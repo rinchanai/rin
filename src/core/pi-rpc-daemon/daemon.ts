@@ -5,13 +5,16 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 
 import { defaultDaemonSocketPath, parseJsonl, safeString } from '../pi-rpc/common.js'
+import { resolveRuntimeProfile } from '../runtime-profile.js'
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true })
 }
 
-async function main() {
-  const socketPath = process.argv[2] || defaultDaemonSocketPath()
+export async function startDaemon(options: { socketPath?: string; workerPath?: string } = {}) {
+  const socketPath = options.socketPath || process.argv[2] || defaultDaemonSocketPath()
+  const workerPath = options.workerPath || process.env.PI_RPC_WORKER_PATH || path.join(path.dirname(new URL(import.meta.url).pathname), 'worker.js')
+  const runtime = resolveRuntimeProfile()
   const connections = new Set<{ socket: net.Socket; closeWorker: () => void }>()
 
   try { fs.rmSync(socketPath, { force: true }) } catch {}
@@ -19,8 +22,8 @@ async function main() {
 
   const server = net.createServer((socket) => {
     let clientBuffer = ''
-    let workerStdoutBuffer = { buffer: '' }
-    let workerStderrBuffer = { buffer: '' }
+    const workerStdoutBuffer = { buffer: '' }
+    const workerStderrBuffer = { buffer: '' }
     let worker: ReturnType<typeof spawn> | null = null
 
     const sendLine = (line: string) => {
@@ -29,9 +32,8 @@ async function main() {
 
     const ensureWorker = () => {
       if (worker) return worker
-      const workerPath = path.join(path.dirname(new URL(import.meta.url).pathname), 'worker.js')
       worker = spawn(process.execPath, [workerPath], {
-        cwd: process.cwd(),
+        cwd: runtime.cwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env },
       })
@@ -39,9 +41,7 @@ async function main() {
         sendLine(JSON.stringify({ type: 'ui', name: 'worker_spawned', payload: { pid: worker?.pid ?? null } }))
       })
       worker.stdout.on('data', (chunk) => {
-        parseJsonl(String(chunk), workerStdoutBuffer, (line) => {
-          sendLine(line)
-        })
+        parseJsonl(String(chunk), workerStdoutBuffer, (line) => sendLine(line))
       })
       worker.stderr.on('data', (chunk) => {
         parseJsonl(String(chunk), workerStderrBuffer, (line) => {
@@ -75,8 +75,7 @@ async function main() {
         clientBuffer = clientBuffer.slice(idx + 1)
         if (line.endsWith('\r')) line = line.slice(0, -1)
         if (!line.trim()) continue
-        const currentWorker = ensureWorker()
-        currentWorker.stdin.write(`${line}\n`)
+        ensureWorker().stdin.write(`${line}\n`)
       }
     })
 
@@ -107,6 +106,10 @@ async function main() {
 
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
+}
+
+async function main() {
+  await startDaemon()
 }
 
 main().catch((error: any) => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { parseJsonl } from '../pi-rpc/common.js'
-import { loadPiRpcCodingAgent, loadPiRpcSessionManagerModule } from '../pi-rpc/pi-rpc-loader.js'
+import { loadPiRpcSessionManagerModule } from '../pi-rpc/pi-rpc-loader.js'
+import { createConfiguredAgentSession } from '../pi-session-factory.js'
 
 function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
@@ -305,11 +306,16 @@ async function runCustomRpcMode(session: any, deps: { SessionManager: any }) {
   await new Promise<never>(() => {})
 }
 
-async function main() {
-  const sdk = await loadPiRpcCodingAgent()
+export async function startWorker(options: { additionalExtensionPaths?: string[] } = {}) {
   const sessionManagerModule = await loadPiRpcSessionManagerModule()
-  const { session } = await sdk.createAgentSession()
+  const { session } = await createConfiguredAgentSession({
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  })
   await runCustomRpcMode(session, { SessionManager: sessionManagerModule.SessionManager })
+}
+
+async function main() {
+  await startWorker()
 }
 
 main().catch((error: any) => {
