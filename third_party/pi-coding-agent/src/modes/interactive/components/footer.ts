@@ -85,23 +85,10 @@ export class FooterComponent implements Component {
 		const contextPercentValue = contextUsage?.percent ?? 0;
 		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
 
-		// Replace home directory with ~
-		let pwd = process.cwd();
-		const home = process.env.HOME || process.env.USERPROFILE;
-		if (home && pwd.startsWith(home)) {
-			pwd = `~${pwd.slice(home.length)}`;
-		}
-
-		// Add git branch if available
-		const branch = this.footerData.getGitBranch();
-		if (branch) {
-			pwd = `${pwd} (${branch})`;
-		}
-
-		// Add session name if set
+		let headerText = "";
 		const sessionName = this.session.sessionManager.getSessionName();
 		if (sessionName) {
-			pwd = `${pwd} • ${sessionName}`;
+			headerText = sessionName;
 		}
 
 		// Build stats line
@@ -197,8 +184,10 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-		const lines = [pwdLine, dimStatsLeft + dimRemainder];
+		const lines = [dimStatsLeft + dimRemainder];
+		if (headerText) {
+			lines.unshift(truncateToWidth(theme.fg("dim", headerText), width, theme.fg("dim", "...")));
+		}
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

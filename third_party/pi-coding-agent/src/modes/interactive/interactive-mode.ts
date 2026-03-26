@@ -411,7 +411,7 @@ export class InteractiveMode {
 		// Setup autocomplete
 		this.autocompleteProvider = new CombinedAutocompleteProvider(
 			[...slashCommands, ...templateCommands, ...extensionCommands, ...skillCommandList],
-			process.cwd(),
+			this.sessionManager.getCwd(),
 			fdPath,
 		);
 		this.defaultEditor.setAutocompleteProvider(this.autocompleteProvider);
@@ -547,15 +547,14 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Update terminal title with session name and cwd.
+	 * Update terminal title without exposing process cwd.
 	 */
 	private updateTerminalTitle(): void {
-		const cwdBasename = path.basename(process.cwd());
 		const sessionName = this.sessionManager.getSessionName();
 		if (sessionName) {
-			this.ui.terminal.setTitle(`π - ${sessionName} - ${cwdBasename}`);
+			this.ui.terminal.setTitle(`π - ${sessionName}`);
 		} else {
-			this.ui.terminal.setTitle(`π - ${cwdBasename}`);
+			this.ui.terminal.setTitle(`π`);
 		}
 	}
 
@@ -668,7 +667,7 @@ export class InteractiveMode {
 
 		try {
 			const packageManager = new DefaultPackageManager({
-				cwd: process.cwd(),
+				cwd: this.sessionManager.getCwd(),
 				agentDir: getAgentDir(),
 				settingsManager: this.settingsManager,
 			});
@@ -1272,7 +1271,7 @@ export class InteractiveMode {
 		const createContext = (): ExtensionContext => ({
 			ui: this.createExtensionUIContext(),
 			hasUI: true,
-			cwd: process.cwd(),
+			cwd: this.sessionManager.getCwd(),
 			sessionManager: this.sessionManager,
 			modelRegistry: this.session.modelRegistry,
 			model: this.session.model,
@@ -4480,7 +4479,7 @@ export class InteractiveMode {
 					type: "user_bash",
 					command,
 					excludeFromContext,
-					cwd: process.cwd(),
+					cwd: this.sessionManager.getCwd(),
 				})
 			: undefined;
 

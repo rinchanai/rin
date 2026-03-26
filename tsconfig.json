@@ -13,14 +13,5 @@
     "strict": false,
     "types": ["node"]
   },
-  "files": [
-    "src/core/pi-rpc/common.ts",
-    "src/core/pi-rpc/pi-rpc-loader.ts",
-    "src/core/pi-rpc-daemon/daemon.ts",
-    "src/core/pi-rpc-daemon/worker.ts",
-    "src/core/pi-rpc-tui/frontend-surface.ts",
-    "src/core/pi-rpc-tui/rpc-client.ts",
-    "src/core/pi-rpc-tui/runtime.ts",
-    "src/core/pi-rpc-tui/main.ts"
-  ]
+  "include": ["src/app/**/*.ts"]
 }

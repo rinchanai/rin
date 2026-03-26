@@ -1,10 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import jiti from '@mariozechner/jiti'
 
-const repoRoot = process.cwd()
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const codingAgentRoot = path.join(repoRoot, 'third_party', 'pi-coding-agent')
 const codingAgentDistRoot = path.join(codingAgentRoot, 'dist')
 const codingAgentSrcRoot = path.join(codingAgentRoot, 'src')

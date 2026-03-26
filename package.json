@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "bin": {
-    "pi-rpc-daemon": "dist/core/pi-rpc-daemon/daemon.js",
-    "pi-rpc-tui": "dist/core/pi-rpc-tui/main.js"
+    "pi-rpc-daemon": "dist/app/pi-rpc-daemon/daemon.js",
+    "pi-rpc-tui": "dist/app/pi-rpc-tui/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/core/pi-rpc-daemon/daemon.js dist/core/pi-rpc-tui/main.js"
+    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/pi-rpc-daemon/daemon.js dist/app/pi-rpc-daemon/worker.js dist/app/pi-rpc-tui/main.js"
   },
   "dependencies": {
     "@mariozechner/jiti": "^2.6.2",

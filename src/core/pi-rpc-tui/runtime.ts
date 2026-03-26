@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
 
+import { resolveRuntimeProfile } from '../runtime-profile.js'
 import { PiRpcDaemonFrontendClient } from './rpc-client.js'
 
 const ALL_THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
@@ -293,6 +294,8 @@ class RemoteAgent {
 
 type RefreshFlags = { messages?: boolean; models?: boolean; session?: boolean }
 
+const RUNTIME_PROFILE = resolveRuntimeProfile()
+
 export class RpcInteractiveSession {
   public agent: RemoteAgent
   public settingsManager: any
@@ -360,7 +363,7 @@ export class RpcInteractiveSession {
       getTree: () => [...this.tree],
       getLeafId: () => this.leafId,
       appendLabelChange: (entryId: string, label: string | undefined) => void this.setEntryLabel(entryId, label).catch(() => {}),
-      getCwd: () => process.cwd(),
+      getCwd: () => RUNTIME_PROFILE.cwd,
       getSessionDir: () => undefined,
       appendSessionInfo: (name: string) => void this.setSessionName(name).catch(() => {}),
     }
