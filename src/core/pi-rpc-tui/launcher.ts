@@ -1,6 +1,6 @@
 import { loadPiRpcCodingAgent } from '../pi-rpc/pi-rpc-loader.js'
 import { createConfiguredAgentSession } from '../pi-session-factory.js'
-import { resolveRuntimeProfile } from '../runtime-profile.js'
+import { applyRuntimeProfileEnvironment, resolveRuntimeProfile } from '../runtime-profile.js'
 
 import { PiRpcDaemonFrontendClient } from './rpc-client.js'
 import { RpcInteractiveSession } from './runtime.js'
@@ -18,6 +18,7 @@ function parseMode(argv: string[]): TuiMode {
 
 export async function startTui(options: { additionalExtensionPaths?: string[] } = {}) {
   const runtime = resolveRuntimeProfile()
+  applyRuntimeProfileEnvironment(runtime)
   if (process.cwd() !== runtime.cwd) {
     process.chdir(runtime.cwd)
   }

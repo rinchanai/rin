@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
 
-import { resolveRuntimeProfile } from '../runtime-profile.js'
+import { getRuntimeSessionDir, resolveRuntimeProfile } from '../runtime-profile.js'
 import { PiRpcDaemonFrontendClient } from './rpc-client.js'
 
 const ALL_THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
@@ -44,7 +44,7 @@ function getLastAssistantText(messages: AgentMessage[]) {
 
 function createSettingsManager() {
   const values = {
-    showHardwareCursor: true,
+    showHardwareCursor: false,
     clearOnShrink: false,
     editorPaddingX: 1,
     autocompleteMaxVisible: 8,
@@ -295,6 +295,7 @@ class RemoteAgent {
 type RefreshFlags = { messages?: boolean; models?: boolean; session?: boolean }
 
 const RUNTIME_PROFILE = resolveRuntimeProfile()
+const RUNTIME_SESSION_DIR = getRuntimeSessionDir(RUNTIME_PROFILE.cwd, RUNTIME_PROFILE.agentDir)
 
 export class RpcInteractiveSession {
   public agent: RemoteAgent
@@ -364,7 +365,7 @@ export class RpcInteractiveSession {
       getLeafId: () => this.leafId,
       appendLabelChange: (entryId: string, label: string | undefined) => void this.setEntryLabel(entryId, label).catch(() => {}),
       getCwd: () => RUNTIME_PROFILE.cwd,
-      getSessionDir: () => undefined,
+      getSessionDir: () => RUNTIME_SESSION_DIR,
       appendSessionInfo: (name: string) => void this.setSessionName(name).catch(() => {}),
     }
   }
