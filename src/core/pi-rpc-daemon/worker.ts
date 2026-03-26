@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { pathToFileURL } from 'node:url'
+
 import { parseJsonl } from '../pi-rpc/common.js'
 import { loadPiRpcSessionManagerModule } from '../pi-rpc/pi-rpc-loader.js'
 import { createConfiguredAgentSession } from '../pi-session-factory.js'
@@ -318,8 +320,12 @@ async function main() {
   await startWorker()
 }
 
-main().catch((error: any) => {
-  const message = String(error && error.message ? error.message : error || 'pi_rpc_worker_failed')
-  console.error(message)
-  process.exit(1)
-})
+const isDirectEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (isDirectEntry) {
+  main().catch((error: any) => {
+    const message = String(error && error.message ? error.message : error || 'pi_rpc_worker_failed')
+    console.error(message)
+    process.exit(1)
+  })
+}

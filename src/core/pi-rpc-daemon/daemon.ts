@@ -3,6 +3,7 @@ import net from 'node:net'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { pathToFileURL } from 'node:url'
 
 import { defaultDaemonSocketPath, parseJsonl, safeString } from '../pi-rpc/common.js'
 import { resolveRuntimeProfile } from '../runtime-profile.js'
@@ -112,7 +113,11 @@ async function main() {
   await startDaemon()
 }
 
-main().catch((error: any) => {
-  console.error(safeString(error && error.message ? error.message : error) || 'pi_rpc_daemon_failed')
-  process.exit(1)
-})
+const isDirectEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (isDirectEntry) {
+  main().catch((error: any) => {
+    console.error(safeString(error && error.message ? error.message : error) || 'pi_rpc_daemon_failed')
+    process.exit(1)
+  })
+}

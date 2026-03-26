@@ -1,5 +1,5 @@
 import { loadPiRpcCodingAgent } from './pi-rpc/pi-rpc-loader.js'
-import { resolveRuntimeProfile } from './runtime-profile.js'
+import { applyRuntimeProfileEnvironment, resolveRuntimeProfile } from './runtime-profile.js'
 
 export async function createConfiguredAgentSession(
   options: {
@@ -19,6 +19,8 @@ export async function createConfiguredAgentSession(
     cwd: options.cwd,
     agentDir: options.agentDir,
   })
+
+  applyRuntimeProfileEnvironment({ agentDir })
 
   if (process.cwd() !== cwd) {
     process.chdir(cwd)
