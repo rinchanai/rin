@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": false,
+    "declaration": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "types": ["node"]
+  },
+  "files": [
+    "src/core/pi-rpc/common.ts",
+    "src/core/pi-rpc/pi-rpc-loader.ts",
+    "src/core/pi-rpc-daemon/daemon.ts",
+    "src/core/pi-rpc-daemon/worker.ts",
+    "src/core/pi-rpc-tui/frontend-surface.ts",
+    "src/core/pi-rpc-tui/rpc-client.ts",
+    "src/core/pi-rpc-tui/runtime.ts",
+    "src/core/pi-rpc-tui/main.ts"
+  ]
+}

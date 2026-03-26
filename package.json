@@ -1,0 +1,37 @@
+{
+  "name": "rin-v2",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "pi-rpc-daemon": "dist/core/pi-rpc-daemon/daemon.js",
+    "pi-rpc-tui": "dist/core/pi-rpc-tui/main.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/core/pi-rpc-daemon/daemon.js dist/core/pi-rpc-tui/main.js"
+  },
+  "dependencies": {
+    "@mariozechner/jiti": "^2.6.2",
+    "@mariozechner/pi-agent-core": "^0.62.0",
+    "@mariozechner/pi-ai": "^0.62.0",
+    "@mariozechner/pi-tui": "0.62.0",
+    "@silvia-odwyer/photon-node": "^0.3.4",
+    "chalk": "^5.5.0",
+    "cli-highlight": "^2.1.11",
+    "diff": "^8.0.2",
+    "extract-zip": "^2.0.1",
+    "file-type": "^21.1.1",
+    "glob": "^13.0.1",
+    "hosted-git-info": "^9.0.2",
+    "ignore": "^7.0.5",
+    "marked": "^15.0.12",
+    "minimatch": "^10.2.3",
+    "proper-lockfile": "^4.1.2",
+    "strip-ansi": "^7.1.0",
+    "undici": "^7.19.1",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2"
+  }
+}
