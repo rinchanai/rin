@@ -1,7 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 
-import { loadPiRpcCodingAgent } from './loader.js'
+import { loadRinCodingAgent } from './loader.js'
 
 export const RIN_DIR_ENV = 'RIN_DIR'
 export const PI_AGENT_DIR_ENV = 'PI_CODING_AGENT_DIR'
@@ -31,7 +31,7 @@ export async function createConfiguredAgentSession(
     sessionManager?: any
   } = {},
 ) {
-  const codingAgentModule = await loadPiRpcCodingAgent()
+  const codingAgentModule = await loadRinCodingAgent()
   const {
     createAgentSession,
     DefaultResourceLoader,

@@ -6,9 +6,9 @@ import { pathToFileURL, pathToFileURL as toFileUrl } from 'node:url'
 
 import type { ImageContent } from '@mariozechner/pi-ai'
 
-import { PiRpcDaemonFrontendClient } from '../pi-rpc-tui/rpc-client.js'
-import { RpcInteractiveSession } from '../pi-rpc-tui/runtime.js'
-import { applyRuntimeProfileEnvironment, resolveRuntimeProfile } from '../pi-rpc-lib/runtime.js'
+import { RinDaemonFrontendClient } from '../rin-tui/rpc-client.js'
+import { RpcInteractiveSession } from '../rin-tui/runtime.js'
+import { applyRuntimeProfileEnvironment, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import {
   canAccessAgentInput,
   canRunCommand,
@@ -289,7 +289,7 @@ class KoishiChatController {
   dataDir: string
   statePath: string
   state: KoishiChatState
-  client: PiRpcDaemonFrontendClient | null = null
+  client: RinDaemonFrontendClient | null = null
   session: RpcInteractiveSession | null = null
   turnSeq = 0
   activeTag = ''
@@ -315,7 +315,7 @@ class KoishiChatController {
 
   async connect() {
     if (this.session && this.client) return
-    const client = new PiRpcDaemonFrontendClient()
+    const client = new RinDaemonFrontendClient()
     const session = new RpcInteractiveSession(client)
     await session.connect()
     this.client = client
@@ -394,6 +394,9 @@ class KoishiChatController {
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile).catch(() => {})
     }
+    if (!session.sessionManager.getSessionName?.()) {
+      await session.setSessionName(this.chatKey)
+    }
   }
 
   dispose() {
@@ -443,6 +446,25 @@ class KoishiChatController {
     return new Promise<any>((resolve, reject) => {
       this.turnWaiters.set(tag, { resolve, reject })
     })
+  }
+
+  async runCommand(commandLine: string, replyToMessageId = '') {
+    await this.connect()
+    if (!this.client || !this.session) throw new Error('koishi_session_not_connected')
+    const response: any = await this.client.send({ type: 'run_command', commandLine })
+    if (!response || response.success !== true) {
+      throw new Error(String(response?.error || 'rin_run_command_failed'))
+    }
+    const data = response.data || {}
+    this.state.piSessionFile = safeString(this.session.sessionManager.getSessionFile?.() || this.state.piSessionFile || '').trim() || undefined
+    if (!this.session.sessionManager.getSessionName?.()) {
+      await this.session.setSessionName(this.chatKey)
+    }
+    delete this.state.processing
+    this.saveState()
+    const text = safeString(data?.text || '').trim()
+    if (text) await sendText(this.app, this.chatKey, text, replyToMessageId)
+    return data
   }
 
   async runTurn(input: { text: string; attachments: SavedAttachment[]; replyToMessageId?: string }, mode: 'prompt' | 'interrupt_prompt' = 'prompt') {
@@ -527,7 +549,7 @@ async function shouldProcessText(session: any, identity: any, registeredCommands
 }
 
 async function discoverRpcCommands() {
-  const client = new PiRpcDaemonFrontendClient()
+  const client = new RinDaemonFrontendClient()
   await client.connect()
   try {
     const commands = await client.getCommands()
@@ -552,15 +574,25 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
   materializeKoishiConfig(configPath, settings)
 
   const loader = new Loader()
-  await loader.init(configPath)
-  loader.envFiles = []
-  await loader.readConfig(true)
+  const previousCwd = process.cwd()
+  if (previousCwd !== dataDir) process.chdir(dataDir)
+  try {
+    await loader.init(configPath)
+    loader.envFiles = []
+    await loader.readConfig(true)
+  } finally {
+    if (process.cwd() !== previousCwd) process.chdir(previousCwd)
+  }
 
   const app = await loader.createApp()
   const controllers = new Map<string, KoishiChatController>()
   const registeredCommandNames = new Set<string>()
   const rpcCommands = await discoverRpcCommands()
-  const commandRows = [{ name: 'help', description: 'Show available commands' }, ...rpcCommands]
+  const allowedCommandNames = new Set(['new', 'compact', 'reload', 'session', 'resume', 'model'])
+  const commandRows = [
+    { name: 'help', description: 'Show available commands' },
+    ...rpcCommands.filter((item) => allowedCommandNames.has(item.name)),
+  ]
   const getIdentity = () => loadIdentity(dataDir)
 
   const getController = (chatKey: string) => {
@@ -589,20 +621,8 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
           return ''
         }
 
-        if (item.name === 'new') {
-          const controller = getController(chatKey)
-          await controller.connect()
-          await controller.session?.newSession()
-          controller.state.piSessionFile = safeString(controller.session?.sessionManager.getSessionFile?.() || '').trim() || undefined
-          delete controller.state.processing
-          ;(controller as any).saveState()
-          await sendText(app, chatKey, 'Started a new session.', safeString(session?.messageId || '').trim()).catch(() => {})
-          return ''
-        }
-
-        const attachments = await extractInboundAttachments(session, chatStateDir(dataDir, chatKey))
         const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ''}`
-        void getController(chatKey).runTurn({ text, attachments, replyToMessageId: safeString(session?.messageId || '').trim() }, 'interrupt_prompt').catch((error) => {
+        void getController(chatKey).runCommand(text, safeString(session?.messageId || '').trim()).catch((error) => {
           logger.warn(`koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`)
         })
         return ''

@@ -17,6 +17,7 @@ This extension makes the session's system prompt stable by freezing the first ef
 - On later turns, it always returns the frozen value instead of the newly computed prompt.
 - When resuming, switching, navigating the tree, or forking, it restores the latest frozen prompt from the current branch.
 - After `/reload`, the frozen prompt is cleared for the current process/session instance, and the next turn captures a fresh system prompt.
+- After session compaction, the frozen prompt is also cleared so the next turn captures a fresh prompt instead of preserving the old cache prefix.
 
 ## Scope
 

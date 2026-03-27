@@ -1,6 +1,6 @@
 import net from 'node:net'
 
-import { defaultDaemonSocketPath, parseJsonl } from '../pi-rpc-lib/common.js'
+import { defaultDaemonSocketPath, parseJsonl } from '../rin-lib/common.js'
 import type {
   FrontendAutocompleteItem,
   FrontendCommandItem,
@@ -29,7 +29,7 @@ function toFrontendEvent(event: any): InteractiveFrontendEvent | null {
   return { type: 'ui', name: String(event.type || 'event'), payload: event }
 }
 
-export class PiRpcDaemonFrontendClient implements InteractiveFrontendSurface {
+export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   socketPath: string
   socket: net.Socket | null = null
   state = { buffer: '' }
@@ -131,12 +131,12 @@ export class PiRpcDaemonFrontendClient implements InteractiveFrontendSurface {
   async respondDialog(_id: string, _payload: unknown): Promise<void> {}
 
   async send(command: any) {
-    if (!this.socket || this.socket.destroyed) throw new Error('pi_rpc_tui_not_connected')
+    if (!this.socket || this.socket.destroyed) throw new Error('rin_tui_not_connected')
     const id = `req_${++this.requestId}`
     return await new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new Error(`pi_rpc_timeout:${String(command?.type || 'command')}`))
+        reject(new Error(`rin_timeout:${String(command?.type || 'command')}`))
       }, 30000)
       this.pending.set(id, { resolve, reject, timer })
       this.socket.write(`${JSON.stringify({ ...command, id })}\n`)
@@ -169,14 +169,14 @@ export class PiRpcDaemonFrontendClient implements InteractiveFrontendSurface {
   private handleDisconnect() {
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timer)
-      try { pending.reject(new Error(`pi_rpc_disconnected:${id}`)) } catch {}
+      try { pending.reject(new Error(`rin_disconnected:${id}`)) } catch {}
     }
     this.pending.clear()
   }
 
   private getData(response: any) {
     if (!response || response.success !== true) {
-      throw new Error(String(response?.error || 'pi_rpc_request_failed'))
+      throw new Error(String(response?.error || 'rin_request_failed'))
     }
     return response.data
   }

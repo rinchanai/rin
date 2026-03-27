@@ -132,9 +132,18 @@ export function buildKoishiConfigFromSettings(settings: any) {
 }
 
 export function materializeKoishiConfig(configPath: string, settings: any) {
-  ensureDir(path.dirname(configPath))
+  const rootDir = path.dirname(configPath)
+  ensureDir(rootDir)
   const config = buildKoishiConfigFromSettings(settings)
   fs.writeFileSync(configPath, YAML.stringify(config), 'utf8')
+  const packageJsonPath = path.join(rootDir, 'package.json')
+  if (!fs.existsSync(packageJsonPath)) {
+    fs.writeFileSync(packageJsonPath, `${JSON.stringify({
+      name: 'rin-koishi-runtime',
+      private: true,
+      version: '0.0.0',
+    }, null, 2)}\n`, 'utf8')
+  }
   return { configPath, config }
 }
 

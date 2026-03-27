@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "bin": {
-    "pi-rpc-daemon": "dist/app/pi-rpc-daemon/daemon.js",
-    "pi-rpc-tui": "dist/app/pi-rpc-tui/main.js",
-    "pi-rpc-koishi": "dist/app/pi-rpc-koishi/main.js"
+    "rin-daemon": "dist/app/rin-daemon/daemon.js",
+    "rin-tui": "dist/app/rin-tui/main.js",
+    "rin-koishi": "dist/app/rin-koishi/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/pi-rpc-daemon/daemon.js dist/app/pi-rpc-daemon/worker.js dist/app/pi-rpc-tui/main.js dist/app/pi-rpc-koishi/main.js"
+    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-koishi/main.js"
   },
   "dependencies": {
     "@koishijs/plugin-adapter-telegram": "^4.5.11",
@@ -28,7 +28,7 @@
     "hosted-git-info": "^9.0.2",
     "ignore": "^7.0.5",
     "koishi": "^4.18.11",
-    "koishi-plugin-adapter-onebot": "^6.8.0",
+    "koishi-plugin-adapter-onebot": "^6.9.0",
     "marked": "^15.0.12",
     "minimatch": "^10.2.3",
     "proper-lockfile": "^4.1.2",

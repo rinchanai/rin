@@ -5,8 +5,8 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { defaultDaemonSocketPath, parseJsonl, safeString } from '../pi-rpc-lib/common.js'
-import { resolveRuntimeProfile } from '../pi-rpc-lib/runtime.js'
+import { defaultDaemonSocketPath, parseJsonl, safeString } from '../rin-lib/common.js'
+import { resolveRuntimeProfile } from '../rin-lib/runtime.js'
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true })
@@ -14,7 +14,7 @@ function ensureDir(dir: string) {
 
 export async function startDaemon(options: { socketPath?: string; workerPath?: string } = {}) {
   const socketPath = options.socketPath || process.argv[2] || defaultDaemonSocketPath()
-  const workerPath = options.workerPath || process.env.PI_RPC_WORKER_PATH || path.join(path.dirname(new URL(import.meta.url).pathname), 'worker.js')
+  const workerPath = options.workerPath || process.env.RIN_WORKER_PATH || path.join(path.dirname(new URL(import.meta.url).pathname), 'worker.js')
   const runtime = resolveRuntimeProfile()
   const connections = new Set<{ socket: net.Socket; closeWorker: () => void }>()
 
@@ -92,7 +92,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
   })
 
   server.listen(socketPath, () => {
-    console.log(`pi rpc daemon listening on ${socketPath}`)
+    console.log(`rin daemon listening on ${socketPath}`)
   })
 
   const shutdown = async () => {
@@ -117,7 +117,7 @@ const isDirectEntry = process.argv[1] && import.meta.url === pathToFileURL(proce
 
 if (isDirectEntry) {
   main().catch((error: any) => {
-    console.error(safeString(error && error.message ? error.message : error) || 'pi_rpc_daemon_failed')
+    console.error(safeString(error && error.message ? error.message : error) || 'rin_daemon_failed')
     process.exit(1)
   })
 }
