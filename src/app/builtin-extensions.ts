@@ -16,5 +16,6 @@ export function getBuiltinExtensionPaths() {
   const root = repoRootFromHere()
   return [
     path.join(root, 'extensions', 'freeze-session-runtime', 'index.ts'),
+    path.join(root, 'extensions', 'discover-attention-resources', 'index.ts'),
   ]
 }
