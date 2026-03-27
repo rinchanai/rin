@@ -47,4 +47,9 @@ else
 fi
 
 npm run build
+
+if [ -r /dev/tty ]; then
+  exec node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+fi
+
 exec node dist/app/rin-install/main.js
