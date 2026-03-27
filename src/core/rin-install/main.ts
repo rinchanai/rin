@@ -90,11 +90,3 @@ export async function startInstaller() {
   outro('Installer placeholder complete. No changes were made.')
 }
 
-async function main() {
-  await startInstaller()
-}
-
-main().catch((error: any) => {
-  console.error(String(error?.message || error || 'rin_install_failed'))
-  process.exit(1)
-})
