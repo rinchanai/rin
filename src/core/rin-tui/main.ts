@@ -2,6 +2,6 @@
 import { startTui } from './launcher.js'
 
 startTui().catch((error: any) => {
-  console.error(String(error?.message || error || 'pi_rpc_tui_failed'))
+  console.error(String(error?.message || error || 'rin_tui_failed'))
   process.exit(1)
 })

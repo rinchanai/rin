@@ -26,18 +26,18 @@ async function importSourceModule(relativePath: string) {
   return await sourceLoader.import(path.join(codingAgentSrcRoot, relativePath))
 }
 
-export async function loadPiRpcCodingAgent() {
+export async function loadRinCodingAgent() {
   if (hasDistModule('index.js')) return await importDistModule('index.js')
   return await importSourceModule('index.ts')
 }
 
-export async function loadPiRpcSessionManagerModule() {
+export async function loadRinSessionManagerModule() {
   if (hasDistModule(path.join('core', 'session-manager.js'))) {
     return await importDistModule(path.join('core', 'session-manager.js'))
   }
   return await importSourceModule(path.join('core', 'session-manager.ts'))
 }
 
-export function resolvePiRpcCodingAgentDistDir() {
+export function resolveRinCodingAgentDistDir() {
   return codingAgentDistRoot
 }

@@ -8,7 +8,7 @@ export function safeString(value: unknown): string {
 
 export function defaultDaemonSocketPath() {
   const runtimeDir = safeString(process.env.XDG_RUNTIME_DIR).trim() || path.join(os.homedir(), '.cache')
-  return path.join(runtimeDir, 'pi-rpc-daemon', 'daemon.sock')
+  return path.join(runtimeDir, 'rin-daemon', 'daemon.sock')
 }
 
 export function parseJsonl(chunk: string, state: { buffer: string }, onLine: (line: string) => void) {

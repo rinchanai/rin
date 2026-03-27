@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url'
 
-import { parseJsonl } from '../pi-rpc-lib/common.js'
-import { loadPiRpcSessionManagerModule } from '../pi-rpc-lib/loader.js'
-import { createConfiguredAgentSession } from '../pi-rpc-lib/runtime.js'
+import { parseJsonl } from '../rin-lib/common.js'
+import { loadRinSessionManagerModule } from '../rin-lib/loader.js'
+import { createConfiguredAgentSession } from '../rin-lib/runtime.js'
 
 const BUILTIN_SLASH_COMMANDS = [
   { name: 'settings', description: 'Open settings menu' },
@@ -37,7 +37,7 @@ function response(id: string | undefined, command: string, success: boolean, pay
     ? payload === undefined
       ? { id, type: 'response', command, success: true }
       : { id, type: 'response', command, success: true, data: payload }
-    : { id, type: 'response', command, success: false, error: String((payload as any)?.message || payload || 'pi_rpc_request_failed') }
+    : { id, type: 'response', command, success: false, error: String((payload as any)?.message || payload || 'rin_request_failed') }
 }
 
 function ok(id: string | undefined, command: string, data?: unknown) {
@@ -98,6 +98,110 @@ function getOAuthState(session: any) {
     usesCallbackServer: Boolean(provider.usesCallbackServer),
   }))
   return { credentials, providers }
+}
+
+function splitCommandArgs(text: string) {
+  const args: string[] = []
+  let current = ''
+  let quote: string | null = null
+
+  for (const char of String(text || '')) {
+    if (quote) {
+      if (char === quote) quote = null
+      else current += char
+      continue
+    }
+    if (char === '"' || char === "'") {
+      quote = char
+      continue
+    }
+    if (char === ' ' || char === '\t') {
+      if (current) {
+        args.push(current)
+        current = ''
+      }
+      continue
+    }
+    current += char
+  }
+
+  if (current) args.push(current)
+  return args
+}
+
+function formatSessionStats(stats: any) {
+  return [
+    `Session ID: ${String(stats?.sessionId || '')}`,
+    `Session File: ${String(stats?.sessionFile || 'In-memory')}`,
+    `Messages: ${String(stats?.totalMessages || 0)} (user=${String(stats?.userMessages || 0)}, assistant=${String(stats?.assistantMessages || 0)}, toolResults=${String(stats?.toolResults || 0)})`,
+    `Tool Calls: ${String(stats?.toolCalls || 0)}`,
+    `Tokens: ${String(stats?.tokens?.total || 0)} (input=${String(stats?.tokens?.input || 0)}, output=${String(stats?.tokens?.output || 0)}, cacheRead=${String(stats?.tokens?.cacheRead || 0)}, cacheWrite=${String(stats?.tokens?.cacheWrite || 0)})`,
+    `Cost: ${String(stats?.cost || 0)}`,
+  ].join('\n')
+}
+
+async function runBuiltinCommand(session: any, commandLine: string, deps: { SessionManager: any }) {
+  const trimmed = String(commandLine || '').trim()
+  if (!trimmed.startsWith('/')) return { handled: false }
+
+  const [name = '', ...rest] = splitCommandArgs(trimmed.slice(1))
+  const argsText = rest.join(' ').trim()
+  const command = name.trim()
+  if (!command) return { handled: false }
+
+  switch (command) {
+    case 'new':
+      await session.newSession()
+      return { handled: true, text: 'Started a new session.' }
+
+    case 'compact':
+      await session.compact(argsText || undefined)
+      return { handled: true, text: 'Compacted session.' }
+
+    case 'reload':
+      await session.reload()
+      return { handled: true, text: 'Reloaded extensions, prompts, skills, and themes.' }
+
+    case 'session':
+      return { handled: true, text: formatSessionStats(session.getSessionStats()) }
+
+    case 'resume': {
+      const sessions = await deps.SessionManager.list(session.sessionManager.getCwd(), session.sessionManager.getSessionDir())
+      if (!argsText) {
+        const lines = sessions.slice(0, 20).map((item: any) => {
+          const label = String(item?.name || item?.id || '').trim() || String(item?.id || '')
+          return `${String(item?.id || '')} — ${label}`
+        })
+        return { handled: true, text: lines.length ? ['Available sessions:', ...lines].join('\n') : 'No sessions available.' }
+      }
+      const match = sessions.find((item: any) => String(item?.id || '') === argsText)
+      if (!match) return { handled: true, text: `Session not found: ${argsText}` }
+      await session.switchSession(String(match.path || ''))
+      return { handled: true, text: `Resumed session: ${String(match.id || '')}` }
+    }
+
+    case 'model': {
+      if (!rest.length) {
+        const models = await session.modelRegistry.getAvailable()
+        const lines = models.slice(0, 50).map((model: any) => `${String(model.provider || '')}/${String(model.id || '')}`)
+        return { handled: true, text: lines.length ? ['Available models:', ...lines].join('\n') : 'No models available.' }
+      }
+      const [targetRef = '', thinkingLevel = ''] = rest
+      const [provider = '', modelId = ''] = String(targetRef).split('/', 2)
+      if (!provider || !modelId) {
+        return { handled: true, text: 'Usage: /model <provider/model> [thinking-level]' }
+      }
+      const models = await session.modelRegistry.getAvailable()
+      const match = models.find((model: any) => model.provider === provider && model.id === modelId)
+      if (!match) return { handled: true, text: `Model not found: ${targetRef}` }
+      await session.setModel(match)
+      if (thinkingLevel) await session.setThinkingLevel(thinkingLevel)
+      return { handled: true, text: `Model set to: ${provider}/${modelId}${thinkingLevel ? ` (${thinkingLevel})` : ''}` }
+    }
+
+    default:
+      return { handled: false }
+  }
 }
 
 async function runCustomRpcMode(session: any, deps: { SessionManager: any; builtinSlashCommands: any[] }) {
@@ -256,6 +360,8 @@ async function runCustomRpcMode(session: any, deps: { SessionManager: any; built
       case 'get_last_assistant_text': return done(id, type, { text: session.getLastAssistantText() })
       case 'get_messages': return done(id, type, { messages: session.messages })
       case 'get_commands': return done(id, type, { commands: getSlashCommands(session, builtinSlashCommands) })
+      case 'run_command':
+        return run(id, type, () => runBuiltinCommand(session, String(command.commandLine || ''), { SessionManager }), (value) => value)
 
       case 'new_session':
         return run(id, type, () => session.newSession(command.parentSession ? { parentSession: command.parentSession } : undefined), (value) => ({ cancelled: !value }))
@@ -384,7 +490,7 @@ async function runCustomRpcMode(session: any, deps: { SessionManager: any; built
 }
 
 export async function startWorker(options: { additionalExtensionPaths?: string[] } = {}) {
-  const sessionManagerModule = await loadPiRpcSessionManagerModule()
+  const sessionManagerModule = await loadRinSessionManagerModule()
   const { session } = await createConfiguredAgentSession({
     additionalExtensionPaths: options.additionalExtensionPaths,
   })
@@ -402,7 +508,7 @@ const isDirectEntry = process.argv[1] && import.meta.url === pathToFileURL(proce
 
 if (isDirectEntry) {
   main().catch((error: any) => {
-    const message = String(error && error.message ? error.message : error || 'pi_rpc_worker_failed')
+    const message = String(error && error.message ? error.message : error || 'rin_worker_failed')
     console.error(message)
     process.exit(1)
   })

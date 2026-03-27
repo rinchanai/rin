@@ -11,7 +11,7 @@ type FrozenPromptSnapshot = {
 };
 
 const SNAPSHOT_TYPE = "frozen-system-prompt";
-const RELOAD_MARKER_DIR = join(tmpdir(), "pi-frozen-runtime");
+const RELOAD_MARKER_DIR = join(tmpdir(), "rin-frozen-runtime");
 
 function getSessionKey(ctx: ExtensionContext): string {
 	const sessionFile = ctx.sessionManager.getSessionFile?.();
@@ -86,6 +86,12 @@ export default function freezeSessionRuntimeExtension(pi: ExtensionAPI) {
 
 	pi.on("session_fork", async (_event, ctx) => {
 		restore(ctx);
+	});
+
+	pi.on("session_compact", async (_event, ctx) => {
+		markReload(ctx);
+		snapshot = undefined;
+		reloadPending = true;
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

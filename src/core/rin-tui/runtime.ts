@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
 
-import { getRuntimeSessionDir, resolveRuntimeProfile } from '../pi-rpc-lib/runtime.js'
-import { PiRpcDaemonFrontendClient } from './rpc-client.js'
+import { getRuntimeSessionDir, resolveRuntimeProfile } from '../rin-lib/runtime.js'
+import { RinDaemonFrontendClient } from './rpc-client.js'
 
 const ALL_THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const REFRESH_MESSAGES = { messages: true } as const
@@ -142,7 +142,7 @@ function createSettingsManager() {
   }
 }
 
-function createAuthStorageProxy(client: PiRpcDaemonFrontendClient) {
+function createAuthStorageProxy(client: RinDaemonFrontendClient) {
   const state = {
     credentials: {} as Record<string, { type: string } | undefined>,
     providers: [] as Array<{ id: string; name: string; usesCallbackServer?: boolean }>,
@@ -240,7 +240,7 @@ function createAuthStorageProxy(client: PiRpcDaemonFrontendClient) {
   }
 }
 
-function createModelRegistry(client: PiRpcDaemonFrontendClient) {
+function createModelRegistry(client: RinDaemonFrontendClient) {
   const state = { models: [] as any[], error: undefined as string | undefined }
   const authStorage = createAuthStorageProxy(client)
   return {
@@ -264,20 +264,20 @@ function createModelRegistry(client: PiRpcDaemonFrontendClient) {
         const oauthData: any = oauthResponse && oauthResponse.success === true ? oauthResponse.data : null
         authStorage.applyState(oauthData)
       } catch (error: any) {
-        state.error = String(error?.message || error || 'pi_rpc_model_registry_failed')
+        state.error = String(error?.message || error || 'rin_model_registry_failed')
       }
     },
   }
 }
 
 class RemoteAgent {
-  constructor(private client: PiRpcDaemonFrontendClient) {}
+  constructor(private client: RinDaemonFrontendClient) {}
 
   waitForIdle(timeout = 60000) {
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         unsubscribe()
-        reject(new Error('pi_rpc_wait_for_idle_timeout'))
+        reject(new Error('rin_wait_for_idle_timeout'))
       }, timeout)
       const unsubscribe = this.client.subscribe((event) => {
         if (event.type !== 'ui') return
@@ -335,7 +335,7 @@ export class RpcInteractiveSession {
   private listeners = new Set<(event: AgentEvent) => void>()
   private unsubscribeClient?: () => void
 
-  constructor(public client: PiRpcDaemonFrontendClient) {
+  constructor(public client: RinDaemonFrontendClient) {
     this.agent = new RemoteAgent(client)
     this.settingsManager = createSettingsManager()
     this.modelRegistry = createModelRegistry(client)
@@ -633,7 +633,7 @@ export class RpcInteractiveSession {
   private async call(type: string, payload: Record<string, unknown> = {}) {
     const response: any = await this.client.send({ type, ...payload })
     if (!response || response.success !== true) {
-      throw new Error(String(response?.error || 'pi_rpc_request_failed'))
+      throw new Error(String(response?.error || 'rin_request_failed'))
     }
     return response.data
   }
