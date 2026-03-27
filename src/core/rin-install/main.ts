@@ -221,16 +221,6 @@ async function maybeLoginProvider(provider: string, authStorage: any | null) {
     return { didLogin: false, hasAuth: false }
   }
 
-  const shouldLogin = ensureNotCancelled(await select({
-    message: `Configure login for ${oauthProvider.name || provider} now?`,
-    options: [
-      { value: 'login', label: 'Login now', hint: 'recommended' },
-      { value: 'skip', label: 'Skip for now', hint: 'configure later' },
-    ],
-  }))
-
-  if (shouldLogin !== 'login') return { didLogin: false, hasAuth: false }
-
   const status = spinner()
   let lastAuthUrl = ''
   status.start(`Starting login for ${oauthProvider.name || provider}...`)
@@ -267,7 +257,7 @@ async function maybeLoginProvider(provider: string, authStorage: any | null) {
     status.stop(`${oauthProvider.name || provider} login complete.`)
     return { didLogin: true, hasAuth: true }
   } catch (error: any) {
-    status.stop(`Login skipped or failed for ${oauthProvider.name || provider}.`)
+    status.stop(`Login failed for ${oauthProvider.name || provider}.`)
     note(String(error?.message || error || 'provider_login_failed'), 'Provider auth')
     return { didLogin: false, hasAuth: Boolean(authStorage.hasAuth?.(provider)) }
   }
