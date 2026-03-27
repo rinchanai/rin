@@ -1,6 +1,5 @@
-import { loadPiRpcCodingAgent } from '../pi-rpc/pi-rpc-loader.js'
-import { createConfiguredAgentSession } from '../pi-session-factory.js'
-import { applyRuntimeProfileEnvironment, resolveRuntimeProfile } from '../runtime-profile.js'
+import { loadPiRpcCodingAgent } from '../pi-rpc-lib/loader.js'
+import { applyRuntimeProfileEnvironment, createConfiguredAgentSession, resolveRuntimeProfile } from '../pi-rpc-lib/runtime.js'
 
 import { PiRpcDaemonFrontendClient } from './rpc-client.js'
 import { RpcInteractiveSession } from './runtime.js'
