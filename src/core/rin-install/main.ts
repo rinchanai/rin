@@ -179,8 +179,48 @@ async function chooseInstallDir(targetUser: string) {
 }
 
 async function chooseModelConfig() {
-  const models = await loadModelChoices()
-  const providerNames = [...new Set(models.map((model) => model.provider))]
+  const models = await loadModelChoices().catch(() => [] as ModelChoice[])
+  const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
+
+  if (!providerNames.length) {
+    note([
+      'Pi model registry did not return any selectable providers in this installer environment.',
+      'Falling back to manual provider/model entry for now.',
+    ].join('\n'), 'Model selection')
+
+    const provider = String(ensureNotCancelled(await text({
+      message: 'Enter the provider id.',
+      placeholder: 'openai',
+      defaultValue: 'openai',
+      validate(value) {
+        if (!String(value || '').trim()) return 'Provider is required.'
+      },
+    }))).trim()
+
+    const modelId = String(ensureNotCancelled(await text({
+      message: 'Enter the model id.',
+      placeholder: 'gpt-5',
+      defaultValue: 'gpt-5',
+      validate(value) {
+        if (!String(value || '').trim()) return 'Model id is required.'
+      },
+    }))).trim()
+
+    const reasoning = ensureNotCancelled(await confirm({
+      message: 'Does this model support reasoning?',
+      initialValue: true,
+    }))
+
+    const thinkingLevel = ensureNotCancelled(await select({
+      message: 'Choose the default thinking level.',
+      options: computeAvailableThinkingLevels({ provider, id: modelId, reasoning }).map((level) => ({
+        value: level,
+        label: level,
+      })),
+    }))
+
+    return { provider, modelId, thinkingLevel, modelAvailable: false }
+  }
 
   const provider = ensureNotCancelled(await select({
     message: 'Choose a provider.',
@@ -196,6 +236,25 @@ async function chooseModelConfig() {
   }))
 
   const providerModels = models.filter((model) => model.provider === provider)
+  if (!providerModels.length) {
+    const modelId = String(ensureNotCancelled(await text({
+      message: `No models were listed for provider \"${provider}\". Enter a model id manually.`,
+      placeholder: 'model-id',
+      validate(value) {
+        if (!String(value || '').trim()) return 'Model id is required.'
+      },
+    }))).trim()
+    const reasoning = ensureNotCancelled(await confirm({
+      message: 'Does this model support reasoning?',
+      initialValue: true,
+    }))
+    const thinkingLevel = ensureNotCancelled(await select({
+      message: 'Choose the default thinking level.',
+      options: computeAvailableThinkingLevels({ provider: String(provider), id: modelId, reasoning }).map((level) => ({ value: level, label: level })),
+    }))
+    return { provider: String(provider), modelId, thinkingLevel, modelAvailable: false }
+  }
+
   const modelId = ensureNotCancelled(await select({
     message: 'Choose a model.',
     options: providerModels.map((model) => ({
