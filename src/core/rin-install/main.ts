@@ -12,6 +12,10 @@ const ALL_THINKING_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 
 type SystemUser = { name: string; uid: number; home: string; shell: string }
 type ModelChoice = { provider: string; id: string; reasoning: boolean; available: boolean }
+type InstallerAgentContext = {
+  models: ModelChoice[]
+  authStorage: any | null
+}
 type KoishiPlan =
   | { enabled: false }
   | { enabled: true; adapter: 'telegram'; token: string }
@@ -75,7 +79,7 @@ function computeAvailableThinkingLevels(model: { provider: string; id: string; r
     : ['off', 'minimal', 'low', 'medium', 'high']
 }
 
-async function loadModelChoices() {
+async function loadInstallerAgentContext(): Promise<InstallerAgentContext> {
   const builtinChoices: ModelChoice[] = []
   for (const provider of getProviders()) {
     for (const model of getModels(provider as any)) {
@@ -89,6 +93,7 @@ async function loadModelChoices() {
   }
 
   const byKey = new Map<string, ModelChoice>(builtinChoices.map((choice) => [`${choice.provider}/${choice.id}`, choice]))
+  let authStorage: any | null = null
 
   try {
     const runtimeProfile = resolveRuntimeProfile()
@@ -97,6 +102,7 @@ async function loadModelChoices() {
       agentDir: runtimeProfile.agentDir,
     })
     const registry = (session as any).modelRegistry
+    authStorage = registry?.authStorage || null
     const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
     const availableKeys = new Set(
       (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
@@ -113,9 +119,9 @@ async function loadModelChoices() {
     }
   } catch {}
 
-  const choices = [...byKey.values()].filter((choice) => choice.provider && choice.id)
-  choices.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
-  return choices
+  const models = [...byKey.values()].filter((choice) => choice.provider && choice.id)
+  models.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
+  return { models, authStorage }
 }
 
 async function chooseTargetUser(currentUser: string) {
@@ -201,11 +207,78 @@ async function chooseInstallDir(targetUser: string) {
   return installDir
 }
 
+async function maybeLoginProvider(provider: string, authStorage: any | null) {
+  if (!authStorage?.getOAuthProviders) return { didLogin: false, hasAuth: false }
+  if (authStorage.hasAuth?.(provider)) return { didLogin: false, hasAuth: true }
+
+  const oauthProvider = authStorage.getOAuthProviders().find((entry: any) => entry.id === provider)
+  if (!oauthProvider) {
+    note([
+      `Provider: ${provider}`,
+      'This provider does not expose a built-in OAuth flow here.',
+      'You can still configure it later with auth.json, environment variables, or custom provider config.',
+    ].join('\n'), 'Provider auth')
+    return { didLogin: false, hasAuth: false }
+  }
+
+  const shouldLogin = ensureNotCancelled(await select({
+    message: `Configure login for ${oauthProvider.name || provider} now?`,
+    options: [
+      { value: 'login', label: 'Login now', hint: 'recommended' },
+      { value: 'skip', label: 'Skip for now', hint: 'configure later' },
+    ],
+  }))
+
+  if (shouldLogin !== 'login') return { didLogin: false, hasAuth: false }
+
+  const status = spinner()
+  let lastAuthUrl = ''
+  status.start(`Starting login for ${oauthProvider.name || provider}...`)
+
+  try {
+    await authStorage.login(provider, {
+      onAuth(info: { url: string; instructions?: string }) {
+        lastAuthUrl = String(info?.url || '')
+        status.stop(`Open this URL to continue login:\n${lastAuthUrl}${info?.instructions ? `\n${info.instructions}` : ''}`)
+      },
+      async onPrompt(prompt: { message: string; placeholder?: string }) {
+        return String(ensureNotCancelled(await text({
+          message: prompt.message || 'Enter login value.',
+          placeholder: prompt.placeholder,
+          validate(value) {
+            if (!String(value || '').trim()) return 'A value is required.'
+          },
+        }))).trim()
+      },
+      onProgress(message: string) {
+        status.message(message || `Waiting for ${oauthProvider.name || provider} login...`)
+      },
+      async onManualCodeInput() {
+        return String(ensureNotCancelled(await text({
+          message: 'Paste the redirect URL or code from the browser.',
+          placeholder: lastAuthUrl ? 'paste the final redirect URL or device code' : 'paste the code',
+          validate(value) {
+            if (!String(value || '').trim()) return 'A value is required.'
+          },
+        }))).trim()
+      },
+      signal: AbortSignal.timeout(10 * 60 * 1000),
+    })
+    status.stop(`${oauthProvider.name || provider} login complete.`)
+    return { didLogin: true, hasAuth: true }
+  } catch (error: any) {
+    status.stop(`Login skipped or failed for ${oauthProvider.name || provider}.`)
+    note(String(error?.message || error || 'provider_login_failed'), 'Provider auth')
+    return { didLogin: false, hasAuth: Boolean(authStorage.hasAuth?.(provider)) }
+  }
+}
+
 async function chooseModelConfig() {
   const load = spinner()
   load.start('Loading provider and model choices...')
-  const models = await loadModelChoices().catch(() => [] as ModelChoice[])
-  load.stop(models.length ? 'Provider and model choices loaded.' : 'No provider/model choices were loaded.')
+  const context = await loadInstallerAgentContext().catch(() => ({ models: [] as ModelChoice[], authStorage: null }))
+  load.stop(context.models.length ? 'Provider and model choices loaded.' : 'No provider/model choices were loaded.')
+  const models = context.models
   const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
 
   if (!providerNames.length) {
@@ -225,6 +298,7 @@ async function chooseModelConfig() {
     }),
   }))
 
+  const auth = await maybeLoginProvider(String(provider), context.authStorage)
   const providerModels = models.filter((model) => model.provider === provider)
   if (!providerModels.length) {
     throw new Error(`rin_installer_no_models_for_provider:${provider}`)
@@ -235,7 +309,7 @@ async function chooseModelConfig() {
     options: providerModels.map((model) => ({
       value: model.id,
       label: model.id,
-      hint: [model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
+      hint: [auth.hasAuth || model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
     })),
   }))
 
@@ -248,7 +322,7 @@ async function chooseModelConfig() {
     })),
   }))
 
-  return { provider, modelId, thinkingLevel, modelAvailable: model.available }
+  return { provider, modelId, thinkingLevel, modelAvailable: auth.hasAuth || model.available }
 }
 
 async function chooseKoishiPlan(): Promise<KoishiPlan> {
