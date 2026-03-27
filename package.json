@@ -3,15 +3,17 @@
   "private": true,
   "type": "module",
   "bin": {
+    "rin": "dist/app/rin/main.js",
     "rin-daemon": "dist/app/rin-daemon/daemon.js",
     "rin-tui": "dist/app/rin-tui/main.js",
     "rin-koishi": "dist/app/rin-koishi/main.js",
     "rin-install": "dist/app/rin-install/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-koishi/main.js dist/app/rin-install/main.js"
+    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/rin/main.js dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-koishi/main.js dist/app/rin-install/main.js"
   },
   "dependencies": {
+    "@clack/prompts": "^0.10.1",
     "@koishijs/plugin-adapter-telegram": "^4.5.11",
     "@koishijs/plugin-http": "^0.6.3",
     "@koishijs/plugin-proxy-agent": "^0.3.3",
