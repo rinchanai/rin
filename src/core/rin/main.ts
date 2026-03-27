@@ -1,0 +1,163 @@
+#!/usr/bin/env node
+import os from 'node:os'
+import fs from 'node:fs'
+import path from 'node:path'
+import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+
+function safeString(value: unknown) {
+  if (value == null) return ''
+  return String(value)
+}
+
+function repoRootFromHere() {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+}
+
+function readPasswdUser(name: string) {
+  try {
+    const raw = fs.readFileSync('/etc/passwd', 'utf8')
+    for (const line of raw.split(/\r?\n/)) {
+      const [user = '', , , , , home = '', shell = ''] = line.split(':')
+      if (user !== name) continue
+      return { name: user, home, shell }
+    }
+  } catch {}
+  return null
+}
+
+function runCommand(command: string, args: string[], options: any = {}) {
+  return new Promise<number>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: 'inherit', ...options })
+    child.on('error', reject)
+    child.on('exit', (code, signal) => {
+      if (signal) return reject(new Error(`terminated:${signal}`))
+      resolve(code ?? 0)
+    })
+  })
+}
+
+function shellQuote(value: string) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`
+}
+
+function buildUserShell(targetUser: string, argv: string[], env: Record<string, string> = {}) {
+  const currentUser = os.userInfo().username
+  if (!targetUser || targetUser === currentUser) {
+    return {
+      command: argv[0],
+      args: argv.slice(1),
+      env: { ...process.env, ...env },
+    }
+  }
+
+  const target = readPasswdUser(targetUser)
+  if (!target) throw new Error(`target_user_not_found:${targetUser}`)
+
+  const shellCommand = [
+    ...Object.entries(env).map(([key, value]) => `${key}=${shellQuote(value)}`),
+    ...argv.map((arg) => shellQuote(arg)),
+  ].join(' ')
+
+  if (process.platform !== 'win32' && fs.existsSync('/usr/sbin/runuser')) {
+    return {
+      command: '/usr/sbin/runuser',
+      args: ['-u', targetUser, '--', 'sh', '-lc', shellCommand],
+      env: { ...process.env, HOME: target.home || `/home/${targetUser}` },
+    }
+  }
+
+  return {
+    command: 'sudo',
+    args: ['-u', targetUser, 'sh', '-lc', shellCommand],
+    env: { ...process.env, HOME: target.home || `/home/${targetUser}` },
+  }
+}
+
+function usage() {
+  console.log([
+    'Usage: rin [--user <name>] [--std] [--tmux <session>] [--tmux-list]',
+    '',
+    'Defaults to the RPC TUI for the target user.',
+    'Options:',
+    '  --user <name>        Run against a specific daemon user (default: current user)',
+    '  --std                Start std TUI instead of RPC TUI',
+    '  --tmux <session>     Create or attach a hidden Rin tmux session',
+    '  --tmux-list          List hidden Rin tmux sessions',
+  ].join('\n'))
+}
+
+function parseArgs(argv: string[]) {
+  let targetUser = ''
+  let std = false
+  let tmuxSession = ''
+  let tmuxList = false
+  const passthrough: string[] = []
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i]
+    if (arg === '--user') {
+      targetUser = safeString(argv[i + 1]).trim()
+      i += 1
+      continue
+    }
+    if (arg === '--std') {
+      std = true
+      continue
+    }
+    if (arg === '--tmux') {
+      tmuxSession = safeString(argv[i + 1]).trim()
+      i += 1
+      continue
+    }
+    if (arg === '--tmux-list') {
+      tmuxList = true
+      continue
+    }
+    if (arg === '-h' || arg === '--help') {
+      usage()
+      process.exit(0)
+    }
+    passthrough.push(arg)
+  }
+
+  return { targetUser: targetUser || os.userInfo().username, std, tmuxSession, tmuxList, passthrough }
+}
+
+export async function startRinCli() {
+  const parsed = parseArgs(process.argv.slice(2))
+  const repoRoot = repoRootFromHere()
+  const targetUser = parsed.targetUser
+  const tmuxSocketName = `rin-${targetUser}`
+
+  if (parsed.tmuxSession && parsed.tmuxList) throw new Error('rin_tmux_mode_conflict')
+
+  if (parsed.tmuxList) {
+    const launch = buildUserShell(targetUser, ['tmux', '-L', tmuxSocketName, 'list-sessions'])
+    const code = await runCommand(launch.command, launch.args, { env: launch.env, cwd: repoRoot })
+    process.exit(code)
+  }
+
+  if (parsed.tmuxSession) {
+    const innerArgs = [process.execPath, path.join(repoRoot, 'dist', 'app', 'rin-tui', 'main.js'), parsed.std ? '--std' : '--rpc', ...parsed.passthrough]
+    const innerLaunch = buildUserShell(targetUser, innerArgs)
+    const code = await runCommand('tmux', ['-L', tmuxSocketName, 'new-session', '-A', '-s', parsed.tmuxSession, innerLaunch.command, ...innerLaunch.args], {
+      env: innerLaunch.env,
+      cwd: repoRoot,
+    })
+    process.exit(code)
+  }
+
+  const launch = buildUserShell(targetUser, [process.execPath, path.join(repoRoot, 'dist', 'app', 'rin-tui', 'main.js'), parsed.std ? '--std' : '--rpc', ...parsed.passthrough])
+  const code = await runCommand(launch.command, launch.args, { env: launch.env, cwd: repoRoot })
+  process.exit(code)
+}
+
+async function main() {
+  await startRinCli()
+}
+
+main().catch((error: any) => {
+  console.error(String(error?.message || error || 'rin_cli_failed'))
+  process.exit(1)
+})
