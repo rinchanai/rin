@@ -3,7 +3,8 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
+import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
+import { getModels, getProviders } from '@mariozechner/pi-ai'
 
 import { createConfiguredAgentSession, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 
@@ -75,22 +76,44 @@ function computeAvailableThinkingLevels(model: { provider: string; id: string; r
 }
 
 async function loadModelChoices() {
-  const runtimeProfile = resolveRuntimeProfile()
-  const session = await createConfiguredAgentSession({
-    cwd: runtimeProfile.cwd,
-    agentDir: runtimeProfile.agentDir,
-  })
-  const registry = (session as any).modelRegistry
-  const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
-  const availableKeys = new Set(
-    (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
-  )
-  const choices: ModelChoice[] = all.map((model: any) => ({
-    provider: String(model.provider || ''),
-    id: String(model.id || ''),
-    reasoning: Boolean(model.reasoning),
-    available: availableKeys.has(`${model.provider}/${model.id}`),
-  }))
+  const builtinChoices: ModelChoice[] = []
+  for (const provider of getProviders()) {
+    for (const model of getModels(provider as any)) {
+      builtinChoices.push({
+        provider: String((model as any).provider || provider),
+        id: String((model as any).id || ''),
+        reasoning: Boolean((model as any).reasoning),
+        available: false,
+      })
+    }
+  }
+
+  const byKey = new Map<string, ModelChoice>(builtinChoices.map((choice) => [`${choice.provider}/${choice.id}`, choice]))
+
+  try {
+    const runtimeProfile = resolveRuntimeProfile()
+    const session = await createConfiguredAgentSession({
+      cwd: runtimeProfile.cwd,
+      agentDir: runtimeProfile.agentDir,
+    })
+    const registry = (session as any).modelRegistry
+    const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
+    const availableKeys = new Set(
+      (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
+    )
+
+    for (const model of all) {
+      const key = `${model.provider}/${model.id}`
+      byKey.set(key, {
+        provider: String(model.provider || ''),
+        id: String(model.id || ''),
+        reasoning: Boolean(model.reasoning),
+        available: availableKeys.has(key),
+      })
+    }
+  } catch {}
+
+  const choices = [...byKey.values()].filter((choice) => choice.provider && choice.id)
   choices.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
   return choices
 }
@@ -179,47 +202,14 @@ async function chooseInstallDir(targetUser: string) {
 }
 
 async function chooseModelConfig() {
+  const load = spinner()
+  load.start('Loading provider and model choices...')
   const models = await loadModelChoices().catch(() => [] as ModelChoice[])
+  load.stop(models.length ? 'Provider and model choices loaded.' : 'No provider/model choices were loaded.')
   const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
 
   if (!providerNames.length) {
-    note([
-      'Pi model registry did not return any selectable providers in this installer environment.',
-      'Falling back to manual provider/model entry for now.',
-    ].join('\n'), 'Model selection')
-
-    const provider = String(ensureNotCancelled(await text({
-      message: 'Enter the provider id.',
-      placeholder: 'openai',
-      defaultValue: 'openai',
-      validate(value) {
-        if (!String(value || '').trim()) return 'Provider is required.'
-      },
-    }))).trim()
-
-    const modelId = String(ensureNotCancelled(await text({
-      message: 'Enter the model id.',
-      placeholder: 'gpt-5',
-      defaultValue: 'gpt-5',
-      validate(value) {
-        if (!String(value || '').trim()) return 'Model id is required.'
-      },
-    }))).trim()
-
-    const reasoning = ensureNotCancelled(await confirm({
-      message: 'Does this model support reasoning?',
-      initialValue: true,
-    }))
-
-    const thinkingLevel = ensureNotCancelled(await select({
-      message: 'Choose the default thinking level.',
-      options: computeAvailableThinkingLevels({ provider, id: modelId, reasoning }).map((level) => ({
-        value: level,
-        label: level,
-      })),
-    }))
-
-    return { provider, modelId, thinkingLevel, modelAvailable: false }
+    throw new Error('rin_installer_no_models_available')
   }
 
   const provider = ensureNotCancelled(await select({
@@ -237,22 +227,7 @@ async function chooseModelConfig() {
 
   const providerModels = models.filter((model) => model.provider === provider)
   if (!providerModels.length) {
-    const modelId = String(ensureNotCancelled(await text({
-      message: `No models were listed for provider \"${provider}\". Enter a model id manually.`,
-      placeholder: 'model-id',
-      validate(value) {
-        if (!String(value || '').trim()) return 'Model id is required.'
-      },
-    }))).trim()
-    const reasoning = ensureNotCancelled(await confirm({
-      message: 'Does this model support reasoning?',
-      initialValue: true,
-    }))
-    const thinkingLevel = ensureNotCancelled(await select({
-      message: 'Choose the default thinking level.',
-      options: computeAvailableThinkingLevels({ provider: String(provider), id: modelId, reasoning }).map((level) => ({ value: level, label: level })),
-    }))
-    return { provider: String(provider), modelId, thinkingLevel, modelAvailable: false }
+    throw new Error(`rin_installer_no_models_for_provider:${provider}`)
   }
 
   const modelId = ensureNotCancelled(await select({
