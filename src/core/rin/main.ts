@@ -153,11 +153,3 @@ export async function startRinCli() {
   process.exit(code)
 }
 
-async function main() {
-  await startRinCli()
-}
-
-main().catch((error: any) => {
-  console.error(String(error?.message || error || 'rin_cli_failed'))
-  process.exit(1)
-})
