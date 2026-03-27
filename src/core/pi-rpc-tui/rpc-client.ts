@@ -1,6 +1,6 @@
 import net from 'node:net'
 
-import { defaultDaemonSocketPath, parseJsonl } from '../pi-rpc/common.js'
+import { defaultDaemonSocketPath, parseJsonl } from '../pi-rpc-lib/common.js'
 import type {
   FrontendAutocompleteItem,
   FrontendCommandItem,

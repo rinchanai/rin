@@ -4,12 +4,16 @@
   "type": "module",
   "bin": {
     "pi-rpc-daemon": "dist/app/pi-rpc-daemon/daemon.js",
-    "pi-rpc-tui": "dist/app/pi-rpc-tui/main.js"
+    "pi-rpc-tui": "dist/app/pi-rpc-tui/main.js",
+    "pi-rpc-koishi": "dist/app/pi-rpc-koishi/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/pi-rpc-daemon/daemon.js dist/app/pi-rpc-daemon/worker.js dist/app/pi-rpc-tui/main.js"
+    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/pi-rpc-daemon/daemon.js dist/app/pi-rpc-daemon/worker.js dist/app/pi-rpc-tui/main.js dist/app/pi-rpc-koishi/main.js"
   },
   "dependencies": {
+    "@koishijs/plugin-adapter-telegram": "^4.5.11",
+    "@koishijs/plugin-http": "^0.6.3",
+    "@koishijs/plugin-proxy-agent": "^0.3.3",
     "@mariozechner/jiti": "^2.6.2",
     "@mariozechner/pi-agent-core": "^0.62.0",
     "@mariozechner/pi-ai": "^0.62.0",
@@ -23,6 +27,8 @@
     "glob": "^13.0.1",
     "hosted-git-info": "^9.0.2",
     "ignore": "^7.0.5",
+    "koishi": "^4.18.11",
+    "koishi-plugin-adapter-onebot": "^6.8.0",
     "marked": "^15.0.12",
     "minimatch": "^10.2.3",
     "proper-lockfile": "^4.1.2",

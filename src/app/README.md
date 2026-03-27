@@ -12,6 +12,7 @@ It intentionally contains only thin executable entrypoints and builtin-extension
   - daemon
   - worker
   - TUI
+  - Koishi
 
 ## Non-goals
 
@@ -31,3 +32,4 @@ Instead, app provides a few very small wrappers that only do assembly:
 - `pi-rpc-daemon/daemon.ts` points the daemon at the app worker
 - `pi-rpc-daemon/worker.ts` starts the core worker with builtin extension paths
 - `pi-rpc-tui/main.ts` starts the shared TUI launcher with builtin extension paths
+- `pi-rpc-koishi/main.ts` starts the shared Koishi bridge with builtin extension paths

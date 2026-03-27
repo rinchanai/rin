@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
 
-import { getRuntimeSessionDir, resolveRuntimeProfile } from '../runtime-profile.js'
+import { getRuntimeSessionDir, resolveRuntimeProfile } from '../pi-rpc-lib/runtime.js'
 import { PiRpcDaemonFrontendClient } from './rpc-client.js'
 
 const ALL_THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
@@ -397,9 +397,13 @@ export class RpcInteractiveSession {
   }
 
   async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[] }) {
-    if (options?.streamingBehavior === 'steer') return await this.steer(message, options.images)
+    if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images)
     if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images)
     await this.call('prompt', { message, images: options?.images })
+  }
+
+  async interruptPrompt(message: string, images?: any[]) {
+    await this.call('interrupt_prompt', { message, images })
   }
 
   async steer(message: string, images?: any[]) {

@@ -5,8 +5,8 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
-import { defaultDaemonSocketPath, parseJsonl, safeString } from '../pi-rpc/common.js'
-import { resolveRuntimeProfile } from '../runtime-profile.js'
+import { defaultDaemonSocketPath, parseJsonl, safeString } from '../pi-rpc-lib/common.js'
+import { resolveRuntimeProfile } from '../pi-rpc-lib/runtime.js'
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true })

@@ -1,9 +1,32 @@
 #!/usr/bin/env node
 import { pathToFileURL } from 'node:url'
 
-import { parseJsonl } from '../pi-rpc/common.js'
-import { loadPiRpcSessionManagerModule } from '../pi-rpc/pi-rpc-loader.js'
-import { createConfiguredAgentSession } from '../pi-session-factory.js'
+import { parseJsonl } from '../pi-rpc-lib/common.js'
+import { loadPiRpcSessionManagerModule } from '../pi-rpc-lib/loader.js'
+import { createConfiguredAgentSession } from '../pi-rpc-lib/runtime.js'
+
+const BUILTIN_SLASH_COMMANDS = [
+  { name: 'settings', description: 'Open settings menu' },
+  { name: 'model', description: 'Select model (opens selector UI)' },
+  { name: 'scoped-models', description: 'Enable/disable models for Ctrl+P cycling' },
+  { name: 'export', description: 'Export session (HTML default, or specify path: .html/.jsonl)' },
+  { name: 'import', description: 'Import and resume a session from a JSONL file' },
+  { name: 'share', description: 'Share session as a secret GitHub gist' },
+  { name: 'copy', description: 'Copy last agent message to clipboard' },
+  { name: 'name', description: 'Set session display name' },
+  { name: 'session', description: 'Show session info and stats' },
+  { name: 'changelog', description: 'Show changelog entries' },
+  { name: 'hotkeys', description: 'Show all keyboard shortcuts' },
+  { name: 'fork', description: 'Create a new fork from a previous message' },
+  { name: 'tree', description: 'Navigate session tree (switch branches)' },
+  { name: 'login', description: 'Login with OAuth provider' },
+  { name: 'logout', description: 'Logout from OAuth provider' },
+  { name: 'new', description: 'Start a new session' },
+  { name: 'compact', description: 'Manually compact the session context' },
+  { name: 'resume', description: 'Resume a different session' },
+  { name: 'reload', description: 'Reload keybindings, extensions, skills, prompts, and themes' },
+  { name: 'quit', description: 'Quit pi' },
+]
 
 function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`)
@@ -42,9 +65,12 @@ function getSessionState(session: any) {
   }
 }
 
-function getSlashCommands(session: any) {
+function getSlashCommands(session: any, builtinSlashCommands: any[] = []) {
   const commands: any[] = []
 
+  for (const command of builtinSlashCommands) {
+    commands.push({ name: command.name, description: command.description, source: 'builtin' })
+  }
   for (const command of session.extensionRunner?.getRegisteredCommands?.() ?? []) {
     commands.push({ name: command.invocationName, description: command.description, source: 'extension', sourceInfo: command.sourceInfo })
   }
@@ -74,13 +100,51 @@ function getOAuthState(session: any) {
   return { credentials, providers }
 }
 
-async function runCustomRpcMode(session: any, deps: { SessionManager: any }) {
-  const { SessionManager } = deps
+async function runCustomRpcMode(session: any, deps: { SessionManager: any; builtinSlashCommands: any[] }) {
+  const { SessionManager, builtinSlashCommands } = deps
   const output = (obj: unknown) => writeJsonLine(obj)
   const done = (id: string | undefined, type: string, value?: unknown) => ok(id, type, value)
   const run = async (id: string | undefined, type: string, fn: () => any, map?: (value: any) => any) => {
     const value = await fn()
     return done(id, type, map ? map(value) : value)
+  }
+  let activeTurnPromise: Promise<void> | null = null
+  let interruptQueue = Promise.resolve()
+  const emitTurnEvent = (event: string, requestTag: string, payload: Record<string, unknown> = {}) => {
+    if (!requestTag) return
+    output({ type: 'rpc_turn_event', event, requestTag, ...payload })
+  }
+  const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
+    const promise = (async () => {
+      emitTurnEvent('start', requestTag)
+      try {
+        await task()
+        await session.agent.waitForIdle()
+        emitTurnEvent('complete', requestTag, { sessionFile: session.sessionFile })
+      } catch (error: any) {
+        emitTurnEvent('error', requestTag, { error: String(error?.message || error || 'rpc_turn_failed') })
+        throw error
+      } finally {
+        if (activeTurnPromise === promise) activeTurnPromise = null
+      }
+    })()
+    activeTurnPromise = promise
+    promise.catch(() => {})
+  }
+  const startInterruptTurnTask = (requestTag: string, task: () => Promise<void>) => {
+    interruptQueue = interruptQueue.then(async () => {
+      if (session.isStreaming || session.isCompacting) {
+        await session.abort()
+      }
+      try { await activeTurnPromise } catch {}
+      startTurnTask(requestTag, task)
+    }, async () => {
+      if (session.isStreaming || session.isCompacting) {
+        await session.abort()
+      }
+      try { await activeTurnPromise } catch {}
+      startTurnTask(requestTag, task)
+    }).catch(() => {})
   }
   let loginSeq = 0
   const activeLogins = new Map<string, { abort: AbortController; waits: Map<string, { resolve: (value: string) => void; reject: (error: Error) => void }> }>()
@@ -138,12 +202,23 @@ async function runCustomRpcMode(session: any, deps: { SessionManager: any }) {
 
     switch (type) {
       case 'prompt':
-        session.prompt(command.message, {
-          images: command.images,
-          streamingBehavior: command.streamingBehavior,
-          source: 'rpc' as any,
-        }).catch((error: unknown) => output(fail(id, 'prompt', error)))
+        startTurnTask(String(command.requestTag || ''), async () => {
+          await session.prompt(command.message, {
+            images: command.images,
+            streamingBehavior: command.streamingBehavior,
+            source: 'rpc' as any,
+          })
+        })
         return done(id, 'prompt')
+
+      case 'interrupt_prompt':
+        startInterruptTurnTask(String(command.requestTag || ''), async () => {
+          await session.prompt(command.message, {
+            images: command.images,
+            source: 'rpc' as any,
+          })
+        })
+        return done(id, 'interrupt_prompt')
 
       case 'steer': return run(id, type, () => session.steer(command.message, command.images))
       case 'follow_up': return run(id, type, () => session.followUp(command.message, command.images))
@@ -180,7 +255,7 @@ async function runCustomRpcMode(session: any, deps: { SessionManager: any }) {
       case 'get_fork_messages': return done(id, type, { messages: session.getUserMessagesForForking() })
       case 'get_last_assistant_text': return done(id, type, { text: session.getLastAssistantText() })
       case 'get_messages': return done(id, type, { messages: session.messages })
-      case 'get_commands': return done(id, type, { commands: getSlashCommands(session) })
+      case 'get_commands': return done(id, type, { commands: getSlashCommands(session, builtinSlashCommands) })
 
       case 'new_session':
         return run(id, type, () => session.newSession(command.parentSession ? { parentSession: command.parentSession } : undefined), (value) => ({ cancelled: !value }))
@@ -313,7 +388,10 @@ export async function startWorker(options: { additionalExtensionPaths?: string[]
   const { session } = await createConfiguredAgentSession({
     additionalExtensionPaths: options.additionalExtensionPaths,
   })
-  await runCustomRpcMode(session, { SessionManager: sessionManagerModule.SessionManager })
+  await runCustomRpcMode(session, {
+    SessionManager: sessionManagerModule.SessionManager,
+    builtinSlashCommands: BUILTIN_SLASH_COMMANDS,
+  })
 }
 
 async function main() {
