@@ -8,7 +8,12 @@ WORKDIR=$(mktemp -d "$TMPDIR_BASE/rin-install.XXXXXX")
 ARCHIVE="$WORKDIR/rin.tar.gz"
 SRC_DIR="$WORKDIR/src"
 LOGFILE="$WORKDIR/install.log"
-TTY=/dev/tty
+HAS_TTY=0
+
+if tty -s 2>/dev/null; then
+  exec 3>/dev/tty 4</dev/tty
+  HAS_TTY=1
+fi
 
 cleanup() {
   rm -rf "$WORKDIR"
@@ -16,8 +21,8 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 say() {
-  if [ -w "$TTY" ]; then
-    printf '%s\n' "$1" >"$TTY"
+  if [ "$HAS_TTY" -eq 1 ]; then
+    printf '%s\n' "$1" >&3
   else
     printf '%s\n' "$1"
   fi
@@ -40,8 +45,8 @@ render_spinner() {
       8) frame='⠇' ;;
       *) frame='⠏' ;;
     esac
-    if [ -w "$TTY" ]; then
-      printf '\r[rin-install] %s %s' "$frame" "$label" >"$TTY"
+    if [ "$HAS_TTY" -eq 1 ]; then
+      printf '\r[rin-install] %s %s\033[K' "$frame" "$label" >&3
     fi
     i=$(( (i + 1) % 10 ))
     sleep 0.1
@@ -55,13 +60,16 @@ run_step() {
   "$@" >>"$LOGFILE" 2>&1 &
   pid=$!
   render_spinner "$label" "$pid"
-  wait "$pid"
-  status=$?
-  if [ -w "$TTY" ]; then
+  if wait "$pid"; then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$HAS_TTY" -eq 1 ]; then
     if [ "$status" -eq 0 ]; then
-      printf '\r[rin-install] ✓ %s\033[K\n' "$label" >"$TTY"
+      printf '\r[rin-install] ✓ %s\033[K\n' "$label" >&3
     else
-      printf '\r[rin-install] ✗ %s\033[K\n' "$label" >"$TTY"
+      printf '\r[rin-install] ✗ %s\033[K\n' "$label" >&3
     fi
   fi
   if [ "$status" -ne 0 ]; then
@@ -95,20 +103,19 @@ run_step "Preparing installer source" tar -xzf "$ARCHIVE" -C "$SRC_DIR" --strip-
 cd "$SRC_DIR"
 if command -v npm >/dev/null 2>&1; then
   if [ -f package-lock.json ]; then
-    run_step "Installing dependencies" npm ci --no-fund --no-audit
+    run_step "Installing dependencies" npm ci --no-fund --no-audit --silent --loglevel=error
   else
-    run_step "Installing dependencies" npm install --no-fund --no-audit
+    run_step "Installing dependencies" npm install --no-fund --no-audit --silent --loglevel=error
   fi
 else
   echo "rin installer requires npm" >&2
   exit 1
 fi
 
-run_step "Building installer" npm run build
 say "[rin-install] Launching installer..."
 
-if [ -r /dev/tty ]; then
-  exec node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+if [ "$HAS_TTY" -eq 1 ]; then
+  exec node node_modules/@mariozechner/jiti/lib/jiti-cli.mjs src/app/rin-install/main.ts <&4 >&3 2>&1
 fi
 
-exec node dist/app/rin-install/main.js
+exec node node_modules/@mariozechner/jiti/lib/jiti-cli.mjs src/app/rin-install/main.ts
