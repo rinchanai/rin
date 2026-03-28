@@ -2,8 +2,11 @@
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
+import net from 'node:net'
 import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+
+import { defaultDaemonSocketPath } from '../rin-lib/common.js'
 
 function safeString(value: unknown) {
   if (value == null) return ''
@@ -55,6 +58,14 @@ function shellQuote(value: string) {
   return `'${String(value).replace(/'/g, `'"'"'`)}'`
 }
 
+function pickPrivilegeCommand() {
+  if (process.platform !== 'win32' && fs.existsSync('/usr/sbin/runuser')) return '/usr/sbin/runuser'
+  if (process.platform !== 'win32' && fs.existsSync('/run/current-system/sw/bin/doas')) return '/run/current-system/sw/bin/doas'
+  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/doas')) return '/usr/bin/doas'
+  if (process.platform !== 'win32' && fs.existsSync('/bin/doas')) return '/bin/doas'
+  return 'sudo'
+}
+
 function buildUserShell(targetUser: string, argv: string[], env: Record<string, string> = {}) {
   const currentUser = os.userInfo().username
   if (!targetUser || targetUser === currentUser) {
@@ -73,23 +84,37 @@ function buildUserShell(targetUser: string, argv: string[], env: Record<string, 
     ...argv.map((arg) => shellQuote(arg)),
   ].join(' ')
 
-  if (process.platform !== 'win32' && fs.existsSync('/usr/sbin/runuser')) {
+  const privilegeCommand = pickPrivilegeCommand()
+  if (privilegeCommand.endsWith('runuser')) {
     return {
-      command: '/usr/sbin/runuser',
+      command: privilegeCommand,
       args: ['-u', targetUser, '--', 'sh', '-lc', shellCommand],
       env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
     }
   }
 
+  if (privilegeCommand.endsWith('doas')) {
+    return {
+      command: privilegeCommand,
+      args: ['-u', targetUser, 'sh', '-lc', shellCommand],
+      env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
+    }
+  }
+
   return {
-    command: 'sudo',
+    command: privilegeCommand,
     args: ['-u', targetUser, 'sh', '-lc', shellCommand],
     env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
   }
 }
 
+function appConfigDir() {
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'rin')
+  return path.join(os.homedir(), '.config', 'rin')
+}
+
 function installConfigPath() {
-  return path.join(os.homedir(), '.config', 'rin', 'install.json')
+  return path.join(appConfigDir(), 'install.json')
 }
 
 function loadInstallConfig() {
@@ -99,6 +124,44 @@ function loadInstallConfig() {
   } catch {
     return {}
   }
+}
+
+async function canConnectSocket(socketPath: string) {
+  return await new Promise<boolean>((resolve) => {
+    const socket = net.createConnection(socketPath)
+    let done = false
+    const finish = (value: boolean) => {
+      if (done) return
+      done = true
+      try { socket.destroy() } catch {}
+      resolve(value)
+    }
+    socket.once('connect', () => finish(true))
+    socket.once('error', () => finish(false))
+    setTimeout(() => finish(false), 500)
+  })
+}
+
+async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: Record<string, string>) {
+  const socketPath = defaultDaemonSocketPath()
+  if (await canConnectSocket(socketPath)) return
+  const daemonEntry = path.join(repoRoot, 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const launch = buildUserShell(targetUser, [process.execPath, daemonEntry], env)
+  const child = spawn(launch.command, launch.args, {
+    cwd: repoRoot,
+    env: launch.env,
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < 5000) {
+    if (await canConnectSocket(socketPath)) return
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+
+  throw new Error(`rin_daemon_unavailable: failed to start daemon for ${targetUser}`)
 }
 
 function usage() {
@@ -181,6 +244,10 @@ export async function startRinCli() {
     const launch = buildUserShell(targetUser, ['tmux', '-L', tmuxSocketName, 'list-sessions'], runtimeEnv)
     const code = await runCommand(launch.command, launch.args, { env: launch.env, cwd: repoRoot })
     process.exit(code)
+  }
+
+  if (!parsed.std) {
+    await ensureDaemonAvailable(repoRoot, targetUser, runtimeEnv)
   }
 
   if (parsed.tmuxSession) {
