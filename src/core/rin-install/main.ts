@@ -8,19 +8,20 @@ import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } 
 import { loadRinCodingAgent } from '../rin-lib/loader.js'
 
 function listSystemUsers() {
-  const users: Array<{ name: string; uid: number; home: string; shell: string }> = []
+  const users: Array<{ name: string; uid: number; gid: number; home: string; shell: string }> = []
   try {
     const raw = fs.readFileSync('/etc/passwd', 'utf8')
     for (const line of raw.split(/\r?\n/)) {
       if (!line.trim() || line.startsWith('#')) continue
-      const [name = '', , uidRaw = '', , , home = '', shell = ''] = line.split(':')
+      const [name = '', , uidRaw = '', gidRaw = '', , home = '', shell = ''] = line.split(':')
       const uid = Number(uidRaw || 0)
+      const gid = Number(gidRaw || 0)
       if (!name) continue
-      if (!Number.isFinite(uid)) continue
+      if (!Number.isFinite(uid) || !Number.isFinite(gid)) continue
       if (uid < 1000) continue
       if (name === 'nobody') continue
       if (/nologin|false/.test(shell)) continue
-      users.push({ name, uid, home, shell })
+      users.push({ name, uid, gid, home, shell } as any)
     }
   } catch {}
   return users.sort((a, b) => a.uid - b.uid || a.name.localeCompare(b.name))
@@ -34,8 +35,12 @@ function ensureNotCancelled<T>(value: T | symbol): T {
   return value as T
 }
 
+function findSystemUser(targetUser: string) {
+  return listSystemUsers().find((entry) => entry.name === targetUser)
+}
+
 function targetHomeForUser(targetUser: string) {
-  const matched = listSystemUsers().find((entry) => entry.name === targetUser)
+  const matched = findSystemUser(targetUser)
   return matched?.home || path.join('/home', targetUser)
 }
 
@@ -168,6 +173,39 @@ async function configureProviderAuth(provider: string, installDir: string) {
   }))).trim()
   authStorage.set(provider, { type: 'api_key', key: token })
   return { available: true, authKind: 'api_key' }
+}
+
+function describeOwnership(targetUser: string, installDir: string) {
+  const target = findSystemUser(targetUser) as any
+  const targetUid = Number(target?.uid ?? -1)
+  const targetGid = Number(target?.gid ?? -1)
+
+  try {
+    const stat = fs.statSync(installDir)
+    let writable = true
+    try {
+      fs.accessSync(installDir, fs.constants.W_OK)
+    } catch {
+      writable = false
+    }
+    return {
+      ownerMatches: targetUid >= 0 ? stat.uid === targetUid : true,
+      writable,
+      statUid: stat.uid,
+      statGid: stat.gid,
+      targetUid,
+      targetGid,
+    }
+  } catch {
+    return {
+      ownerMatches: true,
+      writable: true,
+      statUid: -1,
+      statGid: -1,
+      targetUid,
+      targetGid,
+    }
+  }
 }
 
 async function persistInstallerOutputs(options: {
@@ -410,6 +448,20 @@ export async function startInstaller() {
     '- `rin --tmux-list` → list Rin tmux sessions for the target user',
   ].filter(Boolean).join('\n'), 'Install plan')
 
+  const ownership = describeOwnership(targetUser, installDir)
+  if (!ownership.ownerMatches && ownership.targetUid >= 0) {
+    note([
+      `Target dir owner uid/gid: ${ownership.statUid}:${ownership.statGid}`,
+      `Target user uid/gid: ${ownership.targetUid}:${ownership.targetGid}`,
+      'This directory is not currently owned by the selected target user.',
+      'The installer will still write config if it can, but you may want to fix ownership before switching fully.',
+    ].join('\n'), 'Ownership check')
+  }
+
+  if (!ownership.writable) {
+    note('The selected install directory is not writable by the current installer process.', 'Ownership check')
+  }
+
   const shouldWrite = ensureNotCancelled(await confirm({
     message: 'Write these settings now?',
     initialValue: true,
@@ -432,6 +484,19 @@ export async function startInstaller() {
     koishiConfig,
   })
 
-  outro(`Wrote installer state to ${installDir} and ${written.launcherPath}`)
+  note([
+    `Target install dir: ${installDir}`,
+    `Written: ${written.settingsPath}`,
+    `Written: ${path.join(installDir, 'auth.json')}`,
+    `Written: ${written.manifestPath}`,
+    `Written: ${written.launcherPath}`,
+    '',
+    'Default launcher behavior:',
+    '- `rin` uses the saved target user and install dir',
+    '- `rin --std` enters std mode for that target',
+    '- `rin -t <name>` attaches/creates a hidden tmux TUI session',
+  ].join('\n'), 'Written paths')
+
+  outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main`)
 }
 
