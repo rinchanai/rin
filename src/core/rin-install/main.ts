@@ -151,6 +151,24 @@ function runPrivileged(command: string, args: string[]) {
   execFileSync(privilegeCommand, [command, ...args], { stdio: 'inherit' })
 }
 
+function runCommandAsUser(targetUser: string, command: string, args: string[], extraEnv: Record<string, string> = {}) {
+  const envArgs = Object.entries(extraEnv).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+  const shellCommand = [...envArgs, JSON.stringify(command), ...args.map((arg) => JSON.stringify(arg))].join(' ')
+
+  if (fs.existsSync('/usr/sbin/runuser')) {
+    execFileSync('/usr/sbin/runuser', ['-u', targetUser, '--', 'sh', '-lc', shellCommand], { stdio: 'inherit' })
+    return
+  }
+
+  const privilegeCommand = pickPrivilegeCommand()
+  if (privilegeCommand.endsWith('doas') || privilegeCommand.endsWith('sudo')) {
+    execFileSync(privilegeCommand, ['-u', targetUser, 'sh', '-lc', shellCommand], { stdio: 'inherit' })
+    return
+  }
+
+  execFileSync(privilegeCommand, ['sh', '-lc', shellCommand], { stdio: 'inherit' })
+}
+
 function writeTextFileWithPrivilege(filePath: string, value: string, ownerUser?: string, ownerGroup?: string | number, mode = 0o600) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-write-'))
   const tempFile = path.join(tempDir, 'payload')
@@ -374,16 +392,21 @@ function installSystemdUserService(targetUser: string, installDir: string, eleva
   const spec = buildSystemdUserService(targetUser, installDir)
   const systemctl = fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : 'systemctl'
   const loginctl = fs.existsSync('/usr/bin/loginctl') ? '/usr/bin/loginctl' : 'loginctl'
+  const uid = Number(target?.uid ?? -1)
+  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : ''
+  const userEnv = runtimeDir && fs.existsSync(runtimeDir)
+    ? { XDG_RUNTIME_DIR: runtimeDir, DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus` }
+    : {}
 
   if (elevated) {
     writeTextFileWithPrivilege(spec.servicePath, spec.service, targetUser, target?.gid, 0o644)
     try { runPrivileged(loginctl, ['enable-linger', targetUser]) } catch {}
-    runPrivileged(systemctl, ['--user', 'daemon-reload'])
-    runPrivileged(systemctl, ['--user', 'enable', '--now', spec.label])
+    runCommandAsUser(targetUser, systemctl, ['--user', 'daemon-reload'], userEnv)
+    runCommandAsUser(targetUser, systemctl, ['--user', 'enable', '--now', spec.label], userEnv)
   } else {
     writeTextFile(spec.servicePath, spec.service, 0o644)
-    execFileSync(systemctl, ['--user', 'daemon-reload'], { stdio: 'inherit' })
-    execFileSync(systemctl, ['--user', 'enable', '--now', spec.label], { stdio: 'inherit' })
+    execFileSync(systemctl, ['--user', 'daemon-reload'], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
+    execFileSync(systemctl, ['--user', 'enable', '--now', spec.label], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
   }
 
   return spec
@@ -802,9 +825,9 @@ export async function startInstaller() {
       installedService = installDaemonService(targetUser, installDir)
     } catch (error: any) {
       const message = String(error?.message || error || '')
-      if (/not permitted|permission denied|EACCES|EPERM/i.test(message)) {
+      if (/not permitted|permission denied|EACCES|EPERM|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|Failed to connect to user scope bus/i.test(message)) {
         const usePrivilegeForService = ensureNotCancelled(await confirm({
-          message: 'Installing the daemon service needs elevated permissions. Use privilege escalation now?',
+          message: 'Installing the daemon service needs privilege escalation or a target user session bus. Use privilege escalation now?',
           initialValue: true,
         }))
         if (usePrivilegeForService) {
