@@ -204,6 +204,40 @@ function writeUserLaunchers(installDir: string) {
   writeExecutable(path.join(binDir, 'rin-install'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(rinInstallTarget)} "$@"\n`)
 }
 
+function daemonEntryForInstallDir(installDir: string) {
+  return path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-daemon', 'daemon.js')
+}
+
+function buildSystemdServiceText(targetUser: string, targetHome: string, installDir: string, description: string) {
+  return `[Unit]\nDescription=${description}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=${RIN_DIR_ENV}=${installDir}\nEnvironment=${PI_AGENT_DIR_ENV}=${installDir}\nExecStart=${process.execPath} ${daemonEntryForInstallDir(installDir)}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`
+}
+
+function refreshManagedServiceFiles(targetUser: string, installDir: string) {
+  if (process.platform !== 'linux') return
+  const target = readPasswdUser(targetUser)
+  if (!target?.home) return
+  const userUnitDir = path.join(target.home, '.config', 'systemd', 'user')
+  if (!fs.existsSync(userUnitDir)) return
+
+  const candidateFiles = [
+    {
+      path: path.join(userUnitDir, `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`),
+      description: `Rin daemon for ${targetUser}`,
+    },
+    {
+      path: path.join(userUnitDir, 'rin-daemon.service'),
+      description: 'Rin daemon',
+    },
+  ]
+
+  for (const entry of candidateFiles) {
+    if (!fs.existsSync(entry.path)) continue
+    fs.mkdirSync(path.dirname(entry.path), { recursive: true })
+    fs.writeFileSync(entry.path, buildSystemdServiceText(targetUser, target.home, installDir, entry.description), { encoding: 'utf8', mode: 0o644 })
+    fs.chmodSync(entry.path, 0o644)
+  }
+}
+
 function resolveInstallDirForTarget(parsed: ReturnType<typeof parseArgs>) {
   const target = readPasswdUser(parsed.targetUser)
   return parsed.installDir || path.join(target?.home || os.homedir(), '.rin')
@@ -285,6 +319,8 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
     fs.renameSync(currentTmpLink, currentLink)
 
     writeUserLaunchers(installDir)
+    refreshManagedServiceFiles(parsed.targetUser, installDir)
+    await runRestart(parsed)
     console.log(`rin update complete: ${releaseRoot}`)
   } finally {
     try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
