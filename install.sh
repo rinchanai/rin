@@ -54,8 +54,10 @@ run_step() {
   "$@" >>"$LOGFILE" 2>&1 &
   pid=$!
   render_spinner "$label" "$pid"
+  set +e
   wait "$pid"
   status=$?
+  set -e
   if [ -w "$TTY" ]; then
     if [ "$status" -eq 0 ]; then
       printf '\r[rin-install] ✓ %s\033[K\n' "$label" >"$TTY"
