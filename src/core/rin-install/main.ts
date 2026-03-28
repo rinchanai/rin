@@ -331,7 +331,58 @@ function installLaunchdAgent(targetUser: string, installDir: string, elevated = 
     try { execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/${label}`], { stdio: 'inherit' }) } catch {}
   }
 
-  return { label, plistPath, stdoutPath, stderrPath }
+  return { kind: 'launchd' as const, label, servicePath: plistPath, stdoutPath, stderrPath }
+}
+
+function buildSystemdUserService(targetUser: string, installDir: string) {
+  const daemonEntry = path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const targetHome = targetHomeForUser(targetUser)
+  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
+  const unitPath = path.join(targetHome, '.config', 'systemd', 'user', unitName)
+  const service = `[Unit]
+Description=Rin daemon for ${targetUser}
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=${targetHome}
+Environment=RIN_DIR=${installDir}
+ExecStart=${process.execPath} ${daemonEntry}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`
+  return { kind: 'systemd' as const, label: unitName, servicePath: unitPath, service }
+}
+
+function installSystemdUserService(targetUser: string, installDir: string, elevated = false) {
+  const target = findSystemUser(targetUser) as any
+  const spec = buildSystemdUserService(targetUser, installDir)
+  const systemctl = fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : 'systemctl'
+  const loginctl = fs.existsSync('/usr/bin/loginctl') ? '/usr/bin/loginctl' : 'loginctl'
+
+  if (elevated) {
+    writeTextFileWithPrivilege(spec.servicePath, spec.service, targetUser, target?.gid, 0o644)
+    try { runPrivileged(loginctl, ['enable-linger', targetUser]) } catch {}
+    runPrivileged(systemctl, ['--user', 'daemon-reload'])
+    runPrivileged(systemctl, ['--user', 'enable', '--now', spec.label])
+  } else {
+    writeTextFile(spec.servicePath, spec.service, 0o644)
+    execFileSync(systemctl, ['--user', 'daemon-reload'], { stdio: 'inherit' })
+    execFileSync(systemctl, ['--user', 'enable', '--now', spec.label], { stdio: 'inherit' })
+  }
+
+  return spec
+}
+
+function installDaemonService(targetUser: string, installDir: string, elevated = false) {
+  if (process.platform === 'darwin') return installLaunchdAgent(targetUser, installDir, elevated)
+  if (process.platform === 'linux' && (fs.existsSync('/usr/bin/systemctl') || fs.existsSync('/bin/systemctl'))) {
+    return installSystemdUserService(targetUser, installDir, elevated)
+  }
+  throw new Error(`rin_service_install_unsupported:${process.platform}`)
 }
 
 function describeOwnership(targetUser: string, installDir: string) {
@@ -648,20 +699,26 @@ export async function startInstaller() {
     return
   }
 
-  const installLaunchdNow = process.platform === 'darwin'
+  const installServiceNow = (process.platform === 'darwin' || process.platform === 'linux')
     ? ensureNotCancelled(await confirm({
-        message: 'Install and start a macOS launchd agent for the Rin daemon now?',
+        message: process.platform === 'darwin'
+          ? 'Install and start a macOS launchd agent for the Rin daemon now?'
+          : 'Install and start a Linux user daemon service for Rin now?',
         initialValue: true,
       }))
     : false
 
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string }
-  let launchdInstalled: null | { label: string; plistPath: string; stdoutPath: string; stderrPath: string } = null
+  let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
   const serviceHint = process.platform === 'darwin'
-    ? installLaunchdNow
+    ? installServiceNow
       ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
       : 'The launcher auto-starts the daemon on demand. You skipped launchd installation for now.'
-    : 'On Linux and other Unix systems, the launcher auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
+    : process.platform === 'linux'
+      ? installServiceNow
+        ? 'A Linux user service will be installed and started for this daemon when supported.'
+        : 'The launcher auto-starts the daemon on demand. You skipped dedicated Linux service installation for now.'
+      : 'The launcher auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
   try {
     written = await persistInstallerOutputs({
       currentUser,
@@ -696,26 +753,26 @@ export async function startInstaller() {
         authData: authResult.authData || {},
         elevated: true,
       })
-      if (installLaunchdNow && process.platform === 'darwin') {
-        launchdInstalled = installLaunchdAgent(targetUser, installDir, true)
+      if (installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
+        installedService = installDaemonService(targetUser, installDir, true)
       }
     } else {
       throw error
     }
   }
 
-  if (!launchdInstalled && installLaunchdNow && process.platform === 'darwin') {
+  if (!installedService && installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
     try {
-      launchdInstalled = installLaunchdAgent(targetUser, installDir)
+      installedService = installDaemonService(targetUser, installDir)
     } catch (error: any) {
       const message = String(error?.message || error || '')
       if (/not permitted|permission denied|EACCES|EPERM/i.test(message)) {
-        const usePrivilegeForLaunchd = ensureNotCancelled(await confirm({
-          message: 'Installing the launchd agent needs elevated permissions. Use privilege escalation now?',
+        const usePrivilegeForService = ensureNotCancelled(await confirm({
+          message: 'Installing the daemon service needs elevated permissions. Use privilege escalation now?',
           initialValue: true,
         }))
-        if (usePrivilegeForLaunchd) {
-          launchdInstalled = installLaunchdAgent(targetUser, installDir, true)
+        if (usePrivilegeForService) {
+          installedService = installDaemonService(targetUser, installDir, true)
         } else {
           throw error
         }
@@ -731,8 +788,8 @@ export async function startInstaller() {
     `Written: ${written.authPath}`,
     `Written: ${written.manifestPath}`,
     `Written: ${written.launcherPath}`,
-    launchdInstalled ? `Written: ${launchdInstalled.plistPath}` : '',
-    launchdInstalled ? `launchd label: ${launchdInstalled.label}` : '',
+    installedService ? `Written: ${installedService.servicePath}` : '',
+    installedService ? `${installedService.kind} label: ${installedService.label}` : '',
     '',
     'Default launcher behavior:',
     '- `rin` uses the saved target user and install dir',
@@ -747,6 +804,6 @@ export async function startInstaller() {
     '- Treat it like a shell-capable operator on that account and use it carefully.',
   ].join('\n'), 'Written paths')
 
-  outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main${launchdInstalled ? ', and launchd is installed.' : ''}`)
+  outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main${installedService ? `, and ${installedService.kind} service is installed.` : ''}`)
 }
 
