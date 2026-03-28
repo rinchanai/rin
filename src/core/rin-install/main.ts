@@ -56,6 +56,23 @@ function summarizeDirState(dir: string) {
   }
 }
 
+function ensureDir(dir: string) {
+  fs.mkdirSync(dir, { recursive: true })
+}
+
+function readJsonFile<T>(filePath: string, fallback: T): T {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
+  } catch {
+    return fallback
+  }
+}
+
+function writeJsonFile(filePath: string, value: unknown) {
+  ensureDir(path.dirname(filePath))
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+}
+
 function computeAvailableThinkingLevels(model: { provider: string; id: string; reasoning: boolean }) {
   if (!model.reasoning) return ['off']
   const id = String(model.id || '').toLowerCase()
@@ -85,15 +102,19 @@ async function loadModelChoices() {
   return choices
 }
 
-async function createInstallerAuthStorage() {
+async function createInstallerAuthStorage(installDir: string) {
   const codingAgentModule = await loadRinCodingAgent()
   const { AuthStorage } = codingAgentModule as any
-  return AuthStorage.inMemory()
+  return AuthStorage.create(path.join(installDir, 'auth.json'))
 }
 
-async function configureProviderAuth(provider: string) {
-  const codingAgentModule = await loadRinCodingAgent()
-  const authStorage = await createInstallerAuthStorage()
+async function configureProviderAuth(provider: string, installDir: string) {
+  ensureDir(installDir)
+  const authStorage = await createInstallerAuthStorage(installDir)
+  if (authStorage.hasAuth?.(provider)) {
+    return { available: true, authKind: 'existing' }
+  }
+
   const oauthProviders = Array.isArray(authStorage.getOAuthProviders?.()) ? authStorage.getOAuthProviders() : []
   const oauthProvider = oauthProviders.find((entry: any) => entry.id === provider)
 
@@ -147,6 +168,57 @@ async function configureProviderAuth(provider: string) {
   }))).trim()
   authStorage.set(provider, { type: 'api_key', key: token })
   return { available: true, authKind: 'api_key' }
+}
+
+async function persistInstallerOutputs(options: {
+  currentUser: string
+  targetUser: string
+  installDir: string
+  provider: string
+  modelId: string
+  thinkingLevel: string
+  koishiDescription: string
+  koishiDetail: string
+  koishiConfig: any
+}) {
+  ensureDir(options.installDir)
+
+  const codingAgentModule = await loadRinCodingAgent()
+  const { SettingsManager } = codingAgentModule as any
+  const targetCwd = targetHomeForUser(options.targetUser)
+  const settingsManager = SettingsManager.create(targetCwd, options.installDir)
+  settingsManager.setDefaultModelAndProvider(options.provider, options.modelId)
+  settingsManager.setDefaultThinkingLevel(options.thinkingLevel)
+
+  const settingsPath = path.join(options.installDir, 'settings.json')
+  const settingsJson = readJsonFile<any>(settingsPath, {})
+  if (options.koishiConfig) {
+    settingsJson.koishi ||= {}
+    if (options.koishiConfig.telegram) settingsJson.koishi.telegram = options.koishiConfig.telegram
+    if (options.koishiConfig.onebot) settingsJson.koishi.onebot = options.koishiConfig.onebot
+  }
+  writeJsonFile(settingsPath, settingsJson)
+
+  const launcherPath = path.join(os.homedir(), '.config', 'rin', 'install.json')
+  const launcherJson = readJsonFile<any>(launcherPath, {})
+  launcherJson.defaultTargetUser = options.targetUser
+  launcherJson.defaultInstallDir = options.installDir
+  launcherJson.updatedAt = new Date().toISOString()
+  launcherJson.installedBy = options.currentUser
+  writeJsonFile(launcherPath, launcherJson)
+
+  const manifestPath = path.join(options.installDir, 'config', 'installer.json')
+  const manifestJson = readJsonFile<any>(manifestPath, {})
+  manifestJson.targetUser = options.targetUser
+  manifestJson.installDir = options.installDir
+  manifestJson.defaultProvider = options.provider
+  manifestJson.defaultModel = options.modelId
+  manifestJson.defaultThinkingLevel = options.thinkingLevel
+  manifestJson.koishi = options.koishiConfig || {}
+  manifestJson.updatedAt = new Date().toISOString()
+  writeJsonFile(manifestPath, manifestJson)
+
+  return { settingsPath, launcherPath, manifestPath }
 }
 
 export async function startInstaller() {
@@ -249,7 +321,7 @@ export async function startInstaller() {
     }),
   }))
 
-  const authResult = await configureProviderAuth(String(provider))
+  const authResult = await configureProviderAuth(String(provider), installDir)
 
   const providerModels = models.filter((model) => model.provider === provider)
   if (!providerModels.length) {
@@ -280,6 +352,7 @@ export async function startInstaller() {
 
   let koishiDescription = 'disabled for now'
   let koishiDetail = ''
+  let koishiConfig: any = null
   if (enableKoishi) {
     const adapter = ensureNotCancelled(await select({
       message: 'Choose a Koishi adapter.',
@@ -291,14 +364,15 @@ export async function startInstaller() {
 
     koishiDescription = adapter
     if (adapter === 'telegram') {
-      ensureNotCancelled(await text({
+      const token = String(ensureNotCancelled(await text({
         message: 'Enter the Telegram bot token.',
         placeholder: '123456:ABCDEF...',
         validate(value) {
           if (!String(value || '').trim()) return 'Token is required.'
         },
-      }))
-      koishiDetail = 'Koishi token: [saved later during real install]'
+      }))).trim()
+      koishiDetail = 'Koishi token: [saved to target settings.json]'
+      koishiConfig = { telegram: { token, protocol: 'polling', slash: true } }
     } else {
       const endpoint = String(ensureNotCancelled(await text({
         message: 'Enter the OneBot endpoint URL.',
@@ -314,6 +388,7 @@ export async function startInstaller() {
         },
       }))).trim()
       koishiDetail = `Koishi endpoint: ${endpoint}`
+      koishiConfig = { onebot: { endpoint, protocol: endpoint.startsWith('ws') ? 'ws' : 'http', selfId: '', token: '' } }
     }
   }
 
@@ -333,10 +408,30 @@ export async function startInstaller() {
     '- `rin --std` → std TUI for the target user',
     '- `rin --tmux <session_name>` → attach/create a hidden Rin tmux session for the target user',
     '- `rin --tmux-list` → list Rin tmux sessions for the target user',
-    '',
-    'This installer is still a dry run. Nothing has been installed yet.',
-  ].join('\n'), 'Install plan')
+  ].filter(Boolean).join('\n'), 'Install plan')
 
-  outro('Installer placeholder complete. No changes were made.')
+  const shouldWrite = ensureNotCancelled(await confirm({
+    message: 'Write these settings now?',
+    initialValue: true,
+  }))
+
+  if (!shouldWrite) {
+    outro('Installer finished without writing changes.')
+    return
+  }
+
+  const written = await persistInstallerOutputs({
+    currentUser,
+    targetUser,
+    installDir,
+    provider: String(provider),
+    modelId: String(modelId),
+    thinkingLevel: String(thinkingLevel),
+    koishiDescription,
+    koishiDetail,
+    koishiConfig,
+  })
+
+  outro(`Wrote installer state to ${installDir} and ${written.launcherPath}`)
 }
 
