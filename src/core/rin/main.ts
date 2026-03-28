@@ -204,9 +204,46 @@ function writeUserLaunchers(installDir: string) {
   writeExecutable(path.join(binDir, 'rin-install'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(rinInstallTarget)} "$@"\n`)
 }
 
-async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
+function resolveInstallDirForTarget(parsed: ReturnType<typeof parseArgs>) {
   const target = readPasswdUser(parsed.targetUser)
-  const installDir = parsed.installDir || path.join(target?.home || os.homedir(), '.rin')
+  return parsed.installDir || path.join(target?.home || os.homedir(), '.rin')
+}
+
+async function runRestart(parsed: ReturnType<typeof parseArgs>) {
+  const repoRoot = repoRootFromHere()
+  const installDir = resolveInstallDirForTarget(parsed)
+  const runtimeEnv = { [RIN_DIR_ENV]: installDir, [PI_AGENT_DIR_ENV]: installDir }
+  const targetUser = parsed.targetUser
+  const systemctl = process.platform === 'linux'
+    ? (fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : ''))
+    : ''
+
+  if (systemctl) {
+    for (const unit of [`rin-daemon-${targetUser}.service`, 'rin-daemon.service']) {
+      try {
+        const check = buildUserShell(targetUser, [systemctl, '--user', 'status', unit], runtimeEnv)
+        execFileSync(check.command, check.args, { stdio: 'ignore', env: check.env, cwd: repoRoot })
+        const restart = buildUserShell(targetUser, [systemctl, '--user', 'restart', unit], runtimeEnv)
+        execFileSync(restart.command, restart.args, { stdio: 'inherit', env: restart.env, cwd: repoRoot })
+        console.log(`rin restart complete: ${unit}`)
+        return
+      } catch {}
+    }
+  }
+
+  try {
+    const pkill = requireTool('pkill', ['/usr/bin/pkill', '/bin/pkill'])
+    const daemonPattern = `${installDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/app/.*/dist/(app/rin-daemon/daemon\\.js|daemon\\.js)`
+    const stop = buildUserShell(targetUser, [pkill, '-f', daemonPattern], runtimeEnv)
+    execFileSync(stop.command, stop.args, { stdio: 'ignore', env: stop.env, cwd: repoRoot })
+  } catch {}
+
+  await ensureDaemonAvailable(repoRoot, targetUser, runtimeEnv)
+  console.log('rin restart complete')
+}
+
+async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
+  const installDir = resolveInstallDirForTarget(parsed)
 
   const curl = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/curl') ? '/usr/bin/curl' : '')
   const wget = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/wget') ? '/usr/bin/wget' : '')
@@ -257,11 +294,12 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
 
 function usage() {
   console.log([
-    'Usage: rin [update|upgrade] [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
+    'Usage: rin [update|upgrade|restart] [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
     '',
     'Defaults to the RPC TUI for the target user.',
     'Commands:',
     '  update, upgrade      Upgrade the installed Rin runtime from GitHub main',
+    '  restart              Restart the target user daemon',
     '',
     'Options:',
     '  --user, -u <name>    Run against a specific daemon user',
@@ -285,6 +323,10 @@ function parseArgs(argv: string[]) {
     const arg = argv[i]
     if (!command && (arg === 'update' || arg === 'upgrade')) {
       command = 'update'
+      continue
+    }
+    if (!command && arg === 'restart') {
+      command = 'restart'
       continue
     }
     if (arg === '--user' || arg === '-u') {
@@ -330,6 +372,10 @@ export async function startRinCli() {
   const parsed = parseArgs(process.argv.slice(2))
   if (parsed.command === 'update') {
     await runUpdate(parsed)
+    return
+  }
+  if (parsed.command === 'restart') {
+    await runRestart(parsed)
     return
   }
 
