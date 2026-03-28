@@ -657,14 +657,7 @@ export async function startInstaller() {
       }),
     })))
 
-    const shouldConfigureProviderAuth = ensureNotCancelled(await confirm({
-      message: `Configure authentication for ${String(provider)} now?`,
-      initialValue: true,
-    }))
-
-    authResult = shouldConfigureProviderAuth
-      ? await configureProviderAuth(String(provider), installDir)
-      : { available: false, authKind: 'skipped', authData: {} }
+    authResult = await configureProviderAuth(String(provider), installDir)
 
     const providerModels = models.filter((model) => model.provider === provider)
     if (!providerModels.length) {
