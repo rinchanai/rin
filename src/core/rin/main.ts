@@ -165,11 +165,105 @@ async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: 
   throw new Error(`rin_daemon_unavailable: failed to start daemon for ${targetUser}`)
 }
 
+function requireTool(name: string, paths: string[] = []) {
+  for (const candidate of paths) {
+    if (candidate && fs.existsSync(candidate)) return candidate
+  }
+  try {
+    return execFileSync('sh', ['-lc', `command -v ${shellQuote(name)}`], { encoding: 'utf8' }).trim() || name
+  } catch {
+    throw new Error(`rin_missing_required_tool:${name}`)
+  }
+}
+
+function runCommandSync(command: string, args: string[], options: any = {}) {
+  execFileSync(command, args, { stdio: 'inherit', ...options })
+}
+
+function writeExecutable(filePath: string, content: string) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.writeFileSync(filePath, content, { encoding: 'utf8', mode: 0o755 })
+  fs.chmodSync(filePath, 0o755)
+}
+
+function syncTree(sourcePath: string, destPath: string) {
+  runCommandSync('rm', ['-rf', destPath])
+  fs.mkdirSync(path.dirname(destPath), { recursive: true })
+  runCommandSync('cp', ['-a', sourcePath, destPath])
+}
+
+function releaseIdNow() {
+  return new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, 'Z')
+}
+
+function writeUserLaunchers(installDir: string) {
+  const binDir = path.join(os.homedir(), '.local', 'bin')
+  const rinTarget = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js')
+  const rinInstallTarget = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js')
+  writeExecutable(path.join(binDir, 'rin'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(rinTarget)} "$@"\n`)
+  writeExecutable(path.join(binDir, 'rin-install'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(rinInstallTarget)} "$@"\n`)
+}
+
+async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
+  if (!parsed.installDir) {
+    throw new Error(`rin_not_installed: no saved install dir (expected ${installConfigPath()})`)
+  }
+
+  const curl = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/curl') ? '/usr/bin/curl' : '')
+  const wget = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/wget') ? '/usr/bin/wget' : '')
+  const tar = requireTool('tar', ['/usr/bin/tar', '/bin/tar'])
+  const npm = requireTool('npm', ['/usr/bin/npm', '/bin/npm'])
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-update-'))
+  const archivePath = path.join(tempRoot, 'rin.tar.gz')
+  const sourceRoot = path.join(tempRoot, 'src')
+  const releaseRoot = path.join(parsed.installDir, 'app', 'releases', releaseIdNow())
+  const currentLink = path.join(parsed.installDir, 'app', 'current')
+  const currentTmpLink = `${currentLink}.tmp`
+
+  try {
+    fs.mkdirSync(sourceRoot, { recursive: true })
+    if (curl) {
+      runCommandSync(curl, ['-fsSL', 'https://github.com/THE-cattail/rin/archive/refs/heads/main.tar.gz', '-o', archivePath])
+    } else if (wget) {
+      runCommandSync(wget, ['-qO', archivePath, 'https://github.com/THE-cattail/rin/archive/refs/heads/main.tar.gz'])
+    } else {
+      throw new Error('rin_missing_required_tool:curl_or_wget')
+    }
+    runCommandSync(tar, ['-xzf', archivePath, '-C', sourceRoot, '--strip-components=1'])
+
+    if (fs.existsSync(path.join(sourceRoot, 'package-lock.json'))) {
+      runCommandSync(npm, ['ci', '--no-fund', '--no-audit'], { cwd: sourceRoot })
+    } else {
+      runCommandSync(npm, ['install', '--no-fund', '--no-audit'], { cwd: sourceRoot })
+    }
+    runCommandSync(npm, ['run', 'build'], { cwd: sourceRoot })
+
+    fs.mkdirSync(releaseRoot, { recursive: true })
+    for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
+      syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name))
+    }
+
+    try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
+    fs.symlinkSync(releaseRoot, currentTmpLink)
+    try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
+    fs.renameSync(currentTmpLink, currentLink)
+
+    writeUserLaunchers(parsed.installDir)
+    console.log(`rin update complete: ${releaseRoot}`)
+  } finally {
+    try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
+    try { fs.rmSync(tempRoot, { recursive: true, force: true }) } catch {}
+  }
+}
+
 function usage() {
   console.log([
-    'Usage: rin [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
+    'Usage: rin [update|upgrade] [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
     '',
     'Defaults to the RPC TUI for the target user.',
+    'Commands:',
+    '  update, upgrade      Upgrade the installed Rin runtime from GitHub main',
+    '',
     'Options:',
     '  --user, -u <name>    Run against a specific daemon user',
     '  --std                Start std TUI instead of RPC TUI',
@@ -180,6 +274,7 @@ function usage() {
 
 function parseArgs(argv: string[]) {
   const installConfig = loadInstallConfig()
+  let command = ''
   let targetUser = ''
   let std = false
   let tmuxSession = ''
@@ -189,6 +284,10 @@ function parseArgs(argv: string[]) {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
+    if (!command && (arg === 'update' || arg === 'upgrade')) {
+      command = 'update'
+      continue
+    }
     if (arg === '--user' || arg === '-u') {
       targetUser = safeString(argv[i + 1]).trim()
       explicitUser = true
@@ -216,6 +315,7 @@ function parseArgs(argv: string[]) {
   }
 
   return {
+    command,
     targetUser: targetUser || safeString(installConfig.defaultTargetUser).trim() || os.userInfo().username,
     installDir: safeString(installConfig.defaultInstallDir).trim(),
     std,
@@ -229,6 +329,11 @@ function parseArgs(argv: string[]) {
 
 export async function startRinCli() {
   const parsed = parseArgs(process.argv.slice(2))
+  if (parsed.command === 'update') {
+    await runUpdate(parsed)
+    return
+  }
+
   const repoRoot = repoRootFromHere()
   const targetUser = parsed.targetUser
   const tmuxSocketName = `rin-${targetUser}`
