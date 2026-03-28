@@ -369,9 +369,53 @@ async function configureProviderAuth(provider: string, installDir: string) {
   return { available: true, authKind: 'api_key', authData: authStorage.getAll?.() || {} }
 }
 
+function syncTree(sourcePath: string, destPath: string) {
+  execFileSync('rm', ['-rf', destPath], { stdio: 'inherit' })
+  ensureDir(path.dirname(destPath))
+  execFileSync('cp', ['-a', sourcePath, destPath], { stdio: 'inherit' })
+}
+
+function releaseIdNow() {
+  return new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, 'Z')
+}
+
+function publishInstalledRuntime(installDir: string, elevated = false) {
+  const repoRoot = repoRootFromHere()
+  const releaseRoot = path.join(installDir, 'app', 'releases', releaseIdNow())
+  const currentLink = path.join(installDir, 'app', 'current')
+  const currentTmpLink = `${currentLink}.tmp`
+
+  if (elevated) {
+    runPrivileged('mkdir', ['-p', path.dirname(releaseRoot)])
+    for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
+      runPrivileged('rm', ['-rf', path.join(releaseRoot, name)])
+      runPrivileged('cp', ['-a', path.join(repoRoot, name), path.join(releaseRoot, name)])
+    }
+    try { runPrivileged('rm', ['-rf', currentTmpLink]) } catch {}
+    runPrivileged('ln', ['-s', releaseRoot, currentTmpLink])
+    try { runPrivileged('rm', ['-rf', currentLink]) } catch {}
+    runPrivileged('mv', [currentTmpLink, currentLink])
+    return { releaseRoot, currentLink }
+  }
+
+  ensureDir(path.dirname(releaseRoot))
+  for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
+    syncTree(path.join(repoRoot, name), path.join(releaseRoot, name))
+  }
+
+  try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
+  fs.symlinkSync(releaseRoot, currentTmpLink)
+  try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
+  fs.renameSync(currentTmpLink, currentLink)
+
+  return { releaseRoot, currentLink }
+}
+
 function resolveDaemonEntryForInstall(installDir: string) {
-  const installedEntry = path.join(installDir, 'app', 'current', 'dist', 'daemon.js')
-  if (fs.existsSync(installedEntry)) return installedEntry
+  const currentStyle = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-daemon', 'daemon.js')
+  if (fs.existsSync(currentStyle)) return currentStyle
+  const legacyStyle = path.join(installDir, 'app', 'current', 'dist', 'daemon.js')
+  if (fs.existsSync(legacyStyle)) return legacyStyle
   return path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
 }
 
@@ -837,6 +881,7 @@ export async function startInstaller() {
     : false
 
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string; rinPath: string; rinInstallPath: string }
+  let publishedRuntime: { releaseRoot: string; currentLink: string }
   let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
   const serviceHint = process.platform === 'darwin'
     ? installServiceNow
@@ -848,6 +893,7 @@ export async function startInstaller() {
         : 'The launcher auto-starts the daemon on demand. You skipped dedicated Linux service installation for now.'
       : 'The launcher auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
   try {
+    publishedRuntime = publishInstalledRuntime(installDir)
     written = await persistInstallerOutputs({
       currentUser,
       targetUser,
@@ -868,6 +914,7 @@ export async function startInstaller() {
         initialValue: true,
       }))
       if (!useSudo) throw error
+      publishedRuntime = publishInstalledRuntime(installDir, true)
       written = await persistInstallerOutputs({
         currentUser,
         targetUser,
@@ -918,6 +965,8 @@ export async function startInstaller() {
     `Written: ${written.launcherPath}`,
     `Written: ${written.rinPath}`,
     `Written: ${written.rinInstallPath}`,
+    `Written: ${publishedRuntime.currentLink}`,
+    `Written: ${publishedRuntime.releaseRoot}`,
     installedService ? `Written: ${installedService.servicePath}` : '',
     installedService ? `${installedService.kind} label: ${installedService.label}` : '',
     '',
