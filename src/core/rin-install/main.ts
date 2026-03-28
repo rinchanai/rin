@@ -82,9 +82,13 @@ function findSystemUser(targetUser: string) {
   return listSystemUsers().find((entry) => entry.name === targetUser)
 }
 
-function targetHomeForUser(targetUser: string) {
+function homeForUser(targetUser: string) {
   const matched = findSystemUser(targetUser)
   return matched?.home || path.join(process.platform === 'darwin' ? '/Users' : '/home', targetUser)
+}
+
+function targetHomeForUser(targetUser: string) {
+  return homeForUser(targetUser)
 }
 
 function summarizeDirState(dir: string) {
@@ -154,9 +158,36 @@ function writeTextFile(filePath: string, value: string, mode = 0o600) {
   fs.chmodSync(filePath, mode)
 }
 
-function appConfigDir() {
-  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'rin')
-  return path.join(os.homedir(), '.config', 'rin')
+function shellQuote(value: string) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`
+}
+
+function writeExecutable(filePath: string, content: string) {
+  writeTextFile(filePath, content, 0o755)
+}
+
+function launcherTargetsForInstallDir(installDir: string) {
+  return {
+    rin: path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js'),
+    rinInstall: path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js'),
+  }
+}
+
+function writeLaunchersForUser(userName: string, installDir: string) {
+  const binDir = path.join(homeForUser(userName), '.local', 'bin')
+  const targets = launcherTargetsForInstallDir(installDir)
+  writeExecutable(path.join(binDir, 'rin'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(targets.rin)} "$@"\n`)
+  writeExecutable(path.join(binDir, 'rin-install'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(targets.rinInstall)} "$@"\n`)
+  return {
+    rinPath: path.join(binDir, 'rin'),
+    rinInstallPath: path.join(binDir, 'rin-install'),
+  }
+}
+
+function appConfigDirForUser(userName: string) {
+  const home = homeForUser(userName)
+  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'rin')
+  return path.join(home, '.config', 'rin')
 }
 
 function pickPrivilegeCommand() {
@@ -516,7 +547,7 @@ async function persistInstallerOutputs(options: {
   const authJson = readInstallerJson<any>(authPath, {}, Boolean(options.elevated))
   const nextAuthJson = { ...authJson, ...(options.authData || {}) }
 
-  const launcherPath = path.join(appConfigDir(), 'install.json')
+  const launcherPath = path.join(appConfigDirForUser(options.currentUser), 'install.json')
   const launcherJson = readJsonFile<any>(launcherPath, {})
   launcherJson.defaultTargetUser = options.targetUser
   launcherJson.defaultInstallDir = options.installDir
@@ -543,8 +574,9 @@ async function persistInstallerOutputs(options: {
     writeJsonFile(manifestPath, manifestJson)
   }
   writeJsonFile(launcherPath, launcherJson)
+  const launchers = writeLaunchersForUser(options.currentUser, options.installDir)
 
-  return { settingsPath, authPath, launcherPath, manifestPath }
+  return { settingsPath, authPath, launcherPath, manifestPath, ...launchers }
 }
 
 export async function startInstaller() {
@@ -790,7 +822,7 @@ export async function startInstaller() {
       }))
     : false
 
-  let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string }
+  let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string; rinPath: string; rinInstallPath: string }
   let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
   const serviceHint = process.platform === 'darwin'
     ? installServiceNow
@@ -870,8 +902,14 @@ export async function startInstaller() {
     `Written: ${written.authPath}`,
     `Written: ${written.manifestPath}`,
     `Written: ${written.launcherPath}`,
+    `Written: ${written.rinPath}`,
+    `Written: ${written.rinInstallPath}`,
     installedService ? `Written: ${installedService.servicePath}` : '',
     installedService ? `${installedService.kind} label: ${installedService.label}` : '',
+    '',
+    'Launcher note:',
+    `- installer command shims are written for ${currentUser} under ${path.join(homeForUser(currentUser), '.local', 'bin')}`,
+    '- ensure that directory is on your PATH when launching `rin` or `rin-install`',
     '',
     'Default launcher behavior:',
     '- `rin` uses the saved target user and install dir',
