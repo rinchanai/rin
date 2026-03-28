@@ -386,7 +386,7 @@ function publishInstalledRuntime(installDir: string, elevated = false) {
   const currentTmpLink = `${currentLink}.tmp`
 
   if (elevated) {
-    runPrivileged('mkdir', ['-p', path.dirname(releaseRoot)])
+    runPrivileged('mkdir', ['-p', releaseRoot])
     for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
       runPrivileged('rm', ['-rf', path.join(releaseRoot, name)])
       runPrivileged('cp', ['-a', path.join(repoRoot, name), path.join(releaseRoot, name)])
