@@ -2,7 +2,6 @@
 set -eu
 
 REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/THE-cattail/rin}
-REF=${RIN_INSTALL_REF:-${RIN_INSTALL_BRANCH:-main}}
 TMPDIR_BASE=${TMPDIR:-/tmp}
 WORKDIR=$(mktemp -d "$TMPDIR_BASE/rin-install.XXXXXX")
 ARCHIVE="$WORKDIR/rin.tar.gz"
@@ -86,9 +85,9 @@ fetch() {
   exit 1
 }
 
-ARCHIVE_URL="$REPO_URL/archive/$REF.tar.gz"
+ARCHIVE_URL="$REPO_URL/archive/refs/heads/main.tar.gz"
 : >"$LOGFILE"
-run_step "Fetching installer from GitHub ref $REF" fetch "$ARCHIVE_URL" "$ARCHIVE"
+run_step "Fetching installer from GitHub main" fetch "$ARCHIVE_URL" "$ARCHIVE"
 mkdir -p "$SRC_DIR"
 run_step "Preparing installer source" tar -xzf "$ARCHIVE" -C "$SRC_DIR" --strip-components=1
 
