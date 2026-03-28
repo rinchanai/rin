@@ -3,7 +3,9 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { cancel, intro, isCancel, note, outro, select, text } from '@clack/prompts'
+import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
+
+import { createConfiguredAgentSession, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 
 function listSystemUsers() {
   const users: Array<{ name: string; uid: number; home: string; shell: string }> = []
@@ -52,6 +54,36 @@ function summarizeDirState(dir: string) {
       sample: [] as string[],
     }
   }
+}
+
+function computeAvailableThinkingLevels(model: { provider: string; id: string; reasoning: boolean }) {
+  if (!model.reasoning) return ['off']
+  const id = String(model.id || '').toLowerCase()
+  const provider = String(model.provider || '').toLowerCase()
+  return provider === 'openai' && id.includes('codex-max')
+    ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
+    : ['off', 'minimal', 'low', 'medium', 'high']
+}
+
+async function loadModelChoices() {
+  const runtimeProfile = resolveRuntimeProfile()
+  const session = await createConfiguredAgentSession({
+    cwd: runtimeProfile.cwd,
+    agentDir: runtimeProfile.agentDir,
+  })
+  const registry = (session as any).modelRegistry
+  const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
+  const availableKeys = new Set(
+    (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
+  )
+  const choices: Array<{ provider: string; id: string; reasoning: boolean; available: boolean }> = all.map((model: any) => ({
+    provider: String(model.provider || ''),
+    id: String(model.id || ''),
+    reasoning: Boolean(model.reasoning),
+    available: availableKeys.has(`${model.provider}/${model.id}`),
+  }))
+  choices.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
+  return choices
 }
 
 export async function startInstaller() {
@@ -131,10 +163,95 @@ export async function startInstaller() {
     ].join('\n'), 'Install directory')
   }
 
+  const models = await loadModelChoices()
+  const providerNames = [...new Set(models.map((model) => model.provider))]
+
+  const provider = ensureNotCancelled(await select({
+    message: 'Choose a provider.',
+    options: providerNames.map((name) => {
+      const scoped = models.filter((model) => model.provider === name)
+      const availableCount = scoped.filter((model) => model.available).length
+      return {
+        value: name,
+        label: name,
+        hint: availableCount ? `${availableCount}/${scoped.length} ready` : `${scoped.length} models`,
+      }
+    }),
+  }))
+
+  const providerModels = models.filter((model) => model.provider === provider)
+  const modelId = ensureNotCancelled(await select({
+    message: 'Choose a model.',
+    options: providerModels.map((model) => ({
+      value: model.id,
+      label: model.id,
+      hint: [model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
+    })),
+  }))
+
+  const model = providerModels.find((entry) => entry.id === modelId)!
+  const thinkingLevel = ensureNotCancelled(await select({
+    message: 'Choose the default thinking level.',
+    options: computeAvailableThinkingLevels(model).map((level) => ({
+      value: level,
+      label: level,
+    })),
+  }))
+
+  const enableKoishi = ensureNotCancelled(await confirm({
+    message: 'Configure a Koishi adapter now?',
+    initialValue: false,
+  }))
+
+  let koishiDescription = 'disabled for now'
+  let koishiDetail = ''
+  if (enableKoishi) {
+    const adapter = ensureNotCancelled(await select({
+      message: 'Choose a Koishi adapter.',
+      options: [
+        { value: 'telegram', label: 'Telegram', hint: 'bot token' },
+        { value: 'onebot', label: 'OneBot', hint: 'endpoint URL' },
+      ],
+    })) as 'telegram' | 'onebot'
+
+    koishiDescription = adapter
+    if (adapter === 'telegram') {
+      ensureNotCancelled(await text({
+        message: 'Enter the Telegram bot token.',
+        placeholder: '123456:ABCDEF...',
+        validate(value) {
+          if (!String(value || '').trim()) return 'Token is required.'
+        },
+      }))
+      koishiDetail = 'Koishi token: [saved later during real install]'
+    } else {
+      const endpoint = String(ensureNotCancelled(await text({
+        message: 'Enter the OneBot endpoint URL.',
+        placeholder: 'http://127.0.0.1:5700',
+        validate(value) {
+          const next = String(value || '').trim()
+          if (!next) return 'Endpoint is required.'
+          try {
+            new URL(next)
+          } catch {
+            return 'Use a valid URL.'
+          }
+        },
+      }))).trim()
+      koishiDetail = `Koishi endpoint: ${endpoint}`
+    }
+  }
+
   note([
     `Current user: ${currentUser}`,
     `Target daemon user: ${targetUser}`,
     `Install dir: ${installDir}`,
+    `Provider: ${provider}`,
+    `Model: ${modelId}`,
+    `Thinking level: ${thinkingLevel}`,
+    `Model auth status: ${model.available ? 'ready' : 'needs auth/config later'}`,
+    `Koishi: ${koishiDescription}`,
+    koishiDetail,
     '',
     'Planned command shape:',
     '- `rin` → RPC TUI for the target user',
