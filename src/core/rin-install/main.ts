@@ -66,22 +66,43 @@ function computeAvailableThinkingLevels(model: { provider: string; id: string; r
 }
 
 async function loadModelChoices() {
-  const runtimeProfile = resolveRuntimeProfile()
-  const session = await createConfiguredAgentSession({
-    cwd: runtimeProfile.cwd,
-    agentDir: runtimeProfile.agentDir,
-  })
-  const registry = (session as any).modelRegistry
-  const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
-  const availableKeys = new Set(
-    (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
-  )
-  const choices: Array<{ provider: string; id: string; reasoning: boolean; available: boolean }> = all.map((model: any) => ({
-    provider: String(model.provider || ''),
-    id: String(model.id || ''),
-    reasoning: Boolean(model.reasoning),
-    available: availableKeys.has(`${model.provider}/${model.id}`),
-  }))
+  const { getProviders, getModels } = await import('@mariozechner/pi-ai')
+
+  const merged = new Map<string, { provider: string; id: string; reasoning: boolean; available: boolean }>()
+
+  for (const provider of getProviders()) {
+    for (const model of getModels(provider as any)) {
+      merged.set(`${(model as any).provider || provider}/${(model as any).id || ''}`, {
+        provider: String((model as any).provider || provider),
+        id: String((model as any).id || ''),
+        reasoning: Boolean((model as any).reasoning),
+        available: false,
+      })
+    }
+  }
+
+  try {
+    const runtimeProfile = resolveRuntimeProfile()
+    const session = await createConfiguredAgentSession({
+      cwd: runtimeProfile.cwd,
+      agentDir: runtimeProfile.agentDir,
+    })
+    const registry = (session as any).modelRegistry
+    const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
+    const availableKeys = new Set(
+      (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
+    )
+    for (const model of all) {
+      merged.set(`${model.provider}/${model.id}`, {
+        provider: String(model.provider || ''),
+        id: String(model.id || ''),
+        reasoning: Boolean(model.reasoning),
+        available: availableKeys.has(`${model.provider}/${model.id}`),
+      })
+    }
+  } catch {}
+
+  const choices = [...merged.values()].filter((model) => model.provider && model.id)
   choices.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
   return choices
 }
@@ -164,7 +185,10 @@ export async function startInstaller() {
   }
 
   const models = await loadModelChoices()
-  const providerNames = [...new Set(models.map((model) => model.provider))]
+  const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
+  if (!providerNames.length) {
+    throw new Error('rin_installer_no_models_available')
+  }
 
   const provider = ensureNotCancelled(await select({
     message: 'Choose a provider.',
@@ -180,6 +204,9 @@ export async function startInstaller() {
   }))
 
   const providerModels = models.filter((model) => model.provider === provider)
+  if (!providerModels.length) {
+    throw new Error(`rin_installer_no_models_for_provider:${provider}`)
+  }
   const modelId = ensureNotCancelled(await select({
     message: 'Choose a model.',
     options: providerModels.map((model) => ({
