@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import os from 'node:os'
 import fs from 'node:fs'
+import path from 'node:path'
 
 import { cancel, intro, isCancel, note, outro, select, text } from '@clack/prompts'
 
@@ -29,6 +30,28 @@ function ensureNotCancelled<T>(value: T | symbol): T {
     process.exit(1)
   }
   return value as T
+}
+
+function targetHomeForUser(targetUser: string) {
+  const matched = listSystemUsers().find((entry) => entry.name === targetUser)
+  return matched?.home || path.join('/home', targetUser)
+}
+
+function summarizeDirState(dir: string) {
+  try {
+    const entries = fs.readdirSync(dir)
+    return {
+      exists: true,
+      entryCount: entries.length,
+      sample: entries.slice(0, 8),
+    }
+  } catch {
+    return {
+      exists: false,
+      entryCount: 0,
+      sample: [] as string[],
+    }
+  }
 }
 
 export async function startInstaller() {
@@ -74,9 +97,44 @@ export async function startInstaller() {
     }))
   }
 
+  const defaultDir = path.join(targetHomeForUser(targetUser), '.rin')
+  const installDir = String(ensureNotCancelled(await text({
+    message: 'Choose the Rin data directory for the daemon user.',
+    placeholder: defaultDir,
+    defaultValue: defaultDir,
+    validate(value) {
+      const next = String(value || '').trim()
+      if (!next) return 'Directory is required.'
+      if (!path.isAbsolute(next)) return 'Use an absolute path.'
+    },
+  }))).trim()
+
+  const state = summarizeDirState(installDir)
+  if (state.exists) {
+    note([
+      `Directory exists: ${installDir}`,
+      `Existing entries: ${state.entryCount}`,
+      state.sample.length ? `Sample: ${state.sample.join(', ')}` : '',
+      '',
+      'Installer policy:',
+      '- keep unknown files untouched',
+      '- keep existing config unless a required file must be updated',
+      '- only remove old files when they are known legacy Rin artifacts',
+    ].filter(Boolean).join('\n'), 'Existing directory')
+  } else {
+    note([
+      `Directory will be created: ${installDir}`,
+      '',
+      'Installer policy:',
+      '- create only the files Rin needs',
+      '- future updates should preserve unknown files',
+    ].join('\n'), 'Install directory')
+  }
+
   note([
     `Current user: ${currentUser}`,
     `Target daemon user: ${targetUser}`,
+    `Install dir: ${installDir}`,
     '',
     'Planned command shape:',
     '- `rin` → RPC TUI for the target user',
