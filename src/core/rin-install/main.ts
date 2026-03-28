@@ -450,9 +450,9 @@ async function persistInstallerOutputs(options: {
 
   const settingsPath = path.join(options.installDir, 'settings.json')
   const settingsJson = readJsonFile<any>(settingsPath, {})
-  settingsJson.defaultProvider = options.provider
-  settingsJson.defaultModel = options.modelId
-  settingsJson.defaultThinkingLevel = options.thinkingLevel
+  if (options.provider) settingsJson.defaultProvider = options.provider
+  if (options.modelId) settingsJson.defaultModel = options.modelId
+  if (options.thinkingLevel) settingsJson.defaultThinkingLevel = options.thinkingLevel
   if (options.koishiConfig) {
     settingsJson.koishi ||= {}
     if (options.koishiConfig.telegram) settingsJson.koishi.telegram = options.koishiConfig.telegram
@@ -474,9 +474,9 @@ async function persistInstallerOutputs(options: {
   const manifestJson = readJsonFile<any>(manifestPath, {})
   manifestJson.targetUser = options.targetUser
   manifestJson.installDir = options.installDir
-  manifestJson.defaultProvider = options.provider
-  manifestJson.defaultModel = options.modelId
-  manifestJson.defaultThinkingLevel = options.thinkingLevel
+  if (options.provider) manifestJson.defaultProvider = options.provider
+  if (options.modelId) manifestJson.defaultModel = options.modelId
+  if (options.thinkingLevel) manifestJson.defaultThinkingLevel = options.thinkingLevel
   manifestJson.koishi = options.koishiConfig || {}
   manifestJson.updatedAt = new Date().toISOString()
 
@@ -576,59 +576,71 @@ export async function startInstaller() {
     ].join('\n'), 'Install directory')
   }
 
-  const loadSpinner = spinner()
-  loadSpinner.start('Loading provider and model choices...')
-  const models = await loadModelChoices()
-  loadSpinner.stop('Provider and model choices loaded.')
-
-  const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
-  if (!providerNames.length) {
-    throw new Error('rin_installer_no_models_available')
-  }
-
-  const provider = ensureNotCancelled(await select({
-    message: 'Choose a provider.',
-    options: providerNames.map((name) => {
-      const scoped = models.filter((model) => model.provider === name)
-      const availableCount = scoped.filter((model) => model.available).length
-      return {
-        value: name,
-        label: name,
-        hint: availableCount ? `${availableCount}/${scoped.length} ready` : `${scoped.length} models`,
-      }
-    }),
-  }))
-
-  const shouldConfigureProviderAuth = ensureNotCancelled(await confirm({
-    message: `Configure authentication for ${String(provider)} now?`,
+  const shouldConfigureProvider = ensureNotCancelled(await confirm({
+    message: 'Configure a provider now?',
     initialValue: true,
   }))
 
-  const authResult = shouldConfigureProviderAuth
-    ? await configureProviderAuth(String(provider), installDir)
-    : { available: false, authKind: 'skipped', authData: {} }
+  let provider = ''
+  let modelId = ''
+  let thinkingLevel = ''
+  let authResult: any = { available: false, authKind: 'skipped', authData: {} }
 
-  const providerModels = models.filter((model) => model.provider === provider)
-  if (!providerModels.length) {
-    throw new Error(`rin_installer_no_models_for_provider:${provider}`)
+  if (shouldConfigureProvider) {
+    const loadSpinner = spinner()
+    loadSpinner.start('Loading provider and model choices...')
+    const models = await loadModelChoices()
+    loadSpinner.stop('Provider and model choices loaded.')
+
+    const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
+    if (!providerNames.length) {
+      throw new Error('rin_installer_no_models_available')
+    }
+
+    provider = String(ensureNotCancelled(await select({
+      message: 'Choose a provider.',
+      options: providerNames.map((name) => {
+        const scoped = models.filter((model) => model.provider === name)
+        const availableCount = scoped.filter((model) => model.available).length
+        return {
+          value: name,
+          label: name,
+          hint: availableCount ? `${availableCount}/${scoped.length} ready` : `${scoped.length} models`,
+        }
+      }),
+    })))
+
+    const shouldConfigureProviderAuth = ensureNotCancelled(await confirm({
+      message: `Configure authentication for ${String(provider)} now?`,
+      initialValue: true,
+    }))
+
+    authResult = shouldConfigureProviderAuth
+      ? await configureProviderAuth(String(provider), installDir)
+      : { available: false, authKind: 'skipped', authData: {} }
+
+    const providerModels = models.filter((model) => model.provider === provider)
+    if (!providerModels.length) {
+      throw new Error(`rin_installer_no_models_for_provider:${provider}`)
+    }
+    modelId = String(ensureNotCancelled(await select({
+      message: 'Choose a model.',
+      options: providerModels.map((model) => ({
+        value: model.id,
+        label: model.id,
+        hint: [authResult.available || model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
+      })),
+    })))
+
+    const model = providerModels.find((entry) => entry.id === modelId)!
+    thinkingLevel = String(ensureNotCancelled(await select({
+      message: 'Choose the default thinking level.',
+      options: computeAvailableThinkingLevels(model).map((level) => ({
+        value: level,
+        label: level,
+      })),
+    })))
   }
-  const modelId = ensureNotCancelled(await select({
-    message: 'Choose a model.',
-    options: providerModels.map((model) => ({
-      value: model.id,
-      label: model.id,
-      hint: [authResult.available || model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
-    })),
-  }))
-
-  const model = providerModels.find((entry) => entry.id === modelId)!
-  const thinkingLevel = ensureNotCancelled(await select({
-    message: 'Choose the default thinking level.',
-    options: computeAvailableThinkingLevels(model).map((level) => ({
-      value: level,
-      label: level,
-    })),
-  }))
 
   const enableKoishi = ensureNotCancelled(await confirm({
     message: 'Configure a Koishi adapter now?',
@@ -681,10 +693,10 @@ export async function startInstaller() {
     `Current user: ${currentUser}`,
     `Target daemon user: ${targetUser}`,
     `Install dir: ${installDir}`,
-    `Provider: ${provider}`,
-    `Model: ${modelId}`,
-    `Thinking level: ${thinkingLevel}`,
-    `Model auth status: ${authResult.available || model.available ? 'ready' : 'needs auth/config later'}`,
+    `Provider: ${provider || 'skipped for now'}`,
+    `Model: ${modelId || 'skipped for now'}`,
+    `Thinking level: ${thinkingLevel || 'skipped for now'}`,
+    `Model auth status: ${provider ? (authResult.available ? 'ready' : 'needs auth/config later') : 'skipped for now'}`,
     `Koishi: ${koishiDescription}`,
     koishiDetail,
     '',
