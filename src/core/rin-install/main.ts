@@ -154,8 +154,9 @@ function runPrivileged(command: string, args: string[]) {
 function runCommandAsUser(targetUser: string, command: string, args: string[], extraEnv: Record<string, string> = {}) {
   const envArgs = Object.entries(extraEnv).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
   const shellCommand = [...envArgs, JSON.stringify(command), ...args.map((arg) => JSON.stringify(arg))].join(' ')
+  const isRoot = typeof process.getuid === 'function' ? process.getuid() === 0 : false
 
-  if (fs.existsSync('/usr/sbin/runuser')) {
+  if (isRoot && fs.existsSync('/usr/sbin/runuser')) {
     execFileSync('/usr/sbin/runuser', ['-u', targetUser, '--', 'sh', '-lc', shellCommand], { stdio: 'inherit' })
     return
   }
