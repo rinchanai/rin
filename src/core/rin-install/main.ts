@@ -108,16 +108,29 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
-function writeJsonFileWithSudo(filePath: string, value: unknown, ownerUser?: string, ownerGroup?: string | number) {
+function appConfigDir() {
+  if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'rin')
+  return path.join(os.homedir(), '.config', 'rin')
+}
+
+function pickPrivilegeCommand() {
+  if (process.platform !== 'win32' && fs.existsSync('/run/current-system/sw/bin/doas')) return '/run/current-system/sw/bin/doas'
+  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/doas')) return '/usr/bin/doas'
+  if (process.platform !== 'win32' && fs.existsSync('/bin/doas')) return '/bin/doas'
+  return 'sudo'
+}
+
+function writeJsonFileWithPrivilege(filePath: string, value: unknown, ownerUser?: string, ownerGroup?: string | number) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-write-'))
   const tempFile = path.join(tempDir, 'payload.json')
+  const privilegeCommand = pickPrivilegeCommand()
   try {
     fs.writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-    execFileSync('sudo', ['mkdir', '-p', path.dirname(filePath)], { stdio: 'inherit' })
-    execFileSync('sudo', ['install', '-m', '600', tempFile, filePath], { stdio: 'inherit' })
-    if (ownerUser) {
+    execFileSync(privilegeCommand, ['mkdir', '-p', path.dirname(filePath)], { stdio: 'inherit' })
+    execFileSync(privilegeCommand, ['install', '-m', '600', tempFile, filePath], { stdio: 'inherit' })
+    if (ownerUser && process.platform !== 'win32') {
       const owner = ownerGroup != null && `${ownerGroup}` !== '' ? `${ownerUser}:${ownerGroup}` : ownerUser
-      execFileSync('sudo', ['chown', owner, filePath], { stdio: 'inherit' })
+      execFileSync(privilegeCommand, ['chown', owner, filePath], { stdio: 'inherit' })
     }
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true })
@@ -288,7 +301,7 @@ async function persistInstallerOutputs(options: {
   const authJson = readJsonFile<any>(authPath, {})
   const nextAuthJson = { ...authJson, ...(options.authData || {}) }
 
-  const launcherPath = path.join(os.homedir(), '.config', 'rin', 'install.json')
+  const launcherPath = path.join(appConfigDir(), 'install.json')
   const launcherJson = readJsonFile<any>(launcherPath, {})
   launcherJson.defaultTargetUser = options.targetUser
   launcherJson.defaultInstallDir = options.installDir
@@ -306,9 +319,9 @@ async function persistInstallerOutputs(options: {
   manifestJson.updatedAt = new Date().toISOString()
 
   if (options.elevated) {
-    writeJsonFileWithSudo(settingsPath, settingsJson, ownerUser, ownerGroup)
-    writeJsonFileWithSudo(authPath, nextAuthJson, ownerUser, ownerGroup)
-    writeJsonFileWithSudo(manifestPath, manifestJson, ownerUser, ownerGroup)
+    writeJsonFileWithPrivilege(settingsPath, settingsJson, ownerUser, ownerGroup)
+    writeJsonFileWithPrivilege(authPath, nextAuthJson, ownerUser, ownerGroup)
+    writeJsonFileWithPrivilege(manifestPath, manifestJson, ownerUser, ownerGroup)
   } else {
     writeJsonFile(settingsPath, settingsJson)
     writeJsonFile(authPath, nextAuthJson)
@@ -537,6 +550,9 @@ export async function startInstaller() {
   }
 
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string }
+  const serviceHint = process.platform === 'darwin'
+    ? 'macOS launchd/user services can be added later; current installer writes reusable config and the launcher auto-starts the daemon on demand.'
+    : 'On Linux and other Unix systems, the launcher now auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
   try {
     written = await persistInstallerOutputs({
       currentUser,
@@ -585,8 +601,11 @@ export async function startInstaller() {
     '',
     'Default launcher behavior:',
     '- `rin` uses the saved target user and install dir',
+    '- `rin` in RPC mode auto-starts the daemon when needed',
     '- `rin --std` enters std mode for that target',
     '- `rin -t <name>` attaches/creates a hidden tmux TUI session',
+    '',
+    `Service/platform note: ${serviceHint}`,
     '',
     'Safety reminder:',
     '- This agent runs with the full permissions of its system user account.',
