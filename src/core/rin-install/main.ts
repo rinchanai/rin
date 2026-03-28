@@ -645,7 +645,7 @@ export async function startInstaller() {
     }
 
     provider = String(ensureNotCancelled(await select({
-      message: 'Choose a provider.',
+      message: 'Choose a provider to authenticate and use.',
       options: providerNames.map((name) => {
         const scoped = models.filter((model) => model.provider === name)
         const availableCount = scoped.filter((model) => model.available).length
