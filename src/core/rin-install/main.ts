@@ -108,6 +108,22 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
+function writeJsonFileWithSudo(filePath: string, value: unknown, ownerUser?: string, ownerGroup?: string | number) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-write-'))
+  const tempFile = path.join(tempDir, 'payload.json')
+  try {
+    fs.writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
+    execFileSync('sudo', ['mkdir', '-p', path.dirname(filePath)], { stdio: 'inherit' })
+    execFileSync('sudo', ['install', '-m', '600', tempFile, filePath], { stdio: 'inherit' })
+    if (ownerUser) {
+      const owner = ownerGroup != null && `${ownerGroup}` !== '' ? `${ownerUser}:${ownerGroup}` : ownerUser
+      execFileSync('sudo', ['chown', owner, filePath], { stdio: 'inherit' })
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
 function computeAvailableThinkingLevels(model: { provider: string; id: string; reasoning: boolean }) {
   if (!model.reasoning) return ['off']
   const id = String(model.id || '').toLowerCase()
@@ -140,14 +156,15 @@ async function loadModelChoices() {
 async function createInstallerAuthStorage(installDir: string) {
   const codingAgentModule = await loadRinCodingAgent()
   const { AuthStorage } = codingAgentModule as any
-  return AuthStorage.create(path.join(installDir, 'auth.json'))
+  const authPath = path.join(installDir, 'auth.json')
+  const existing = readJsonFile<any>(authPath, {})
+  return AuthStorage.inMemory(existing)
 }
 
 async function configureProviderAuth(provider: string, installDir: string) {
-  ensureDir(installDir)
   const authStorage = await createInstallerAuthStorage(installDir)
   if (authStorage.hasAuth?.(provider)) {
-    return { available: true, authKind: 'existing' }
+    return { available: true, authKind: 'existing', authData: authStorage.getAll?.() || {} }
   }
 
   const oauthProviders = Array.isArray(authStorage.getOAuthProviders?.()) ? authStorage.getOAuthProviders() : []
@@ -187,7 +204,7 @@ async function configureProviderAuth(provider: string, installDir: string) {
         signal: AbortSignal.timeout(10 * 60 * 1000),
       })
       loginSpinner.stop(`${oauthProvider.name || provider} login complete.`)
-      return { available: true, authKind: 'oauth' }
+      return { available: true, authKind: 'oauth', authData: authStorage.getAll?.() || {} }
     } catch (error: any) {
       loginSpinner.stop(`Login failed for ${oauthProvider.name || provider}.`)
       throw error
@@ -202,7 +219,7 @@ async function configureProviderAuth(provider: string, installDir: string) {
     },
   }))).trim()
   authStorage.set(provider, { type: 'api_key', key: token })
-  return { available: true, authKind: 'api_key' }
+  return { available: true, authKind: 'api_key', authData: authStorage.getAll?.() || {} }
 }
 
 function describeOwnership(targetUser: string, installDir: string) {
@@ -248,24 +265,28 @@ async function persistInstallerOutputs(options: {
   koishiDescription: string
   koishiDetail: string
   koishiConfig: any
+  authData: any
+  elevated?: boolean
 }) {
-  ensureDir(options.installDir)
-
-  const codingAgentModule = await loadRinCodingAgent()
-  const { SettingsManager } = codingAgentModule as any
-  const targetCwd = targetHomeForUser(options.targetUser)
-  const settingsManager = SettingsManager.create(targetCwd, options.installDir)
-  settingsManager.setDefaultModelAndProvider(options.provider, options.modelId)
-  settingsManager.setDefaultThinkingLevel(options.thinkingLevel)
+  const target = findSystemUser(options.targetUser) as any
+  const ownerUser = target?.name || options.targetUser
+  const ownerGroup = target?.gid
+  if (!options.elevated) ensureDir(options.installDir)
 
   const settingsPath = path.join(options.installDir, 'settings.json')
   const settingsJson = readJsonFile<any>(settingsPath, {})
+  settingsJson.defaultProvider = options.provider
+  settingsJson.defaultModel = options.modelId
+  settingsJson.defaultThinkingLevel = options.thinkingLevel
   if (options.koishiConfig) {
     settingsJson.koishi ||= {}
     if (options.koishiConfig.telegram) settingsJson.koishi.telegram = options.koishiConfig.telegram
     if (options.koishiConfig.onebot) settingsJson.koishi.onebot = options.koishiConfig.onebot
   }
-  writeJsonFile(settingsPath, settingsJson)
+
+  const authPath = path.join(options.installDir, 'auth.json')
+  const authJson = readJsonFile<any>(authPath, {})
+  const nextAuthJson = { ...authJson, ...(options.authData || {}) }
 
   const launcherPath = path.join(os.homedir(), '.config', 'rin', 'install.json')
   const launcherJson = readJsonFile<any>(launcherPath, {})
@@ -273,7 +294,6 @@ async function persistInstallerOutputs(options: {
   launcherJson.defaultInstallDir = options.installDir
   launcherJson.updatedAt = new Date().toISOString()
   launcherJson.installedBy = options.currentUser
-  writeJsonFile(launcherPath, launcherJson)
 
   const manifestPath = path.join(options.installDir, 'config', 'installer.json')
   const manifestJson = readJsonFile<any>(manifestPath, {})
@@ -284,9 +304,19 @@ async function persistInstallerOutputs(options: {
   manifestJson.defaultThinkingLevel = options.thinkingLevel
   manifestJson.koishi = options.koishiConfig || {}
   manifestJson.updatedAt = new Date().toISOString()
-  writeJsonFile(manifestPath, manifestJson)
 
-  return { settingsPath, launcherPath, manifestPath }
+  if (options.elevated) {
+    writeJsonFileWithSudo(settingsPath, settingsJson, ownerUser, ownerGroup)
+    writeJsonFileWithSudo(authPath, nextAuthJson, ownerUser, ownerGroup)
+    writeJsonFileWithSudo(manifestPath, manifestJson, ownerUser, ownerGroup)
+  } else {
+    writeJsonFile(settingsPath, settingsJson)
+    writeJsonFile(authPath, nextAuthJson)
+    writeJsonFile(manifestPath, manifestJson)
+  }
+  writeJsonFile(launcherPath, launcherJson)
+
+  return { settingsPath, authPath, launcherPath, manifestPath }
 }
 
 export async function startInstaller() {
@@ -506,22 +536,50 @@ export async function startInstaller() {
     return
   }
 
-  const written = await persistInstallerOutputs({
-    currentUser,
-    targetUser,
-    installDir,
-    provider: String(provider),
-    modelId: String(modelId),
-    thinkingLevel: String(thinkingLevel),
-    koishiDescription,
-    koishiDetail,
-    koishiConfig,
-  })
+  let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string }
+  try {
+    written = await persistInstallerOutputs({
+      currentUser,
+      targetUser,
+      installDir,
+      provider: String(provider),
+      modelId: String(modelId),
+      thinkingLevel: String(thinkingLevel),
+      koishiDescription,
+      koishiDetail,
+      koishiConfig,
+      authData: authResult.authData || {},
+    })
+  } catch (error: any) {
+    const message = String(error?.message || error || '')
+    if (/EACCES|EPERM|permission denied/i.test(message)) {
+      const useSudo = ensureNotCancelled(await confirm({
+        message: 'Writing these files needs elevated permissions. Use sudo to finish writing?',
+        initialValue: true,
+      }))
+      if (!useSudo) throw error
+      written = await persistInstallerOutputs({
+        currentUser,
+        targetUser,
+        installDir,
+        provider: String(provider),
+        modelId: String(modelId),
+        thinkingLevel: String(thinkingLevel),
+        koishiDescription,
+        koishiDetail,
+        koishiConfig,
+        authData: authResult.authData || {},
+        elevated: true,
+      })
+    } else {
+      throw error
+    }
+  }
 
   note([
     `Target install dir: ${installDir}`,
     `Written: ${written.settingsPath}`,
-    `Written: ${path.join(installDir, 'auth.json')}`,
+    `Written: ${written.authPath}`,
     `Written: ${written.manifestPath}`,
     `Written: ${written.launcherPath}`,
     '',
