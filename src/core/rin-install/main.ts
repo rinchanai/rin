@@ -3,9 +3,9 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
+import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
 
-import { createConfiguredAgentSession, resolveRuntimeProfile } from '../rin-lib/runtime.js'
+import { loadRinCodingAgent } from '../rin-lib/loader.js'
 
 function listSystemUsers() {
   const users: Array<{ name: string; uid: number; home: string; shell: string }> = []
@@ -67,7 +67,6 @@ function computeAvailableThinkingLevels(model: { provider: string; id: string; r
 
 async function loadModelChoices() {
   const { getProviders, getModels } = await import('@mariozechner/pi-ai')
-
   const merged = new Map<string, { provider: string; id: string; reasoning: boolean; available: boolean }>()
 
   for (const provider of getProviders()) {
@@ -81,30 +80,73 @@ async function loadModelChoices() {
     }
   }
 
-  try {
-    const runtimeProfile = resolveRuntimeProfile()
-    const session = await createConfiguredAgentSession({
-      cwd: runtimeProfile.cwd,
-      agentDir: runtimeProfile.agentDir,
-    })
-    const registry = (session as any).modelRegistry
-    const all = Array.isArray(registry?.getAll?.()) ? registry.getAll() : []
-    const availableKeys = new Set(
-      (Array.isArray(registry?.getAvailable?.()) ? registry.getAvailable() : []).map((model: any) => `${model.provider}/${model.id}`),
-    )
-    for (const model of all) {
-      merged.set(`${model.provider}/${model.id}`, {
-        provider: String(model.provider || ''),
-        id: String(model.id || ''),
-        reasoning: Boolean(model.reasoning),
-        available: availableKeys.has(`${model.provider}/${model.id}`),
-      })
-    }
-  } catch {}
-
   const choices = [...merged.values()].filter((model) => model.provider && model.id)
   choices.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
   return choices
+}
+
+async function createInstallerAuthStorage() {
+  const codingAgentModule = await loadRinCodingAgent()
+  const { AuthStorage } = codingAgentModule as any
+  return AuthStorage.inMemory()
+}
+
+async function configureProviderAuth(provider: string) {
+  const codingAgentModule = await loadRinCodingAgent()
+  const authStorage = await createInstallerAuthStorage()
+  const oauthProviders = Array.isArray(authStorage.getOAuthProviders?.()) ? authStorage.getOAuthProviders() : []
+  const oauthProvider = oauthProviders.find((entry: any) => entry.id === provider)
+
+  if (oauthProvider) {
+    const loginSpinner = spinner()
+    let lastAuthUrl = ''
+    loginSpinner.start(`Starting ${oauthProvider.name || provider} login...`)
+    try {
+      await authStorage.login(provider, {
+        onAuth(info: { url: string; instructions?: string }) {
+          lastAuthUrl = String(info?.url || '')
+          loginSpinner.stop(`Open this URL to continue login:\n${lastAuthUrl}${info?.instructions ? `\n${info.instructions}` : ''}`)
+        },
+        async onPrompt(prompt: { message: string; placeholder?: string }) {
+          return String(ensureNotCancelled(await text({
+            message: prompt.message || 'Enter login value.',
+            placeholder: prompt.placeholder,
+            validate(value) {
+              if (!String(value || '').trim()) return 'A value is required.'
+            },
+          }))).trim()
+        },
+        onProgress(message: string) {
+          loginSpinner.message(message || `Waiting for ${oauthProvider.name || provider} login...`)
+        },
+        async onManualCodeInput() {
+          return String(ensureNotCancelled(await text({
+            message: 'Paste the redirect URL or code from the browser.',
+            placeholder: lastAuthUrl ? 'paste the final redirect URL or device code' : 'paste the code',
+            validate(value) {
+              if (!String(value || '').trim()) return 'A value is required.'
+            },
+          }))).trim()
+        },
+        signal: AbortSignal.timeout(10 * 60 * 1000),
+      })
+      loginSpinner.stop(`${oauthProvider.name || provider} login complete.`)
+      return { available: true, authKind: 'oauth' }
+    } catch (error: any) {
+      loginSpinner.stop(`Login failed for ${oauthProvider.name || provider}.`)
+      throw error
+    }
+  }
+
+  const token = String(ensureNotCancelled(await text({
+    message: `Enter the API key or token for ${provider}.`,
+    placeholder: 'token',
+    validate(value) {
+      if (!String(value || '').trim()) return 'A token is required.'
+    },
+  }))).trim()
+  authStorage.set(provider, { type: 'api_key', key: token })
+  return { available: true, authKind: 'api_key' }
 }
 
 export async function startInstaller() {
@@ -184,7 +226,11 @@ export async function startInstaller() {
     ].join('\n'), 'Install directory')
   }
 
+  const loadSpinner = spinner()
+  loadSpinner.start('Loading provider and model choices...')
   const models = await loadModelChoices()
+  loadSpinner.stop('Provider and model choices loaded.')
+
   const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
   if (!providerNames.length) {
     throw new Error('rin_installer_no_models_available')
@@ -203,6 +249,8 @@ export async function startInstaller() {
     }),
   }))
 
+  const authResult = await configureProviderAuth(String(provider))
+
   const providerModels = models.filter((model) => model.provider === provider)
   if (!providerModels.length) {
     throw new Error(`rin_installer_no_models_for_provider:${provider}`)
@@ -212,7 +260,7 @@ export async function startInstaller() {
     options: providerModels.map((model) => ({
       value: model.id,
       label: model.id,
-      hint: [model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
+      hint: [authResult.available || model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
     })),
   }))
 
@@ -276,7 +324,7 @@ export async function startInstaller() {
     `Provider: ${provider}`,
     `Model: ${modelId}`,
     `Thinking level: ${thinkingLevel}`,
-    `Model auth status: ${model.available ? 'ready' : 'needs auth/config later'}`,
+    `Model auth status: ${authResult.available || model.available ? 'ready' : 'needs auth/config later'}`,
     `Koishi: ${koishiDescription}`,
     koishiDetail,
     '',
