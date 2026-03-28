@@ -196,16 +196,32 @@ function releaseIdNow() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, 'Z')
 }
 
+function launcherScript(candidates: string[]) {
+  const checks = candidates.map((candidate) => `if [ -f ${shellQuote(candidate)} ]; then exec ${shellQuote(process.execPath)} ${shellQuote(candidate)} "$@"; fi`).join('\n')
+  return `#!/usr/bin/env sh
+${checks}
+echo "rin: installed runtime entry not found" >&2
+exit 1
+`
+}
+
 function writeUserLaunchers(installDir: string) {
   const binDir = path.join(os.homedir(), '.local', 'bin')
-  const rinTarget = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js')
-  const rinInstallTarget = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js')
-  writeExecutable(path.join(binDir, 'rin'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(rinTarget)} "$@"\n`)
-  writeExecutable(path.join(binDir, 'rin-install'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(rinInstallTarget)} "$@"\n`)
+  const rinCandidates = [
+    path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js'),
+    path.join(installDir, 'app', 'current', 'dist', 'index.js'),
+  ]
+  const rinInstallCandidates = [
+    path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js'),
+  ]
+  writeExecutable(path.join(binDir, 'rin'), launcherScript(rinCandidates))
+  writeExecutable(path.join(binDir, 'rin-install'), launcherScript(rinInstallCandidates))
 }
 
 function daemonEntryForInstallDir(installDir: string) {
-  return path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const currentStyle = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-daemon', 'daemon.js')
+  if (fs.existsSync(currentStyle)) return currentStyle
+  return path.join(installDir, 'app', 'current', 'dist', 'daemon.js')
 }
 
 function buildSystemdServiceText(targetUser: string, targetHome: string, installDir: string, description: string) {

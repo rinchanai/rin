@@ -166,18 +166,32 @@ function writeExecutable(filePath: string, content: string) {
   writeTextFile(filePath, content, 0o755)
 }
 
+function launcherScript(candidates: string[]) {
+  const checks = candidates.map((candidate) => `if [ -f ${shellQuote(candidate)} ]; then exec ${shellQuote(process.execPath)} ${shellQuote(candidate)} "$@"; fi`).join('\n')
+  return `#!/usr/bin/env sh
+${checks}
+echo "rin: installed runtime entry not found" >&2
+exit 1
+`
+}
+
 function launcherTargetsForInstallDir(installDir: string) {
   return {
-    rin: path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js'),
-    rinInstall: path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js'),
+    rin: [
+      path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js'),
+      path.join(installDir, 'app', 'current', 'dist', 'index.js'),
+    ],
+    rinInstall: [
+      path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js'),
+    ],
   }
 }
 
 function writeLaunchersForUser(userName: string, installDir: string) {
   const binDir = path.join(homeForUser(userName), '.local', 'bin')
   const targets = launcherTargetsForInstallDir(installDir)
-  writeExecutable(path.join(binDir, 'rin'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(targets.rin)} "$@"\n`)
-  writeExecutable(path.join(binDir, 'rin-install'), `#!/usr/bin/env sh\nexec ${shellQuote(process.execPath)} ${shellQuote(targets.rinInstall)} "$@"\n`)
+  writeExecutable(path.join(binDir, 'rin'), launcherScript(targets.rin))
+  writeExecutable(path.join(binDir, 'rin-install'), launcherScript(targets.rinInstall))
   return {
     rinPath: path.join(binDir, 'rin'),
     rinInstallPath: path.join(binDir, 'rin-install'),
