@@ -2,6 +2,7 @@
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
 
@@ -9,6 +10,35 @@ import { loadRinCodingAgent } from '../rin-lib/loader.js'
 
 function listSystemUsers() {
   const users: Array<{ name: string; uid: number; gid: number; home: string; shell: string }> = []
+
+  if (process.platform === 'darwin') {
+    try {
+      const raw = execFileSync('dscl', ['.', '-list', '/Users', 'UniqueID'], { encoding: 'utf8' })
+      for (const line of raw.split(/\r?\n/)) {
+        const match = line.trim().match(/^(\S+)\s+(\d+)$/)
+        if (!match) continue
+        const [, name, uidRaw] = match
+        const uid = Number(uidRaw || 0)
+        if (!name || !Number.isFinite(uid) || uid < 500) continue
+        if (name === 'nobody') continue
+        let home = ''
+        let shell = ''
+        let gid = 20
+        try {
+          const detail = execFileSync('dscl', ['.', '-read', `/Users/${name}`, 'NFSHomeDirectory', 'UserShell', 'PrimaryGroupID'], { encoding: 'utf8' })
+          for (const detailLine of detail.split(/\r?\n/)) {
+            if (detailLine.startsWith('NFSHomeDirectory:')) home = detailLine.replace(/^NFSHomeDirectory:\s*/, '').trim()
+            if (detailLine.startsWith('UserShell:')) shell = detailLine.replace(/^UserShell:\s*/, '').trim()
+            if (detailLine.startsWith('PrimaryGroupID:')) gid = Number(detailLine.replace(/^PrimaryGroupID:\s*/, '').trim() || 20)
+          }
+        } catch {}
+        if (/nologin|false/.test(shell)) continue
+        users.push({ name, uid, gid, home, shell })
+      }
+    } catch {}
+    return users.sort((a, b) => a.uid - b.uid || a.name.localeCompare(b.name))
+  }
+
   try {
     const raw = fs.readFileSync('/etc/passwd', 'utf8')
     for (const line of raw.split(/\r?\n/)) {
@@ -41,7 +71,7 @@ function findSystemUser(targetUser: string) {
 
 function targetHomeForUser(targetUser: string) {
   const matched = findSystemUser(targetUser)
-  return matched?.home || path.join('/home', targetUser)
+  return matched?.home || path.join(process.platform === 'darwin' ? '/Users' : '/home', targetUser)
 }
 
 function summarizeDirState(dir: string) {

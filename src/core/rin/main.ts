@@ -2,7 +2,7 @@
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 function safeString(value: unknown) {
@@ -15,6 +15,20 @@ function repoRootFromHere() {
 }
 
 function readPasswdUser(name: string) {
+  if (process.platform === 'darwin') {
+    try {
+      const detail = execFileSync('dscl', ['.', '-read', `/Users/${name}`, 'NFSHomeDirectory', 'UserShell'], { encoding: 'utf8' })
+      let home = ''
+      let shell = ''
+      for (const line of detail.split(/\r?\n/)) {
+        if (line.startsWith('NFSHomeDirectory:')) home = line.replace(/^NFSHomeDirectory:\s*/, '').trim()
+        if (line.startsWith('UserShell:')) shell = line.replace(/^UserShell:\s*/, '').trim()
+      }
+      return { name, home, shell }
+    } catch {}
+    return null
+  }
+
   try {
     const raw = fs.readFileSync('/etc/passwd', 'utf8')
     for (const line of raw.split(/\r?\n/)) {
@@ -63,14 +77,14 @@ function buildUserShell(targetUser: string, argv: string[], env: Record<string, 
     return {
       command: '/usr/sbin/runuser',
       args: ['-u', targetUser, '--', 'sh', '-lc', shellCommand],
-      env: { ...process.env, HOME: target.home || `/home/${targetUser}` },
+      env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
     }
   }
 
   return {
     command: 'sudo',
     args: ['-u', targetUser, 'sh', '-lc', shellCommand],
-    env: { ...process.env, HOME: target.home || `/home/${targetUser}` },
+    env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
   }
 }
 
