@@ -205,9 +205,8 @@ function writeUserLaunchers(installDir: string) {
 }
 
 async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
-  if (!parsed.installDir) {
-    throw new Error(`rin_not_installed: no saved install dir (expected ${installConfigPath()})`)
-  }
+  const target = readPasswdUser(parsed.targetUser)
+  const installDir = parsed.installDir || path.join(target?.home || os.homedir(), '.rin')
 
   const curl = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/curl') ? '/usr/bin/curl' : '')
   const wget = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/wget') ? '/usr/bin/wget' : '')
@@ -216,8 +215,8 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-update-'))
   const archivePath = path.join(tempRoot, 'rin.tar.gz')
   const sourceRoot = path.join(tempRoot, 'src')
-  const releaseRoot = path.join(parsed.installDir, 'app', 'releases', releaseIdNow())
-  const currentLink = path.join(parsed.installDir, 'app', 'current')
+  const releaseRoot = path.join(installDir, 'app', 'releases', releaseIdNow())
+  const currentLink = path.join(installDir, 'app', 'current')
   const currentTmpLink = `${currentLink}.tmp`
 
   try {
@@ -248,7 +247,7 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
     try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
     fs.renameSync(currentTmpLink, currentLink)
 
-    writeUserLaunchers(parsed.installDir)
+    writeUserLaunchers(installDir)
     console.log(`rin update complete: ${releaseRoot}`)
   } finally {
     try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
