@@ -8,6 +8,7 @@ WORKDIR=$(mktemp -d "$TMPDIR_BASE/rin-install.XXXXXX")
 ARCHIVE="$WORKDIR/rin.tar.gz"
 SRC_DIR="$WORKDIR/src"
 LOGFILE="$WORKDIR/install.log"
+LAUNCHER="$WORKDIR/launcher.mjs"
 HAS_TTY=0
 
 if tty -s 2>/dev/null; then
@@ -112,10 +113,20 @@ else
   exit 1
 fi
 
+cat >"$LAUNCHER" <<'EOF'
+import jiti from './src/node_modules/@mariozechner/jiti/lib/jiti.mjs'
+
+const loader = jiti(import.meta.url, { interopDefault: true, moduleCache: true })
+const mod = await loader.import('./src/src/core/rin-install/main.ts')
+await mod.startInstaller()
+EOF
+
 say "[rin-install] Launching installer..."
 
 if [ "$HAS_TTY" -eq 1 ]; then
-  exec node node_modules/@mariozechner/jiti/lib/jiti-cli.mjs src/app/rin-install/main.ts <&4 >&3 2>&1
+  cd "$WORKDIR"
+  exec node "$LAUNCHER" <&4 >&3 2>&1
 fi
 
-exec node node_modules/@mariozechner/jiti/lib/jiti-cli.mjs src/app/rin-install/main.ts
+cd "$WORKDIR"
+exec node "$LAUNCHER"
