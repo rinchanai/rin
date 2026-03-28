@@ -446,6 +446,10 @@ export async function startInstaller() {
     '- `rin --std` → std TUI for the target user',
     '- `rin --tmux <session_name>` → attach/create a hidden Rin tmux session for the target user',
     '- `rin --tmux-list` → list Rin tmux sessions for the target user',
+    '',
+    'Safety reminder:',
+    '- This agent runs with the full permissions of its system user account.',
+    '- Treat it like a shell-capable operator on that account and use it carefully.',
   ].filter(Boolean).join('\n'), 'Install plan')
 
   const ownership = describeOwnership(targetUser, installDir)
@@ -495,6 +499,10 @@ export async function startInstaller() {
     '- `rin` uses the saved target user and install dir',
     '- `rin --std` enters std mode for that target',
     '- `rin -t <name>` attaches/creates a hidden tmux TUI session',
+    '',
+    'Safety reminder:',
+    '- This agent runs with the full permissions of its system user account.',
+    '- Treat it like a shell-capable operator on that account and use it carefully.',
   ].join('\n'), 'Written paths')
 
   outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main`)

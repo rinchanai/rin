@@ -74,8 +74,12 @@ function buildUserShell(targetUser: string, argv: string[], env: Record<string, 
   }
 }
 
+function installConfigPath() {
+  return path.join(os.homedir(), '.config', 'rin', 'install.json')
+}
+
 function loadInstallConfig() {
-  const filePath = path.join(os.homedir(), '.config', 'rin', 'install.json')
+  const filePath = installConfigPath()
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) as { defaultTargetUser?: string; defaultInstallDir?: string }
   } catch {
@@ -102,12 +106,14 @@ function parseArgs(argv: string[]) {
   let std = false
   let tmuxSession = ''
   let tmuxList = false
+  let explicitUser = false
   const passthrough: string[] = []
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--user' || arg === '-u') {
       targetUser = safeString(argv[i + 1]).trim()
+      explicitUser = true
       i += 1
       continue
     }
@@ -138,6 +144,8 @@ function parseArgs(argv: string[]) {
     tmuxSession,
     tmuxList,
     passthrough,
+    explicitUser,
+    hasSavedInstall: Boolean(safeString(installConfig.defaultTargetUser).trim() || safeString(installConfig.defaultInstallDir).trim()),
   }
 }
 
@@ -146,6 +154,10 @@ export async function startRinCli() {
   const repoRoot = repoRootFromHere()
   const targetUser = parsed.targetUser
   const tmuxSocketName = `rin-${targetUser}`
+
+  if (!parsed.explicitUser && !parsed.hasSavedInstall) {
+    throw new Error(`rin_not_installed: run rin-install first or pass --user/-u explicitly (expected ${installConfigPath()})`)
+  }
 
   if (parsed.tmuxSession && parsed.tmuxList) throw new Error('rin_tmux_mode_conflict')
 
