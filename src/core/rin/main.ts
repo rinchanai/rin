@@ -7,6 +7,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { defaultDaemonSocketPath } from '../rin-lib/common.js'
+import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from '../rin-lib/runtime.js'
 
 function safeString(value: unknown) {
   if (value == null) return ''
@@ -238,7 +239,9 @@ export async function startRinCli() {
 
   if (parsed.tmuxSession && parsed.tmuxList) throw new Error('rin_tmux_mode_conflict')
 
-  const runtimeEnv = parsed.installDir ? { RIN_DIR: parsed.installDir } : {}
+  const runtimeEnv = parsed.installDir
+    ? { [RIN_DIR_ENV]: parsed.installDir, [PI_AGENT_DIR_ENV]: parsed.installDir }
+    : {}
 
   if (parsed.tmuxList) {
     const launch = buildUserShell(targetUser, ['tmux', '-L', tmuxSocketName, 'list-sessions'], runtimeEnv)
