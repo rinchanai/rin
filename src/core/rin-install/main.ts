@@ -66,6 +66,18 @@ function ensureNotCancelled<T>(value: T | symbol): T {
   return value as T
 }
 
+function detectCurrentUser() {
+  const candidates = [
+    process.env.SUDO_USER,
+    process.env.LOGNAME,
+    process.env.USER,
+    (() => {
+      try { return os.userInfo().username } catch { return '' }
+    })(),
+  ].map((value) => String(value || '').trim()).filter(Boolean)
+  return candidates[0] || 'unknown'
+}
+
 function findSystemUser(targetUser: string) {
   return listSystemUsers().find((entry) => entry.name === targetUser)
 }
@@ -483,9 +495,10 @@ async function persistInstallerOutputs(options: {
 }
 
 export async function startInstaller() {
-  const currentUser = os.userInfo().username
+  const currentUser = detectCurrentUser()
   const allUsers = listSystemUsers()
   const otherUsers = allUsers.filter((entry) => entry.name !== currentUser)
+  const existingCandidates = otherUsers.length ? otherUsers : allUsers.filter((entry) => entry.name !== currentUser).length ? allUsers.filter((entry) => entry.name !== currentUser) : allUsers
 
   intro('Rin Installer')
 
@@ -493,21 +506,25 @@ export async function startInstaller() {
     message: 'Choose the target user for the Rin daemon.',
     options: [
       { value: 'current', label: `Current user`, hint: currentUser },
-      { value: 'existing', label: 'Existing other user', hint: otherUsers.length ? `${otherUsers.length} user(s)` : 'none found' },
+      { value: 'existing', label: 'Existing other user', hint: existingCandidates.length ? `${existingCandidates.length} user(s)` : 'none found' },
       { value: 'new', label: 'New user', hint: 'enter a username' },
     ],
   }))
 
   let targetUser = currentUser
   if (targetMode === 'existing') {
-    if (!otherUsers.length) {
-      note('No eligible existing users were found on this system.', 'Target user')
+    if (!existingCandidates.length) {
+      note([
+        'No eligible existing users were found on this system.',
+        `Detected current user: ${currentUser}`,
+        `Visible users: ${allUsers.map((entry) => entry.name).join(', ') || 'none'}`,
+      ].join('\n'), 'Target user')
       outro('Nothing installed.')
       return
     }
     targetUser = ensureNotCancelled(await select({
       message: 'Choose the existing user to host the Rin daemon.',
-      options: otherUsers.map((entry) => ({
+      options: existingCandidates.map((entry) => ({
         value: entry.name,
         label: entry.name,
         hint: `${entry.home} · uid ${entry.uid}`,
