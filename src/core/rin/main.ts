@@ -60,10 +60,11 @@ function shellQuote(value: string) {
 }
 
 function pickPrivilegeCommand() {
-  if (process.platform !== 'win32' && fs.existsSync('/usr/sbin/runuser')) return '/usr/sbin/runuser'
   if (process.platform !== 'win32' && fs.existsSync('/run/current-system/sw/bin/doas')) return '/run/current-system/sw/bin/doas'
   if (process.platform !== 'win32' && fs.existsSync('/usr/bin/doas')) return '/usr/bin/doas'
   if (process.platform !== 'win32' && fs.existsSync('/bin/doas')) return '/bin/doas'
+  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/sudo')) return '/usr/bin/sudo'
+  if (process.platform !== 'win32' && fs.existsSync('/bin/sudo')) return '/bin/sudo'
   return 'sudo'
 }
 
@@ -85,15 +86,16 @@ function buildUserShell(targetUser: string, argv: string[], env: Record<string, 
     ...argv.map((arg) => shellQuote(arg)),
   ].join(' ')
 
-  const privilegeCommand = pickPrivilegeCommand()
-  if (privilegeCommand.endsWith('runuser')) {
+  const isRoot = typeof process.getuid === 'function' ? process.getuid() === 0 : false
+  if (isRoot && process.platform !== 'win32' && fs.existsSync('/usr/sbin/runuser')) {
     return {
-      command: privilegeCommand,
+      command: '/usr/sbin/runuser',
       args: ['-u', targetUser, '--', 'sh', '-lc', shellCommand],
       env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
     }
   }
 
+  const privilegeCommand = pickPrivilegeCommand()
   if (privilegeCommand.endsWith('doas')) {
     return {
       command: privilegeCommand,
@@ -146,6 +148,27 @@ async function canConnectSocket(socketPath: string) {
 async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: Record<string, string>) {
   const socketPath = defaultDaemonSocketPath()
   if (await canConnectSocket(socketPath)) return
+
+  const currentUser = os.userInfo().username
+  const systemctl = process.platform === 'linux'
+    ? (fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : ''))
+    : ''
+
+  if (targetUser !== currentUser && systemctl) {
+    for (const unit of [`rin-daemon-${targetUser}.service`, 'rin-daemon.service']) {
+      try {
+        const start = buildUserShell(targetUser, [systemctl, '--user', 'start', unit], env)
+        execFileSync(start.command, start.args, { stdio: 'inherit', env: start.env, cwd: repoRoot })
+        break
+      } catch {}
+    }
+    const startedAt = Date.now()
+    while (Date.now() - startedAt < 5000) {
+      if (await canConnectSocket(socketPath)) return
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+  }
+
   const daemonEntry = path.join(repoRoot, 'dist', 'app', 'rin-daemon', 'daemon.js')
   const launch = buildUserShell(targetUser, [process.execPath, daemonEntry], env)
   const child = spawn(launch.command, launch.args, {

@@ -531,6 +531,24 @@ function installSystemdUserService(targetUser: string, installDir: string, eleva
   return spec
 }
 
+function refreshManagedServiceFiles(targetUser: string, installDir: string, elevated = false) {
+  if (process.platform !== 'linux') return
+  const targetHome = targetHomeForUser(targetUser)
+  const unitDir = path.join(targetHome, '.config', 'systemd', 'user')
+  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
+  const candidateFiles = [
+    path.join(unitDir, unitName),
+    path.join(unitDir, 'rin-daemon.service'),
+  ]
+
+  for (const filePath of candidateFiles) {
+    if (!fs.existsSync(filePath)) continue
+    const spec = buildSystemdUserService(targetUser, installDir)
+    if (elevated) writeTextFileWithPrivilege(filePath, spec.service, targetUser, findSystemUser(targetUser)?.gid, 0o644)
+    else writeTextFile(filePath, spec.service, 0o644)
+  }
+}
+
 function installDaemonService(targetUser: string, installDir: string, elevated = false) {
   if (process.platform === 'darwin') return installLaunchdAgent(targetUser, installDir, elevated)
   if (process.platform === 'linux' && (fs.existsSync('/usr/bin/systemctl') || fs.existsSync('/bin/systemctl'))) {
@@ -894,6 +912,7 @@ export async function startInstaller() {
       : 'The launcher auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
   try {
     publishedRuntime = publishInstalledRuntime(installDir)
+    refreshManagedServiceFiles(targetUser, installDir)
     written = await persistInstallerOutputs({
       currentUser,
       targetUser,
@@ -915,6 +934,7 @@ export async function startInstaller() {
       }))
       if (!useSudo) throw error
       publishedRuntime = publishInstalledRuntime(installDir, true)
+      refreshManagedServiceFiles(targetUser, installDir, true)
       written = await persistInstallerOutputs({
         currentUser,
         targetUser,
