@@ -324,10 +324,16 @@ async function configureProviderAuth(provider: string, installDir: string) {
   return { available: true, authKind: 'api_key', authData: authStorage.getAll?.() || {} }
 }
 
+function resolveDaemonEntryForInstall(installDir: string) {
+  const installedEntry = path.join(installDir, 'app', 'current', 'dist', 'daemon.js')
+  if (fs.existsSync(installedEntry)) return installedEntry
+  return path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
+}
+
 function buildLaunchdPlist(targetUser: string, installDir: string) {
   const label = `com.rin.daemon.${String(targetUser).replace(/[^A-Za-z0-9_.-]+/g, '-')}`
   const targetHome = targetHomeForUser(targetUser)
-  const daemonEntry = path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const daemonEntry = resolveDaemonEntryForInstall(installDir)
   const stdoutPath = path.join(installDir, 'data', 'logs', 'daemon.stdout.log')
   const stderrPath = path.join(installDir, 'data', 'logs', 'daemon.stderr.log')
   const plistPath = path.join(targetHome, 'Library', 'LaunchAgents', `${label}.plist`)
@@ -389,7 +395,7 @@ function installLaunchdAgent(targetUser: string, installDir: string, elevated = 
 }
 
 function buildSystemdUserService(targetUser: string, installDir: string) {
-  const daemonEntry = path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const daemonEntry = resolveDaemonEntryForInstall(installDir)
   const targetHome = targetHomeForUser(targetUser)
   const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
   const unitPath = path.join(targetHome, '.config', 'systemd', 'user', unitName)
