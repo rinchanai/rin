@@ -3,6 +3,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
 
@@ -95,6 +96,10 @@ function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true })
 }
 
+function repoRootFromHere() {
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+}
+
 function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
@@ -108,6 +113,12 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
+function writeTextFile(filePath: string, value: string, mode = 0o600) {
+  ensureDir(path.dirname(filePath))
+  fs.writeFileSync(filePath, value, 'utf8')
+  fs.chmodSync(filePath, mode)
+}
+
 function appConfigDir() {
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'rin')
   return path.join(os.homedir(), '.config', 'rin')
@@ -117,7 +128,31 @@ function pickPrivilegeCommand() {
   if (process.platform !== 'win32' && fs.existsSync('/run/current-system/sw/bin/doas')) return '/run/current-system/sw/bin/doas'
   if (process.platform !== 'win32' && fs.existsSync('/usr/bin/doas')) return '/usr/bin/doas'
   if (process.platform !== 'win32' && fs.existsSync('/bin/doas')) return '/bin/doas'
+  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/sudo')) return '/usr/bin/sudo'
+  if (process.platform !== 'win32' && fs.existsSync('/bin/sudo')) return '/bin/sudo'
+  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/pkexec')) return '/usr/bin/pkexec'
   return 'sudo'
+}
+
+function runPrivileged(command: string, args: string[]) {
+  const privilegeCommand = pickPrivilegeCommand()
+  execFileSync(privilegeCommand, [command, ...args], { stdio: 'inherit' })
+}
+
+function writeTextFileWithPrivilege(filePath: string, value: string, ownerUser?: string, ownerGroup?: string | number, mode = 0o600) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-write-'))
+  const tempFile = path.join(tempDir, 'payload')
+  try {
+    fs.writeFileSync(tempFile, value, 'utf8')
+    runPrivileged('mkdir', ['-p', path.dirname(filePath)])
+    runPrivileged('install', ['-m', String(mode.toString(8)), tempFile, filePath])
+    if (ownerUser && process.platform !== 'win32') {
+      const owner = ownerGroup != null && `${ownerGroup}` !== '' ? `${ownerUser}:${ownerGroup}` : ownerUser
+      runPrivileged('chown', [owner, filePath])
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
 }
 
 function writeJsonFileWithPrivilege(filePath: string, value: unknown, ownerUser?: string, ownerGroup?: string | number) {
@@ -233,6 +268,70 @@ async function configureProviderAuth(provider: string, installDir: string) {
   }))).trim()
   authStorage.set(provider, { type: 'api_key', key: token })
   return { available: true, authKind: 'api_key', authData: authStorage.getAll?.() || {} }
+}
+
+function buildLaunchdPlist(targetUser: string, installDir: string) {
+  const label = `com.rin.daemon.${String(targetUser).replace(/[^A-Za-z0-9_.-]+/g, '-')}`
+  const targetHome = targetHomeForUser(targetUser)
+  const daemonEntry = path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const stdoutPath = path.join(installDir, 'data', 'logs', 'daemon.stdout.log')
+  const stderrPath = path.join(installDir, 'data', 'logs', 'daemon.stderr.log')
+  const plistPath = path.join(targetHome, 'Library', 'LaunchAgents', `${label}.plist`)
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>${label}</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>${process.execPath}</string>
+      <string>${daemonEntry}</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>RIN_DIR</key>
+      <string>${installDir}</string>
+    </dict>
+    <key>WorkingDirectory</key>
+    <string>${targetHome}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${stdoutPath}</string>
+    <key>StandardErrorPath</key>
+    <string>${stderrPath}</string>
+  </dict>
+</plist>
+`
+  return { label, plistPath, plist, stdoutPath, stderrPath }
+}
+
+function installLaunchdAgent(targetUser: string, installDir: string, elevated = false) {
+  const target = findSystemUser(targetUser) as any
+  const uid = Number(target?.uid ?? -1)
+  if (uid < 0) throw new Error(`rin_launchd_target_user_not_found:${targetUser}`)
+
+  const { label, plistPath, plist, stdoutPath, stderrPath } = buildLaunchdPlist(targetUser, installDir)
+  if (elevated) {
+    runPrivileged('mkdir', ['-p', path.dirname(plistPath)])
+    runPrivileged('mkdir', ['-p', path.dirname(stdoutPath)])
+    writeTextFileWithPrivilege(plistPath, plist, targetUser, target?.gid, 0o644)
+    try { runPrivileged('launchctl', ['bootout', `gui/${uid}`, plistPath]) } catch {}
+    runPrivileged('launchctl', ['bootstrap', `gui/${uid}`, plistPath])
+    try { runPrivileged('launchctl', ['kickstart', '-k', `gui/${uid}/${label}`]) } catch {}
+  } else {
+    ensureDir(path.dirname(plistPath))
+    ensureDir(path.dirname(stdoutPath))
+    writeTextFile(plistPath, plist, 0o644)
+    try { execFileSync('launchctl', ['bootout', `gui/${uid}`, plistPath], { stdio: 'ignore' }) } catch {}
+    execFileSync('launchctl', ['bootstrap', `gui/${uid}`, plistPath], { stdio: 'inherit' })
+    try { execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/${label}`], { stdio: 'inherit' }) } catch {}
+  }
+
+  return { label, plistPath, stdoutPath, stderrPath }
 }
 
 function describeOwnership(targetUser: string, installDir: string) {
@@ -549,10 +648,20 @@ export async function startInstaller() {
     return
   }
 
+  const installLaunchdNow = process.platform === 'darwin'
+    ? ensureNotCancelled(await confirm({
+        message: 'Install and start a macOS launchd agent for the Rin daemon now?',
+        initialValue: true,
+      }))
+    : false
+
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string }
+  let launchdInstalled: null | { label: string; plistPath: string; stdoutPath: string; stderrPath: string } = null
   const serviceHint = process.platform === 'darwin'
-    ? 'macOS launchd/user services can be added later; current installer writes reusable config and the launcher auto-starts the daemon on demand.'
-    : 'On Linux and other Unix systems, the launcher now auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
+    ? installLaunchdNow
+      ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
+      : 'The launcher auto-starts the daemon on demand. You skipped launchd installation for now.'
+    : 'On Linux and other Unix systems, the launcher auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
   try {
     written = await persistInstallerOutputs({
       currentUser,
@@ -587,8 +696,32 @@ export async function startInstaller() {
         authData: authResult.authData || {},
         elevated: true,
       })
+      if (installLaunchdNow && process.platform === 'darwin') {
+        launchdInstalled = installLaunchdAgent(targetUser, installDir, true)
+      }
     } else {
       throw error
+    }
+  }
+
+  if (!launchdInstalled && installLaunchdNow && process.platform === 'darwin') {
+    try {
+      launchdInstalled = installLaunchdAgent(targetUser, installDir)
+    } catch (error: any) {
+      const message = String(error?.message || error || '')
+      if (/not permitted|permission denied|EACCES|EPERM/i.test(message)) {
+        const usePrivilegeForLaunchd = ensureNotCancelled(await confirm({
+          message: 'Installing the launchd agent needs elevated permissions. Use privilege escalation now?',
+          initialValue: true,
+        }))
+        if (usePrivilegeForLaunchd) {
+          launchdInstalled = installLaunchdAgent(targetUser, installDir, true)
+        } else {
+          throw error
+        }
+      } else {
+        throw error
+      }
     }
   }
 
@@ -598,6 +731,8 @@ export async function startInstaller() {
     `Written: ${written.authPath}`,
     `Written: ${written.manifestPath}`,
     `Written: ${written.launcherPath}`,
+    launchdInstalled ? `Written: ${launchdInstalled.plistPath}` : '',
+    launchdInstalled ? `launchd label: ${launchdInstalled.label}` : '',
     '',
     'Default launcher behavior:',
     '- `rin` uses the saved target user and install dir',
@@ -612,6 +747,6 @@ export async function startInstaller() {
     '- Treat it like a shell-capable operator on that account and use it carefully.',
   ].join('\n'), 'Written paths')
 
-  outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main`)
+  outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main${launchdInstalled ? ', and launchd is installed.' : ''}`)
 }
 

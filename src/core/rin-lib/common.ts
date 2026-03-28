@@ -7,7 +7,10 @@ export function safeString(value: unknown): string {
 }
 
 export function defaultDaemonSocketPath() {
-  const runtimeDir = safeString(process.env.XDG_RUNTIME_DIR).trim() || path.join(os.homedir(), '.cache')
+  const fallbackRuntimeDir = process.platform === 'darwin'
+    ? path.join(os.homedir(), 'Library', 'Caches')
+    : path.join(os.homedir(), '.cache')
+  const runtimeDir = safeString(process.env.XDG_RUNTIME_DIR).trim() || fallbackRuntimeDir
   return path.join(runtimeDir, 'rin-daemon', 'daemon.sock')
 }
 
