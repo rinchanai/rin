@@ -120,6 +120,29 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
   }
 }
 
+function readJsonFileWithPrivilege<T>(filePath: string, fallback: T): T {
+  const privilegeCommand = pickPrivilegeCommand()
+  try {
+    const raw = execFileSync(privilegeCommand, ['cat', filePath], { encoding: 'utf8' })
+    return JSON.parse(String(raw || '')) as T
+  } catch {
+    return fallback
+  }
+}
+
+function readInstallerJson<T>(filePath: string, fallback: T, elevated = false): T {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
+  } catch (error: any) {
+    const code = String(error?.code || '')
+    if (code === 'EACCES' || code === 'EPERM') {
+      if (!elevated) throw error
+      return readJsonFileWithPrivilege(filePath, fallback)
+    }
+    return fallback
+  }
+}
+
 function writeJsonFile(filePath: string, value: unknown) {
   ensureDir(path.dirname(filePath))
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
@@ -473,7 +496,7 @@ async function persistInstallerOutputs(options: {
   if (!options.elevated) ensureDir(options.installDir)
 
   const settingsPath = path.join(options.installDir, 'settings.json')
-  const settingsJson = readJsonFile<any>(settingsPath, {})
+  const settingsJson = readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated))
   if (options.provider) settingsJson.defaultProvider = options.provider
   if (options.modelId) settingsJson.defaultModel = options.modelId
   if (options.thinkingLevel) settingsJson.defaultThinkingLevel = options.thinkingLevel
@@ -484,7 +507,7 @@ async function persistInstallerOutputs(options: {
   }
 
   const authPath = path.join(options.installDir, 'auth.json')
-  const authJson = readJsonFile<any>(authPath, {})
+  const authJson = readInstallerJson<any>(authPath, {}, Boolean(options.elevated))
   const nextAuthJson = { ...authJson, ...(options.authData || {}) }
 
   const launcherPath = path.join(appConfigDir(), 'install.json')
@@ -495,7 +518,7 @@ async function persistInstallerOutputs(options: {
   launcherJson.installedBy = options.currentUser
 
   const manifestPath = path.join(options.installDir, 'config', 'installer.json')
-  const manifestJson = readJsonFile<any>(manifestPath, {})
+  const manifestJson = readInstallerJson<any>(manifestPath, {}, Boolean(options.elevated))
   manifestJson.targetUser = options.targetUser
   manifestJson.installDir = options.installDir
   if (options.provider) manifestJson.defaultProvider = options.provider
