@@ -604,13 +604,6 @@ export async function startRinCli() {
     process.exit(code)
   }
 
-  if (!parsed.std) {
-    const socketPath = socketPathForUser(targetUser)
-    if (!(await canConnectSocketAsTargetUser(targetUser, socketPath))) {
-      throw new Error(`rin_daemon_unavailable: daemon is not running for ${targetUser}; run 'rin doctor${parsed.explicitUser ? ` -u ${targetUser}` : ''}' first`)
-    }
-  }
-
   if (parsed.tmuxSession) {
     const innerArgs = [process.execPath, path.join(repoRoot, 'dist', 'app', 'rin-tui', 'main.js'), parsed.std ? '--std' : '--rpc', ...parsed.passthrough]
     const innerLaunch = buildUserShell(targetUser, innerArgs, runtimeEnv)
