@@ -550,10 +550,8 @@ function refreshManagedServiceFiles(targetUser: string, installDir: string, elev
   }
 }
 
-function reconcileSystemdUserService(targetUser: string, installDir: string, action: 'start' | 'restart', elevated = false) {
-  if (process.platform !== 'linux') return false
+function systemdUserContext(targetUser: string) {
   const systemctl = fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : '')
-  if (!systemctl) return false
   const target = findSystemUser(targetUser) as any
   const uid = Number(target?.uid ?? -1)
   const runtimeDir = uid >= 0 ? `/run/user/${uid}` : ''
@@ -562,6 +560,53 @@ function reconcileSystemdUserService(targetUser: string, installDir: string, act
     : {}
   const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
   const units = [unitName, 'rin-daemon.service']
+  return { systemctl, userEnv, units }
+}
+
+function collectDaemonFailureDetails(targetUser: string, installDir: string) {
+  const socketPath = daemonSocketPathForUser(targetUser)
+  const lines = [
+    `targetUser=${targetUser}`,
+    `installDir=${installDir}`,
+    `socketPath=${socketPath}`,
+    `socketReady=no`,
+  ]
+
+  if (process.platform === 'linux') {
+    const { systemctl, userEnv, units } = systemdUserContext(targetUser)
+    if (systemctl) {
+      for (const unit of units) {
+        try {
+          const status = execFileSync(systemctl, ['--user', 'status', unit, '--no-pager', '-l'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
+          lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
+          break
+        } catch (error: any) {
+          const text = String(error?.stdout || error?.stderr || error?.message || '').trim()
+          if (text) {
+            lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...text.split(/\r?\n/).slice(0, 20))
+            break
+          }
+        }
+      }
+      for (const unit of units) {
+        try {
+          const journal = execFileSync('journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
+          if (String(journal || '').trim()) {
+            lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
+            break
+          }
+        } catch {}
+      }
+    }
+  }
+
+  return lines.join('\n')
+}
+
+function reconcileSystemdUserService(targetUser: string, installDir: string, action: 'start' | 'restart', elevated = false) {
+  if (process.platform !== 'linux') return false
+  const { systemctl, userEnv, units } = systemdUserContext(targetUser)
+  if (!systemctl) return false
 
   if (elevated) {
     runCommandAsUser(targetUser, systemctl, ['--user', 'daemon-reload'], userEnv)
@@ -945,39 +990,31 @@ export async function startInstaller() {
     note('The selected install directory is not writable by the current installer process.', 'Ownership check')
   }
 
-  const shouldWrite = ensureNotCancelled(await confirm({
-    message: 'Write these settings now?',
+  const installServiceNow = process.platform === 'darwin' || process.platform === 'linux'
+  const needsElevatedWrite = !ownership.writable
+  const needsElevatedService = installServiceNow && targetUser !== currentUser
+  const finalRequirements = [
+    'write configuration and launchers',
+    'publish the runtime into the install directory',
+    installServiceNow ? 'install and start the daemon service' : 'skip daemon service installation on this platform',
+    needsElevatedWrite || needsElevatedService ? 'use sudo/doas if needed for the selected target and install dir' : 'no extra privilege escalation currently predicted',
+  ]
+
+  const shouldProceed = ensureNotCancelled(await confirm({
+    message: [
+      'Finalize installation now?',
+      ...finalRequirements.map((item) => `- ${item}`),
+    ].join('\n'),
     initialValue: true,
   }))
 
-  if (!shouldWrite) {
+  if (!shouldProceed) {
     outro('Installer finished without writing changes.')
     return
   }
 
-  const installServiceNow = (process.platform === 'darwin' || process.platform === 'linux')
-    ? ensureNotCancelled(await confirm({
-        message: process.platform === 'darwin'
-          ? 'Install and start a macOS launchd agent for the Rin daemon now?'
-          : 'Install and start a Linux user daemon service for Rin now?',
-        initialValue: true,
-      }))
-    : false
-
-  const needsElevatedWrite = !ownership.writable
-  const needsElevatedService = installServiceNow && (process.platform === 'linux' || process.platform === 'darwin') && targetUser !== currentUser
   const useElevatedWrite = needsElevatedWrite
-    ? ensureNotCancelled(await confirm({
-        message: 'Writing these files needs elevated permissions. Use sudo to finish writing?',
-        initialValue: true,
-      }))
-    : false
   const useElevatedService = needsElevatedService
-    ? ensureNotCancelled(await confirm({
-        message: 'Installing the daemon service may need privilege escalation for the target user. Use sudo when needed?',
-        initialValue: true,
-      }))
-    : false
 
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string; rinPath: string; rinInstallPath: string }
   let publishedRuntime: { releaseRoot: string; currentLink: string }
@@ -1010,11 +1047,7 @@ export async function startInstaller() {
     authData: authResult.authData || {},
     elevated: useElevatedWrite,
   })
-  if (useElevatedWrite && installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
-    installedService = installDaemonService(targetUser, installDir, true)
-  }
-
-  if (!installedService && installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
+  if (installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
     finalizeSpinner.message(useElevatedService ? 'Installing daemon service with elevated permissions...' : 'Installing daemon service...')
     installedService = installDaemonService(targetUser, installDir, useElevatedService)
   }
@@ -1025,7 +1058,7 @@ export async function startInstaller() {
     : false
   if (!daemonReady && installServiceNow) {
     finalizeSpinner.stop('Runtime published and configuration written, but the daemon service did not become ready.')
-    throw new Error(`rin_installer_daemon_not_ready: run 'rin doctor${currentUser === targetUser ? '' : ` -u ${targetUser}`}'`) 
+    throw new Error(`rin_installer_daemon_not_ready\n${collectDaemonFailureDetails(targetUser, installDir)}`)
   }
   finalizeSpinner.stop(installedService ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written.')
 
