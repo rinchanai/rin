@@ -85,11 +85,23 @@ export class FooterComponent implements Component {
 		const contextPercentValue = contextUsage?.percent ?? 0;
 		const contextPercent = contextUsage?.percent !== null ? contextPercentValue.toFixed(1) : "?";
 
+		// Replace home directory with ~
+		let pwd = process.cwd();
+		const home = process.env.HOME || process.env.USERPROFILE;
+		if (home && pwd.startsWith(home)) {
+			pwd = `~${pwd.slice(home.length)}`;
+		}
+
+		// Add git branch if available
+		const branch = this.footerData.getGitBranch();
+		if (branch) {
+			pwd = `${pwd} (${branch})`;
+		}
+
 		// Add session name if set
-		let pwd = "";
 		const sessionName = this.session.sessionManager.getSessionName();
 		if (sessionName) {
-			pwd = sessionName;
+			pwd = `${pwd} • ${sessionName}`;
 		}
 
 		// Build stats line
@@ -185,12 +197,8 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		const lines = [] as string[];
-		if (pwd) {
-			const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-			lines.push(pwdLine);
-		}
-		lines.push(dimStatsLeft + dimRemainder);
+		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
+		const lines = [pwdLine, dimStatsLeft + dimRemainder];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();
