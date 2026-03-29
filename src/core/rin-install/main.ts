@@ -904,12 +904,12 @@ export async function startInstaller() {
   const serviceHint = process.platform === 'darwin'
     ? installServiceNow
       ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
-      : 'The launcher auto-starts the daemon on demand. You skipped launchd installation for now.'
+      : 'You skipped launchd installation for now; start the daemon explicitly when needed.'
     : process.platform === 'linux'
       ? installServiceNow
         ? 'A Linux user service will be installed and started for this daemon when supported.'
-        : 'The launcher auto-starts the daemon on demand. You skipped dedicated Linux service installation for now.'
-      : 'The launcher auto-starts the daemon on demand; dedicated user services can be layered on later if wanted.'
+        : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
+      : 'No dedicated service was installed; start the daemon explicitly when needed.'
   try {
     publishedRuntime = publishInstalledRuntime(installDir)
     refreshManagedServiceFiles(targetUser, installDir)
@@ -996,7 +996,8 @@ export async function startInstaller() {
     '',
     'Default launcher behavior:',
     '- `rin` uses the saved target user and install dir',
-    '- `rin` in RPC mode auto-starts the daemon when needed',
+    '- `rin` in RPC mode expects the daemon to already be running',
+    '- use `rin start`, `rin stop`, `rin restart`, or `rin doctor` for daemon control',
     '- `rin --std` enters std mode for that target',
     '- `rin -t <name>` attaches/creates a hidden tmux TUI session',
     '',

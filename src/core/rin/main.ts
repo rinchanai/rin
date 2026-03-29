@@ -311,7 +311,7 @@ function resolveInstallDirForTarget(parsed: ReturnType<typeof parseArgs>) {
   return parsed.installDir || path.join(target?.home || os.homedir(), '.rin')
 }
 
-async function runRestart(parsed: ReturnType<typeof parseArgs>) {
+function daemonControlContext(parsed: ReturnType<typeof parseArgs>) {
   const repoRoot = repoRootFromHere()
   const installDir = resolveInstallDirForTarget(parsed)
   const targetUser = parsed.targetUser
@@ -319,28 +319,61 @@ async function runRestart(parsed: ReturnType<typeof parseArgs>) {
   const systemctl = process.platform === 'linux'
     ? (fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : ''))
     : ''
+  const socketPath = socketPathForUser(targetUser)
+  return { repoRoot, installDir, targetUser, runtimeEnv, systemctl, socketPath }
+}
 
-  if (systemctl) {
-    for (const unit of [`rin-daemon-${targetUser}.service`, 'rin-daemon.service']) {
-      try {
-        const check = buildUserShell(targetUser, [systemctl, '--user', 'status', unit], runtimeEnv)
-        execFileSync(check.command, check.args, { stdio: 'ignore', env: check.env, cwd: repoRoot })
-        const restart = buildUserShell(targetUser, [systemctl, '--user', 'restart', unit], runtimeEnv)
-        execFileSync(restart.command, restart.args, { stdio: 'inherit', env: restart.env, cwd: repoRoot })
-        console.log(`rin restart complete: ${unit}`)
-        return
-      } catch {}
-    }
+function tryManagedServiceAction(context: ReturnType<typeof daemonControlContext>, action: 'start' | 'stop' | 'restart') {
+  if (!context.systemctl) return false
+  for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
+    try {
+      const check = buildUserShell(context.targetUser, [context.systemctl, '--user', 'status', unit], context.runtimeEnv)
+      execFileSync(check.command, check.args, { stdio: 'ignore', env: check.env, cwd: context.repoRoot })
+      const run = buildUserShell(context.targetUser, [context.systemctl, '--user', action, unit], context.runtimeEnv)
+      execFileSync(run.command, run.args, { stdio: 'inherit', env: run.env, cwd: context.repoRoot })
+      console.log(`rin ${action} complete: ${unit}`)
+      return true
+    } catch {}
   }
+  return false
+}
 
+async function runStart(parsed: ReturnType<typeof parseArgs>) {
+  const context = daemonControlContext(parsed)
+  if (tryManagedServiceAction(context, 'start')) return
+  await ensureDaemonAvailable(context.repoRoot, context.targetUser, context.runtimeEnv)
+  console.log('rin start complete')
+}
+
+async function runStop(parsed: ReturnType<typeof parseArgs>) {
+  const context = daemonControlContext(parsed)
+  if (tryManagedServiceAction(context, 'stop')) return
   try {
     const pkill = requireTool('pkill', ['/usr/bin/pkill', '/bin/pkill'])
-    const daemonPattern = `${installDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/app/.*/dist/(app/rin-daemon/daemon\\.js|daemon\\.js)`
-    const stop = buildUserShell(targetUser, [pkill, '-f', daemonPattern], runtimeEnv)
-    execFileSync(stop.command, stop.args, { stdio: 'ignore', env: stop.env, cwd: repoRoot })
+    const daemonPattern = `${context.installDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/app/.*/dist/(app/rin-daemon/daemon\\.js|daemon\\.js)`
+    const stop = buildUserShell(context.targetUser, [pkill, '-f', daemonPattern], context.runtimeEnv)
+    execFileSync(stop.command, stop.args, { stdio: 'ignore', env: stop.env, cwd: context.repoRoot })
   } catch {}
+  console.log('rin stop complete')
+}
 
-  await ensureDaemonAvailable(repoRoot, targetUser, runtimeEnv)
+async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
+  const context = daemonControlContext(parsed)
+  const socketReady = await canConnectSocket(context.socketPath)
+  console.log([
+    `targetUser=${context.targetUser}`,
+    `installDir=${context.installDir}`,
+    `socketPath=${context.socketPath}`,
+    `socketReady=${socketReady ? 'yes' : 'no'}`,
+    `serviceManager=${context.systemctl ? 'systemd-user' : 'none'}`,
+  ].join('\n'))
+}
+
+async function runRestart(parsed: ReturnType<typeof parseArgs>) {
+  const context = daemonControlContext(parsed)
+  if (tryManagedServiceAction(context, 'restart')) return
+  await runStop(parsed)
+  await runStart(parsed)
   console.log('rin restart complete')
 }
 
@@ -398,12 +431,15 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
 
 function usage() {
   console.log([
-    'Usage: rin [update|upgrade|restart] [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
+    'Usage: rin [update|upgrade|start|stop|restart|doctor] [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
     '',
     'Defaults to the RPC TUI for the target user.',
     'Commands:',
     '  update, upgrade      Upgrade the installed Rin runtime from GitHub main',
+    '  start                Start the target user daemon',
+    '  stop                 Stop the target user daemon',
     '  restart              Restart the target user daemon',
+    '  doctor               Show daemon/socket diagnostics for the target user',
     '',
     'Options:',
     '  --user, -u <name>    Run against a specific daemon user',
@@ -429,8 +465,8 @@ function parseArgs(argv: string[]) {
       command = 'update'
       continue
     }
-    if (!command && arg === 'restart') {
-      command = 'restart'
+    if (!command && ['start', 'stop', 'restart', 'doctor'].includes(arg)) {
+      command = arg
       continue
     }
     if (arg === '--user' || arg === '-u') {
@@ -478,8 +514,20 @@ export async function startRinCli() {
     await runUpdate(parsed)
     return
   }
+  if (parsed.command === 'start') {
+    await runStart(parsed)
+    return
+  }
+  if (parsed.command === 'stop') {
+    await runStop(parsed)
+    return
+  }
   if (parsed.command === 'restart') {
     await runRestart(parsed)
+    return
+  }
+  if (parsed.command === 'doctor') {
+    await runDoctor(parsed)
     return
   }
 
@@ -504,7 +552,10 @@ export async function startRinCli() {
   }
 
   if (!parsed.std) {
-    await ensureDaemonAvailable(repoRoot, targetUser, runtimeEnv)
+    const socketPath = socketPathForUser(targetUser)
+    if (!(await canConnectSocket(socketPath))) {
+      throw new Error(`rin_daemon_unavailable: daemon is not running for ${targetUser}; run 'rin start${parsed.explicitUser ? ` -u ${targetUser}` : ''}' first`)
+    }
   }
 
   if (parsed.tmuxSession) {
