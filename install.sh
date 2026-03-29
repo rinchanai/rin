@@ -2,7 +2,9 @@
 set -eu
 
 REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/THE-cattail/rin}
-TMPDIR_BASE=${TMPDIR:-/tmp}
+CACHE_BASE=${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}
+TMPDIR_BASE=${RIN_INSTALL_TMPDIR:-$CACHE_BASE/rin-install}
+mkdir -p "$TMPDIR_BASE"
 WORKDIR=$(mktemp -d "$TMPDIR_BASE/rin-install.XXXXXX")
 ARCHIVE="$WORKDIR/rin.tar.gz"
 SRC_DIR="$WORKDIR/src"
