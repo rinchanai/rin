@@ -325,11 +325,16 @@ function daemonControlContext(parsed: ReturnType<typeof parseArgs>) {
 
 function tryManagedServiceAction(context: ReturnType<typeof daemonControlContext>, action: 'start' | 'stop' | 'restart') {
   if (!context.systemctl) return false
+  try {
+    const reload = buildUserShell(context.targetUser, [context.systemctl, '--user', 'daemon-reload'], context.runtimeEnv)
+    execFileSync(reload.command, reload.args, { stdio: 'ignore', env: reload.env, cwd: context.repoRoot })
+  } catch {}
   for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
     try {
       const check = buildUserShell(context.targetUser, [context.systemctl, '--user', 'status', unit], context.runtimeEnv)
       execFileSync(check.command, check.args, { stdio: 'ignore', env: check.env, cwd: context.repoRoot })
-      const run = buildUserShell(context.targetUser, [context.systemctl, '--user', action, unit], context.runtimeEnv)
+      const effectiveAction = action === 'start' ? 'restart' : action
+      const run = buildUserShell(context.targetUser, [context.systemctl, '--user', effectiveAction, unit], context.runtimeEnv)
       execFileSync(run.command, run.args, { stdio: 'inherit', env: run.env, cwd: context.repoRoot })
       console.log(`rin ${action} complete: ${unit}`)
       return true

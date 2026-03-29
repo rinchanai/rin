@@ -550,6 +550,40 @@ function refreshManagedServiceFiles(targetUser: string, installDir: string, elev
   }
 }
 
+function reconcileSystemdUserService(targetUser: string, installDir: string, action: 'start' | 'restart', elevated = false) {
+  if (process.platform !== 'linux') return false
+  const systemctl = fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : '')
+  if (!systemctl) return false
+  const target = findSystemUser(targetUser) as any
+  const uid = Number(target?.uid ?? -1)
+  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : ''
+  const userEnv = runtimeDir && fs.existsSync(runtimeDir)
+    ? { XDG_RUNTIME_DIR: runtimeDir, DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus` }
+    : {}
+  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
+  const units = [unitName, 'rin-daemon.service']
+
+  if (elevated) {
+    runCommandAsUser(targetUser, systemctl, ['--user', 'daemon-reload'], userEnv)
+    for (const unit of units) {
+      try {
+        runCommandAsUser(targetUser, systemctl, ['--user', action, unit], userEnv)
+        return true
+      } catch {}
+    }
+    return false
+  }
+
+  execFileSync(systemctl, ['--user', 'daemon-reload'], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
+  for (const unit of units) {
+    try {
+      execFileSync(systemctl, ['--user', action, unit], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
+      return true
+    } catch {}
+  }
+  return false
+}
+
 function installDaemonService(targetUser: string, installDir: string, elevated = false) {
   if (process.platform === 'darwin') return installLaunchdAgent(targetUser, installDir, elevated)
   if (process.platform === 'linux' && (fs.existsSync('/usr/bin/systemctl') || fs.existsSync('/bin/systemctl'))) {
@@ -957,6 +991,7 @@ export async function startInstaller() {
   try {
     publishedRuntime = publishInstalledRuntime(installDir)
     refreshManagedServiceFiles(targetUser, installDir)
+    reconcileSystemdUserService(targetUser, installDir, 'restart')
     written = await persistInstallerOutputs({
       currentUser,
       targetUser,
@@ -980,6 +1015,7 @@ export async function startInstaller() {
       finalizeSpinner.message('Publishing runtime and writing configuration with elevated permissions...')
       publishedRuntime = publishInstalledRuntime(installDir, true)
       refreshManagedServiceFiles(targetUser, installDir, true)
+      reconcileSystemdUserService(targetUser, installDir, 'restart', true)
       written = await persistInstallerOutputs({
         currentUser,
         targetUser,
