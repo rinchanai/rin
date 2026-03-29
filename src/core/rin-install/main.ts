@@ -994,6 +994,12 @@ export async function startInstaller() {
     `- installer command shims are written for ${currentUser} under ${path.join(homeForUser(currentUser), '.local', 'bin')}`,
     '- ensure that directory is on your PATH when launching `rin` or `rin-install`',
     '',
+    'Recommended first commands:',
+    `- start daemon: rin start${currentUser === targetUser ? '' : ` -u ${targetUser}`}`,
+    `- enter RPC TUI: rin${currentUser === targetUser ? '' : ` -u ${targetUser}`}`,
+    `- enter std TUI: rin --std${currentUser === targetUser ? '' : ` -u ${targetUser}`}`,
+    `- attach/create tmux TUI: rin -t main${currentUser === targetUser ? '' : ` -u ${targetUser}`}`,
+    '',
     'Default launcher behavior:',
     '- `rin` uses the saved target user and install dir',
     '- `rin` in RPC mode expects the daemon to already be running',
@@ -1008,6 +1014,7 @@ export async function startInstaller() {
     '- Treat it like a shell-capable operator on that account and use it carefully.',
   ].join('\n'), 'Written paths')
 
-  outro(`Installer wrote config for ${targetUser}. You can start with: rin, rin --std, rin -t main${installedService ? `, and ${installedService.kind} service is installed.` : ''}`)
+  const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
+  outro(`Installer wrote config for ${targetUser}. Next: rin start${userSuffix}, then rin${userSuffix}, or rin --std${userSuffix}${installedService ? ` (${installedService.kind} service installed).` : '.'}`)
 }
 
