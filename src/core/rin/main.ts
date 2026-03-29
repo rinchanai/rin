@@ -365,13 +365,40 @@ async function runStop(parsed: ReturnType<typeof parseArgs>) {
 async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   const context = daemonControlContext(parsed)
   const socketReady = await canConnectSocket(context.socketPath)
-  console.log([
+  const lines = [
     `targetUser=${context.targetUser}`,
     `installDir=${context.installDir}`,
     `socketPath=${context.socketPath}`,
     `socketReady=${socketReady ? 'yes' : 'no'}`,
     `serviceManager=${context.systemctl ? 'systemd-user' : 'none'}`,
-  ].join('\n'))
+  ]
+
+  if (context.systemctl) {
+    for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
+      try {
+        const status = execFileSync(context.systemctl, ['--user', 'status', unit, '--no-pager', '-l'], { encoding: 'utf8', env: { ...process.env, ...context.runtimeEnv } })
+        lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
+        break
+      } catch (error: any) {
+        const text = String(error?.stdout || error?.stderr || error?.message || '').trim()
+        if (text) {
+          lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...text.split(/\r?\n/).slice(0, 20))
+          break
+        }
+      }
+    }
+    for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
+      try {
+        const journal = execFileSync('journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], { encoding: 'utf8', env: { ...process.env, ...context.runtimeEnv } })
+        if (String(journal || '').trim()) {
+          lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
+          break
+        }
+      } catch {}
+    }
+  }
+
+  console.log(lines.join('\n'))
 }
 
 async function runRestart(parsed: ReturnType<typeof parseArgs>) {
