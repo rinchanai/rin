@@ -973,6 +973,21 @@ export async function startInstaller() {
       }))
     : false
 
+  const needsElevatedWrite = !ownership.writable
+  const needsElevatedService = installServiceNow && (process.platform === 'linux' || process.platform === 'darwin') && targetUser !== currentUser
+  const useElevatedWrite = needsElevatedWrite
+    ? ensureNotCancelled(await confirm({
+        message: 'Writing these files needs elevated permissions. Use sudo to finish writing?',
+        initialValue: true,
+      }))
+    : false
+  const useElevatedService = needsElevatedService
+    ? ensureNotCancelled(await confirm({
+        message: 'Installing the daemon service may need privilege escalation for the target user. Use sudo when needed?',
+        initialValue: true,
+      }))
+    : false
+
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string; rinPath: string; rinInstallPath: string }
   let publishedRuntime: { releaseRoot: string; currentLink: string }
   let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
@@ -987,85 +1002,40 @@ export async function startInstaller() {
         ? 'A Linux user service will be installed and started for this daemon when supported.'
         : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
       : 'No dedicated service was installed; start the daemon explicitly when needed.'
-  finalizeSpinner.start('Publishing runtime and writing configuration...')
-  try {
-    publishedRuntime = publishInstalledRuntime(installDir)
-    refreshManagedServiceFiles(targetUser, installDir)
-    reconcileSystemdUserService(targetUser, installDir, 'restart')
-    written = await persistInstallerOutputs({
-      currentUser,
-      targetUser,
-      installDir,
-      provider: String(provider),
-      modelId: String(modelId),
-      thinkingLevel: String(thinkingLevel),
-      koishiDescription,
-      koishiDetail,
-      koishiConfig,
-      authData: authResult.authData || {},
-    })
-  } catch (error: any) {
-    const message = String(error?.message || error || '')
-    if (/EACCES|EPERM|permission denied/i.test(message)) {
-      finalizeSpinner.stop('Publishing runtime and writing configuration needs elevated permissions.')
-      const useSudo = ensureNotCancelled(await confirm({
-        message: 'Writing these files needs elevated permissions. Use sudo to finish writing?',
-        initialValue: true,
-      }))
-      if (!useSudo) throw error
-      finalizeSpinner.start('Publishing runtime and writing configuration with elevated permissions...')
-      publishedRuntime = publishInstalledRuntime(installDir, true)
-      refreshManagedServiceFiles(targetUser, installDir, true)
-      reconcileSystemdUserService(targetUser, installDir, 'restart', true)
-      written = await persistInstallerOutputs({
-        currentUser,
-        targetUser,
-        installDir,
-        provider: String(provider),
-        modelId: String(modelId),
-        thinkingLevel: String(thinkingLevel),
-        koishiDescription,
-        koishiDetail,
-        koishiConfig,
-        authData: authResult.authData || {},
-        elevated: true,
-      })
-      if (installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
-        installedService = installDaemonService(targetUser, installDir, true)
-      }
-    } else {
-      throw error
-    }
+  finalizeSpinner.start(useElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
+  publishedRuntime = publishInstalledRuntime(installDir, useElevatedWrite)
+  refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
+  reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite)
+  written = await persistInstallerOutputs({
+    currentUser,
+    targetUser,
+    installDir,
+    provider: String(provider),
+    modelId: String(modelId),
+    thinkingLevel: String(thinkingLevel),
+    koishiDescription,
+    koishiDetail,
+    koishiConfig,
+    authData: authResult.authData || {},
+    elevated: useElevatedWrite,
+  })
+  if (useElevatedWrite && installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
+    installedService = installDaemonService(targetUser, installDir, true)
   }
 
   if (!installedService && installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
-    finalizeSpinner.message('Installing daemon service...')
-    try {
-      installedService = installDaemonService(targetUser, installDir)
-    } catch (error: any) {
-      const message = String(error?.message || error || '')
-      if (/not permitted|permission denied|EACCES|EPERM|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|Failed to connect to user scope bus/i.test(message)) {
-        finalizeSpinner.stop('Installing the daemon service needs elevated permissions or access to the target user bus.')
-        const usePrivilegeForService = ensureNotCancelled(await confirm({
-          message: 'Installing the daemon service needs privilege escalation or a target user session bus. Use privilege escalation now?',
-          initialValue: true,
-        }))
-        if (usePrivilegeForService) {
-          finalizeSpinner.start('Installing daemon service with elevated permissions...')
-          installedService = installDaemonService(targetUser, installDir, true)
-        } else {
-          throw error
-        }
-      } else {
-        throw error
-      }
-    }
+    finalizeSpinner.message(useElevatedService ? 'Installing daemon service with elevated permissions...' : 'Installing daemon service...')
+    installedService = installDaemonService(targetUser, installDir, useElevatedService)
   }
 
   finalizeSpinner.message(installedService ? 'Waiting for daemon to become ready...' : 'Starting daemon...')
   daemonReady = installedService
     ? await waitForSocket(daemonSocketPathForUser(targetUser))
     : await startDaemonDirectly(targetUser, installDir)
+  if (!daemonReady) {
+    finalizeSpinner.message('Daemon did not become ready through the service; starting it directly...')
+    daemonReady = await startDaemonDirectly(targetUser, installDir)
+  }
   finalizeSpinner.stop(daemonReady ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written, but daemon is not ready yet.')
 
   note([
