@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-import { searchWeb } from "../../src/core/rin-web-search/service.js";
+import { searchWeb } from "../../dist/core/rin-web-search/service.js";
 
 function trimSnippet(value: string, max = 220): string {
 	const text = String(value || "").replace(/\s+/g, " ").trim();

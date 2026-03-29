@@ -111,9 +111,23 @@ function buildUserShell(targetUser: string, argv: string[], env: Record<string, 
   }
 }
 
+function homeForUser(targetUser: string) {
+  const target = readPasswdUser(targetUser)
+  return target?.home || path.join(process.platform === 'darwin' ? '/Users' : '/home', targetUser)
+}
+
 function appConfigDir() {
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', 'rin')
   return path.join(os.homedir(), '.config', 'rin')
+}
+
+function socketPathForUser(targetUser: string) {
+  const currentUser = os.userInfo().username
+  if (!targetUser || targetUser === currentUser) return defaultDaemonSocketPath()
+  if (process.platform === 'darwin') return path.join(homeForUser(targetUser), 'Library', 'Caches', 'rin-daemon', 'daemon.sock')
+  const uid = Number(execFileSync('id', ['-u', targetUser], { encoding: 'utf8' }).trim() || '-1')
+  if (uid >= 0) return path.join('/run/user', String(uid), 'rin-daemon', 'daemon.sock')
+  return defaultDaemonSocketPath()
 }
 
 function installConfigPath() {
@@ -160,7 +174,7 @@ function targetUserRuntimeEnv(targetUser: string, env: Record<string, string> = 
 }
 
 async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: Record<string, string>) {
-  const socketPath = defaultDaemonSocketPath()
+  const socketPath = socketPathForUser(targetUser)
   if (await canConnectSocket(socketPath)) return
 
   const currentUser = os.userInfo().username
