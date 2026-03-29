@@ -1007,12 +1007,13 @@ export async function startInstaller() {
   } catch (error: any) {
     const message = String(error?.message || error || '')
     if (/EACCES|EPERM|permission denied/i.test(message)) {
+      finalizeSpinner.stop('Publishing runtime and writing configuration needs elevated permissions.')
       const useSudo = ensureNotCancelled(await confirm({
         message: 'Writing these files needs elevated permissions. Use sudo to finish writing?',
         initialValue: true,
       }))
       if (!useSudo) throw error
-      finalizeSpinner.message('Publishing runtime and writing configuration with elevated permissions...')
+      finalizeSpinner.start('Publishing runtime and writing configuration with elevated permissions...')
       publishedRuntime = publishInstalledRuntime(installDir, true)
       refreshManagedServiceFiles(targetUser, installDir, true)
       reconcileSystemdUserService(targetUser, installDir, 'restart', true)
@@ -1044,12 +1045,13 @@ export async function startInstaller() {
     } catch (error: any) {
       const message = String(error?.message || error || '')
       if (/not permitted|permission denied|EACCES|EPERM|DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR|Failed to connect to user scope bus/i.test(message)) {
+        finalizeSpinner.stop('Installing the daemon service needs elevated permissions or access to the target user bus.')
         const usePrivilegeForService = ensureNotCancelled(await confirm({
           message: 'Installing the daemon service needs privilege escalation or a target user session bus. Use privilege escalation now?',
           initialValue: true,
         }))
         if (usePrivilegeForService) {
-          finalizeSpinner.message('Installing daemon service with elevated permissions...')
+          finalizeSpinner.start('Installing daemon service with elevated permissions...')
           installedService = installDaemonService(targetUser, installDir, true)
         } else {
           throw error
