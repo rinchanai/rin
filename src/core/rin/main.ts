@@ -81,33 +81,36 @@ function buildUserShell(targetUser: string, argv: string[], env: Record<string, 
   const target = readPasswdUser(targetUser)
   if (!target) throw new Error(`target_user_not_found:${targetUser}`)
 
-  const shellCommand = [
-    ...Object.entries(env).map(([key, value]) => `${key}=${shellQuote(value)}`),
-    ...argv.map((arg) => shellQuote(arg)),
-  ].join(' ')
+  const targetHome = target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}`
+  const mergedEnv = { ...process.env, HOME: targetHome, ...env }
+  const envArgs = Object.entries(env).map(([key, value]) => `${key}=${value}`)
 
   const isRoot = typeof process.getuid === 'function' ? process.getuid() === 0 : false
   if (isRoot && process.platform !== 'win32' && fs.existsSync('/usr/sbin/runuser')) {
     return {
       command: '/usr/sbin/runuser',
-      args: ['-u', targetUser, '--', 'sh', '-lc', shellCommand],
-      env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
+      args: ['-u', targetUser, '--', 'env', ...envArgs, ...argv],
+      env: mergedEnv,
     }
   }
 
   const privilegeCommand = pickPrivilegeCommand()
-  if (privilegeCommand.endsWith('doas')) {
+  if (privilegeCommand.endsWith('doas') || privilegeCommand.endsWith('sudo')) {
     return {
       command: privilegeCommand,
-      args: ['-u', targetUser, 'sh', '-lc', shellCommand],
-      env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
+      args: ['-u', targetUser, 'env', ...envArgs, ...argv],
+      env: mergedEnv,
     }
   }
 
+  const shellCommand = [
+    ...Object.entries(env).map(([key, value]) => `${key}=${shellQuote(value)}`),
+    ...argv.map((arg) => shellQuote(arg)),
+  ].join(' ')
   return {
     command: privilegeCommand,
-    args: ['-u', targetUser, 'sh', '-lc', shellCommand],
-    env: { ...process.env, HOME: target.home || `${process.platform === 'darwin' ? '/Users' : '/home'}/${targetUser}` },
+    args: ['sh', '-lc', shellCommand],
+    env: mergedEnv,
   }
 }
 
