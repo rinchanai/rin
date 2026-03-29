@@ -159,6 +159,22 @@ async function canConnectSocket(socketPath: string) {
   })
 }
 
+function canConnectSocketAsTargetUser(targetUser: string, socketPath: string) {
+  const currentUser = os.userInfo().username
+  if (!targetUser || targetUser === currentUser) return canConnectSocket(socketPath)
+  try {
+    const launch = buildUserShell(targetUser, [
+      process.execPath,
+      '-e',
+      `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),500);`,
+    ])
+    execFileSync(launch.command, launch.args, { stdio: 'ignore', env: launch.env, cwd: repoRootFromHere() })
+    return Promise.resolve(true)
+  } catch {
+    return Promise.resolve(false)
+  }
+}
+
 function targetUserRuntimeEnv(targetUser: string, env: Record<string, string> = {}) {
   const target = readPasswdUser(targetUser)
   const uid = typeof process.platform === 'string' && process.platform !== 'darwin' && target?.name
@@ -175,7 +191,7 @@ function targetUserRuntimeEnv(targetUser: string, env: Record<string, string> = 
 
 async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: Record<string, string>) {
   const socketPath = socketPathForUser(targetUser)
-  if (await canConnectSocket(socketPath)) return
+  if (await canConnectSocketAsTargetUser(targetUser, socketPath)) return
 
   const currentUser = os.userInfo().username
   const systemctl = process.platform === 'linux'
@@ -193,7 +209,7 @@ async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: 
     }
     const startedAt = Date.now()
     while (Date.now() - startedAt < 5000) {
-      if (await canConnectSocket(socketPath)) return
+      if (await canConnectSocketAsTargetUser(targetUser, socketPath)) return
       await new Promise((resolve) => setTimeout(resolve, 150))
     }
   }
@@ -210,7 +226,7 @@ async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: 
 
   const startedAt = Date.now()
   while (Date.now() - startedAt < 5000) {
-    if (await canConnectSocket(socketPath)) return
+    if (await canConnectSocketAsTargetUser(targetUser, socketPath)) return
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
 
@@ -369,7 +385,7 @@ function captureAsTargetUser(targetUser: string, argv: string[], env: Record<str
 
 async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   const context = daemonControlContext(parsed)
-  const socketReady = await canConnectSocket(context.socketPath)
+  const socketReady = await canConnectSocketAsTargetUser(context.targetUser, context.socketPath)
   const lines = [
     `targetUser=${context.targetUser}`,
     `installDir=${context.installDir}`,
@@ -590,7 +606,7 @@ export async function startRinCli() {
 
   if (!parsed.std) {
     const socketPath = socketPathForUser(targetUser)
-    if (!(await canConnectSocket(socketPath))) {
+    if (!(await canConnectSocketAsTargetUser(targetUser, socketPath))) {
       throw new Error(`rin_daemon_unavailable: daemon is not running for ${targetUser}; run 'rin doctor${parsed.explicitUser ? ` -u ${targetUser}` : ''}' first`)
     }
   }

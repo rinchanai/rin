@@ -662,10 +662,24 @@ function daemonSocketPathForUser(targetUser: string) {
   return path.join(targetHomeForUser(targetUser), '.cache', 'rin-daemon', 'daemon.sock')
 }
 
-async function waitForSocket(socketPath: string, timeoutMs = 5000) {
+async function waitForSocket(socketPath: string, timeoutMs = 5000, targetUser?: string) {
   const startedAt = Date.now()
   while (Date.now() - startedAt < timeoutMs) {
     const ok = await new Promise<boolean>((resolve) => {
+      if (targetUser) {
+        try {
+          const probe = captureCommandAsUser(targetUser, process.execPath, [
+            '-e',
+            `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),300);`,
+          ])
+          void probe
+          resolve(true)
+          return
+        } catch {
+          resolve(false)
+          return
+        }
+      }
       const socket = net.createConnection(socketPath)
       let done = false
       const finish = (value: boolean) => {
@@ -1071,7 +1085,7 @@ export async function startInstaller() {
 
   finalizeSpinner.message(installedService ? 'Waiting for daemon to become ready...' : 'Finishing without starting daemon...')
   daemonReady = installedService
-    ? await waitForSocket(daemonSocketPathForUser(targetUser))
+    ? await waitForSocket(daemonSocketPathForUser(targetUser), 5000, targetUser)
     : false
   if (!daemonReady && installServiceNow) {
     finalizeSpinner.stop('Runtime published and configuration written, but the daemon service did not become ready.')
