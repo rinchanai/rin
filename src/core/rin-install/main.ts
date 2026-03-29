@@ -2,6 +2,7 @@
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
+import net from 'node:net'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
@@ -557,6 +558,46 @@ function installDaemonService(targetUser: string, installDir: string, elevated =
   throw new Error(`rin_service_install_unsupported:${process.platform}`)
 }
 
+function daemonSocketPathForUser(targetUser: string) {
+  const target = findSystemUser(targetUser) as any
+  if (process.platform === 'darwin') return path.join(targetHomeForUser(targetUser), 'Library', 'Caches', 'rin-daemon', 'daemon.sock')
+  const uid = Number(target?.uid ?? -1)
+  if (uid >= 0) return path.join('/run/user', String(uid), 'rin-daemon', 'daemon.sock')
+  return path.join(targetHomeForUser(targetUser), '.cache', 'rin-daemon', 'daemon.sock')
+}
+
+async function waitForSocket(socketPath: string, timeoutMs = 5000) {
+  const startedAt = Date.now()
+  while (Date.now() - startedAt < timeoutMs) {
+    const ok = await new Promise<boolean>((resolve) => {
+      const socket = net.createConnection(socketPath)
+      let done = false
+      const finish = (value: boolean) => {
+        if (done) return
+        done = true
+        try { socket.destroy() } catch {}
+        resolve(value)
+      }
+      socket.once('connect', () => finish(true))
+      socket.once('error', () => finish(false))
+      setTimeout(() => finish(false), 300)
+    })
+    if (ok) return true
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  return false
+}
+
+async function startDaemonDirectly(targetUser: string, installDir: string) {
+  const daemonEntry = resolveDaemonEntryForInstall(installDir)
+  const runtimeEnv = {
+    RIN_DIR: installDir,
+    PI_CODING_AGENT_DIR: installDir,
+  }
+  runCommandAsUser(targetUser, 'sh', ['-lc', `nohup ${JSON.stringify(process.execPath)} ${JSON.stringify(daemonEntry)} >/dev/null 2>&1 &`], runtimeEnv)
+  return await waitForSocket(daemonSocketPathForUser(targetUser))
+}
+
 function describeOwnership(targetUser: string, installDir: string) {
   const target = findSystemUser(targetUser) as any
   const targetUid = Number(target?.uid ?? -1)
@@ -977,6 +1018,10 @@ export async function startInstaller() {
     }
   }
 
+  const daemonReady = installedService
+    ? await waitForSocket(daemonSocketPathForUser(targetUser))
+    : await startDaemonDirectly(targetUser, installDir)
+
   note([
     `Target install dir: ${installDir}`,
     `Written: ${written.settingsPath}`,
@@ -1008,6 +1053,7 @@ export async function startInstaller() {
     '- `rin -t <name>` attaches/creates a hidden tmux TUI session',
     '',
     `Service/platform note: ${serviceHint}`,
+    `Daemon started now: ${daemonReady ? 'yes' : 'no'}`,
     '',
     'Safety reminder:',
     '- This agent runs with the full permissions of its system user account.',
@@ -1015,6 +1061,6 @@ export async function startInstaller() {
   ].join('\n'), 'Written paths')
 
   const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
-  outro(`Installer wrote config for ${targetUser}. Next: rin start${userSuffix}, then rin${userSuffix}, or rin --std${userSuffix}${installedService ? ` (${installedService.kind} service installed).` : '.'}`)
+  outro(`Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; open with rin${userSuffix} or rin --std${userSuffix}.` : `Daemon is not running yet; use rin start${userSuffix}, then rin${userSuffix} or rin --std${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ''}`)
 }
 
