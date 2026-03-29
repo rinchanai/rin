@@ -1,4 +1,4 @@
-import { loadRinCodingAgent } from '../rin-lib/loader.js'
+import { loadRinInteractiveModeModule } from '../rin-lib/loader.js'
 import { applyRuntimeProfileEnvironment, createConfiguredAgentSession, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import { ensureSearxngSidecar, stopSearxngSidecar } from '../rin-web-search/service.js'
 
@@ -7,6 +7,22 @@ import { RpcInteractiveSession } from './runtime.js'
 import { applyRinTuiOverrides } from './upstream-overrides.js'
 
 type TuiMode = 'rpc' | 'std'
+
+function startupProfiler() {
+  const enabled = /^(1|true|yes)$/i.test(String(process.env.RIN_STARTUP_PROFILE || '').trim())
+  const startedAt = Date.now()
+  let lastAt = startedAt
+  return {
+    mark(label: string) {
+      if (!enabled) return
+      const now = Date.now()
+      const delta = now - lastAt
+      const total = now - startedAt
+      lastAt = now
+      console.error(`[rin-startup] ${label} +${delta}ms total=${total}ms`)
+    },
+  }
+}
 
 function parseMode(argv: string[]): TuiMode {
   const envMode = String(process.env.RIN_TUI_MODE || '').trim().toLowerCase()
@@ -18,16 +34,26 @@ function parseMode(argv: string[]): TuiMode {
 }
 
 export async function startTui(options: { additionalExtensionPaths?: string[] } = {}) {
+  const profile = startupProfiler()
   const runtime = resolveRuntimeProfile()
+  profile.mark('runtime-resolved')
   applyRuntimeProfileEnvironment(runtime)
   if (process.cwd() !== runtime.cwd) {
     process.chdir(runtime.cwd)
   }
 
-  await applyRinTuiOverrides()
-  const codingAgentModule = await loadRinCodingAgent()
-  const { InteractiveMode } = codingAgentModule as any
   const mode = parseMode(process.argv.slice(2))
+  profile.mark(`mode=${mode}`)
+
+  const client = mode === 'rpc' ? new RinDaemonFrontendClient() : null
+  const interactiveModeModulePromise = loadRinInteractiveModeModule()
+  const overridesPromise = applyRinTuiOverrides()
+  const connectPromise = client ? client.connect() : Promise.resolve()
+
+  await Promise.all([overridesPromise, connectPromise])
+  profile.mark('overrides-and-connect-ready')
+  const { InteractiveMode } = await interactiveModeModulePromise as any
+  profile.mark('interactive-mode-loaded')
 
   if (mode === 'std') {
     const webSearchInstanceId = `tui-${process.pid}`
@@ -35,6 +61,7 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
     const { session } = await createConfiguredAgentSession({
       additionalExtensionPaths: options.additionalExtensionPaths,
     })
+    profile.mark('std-session-created')
     const interactiveMode = new InteractiveMode(session, { verbose: true })
     try {
       await interactiveMode.run()
@@ -44,9 +71,8 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
     return
   }
 
-  const client = new RinDaemonFrontendClient()
-  const session = new RpcInteractiveSession(client)
-  await session.connect()
+  const session = new RpcInteractiveSession(client!)
+  profile.mark('rpc-session-created')
 
   try {
     const interactiveMode = new InteractiveMode(session as any, { verbose: true })

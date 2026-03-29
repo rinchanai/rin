@@ -67,7 +67,7 @@ function ensureNotCancelled<T>(value: T | symbol): T {
   return value as T
 }
 
-function detectCurrentUser() {
+export function detectCurrentUser() {
   const candidates = [
     process.env.SUDO_USER,
     process.env.LOGNAME,
@@ -380,28 +380,33 @@ function releaseIdNow() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, 'Z')
 }
 
-function publishInstalledRuntime(installDir: string, elevated = false) {
-  const repoRoot = repoRootFromHere()
+function publishInstalledRuntime(sourceRoot: string, installDir: string, targetUser: string, elevated = false) {
   const releaseRoot = path.join(installDir, 'app', 'releases', releaseIdNow())
   const currentLink = path.join(installDir, 'app', 'current')
   const currentTmpLink = `${currentLink}.tmp`
 
   if (elevated) {
+    const target = findSystemUser(targetUser) as any
+    const targetGroup = target?.name ? String(target?.gid ?? '') : ''
     runPrivileged('mkdir', ['-p', releaseRoot])
     for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
       runPrivileged('rm', ['-rf', path.join(releaseRoot, name)])
-      runPrivileged('cp', ['-a', path.join(repoRoot, name), path.join(releaseRoot, name)])
+      runPrivileged('cp', ['-a', path.join(sourceRoot, name), path.join(releaseRoot, name)])
     }
     try { runPrivileged('rm', ['-rf', currentTmpLink]) } catch {}
     runPrivileged('ln', ['-s', releaseRoot, currentTmpLink])
     try { runPrivileged('rm', ['-rf', currentLink]) } catch {}
     runPrivileged('mv', [currentTmpLink, currentLink])
+    if (target?.name) {
+      runPrivileged('chown', ['-R', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, releaseRoot])
+      try { runPrivileged('chown', ['-h', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, currentLink]) } catch {}
+    }
     return { releaseRoot, currentLink }
   }
 
   ensureDir(path.dirname(releaseRoot))
   for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
-    syncTree(path.join(repoRoot, name), path.join(releaseRoot, name))
+    syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name))
   }
 
   try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
@@ -797,6 +802,86 @@ async function persistInstallerOutputs(options: {
   return { settingsPath, authPath, launcherPath, manifestPath, ...launchers }
 }
 
+export async function finalizeInstallPlan(options: {
+  currentUser: string
+  targetUser: string
+  installDir: string
+  provider?: string
+  modelId?: string
+  thinkingLevel?: string
+  koishiDescription?: string
+  koishiDetail?: string
+  koishiConfig?: any
+  authData?: any
+  sourceRoot?: string
+}) {
+  const currentUser = String(options.currentUser || '').trim() || detectCurrentUser()
+  const targetUser = String(options.targetUser || '').trim() || currentUser
+  const installDir = String(options.installDir || '').trim() || path.join(targetHomeForUser(targetUser), '.rin')
+  const provider = String(options.provider || '')
+  const modelId = String(options.modelId || '')
+  const thinkingLevel = String(options.thinkingLevel || '')
+  const koishiDescription = String(options.koishiDescription || 'disabled for now')
+  const koishiDetail = String(options.koishiDetail || '')
+  const koishiConfig = options.koishiConfig || null
+  const authData = options.authData || {}
+  const sourceRoot = String(options.sourceRoot || '').trim() || repoRootFromHere()
+
+  const ownership = describeOwnership(targetUser, installDir)
+  const installServiceNow = process.platform === 'darwin' || process.platform === 'linux'
+  const useElevatedWrite = !ownership.writable
+  const useElevatedService = installServiceNow && targetUser !== currentUser
+
+  const publishedRuntime = publishInstalledRuntime(sourceRoot, installDir, targetUser, useElevatedWrite)
+  refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
+  reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite)
+  const written = await persistInstallerOutputs({
+    currentUser,
+    targetUser,
+    installDir,
+    provider,
+    modelId,
+    thinkingLevel,
+    koishiDescription,
+    koishiDetail,
+    koishiConfig,
+    authData,
+    elevated: useElevatedWrite,
+  })
+
+  let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
+  if (installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
+    installedService = installDaemonService(targetUser, installDir, useElevatedService)
+  }
+
+  const daemonReady = installedService
+    ? await waitForSocket(daemonSocketPathForUser(targetUser), 5000, targetUser)
+    : false
+  if (!daemonReady && installServiceNow) {
+    throw new Error(`rin_installer_daemon_not_ready\n${collectDaemonFailureDetails(targetUser, installDir)}`)
+  }
+
+  return {
+    currentUser,
+    targetUser,
+    installDir,
+    written,
+    publishedRuntime,
+    installedService,
+    daemonReady,
+    ownership,
+    serviceHint: process.platform === 'darwin'
+      ? installServiceNow
+        ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
+        : 'You skipped launchd installation for now; start the daemon explicitly when needed.'
+      : process.platform === 'linux'
+        ? installServiceNow
+          ? 'A Linux user service will be installed and started for this daemon when supported.'
+          : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
+        : 'No dedicated service was installed; the installer will not start the daemon for you.',
+  }
+}
+
 export async function startInstaller() {
   const currentUser = detectCurrentUser()
   const allUsers = listSystemUsers()
@@ -1044,54 +1129,23 @@ export async function startInstaller() {
     return
   }
 
-  const useElevatedWrite = needsElevatedWrite
-  const useElevatedService = needsElevatedService
-
-  let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string; rinPath: string; rinInstallPath: string }
-  let publishedRuntime: { releaseRoot: string; currentLink: string }
-  let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
-  let daemonReady = false
   const finalizeSpinner = spinner()
-  const serviceHint = process.platform === 'darwin'
-    ? installServiceNow
-      ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
-      : 'You skipped launchd installation for now; start the daemon explicitly when needed.'
-    : process.platform === 'linux'
-      ? installServiceNow
-        ? 'A Linux user service will be installed and started for this daemon when supported.'
-        : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
-      : 'No dedicated service was installed; the installer will not start the daemon for you.'
-  finalizeSpinner.start(useElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
-  publishedRuntime = publishInstalledRuntime(installDir, useElevatedWrite)
-  refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
-  reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite)
-  written = await persistInstallerOutputs({
+  finalizeSpinner.start(needsElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
+  const result = await finalizeInstallPlan({
     currentUser,
     targetUser,
     installDir,
-    provider: String(provider),
-    modelId: String(modelId),
-    thinkingLevel: String(thinkingLevel),
+    provider,
+    modelId,
+    thinkingLevel,
     koishiDescription,
     koishiDetail,
     koishiConfig,
     authData: authResult.authData || {},
-    elevated: useElevatedWrite,
   })
-  if (installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
-    finalizeSpinner.message(useElevatedService ? 'Installing daemon service with elevated permissions...' : 'Installing daemon service...')
-    installedService = installDaemonService(targetUser, installDir, useElevatedService)
-  }
+  finalizeSpinner.stop(result.installedService ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written.')
 
-  finalizeSpinner.message(installedService ? 'Waiting for daemon to become ready...' : 'Finishing without starting daemon...')
-  daemonReady = installedService
-    ? await waitForSocket(daemonSocketPathForUser(targetUser), 5000, targetUser)
-    : false
-  if (!daemonReady && installServiceNow) {
-    finalizeSpinner.stop('Runtime published and configuration written, but the daemon service did not become ready.')
-    throw new Error(`rin_installer_daemon_not_ready\n${collectDaemonFailureDetails(targetUser, installDir)}`)
-  }
-  finalizeSpinner.stop(installedService ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written.')
+  const { written, publishedRuntime, installedService, daemonReady, serviceHint } = result
 
   note([
     `Target install dir: ${installDir}`,

@@ -42,6 +42,35 @@ function getLastAssistantText(messages: AgentMessage[]) {
   return undefined
 }
 
+function calculateContextTokens(usage: any) {
+  if (!usage || typeof usage !== 'object') return 0
+  return Number(usage.totalTokens || 0)
+    || Number(usage.input || 0) + Number(usage.output || 0) + Number(usage.cacheRead || 0) + Number(usage.cacheWrite || 0)
+}
+
+function estimateMessageTokens(message: any) {
+  const text = extractText(message?.content)
+  if (!text) return 0
+  return Math.ceil(text.length / 4)
+}
+
+function estimateContextTokens(messages: AgentMessage[]) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message: any = messages[i]
+    const usage = message?.role === 'assistant' ? message?.usage : undefined
+    const stopReason = String(message?.stopReason || '')
+    if (usage && stopReason !== 'aborted' && stopReason !== 'error') {
+      let trailingTokens = 0
+      for (let j = i + 1; j < messages.length; j++) trailingTokens += estimateMessageTokens(messages[j])
+      return calculateContextTokens(usage) + trailingTokens
+    }
+  }
+
+  let estimated = 0
+  for (const message of messages) estimated += estimateMessageTokens(message)
+  return estimated
+}
+
 function createSettingsManager() {
   const values = {
     showHardwareCursor: false,
@@ -399,20 +428,24 @@ export class RpcInteractiveSession {
   async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[] }) {
     if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images)
     if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images)
+    this.isStreaming = true
     await this.call('prompt', { message, images: options?.images })
   }
 
   async interruptPrompt(message: string, images?: any[]) {
+    this.isStreaming = true
     await this.call('interrupt_prompt', { message, images })
   }
 
   async steer(message: string, images?: any[]) {
     this.enqueuePending('steeringMessages', message)
+    this.isStreaming = true
     await this.call('steer', { message, images })
   }
 
   async followUp(message: string, images?: any[]) {
     this.enqueuePending('followUpMessages', message)
+    this.isStreaming = true
     await this.call('follow_up', { message, images })
   }
 
@@ -580,7 +613,43 @@ export class RpcInteractiveSession {
     return this.lastSessionStats
   }
 
-  getContextUsage() { return this.lastSessionStats?.contextUsage }
+  getContextUsage() {
+    const contextWindow = Number(this.model?.contextWindow || 0)
+    if (contextWindow <= 0) return undefined
+
+    const branch = this.getBranch()
+    let latestCompactionIndex = -1
+    for (let i = branch.length - 1; i >= 0; i--) {
+      if (branch[i]?.type === 'compaction') {
+        latestCompactionIndex = i
+        break
+      }
+    }
+
+    if (latestCompactionIndex >= 0) {
+      let hasPostCompactionUsage = false
+      for (let i = branch.length - 1; i > latestCompactionIndex; i--) {
+        const entry = branch[i]
+        const message: any = entry?.type === 'message' ? entry.message : null
+        const usage = message?.role === 'assistant' ? message?.usage : undefined
+        const stopReason = String(message?.stopReason || '')
+        if (usage && stopReason !== 'aborted' && stopReason !== 'error') {
+          if (calculateContextTokens(usage) > 0) hasPostCompactionUsage = true
+          break
+        }
+      }
+      if (!hasPostCompactionUsage) {
+        return { tokens: null, contextWindow, percent: null }
+      }
+    }
+
+    const tokens = estimateContextTokens(this.messages)
+    return {
+      tokens,
+      contextWindow,
+      percent: (tokens / contextWindow) * 100,
+    }
+  }
 
   async exportToHtml(outputPath?: string) {
     const data = await this.call('export_html', { outputPath })
@@ -611,8 +680,11 @@ export class RpcInteractiveSession {
   private handleRpcEvent(payload: any) {
     if (!payload || typeof payload !== 'object') return
     if (payload.type === 'agent_start') this.isStreaming = true
-    if (payload.type === 'auto_compaction_start') this.isCompacting = true
-    if (payload.type === 'auto_compaction_end') this.isCompacting = false
+    if (payload.type === 'compaction_start') this.isCompacting = true
+    if (payload.type === 'compaction_end') {
+      this.isCompacting = false
+      void this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    }
     if (payload.type === 'auto_retry_start') this.retryAttempt = Number(payload.attempt || 1)
     if (payload.type === 'auto_retry_end') this.retryAttempt = 0
     if (payload.type === 'agent_end') {
@@ -748,9 +820,7 @@ export class RpcInteractiveSession {
       totalMessages: userMessages + assistantMessages + toolResults,
       tokens: { input, output, cacheRead, cacheWrite, total: totalTokens },
       cost,
-      contextUsage: contextWindow > 0
-        ? { tokens: totalTokens, contextWindow, percent: totalTokens > 0 ? (totalTokens / contextWindow) * 100 : 0 }
-        : undefined,
+      contextUsage: this.getContextUsage(),
     }
   }
 

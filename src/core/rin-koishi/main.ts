@@ -377,8 +377,8 @@ class KoishiChatController {
         }
         case 'tool_execution_start':
         case 'tool_execution_end':
-        case 'auto_compaction_start':
-        case 'auto_compaction_end':
+        case 'compaction_start':
+        case 'compaction_end':
           if (this.pendingCompletedAssistantText) {
             void this.flushInterim().catch(() => {})
           }
