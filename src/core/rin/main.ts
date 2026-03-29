@@ -7,6 +7,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { defaultDaemonSocketPath } from '../rin-lib/common.js'
+import { finalizeInstallPlan, detectCurrentUser } from '../rin-install/main.js'
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from '../rin-lib/runtime.js'
 
 function safeString(value: unknown) {
@@ -478,9 +479,6 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
   const tmpDir = path.join(tempRoot, 'tmp')
   const archivePath = path.join(tempRoot, 'rin.tar.gz')
   const sourceRoot = path.join(tempRoot, 'src')
-  const releaseRoot = path.join(installDir, 'app', 'releases', releaseIdNow())
-  const currentLink = path.join(installDir, 'app', 'current')
-  const currentTmpLink = `${currentLink}.tmp`
   const buildEnv = { ...process.env, TMPDIR: tmpDir, TEMP: tmpDir, TMP: tmpDir }
 
   try {
@@ -502,40 +500,14 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
     }
     runCommandSync(npm, ['run', 'build'], { cwd: sourceRoot, env: buildEnv })
 
-    try {
-      fs.mkdirSync(releaseRoot, { recursive: true })
-      for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
-        syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name))
-      }
-
-      try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
-      fs.symlinkSync(releaseRoot, currentTmpLink)
-      try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
-      fs.renameSync(currentTmpLink, currentLink)
-    } catch (error) {
-      if (!isPermissionError(error)) throw error
-      const target = readPasswdUser(parsed.targetUser)
-      const targetGroup = target?.name ? String(execFileSync('id', ['-g', target.name], { encoding: 'utf8' }).trim() || target.name) : ''
-      runPrivileged('mkdir', ['-p', releaseRoot])
-      for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
-        syncTreePrivileged(path.join(sourceRoot, name), path.join(releaseRoot, name))
-      }
-      try { runPrivileged('rm', ['-rf', currentTmpLink]) } catch {}
-      runPrivileged('ln', ['-s', releaseRoot, currentTmpLink])
-      try { runPrivileged('rm', ['-rf', currentLink]) } catch {}
-      runPrivileged('mv', [currentTmpLink, currentLink])
-      if (target?.name) {
-        runPrivileged('chown', ['-R', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, releaseRoot])
-        try { runPrivileged('chown', ['-h', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, currentLink]) } catch {}
-      }
-    }
-
-    writeUserLaunchers(installDir)
-    refreshManagedServiceFiles(parsed.targetUser, installDir)
-    await runRestart(parsed)
-    console.log(`rin update complete: ${releaseRoot}`)
+    const result = await finalizeInstallPlan({
+      currentUser: detectCurrentUser(),
+      targetUser: parsed.targetUser,
+      installDir,
+      sourceRoot,
+    })
+    console.log(`rin update complete: ${result.publishedRuntime.releaseRoot}`)
   } finally {
-    try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
     try { fs.rmSync(tempRoot, { recursive: true, force: true }) } catch {}
   }
 }

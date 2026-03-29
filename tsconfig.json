@@ -13,5 +13,5 @@
     "strict": false,
     "types": ["node"]
   },
-  "include": ["src/app/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
