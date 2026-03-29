@@ -145,6 +145,20 @@ async function canConnectSocket(socketPath: string) {
   })
 }
 
+function targetUserRuntimeEnv(targetUser: string, env: Record<string, string> = {}) {
+  const target = readPasswdUser(targetUser)
+  const uid = typeof process.platform === 'string' && process.platform !== 'darwin' && target?.name
+    ? Number(execFileSync('id', ['-u', targetUser], { encoding: 'utf8' }).trim() || '-1')
+    : -1
+  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : ''
+  const busPath = runtimeDir ? path.join(runtimeDir, 'bus') : ''
+  return {
+    ...env,
+    ...(runtimeDir && fs.existsSync(runtimeDir) ? { XDG_RUNTIME_DIR: runtimeDir } : {}),
+    ...(busPath && fs.existsSync(busPath) ? { DBUS_SESSION_BUS_ADDRESS: `unix:path=${busPath}` } : {}),
+  }
+}
+
 async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: Record<string, string>) {
   const socketPath = defaultDaemonSocketPath()
   if (await canConnectSocket(socketPath)) return
@@ -153,11 +167,12 @@ async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: 
   const systemctl = process.platform === 'linux'
     ? (fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : ''))
     : ''
+  const userEnv = targetUserRuntimeEnv(targetUser, env)
 
   if (targetUser !== currentUser && systemctl) {
     for (const unit of [`rin-daemon-${targetUser}.service`, 'rin-daemon.service']) {
       try {
-        const start = buildUserShell(targetUser, [systemctl, '--user', 'start', unit], env)
+        const start = buildUserShell(targetUser, [systemctl, '--user', 'start', unit], userEnv)
         execFileSync(start.command, start.args, { stdio: 'inherit', env: start.env, cwd: repoRoot })
         break
       } catch {}
@@ -170,7 +185,7 @@ async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: 
   }
 
   const daemonEntry = path.join(repoRoot, 'dist', 'app', 'rin-daemon', 'daemon.js')
-  const launch = buildUserShell(targetUser, [process.execPath, daemonEntry], env)
+  const launch = buildUserShell(targetUser, [process.execPath, daemonEntry], userEnv)
   const child = spawn(launch.command, launch.args, {
     cwd: repoRoot,
     env: launch.env,
@@ -285,8 +300,8 @@ function resolveInstallDirForTarget(parsed: ReturnType<typeof parseArgs>) {
 async function runRestart(parsed: ReturnType<typeof parseArgs>) {
   const repoRoot = repoRootFromHere()
   const installDir = resolveInstallDirForTarget(parsed)
-  const runtimeEnv = { [RIN_DIR_ENV]: installDir, [PI_AGENT_DIR_ENV]: installDir }
   const targetUser = parsed.targetUser
+  const runtimeEnv = targetUserRuntimeEnv(targetUser, { [RIN_DIR_ENV]: installDir, [PI_AGENT_DIR_ENV]: installDir })
   const systemctl = process.platform === 'linux'
     ? (fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : ''))
     : ''
