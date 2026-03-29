@@ -257,10 +257,34 @@ function writeExecutable(filePath: string, content: string) {
   fs.chmodSync(filePath, 0o755)
 }
 
+function isPermissionError(error: unknown) {
+  const code = String((error as any)?.code || '')
+  const message = safeString((error as any)?.message || error)
+  return code === 'EACCES' || code === 'EPERM' || /permission denied/i.test(message)
+}
+
+function updateWorkRoot() {
+  const base = safeString(process.env.XDG_CACHE_HOME).trim() || path.join(os.homedir(), '.cache')
+  const dir = path.join(base, 'rin-update')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
+function runPrivileged(command: string, args: string[], options: any = {}) {
+  const privilegeCommand = pickPrivilegeCommand()
+  execFileSync(privilegeCommand, [command, ...args], { stdio: 'inherit', ...options })
+}
+
 function syncTree(sourcePath: string, destPath: string) {
   runCommandSync('rm', ['-rf', destPath])
   fs.mkdirSync(path.dirname(destPath), { recursive: true })
   runCommandSync('cp', ['-a', sourcePath, destPath])
+}
+
+function syncTreePrivileged(sourcePath: string, destPath: string) {
+  runPrivileged('rm', ['-rf', destPath])
+  runPrivileged('mkdir', ['-p', path.dirname(destPath)])
+  runPrivileged('cp', ['-a', sourcePath, destPath])
 }
 
 function releaseIdNow() {
@@ -319,9 +343,19 @@ function refreshManagedServiceFiles(targetUser: string, installDir: string) {
 
   for (const entry of candidateFiles) {
     if (!fs.existsSync(entry.path)) continue
-    fs.mkdirSync(path.dirname(entry.path), { recursive: true })
-    fs.writeFileSync(entry.path, buildSystemdServiceText(targetUser, target.home, installDir, entry.description), { encoding: 'utf8', mode: 0o644 })
-    fs.chmodSync(entry.path, 0o644)
+    const content = buildSystemdServiceText(targetUser, target.home, installDir, entry.description)
+    try {
+      fs.mkdirSync(path.dirname(entry.path), { recursive: true })
+      fs.writeFileSync(entry.path, content, { encoding: 'utf8', mode: 0o644 })
+      fs.chmodSync(entry.path, 0o644)
+    } catch (error) {
+      if (!isPermissionError(error)) throw error
+      const privilegeCommand = pickPrivilegeCommand()
+      execFileSync(privilegeCommand, ['sh', '-lc', `mkdir -p ${shellQuote(path.dirname(entry.path))} && cat > ${shellQuote(entry.path)} && chmod 0644 ${shellQuote(entry.path)}`], {
+        stdio: ['pipe', 'inherit', 'inherit'],
+        input: content,
+      })
+    }
   }
 }
 
@@ -440,15 +474,18 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
   const wget = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/wget') ? '/usr/bin/wget' : '')
   const tar = requireTool('tar', ['/usr/bin/tar', '/bin/tar'])
   const npm = requireTool('npm', ['/usr/bin/npm', '/bin/npm'])
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-update-'))
+  const tempRoot = fs.mkdtempSync(path.join(updateWorkRoot(), 'work-'))
+  const tmpDir = path.join(tempRoot, 'tmp')
   const archivePath = path.join(tempRoot, 'rin.tar.gz')
   const sourceRoot = path.join(tempRoot, 'src')
   const releaseRoot = path.join(installDir, 'app', 'releases', releaseIdNow())
   const currentLink = path.join(installDir, 'app', 'current')
   const currentTmpLink = `${currentLink}.tmp`
+  const buildEnv = { ...process.env, TMPDIR: tmpDir, TEMP: tmpDir, TMP: tmpDir }
 
   try {
     fs.mkdirSync(sourceRoot, { recursive: true })
+    fs.mkdirSync(tmpDir, { recursive: true })
     if (curl) {
       runCommandSync(curl, ['-fsSL', 'https://github.com/THE-cattail/rin/archive/refs/heads/main.tar.gz', '-o', archivePath])
     } else if (wget) {
@@ -459,21 +496,39 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
     runCommandSync(tar, ['-xzf', archivePath, '-C', sourceRoot, '--strip-components=1'])
 
     if (fs.existsSync(path.join(sourceRoot, 'package-lock.json'))) {
-      runCommandSync(npm, ['ci', '--no-fund', '--no-audit'], { cwd: sourceRoot })
+      runCommandSync(npm, ['ci', '--no-fund', '--no-audit'], { cwd: sourceRoot, env: buildEnv })
     } else {
-      runCommandSync(npm, ['install', '--no-fund', '--no-audit'], { cwd: sourceRoot })
+      runCommandSync(npm, ['install', '--no-fund', '--no-audit'], { cwd: sourceRoot, env: buildEnv })
     }
-    runCommandSync(npm, ['run', 'build'], { cwd: sourceRoot })
+    runCommandSync(npm, ['run', 'build'], { cwd: sourceRoot, env: buildEnv })
 
-    fs.mkdirSync(releaseRoot, { recursive: true })
-    for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
-      syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name))
+    try {
+      fs.mkdirSync(releaseRoot, { recursive: true })
+      for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
+        syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name))
+      }
+
+      try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
+      fs.symlinkSync(releaseRoot, currentTmpLink)
+      try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
+      fs.renameSync(currentTmpLink, currentLink)
+    } catch (error) {
+      if (!isPermissionError(error)) throw error
+      const target = readPasswdUser(parsed.targetUser)
+      const targetGroup = target?.name ? String(execFileSync('id', ['-g', target.name], { encoding: 'utf8' }).trim() || target.name) : ''
+      runPrivileged('mkdir', ['-p', releaseRoot])
+      for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
+        syncTreePrivileged(path.join(sourceRoot, name), path.join(releaseRoot, name))
+      }
+      try { runPrivileged('rm', ['-rf', currentTmpLink]) } catch {}
+      runPrivileged('ln', ['-s', releaseRoot, currentTmpLink])
+      try { runPrivileged('rm', ['-rf', currentLink]) } catch {}
+      runPrivileged('mv', [currentTmpLink, currentLink])
+      if (target?.name) {
+        runPrivileged('chown', ['-R', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, releaseRoot])
+        try { runPrivileged('chown', ['-h', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, currentLink]) } catch {}
+      }
     }
-
-    try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
-    fs.symlinkSync(releaseRoot, currentTmpLink)
-    try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
-    fs.renameSync(currentTmpLink, currentLink)
 
     writeUserLaunchers(installDir)
     refreshManagedServiceFiles(parsed.targetUser, installDir)
