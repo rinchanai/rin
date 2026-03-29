@@ -554,7 +554,7 @@ export async function startRinCli() {
   if (!parsed.std) {
     const socketPath = socketPathForUser(targetUser)
     if (!(await canConnectSocket(socketPath))) {
-      throw new Error(`rin_daemon_unavailable: daemon is not running for ${targetUser}; run 'rin start${parsed.explicitUser ? ` -u ${targetUser}` : ''}' first`)
+      throw new Error(`rin_daemon_unavailable: daemon is not running for ${targetUser}; run 'rin doctor${parsed.explicitUser ? ` -u ${targetUser}` : ''}' first`)
     }
   }
 
