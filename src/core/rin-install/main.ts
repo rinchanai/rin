@@ -622,15 +622,6 @@ async function waitForSocket(socketPath: string, timeoutMs = 5000) {
   return false
 }
 
-async function startDaemonDirectly(targetUser: string, installDir: string) {
-  const daemonEntry = resolveDaemonEntryForInstall(installDir)
-  const runtimeEnv = {
-    RIN_DIR: installDir,
-    PI_CODING_AGENT_DIR: installDir,
-  }
-  runCommandAsUser(targetUser, 'sh', ['-lc', `nohup ${JSON.stringify(process.execPath)} ${JSON.stringify(daemonEntry)} >/dev/null 2>&1 &`], runtimeEnv)
-  return await waitForSocket(daemonSocketPathForUser(targetUser))
-}
 
 function describeOwnership(targetUser: string, installDir: string) {
   const target = findSystemUser(targetUser) as any
@@ -1001,7 +992,7 @@ export async function startInstaller() {
       ? installServiceNow
         ? 'A Linux user service will be installed and started for this daemon when supported.'
         : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
-      : 'No dedicated service was installed; start the daemon explicitly when needed.'
+      : 'No dedicated service was installed; the installer will not start the daemon for you.'
   finalizeSpinner.start(useElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
   publishedRuntime = publishInstalledRuntime(installDir, useElevatedWrite)
   refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
@@ -1028,15 +1019,15 @@ export async function startInstaller() {
     installedService = installDaemonService(targetUser, installDir, useElevatedService)
   }
 
-  finalizeSpinner.message(installedService ? 'Waiting for daemon to become ready...' : 'Starting daemon...')
+  finalizeSpinner.message(installedService ? 'Waiting for daemon to become ready...' : 'Finishing without starting daemon...')
   daemonReady = installedService
     ? await waitForSocket(daemonSocketPathForUser(targetUser))
-    : await startDaemonDirectly(targetUser, installDir)
-  if (!daemonReady) {
-    finalizeSpinner.message('Daemon did not become ready through the service; starting it directly...')
-    daemonReady = await startDaemonDirectly(targetUser, installDir)
+    : false
+  if (!daemonReady && installServiceNow) {
+    finalizeSpinner.stop('Runtime published and configuration written, but the daemon service did not become ready.')
+    throw new Error(`rin_installer_daemon_not_ready: run 'rin doctor${currentUser === targetUser ? '' : ` -u ${targetUser}`}'`) 
   }
-  finalizeSpinner.stop(daemonReady ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written, but daemon is not ready yet.')
+  finalizeSpinner.stop(installedService ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written.')
 
   note([
     `Target install dir: ${installDir}`,
@@ -1077,6 +1068,6 @@ export async function startInstaller() {
   ].join('\n'), 'Written paths')
 
   const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
-  outro(`Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; open with rin${userSuffix} or rin --std${userSuffix}.` : `Daemon is not running yet; use rin start${userSuffix}, then rin${userSuffix} or rin --std${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ''}`)
+  outro(`Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; open with rin${userSuffix} or rin --std${userSuffix}.` : `Daemon was not started by the installer; use rin start${userSuffix}, then rin${userSuffix} or rin --std${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ''}`)
 }
 
