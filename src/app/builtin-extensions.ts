@@ -15,7 +15,6 @@ function repoRootFromHere() {
 export function getBuiltinExtensionPaths() {
   const root = repoRootFromHere()
   return [
-    path.join(root, 'extensions', 'hide-tui-cwd', 'index.ts'),
     path.join(root, 'extensions', 'discover-attention-resources', 'index.ts'),
     path.join(root, 'extensions', 'web-search', 'index.ts'),
     path.join(root, 'extensions', 'reset-system-prompt', 'index.ts'),

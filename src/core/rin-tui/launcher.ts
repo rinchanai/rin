@@ -4,6 +4,7 @@ import { ensureSearxngSidecar, stopSearxngSidecar } from '../rin-web-search/serv
 
 import { RinDaemonFrontendClient } from './rpc-client.js'
 import { RpcInteractiveSession } from './runtime.js'
+import { applyRinTuiOverrides } from './upstream-overrides.js'
 
 type TuiMode = 'rpc' | 'std'
 
@@ -23,6 +24,7 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
     process.chdir(runtime.cwd)
   }
 
+  await applyRinTuiOverrides()
   const codingAgentModule = await loadRinCodingAgent()
   const { InteractiveMode } = codingAgentModule as any
   const mode = parseMode(process.argv.slice(2))

@@ -38,6 +38,27 @@ export async function loadRinSessionManagerModule() {
   return await importSourceModule(path.join('core', 'session-manager.ts'))
 }
 
+export async function loadRinInteractiveModeModule() {
+  if (hasDistModule(path.join('modes', 'interactive', 'interactive-mode.js'))) {
+    return await importDistModule(path.join('modes', 'interactive', 'interactive-mode.js'))
+  }
+  return await importSourceModule(path.join('modes', 'interactive', 'interactive-mode.ts'))
+}
+
+export async function loadRinInteractiveFooterModule() {
+  if (hasDistModule(path.join('modes', 'interactive', 'components', 'footer.js'))) {
+    return await importDistModule(path.join('modes', 'interactive', 'components', 'footer.js'))
+  }
+  return await importSourceModule(path.join('modes', 'interactive', 'components', 'footer.ts'))
+}
+
+export async function loadRinInteractiveThemeModule() {
+  if (hasDistModule(path.join('modes', 'interactive', 'theme', 'theme.js'))) {
+    return await importDistModule(path.join('modes', 'interactive', 'theme', 'theme.js'))
+  }
+  return await importSourceModule(path.join('modes', 'interactive', 'theme', 'theme.ts'))
+}
+
 export function resolveRinCodingAgentDistDir() {
   return codingAgentDistRoot
 }
