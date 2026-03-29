@@ -362,6 +362,11 @@ async function runStop(parsed: ReturnType<typeof parseArgs>) {
   console.log('rin stop complete')
 }
 
+function captureAsTargetUser(targetUser: string, argv: string[], env: Record<string, string>) {
+  const launch = buildUserShell(targetUser, argv, env)
+  return execFileSync(launch.command, launch.args, { encoding: 'utf8', env: launch.env, cwd: repoRootFromHere() })
+}
+
 async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   const context = daemonControlContext(parsed)
   const socketReady = await canConnectSocket(context.socketPath)
@@ -376,7 +381,7 @@ async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   if (context.systemctl) {
     for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
       try {
-        const status = execFileSync(context.systemctl, ['--user', 'status', unit, '--no-pager', '-l'], { encoding: 'utf8', env: { ...process.env, ...context.runtimeEnv } })
+        const status = captureAsTargetUser(context.targetUser, [context.systemctl, '--user', 'status', unit, '--no-pager', '-l'], context.runtimeEnv)
         lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
         break
       } catch (error: any) {
@@ -389,7 +394,7 @@ async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
     }
     for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
       try {
-        const journal = execFileSync('journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], { encoding: 'utf8', env: { ...process.env, ...context.runtimeEnv } })
+        const journal = captureAsTargetUser(context.targetUser, ['journalctl', '--user', '-u', unit, '-n', '20', '--no-pager'], context.runtimeEnv)
         if (String(journal || '').trim()) {
           lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
           break

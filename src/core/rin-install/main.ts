@@ -563,6 +563,23 @@ function systemdUserContext(targetUser: string) {
   return { systemctl, userEnv, units }
 }
 
+function captureCommandAsUser(targetUser: string, command: string, args: string[], extraEnv: Record<string, string> = {}) {
+  const envArgs = Object.entries(extraEnv).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+  const shellCommand = [...envArgs, JSON.stringify(command), ...args.map((arg) => JSON.stringify(arg))].join(' ')
+  const isRoot = typeof process.getuid === 'function' ? process.getuid() === 0 : false
+
+  if (isRoot && fs.existsSync('/usr/sbin/runuser')) {
+    return execFileSync('/usr/sbin/runuser', ['-u', targetUser, '--', 'sh', '-lc', shellCommand], { encoding: 'utf8' })
+  }
+
+  const privilegeCommand = pickPrivilegeCommand()
+  if (privilegeCommand.endsWith('doas') || privilegeCommand.endsWith('sudo')) {
+    return execFileSync(privilegeCommand, ['-u', targetUser, 'sh', '-lc', shellCommand], { encoding: 'utf8' })
+  }
+
+  return execFileSync(privilegeCommand, ['sh', '-lc', shellCommand], { encoding: 'utf8' })
+}
+
 function collectDaemonFailureDetails(targetUser: string, installDir: string) {
   const socketPath = daemonSocketPathForUser(targetUser)
   const lines = [
@@ -577,7 +594,7 @@ function collectDaemonFailureDetails(targetUser: string, installDir: string) {
     if (systemctl) {
       for (const unit of units) {
         try {
-          const status = execFileSync(systemctl, ['--user', 'status', unit, '--no-pager', '-l'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
+          const status = captureCommandAsUser(targetUser, systemctl, ['--user', 'status', unit, '--no-pager', '-l'], userEnv)
           lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
           break
         } catch (error: any) {
@@ -590,7 +607,7 @@ function collectDaemonFailureDetails(targetUser: string, installDir: string) {
       }
       for (const unit of units) {
         try {
-          const journal = execFileSync('journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
+          const journal = captureCommandAsUser(targetUser, 'journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], userEnv)
           if (String(journal || '').trim()) {
             lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
             break
