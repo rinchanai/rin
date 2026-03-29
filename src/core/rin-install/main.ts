@@ -942,6 +942,8 @@ export async function startInstaller() {
   let written: { settingsPath: string; authPath: string; launcherPath: string; manifestPath: string; rinPath: string; rinInstallPath: string }
   let publishedRuntime: { releaseRoot: string; currentLink: string }
   let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
+  let daemonReady = false
+  const finalizeSpinner = spinner()
   const serviceHint = process.platform === 'darwin'
     ? installServiceNow
       ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
@@ -951,6 +953,7 @@ export async function startInstaller() {
         ? 'A Linux user service will be installed and started for this daemon when supported.'
         : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
       : 'No dedicated service was installed; start the daemon explicitly when needed.'
+  finalizeSpinner.start('Publishing runtime and writing configuration...')
   try {
     publishedRuntime = publishInstalledRuntime(installDir)
     refreshManagedServiceFiles(targetUser, installDir)
@@ -974,6 +977,7 @@ export async function startInstaller() {
         initialValue: true,
       }))
       if (!useSudo) throw error
+      finalizeSpinner.message('Publishing runtime and writing configuration with elevated permissions...')
       publishedRuntime = publishInstalledRuntime(installDir, true)
       refreshManagedServiceFiles(targetUser, installDir, true)
       written = await persistInstallerOutputs({
@@ -998,6 +1002,7 @@ export async function startInstaller() {
   }
 
   if (!installedService && installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
+    finalizeSpinner.message('Installing daemon service...')
     try {
       installedService = installDaemonService(targetUser, installDir)
     } catch (error: any) {
@@ -1008,6 +1013,7 @@ export async function startInstaller() {
           initialValue: true,
         }))
         if (usePrivilegeForService) {
+          finalizeSpinner.message('Installing daemon service with elevated permissions...')
           installedService = installDaemonService(targetUser, installDir, true)
         } else {
           throw error
@@ -1018,9 +1024,11 @@ export async function startInstaller() {
     }
   }
 
-  const daemonReady = installedService
+  finalizeSpinner.message(installedService ? 'Waiting for daemon to become ready...' : 'Starting daemon...')
+  daemonReady = installedService
     ? await waitForSocket(daemonSocketPathForUser(targetUser))
     : await startDaemonDirectly(targetUser, installDir)
+  finalizeSpinner.stop(daemonReady ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written, but daemon is not ready yet.')
 
   note([
     `Target install dir: ${installDir}`,
