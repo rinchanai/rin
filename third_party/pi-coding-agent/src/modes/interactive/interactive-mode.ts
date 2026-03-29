@@ -550,14 +550,15 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Update terminal title with session name.
+	 * Update terminal title with session name and cwd.
 	 */
 	private updateTerminalTitle(): void {
+		const cwdBasename = path.basename(process.cwd());
 		const sessionName = this.sessionManager.getSessionName();
 		if (sessionName) {
-			this.ui.terminal.setTitle(`π - ${sessionName}`);
+			this.ui.terminal.setTitle(`π - ${sessionName} - ${cwdBasename}`);
 		} else {
-			this.ui.terminal.setTitle(`π`);
+			this.ui.terminal.setTitle(`π - ${cwdBasename}`);
 		}
 	}
 
