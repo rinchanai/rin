@@ -350,7 +350,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       return true
     }
     if (type === 'get_commands' && !connection.attachedWorker) {
-      writeLine(connection.socket, response(id, type, true, { commands: BUILTIN_SLASH_COMMANDS.map((command) => ({ ...command, source: 'builtin' })) }))
+      requestWorker(getCatalogWorker(), connection, command, false)
       return true
     }
     if (type === 'get_available_models' && !connection.attachedWorker) {
@@ -380,6 +380,29 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       const manager = SessionManager.open(command.sessionPath)
       manager.appendSessionInfo(name)
       writeLine(connection.socket, response(id, type, true))
+      return true
+    }
+    if (type === 'daemon_status') {
+      writeLine(connection.socket, response(id, type, true, {
+        socketPath,
+        workerCount: workers.size,
+        maxWorkers,
+        idleTtlMs,
+        catalogWorkerId: catalogWorker && workers.has(catalogWorker) ? catalogWorker.id : undefined,
+        workers: Array.from(workers).map((worker) => ({
+          id: worker.id,
+          pid: worker.child.pid ?? null,
+          sessionFile: worker.sessionFile,
+          sessionId: worker.sessionId,
+          attachedConnections: worker.connections.size,
+          pendingResponses: worker.pendingResponses.size,
+          isStreaming: worker.isStreaming,
+          isCompacting: worker.isCompacting,
+          lastUsedAt: worker.lastUsedAt,
+          keepAliveUntil: worker.keepAliveUntil,
+          role: catalogWorker === worker ? 'catalog' : 'session',
+        })),
+      }))
       return true
     }
     return false
