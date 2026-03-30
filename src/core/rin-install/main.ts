@@ -3,7 +3,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 import net from 'node:net'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
@@ -804,7 +804,7 @@ async function persistInstallerOutputs(options: {
   return { settingsPath, authPath, launcherPath, manifestPath, ...launchers }
 }
 
-export async function finalizeInstallPlan(options: {
+type FinalizeInstallOptions = {
   currentUser: string
   targetUser: string
   installDir: string
@@ -816,7 +816,46 @@ export async function finalizeInstallPlan(options: {
   koishiConfig?: any
   authData?: any
   sourceRoot?: string
-}) {
+}
+
+async function runFinalizeInstallPlanInChild(options: FinalizeInstallOptions, message: string) {
+  const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-'))
+  const resultPath = path.join(resultDir, 'result.json')
+  const errorPath = path.join(resultDir, 'error.txt')
+  const child = spawn(process.execPath, [process.argv[1] || fileURLToPath(import.meta.url)], {
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      RIN_INSTALL_APPLY_PLAN: JSON.stringify(options),
+      RIN_INSTALL_APPLY_RESULT: resultPath,
+      RIN_INSTALL_APPLY_ERROR: errorPath,
+    },
+  })
+
+  const waitSpinner = spinner()
+  waitSpinner.start(message)
+
+  const exitCode = await new Promise<number>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', (code) => resolve(code ?? 1))
+  })
+
+  if (exitCode === 0 && fs.existsSync(resultPath)) {
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'))
+    waitSpinner.stop(result.installedService ? 'Runtime updated and daemon is ready.' : 'Runtime updated.')
+    try { fs.rmSync(resultDir, { recursive: true, force: true }) } catch {}
+    return result
+  }
+
+  const errorText = fs.existsSync(errorPath)
+    ? String(fs.readFileSync(errorPath, 'utf8') || '').trim()
+    : `rin_installer_apply_failed:${exitCode}`
+  waitSpinner.stop('Update failed.')
+  try { fs.rmSync(resultDir, { recursive: true, force: true }) } catch {}
+  throw new Error(errorText || `rin_installer_apply_failed:${exitCode}`)
+}
+
+export async function finalizeInstallPlan(options: FinalizeInstallOptions) {
   const currentUser = String(options.currentUser || '').trim() || detectCurrentUser()
   const targetUser = String(options.targetUser || '').trim() || currentUser
   const installDir = String(options.installDir || '').trim() || path.join(targetHomeForUser(targetUser), '.rin')
@@ -997,15 +1036,12 @@ async function startUpdater() {
     return
   }
 
-  const finalizeSpinner = spinner()
-  finalizeSpinner.start('Publishing runtime and refreshing the installed target...')
-  const result = await finalizeInstallPlan({
+  const result = await runFinalizeInstallPlanInChild({
     currentUser,
     targetUser,
     installDir,
     sourceRoot: repoRootFromHere(),
-  })
-  finalizeSpinner.stop(result.installedService ? 'Runtime updated and daemon is ready.' : 'Runtime updated.')
+  }, 'Publishing runtime and refreshing the installed target...')
 
   const { written, publishedRuntime, installedService, daemonReady, serviceHint } = result
   const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
@@ -1032,6 +1068,20 @@ async function startUpdater() {
 }
 
 export async function startInstaller() {
+  const applyPlanRaw = String(process.env.RIN_INSTALL_APPLY_PLAN || '').trim()
+  if (applyPlanRaw) {
+    const resultPath = String(process.env.RIN_INSTALL_APPLY_RESULT || '').trim()
+    const errorPath = String(process.env.RIN_INSTALL_APPLY_ERROR || '').trim()
+    try {
+      const result = await finalizeInstallPlan(JSON.parse(applyPlanRaw) as FinalizeInstallOptions)
+      if (resultPath) fs.writeFileSync(resultPath, `${JSON.stringify(result)}\n`, 'utf8')
+      return
+    } catch (error: any) {
+      if (errorPath) fs.writeFileSync(errorPath, String(error?.message || error || 'rin_installer_apply_failed'), 'utf8')
+      throw error
+    }
+  }
+
   if (String(process.env.RIN_INSTALL_MODE || '').trim().toLowerCase() === 'update') {
     await startUpdater()
     return
@@ -1283,9 +1333,7 @@ export async function startInstaller() {
     return
   }
 
-  const finalizeSpinner = spinner()
-  finalizeSpinner.start(needsElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
-  const result = await finalizeInstallPlan({
+  const result = await runFinalizeInstallPlanInChild({
     currentUser,
     targetUser,
     installDir,
@@ -1296,8 +1344,7 @@ export async function startInstaller() {
     koishiDetail,
     koishiConfig,
     authData: authResult.authData || {},
-  })
-  finalizeSpinner.stop(result.installedService ? 'Runtime published, configuration written, and daemon is ready.' : 'Runtime published and configuration written.')
+  }, needsElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
 
   const { written, publishedRuntime, installedService, daemonReady, serviceHint } = result
 
