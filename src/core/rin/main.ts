@@ -6,11 +6,11 @@ import net from 'node:net'
 import { execFileSync, spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { cac } from 'cac'
+
 import { finalizeInstallPlan, detectCurrentUser } from '../rin-install/main.js'
-import { getKoishiSidecarStatus } from '../rin-koishi/service.js'
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from '../rin-lib/runtime.js'
 import { buildUserShell, homeForUser, pickPrivilegeCommand, readPasswdUser, shellQuote, socketPathForUser, targetUserRuntimeEnv } from '../rin-lib/system.js'
-import { getSearxngSidecarStatus } from '../rin-web-search/service.js'
 
 function safeString(value: unknown) {
   if (value == null) return ''
@@ -249,12 +249,12 @@ function refreshManagedServiceFiles(targetUser: string, installDir: string) {
   }
 }
 
-function resolveInstallDirForTarget(parsed: ReturnType<typeof parseArgs>) {
+function resolveInstallDirForTarget(parsed: ParsedArgs) {
   const target = readPasswdUser(parsed.targetUser)
   return parsed.installDir || path.join(target?.home || os.homedir(), '.rin')
 }
 
-function daemonControlContext(parsed: ReturnType<typeof parseArgs>) {
+function daemonControlContext(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere()
   const installDir = resolveInstallDirForTarget(parsed)
   const targetUser = parsed.targetUser
@@ -286,14 +286,14 @@ function tryManagedServiceAction(context: ReturnType<typeof daemonControlContext
   return false
 }
 
-async function runStart(parsed: ReturnType<typeof parseArgs>) {
+async function runStart(parsed: ParsedArgs) {
   const context = daemonControlContext(parsed)
   if (tryManagedServiceAction(context, 'start')) return
   await ensureDaemonAvailable(context.repoRoot, context.targetUser, context.runtimeEnv)
   console.log('rin start complete')
 }
 
-async function runStop(parsed: ReturnType<typeof parseArgs>) {
+async function runStop(parsed: ParsedArgs) {
   const context = daemonControlContext(parsed)
   if (tryManagedServiceAction(context, 'stop')) return
   try {
@@ -347,12 +347,12 @@ async function queryDaemonStatus(socketPath: string) {
   })
 }
 
-async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
+async function runDoctor(parsed: ParsedArgs) {
   const context = daemonControlContext(parsed)
   const socketReady = await canConnectSocketAsTargetUser(context.targetUser, context.socketPath)
   const daemonStatus = socketReady ? await queryDaemonStatus(context.socketPath) : undefined
-  const webSearchStatus = getSearxngSidecarStatus(context.installDir)
-  const koishiStatus = getKoishiSidecarStatus(context.installDir)
+  const webSearchStatus = daemonStatus?.webSearch
+  const koishiStatus = daemonStatus?.koishi
   const lines = [
     `targetUser=${context.targetUser}`,
     `installDir=${context.installDir}`,
@@ -362,15 +362,15 @@ async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   ]
 
   lines.push(
-    `webSearchRuntimeReady=${webSearchStatus.runtime.ready ? 'yes' : 'no'}`,
-    `webSearchInstanceCount=${String(webSearchStatus.instances.length)}`,
+    `webSearchRuntimeReady=${webSearchStatus?.runtime?.ready ? 'yes' : 'no'}`,
+    `webSearchInstanceCount=${String(Array.isArray(webSearchStatus?.instances) ? webSearchStatus.instances.length : 0)}`,
   )
-  for (const instance of webSearchStatus.instances) {
+  for (const instance of Array.isArray(webSearchStatus?.instances) ? webSearchStatus.instances : []) {
     lines.push(`webSearchInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? 'yes' : 'no'} port=${String(instance.port || '')} baseUrl=${instance.baseUrl || ''}`)
   }
 
-  lines.push(`koishiInstanceCount=${String(koishiStatus.instances.length)}`)
-  for (const instance of koishiStatus.instances) {
+  lines.push(`koishiInstanceCount=${String(Array.isArray(koishiStatus?.instances) ? koishiStatus.instances.length : 0)}`)
+  for (const instance of Array.isArray(koishiStatus?.instances) ? koishiStatus.instances : []) {
     lines.push(`koishiInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? 'yes' : 'no'} entry=${instance.entryPath || ''}`)
   }
 
@@ -414,7 +414,7 @@ async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   console.log(lines.join('\n'))
 }
 
-async function runRestart(parsed: ReturnType<typeof parseArgs>) {
+async function runRestart(parsed: ParsedArgs) {
   const context = daemonControlContext(parsed)
   if (tryManagedServiceAction(context, 'restart')) return
   await runStop(parsed)
@@ -422,7 +422,7 @@ async function runRestart(parsed: ReturnType<typeof parseArgs>) {
   console.log('rin restart complete')
 }
 
-async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
+async function runUpdate(parsed: ParsedArgs) {
   const installDir = resolveInstallDirForTarget(parsed)
 
   const curl = process.platform === 'win32' ? '' : (fs.existsSync('/usr/bin/curl') ? '/usr/bin/curl' : '')
@@ -466,87 +466,75 @@ async function runUpdate(parsed: ReturnType<typeof parseArgs>) {
   }
 }
 
-function usage() {
-  console.log([
-    'Usage: rin [update|upgrade|start|stop|restart|doctor] [--user <name>|-u <name>] [--std] [--tmux <session>|-t <session>] [--tmux-list]',
-    '',
-    'Defaults to the RPC TUI for the target user.',
-    'Commands:',
-    '  update, upgrade      Upgrade the installed Rin runtime from GitHub main',
-    '  start                Start the target user daemon',
-    '  stop                 Stop the target user daemon',
-    '  restart              Restart the target user daemon',
-    '  doctor               Show daemon/socket diagnostics for the target user',
-    '',
-    'Options:',
-    '  --user, -u <name>    Run against a specific daemon user',
-    '  --std                Start std TUI instead of RPC TUI',
-    '  --tmux, -t <name>    Create or attach a hidden Rin tmux session',
-    '  --tmux-list          List hidden Rin tmux sessions',
-  ].join('\n'))
+type ParsedArgs = {
+  command: '' | 'update' | 'start' | 'stop' | 'restart' | 'doctor'
+  targetUser: string
+  installDir: string
+  std: boolean
+  tmuxSession: string
+  tmuxList: boolean
+  passthrough: string[]
+  explicitUser: boolean
+  hasSavedInstall: boolean
 }
 
-function parseArgs(argv: string[]) {
-  const installConfig = loadInstallConfig()
-  let command = ''
-  let targetUser = ''
-  let std = false
-  let tmuxSession = ''
-  let tmuxList = false
-  let explicitUser = false
+function collectTuiPassthroughArgs(argv: string[]) {
   const passthrough: string[] = []
-
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
-    if (!command && (arg === 'update' || arg === 'upgrade')) {
-      command = 'update'
-      continue
-    }
-    if (!command && ['start', 'stop', 'restart', 'doctor'].includes(arg)) {
-      command = arg
-      continue
-    }
-    if (arg === '--user' || arg === '-u') {
-      targetUser = safeString(argv[i + 1]).trim()
-      explicitUser = true
+    if (arg === '--user' || arg === '-u' || arg === '--tmux' || arg === '-t') {
       i += 1
       continue
     }
-    if (arg === '--std') {
-      std = true
-      continue
-    }
-    if (arg === '--tmux' || arg === '-t') {
-      tmuxSession = safeString(argv[i + 1]).trim()
-      i += 1
-      continue
-    }
-    if (arg === '--tmux-list') {
-      tmuxList = true
-      continue
-    }
-    if (arg === '-h' || arg === '--help') {
-      usage()
-      process.exit(0)
-    }
+    if (arg === '--std' || arg === '--tmux-list') continue
     passthrough.push(arg)
   }
+  return passthrough
+}
 
+function resolveParsedArgs(command: ParsedArgs['command'], options: any, rawArgv: string[]): ParsedArgs {
+  const installConfig = loadInstallConfig()
+  const targetUser = safeString(options.user).trim()
   return {
     command,
     targetUser: targetUser || safeString(installConfig.defaultTargetUser).trim() || os.userInfo().username,
     installDir: safeString(installConfig.defaultInstallDir).trim(),
-    std,
-    tmuxSession,
-    tmuxList,
-    passthrough,
-    explicitUser,
+    std: Boolean(options.std),
+    tmuxSession: safeString(options.tmux).trim(),
+    tmuxList: Boolean(options.tmuxList),
+    passthrough: command ? [] : collectTuiPassthroughArgs(rawArgv),
+    explicitUser: Boolean(targetUser),
     hasSavedInstall: Boolean(safeString(installConfig.defaultTargetUser).trim() || safeString(installConfig.defaultInstallDir).trim()),
   }
 }
 
+function createCli() {
+  const cli = cac('rin')
+  cli
+    .usage('[command] [options] [-- passthrough]')
+    .option('-u, --user <name>', 'Run against a specific daemon user')
+    .option('--std', 'Start std TUI instead of RPC TUI')
+    .option('-t, --tmux <session>', 'Create or attach a hidden Rin tmux session')
+    .option('--tmux-list', 'List hidden Rin tmux sessions')
+    .help()
+
+  cli.command('update', 'Upgrade the installed Rin runtime from GitHub main').alias('upgrade')
+  cli.command('start', 'Start the target user daemon')
+  cli.command('stop', 'Stop the target user daemon')
+  cli.command('restart', 'Restart the target user daemon')
+  cli.command('doctor', 'Show daemon/socket diagnostics for the target user')
+
+  return cli
+}
+
 export async function startRinCli() {
-  const parsed = parseArgs(process.argv.slice(2))
+  const cli = createCli()
+  const parsedArgv = cli.parse(process.argv, { run: false })
+  const matchedName = safeString(cli.matchedCommandName).trim()
+  const command = matchedName === 'upgrade'
+    ? 'update'
+    : (['update', 'start', 'stop', 'restart', 'doctor'].includes(matchedName) ? matchedName as ParsedArgs['command'] : '')
+  const parsed = resolveParsedArgs(command, parsedArgv.options, process.argv.slice(2))
   if (parsed.command === 'update') {
     await runUpdate(parsed)
     return
