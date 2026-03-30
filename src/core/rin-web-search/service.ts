@@ -158,6 +158,17 @@ function readInstanceState(stateRoot: string, instanceId: string) {
   return readJson<any>(instanceStateFileForState(stateRoot, instanceId), null)
 }
 
+function listInstanceIds(stateRoot: string) {
+  try {
+    return fs.readdirSync(instancesRootForState(stateRoot), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
 function writeInstanceState(stateRoot: string, instanceId: string, value: any) {
   writeJsonAtomic(instanceStateFileForState(stateRoot, instanceId), value)
 }
@@ -379,6 +390,26 @@ async function stopSearxngSidecar(stateRoot: string, options: { logger?: any; in
   return { ok: true, pid: Number(current.pid || 0) }
 }
 
+async function cleanupOrphanSearxngSidecars(stateRoot: string, options: { logger?: any } = {}) {
+  const logger = options.logger
+  const cleaned: Array<{ instanceId: string; pid: number; ownerPid?: number }> = []
+  for (const instanceId of listInstanceIds(stateRoot)) {
+    const state = readInstanceState(stateRoot, instanceId) || {}
+    const ownerPid = Number(state?.ownerPid || 0)
+    const pid = Number(state?.pid || 0)
+    if (!(ownerPid > 1)) continue
+    if (isPidAlive(ownerPid)) continue
+    if (pid > 1 && isPidAlive(pid)) {
+      try { process.kill(pid, 'SIGTERM') } catch {}
+      await sleep(150)
+    }
+    try { fs.rmSync(instanceRootForState(stateRoot, instanceId), { recursive: true, force: true }) } catch {}
+    cleaned.push({ instanceId, pid, ownerPid })
+    try { logger?.info?.(`web-search: cleaned orphan instance=${instanceId} pid=${pid} ownerPid=${ownerPid}`) } catch {}
+  }
+  return { ok: true, cleaned }
+}
+
 function normalizeSearchRequest(raw: WebSearchRequest) {
   const q = safeText(raw?.q)
   const limit = Math.max(1, Math.min(8, Number(raw?.limit || 5) || 5))
@@ -486,9 +517,40 @@ async function searchWeb({ q, limit, domains, freshness, language }: WebSearchRe
   }
 }
 
+function getSearxngSidecarStatus(stateRoot: string) {
+  const runtime = readRuntimeBootstrapState(stateRoot) || {}
+  const instances = listInstanceIds(stateRoot).map((instanceId) => {
+    const state = readInstanceState(stateRoot, instanceId) || {}
+    const pid = Number(state?.pid || 0)
+    return {
+      instanceId,
+      pid,
+      alive: isPidAlive(pid),
+      baseUrl: safeString(state?.baseUrl).trim(),
+      port: Number(state?.port || 0) || undefined,
+      startedAt: safeString(state?.startedAt).trim(),
+      ownerPid: Number(state?.ownerPid || 0) || undefined,
+      statePath: instanceStateFileForState(stateRoot, instanceId),
+      settingsPath: safeString(state?.settingsPath).trim(),
+    }
+  })
+  return {
+    root: dataRootForState(stateRoot),
+    runtime: {
+      ready: Boolean(runtime?.ready),
+      installedAt: safeString(runtime?.installedAt).trim(),
+      pythonBin: safeString(runtime?.pythonBin).trim(),
+      sourceDir: safeString(runtime?.sourceDir).trim(),
+    },
+    instances,
+  }
+}
+
 export {
   RIN_WEB_SEARCH_BASE_URL_ENV,
+  cleanupOrphanSearxngSidecars,
   ensureSearxngSidecar,
+  getSearxngSidecarStatus,
   stopSearxngSidecar,
   searchWeb,
   type WebSearchRequest,

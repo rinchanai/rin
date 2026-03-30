@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
 
 import { loadRinCodingAgent } from '../rin-lib/loader.js'
+import { pickPrivilegeCommand, shellQuote } from '../rin-lib/system.js'
 
 function listSystemUsers() {
   const users: Array<{ name: string; uid: number; gid: number; home: string; shell: string }> = []
@@ -159,10 +160,6 @@ function writeTextFile(filePath: string, value: string, mode = 0o600) {
   fs.chmodSync(filePath, mode)
 }
 
-function shellQuote(value: string) {
-  return `'${String(value).replace(/'/g, `'"'"'`)}'`
-}
-
 function writeExecutable(filePath: string, content: string) {
   writeTextFile(filePath, content, 0o755)
 }
@@ -203,16 +200,6 @@ function appConfigDirForUser(userName: string) {
   const home = homeForUser(userName)
   if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'rin')
   return path.join(home, '.config', 'rin')
-}
-
-function pickPrivilegeCommand() {
-  if (process.platform !== 'win32' && fs.existsSync('/run/current-system/sw/bin/doas')) return '/run/current-system/sw/bin/doas'
-  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/doas')) return '/usr/bin/doas'
-  if (process.platform !== 'win32' && fs.existsSync('/bin/doas')) return '/bin/doas'
-  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/sudo')) return '/usr/bin/sudo'
-  if (process.platform !== 'win32' && fs.existsSync('/bin/sudo')) return '/bin/sudo'
-  if (process.platform !== 'win32' && fs.existsSync('/usr/bin/pkexec')) return '/usr/bin/pkexec'
-  return 'sudo'
 }
 
 function runPrivileged(command: string, args: string[]) {
