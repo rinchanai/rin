@@ -855,6 +855,51 @@ async function runFinalizeInstallPlanInChild(options: FinalizeInstallOptions, me
   throw new Error(errorText || `rin_installer_apply_failed:${exitCode}`)
 }
 
+export async function finalizeCoreUpdate(options: {
+  currentUser: string
+  targetUser: string
+  installDir: string
+  sourceRoot?: string
+}) {
+  const currentUser = String(options.currentUser || '').trim() || detectCurrentUser()
+  const targetUser = String(options.targetUser || '').trim() || currentUser
+  const installDir = String(options.installDir || '').trim() || path.join(targetHomeForUser(targetUser), '.rin')
+  const sourceRoot = String(options.sourceRoot || '').trim() || repoRootFromHere()
+
+  const ownership = describeOwnership(targetUser, installDir)
+  const useElevatedWrite = shouldUseElevatedWrite(targetUser, ownership)
+  const useElevatedService = targetUser !== currentUser
+
+  const publishedRuntime = publishInstalledRuntime(sourceRoot, installDir, targetUser, useElevatedWrite)
+  refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
+  reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite)
+
+  let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
+  if (process.platform === 'darwin' || process.platform === 'linux') {
+    try {
+      installedService = installDaemonService(targetUser, installDir, useElevatedService)
+    } catch {
+      installedService = null
+    }
+  }
+
+  const daemonReady = await waitForSocket(daemonSocketPathForUser(targetUser), 5000, targetUser)
+  if (!daemonReady && installedService) {
+    throw new Error(`rin_core_update_daemon_not_ready\n${collectDaemonFailureDetails(targetUser, installDir)}`)
+  }
+
+  return {
+    currentUser,
+    targetUser,
+    installDir,
+    publishedRuntime,
+    installedService,
+    daemonReady,
+    ownership,
+    mode: 'core-only' as const,
+  }
+}
+
 export async function finalizeInstallPlan(options: FinalizeInstallOptions) {
   const currentUser = String(options.currentUser || '').trim() || detectCurrentUser()
   const targetUser = String(options.targetUser || '').trim() || currentUser
