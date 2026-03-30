@@ -83,7 +83,7 @@ function createSettingsManager() {
   const values = {
     showHardwareCursor: false,
     clearOnShrink: false,
-    editorPaddingX: 1,
+    editorPaddingX: 0,
     autocompleteMaxVisible: 8,
     hideThinkingBlock: false,
     theme: 'dark',
@@ -369,6 +369,7 @@ export class RpcInteractiveSession {
   private lastSessionStats: any = undefined
   private steeringMessages: string[] = []
   private followUpMessages: string[] = []
+  private detachedBlankSession = false
   private listeners = new Set<(event: AgentEvent) => void>()
   private unsubscribeClient?: () => void
   private extensionBindings: RpcExtensionBindings = {}
@@ -422,6 +423,7 @@ export class RpcInteractiveSession {
       }
       this.handleRpcEvent(payload)
     })
+    await this.hydrateSettingsManager()
     await this.refreshState(REFRESH_ALL)
   }
 
@@ -439,22 +441,26 @@ export class RpcInteractiveSession {
   async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[]; source?: string }) {
     if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images)
     if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images)
+    await this.ensureRemoteSession()
     this.isStreaming = true
     await this.call('prompt', { message, images: options?.images, source: options?.source })
   }
 
   async interruptPrompt(message: string, images?: any[]) {
+    await this.ensureRemoteSession()
     this.isStreaming = true
     await this.call('interrupt_prompt', { message, images })
   }
 
   async steer(message: string, images?: any[]) {
+    await this.ensureRemoteSession()
     this.enqueuePending('steeringMessages', message)
     this.isStreaming = true
     await this.call('steer', { message, images })
   }
 
   async followUp(message: string, images?: any[]) {
+    await this.ensureRemoteSession()
     this.enqueuePending('followUpMessages', message)
     this.isStreaming = true
     await this.call('follow_up', { message, images })
@@ -472,15 +478,16 @@ export class RpcInteractiveSession {
   getFollowUpMessages() { return [...this.followUpMessages] }
   async abort() { await this.client.abort() }
 
-  async newSession(options?: { parentSession?: string }) {
-    const data = await this.call('new_session', { parentSession: options?.parentSession })
-    await this.refreshState(REFRESH_ALL)
-    this.clearQueue()
-    return !Boolean(data?.cancelled)
+  async newSession(_options?: { parentSession?: string }) {
+    await this.client.send({ type: 'detach_session' }).catch(() => {})
+    this.resetLocalSessionState()
+    this.detachedBlankSession = true
+    return true
   }
 
   async switchSession(sessionPath: string) {
     const data = await this.call('switch_session', { sessionPath })
+    this.detachedBlankSession = false
     await this.refreshState(REFRESH_ALL)
     return !Boolean(data?.cancelled)
   }
@@ -496,6 +503,12 @@ export class RpcInteractiveSession {
   }
 
   async setModel(model: any) {
+    if (this.detachedBlankSession) {
+      this.model = model
+      this.state.model = model
+      this.settingsManager.setDefaultModelAndProvider(model.provider, model.id)
+      return
+    }
     await this.call('set_model', { provider: model.provider, modelId: model.id })
     await this.refreshState(REFRESH_MODELS)
   }
@@ -504,7 +517,21 @@ export class RpcInteractiveSession {
     this.scopedModels = [...scopedModels]
   }
 
-  async cycleModel(_direction?: 'forward' | 'backward') {
+  async cycleModel(direction?: 'forward' | 'backward') {
+    if (this.detachedBlankSession) {
+      const available = this.scopedModels.length > 0
+        ? this.scopedModels.map((entry) => entry.model)
+        : this.modelRegistry.getAvailable()
+      if (available.length <= 1) return undefined
+      const step = direction === 'backward' ? -1 : 1
+      const currentIndex = Math.max(0, available.findIndex((model: any) => model?.provider === this.model?.provider && model?.id === this.model?.id))
+      const next = available[(currentIndex + step + available.length) % available.length]
+      if (!next) return undefined
+      this.model = next
+      this.state.model = next
+      this.settingsManager.setDefaultModelAndProvider(next.provider, next.id)
+      return { model: next, thinkingLevel: this.thinkingLevel }
+    }
     const data = await this.call('cycle_model')
     await this.refreshState(REFRESH_MODELS)
     return data ?? undefined
@@ -683,7 +710,9 @@ export class RpcInteractiveSession {
 
   async reload() {
     await this.modelRegistry.sync()
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    if (!this.detachedBlankSession) {
+      await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    }
     if (this.extensionRunner) {
       await this.loadLocalExtensions(true)
     }
@@ -789,6 +818,73 @@ export class RpcInteractiveSession {
     this.syncPendingCount()
   }
 
+  private async hydrateSettingsManager() {
+    try {
+      const codingAgentModule: any = await loadRinCodingAgent()
+      const SettingsManager = codingAgentModule?.SettingsManager
+      if (!SettingsManager?.create) return
+      const settings = SettingsManager.create(RUNTIME_PROFILE.cwd, RUNTIME_PROFILE.agentDir)
+      this.settingsManager.setShowHardwareCursor(Boolean(settings.getShowHardwareCursor?.()))
+      this.settingsManager.setClearOnShrink(Boolean(settings.getClearOnShrink?.()))
+      this.settingsManager.setEditorPaddingX(Number(settings.getEditorPaddingX?.() ?? 0))
+      this.settingsManager.setAutocompleteMaxVisible(Number(settings.getAutocompleteMaxVisible?.() ?? 8))
+      this.settingsManager.setHideThinkingBlock(Boolean(settings.getHideThinkingBlock?.()))
+      this.settingsManager.setTheme(String(settings.getTheme?.() || 'dark'))
+      this.settingsManager.setEnableSkillCommands(Boolean(settings.getEnableSkillCommands?.()))
+      this.settingsManager.setShowImages(Boolean(settings.getShowImages?.()))
+      this.settingsManager.setImageAutoResize(Boolean(settings.getImageAutoResize?.()))
+      this.settingsManager.setBlockImages(Boolean(settings.getBlockImages?.()))
+      this.settingsManager.setTransport(String(settings.getTransport?.() || 'stdio'))
+      this.settingsManager.setCollapseChangelog(Boolean(settings.getCollapseChangelog?.()))
+      this.settingsManager.setDoubleEscapeAction(String(settings.getDoubleEscapeAction?.() || 'none'))
+      this.settingsManager.setTreeFilterMode(String(settings.getTreeFilterMode?.() || 'all'))
+      this.settingsManager.setQuietStartup(Boolean(settings.getQuietStartup?.()))
+      this.settingsManager.setLastChangelogVersion(settings.getLastChangelogVersion?.())
+      this.settingsManager.setEnabledModels(settings.getEnabledModels?.())
+      this.settingsManager.setSteeringMode(settings.getSteeringMode?.() || 'all')
+      this.settingsManager.setFollowUpMode(settings.getFollowUpMode?.() || 'one-at-a-time')
+      const provider = String(settings.getDefaultProvider?.() || '')
+      const modelId = String(settings.getDefaultModel?.() || '')
+      if (provider && modelId) this.settingsManager.setDefaultModelAndProvider(provider, modelId)
+    } catch {}
+  }
+
+  private resetLocalSessionState() {
+    this.isStreaming = false
+    this.isCompacting = false
+    this.isBashRunning = false
+    this.retryAttempt = 0
+    this.messages = []
+    this.entries = []
+    this.tree = []
+    this.leafId = null
+    this.entryById = new Map()
+    this.labelsById = new Map()
+    this.sessionFile = undefined
+    this.sessionId = ''
+    this.sessionName = undefined
+    this.lastSessionStats = undefined
+    this.clearQueue()
+    this.state = { ...this.state, messages: this.messages, model: this.model, thinkingLevel: this.thinkingLevel }
+  }
+
+  private async ensureRemoteSession() {
+    if (!this.detachedBlankSession && this.sessionFile) return
+    const data = await this.call('new_session')
+    if (data && data.cancelled) throw new Error('rin_new_session_cancelled')
+
+    if (this.model) {
+      await this.call('set_model', { provider: this.model.provider, modelId: this.model.id })
+    }
+    await this.call('set_thinking_level', { level: this.thinkingLevel })
+    await this.call('set_steering_mode', { mode: this.steeringMode })
+    await this.call('set_follow_up_mode', { mode: this.followUpMode })
+    await this.call('set_auto_compaction', { enabled: this.autoCompactionEnabled })
+
+    this.detachedBlankSession = false
+    await this.refreshState(REFRESH_ALL)
+  }
+
   private async call(type: string, payload: Record<string, unknown> = {}) {
     const response: any = await this.client.send({ type, ...payload })
     if (!response || response.success !== true) {
@@ -799,9 +895,11 @@ export class RpcInteractiveSession {
 
   private async refreshState(flags: RefreshFlags = {}) {
     this.applyState(await this.call('get_state'))
-    if (flags.models) await this.modelRegistry.sync()
-    if (flags.messages) await this.refreshMessages()
-    if (flags.session) await this.refreshSessionData()
+    await Promise.all([
+      flags.models ? this.modelRegistry.sync() : Promise.resolve(),
+      flags.messages ? this.refreshMessages() : Promise.resolve(),
+      flags.session ? this.refreshSessionData() : Promise.resolve(),
+    ])
     this.reconcilePendingQueues(this.pendingMessageCount)
     this.lastSessionStats = this.computeSessionStats()
   }
@@ -818,6 +916,7 @@ export class RpcInteractiveSession {
     this.sessionId = String(state?.sessionId || this.sessionId || '')
     this.sessionFile = typeof state?.sessionFile === 'string' ? state.sessionFile : undefined
     this.sessionName = typeof state?.sessionName === 'string' ? state.sessionName : this.sessionName
+    if (this.sessionFile) this.detachedBlankSession = false
     this.state.model = this.model
     this.state.thinkingLevel = this.thinkingLevel
     this.settingsManager.setSteeringMode(this.steeringMode)
