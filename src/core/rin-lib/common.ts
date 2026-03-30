@@ -7,6 +7,16 @@ export function safeString(value: unknown): string {
 }
 
 export function defaultDaemonSocketPath() {
+  if (process.platform === 'linux') {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : -1
+    if (uid >= 0) {
+      const runUserDir = path.join('/run/user', String(uid))
+      if (os.platform() === 'linux') {
+        return path.join(runUserDir, 'rin-daemon', 'daemon.sock')
+      }
+    }
+  }
+
   const fallbackRuntimeDir = process.platform === 'darwin'
     ? path.join(os.homedir(), 'Library', 'Caches')
     : path.join(os.homedir(), '.cache')
