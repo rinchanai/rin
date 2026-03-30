@@ -467,7 +467,7 @@ async function runUpdate(parsed: ParsedArgs) {
 }
 
 type ParsedArgs = {
-  command: '' | 'update' | 'start' | 'stop' | 'restart' | 'doctor'
+  command: '' | 'start' | 'stop' | 'restart' | 'doctor'
   targetUser: string
   installDir: string
   std: boolean
@@ -518,7 +518,6 @@ function createCli() {
     .option('--tmux-list', 'List hidden Rin tmux sessions')
     .help()
 
-  cli.command('update', 'Upgrade the installed Rin runtime from GitHub main').alias('upgrade')
   cli.command('start', 'Start the target user daemon')
   cli.command('stop', 'Stop the target user daemon')
   cli.command('restart', 'Restart the target user daemon')
@@ -530,15 +529,15 @@ function createCli() {
 export async function startRinCli() {
   const cli = createCli()
   const parsedArgv = cli.parse(process.argv, { run: false })
-  const matchedName = safeString(cli.matchedCommandName).trim()
-  const command = matchedName === 'upgrade'
-    ? 'update'
-    : (['update', 'start', 'stop', 'restart', 'doctor'].includes(matchedName) ? matchedName as ParsedArgs['command'] : '')
-  const parsed = resolveParsedArgs(command, parsedArgv.options, process.argv.slice(2))
-  if (parsed.command === 'update') {
-    await runUpdate(parsed)
+  if (parsedArgv.options.help) {
+    cli.outputHelp()
     return
   }
+  const matchedName = safeString(cli.matchedCommandName).trim()
+  const command = ['start', 'stop', 'restart', 'doctor'].includes(matchedName)
+    ? matchedName as ParsedArgs['command']
+    : ''
+  const parsed = resolveParsedArgs(command, parsedArgv.options, process.argv.slice(2))
   if (parsed.command === 'start') {
     await runStart(parsed)
     return
