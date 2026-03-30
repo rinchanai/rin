@@ -9,6 +9,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { getBuiltinExtensionPaths } from '../builtin-extensions.js'
 import { startDaemon } from '../../core/rin-daemon/daemon.js'
 import { cleanupOrphanKoishiSidecars, ensureKoishiSidecar, stopKoishiSidecar } from '../../core/rin-koishi/service.js'
 import { resolveRuntimeProfile } from '../../core/rin-lib/runtime.js'
@@ -36,7 +37,7 @@ async function main() {
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
   process.on('exit', stop)
-  await startDaemon({ workerPath })
+  await startDaemon({ workerPath, additionalExtensionPaths: getBuiltinExtensionPaths() })
 }
 
 main().catch((error: any) => {

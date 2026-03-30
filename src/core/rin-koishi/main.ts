@@ -10,6 +10,11 @@ import { RinDaemonFrontendClient } from '../rin-tui/rpc-client.js'
 import { RpcInteractiveSession } from '../rin-tui/runtime.js'
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import {
+  chatOutboxDir,
+  type ChatMessagePart,
+  type ChatOutboxPayload,
+} from '../rin-lib/chat-outbox.js'
+import {
   canAccessAgentInput,
   canRunCommand,
   chatStateDir,
@@ -55,6 +60,18 @@ type KoishiChatState = {
   }
 }
 
+type KoishiBridgePromptMeta = {
+  source: 'koishi-bridge'
+  sentAt?: number
+  chatKey?: string
+  chatName?: string
+  userId?: string
+  nickname?: string
+  identity?: string
+}
+
+const KOISHI_BRIDGE_PROMPT_META_PREFIX = '[[rin-koishi-bridge-meta:'
+
 function safeString(value: unknown) {
   if (value == null) return ''
   return String(value)
@@ -62,6 +79,17 @@ function safeString(value: unknown) {
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true })
+}
+
+function listJsonFiles(dir: string) {
+  try {
+    return fs.readdirSync(dir)
+      .filter((name) => name.endsWith('.json'))
+      .sort()
+      .map((name) => path.join(dir, name))
+  } catch {
+    return [] as string[]
+  }
 }
 
 function pickUserId(session: any) {
@@ -100,6 +128,46 @@ function mentionLike(session: any) {
 
 function getIncomingText(session: any) {
   return safeString(session?.stripped?.content || session?.content || '').trim()
+}
+
+function pickSenderNickname(session: any) {
+  const values = [
+    session?.author?.nick,
+    session?.author?.name,
+    session?.author?.nickname,
+    session?.author?.username,
+    session?.username,
+    session?.user?.nick,
+    session?.user?.name,
+    session?.user?.nickname,
+    session?.user?.username,
+  ]
+  for (const value of values) {
+    const text = safeString(value).trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function pickChatName(session: any) {
+  const values = [
+    session?.channel?.name,
+    session?.channelName,
+    session?.guild?.name,
+    session?.guildName,
+  ]
+  for (const value of values) {
+    const text = safeString(value).trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function wrapKoishiBridgePrompt(text: string, meta: KoishiBridgePromptMeta) {
+  const body = safeString(text).trim()
+  if (!body) return ''
+  const encoded = Buffer.from(JSON.stringify(meta), 'utf8').toString('base64')
+  return `${KOISHI_BRIDGE_PROMPT_META_PREFIX}${encoded}]]\n${body}`
 }
 
 function getChatId(session: any) {
@@ -211,6 +279,37 @@ async function sendGenericFile(app: any, chatKey: string, filePath: string, name
   if (!bot) throw new Error(`no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ''}`)
   const fileNode = h('file', { src: toFileUrl(filePath).href, name: name || path.basename(filePath) })
   const content = replyToMessageId ? [h.quote(replyToMessageId), fileNode] : [fileNode]
+  await bot.sendMessage(parsed.chatId, content)
+}
+
+function messagePartToNode(part: ChatMessagePart) {
+  if (part.type === 'text') return part.text
+  if (part.type === 'at') return h.at(part.id, part.name ? { name: part.name } : undefined)
+  if (part.type === 'image') {
+    const src = safeString(part.path).trim() ? toFileUrl(path.resolve(part.path!)).href : safeString(part.url).trim()
+    return h.image(src, safeString(part.mimeType).trim() || undefined)
+  }
+  const src = safeString(part.path).trim() ? toFileUrl(path.resolve(part.path!)).href : safeString(part.url).trim()
+  return h.file(src, safeString(part.mimeType).trim() || undefined, {
+    name: safeString(part.name).trim() || (safeString(part.path).trim() ? path.basename(part.path!) : undefined),
+  })
+}
+
+async function sendOutboxPayload(app: any, payload: ChatOutboxPayload) {
+  if (payload?.type === 'text_delivery') {
+    await sendText(app, safeString(payload.chatKey).trim(), safeString(payload.text).trim(), safeString(payload.replyToMessageId).trim())
+    return
+  }
+  if (payload?.type !== 'parts_delivery') return
+  const chatKey = safeString(payload.chatKey).trim()
+  const parsed = parseChatKey(chatKey)
+  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`)
+  const bot = findBot(app, parsed.platform, parsed.botId)
+  if (!bot) throw new Error(`no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ''}`)
+  const nodes = (Array.isArray(payload.parts) ? payload.parts : []).map(messagePartToNode).filter(Boolean)
+  if (!nodes.length) throw new Error('koishi_outbox_empty_message')
+  const replyToMessageId = safeString(payload.replyToMessageId).trim()
+  const content = replyToMessageId ? [h.quote(replyToMessageId), ...nodes] : nodes
   await bot.sendMessage(parsed.chatId, content)
 }
 
@@ -631,10 +730,20 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
 
   app.middleware(async (session: any, next: () => Promise<any>) => {
     if (session?.__rinKoishiCommandHandled) return ''
-    const decision = await shouldProcessText(session, getIdentity(), registeredCommandNames)
+    const identity = getIdentity()
+    const decision = await shouldProcessText(session, identity, registeredCommandNames)
     if (!decision.allow) return await next()
     const attachments = await extractInboundAttachments(session, chatStateDir(dataDir, decision.chatKey))
-    void getController(decision.chatKey).runTurn({ text: decision.text, attachments, replyToMessageId: safeString(session?.messageId || '').trim() }, 'interrupt_prompt').catch((error) => {
+    const text = wrapKoishiBridgePrompt(decision.text, {
+      source: 'koishi-bridge',
+      sentAt: Number.isFinite(Number(session?.timestamp)) ? Number(session.timestamp) : Date.now(),
+      chatKey: decision.chatKey,
+      chatName: pickChatName(session),
+      userId: pickUserId(session),
+      nickname: pickSenderNickname(session),
+      identity: trustOf(identity, safeString(session?.platform || '').trim(), pickUserId(session)),
+    })
+    void getController(decision.chatKey).runTurn({ text, attachments, replyToMessageId: safeString(session?.messageId || '').trim() }, 'interrupt_prompt').catch((error) => {
       logger.warn(`koishi turn failed chatKey=${decision.chatKey} err=${safeString((error as any)?.message || error)}`)
       void sendText(app, decision.chatKey, `Koishi error: ${safeString((error as any)?.message || error || 'koishi_turn_failed')}`, safeString(session?.messageId || '').trim()).catch(() => {})
     })
@@ -660,8 +769,25 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
     void syncTelegramCommands()
   })
 
+  let cronOutboxTimer: NodeJS.Timeout | null = null
+  const drainCronOutbox = async () => {
+    for (const filePath of listJsonFiles(chatOutboxDir(runtime.agentDir))) {
+      let payload: any = null
+      try {
+        payload = readJsonFile<any>(filePath, null)
+        await sendOutboxPayload(app, payload)
+      } catch (error: any) {
+        logger.warn(`koishi outbox failed file=${filePath} err=${safeString(error?.message || error)}`)
+      } finally {
+        try { fs.rmSync(filePath, { force: true }) } catch {}
+      }
+    }
+  }
+
   await app.start()
   await syncTelegramCommands()
+  cronOutboxTimer = setInterval(() => { void drainCronOutbox().catch(() => {}) }, 1000)
+  void drainCronOutbox().catch(() => {})
   logger.info(`koishi started bots=${JSON.stringify(app.bots.map((bot: any) => ({ platform: bot.platform, selfId: bot.selfId, status: bot.status })))}`)
 
   for (const item of listChatStateFiles(path.join(dataDir, 'chats'))) {
@@ -672,6 +798,7 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
   }
 
   const shutdown = async () => {
+    if (cronOutboxTimer) clearInterval(cronOutboxTimer)
     for (const controller of controllers.values()) controller.dispose()
     try { await app.stop() } catch {}
     process.exit(0)
