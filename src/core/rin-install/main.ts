@@ -747,6 +747,11 @@ function describeOwnership(targetUser: string, installDir: string) {
   }
 }
 
+function shouldUseElevatedWrite(targetUser: string, ownership: ReturnType<typeof describeOwnership>) {
+  const effectiveUser = os.userInfo().username
+  return targetUser !== effectiveUser || !ownership.ownerMatches || !ownership.writable
+}
+
 async function persistInstallerOutputs(options: {
   currentUser: string
   targetUser: string
@@ -839,7 +844,7 @@ export async function finalizeInstallPlan(options: {
 
   const ownership = describeOwnership(targetUser, installDir)
   const installServiceNow = process.platform === 'darwin' || process.platform === 'linux'
-  const useElevatedWrite = !ownership.writable
+  const useElevatedWrite = shouldUseElevatedWrite(targetUser, ownership)
   const useElevatedService = installServiceNow && targetUser !== currentUser
 
   const publishedRuntime = publishInstalledRuntime(sourceRoot, installDir, targetUser, useElevatedWrite)
