@@ -884,7 +884,159 @@ export async function finalizeInstallPlan(options: {
   }
 }
 
+type InstalledTarget = {
+  targetUser: string
+  installDir: string
+  ownerHome: string
+  source: 'manifest' | 'systemd' | 'launchd'
+}
+
+function discoverInstalledTargets() {
+  const rows: InstalledTarget[] = []
+  const seen = new Set<string>()
+
+  const add = (targetUser: string, installDir: string, ownerHome: string, source: InstalledTarget['source']) => {
+    const nextTargetUser = String(targetUser || '').trim()
+    const nextInstallDir = String(installDir || '').trim()
+    const nextOwnerHome = String(ownerHome || '').trim()
+    if (!nextTargetUser || !nextInstallDir || !nextOwnerHome) return
+    const key = `${nextTargetUser}\t${nextInstallDir}\t${nextOwnerHome}`
+    if (seen.has(key)) return
+    seen.add(key)
+    rows.push({ targetUser: nextTargetUser, installDir: nextInstallDir, ownerHome: nextOwnerHome, source })
+  }
+
+  const scanHome = (homeDir: string) => {
+    const userName = path.basename(homeDir)
+    const manifestPath = path.join(homeDir, '.rin', 'config', 'installer.json')
+    const manifest = readJsonFile<any>(manifestPath, null)
+    if (manifest && typeof manifest === 'object') {
+      add(String(manifest.targetUser || userName), String(manifest.installDir || path.join(homeDir, '.rin')), homeDir, 'manifest')
+    }
+
+    const systemdDir = path.join(homeDir, '.config', 'systemd', 'user')
+    try {
+      for (const entry of fs.readdirSync(systemdDir)) {
+        if (!/^rin-daemon(?:-.+)?\.service$/.test(entry)) continue
+        const filePath = path.join(systemdDir, entry)
+        const text = fs.readFileSync(filePath, 'utf8')
+        const match = text.match(/^Environment=RIN_DIR=(.+)$/m)
+        add(userName, match ? match[1].trim() : path.join(homeDir, '.rin'), homeDir, 'systemd')
+      }
+    } catch {}
+
+    const launchAgentsDir = path.join(homeDir, 'Library', 'LaunchAgents')
+    try {
+      for (const entry of fs.readdirSync(launchAgentsDir)) {
+        if (!/^com\.rin\.daemon\..+\.plist$/.test(entry)) continue
+        const filePath = path.join(launchAgentsDir, entry)
+        const text = fs.readFileSync(filePath, 'utf8')
+        const match = text.match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/)
+        add(userName, match ? match[1].trim() : path.join(homeDir, '.rin'), homeDir, 'launchd')
+      }
+    } catch {}
+  }
+
+  for (const root of ['/home', '/Users']) {
+    try {
+      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        scanHome(path.join(root, entry.name))
+      }
+    } catch {}
+  }
+
+  return rows.sort((a, b) => a.targetUser.localeCompare(b.targetUser) || a.installDir.localeCompare(b.installDir) || a.ownerHome.localeCompare(b.ownerHome))
+}
+
+async function startUpdater() {
+  const currentUser = detectCurrentUser()
+  intro('Rin Updater')
+
+  const targets = discoverInstalledTargets()
+  if (!targets.length) {
+    note('No installed Rin daemon targets were discovered on this system.', 'Update targets')
+    outro('Nothing updated.')
+    return
+  }
+
+  const target = targets.length === 1
+    ? targets[0]!
+    : targets[Number(ensureNotCancelled(await select({
+      message: 'Choose an installed Rin target to update.',
+      options: targets.map((item, index) => ({
+        value: index,
+        label: `${item.targetUser} → ${item.installDir}`,
+        hint: `${item.ownerHome} · ${item.source}`,
+      })),
+    })))]!
+
+  const installDir = String(process.env.RIN_UPDATE_INSTALL_DIR || target.installDir).trim() || target.installDir
+  const targetUser = String(process.env.RIN_UPDATE_TARGET_USER || target.targetUser).trim() || target.targetUser
+
+  note([
+    `Current user: ${currentUser}`,
+    `Selected daemon user: ${targetUser}`,
+    `Install dir: ${installDir}`,
+    `Discovered from: ${target.source}`,
+    `Owner home: ${target.ownerHome}`,
+    '',
+    'Updater policy:',
+    '- publish a new runtime release into the existing install dir',
+    '- refresh launchers and installer metadata for the current user',
+    '- refresh managed daemon service files and restart the daemon when applicable',
+    '- preserve existing provider/auth/settings unless changed elsewhere',
+  ].join('\n'), 'Update plan')
+
+  const shouldProceed = ensureNotCancelled(await confirm({
+    message: 'Publish the latest built runtime to this installed target now?',
+    initialValue: true,
+  }))
+  if (!shouldProceed) {
+    outro('Updater finished without writing changes.')
+    return
+  }
+
+  const finalizeSpinner = spinner()
+  finalizeSpinner.start('Publishing runtime and refreshing the installed target...')
+  const result = await finalizeInstallPlan({
+    currentUser,
+    targetUser,
+    installDir,
+    sourceRoot: repoRootFromHere(),
+  })
+  finalizeSpinner.stop(result.installedService ? 'Runtime updated and daemon is ready.' : 'Runtime updated.')
+
+  const { written, publishedRuntime, installedService, daemonReady, serviceHint } = result
+  const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
+
+  note([
+    `Written: ${written.launcherPath}`,
+    `Written: ${written.rinPath}`,
+    `Written: ${written.rinInstallPath}`,
+    `Written: ${publishedRuntime.currentLink}`,
+    `Written: ${publishedRuntime.releaseRoot}`,
+    installedService ? `Written: ${installedService.servicePath}` : '',
+    installedService ? `${installedService.kind} label: ${installedService.label}` : '',
+    '',
+    `Service/platform note: ${serviceHint}`,
+    `Daemon started now: ${daemonReady ? 'yes' : 'no'}`,
+    '',
+    'Recommended next commands:',
+    `- doctor: rin doctor${userSuffix}`,
+    `- RPC TUI: rin${userSuffix}`,
+    `- std TUI: rin --std${userSuffix}`,
+  ].filter(Boolean).join('\n'), 'Updated target')
+
+  outro(`Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with rin${userSuffix} or rin --std${userSuffix}.` : `Use rin start${userSuffix} if you need to start the daemon manually.`}`)
+}
+
 export async function startInstaller() {
+  if (String(process.env.RIN_INSTALL_MODE || '').trim().toLowerCase() === 'update') {
+    await startUpdater()
+    return
+  }
+
   const currentUser = detectCurrentUser()
   const allUsers = listSystemUsers()
   const otherUsers = allUsers.filter((entry) => entry.name !== currentUser)
