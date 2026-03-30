@@ -310,6 +310,10 @@ function createModelRegistry(client: RinDaemonFrontendClient) {
 class RemoteAgent {
   constructor(private client: RinDaemonFrontendClient) {}
 
+  abort() {
+    void this.client.abort().catch(() => {})
+  }
+
   waitForIdle(timeout = 60000) {
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
