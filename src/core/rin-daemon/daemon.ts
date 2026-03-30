@@ -10,6 +10,7 @@ import { getKoishiSidecarStatus } from '../rin-koishi/service.js'
 import { emptySessionState, response } from '../rin-lib/rpc.js'
 import { resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import { getSearxngSidecarStatus } from '../rin-web-search/service.js'
+import { CronScheduler } from './cron.js'
 import { ConnectionState, WorkerPool } from './worker-pool.js'
 
 function ensureDir(dir: string) {
@@ -20,7 +21,7 @@ function writeLine(socket: net.Socket, payload: unknown) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`)
 }
 
-export async function startDaemon(options: { socketPath?: string; workerPath?: string } = {}) {
+export async function startDaemon(options: { socketPath?: string; workerPath?: string; additionalExtensionPaths?: string[] } = {}) {
   const socketPath = options.socketPath || process.argv[2] || defaultDaemonSocketPath()
   const workerPath = options.workerPath || process.env.RIN_WORKER_PATH || path.join(path.dirname(new URL(import.meta.url).pathname), 'worker.js')
   const runtime = resolveRuntimeProfile()
@@ -36,6 +37,13 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       if (requester) writeLine(requester.socket, { type: 'ui', name: 'worker_spawned', payload: { pid: worker.child.pid ?? null } })
     },
   })
+
+  const cronScheduler = new CronScheduler({
+    agentDir: runtime.agentDir,
+    cwd: runtime.cwd,
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  })
+  cronScheduler.start()
 
   try { fs.rmSync(socketPath, { force: true }) } catch {}
   ensureDir(path.dirname(socketPath))
@@ -104,9 +112,44 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
         ...workerPool.getStatusSnapshot(),
         maxWorkers,
         idleTtlMs,
+        taskCount: cronScheduler.listTasks().length,
         webSearch: getSearxngSidecarStatus(runtime.agentDir),
         koishi: getKoishiSidecarStatus(runtime.agentDir),
       }))
+      return true
+    }
+    if (type === 'cron_list_tasks') {
+      writeLine(connection.socket, response(id, type, true, { tasks: cronScheduler.listTasks() }))
+      return true
+    }
+    if (type === 'cron_get_task') {
+      const task = cronScheduler.getTask(String(command.taskId || '').trim())
+      writeLine(connection.socket, response(id, type, Boolean(task), task || 'cron_task_not_found'))
+      return true
+    }
+    if (type === 'cron_upsert_task') {
+      const task = cronScheduler.upsertTask(command.task || {}, command.defaults || {})
+      writeLine(connection.socket, response(id, type, true, { task }))
+      return true
+    }
+    if (type === 'cron_delete_task') {
+      const ok = cronScheduler.deleteTask(String(command.taskId || '').trim())
+      writeLine(connection.socket, response(id, type, ok, ok ? { deleted: true } : 'cron_task_not_found'))
+      return true
+    }
+    if (type === 'cron_complete_task') {
+      const task = cronScheduler.completeTask(String(command.taskId || '').trim(), String(command.reason || 'completed_by_tool'))
+      writeLine(connection.socket, response(id, type, true, { task }))
+      return true
+    }
+    if (type === 'cron_pause_task') {
+      const task = cronScheduler.pauseTask(String(command.taskId || '').trim())
+      writeLine(connection.socket, response(id, type, true, { task }))
+      return true
+    }
+    if (type === 'cron_resume_task') {
+      const task = cronScheduler.resumeTask(String(command.taskId || '').trim())
+      writeLine(connection.socket, response(id, type, true, { task }))
       return true
     }
     return false
@@ -170,6 +213,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
   })
 
   const shutdown = async () => {
+    cronScheduler.stop()
     workerPool.destroyAll()
     await new Promise<void>((resolve) => server.close(() => resolve()))
     try { fs.rmSync(socketPath, { force: true }) } catch {}

@@ -17,8 +17,13 @@ export function getBuiltinExtensionPaths() {
   return [
     path.join(root, 'extensions', 'discover-attention-resources', 'index.ts'),
     path.join(root, 'extensions', 'web-search', 'index.ts'),
+    path.join(root, 'extensions', 'memory', 'index.ts'),
     path.join(root, 'extensions', 'reset-system-prompt', 'index.ts'),
+    path.join(root, 'extensions', 'message-header', 'index.ts'),
     path.join(root, 'extensions', 'freeze-session-runtime', 'index.ts'),
     path.join(root, 'extensions', 'tui-input-compat', 'index.ts'),
+    path.join(root, 'extensions', 'subagent', 'index.ts'),
+    path.join(root, 'extensions', 'cron', 'index.ts'),
+    path.join(root, 'extensions', 'koishi-send-message', 'index.ts'),
   ]
 }
