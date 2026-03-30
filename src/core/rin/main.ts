@@ -310,7 +310,22 @@ function captureAsTargetUser(targetUser: string, argv: string[], env: Record<str
   return execFileSync(launch.command, launch.args, { encoding: 'utf8', env: launch.env, cwd: repoRootFromHere() })
 }
 
-async function queryDaemonStatus(socketPath: string) {
+async function queryDaemonStatus(targetUser: string, socketPath: string) {
+  const currentUser = os.userInfo().username
+  if (targetUser && targetUser !== currentUser) {
+    try {
+      const raw = captureAsTargetUser(targetUser, [
+        process.execPath,
+        '-e',
+        `const net=require('node:net');const socketPath=${JSON.stringify(socketPath)};const socket=net.createConnection(socketPath);let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'){finish(payload.success===true?payload.data:undefined);return;}}catch{}}});socket.once('connect',()=>{socket.write(JSON.stringify({id:'doctor_1',type:'daemon_status'})+'\\n');setTimeout(()=>finish(undefined),1500);});`,
+      ], {})
+      const decoded = JSON.parse(String(raw || 'null'))
+      return decoded == null ? undefined : decoded
+    } catch {
+      return undefined
+    }
+  }
+
   return await new Promise<any>((resolve) => {
     const socket = net.createConnection(socketPath)
     let buffer = ''
@@ -350,7 +365,7 @@ async function queryDaemonStatus(socketPath: string) {
 async function runDoctor(parsed: ParsedArgs) {
   const context = daemonControlContext(parsed)
   const socketReady = await canConnectSocketAsTargetUser(context.targetUser, context.socketPath)
-  const daemonStatus = socketReady ? await queryDaemonStatus(context.socketPath) : undefined
+  const daemonStatus = socketReady ? await queryDaemonStatus(context.targetUser, context.socketPath) : undefined
   const webSearchStatus = daemonStatus?.webSearch
   const koishiStatus = daemonStatus?.koishi
   const lines = [
