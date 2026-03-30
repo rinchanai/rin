@@ -61,6 +61,23 @@ export async function applyRinTuiOverrides() {
   const originalHandleEvent = InteractiveMode?.prototype?.handleEvent
   if (typeof originalHandleEvent === 'function') {
     InteractiveMode.prototype.handleEvent = async function handleEventWithSessionBootState(event: any) {
+      if (event?.type === 'rin_status') {
+        if (event.phase === 'end') {
+          if (!this?.session?.isStreaming && !this?.session?.isCompacting) {
+            this.stopWorkingAnimation?.()
+            this.ui?.requestRender?.()
+          }
+          return
+        }
+        const message = typeof event.message === 'string' && event.message.trim() ? event.message : this?.defaultWorkingMessage
+        this.startWorkingAnimation?.(message)
+        if (typeof event.statusText === 'string' && event.statusText.trim() && typeof this.showStatus === 'function') {
+          this.showStatus(event.statusText)
+        }
+        this.ui?.requestRender?.()
+        return
+      }
+
       const isAgentStart = event?.type === 'agent_start'
       this.__rinHandlingAgentStart = isAgentStart
       try {

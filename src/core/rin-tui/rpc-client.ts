@@ -36,6 +36,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   requestId = 0
   pending = new Map<string, { resolve: Function; reject: Function; timer: NodeJS.Timeout }>()
   listeners = new Set<(event: InteractiveFrontendEvent) => void>()
+  connectPromise: Promise<void> | null = null
 
   constructor(socketPath = defaultDaemonSocketPath()) {
     this.socketPath = socketPath
@@ -43,31 +44,41 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
 
   async connect() {
     if (this.socket && !this.socket.destroyed) return
-    await new Promise<void>((resolve, reject) => {
+    if (this.connectPromise) return await this.connectPromise
+    const wasDisconnected = !this.socket || this.socket.destroyed
+    this.connectPromise = new Promise<void>((resolve, reject) => {
       const socket = net.createConnection(this.socketPath)
       const onError = (error: Error) => {
         try { socket.destroy() } catch {}
+        this.connectPromise = null
         reject(error)
       }
       socket.once('error', onError)
       socket.once('connect', () => {
         socket.removeListener('error', onError)
         this.socket = socket
+        this.state.buffer = ''
         socket.on('data', (chunk) => this.handleChunk(String(chunk)))
         socket.on('close', () => this.handleDisconnect())
         socket.on('error', () => this.handleDisconnect())
+        this.connectPromise = null
+        if (wasDisconnected) {
+          this.emit({ type: 'ui', name: 'connection_restored', payload: { socketPath: this.socketPath } })
+        }
         resolve()
       })
     })
+    return await this.connectPromise
   }
 
   async disconnect() {
     const socket = this.socket
     this.socket = null
+    this.connectPromise = null
     if (!socket) return
     try { socket.end() } catch {}
     try { socket.destroy() } catch {}
-    this.handleDisconnect()
+    this.handleDisconnect(false)
   }
 
   subscribe(listener: (event: InteractiveFrontendEvent) => void) {
@@ -142,6 +153,10 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
 
   async respondDialog(_id: string, _payload: unknown): Promise<void> {}
 
+  isConnected() {
+    return Boolean(this.socket && !this.socket.destroyed)
+  }
+
   async send(command: any) {
     if (!this.socket || this.socket.destroyed) throw new Error('rin_tui_not_connected')
     const id = `req_${++this.requestId}`
@@ -173,17 +188,26 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
 
     const event = toFrontendEvent(data)
     if (!event) return
-    for (const listener of this.listeners) {
-      try { listener(event) } catch {}
-    }
+    this.emit(event)
   }
 
-  private handleDisconnect() {
+  private handleDisconnect(emitEvent = true) {
+    this.socket = null
+    this.connectPromise = null
     for (const [id, pending] of this.pending.entries()) {
       clearTimeout(pending.timer)
       try { pending.reject(new Error(`rin_disconnected:${id}`)) } catch {}
     }
     this.pending.clear()
+    if (emitEvent) {
+      this.emit({ type: 'ui', name: 'connection_lost', payload: { socketPath: this.socketPath } })
+    }
+  }
+
+  private emit(event: InteractiveFrontendEvent) {
+    for (const listener of this.listeners) {
+      try { listener(event) } catch {}
+    }
   }
 
   private getData(response: any) {

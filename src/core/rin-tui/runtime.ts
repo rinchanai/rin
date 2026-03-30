@@ -14,6 +14,13 @@ type RpcExtensionBindings = {
   onError?: (error: any) => void
 }
 
+type PendingRpcOperation = {
+  mode: 'prompt' | 'interrupt_prompt' | 'steer' | 'follow_up'
+  message: string
+  images?: any[]
+  source?: string
+}
+
 const REFRESH_MESSAGES = { messages: true } as const
 const REFRESH_MODELS = { models: true } as const
 const REFRESH_SESSION = { session: true } as const
@@ -91,6 +98,11 @@ export class RpcInteractiveSession {
   private unsubscribeClient?: () => void
   private extensionBindings: RpcExtensionBindings = {}
   private additionalExtensionPaths: string[]
+  private reconnecting = false
+  private reconnectTimer: NodeJS.Timeout | null = null
+  private queuedOfflineOps: PendingRpcOperation[] = []
+  private activeTurn: PendingRpcOperation | null = null
+  private disposed = false
 
   constructor(public client: RinDaemonFrontendClient, additionalExtensionPaths: string[] = []) {
     this.additionalExtensionPaths = [...additionalExtensionPaths]
@@ -129,8 +141,18 @@ export class RpcInteractiveSession {
   }
 
   async connect() {
+    this.disposed = false
     await this.client.connect()
+    this.unsubscribeClient?.()
     this.unsubscribeClient = this.client.subscribe((event) => {
+      if (event.type === 'ui' && event.name === 'connection_lost') {
+        this.handleConnectionLost()
+        return
+      }
+      if (event.type === 'ui' && event.name === 'connection_restored') {
+        void this.handleConnectionRestored().catch(() => {})
+        return
+      }
       if (event.type !== 'ui') return
       const payload: any = event.payload
       if (!payload || payload.type === 'response') return
@@ -146,6 +168,9 @@ export class RpcInteractiveSession {
   }
 
   async disconnect() {
+    this.disposed = true
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
     this.unsubscribeClient?.()
     this.unsubscribeClient = undefined
     await this.client.disconnect()
@@ -159,29 +184,21 @@ export class RpcInteractiveSession {
   async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[]; source?: string }) {
     if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images)
     if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images)
-    await this.ensureRemoteSession()
-    this.isStreaming = true
-    await this.call('prompt', { message, images: options?.images, source: options?.source })
+    await this.sendOrQueue({ mode: 'prompt', message, images: options?.images, source: options?.source })
   }
 
   async interruptPrompt(message: string, images?: any[]) {
-    await this.ensureRemoteSession()
-    this.isStreaming = true
-    await this.call('interrupt_prompt', { message, images })
+    await this.sendOrQueue({ mode: 'interrupt_prompt', message, images })
   }
 
   async steer(message: string, images?: any[]) {
-    await this.ensureRemoteSession()
     this.enqueuePending('steeringMessages', message)
-    this.isStreaming = true
-    await this.call('steer', { message, images })
+    await this.sendOrQueue({ mode: 'steer', message, images })
   }
 
   async followUp(message: string, images?: any[]) {
-    await this.ensureRemoteSession()
     this.enqueuePending('followUpMessages', message)
-    this.isStreaming = true
-    await this.call('follow_up', { message, images })
+    await this.sendOrQueue({ mode: 'follow_up', message, images })
   }
 
   clearQueue() {
@@ -523,11 +540,91 @@ export class RpcInteractiveSession {
     if (payload.type === 'auto_retry_end') this.retryAttempt = 0
     if (payload.type === 'agent_end') {
       this.isStreaming = false
+      this.activeTurn = null
+      this.emitEvent({ type: 'rin_status', phase: 'end' } as any)
       void this.refreshState(REFRESH_MESSAGES_AND_SESSION)
     }
     if (payload.type === 'extension_ui_request') return
+    this.emitEvent(payload as AgentEvent)
+  }
+
+  private emitEvent(event: AgentEvent) {
     for (const listener of this.listeners) {
-      try { listener(payload as AgentEvent) } catch {}
+      try { listener(event) } catch {}
+    }
+  }
+
+  private queueOfflineOperation(operation: PendingRpcOperation) {
+    this.queuedOfflineOps.push(operation)
+    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Waiting for daemon startup...', statusText: `Queued message while daemon is offline (${this.queuedOfflineOps.length} queued)` } as any)
+    this.ensureReconnectLoop()
+  }
+
+  private async sendOrQueue(operation: PendingRpcOperation) {
+    if (!this.client.isConnected()) {
+      this.queueOfflineOperation(operation)
+      return
+    }
+    try {
+      await this.ensureRemoteSession()
+      this.isStreaming = true
+      this.activeTurn = operation
+      await this.call(operation.mode, { message: operation.message, images: operation.images, source: operation.source })
+    } catch (error: any) {
+      const message = String(error?.message || error || '')
+      if (/rin_tui_not_connected|rin_disconnected/.test(message)) {
+        this.queueOfflineOperation(operation)
+        return
+      }
+      throw error
+    }
+  }
+
+  private handleConnectionLost() {
+    if (this.disposed) return
+    this.emitEvent({ type: 'rin_status', phase: 'update', message: this.activeTurn ? 'Waiting for daemon startup...' : 'Daemon offline', statusText: this.activeTurn ? 'Connection lost while processing. Will resume after daemon returns.' : 'Daemon disconnected. New messages will be queued until it returns.' } as any)
+    this.ensureReconnectLoop()
+  }
+
+  private ensureReconnectLoop() {
+    if (this.reconnecting || this.disposed) return
+    this.reconnecting = true
+    const tick = async () => {
+      if (this.disposed) return
+      try {
+        await this.client.connect()
+      } catch {
+        this.reconnectTimer = setTimeout(() => { void tick() }, 1000)
+      }
+    }
+    void tick()
+  }
+
+  private async handleConnectionRestored() {
+    if (this.disposed) return
+    this.reconnecting = false
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
+    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Resuming session...', statusText: 'Daemon connection restored.' } as any)
+    try {
+      if (this.sessionFile) {
+        await this.call('switch_session', { sessionPath: this.sessionFile })
+      }
+      await this.refreshState(REFRESH_ALL)
+      if (this.activeTurn) {
+        await this.call('interrupt_prompt', {
+          message: 'Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.',
+        })
+      }
+      const queued = [...this.queuedOfflineOps]
+      this.queuedOfflineOps = []
+      for (const operation of queued) {
+        await this.sendOrQueue(operation)
+      }
+    } finally {
+      if (!this.isStreaming && !this.isCompacting) {
+        this.emitEvent({ type: 'rin_status', phase: 'end' } as any)
+      }
     }
   }
 
