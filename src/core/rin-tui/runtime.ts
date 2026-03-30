@@ -1,7 +1,15 @@
 import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
 
+import { loadRinCodingAgent } from '../rin-lib/loader.js'
 import { getRuntimeSessionDir, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import { RinDaemonFrontendClient } from './rpc-client.js'
+
+type RpcExtensionBindings = {
+  uiContext?: any
+  commandContextActions?: any
+  shutdownHandler?: () => void
+  onError?: (error: any) => void
+}
 
 const ALL_THINKING_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
 const REFRESH_MESSAGES = { messages: true } as const
@@ -363,8 +371,11 @@ export class RpcInteractiveSession {
   private followUpMessages: string[] = []
   private listeners = new Set<(event: AgentEvent) => void>()
   private unsubscribeClient?: () => void
+  private extensionBindings: RpcExtensionBindings = {}
+  private additionalExtensionPaths: string[]
 
-  constructor(public client: RinDaemonFrontendClient) {
+  constructor(public client: RinDaemonFrontendClient, additionalExtensionPaths: string[] = []) {
+    this.additionalExtensionPaths = [...additionalExtensionPaths]
     this.agent = new RemoteAgent(client)
     this.settingsManager = createSettingsManager()
     this.modelRegistry = createModelRegistry(client)
@@ -425,11 +436,11 @@ export class RpcInteractiveSession {
     return () => this.listeners.delete(listener)
   }
 
-  async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[] }) {
+  async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[]; source?: string }) {
     if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images)
     if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images)
     this.isStreaming = true
-    await this.call('prompt', { message, images: options?.images })
+    await this.call('prompt', { message, images: options?.images, source: options?.source })
   }
 
   async interruptPrompt(message: string, images?: any[]) {
@@ -463,14 +474,14 @@ export class RpcInteractiveSession {
 
   async newSession(options?: { parentSession?: string }) {
     const data = await this.call('new_session', { parentSession: options?.parentSession })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    await this.refreshState(REFRESH_ALL)
     this.clearQueue()
     return !Boolean(data?.cancelled)
   }
 
   async switchSession(sessionPath: string) {
     const data = await this.call('switch_session', { sessionPath })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    await this.refreshState(REFRESH_ALL)
     return !Boolean(data?.cancelled)
   }
 
@@ -673,9 +684,85 @@ export class RpcInteractiveSession {
   async reload() {
     await this.modelRegistry.sync()
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    if (this.extensionRunner) {
+      await this.loadLocalExtensions(true)
+    }
   }
 
-  async bindExtensions() {}
+  async bindExtensions(bindings: RpcExtensionBindings = {}) {
+    this.extensionBindings = {
+      ...this.extensionBindings,
+      ...bindings,
+    }
+    await this.loadLocalExtensions(false)
+  }
+
+  private async loadLocalExtensions(forceReload: boolean) {
+    const codingAgentModule: any = await loadRinCodingAgent()
+    const { createEventBus, discoverAndLoadExtensions, ExtensionRunner } = codingAgentModule
+
+    const eventBus = createEventBus()
+    const result = await discoverAndLoadExtensions(
+      this.additionalExtensionPaths,
+      RUNTIME_PROFILE.cwd,
+      RUNTIME_PROFILE.agentDir,
+      eventBus,
+    )
+
+    const runner = new ExtensionRunner(
+      result.extensions,
+      result.runtime,
+      RUNTIME_PROFILE.cwd,
+      this.sessionManager,
+      this.modelRegistry,
+    )
+
+    runner.bindCore(
+      {
+        sendMessage: (message: string, options?: { images?: any[] }) => {
+          void this.prompt(message, { images: options?.images, source: 'extension' as any }).catch(() => {})
+        },
+        sendUserMessage: (content: any) => {
+          const text = extractText(content)
+          if (!text) return
+          void this.prompt(text, { source: 'extension' as any }).catch(() => {})
+        },
+        appendEntry: () => {},
+        setSessionName: (name: string) => { void this.setSessionName(name).catch(() => {}) },
+        getSessionName: () => this.sessionName,
+        setLabel: (entryId: string, label: string | undefined) => { void this.setEntryLabel(entryId, label).catch(() => {}) },
+        getActiveTools: () => [],
+        getAllTools: () => [],
+        setActiveTools: () => {},
+        refreshTools: () => {},
+        getCommands: () => runner.getRegisteredCommands(),
+        setModel: async (model: any) => { await this.setModel(model) },
+        getThinkingLevel: () => this.thinkingLevel,
+        setThinkingLevel: (level: ThinkingLevel) => { this.setThinkingLevel(level) },
+      },
+      {
+        getModel: () => this.model,
+        isIdle: () => !this.isStreaming,
+        getSignal: () => undefined,
+        abort: () => { void this.abort().catch(() => {}) },
+        hasPendingMessages: () => this.pendingMessageCount > 0,
+        shutdown: () => this.extensionBindings.shutdownHandler?.(),
+        getContextUsage: () => this.getContextUsage(),
+        compact: (options?: { customInstructions?: string }) => { void this.compact(options?.customInstructions).catch(() => {}) },
+        getSystemPrompt: () => this.systemPrompt,
+      },
+    )
+
+    runner.setUIContext(this.extensionBindings.uiContext)
+    runner.bindCommandContext(this.extensionBindings.commandContextActions)
+    if (this.extensionBindings.onError) runner.onError(this.extensionBindings.onError)
+
+    this.extensionRunner = runner
+
+    if (forceReload || result.extensions.length > 0) {
+      await runner.emit({ type: 'session_start' })
+    }
+  }
 
   private handleRpcEvent(payload: any) {
     if (!payload || typeof payload !== 'object') return

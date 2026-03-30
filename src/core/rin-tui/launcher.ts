@@ -71,7 +71,7 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
     return
   }
 
-  const session = new RpcInteractiveSession(client!)
+  const session = new RpcInteractiveSession(client!, options.additionalExtensionPaths)
   profile.mark('rpc-session-created')
 
   try {
