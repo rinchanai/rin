@@ -31,6 +31,7 @@ type WorkerHandle = {
   isStreaming: boolean
   isCompacting: boolean
   lastUsedAt: number
+  keepAliveUntil: number
 }
 
 const BUILTIN_SLASH_COMMANDS = [
@@ -136,6 +137,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
   const sessionManagerModulePromise = loadRinSessionManagerModule()
   const workers = new Set<WorkerHandle>()
   const workersBySessionFile = new Map<string, WorkerHandle>()
+  let catalogWorker: WorkerHandle | undefined
   const maxWorkers = Math.max(1, Number(process.env.RIN_DAEMON_MAX_WORKERS || 8))
   const idleTtlMs = Math.max(60_000, Number(process.env.RIN_DAEMON_IDLE_TTL_MS || 15 * 60_000))
   let workerSeq = 0
@@ -149,11 +151,13 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
     worker.connections.delete(connection)
     connection.attachedWorker = undefined
     worker.lastUsedAt = Date.now()
+    worker.keepAliveUntil = Math.max(worker.keepAliveUntil, Date.now() + 10_000)
   }
 
   const destroyWorker = (worker: WorkerHandle) => {
     if (!workers.has(worker)) return
     workers.delete(worker)
+    if (catalogWorker === worker) catalogWorker = undefined
     if (worker.sessionFile && workersBySessionFile.get(worker.sessionFile) === worker) {
       workersBySessionFile.delete(worker.sessionFile)
     }
@@ -171,7 +175,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
   const evictDetachedWorkers = () => {
     const now = Date.now()
     const detached = Array.from(workers)
-      .filter((worker) => worker.connections.size === 0 && !worker.isStreaming && !worker.isCompacting)
+      .filter((worker) => worker.connections.size === 0 && !worker.isStreaming && !worker.isCompacting && now >= worker.keepAliveUntil)
       .sort((a, b) => a.lastUsedAt - b.lastUsedAt)
 
     for (const worker of detached) {
@@ -199,10 +203,22 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       return
     }
 
-    if (payload.type === 'agent_start') worker.isStreaming = true
-    if (payload.type === 'agent_end') worker.isStreaming = false
-    if (payload.type === 'compaction_start') worker.isCompacting = true
-    if (payload.type === 'compaction_end') worker.isCompacting = false
+    if (payload.type === 'agent_start') {
+      worker.isStreaming = true
+      worker.keepAliveUntil = Math.max(worker.keepAliveUntil, Date.now() + 30_000)
+    }
+    if (payload.type === 'agent_end') {
+      worker.isStreaming = false
+      worker.keepAliveUntil = Math.max(worker.keepAliveUntil, Date.now() + 10_000)
+    }
+    if (payload.type === 'compaction_start') {
+      worker.isCompacting = true
+      worker.keepAliveUntil = Math.max(worker.keepAliveUntil, Date.now() + 30_000)
+    }
+    if (payload.type === 'compaction_end') {
+      worker.isCompacting = false
+      worker.keepAliveUntil = Math.max(worker.keepAliveUntil, Date.now() + 10_000)
+    }
     if (payload.type === 'rpc_turn_event' && payload.event === 'complete' && typeof payload.sessionFile === 'string' && payload.sessionFile) {
       if (worker.sessionFile && workersBySessionFile.get(worker.sessionFile) === worker) {
         workersBySessionFile.delete(worker.sessionFile)
@@ -229,6 +245,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       isStreaming: false,
       isCompacting: false,
       lastUsedAt: Date.now(),
+      keepAliveUntil: Date.now(),
     }
     workers.add(worker)
 
@@ -293,11 +310,23 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
     worker.lastUsedAt = Date.now()
   }
 
-  const forwardToWorker = (connection: ConnectionState, worker: WorkerHandle, command: any) => {
-    attachWorker(connection, worker)
+  const requestWorker = (worker: WorkerHandle, connection: ConnectionState, command: any, attach: boolean) => {
+    if (attach) attachWorker(connection, worker)
     worker.lastUsedAt = Date.now()
+    worker.keepAliveUntil = Math.max(worker.keepAliveUntil, Date.now() + 10_000)
     if (command?.id) worker.pendingResponses.set(String(command.id), connection)
     worker.child.stdin.write(`${JSON.stringify(command)}\n`)
+  }
+
+  const forwardToWorker = (connection: ConnectionState, worker: WorkerHandle, command: any) => {
+    requestWorker(worker, connection, command, true)
+  }
+
+  const getCatalogWorker = () => {
+    if (!catalogWorker || !workers.has(catalogWorker)) {
+      catalogWorker = createWorker()
+    }
+    return catalogWorker
   }
 
   const selfHandleCommand = async (connection: ConnectionState, command: any) => {
@@ -325,11 +354,11 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       return true
     }
     if (type === 'get_available_models' && !connection.attachedWorker) {
-      writeLine(connection.socket, response(id, type, true, { models: [] }))
+      requestWorker(getCatalogWorker(), connection, command, false)
       return true
     }
     if (type === 'get_oauth_state' && !connection.attachedWorker) {
-      writeLine(connection.socket, response(id, type, true, { credentials: {}, providers: [] }))
+      requestWorker(getCatalogWorker(), connection, command, false)
       return true
     }
     if (type === 'list_sessions') {

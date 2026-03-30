@@ -106,7 +106,19 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   }
 
   async listSessions(): Promise<FrontendSessionItem[]> {
-    return []
+    const [sessionsResponse, stateResponse]: any = await Promise.all([
+      this.send({ type: 'list_sessions', scope: 'cwd' }),
+      this.send({ type: 'get_state' }).catch(() => ({ success: false })),
+    ])
+    const data = this.getData(sessionsResponse)
+    const sessions = Array.isArray(data?.sessions) ? data.sessions : []
+    const activePath = stateResponse && stateResponse.success === true ? stateResponse.data?.sessionFile : undefined
+    return sessions.map((session: any) => ({
+      id: String(session.path || session.id || ''),
+      title: String(session.name || session.id || session.firstMessage || 'Untitled session'),
+      subtitle: typeof session.modified === 'string' ? session.modified : undefined,
+      isActive: activePath ? String(session.path || '') === String(activePath) : false,
+    }))
   }
 
   async resumeSession(sessionId: string): Promise<void> {
