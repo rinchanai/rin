@@ -19,5 +19,6 @@ export function getBuiltinExtensionPaths() {
     path.join(root, 'extensions', 'web-search', 'index.ts'),
     path.join(root, 'extensions', 'reset-system-prompt', 'index.ts'),
     path.join(root, 'extensions', 'freeze-session-runtime', 'index.ts'),
+    path.join(root, 'extensions', 'tui-input-compat', 'index.ts'),
   ]
 }
