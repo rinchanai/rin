@@ -66,51 +66,127 @@ async function canConnectSocket(socketPath: string) {
   })
 }
 
-function canConnectSocketAsTargetUser(targetUser: string, socketPath: string) {
+type TargetExecutionContext = ReturnType<typeof daemonControlContext> & {
+  currentUser: string
+  isTargetUser: boolean
+  exec: (argv: string[], options?: any) => void
+  capture: (argv: string[], options?: any) => string
+  canConnectSocket: () => Promise<boolean>
+  queryDaemonStatus: () => Promise<any>
+}
+
+function createTargetExecutionContext(parsed: ParsedArgs): TargetExecutionContext {
+  const base = daemonControlContext(parsed)
   const currentUser = os.userInfo().username
-  if (!targetUser || targetUser === currentUser) return canConnectSocket(socketPath)
-  try {
-    const launch = buildUserShell(targetUser, [
-      process.execPath,
-      '-e',
-      `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),500);`,
-    ])
-    execFileSync(launch.command, launch.args, { stdio: 'ignore', env: launch.env, cwd: repoRootFromHere() })
-    return Promise.resolve(true)
-  } catch {
-    return Promise.resolve(false)
+  const isTargetUser = !base.targetUser || base.targetUser === currentUser
+
+  const exec = (argv: string[], options: any = {}) => {
+    const launch = buildUserShell(base.targetUser, argv, base.runtimeEnv)
+    execFileSync(launch.command, launch.args, { stdio: 'inherit', env: launch.env, cwd: base.repoRoot, ...options })
+  }
+
+  const capture = (argv: string[], options: any = {}) => {
+    const launch = buildUserShell(base.targetUser, argv, base.runtimeEnv)
+    return execFileSync(launch.command, launch.args, { encoding: 'utf8', env: launch.env, cwd: base.repoRoot, ...options })
+  }
+
+  const canConnectSocketInContext = async () => {
+    if (isTargetUser) return await canConnectSocket(base.socketPath)
+    try {
+      capture([
+        process.execPath,
+        '-e',
+        `const net=require('node:net');const s=net.createConnection(${JSON.stringify(base.socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),500);`,
+      ], { stdio: 'ignore' })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const queryDaemonStatusInContext = async () => {
+    if (!isTargetUser) {
+      try {
+        const raw = capture([
+          process.execPath,
+          '-e',
+          `const net=require('node:net');const socketPath=${JSON.stringify(base.socketPath)};const socket=net.createConnection(socketPath);let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'){finish(payload.success===true?payload.data:undefined);return;}}catch{}}});socket.once('connect',()=>{socket.write(JSON.stringify({id:'doctor_1',type:'daemon_status'})+'\\n');setTimeout(()=>finish(undefined),1500);});`,
+        ])
+        const decoded = JSON.parse(String(raw || 'null'))
+        return decoded == null ? undefined : decoded
+      } catch {
+        return undefined
+      }
+    }
+
+    return await new Promise<any>((resolve) => {
+      const socket = net.createConnection(base.socketPath)
+      let buffer = ''
+      let settled = false
+      const finish = (value: any) => {
+        if (settled) return
+        settled = true
+        try { socket.destroy() } catch {}
+        resolve(value)
+      }
+      socket.once('error', () => finish(undefined))
+      socket.on('data', (chunk) => {
+        buffer += String(chunk)
+        while (true) {
+          const idx = buffer.indexOf('\n')
+          if (idx < 0) break
+          let line = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 1)
+          if (line.endsWith('\r')) line = line.slice(0, -1)
+          if (!line.trim()) continue
+          try {
+            const payload = JSON.parse(line)
+            if (payload?.type === 'response' && payload?.command === 'daemon_status') {
+              finish(payload.success === true ? payload.data : undefined)
+              return
+            }
+          } catch {}
+        }
+      })
+      socket.once('connect', () => {
+        socket.write(`${JSON.stringify({ id: 'doctor_1', type: 'daemon_status' })}\n`)
+        setTimeout(() => finish(undefined), 1500)
+      })
+    })
+  }
+
+  return {
+    ...base,
+    currentUser,
+    isTargetUser,
+    exec,
+    capture,
+    canConnectSocket: canConnectSocketInContext,
+    queryDaemonStatus: queryDaemonStatusInContext,
   }
 }
 
-async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: Record<string, string>) {
-  const socketPath = socketPathForUser(targetUser)
-  if (await canConnectSocketAsTargetUser(targetUser, socketPath)) return
+async function ensureDaemonAvailable(context: TargetExecutionContext) {
+  if (await context.canConnectSocket()) return
 
-  const currentUser = os.userInfo().username
-  const systemctl = process.platform === 'linux'
-    ? (fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : ''))
-    : ''
-  const userEnv = targetUserRuntimeEnv(targetUser, env)
-
-  if (targetUser !== currentUser && systemctl) {
-    for (const unit of [`rin-daemon-${targetUser}.service`, 'rin-daemon.service']) {
+  if (context.systemctl) {
+    for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
       try {
-        const start = buildUserShell(targetUser, [systemctl, '--user', 'start', unit], userEnv)
-        execFileSync(start.command, start.args, { stdio: 'inherit', env: start.env, cwd: repoRoot })
+        context.exec([context.systemctl, '--user', 'start', unit])
         break
       } catch {}
     }
     const startedAt = Date.now()
     while (Date.now() - startedAt < 5000) {
-      if (await canConnectSocketAsTargetUser(targetUser, socketPath)) return
+      if (await context.canConnectSocket()) return
       await new Promise((resolve) => setTimeout(resolve, 150))
     }
   }
 
-  const daemonEntry = path.join(repoRoot, 'dist', 'app', 'rin-daemon', 'daemon.js')
-  const launch = buildUserShell(targetUser, [process.execPath, daemonEntry], userEnv)
+  const daemonEntry = path.join(context.repoRoot, 'dist', 'app', 'rin-daemon', 'daemon.js')
+  const launch = buildUserShell(context.targetUser, [process.execPath, daemonEntry], context.runtimeEnv)
   const child = spawn(launch.command, launch.args, {
-    cwd: repoRoot,
+    cwd: context.repoRoot,
     env: launch.env,
     detached: true,
     stdio: 'ignore',
@@ -119,11 +195,11 @@ async function ensureDaemonAvailable(repoRoot: string, targetUser: string, env: 
 
   const startedAt = Date.now()
   while (Date.now() - startedAt < 5000) {
-    if (await canConnectSocketAsTargetUser(targetUser, socketPath)) return
+    if (await context.canConnectSocket()) return
     await new Promise((resolve) => setTimeout(resolve, 150))
   }
 
-  throw new Error(`rin_daemon_unavailable: failed to start daemon for ${targetUser}`)
+  throw new Error(`rin_daemon_unavailable: failed to start daemon for ${context.targetUser}`)
 }
 
 function requireTool(name: string, paths: string[] = []) {
@@ -266,19 +342,16 @@ function daemonControlContext(parsed: ParsedArgs) {
   return { repoRoot, installDir, targetUser, runtimeEnv, systemctl, socketPath }
 }
 
-function tryManagedServiceAction(context: ReturnType<typeof daemonControlContext>, action: 'start' | 'stop' | 'restart') {
+function tryManagedServiceAction(context: TargetExecutionContext, action: 'start' | 'stop' | 'restart') {
   if (!context.systemctl) return false
   try {
-    const reload = buildUserShell(context.targetUser, [context.systemctl, '--user', 'daemon-reload'], context.runtimeEnv)
-    execFileSync(reload.command, reload.args, { stdio: 'ignore', env: reload.env, cwd: context.repoRoot })
+    context.capture([context.systemctl, '--user', 'daemon-reload'], { stdio: 'ignore' })
   } catch {}
   for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
     try {
-      const check = buildUserShell(context.targetUser, [context.systemctl, '--user', 'status', unit], context.runtimeEnv)
-      execFileSync(check.command, check.args, { stdio: 'ignore', env: check.env, cwd: context.repoRoot })
+      context.capture([context.systemctl, '--user', 'status', unit], { stdio: 'ignore' })
       const effectiveAction = action === 'start' ? 'restart' : action
-      const run = buildUserShell(context.targetUser, [context.systemctl, '--user', effectiveAction, unit], context.runtimeEnv)
-      execFileSync(run.command, run.args, { stdio: 'inherit', env: run.env, cwd: context.repoRoot })
+      context.exec([context.systemctl, '--user', effectiveAction, unit])
       console.log(`rin ${action} complete: ${unit}`)
       return true
     } catch {}
@@ -287,85 +360,28 @@ function tryManagedServiceAction(context: ReturnType<typeof daemonControlContext
 }
 
 async function runStart(parsed: ParsedArgs) {
-  const context = daemonControlContext(parsed)
+  const context = createTargetExecutionContext(parsed)
   if (tryManagedServiceAction(context, 'start')) return
-  await ensureDaemonAvailable(context.repoRoot, context.targetUser, context.runtimeEnv)
+  await ensureDaemonAvailable(context)
   console.log('rin start complete')
 }
 
 async function runStop(parsed: ParsedArgs) {
-  const context = daemonControlContext(parsed)
+  const context = createTargetExecutionContext(parsed)
   if (tryManagedServiceAction(context, 'stop')) return
   try {
     const pkill = requireTool('pkill', ['/usr/bin/pkill', '/bin/pkill'])
     const daemonPattern = `${context.installDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/app/.*/dist/(app/rin-daemon/daemon\\.js|daemon\\.js)`
-    const stop = buildUserShell(context.targetUser, [pkill, '-f', daemonPattern], context.runtimeEnv)
-    execFileSync(stop.command, stop.args, { stdio: 'ignore', env: stop.env, cwd: context.repoRoot })
+    context.capture([pkill, '-f', daemonPattern], { stdio: 'ignore' })
   } catch {}
   console.log('rin stop complete')
 }
 
-function captureAsTargetUser(targetUser: string, argv: string[], env: Record<string, string>) {
-  const launch = buildUserShell(targetUser, argv, env)
-  return execFileSync(launch.command, launch.args, { encoding: 'utf8', env: launch.env, cwd: repoRootFromHere() })
-}
-
-async function queryDaemonStatus(targetUser: string, socketPath: string) {
-  const currentUser = os.userInfo().username
-  if (targetUser && targetUser !== currentUser) {
-    try {
-      const raw = captureAsTargetUser(targetUser, [
-        process.execPath,
-        '-e',
-        `const net=require('node:net');const socketPath=${JSON.stringify(socketPath)};const socket=net.createConnection(socketPath);let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'){finish(payload.success===true?payload.data:undefined);return;}}catch{}}});socket.once('connect',()=>{socket.write(JSON.stringify({id:'doctor_1',type:'daemon_status'})+'\\n');setTimeout(()=>finish(undefined),1500);});`,
-      ], {})
-      const decoded = JSON.parse(String(raw || 'null'))
-      return decoded == null ? undefined : decoded
-    } catch {
-      return undefined
-    }
-  }
-
-  return await new Promise<any>((resolve) => {
-    const socket = net.createConnection(socketPath)
-    let buffer = ''
-    let settled = false
-    const finish = (value: any) => {
-      if (settled) return
-      settled = true
-      try { socket.destroy() } catch {}
-      resolve(value)
-    }
-    socket.once('error', () => finish(undefined))
-    socket.on('data', (chunk) => {
-      buffer += String(chunk)
-      while (true) {
-        const idx = buffer.indexOf('\n')
-        if (idx < 0) break
-        let line = buffer.slice(0, idx)
-        buffer = buffer.slice(idx + 1)
-        if (line.endsWith('\r')) line = line.slice(0, -1)
-        if (!line.trim()) continue
-        try {
-          const payload = JSON.parse(line)
-          if (payload?.type === 'response' && payload?.command === 'daemon_status') {
-            finish(payload.success === true ? payload.data : undefined)
-            return
-          }
-        } catch {}
-      }
-    })
-    socket.once('connect', () => {
-      socket.write(`${JSON.stringify({ id: 'doctor_1', type: 'daemon_status' })}\n`)
-      setTimeout(() => finish(undefined), 1500)
-    })
-  })
-}
 
 async function runDoctor(parsed: ParsedArgs) {
-  const context = daemonControlContext(parsed)
-  const socketReady = await canConnectSocketAsTargetUser(context.targetUser, context.socketPath)
-  const daemonStatus = socketReady ? await queryDaemonStatus(context.targetUser, context.socketPath) : undefined
+  const context = createTargetExecutionContext(parsed)
+  const socketReady = await context.canConnectSocket()
+  const daemonStatus = socketReady ? await context.queryDaemonStatus() : undefined
   const webSearchStatus = daemonStatus?.webSearch
   const koishiStatus = daemonStatus?.koishi
   const lines = [
@@ -404,7 +420,7 @@ async function runDoctor(parsed: ParsedArgs) {
   if (context.systemctl) {
     for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
       try {
-        const status = captureAsTargetUser(context.targetUser, [context.systemctl, '--user', 'status', unit, '--no-pager', '-l'], context.runtimeEnv)
+        const status = context.capture([context.systemctl, '--user', 'status', unit, '--no-pager', '-l'])
         lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
         break
       } catch (error: any) {
@@ -417,7 +433,7 @@ async function runDoctor(parsed: ParsedArgs) {
     }
     for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
       try {
-        const journal = captureAsTargetUser(context.targetUser, ['journalctl', '--user', '-u', unit, '-n', '20', '--no-pager'], context.runtimeEnv)
+        const journal = context.capture(['journalctl', '--user', '-u', unit, '-n', '20', '--no-pager'])
         if (String(journal || '').trim()) {
           lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
           break
@@ -430,7 +446,7 @@ async function runDoctor(parsed: ParsedArgs) {
 }
 
 async function runRestart(parsed: ParsedArgs) {
-  const context = daemonControlContext(parsed)
+  const context = createTargetExecutionContext(parsed)
   if (tryManagedServiceAction(context, 'restart')) return
   await runStop(parsed)
   await runStart(parsed)
