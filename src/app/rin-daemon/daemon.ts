@@ -10,15 +10,29 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { startDaemon } from '../../core/rin-daemon/daemon.js'
+import { cleanupOrphanKoishiSidecars, ensureKoishiSidecar, stopKoishiSidecar } from '../../core/rin-koishi/service.js'
 import { resolveRuntimeProfile } from '../../core/rin-lib/runtime.js'
-import { ensureSearxngSidecar, stopSearxngSidecar } from '../../core/rin-web-search/service.js'
+import { cleanupOrphanSearxngSidecars, ensureSearxngSidecar, stopSearxngSidecar } from '../../core/rin-web-search/service.js'
 
 async function main() {
-  const workerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'worker.js')
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const ext = path.extname(fileURLToPath(import.meta.url)) || '.js'
+  const workerPath = path.join(here, `worker${ext}`)
+  const koishiEntryPath = path.join(here, '..', 'rin-koishi', `main${ext}`)
   const runtime = resolveRuntimeProfile()
   const webSearchInstanceId = `daemon-${process.pid}`
+  const koishiInstanceId = `daemon-${process.pid}`
+  await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {})
+  await cleanupOrphanKoishiSidecars(runtime.agentDir).catch(() => {})
   await ensureSearxngSidecar(runtime.agentDir, { instanceId: webSearchInstanceId }).catch(() => {})
-  const stop = () => { void stopSearxngSidecar(runtime.agentDir, { instanceId: webSearchInstanceId }).catch(() => {}) }
+  await ensureKoishiSidecar(runtime.agentDir, {
+    instanceId: koishiInstanceId,
+    entryPath: koishiEntryPath,
+  }).catch(() => {})
+  const stop = () => {
+    void stopSearxngSidecar(runtime.agentDir, { instanceId: webSearchInstanceId }).catch(() => {})
+    void stopKoishiSidecar(runtime.agentDir, { instanceId: koishiInstanceId }).catch(() => {})
+  }
   process.on('SIGINT', stop)
   process.on('SIGTERM', stop)
   process.on('exit', stop)

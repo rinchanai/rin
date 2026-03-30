@@ -2,6 +2,8 @@ import { truncateToWidth } from '@mariozechner/pi-tui'
 
 import { loadRinInteractiveFooterModule, loadRinInteractiveModeModule, loadRinInteractiveThemeModule } from '../rin-lib/loader.js'
 
+const SESSION_STARTING_MESSAGE = 'Starting session...'
+
 let applied = false
 
 export async function applyRinTuiOverrides() {
@@ -40,6 +42,32 @@ export async function applyRinTuiOverrides() {
     InteractiveMode.prototype.updateTerminalTitle = function updateTerminalTitleWithoutCwd() {
       const sessionName = this?.sessionManager?.getSessionName?.()
       this?.ui?.terminal?.setTitle?.(sessionName ? `π - ${sessionName}` : 'π')
+    }
+  }
+
+  const originalStartWorkingAnimation = InteractiveMode?.prototype?.startWorkingAnimation
+  if (typeof originalStartWorkingAnimation === 'function') {
+    InteractiveMode.prototype.startWorkingAnimation = function startWorkingAnimationWithSessionBootHint(message?: string) {
+      const isDefaultWorkingMessage = message == null || message === this?.defaultWorkingMessage
+      const hasAttachedSession = Boolean(this?.session?.sessionManager?.getSessionFile?.())
+      const isHandlingRealAgentStart = Boolean(this?.__rinHandlingAgentStart)
+      const nextMessage = isDefaultWorkingMessage && !hasAttachedSession && !isHandlingRealAgentStart
+        ? SESSION_STARTING_MESSAGE
+        : message
+      return originalStartWorkingAnimation.call(this, nextMessage)
+    }
+  }
+
+  const originalHandleEvent = InteractiveMode?.prototype?.handleEvent
+  if (typeof originalHandleEvent === 'function') {
+    InteractiveMode.prototype.handleEvent = async function handleEventWithSessionBootState(event: any) {
+      const isAgentStart = event?.type === 'agent_start'
+      this.__rinHandlingAgentStart = isAgentStart
+      try {
+        return await originalHandleEvent.call(this, event)
+      } finally {
+        this.__rinHandlingAgentStart = false
+      }
     }
   }
 }
