@@ -6,8 +6,10 @@ import { pathToFileURL } from 'node:url'
 
 import { defaultDaemonSocketPath, safeString } from '../rin-lib/common.js'
 import { loadRinSessionManagerModule } from '../rin-lib/loader.js'
+import { getKoishiSidecarStatus } from '../rin-koishi/service.js'
 import { emptySessionState, response } from '../rin-lib/rpc.js'
 import { resolveRuntimeProfile } from '../rin-lib/runtime.js'
+import { getSearxngSidecarStatus } from '../rin-web-search/service.js'
 import { ConnectionState, WorkerPool } from './worker-pool.js'
 
 function ensureDir(dir: string) {
@@ -102,6 +104,8 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
         ...workerPool.getStatusSnapshot(),
         maxWorkers,
         idleTtlMs,
+        webSearch: getSearxngSidecarStatus(runtime.agentDir),
+        koishi: getKoishiSidecarStatus(runtime.agentDir),
       }))
       return true
     }
