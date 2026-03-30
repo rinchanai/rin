@@ -421,9 +421,47 @@ function captureAsTargetUser(targetUser: string, argv: string[], env: Record<str
   return execFileSync(launch.command, launch.args, { encoding: 'utf8', env: launch.env, cwd: repoRootFromHere() })
 }
 
+async function queryDaemonStatus(socketPath: string) {
+  return await new Promise<any>((resolve) => {
+    const socket = net.createConnection(socketPath)
+    let buffer = ''
+    let settled = false
+    const finish = (value: any) => {
+      if (settled) return
+      settled = true
+      try { socket.destroy() } catch {}
+      resolve(value)
+    }
+    socket.once('error', () => finish(undefined))
+    socket.on('data', (chunk) => {
+      buffer += String(chunk)
+      while (true) {
+        const idx = buffer.indexOf('\n')
+        if (idx < 0) break
+        let line = buffer.slice(0, idx)
+        buffer = buffer.slice(idx + 1)
+        if (line.endsWith('\r')) line = line.slice(0, -1)
+        if (!line.trim()) continue
+        try {
+          const payload = JSON.parse(line)
+          if (payload?.type === 'response' && payload?.command === 'daemon_status') {
+            finish(payload.success === true ? payload.data : undefined)
+            return
+          }
+        } catch {}
+      }
+    })
+    socket.once('connect', () => {
+      socket.write(`${JSON.stringify({ id: 'doctor_1', type: 'daemon_status' })}\n`)
+      setTimeout(() => finish(undefined), 1500)
+    })
+  })
+}
+
 async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
   const context = daemonControlContext(parsed)
   const socketReady = await canConnectSocketAsTargetUser(context.targetUser, context.socketPath)
+  const daemonStatus = socketReady ? await queryDaemonStatus(context.socketPath) : undefined
   const lines = [
     `targetUser=${context.targetUser}`,
     `installDir=${context.installDir}`,
@@ -431,6 +469,18 @@ async function runDoctor(parsed: ReturnType<typeof parseArgs>) {
     `socketReady=${socketReady ? 'yes' : 'no'}`,
     `serviceManager=${context.systemctl ? 'systemd-user' : 'none'}`,
   ]
+
+  if (daemonStatus) {
+    lines.push(
+      `daemonWorkerCount=${String(daemonStatus.workerCount ?? 0)}`,
+      `daemonCatalogWorkerId=${String(daemonStatus.catalogWorkerId || '')}`,
+    )
+    const workerLines = Array.isArray(daemonStatus.workers) ? daemonStatus.workers.map((worker: any) => {
+      const sessionFile = worker.sessionFile ? String(worker.sessionFile) : '-'
+      return `daemonWorker=${String(worker.id)} pid=${String(worker.pid)} role=${String(worker.role)} attached=${String(worker.attachedConnections)} pending=${String(worker.pendingResponses)} streaming=${String(worker.isStreaming)} compacting=${String(worker.isCompacting)} session=${sessionFile}`
+    }) : []
+    lines.push(...workerLines)
+  }
 
   if (context.systemctl) {
     for (const unit of [`rin-daemon-${context.targetUser}.service`, 'rin-daemon.service']) {
