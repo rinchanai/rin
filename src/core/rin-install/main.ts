@@ -596,10 +596,15 @@ function collectDaemonFailureDetails(targetUser: string, installDir: string) {
 
   if (process.platform === 'linux') {
     const { systemctl, userEnv, units } = systemdUserContext(targetUser)
+    const effectiveUser = (() => {
+      try { return os.userInfo().username } catch { return '' }
+    })()
     if (systemctl) {
       for (const unit of units) {
         try {
-          const status = captureCommandAsUser(targetUser, systemctl, ['--user', 'status', unit, '--no-pager', '-l'], userEnv)
+          const status = targetUser && targetUser !== effectiveUser
+            ? captureCommandAsUser(targetUser, systemctl, ['--user', 'status', unit, '--no-pager', '-l'], userEnv)
+            : execFileSync(systemctl, ['--user', 'status', unit, '--no-pager', '-l'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
           lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
           break
         } catch (error: any) {
@@ -612,7 +617,9 @@ function collectDaemonFailureDetails(targetUser: string, installDir: string) {
       }
       for (const unit of units) {
         try {
-          const journal = captureCommandAsUser(targetUser, 'journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], userEnv)
+          const journal = targetUser && targetUser !== effectiveUser
+            ? captureCommandAsUser(targetUser, 'journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], userEnv)
+            : execFileSync('journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
           if (String(journal || '').trim()) {
             lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
             break
@@ -669,9 +676,12 @@ function daemonSocketPathForUser(targetUser: string) {
 
 async function waitForSocket(socketPath: string, timeoutMs = 5000, targetUser?: string) {
   const startedAt = Date.now()
+  const currentUser = (() => {
+    try { return os.userInfo().username } catch { return '' }
+  })()
   while (Date.now() - startedAt < timeoutMs) {
     const ok = await new Promise<boolean>((resolve) => {
-      if (targetUser) {
+      if (targetUser && targetUser !== currentUser) {
         try {
           const probe = captureCommandAsUser(targetUser, process.execPath, [
             '-e',
