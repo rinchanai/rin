@@ -424,7 +424,8 @@ export class RpcInteractiveSession {
       this.handleRpcEvent(payload)
     })
     await this.hydrateSettingsManager()
-    await this.refreshState(REFRESH_ALL)
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    void this.modelRegistry.sync().catch(() => {})
   }
 
   async disconnect() {

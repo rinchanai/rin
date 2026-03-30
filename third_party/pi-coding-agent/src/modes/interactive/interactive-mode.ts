@@ -545,8 +545,8 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 
-		// Initialize available provider count for footer display
-		await this.updateAvailableProviderCount();
+		// Initialize available provider count for footer display without blocking startup
+		void this.updateAvailableProviderCount().catch(() => {});
 	}
 
 	/**
@@ -2190,6 +2190,7 @@ export class InteractiveMode {
 			// Normal message submission
 			// First, move any pending bash components to chat
 			this.flushPendingBashComponents();
+			this.startWorkingAnimation(this.defaultWorkingMessage);
 
 			if (this.onInputCallback) {
 				this.onInputCallback(text);
@@ -2223,21 +2224,11 @@ export class InteractiveMode {
 					this.retryLoader.stop();
 					this.retryLoader = undefined;
 				}
-				if (this.loadingAnimation) {
-					this.loadingAnimation.stop();
-				}
-				this.statusContainer.clear();
-				this.loadingAnimation = new Loader(
-					this.ui,
-					(spinner) => theme.fg("accent", spinner),
-					(text) => theme.fg("muted", text),
-					this.defaultWorkingMessage,
-				);
-				this.statusContainer.addChild(this.loadingAnimation);
+				this.startWorkingAnimation(this.defaultWorkingMessage);
 				// Apply any pending working message queued before loader existed
 				if (this.pendingWorkingMessage !== undefined) {
 					if (this.pendingWorkingMessage) {
-						this.loadingAnimation.setMessage(this.pendingWorkingMessage);
+						this.loadingAnimation?.setMessage(this.pendingWorkingMessage);
 					}
 					this.pendingWorkingMessage = undefined;
 				}
@@ -2534,6 +2525,32 @@ export class InteractiveMode {
 		this.chatContainer.addChild(text);
 		this.lastStatusSpacer = spacer;
 		this.lastStatusText = text;
+		this.ui.requestRender();
+	}
+
+	private startWorkingAnimation(message: string = this.defaultWorkingMessage): void {
+		if (this.loadingAnimation) {
+			this.loadingAnimation.setMessage(message);
+			this.ui.requestRender();
+			return;
+		}
+		this.statusContainer.clear();
+		this.loadingAnimation = new Loader(
+			this.ui,
+			(spinner) => theme.fg("accent", spinner),
+			(text) => theme.fg("muted", text),
+			message,
+		);
+		this.statusContainer.addChild(this.loadingAnimation);
+		this.ui.requestRender();
+	}
+
+	private stopWorkingAnimation(): void {
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = undefined;
+		}
+		this.statusContainer.clear();
 		this.ui.requestRender();
 	}
 
@@ -2985,6 +3002,7 @@ export class InteractiveMode {
 	}
 
 	showError(errorMessage: string): void {
+		this.stopWorkingAnimation();
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
 		this.ui.requestRender();
@@ -3768,12 +3786,7 @@ export class InteractiveMode {
 	}
 
 	private async handleResumeSession(sessionPath: string): Promise<void> {
-		// Stop loading animation
-		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
-			this.loadingAnimation = undefined;
-		}
-		this.statusContainer.clear();
+		this.stopWorkingAnimation();
 
 		// Clear UI state
 		this.pendingMessagesContainer.clear();
@@ -3782,8 +3795,13 @@ export class InteractiveMode {
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
 
-		// Switch session via AgentSession (emits extension session events)
-		await this.session.switchSession(sessionPath);
+		this.startWorkingAnimation("Resuming session...");
+		try {
+			// Switch session via AgentSession (emits extension session events)
+			await this.session.switchSession(sessionPath);
+		} finally {
+			this.stopWorkingAnimation();
+		}
 
 		// Clear and re-render the chat
 		this.chatContainer.clear();
