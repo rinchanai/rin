@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 import { cac } from 'cac'
 
-import { finalizeInstallPlan, detectCurrentUser } from '../rin-install/main.js'
+import { finalizeCoreUpdate, detectCurrentUser } from '../rin-install/main.js'
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from '../rin-lib/runtime.js'
 import { buildUserShell, homeForUser, pickPrivilegeCommand, readPasswdUser, shellQuote, socketPathForUser, targetUserRuntimeEnv } from '../rin-lib/system.js'
 
@@ -485,7 +485,8 @@ async function runUpdate(parsed: ParsedArgs) {
     }
     runCommandSync(npm, ['run', 'build'], { cwd: sourceRoot, env: buildEnv })
 
-    const result = await finalizeInstallPlan({
+    console.log('rin update: updating core runtime only (CLI launcher and installer are unchanged)')
+    const result = await finalizeCoreUpdate({
       currentUser: detectCurrentUser(),
       targetUser: parsed.targetUser,
       installDir,
@@ -498,7 +499,7 @@ async function runUpdate(parsed: ParsedArgs) {
 }
 
 type ParsedArgs = {
-  command: '' | 'start' | 'stop' | 'restart' | 'doctor'
+  command: '' | 'update' | 'start' | 'stop' | 'restart' | 'doctor'
   targetUser: string
   installDir: string
   std: boolean
@@ -549,6 +550,7 @@ function createCli() {
     .option('--tmux-list', 'List hidden Rin tmux sessions')
     .help()
 
+  cli.command('update', 'Update the installed Rin core runtime for the target user (does not update the CLI launcher)')
   cli.command('start', 'Start the target user daemon')
   cli.command('stop', 'Stop the target user daemon')
   cli.command('restart', 'Restart the target user daemon')
@@ -565,10 +567,14 @@ export async function startRinCli() {
     return
   }
   const matchedName = safeString(cli.matchedCommandName).trim()
-  const command = ['start', 'stop', 'restart', 'doctor'].includes(matchedName)
+  const command = ['update', 'start', 'stop', 'restart', 'doctor'].includes(matchedName)
     ? matchedName as ParsedArgs['command']
     : ''
   const parsed = resolveParsedArgs(command, parsedArgv.options, process.argv.slice(2))
+  if (parsed.command === 'update') {
+    await runUpdate(parsed)
+    return
+  }
   if (parsed.command === 'start') {
     await runStart(parsed)
     return
