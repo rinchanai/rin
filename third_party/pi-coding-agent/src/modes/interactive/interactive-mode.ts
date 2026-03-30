@@ -545,8 +545,8 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 
-		// Initialize available provider count for footer display without blocking startup
-		void this.updateAvailableProviderCount().catch(() => {});
+		// Initialize available provider count for footer display
+		await this.updateAvailableProviderCount();
 	}
 
 	/**

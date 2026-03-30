@@ -38,13 +38,6 @@ export async function loadRinSessionManagerModule() {
   return await importSourceModule(path.join('core', 'session-manager.ts'))
 }
 
-export async function loadRinSettingsManagerModule() {
-  if (hasDistModule(path.join('core', 'settings-manager.js'))) {
-    return await importDistModule(path.join('core', 'settings-manager.js'))
-  }
-  return await importSourceModule(path.join('core', 'settings-manager.ts'))
-}
-
 export async function loadRinInteractiveModeModule() {
   if (hasDistModule(path.join('modes', 'interactive', 'interactive-mode.js'))) {
     return await importDistModule(path.join('modes', 'interactive', 'interactive-mode.js'))
