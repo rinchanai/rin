@@ -46,14 +46,17 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
   profile.mark(`mode=${mode}`)
 
   const client = mode === 'rpc' ? new RinDaemonFrontendClient() : null
+  const rpcSession = mode === 'rpc' ? new RpcInteractiveSession(client!, options.additionalExtensionPaths) : null
   const interactiveModeModulePromise = loadRinInteractiveModeModule()
   const overridesPromise = applyRinTuiOverrides()
-  const connectPromise = client ? client.connect() : Promise.resolve()
+  const rpcReadyPromise = rpcSession ? rpcSession.connect() : Promise.resolve()
 
-  await Promise.all([overridesPromise, connectPromise])
-  profile.mark('overrides-and-connect-ready')
-  const { InteractiveMode } = await interactiveModeModulePromise as any
-  profile.mark('interactive-mode-loaded')
+  const [{ InteractiveMode }] = await Promise.all([
+    interactiveModeModulePromise as Promise<any>,
+    overridesPromise,
+    rpcReadyPromise,
+  ])
+  profile.mark('interactive-mode-and-rpc-ready')
 
   if (mode === 'std') {
     const webSearchInstanceId = `tui-${process.pid}`
@@ -71,13 +74,12 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
     return
   }
 
-  const session = new RpcInteractiveSession(client!, options.additionalExtensionPaths)
   profile.mark('rpc-session-created')
 
   try {
-    const interactiveMode = new InteractiveMode(session as any, { verbose: true })
+    const interactiveMode = new InteractiveMode(rpcSession as any, { verbose: true })
     await interactiveMode.run()
   } finally {
-    await session.disconnect().catch(() => {})
+    await rpcSession!.disconnect().catch(() => {})
   }
 }

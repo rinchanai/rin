@@ -370,6 +370,11 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
       writeLine(connection.socket, response(id, type, true, { sessions }))
       return true
     }
+    if (type === 'detach_session') {
+      detachWorker(connection)
+      writeLine(connection.socket, response(id, type, true, emptySessionState()))
+      return true
+    }
     if (type === 'rename_session') {
       const { SessionManager } = await sessionManagerModulePromise
       const name = String(command.name || '').trim()
