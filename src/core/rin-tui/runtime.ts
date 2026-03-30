@@ -1,6 +1,6 @@
 import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
 
-import { loadRinCodingAgent } from '../rin-lib/loader.js'
+import { loadRinCodingAgent, loadRinSettingsManagerModule } from '../rin-lib/loader.js'
 import { getRuntimeSessionDir, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import { RinDaemonFrontendClient } from './rpc-client.js'
 
@@ -427,9 +427,14 @@ export class RpcInteractiveSession {
       }
       this.handleRpcEvent(payload)
     })
-    await this.hydrateSettingsManager()
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    await Promise.all([
+      this.hydrateSettingsManager(),
+      this.refreshState(REFRESH_MESSAGES),
+    ])
     void this.modelRegistry.sync().catch(() => {})
+    void this.refreshSessionData().then(() => {
+      this.lastSessionStats = this.computeSessionStats()
+    }).catch(() => {})
   }
 
   async disconnect() {
@@ -825,8 +830,8 @@ export class RpcInteractiveSession {
 
   private async hydrateSettingsManager() {
     try {
-      const codingAgentModule: any = await loadRinCodingAgent()
-      const SettingsManager = codingAgentModule?.SettingsManager
+      const settingsModule: any = await loadRinSettingsManagerModule()
+      const SettingsManager = settingsModule?.SettingsManager
       if (!SettingsManager?.create) return
       const settings = SettingsManager.create(RUNTIME_PROFILE.cwd, RUNTIME_PROFILE.agentDir)
       this.settingsManager.setShowHardwareCursor(Boolean(settings.getShowHardwareCursor?.()))
