@@ -89,6 +89,8 @@ type SubagentDetails = {
 	currentThinkingLevel: ThinkingLevel
 	providers: ProviderModelSummary[]
 	results?: TaskResult[]
+	agentText?: string
+	userText?: string
 }
 
 let sessionCreationQueue: Promise<unknown> = Promise.resolve()
@@ -238,6 +240,36 @@ function summarizeTaskResult(result: TaskResult): string {
 	return `${result.index}. [${result.status}] ${model} — ${preview.slice(0, 180)}${preview.length > 180 ? '…' : ''}`
 }
 
+function buildSubagentAgentText(results: TaskResult[]): string {
+	const failed = results.filter((result) => result.exitCode !== 0).length
+	return [
+		`subagent results=${results.length} failed=${failed}`,
+		...results.map((result) => {
+			const model = result.model || result.requestedModel || '(default model)'
+			const preview = (result.output || result.errorMessage || '(no output)').replace(/\s+/g, ' ').trim()
+			return [
+				`${result.index}. status=${result.status} exit=${result.exitCode} model=${model}`,
+				`cwd=${result.cwd}`,
+				preview ? `preview=${preview.slice(0, 220)}${preview.length > 220 ? '…' : ''}` : '',
+			].filter(Boolean).join('\n')
+		}),
+	].join('\n\n')
+}
+
+function buildSubagentUserText(results: TaskResult[]): string {
+	const failed = results.filter((result) => result.exitCode !== 0)
+	return results.length === 1
+		? (results[0].output || results[0].errorMessage || '(no output)')
+		: [
+			`Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
+			...results.map((result) => {
+				const status = result.exitCode === 0 ? 'ok' : 'failed'
+				const preview = (result.output || result.errorMessage || '(no output)').replace(/\s+/g, ' ').trim()
+				return `${result.index}. [${status}] ${result.model || result.requestedModel || '(default model)'} — ${preview.slice(0, 220)}${preview.length > 220 ? '…' : ''}`
+			}),
+		].join('\n\n')
+}
+
 function buildRunUpdate(results: TaskResult[], detailsBase: SubagentDetails) {
 	const done = results.filter((result) => result.status === 'done').length
 	const failed = results.filter((result) => result.status === 'error').length
@@ -375,9 +407,14 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			}
 
 			if (params.action === 'list_models') {
+				const userText = formatModelList(detailsBase)
+				const agentText = [
+					`subagent_models providers=${detailsBase.providers.length}`,
+					...detailsBase.providers.map((provider) => `${provider.provider}: ${provider.top3.join(', ')}${provider.count > 3 ? ` (+${provider.count - 3})` : ''}`),
+				].join('\n')
 				return {
-					content: [{ type: 'text', text: formatModelList(detailsBase) }],
-					details: detailsBase,
+					content: [{ type: 'text', text: agentText }],
+					details: { ...detailsBase, agentText, userText },
 				}
 			}
 
@@ -449,22 +486,13 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				progressResults[index] = partial
 				onUpdate?.(buildRunUpdate(progressResults, detailsBase))
 			})))
-			const details: SubagentDetails = { ...detailsBase, action: 'run', results }
 			const failed = results.filter((result) => result.exitCode !== 0)
-
-			const text = results.length === 1
-				? (results[0].output || results[0].errorMessage || '(no output)')
-				: [
-					`Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
-					...results.map((result) => {
-						const status = result.exitCode === 0 ? 'ok' : 'failed'
-						const preview = (result.output || result.errorMessage || '(no output)').replace(/\s+/g, ' ').trim()
-						return `${result.index}. [${status}] ${result.model || result.requestedModel || '(default model)'} — ${preview.slice(0, 220)}${preview.length > 220 ? '…' : ''}`
-					}),
-				].join('\n\n')
+			const agentText = buildSubagentAgentText(results)
+			const userText = buildSubagentUserText(results)
+			const details: SubagentDetails = { ...detailsBase, action: 'run', results, agentText, userText }
 
 			return {
-				content: [{ type: 'text', text }],
+				content: [{ type: 'text', text: agentText }],
 				details,
 				isError: failed.length > 0,
 			}
@@ -503,7 +531,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 			}
 
 			if (details.action === 'list_models' || !details.results) {
-				return new Text(formatModelList(details), 0, 0)
+				return new Text(String(details.userText || formatModelList(details)), 0, 0)
 			}
 
 			if (!expanded) {

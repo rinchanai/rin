@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { Type } from '@sinclair/typebox'
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
+import { Text } from '@mariozechner/pi-tui'
 import jiti from '@mariozechner/jiti'
 
 function trimSnippet(value: string, max = 220): string {
@@ -28,6 +29,23 @@ function formatResults(response: any): string {
 				`${index + 1}. ${title}${meta ? ` — ${meta}` : ''}`,
 				url,
 				snippet,
+			].filter(Boolean).join('\n')
+		}),
+	].join('\n\n')
+}
+
+function formatAgentResults(response: any): string {
+	if (!response?.ok) return `web_search error\nquery=${String(response?.query || '')}\nerror=${String(response?.error || 'unknown_error')}`
+	const rows = Array.isArray(response.results) ? response.results : []
+	if (!rows.length) return `web_search 0\nquery=${String(response?.query || '')}`
+	return [
+		`web_search ${rows.length}`,
+		`query=${String(response?.query || '')}`,
+		...rows.map((item: any, index: number) => {
+			const meta = [String(item?.domain || '').trim(), String(item?.publishedDate || '').trim()].filter(Boolean).join(' | ')
+			return [
+				`${index + 1}. ${String(item?.title || '').trim() || '(untitled)'}${meta ? ` | ${meta}` : ''}`,
+				String(item?.url || '').trim(),
 			].filter(Boolean).join('\n')
 		}),
 	].join('\n\n')
@@ -77,11 +95,18 @@ export default function webSearchExtension(pi: ExtensionAPI) {
 				results: [],
 				error: String(error?.message || error || 'web_search_failed'),
 			}))
+			const agentText = formatAgentResults(response)
+			const userText = formatResults(response)
 			return {
-				content: [{ type: 'text', text: formatResults(response) }],
-				details: response,
+				content: [{ type: 'text', text: agentText }],
+				details: { ...response, agentText, userText },
 				isError: response?.ok !== true,
 			}
+		},
+		renderResult(result) {
+			const details = result.details as any
+			const fallback = result.content?.[0]?.type === 'text' ? result.content[0].text : '(no output)'
+			return new Text(String(details?.userText || fallback), 0, 0)
 		},
 	})
 }

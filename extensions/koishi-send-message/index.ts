@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { getAgentDir, type ExtensionAPI } from '@mariozechner/pi-coding-agent'
+import { Text } from '@mariozechner/pi-tui'
 import { Type } from '@sinclair/typebox'
 import jiti from '@mariozechner/jiti'
 
@@ -121,6 +122,20 @@ function isChatKey(value: string) {
   return /^[^/:]+(?:\/[^:]+)?:.+$/.test(value.trim())
 }
 
+function formatPartForAgent(part: KoishiMessagePart) {
+  if (part.type === 'text') return `text chars=${part.text.length}`
+  if (part.type === 'at') return `at id=${part.id}`
+  if (part.type === 'image') return `image ${part.path ? `path=${part.path}` : `url=${part.url || ''}`}`
+  return `file ${part.path ? `path=${part.path}` : `url=${part.url || ''}`}`
+}
+
+function formatPartForUser(part: KoishiMessagePart) {
+  if (part.type === 'text') return `- 文本（${part.text.length} 字符）`
+  if (part.type === 'at') return `- @ ${part.name || part.id}`
+  if (part.type === 'image') return `- 图片：${part.path || part.url || ''}`
+  return `- 文件：${part.path || part.url || ''}${part.name ? `（${part.name}）` : ''}`
+}
+
 export default function koishiSendMessageExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'koishi_send_message',
@@ -167,16 +182,30 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         parts,
       })
 
-      const summary = [
-        `Queued Koishi message to ${chatKey}.`,
-        `Parts: ${parts.map((part) => part.type).join(', ')}`,
-        `Outbox: ${filePath}`,
+      const agentText = [
+        'koishi_send_message queued',
+        `chatKey=${chatKey}`,
+        `requestId=${requestId}`,
+        `outbox=${filePath}`,
+        ...parts.map((part, index) => `${index + 1}. ${formatPartForAgent(part)}`),
+      ].join('\n')
+
+      const userText = [
+        `已加入发送队列，目标聊天：${chatKey}`,
+        `消息片段共 ${parts.length} 个：`,
+        ...parts.map((part) => formatPartForUser(part)),
+        `出站文件：${filePath}`,
       ].join('\n')
 
       return {
-        content: [{ type: 'text', text: summary }],
-        details: { chatKey, requestId, parts, outboxPath: filePath },
+        content: [{ type: 'text', text: agentText }],
+        details: { chatKey, requestId, parts, outboxPath: filePath, agentText, userText },
       }
+    },
+    renderResult(result) {
+      const details = result.details as any
+      const fallback = result.content?.[0]?.type === 'text' ? result.content[0].text : '(no output)'
+      return new Text(String(details?.userText || fallback), 0, 0)
     },
   })
 }

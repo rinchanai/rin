@@ -2,6 +2,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Text } from '@mariozechner/pi-tui'
 import { Type } from "@sinclair/typebox";
 
 function normalizeInputPath(input: string, cwd: string): string {
@@ -70,6 +71,21 @@ function collectSkillPaths(skillsDir: string): string[] {
 	return results;
 }
 
+function formatAgentText(paths: string[], error?: string): string {
+	if (error) return `attention_resources error\n${error}`;
+	if (!paths.length) return 'attention_resources 0';
+	return ['attention_resources', ...paths].join('\n');
+}
+
+function formatUserText(targetDir: string, paths: string[], error?: string): string {
+	if (error) return `无法发现 attention resources：${error}`;
+	if (!paths.length) return `在 ${targetDir} 下没有找到 attention resources。`;
+	return [
+		`在 ${targetDir} 下找到 ${paths.length} 个 attention resources：`,
+		...paths.map((item) => `- ${item}`),
+	].join('\n');
+}
+
 export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "discover_attention_resources",
@@ -85,9 +101,10 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
 			try {
 				stats = statSync(targetPath);
 			} catch {
+				const error = `Path does not exist: ${targetPath}`;
 				return {
-					content: [{ type: "text", text: JSON.stringify({ paths: [], error: `Path does not exist: ${targetPath}` }, null, 2) }],
-					details: { paths: [], error: true },
+					content: [{ type: "text", text: formatAgentText([], error) }],
+					details: { paths: [], error: true, agentText: formatAgentText([], error), userText: formatUserText(targetPath, [], error) },
 				};
 			}
 
@@ -96,11 +113,17 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
 				...listAncestorContextFiles(targetDir),
 				...collectSkillPaths(join(targetDir, ".agents", "skills")),
 			];
-
+			const agentText = formatAgentText(paths);
+			const userText = formatUserText(targetDir, paths);
 			return {
-				content: [{ type: "text", text: JSON.stringify({ paths }, null, 2) }],
-				details: { paths },
+				content: [{ type: "text", text: agentText }],
+				details: { paths, agentText, userText },
 			};
+		},
+		renderResult(result) {
+			const details = result.details as any;
+			const fallback = result.content?.[0]?.type === 'text' ? (result.content[0] as any).text || '' : '';
+			return new Text(String(details?.userText || fallback), 0, 0);
 		},
 	});
 }

@@ -493,6 +493,7 @@ async function runUpdate(parsed: ParsedArgs) {
       sourceRoot,
     })
     console.log(`rin update complete: ${result.publishedRuntime.releaseRoot}`)
+    console.log(`rin update: pruned old releases = ${result.prunedReleases.removed.length}`)
   } finally {
     try { fs.rmSync(tempRoot, { recursive: true, force: true }) } catch {}
   }
