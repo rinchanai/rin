@@ -2,6 +2,7 @@ import net from 'node:net'
 
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
 import { StringEnum } from '@mariozechner/pi-ai'
+import { Text } from '@mariozechner/pi-tui'
 import { Type } from '@sinclair/typebox'
 
 function defaultDaemonSocketPath() {
@@ -124,6 +125,55 @@ function summarizeTask(task: any) {
   ].filter(Boolean).join('\n')
 }
 
+function summarizeTaskForAgent(task: any) {
+  const trigger = task?.trigger?.kind === 'interval'
+    ? `every=${String(task?.trigger?.intervalMs || 0)}ms`
+    : task?.trigger?.kind === 'cron'
+      ? `cron=${String(task?.trigger?.expression || '')}`
+      : `once=${String(task?.trigger?.runAt || '')}`
+  const target = task?.target?.kind === 'shell_command'
+    ? `command=${String(task?.target?.command || '').replace(/\s+/g, ' ').trim()}`
+    : `agent_prompt=${String(task?.target?.prompt || '').replace(/\s+/g, ' ').trim()}`
+  return [
+    `${String(task?.id || '')}${task?.name ? ` | name=${String(task.name)}` : ''}`,
+    trigger,
+    target,
+    task?.chatKey ? `chat=${String(task.chatKey)}` : '',
+    `session=${String(task?.session?.mode || '')}${task?.session?.sessionFile ? `:${String(task.session.sessionFile)}` : task?.dedicatedSessionFile ? `:${String(task.dedicatedSessionFile)}` : ''}`,
+    task?.completedAt ? `completed=${String(task.completedAt)}` : task?.enabled === false ? 'disabled' : `next=${String(task?.nextRunAt || 'pending')}`,
+  ].filter(Boolean).join('\n')
+}
+
+function buildTexts(action: string, data: any, params: any) {
+  const userText = action === 'list'
+    ? (() => {
+      const tasks = Array.isArray(data?.tasks) ? data.tasks : []
+      return tasks.length
+        ? ['Scheduled tasks:', ...tasks.map((task: any) => summarizeTask(task))].join('\n\n')
+        : 'No scheduled tasks.'
+    })()
+    : data?.task
+      ? summarizeTask(data.task)
+      : data?.deleted
+        ? `Deleted task: ${String(params?.taskId || '')}`
+        : JSON.stringify(data, null, 2)
+
+  const agentText = action === 'list'
+    ? (() => {
+      const tasks = Array.isArray(data?.tasks) ? data.tasks : []
+      return tasks.length
+        ? ['scheduled_tasks', ...tasks.map((task: any) => summarizeTaskForAgent(task))].join('\n\n')
+        : 'scheduled_tasks 0'
+    })()
+    : data?.task
+      ? summarizeTaskForAgent(data.task)
+      : data?.deleted
+        ? `scheduled_task deleted\nid=${String(params?.taskId || '')}`
+        : `scheduled_task ${action}`
+
+  return { agentText, userText }
+}
+
 export default function cronExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: 'manage_scheduled_tasks',
@@ -206,23 +256,17 @@ export default function cronExtension(pi: ExtensionAPI) {
       else if (action === 'complete') data = await sendDaemon({ type: 'cron_complete_task', taskId: (params as any)?.taskId, reason: (params as any)?.reason })
       else throw new Error(`Unsupported action: ${action}`)
 
-      const text = action === 'list'
-        ? (() => {
-          const tasks = Array.isArray(data?.tasks) ? data.tasks : []
-          return tasks.length
-            ? ['Scheduled tasks:', ...tasks.map((task: any) => summarizeTask(task))].join('\n\n')
-            : 'No scheduled tasks.'
-        })()
-        : data?.task
-          ? summarizeTask(data.task)
-          : data?.deleted
-            ? `Deleted task: ${String((params as any)?.taskId || '')}`
-            : JSON.stringify(data, null, 2)
+      const { agentText, userText } = buildTexts(action, data, params as any)
 
       return {
-        content: [{ type: 'text', text }],
-        details: data,
+        content: [{ type: 'text', text: agentText }],
+        details: { ...data, agentText, userText },
       }
+    },
+    renderResult(result) {
+      const details = result.details as any
+      const fallback = result.content?.[0]?.type === 'text' ? result.content[0].text : '(no output)'
+      return new Text(String(details?.userText || fallback), 0, 0)
     },
   })
 }
