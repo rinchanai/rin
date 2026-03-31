@@ -83,7 +83,9 @@ export default function memoryExtension(pi: ExtensionAPI) {
 			promptSnippet: 'Manage the markdown-backed long-term memory system with resident memory, progressive memory, recall memory, and event ledger processing.',
 			promptGuidelines: [
 				'Use `memory` for long-term reusable memory, project recall, event history, and memory maintenance. Use it when you need to save, inspect, search, move, process, or review memory state.',
-				'Resident memory is for short global always-on baselines. Progressive memory is for long-form global or directional guidance that should appear as an expandable entry. Recall memory is for everything that should only be remembered when needed.',
+				'When handling memory state, first use `memory` to discover the target document or slot instead of acting from assumptions about internal file paths or storage layout.',
+				'For correcting a mistaken save, reclassification, or relocation between resident/progressive/recall, prefer `memory` tool actions such as `search`, `get`, `move`, `save`, or `delete` rather than editing files based only on inferred implementation knowledge.',
+				'Resident memory is for short global always-on baselines, including identity, voice/style, methodology, and values/worldview that should always guide behavior. Progressive memory is for longer global or directional guidance that should appear as an expandable entry. Recall memory is for everything that should only be remembered when needed.',
 				'Prefer searching and then reading the relevant memory files instead of assuming recall/episode/history content has already been injected into the prompt. Resident and progressive index are the only prompt-resident layers.',
 				'Before saving a new memory, search first and prefer updating, moving, or consolidating an existing memory instead of creating duplicates.',
 			],

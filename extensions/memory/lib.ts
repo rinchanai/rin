@@ -351,11 +351,13 @@ export function buildOnboardingPrompt(mode: 'auto' | 'manual' = 'manual'): strin
 		'- finally ask for the assistant\'s default voice/style preferences',
 		'If the user already provided information from later steps early, remember it and use it; do not force redundant questions.',
 		'When a stable fact becomes clear, proactively call memory to save or update it.',
+		'For onboarding or preference updates, first use the memory tool to inspect or resolve the target slot/doc instead of acting from assumptions about the underlying files.',
 		'Use resident slots:',
 		'- agent_identity = assistant name/identity/relationship framing',
 		'- owner_identity = user name/addressing/stable identity cues',
 		'- core_voice_style = default language, tone, brevity, and chat style',
 		'Prefer updating existing memory over creating duplicates.',
+		'Stable global work-method preferences, methodology, and values belong in always-on memory, not recall-only memory.',
 		'Once those three resident slots are established clearly enough, stop onboarding and continue normally.',
 	].join('\n')
 }
