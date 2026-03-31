@@ -106,7 +106,7 @@ function buildPromptBlock() {
       `- Runtime layout: ${rinRuntimeLayout}`,
       `- Builtin extensions: ${rinBuiltinExtensions}`,
       `- Capabilities: ${rinCapabilities}`,
-      '- On Rin topics, prefer these Rin docs over upstream pi docs.',
+      '- On Rin topics, read runtime-layout.md first and prefer Rin docs over upstream pi docs.',
     )
   }
 
