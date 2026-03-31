@@ -1,10 +1,16 @@
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
+import { Text } from '@mariozechner/pi-tui'
 
+import { synthesizeEpisodeTurn } from './episode-synth.js'
+import { extractAndPersistTurnMemory } from './extractor.js'
 import {
 	buildOnboardingPrompt,
 	compilePromptMemory,
 	executeMemoryTool,
+	formatMemoryAgentResult,
 	formatMemoryResult,
+	getOnboardingState,
+	isOnboardingActive,
 	markOnboardingPrompted,
 	memoryToolParameters,
 	refreshOnboardingCompletion,
@@ -30,8 +36,12 @@ function sessionMeta(ctx: any) {
 	}
 }
 
-function triggerInitConversation(pi: ExtensionAPI, mode: 'auto' | 'manual') {
-	pi.sendUserMessage(buildOnboardingPrompt(mode), { deliverAs: 'followUp' })
+function triggerInitConversation(pi: ExtensionAPI, mode: 'auto' | 'manual', busy: boolean) {
+	pi.sendMessage({
+		customType: 'memory-init-trigger',
+		content: mode === 'auto' ? 'Begin memory onboarding.' : 'Begin requested memory onboarding.',
+		display: false,
+	}, busy ? { triggerTurn: true, deliverAs: 'followUp' } : { triggerTurn: true })
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
@@ -51,17 +61,25 @@ export default function memoryExtension(pi: ExtensionAPI) {
 			const action = String((params as any)?.action || '').trim()
 			try {
 				const response = await executeMemoryTool(params as any)
+				const agentText = formatMemoryAgentResult(action, response)
+				const userText = formatMemoryResult(action, response)
 				return {
-					content: [{ type: 'text', text: formatMemoryResult(action, response) }],
-					details: response,
+					content: [{ type: 'text', text: agentText }],
+					details: { ...response, agentText, userText },
 				}
 			} catch (error: any) {
+				const message = String(error?.message || error || 'memory_action_failed')
 				return {
-					content: [{ type: 'text', text: String(error?.message || error || 'memory_action_failed') }],
-					details: { ok: false, error: String(error?.message || error || 'memory_action_failed') },
+					content: [{ type: 'text', text: message }],
+					details: { ok: false, error: message, agentText: message, userText: `Memory 操作失败：${message}` },
 					isError: true,
 				}
 			}
+		},
+		renderResult(result) {
+			const details = result.details as any
+			const fallback = result.content?.[0]?.type === 'text' ? result.content[0].text : '(no output)'
+			return new Text(String(details?.userText || fallback), 0, 0)
 		},
 	})
 
@@ -107,7 +125,16 @@ export default function memoryExtension(pi: ExtensionAPI) {
 		})
 	})
 
-	pi.on('agent_end', async (_event, ctx) => {
+	pi.on('agent_end', async (event, ctx) => {
+		const messages = Array.isArray((event as any)?.messages) ? (event as any).messages : []
+		await extractAndPersistTurnMemory(ctx as any, messages, {
+			sessionFile: sessionMeta(ctx).sessionFile,
+			trigger: 'extension:agent_end_extractor',
+		})
+		await synthesizeEpisodeTurn(ctx as any, messages, {
+			sessionFile: sessionMeta(ctx).sessionFile,
+			sessionId: sessionMeta(ctx).sessionId,
+		})
 		await executeMemoryTool({ action: 'process', sessionFile: sessionMeta(ctx).sessionFile })
 		await refreshOnboardingCompletion()
 	})
@@ -116,20 +143,23 @@ export default function memoryExtension(pi: ExtensionAPI) {
 		description: 'Start or restart memory onboarding conversation.',
 		handler: async (_args, ctx) => {
 			await markOnboardingPrompted('manual:/init')
-			if (!ctx.isIdle()) {
-				ctx.ui.notify('Memory onboarding queued.', 'info')
-			}
-			triggerInitConversation(pi, 'manual')
+			ctx.ui.notify(ctx.isIdle() ? 'Memory onboarding started.' : 'Memory onboarding queued.', 'info')
+			triggerInitConversation(pi, 'manual', !ctx.isIdle())
 		},
 	})
 
 	pi.on('before_agent_start', async (event, ctx) => {
 		await executeMemoryTool({ action: 'process', sessionFile: sessionMeta(ctx).sessionFile })
 		const { systemPrompt } = await compilePromptMemory(String(event?.prompt || ''))
-		if (!systemPrompt) return
-		if (String(event.systemPrompt || '').includes(systemPrompt)) return
+		const blocks: string[] = []
+		if (systemPrompt && !String(event.systemPrompt || '').includes(systemPrompt)) blocks.push(systemPrompt)
+		const onboarding = getOnboardingState()
+		if (isOnboardingActive(onboarding)) {
+			blocks.push(buildOnboardingPrompt(String(onboarding.lastTrigger || '').startsWith('auto:') ? 'auto' : 'manual'))
+		}
+		if (!blocks.length) return
 		return {
-			systemPrompt: `${String(event.systemPrompt || '').trimEnd()}\n\n${systemPrompt}`.trimEnd(),
+			systemPrompt: `${String(event.systemPrompt || '').trimEnd()}\n\n${blocks.join('\n\n')}`.trimEnd(),
 		}
 	})
 }
