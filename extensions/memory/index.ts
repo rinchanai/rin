@@ -75,43 +75,48 @@ async function processSessionMemory(ctx: any, messages: any[], opts: { sessionFi
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
-	pi.registerTool({
-		name: 'rin_memory',
-		label: 'Rin Memory',
-		description: 'Manage the markdown-backed long-term memory library, event ledger, automatic consolidation, and context recall pipeline.',
-		promptSnippet: 'Manage the markdown-backed long-term memory system with resident memory, progressive memory, recall memory, and event ledger processing.',
-		promptGuidelines: [
-			'Use `rin_memory` for long-term reusable memory, project recall, event history, and memory maintenance. Use it when you need to save, inspect, search, move, process, or review memory state.',
-			'Resident memory is for short global always-on baselines. Progressive memory is for long-form global or directional guidance that should appear as an expandable entry. Recall memory is for everything that should only be remembered when needed.',
-			'Prefer searching and then reading the relevant memory files instead of assuming recall/episode/history content has already been injected into the prompt. Resident and progressive index are the only prompt-resident layers.',
-			'Before saving a new memory, search first and prefer updating, moving, or consolidating an existing memory instead of creating duplicates.',
-		],
-		parameters: memoryToolParameters,
-		execute: async (_toolCallId, params) => {
-			const action = String((params as any)?.action || '').trim()
-			try {
-				const response = await executeMemoryTool(params as any)
-				const agentText = formatMemoryAgentResult(action, response)
-				const userText = formatMemoryResult(action, response)
-				return {
-					content: [{ type: 'text', text: agentText }],
-					details: { ...response, agentText, userText },
+	const registerMemoryTool = (name: 'memory' | 'rin_memory', label: string, primary = false) => {
+		pi.registerTool({
+			name,
+			label,
+			description: 'Manage the markdown-backed long-term memory library, event ledger, automatic consolidation, and context recall pipeline.',
+			promptSnippet: 'Manage the markdown-backed long-term memory system with resident memory, progressive memory, recall memory, and event ledger processing.',
+			promptGuidelines: [
+				`Use \`${primary ? 'memory' : name}\` for long-term reusable memory, project recall, event history, and memory maintenance. Use it when you need to save, inspect, search, move, process, or review memory state.`,
+				'Resident memory is for short global always-on baselines. Progressive memory is for long-form global or directional guidance that should appear as an expandable entry. Recall memory is for everything that should only be remembered when needed.',
+				'Prefer searching and then reading the relevant memory files instead of assuming recall/episode/history content has already been injected into the prompt. Resident and progressive index are the only prompt-resident layers.',
+				'Before saving a new memory, search first and prefer updating, moving, or consolidating an existing memory instead of creating duplicates.',
+			],
+			parameters: memoryToolParameters,
+			execute: async (_toolCallId, params) => {
+				const action = String((params as any)?.action || '').trim()
+				try {
+					const response = await executeMemoryTool(params as any)
+					const agentText = formatMemoryAgentResult(action, response)
+					const userText = formatMemoryResult(action, response)
+					return {
+						content: [{ type: 'text', text: agentText }],
+						details: { ...response, agentText, userText },
+					}
+				} catch (error: any) {
+					const message = String(error?.message || error || 'memory_action_failed')
+					return {
+						content: [{ type: 'text', text: message }],
+						details: { ok: false, error: message, agentText: message, userText: `Memory 操作失败：${message}` },
+						isError: true,
+					}
 				}
-			} catch (error: any) {
-				const message = String(error?.message || error || 'memory_action_failed')
-				return {
-					content: [{ type: 'text', text: message }],
-					details: { ok: false, error: message, agentText: message, userText: `Memory 操作失败：${message}` },
-					isError: true,
-				}
-			}
-		},
-		renderResult(result) {
-			const details = result.details as any
-			const fallback = result.content?.[0]?.type === 'text' ? result.content[0].text : '(no output)'
-			return new Text(String(details?.userText || fallback), 0, 0)
-		},
-	})
+			},
+			renderResult(result) {
+				const details = result.details as any
+				const fallback = result.content?.[0]?.type === 'text' ? result.content[0].text : '(no output)'
+				return new Text(String(details?.userText || fallback), 0, 0)
+			},
+		})
+	}
+
+	registerMemoryTool('memory', 'Memory', true)
+	registerMemoryTool('rin_memory', 'Rin Memory')
 
 	pi.on('input', async (event, ctx) => {
 		const text = String(event?.text || '').trim()

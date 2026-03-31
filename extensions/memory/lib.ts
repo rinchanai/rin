@@ -350,7 +350,7 @@ export function buildOnboardingPrompt(mode: 'auto' | 'manual' = 'manual'): strin
 		'- then ask how to address the user',
 		'- finally ask for the assistant\'s default voice/style preferences',
 		'If the user already provided information from later steps early, remember it and use it; do not force redundant questions.',
-		'When a stable fact becomes clear, proactively call rin_memory to save or update it.',
+		'When a stable fact becomes clear, proactively call memory to save or update it.',
 		'Use resident slots:',
 		'- agent_identity = assistant name/identity/relationship framing',
 		'- owner_identity = user name/addressing/stable identity cues',

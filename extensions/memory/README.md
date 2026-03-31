@@ -2,6 +2,9 @@
 
 Rin's builtin long-term memory extension.
 
+The primary tool name is `memory`.
+For compatibility with older prompts and integrations, `rin_memory` remains available as an alias for now.
+
 Implementation note:
 - the extension is extension-first
 - semantic extraction and episode synthesis happen in extension modules
@@ -11,7 +14,8 @@ Implementation note:
 
 ## What it now does
 
-- registers the `rin_memory` tool
+- registers the `memory` tool as the primary name
+- keeps `rin_memory` as a compatibility alias
 - stores memory under `~/.rin/memory/` (or the active agent dir)
 - keeps three explicit layers:
   - `resident`: short always-on global baselines
@@ -32,7 +36,7 @@ Implementation note:
 
 ## Tool actions
 
-`rin_memory` supports:
+`memory` supports:
 
 - `list`
 - `search`
