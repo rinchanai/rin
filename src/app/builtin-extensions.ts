@@ -20,6 +20,7 @@ export function getBuiltinExtensionPaths() {
     path.join(root, 'extensions', 'memory', 'index.ts'),
     path.join(root, 'extensions', 'reset-system-prompt', 'index.ts'),
     path.join(root, 'extensions', 'message-header', 'index.ts'),
+    path.join(root, 'extensions', 'rin-project-docs', 'index.ts'),
     path.join(root, 'extensions', 'freeze-session-runtime', 'index.ts'),
     path.join(root, 'extensions', 'tui-input-compat', 'index.ts'),
     path.join(root, 'extensions', 'subagent', 'index.ts'),
