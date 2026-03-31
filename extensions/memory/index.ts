@@ -75,14 +75,14 @@ async function processSessionMemory(ctx: any, messages: any[], opts: { sessionFi
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
-	const registerMemoryTool = (name: 'memory' | 'rin_memory', label: string, primary = false) => {
+	const registerMemoryTool = (name: 'memory' | 'rin_memory', label: string) => {
 		pi.registerTool({
 			name,
 			label,
 			description: 'Manage the markdown-backed long-term memory library, event ledger, automatic consolidation, and context recall pipeline.',
 			promptSnippet: 'Manage the markdown-backed long-term memory system with resident memory, progressive memory, recall memory, and event ledger processing.',
 			promptGuidelines: [
-				`Use \`${primary ? 'memory' : name}\` for long-term reusable memory, project recall, event history, and memory maintenance. Use it when you need to save, inspect, search, move, process, or review memory state.`,
+				'Use `memory` for long-term reusable memory, project recall, event history, and memory maintenance. Use it when you need to save, inspect, search, move, process, or review memory state.',
 				'Resident memory is for short global always-on baselines. Progressive memory is for long-form global or directional guidance that should appear as an expandable entry. Recall memory is for everything that should only be remembered when needed.',
 				'Prefer searching and then reading the relevant memory files instead of assuming recall/episode/history content has already been injected into the prompt. Resident and progressive index are the only prompt-resident layers.',
 				'Before saving a new memory, search first and prefer updating, moving, or consolidating an existing memory instead of creating duplicates.',
@@ -115,8 +115,8 @@ export default function memoryExtension(pi: ExtensionAPI) {
 		})
 	}
 
-	registerMemoryTool('memory', 'Memory', true)
-	registerMemoryTool('rin_memory', 'Rin Memory')
+	registerMemoryTool('memory', 'Memory')
+	registerMemoryTool('rin_memory', 'Memory (legacy alias)')
 
 	pi.on('input', async (event, ctx) => {
 		const text = String(event?.text || '').trim()
