@@ -65,7 +65,7 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
       additionalExtensionPaths: options.additionalExtensionPaths,
     })
     profile.mark('std-session-created')
-    const interactiveMode = new InteractiveMode(session, { verbose: true })
+    const interactiveMode = new InteractiveMode(session)
     try {
       await interactiveMode.run()
     } finally {
@@ -77,7 +77,7 @@ export async function startTui(options: { additionalExtensionPaths?: string[] } 
   profile.mark('rpc-session-created')
 
   try {
-    const interactiveMode = new InteractiveMode(rpcSession as any, { verbose: true })
+    const interactiveMode = new InteractiveMode(rpcSession as any)
     await interactiveMode.run()
   } finally {
     await rpcSession!.disconnect().catch(() => {})
