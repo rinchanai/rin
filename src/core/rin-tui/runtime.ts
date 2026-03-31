@@ -556,7 +556,7 @@ export class RpcInteractiveSession {
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
     this.queuedOfflineOps.push(operation)
-    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Waiting for daemon startup...', statusText: `Queued message while daemon is offline (${this.queuedOfflineOps.length} queued)` } as any)
+    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Waiting daemon...', statusText: `Queued message while daemon is offline (${this.queuedOfflineOps.length} queued)` } as any)
     this.ensureReconnectLoop()
   }
 
@@ -582,7 +582,7 @@ export class RpcInteractiveSession {
 
   private handleConnectionLost() {
     if (this.disposed) return
-    this.emitEvent({ type: 'rin_status', phase: 'update', message: this.activeTurn ? 'Waiting for daemon startup...' : 'Daemon offline', statusText: this.activeTurn ? 'Connection lost while processing. Will resume after daemon returns.' : 'Daemon disconnected. New messages will be queued until it returns.' } as any)
+    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Waiting daemon...', statusText: this.activeTurn ? 'Connection lost while processing. Will resume after daemon returns.' : 'Daemon disconnected. New messages will be queued until it returns.' } as any)
     this.ensureReconnectLoop()
   }
 

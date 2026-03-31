@@ -2,7 +2,7 @@ import { truncateToWidth } from '@mariozechner/pi-tui'
 
 import { loadRinInteractiveFooterModule, loadRinInteractiveModeModule, loadRinInteractiveThemeModule } from '../rin-lib/loader.js'
 
-const SESSION_STARTING_MESSAGE = 'Starting session...'
+const SESSION_STARTING_MESSAGE = 'Creating session...'
 
 let applied = false
 
