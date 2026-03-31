@@ -363,6 +363,47 @@ function syncTree(sourcePath: string, destPath: string) {
   execFileSync('cp', ['-a', sourcePath, destPath], { stdio: 'inherit' })
 }
 
+function syncInstalledDocTree(sourceDir: string, destDir: string, targetUser: string, elevated = false) {
+  if (!fs.existsSync(sourceDir)) return null
+
+  if (elevated) {
+    const target = findSystemUser(targetUser) as any
+    const targetGroup = target?.name ? String(target?.gid ?? '') : ''
+    runPrivileged('rm', ['-rf', destDir])
+    runPrivileged('mkdir', ['-p', path.dirname(destDir)])
+    runPrivileged('cp', ['-a', sourceDir, destDir])
+    if (target?.name) {
+      runPrivileged('chown', ['-R', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, destDir])
+    }
+    return destDir
+  }
+
+  syncTree(sourceDir, destDir)
+  return destDir
+}
+
+function syncInstalledDocs(sourceRoot: string, installDir: string, targetUser: string, elevated = false) {
+  const installedRinDocsDir = syncInstalledDocTree(
+    path.join(sourceRoot, 'docs', 'rin'),
+    path.join(installDir, 'docs', 'rin'),
+    targetUser,
+    elevated,
+  )
+
+  const piDocRoot = path.join(sourceRoot, 'third_party', 'pi-coding-agent')
+  const piInstallRoot = path.join(installDir, 'docs', 'pi')
+  const installedPiDocs: string[] = []
+  for (const name of ['README.md', 'CHANGELOG.md', 'docs', 'examples']) {
+    const synced = syncInstalledDocTree(path.join(piDocRoot, name), path.join(piInstallRoot, name), targetUser, elevated)
+    if (synced) installedPiDocs.push(synced)
+  }
+
+  return {
+    rin: installedRinDocsDir,
+    pi: installedPiDocs,
+  }
+}
+
 function releaseIdNow() {
   return new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, 'Z')
 }
@@ -787,6 +828,42 @@ function shouldUseElevatedWrite(targetUser: string, ownership: ReturnType<typeof
   return targetUser !== effectiveUser || !ownership.ownerMatches || !ownership.writable
 }
 
+function reconcileInstallerManifest(options: {
+  targetUser: string
+  installDir: string
+  provider?: string
+  modelId?: string
+  thinkingLevel?: string
+  koishiConfig?: any
+  elevated?: boolean
+}) {
+  const target = findSystemUser(options.targetUser) as any
+  const ownerUser = target?.name || options.targetUser
+  const ownerGroup = target?.gid
+  if (!options.elevated) ensureDir(options.installDir)
+
+  const manifestPath = path.join(options.installDir, 'installer.json')
+  const legacyManifestPath = path.join(options.installDir, 'config', 'installer.json')
+  const manifestJson = readInstallerJson<any>(manifestPath, readInstallerJson<any>(legacyManifestPath, {}, Boolean(options.elevated)), Boolean(options.elevated))
+  manifestJson.targetUser = options.targetUser
+  manifestJson.installDir = options.installDir
+  if (options.provider) manifestJson.defaultProvider = options.provider
+  if (options.modelId) manifestJson.defaultModel = options.modelId
+  if (options.thinkingLevel) manifestJson.defaultThinkingLevel = options.thinkingLevel
+  if (options.koishiConfig) manifestJson.koishi = options.koishiConfig
+  manifestJson.updatedAt = new Date().toISOString()
+
+  if (options.elevated) {
+    writeJsonFileWithPrivilege(manifestPath, manifestJson, ownerUser, ownerGroup)
+    try { runPrivileged('rm', ['-f', legacyManifestPath]) } catch {}
+  } else {
+    writeJsonFile(manifestPath, manifestJson)
+    try { fs.rmSync(legacyManifestPath, { force: true }) } catch {}
+  }
+
+  return { manifestPath, legacyManifestPath }
+}
+
 async function persistInstallerOutputs(options: {
   currentUser: string
   targetUser: string
@@ -827,27 +904,22 @@ async function persistInstallerOutputs(options: {
   launcherJson.updatedAt = new Date().toISOString()
   launcherJson.installedBy = options.currentUser
 
-  const manifestPath = path.join(options.installDir, 'installer.json')
-  const legacyManifestPath = path.join(options.installDir, 'config', 'installer.json')
-  const manifestJson = readInstallerJson<any>(manifestPath, readInstallerJson<any>(legacyManifestPath, {}, Boolean(options.elevated)), Boolean(options.elevated))
-  manifestJson.targetUser = options.targetUser
-  manifestJson.installDir = options.installDir
-  if (options.provider) manifestJson.defaultProvider = options.provider
-  if (options.modelId) manifestJson.defaultModel = options.modelId
-  if (options.thinkingLevel) manifestJson.defaultThinkingLevel = options.thinkingLevel
-  manifestJson.koishi = options.koishiConfig || {}
-  manifestJson.updatedAt = new Date().toISOString()
+  const { manifestPath } = reconcileInstallerManifest({
+    targetUser: options.targetUser,
+    installDir: options.installDir,
+    provider: options.provider,
+    modelId: options.modelId,
+    thinkingLevel: options.thinkingLevel,
+    koishiConfig: options.koishiConfig || {},
+    elevated: options.elevated,
+  })
 
   if (options.elevated) {
     writeJsonFileWithPrivilege(settingsPath, settingsJson, ownerUser, ownerGroup)
     writeJsonFileWithPrivilege(authPath, nextAuthJson, ownerUser, ownerGroup)
-    writeJsonFileWithPrivilege(manifestPath, manifestJson, ownerUser, ownerGroup)
-    try { runPrivileged('rm', ['-f', legacyManifestPath]) } catch {}
   } else {
     writeJsonFile(settingsPath, settingsJson)
     writeJsonFile(authPath, nextAuthJson)
-    writeJsonFile(manifestPath, manifestJson)
-    try { fs.rmSync(legacyManifestPath, { force: true }) } catch {}
   }
   writeJsonFile(launcherPath, launcherJson)
   const launchers = writeLaunchersForUser(options.currentUser, options.installDir)
@@ -926,7 +998,17 @@ async function applyInstalledRuntime(options: FinalizeInstallOptions & { persist
   const useElevatedService = installServiceNow && targetUser !== currentUser
 
   const publishedRuntime = publishInstalledRuntime(sourceRoot, installDir, targetUser, useElevatedWrite)
+  const installedDocs = syncInstalledDocs(sourceRoot, installDir, targetUser, useElevatedWrite)
   const prunedReleases = pruneInstalledReleases(installDir, 3, publishedRuntime.releaseRoot, useElevatedWrite)
+  const installerManifest = reconcileInstallerManifest({
+    targetUser,
+    installDir,
+    provider,
+    modelId,
+    thinkingLevel,
+    koishiConfig,
+    elevated: useElevatedWrite,
+  })
   refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
   reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite)
 
@@ -968,7 +1050,10 @@ async function applyInstalledRuntime(options: FinalizeInstallOptions & { persist
     targetUser,
     installDir,
     written,
+    installerManifest,
     publishedRuntime,
+    installedDocs,
+    installedDocsDir: installedDocs.rin,
     prunedReleases,
     installedService,
     daemonReady,
@@ -1133,7 +1218,7 @@ async function startUpdater() {
     sourceRoot: repoRootFromHere(),
   }, 'Publishing runtime and refreshing the installed target...')
 
-  const { written, publishedRuntime, installedService, daemonReady, serviceHint } = result
+  const { written, publishedRuntime, installedDocs, installedDocsDir, installedService, daemonReady, serviceHint } = result
   const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
 
   note([
@@ -1142,6 +1227,8 @@ async function startUpdater() {
     `Written: ${written.rinInstallPath}`,
     `Written: ${publishedRuntime.currentLink}`,
     `Written: ${publishedRuntime.releaseRoot}`,
+    installedDocsDir ? `Written: ${installedDocsDir}` : '',
+    ...(Array.isArray(installedDocs?.pi) ? installedDocs.pi.map((item: string) => `Written: ${item}`) : []),
     result.prunedReleases.removed.length ? `Removed old releases: ${result.prunedReleases.removed.length}` : 'Removed old releases: 0',
     installedService ? `Written: ${installedService.servicePath}` : '',
     installedService ? `${installedService.kind} label: ${installedService.label}` : '',
@@ -1437,7 +1524,7 @@ export async function startInstaller() {
     authData: authResult.authData || {},
   }, needsElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
 
-  const { written, publishedRuntime, installedService, daemonReady, serviceHint } = result
+  const { written, publishedRuntime, installedDocs, installedDocsDir, installedService, daemonReady, serviceHint } = result
 
   note([
     `Target install dir: ${installDir}`,
@@ -1449,6 +1536,8 @@ export async function startInstaller() {
     `Written: ${written.rinInstallPath}`,
     `Written: ${publishedRuntime.currentLink}`,
     `Written: ${publishedRuntime.releaseRoot}`,
+    installedDocsDir ? `Written: ${installedDocsDir}` : '',
+    ...(Array.isArray(installedDocs?.pi) ? installedDocs.pi.map((item: string) => `Written: ${item}`) : []),
     installedService ? `Written: ${installedService.servicePath}` : '',
     installedService ? `${installedService.kind} label: ${installedService.label}` : '',
     '',
