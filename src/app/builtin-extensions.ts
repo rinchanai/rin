@@ -26,5 +26,6 @@ export function getBuiltinExtensionPaths() {
     path.join(root, 'extensions', 'subagent', 'index.ts'),
     path.join(root, 'extensions', 'cron', 'index.ts'),
     path.join(root, 'extensions', 'koishi-send-message', 'index.ts'),
+    path.join(root, 'extensions', 'koishi-get-message', 'index.ts'),
   ]
 }

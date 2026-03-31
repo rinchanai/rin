@@ -32,6 +32,12 @@ import {
   trustOf,
   writeJsonFile,
 } from './support.js'
+import {
+  findKoishiMessageByChatAndId,
+  normalizeElementSummary,
+  saveKoishiMessage,
+  updateKoishiMessage,
+} from './message-store.js'
 
 const require = createRequire(import.meta.url)
 const { Loader, Logger, h } = require('koishi') as { Loader: any; Logger: any; h: any }
@@ -68,6 +74,7 @@ type KoishiBridgePromptMeta = {
   userId?: string
   nickname?: string
   identity?: string
+  replyToMessageId?: string
 }
 
 const KOISHI_BRIDGE_PROMPT_META_PREFIX = '[[rin-koishi-bridge-meta:'
@@ -161,6 +168,85 @@ function pickChatName(session: any) {
     if (text) return text
   }
   return ''
+}
+
+function pickMessageId(session: any) {
+  return safeString(
+    session?.messageId
+    || session?.event?.messageId,
+  ).trim()
+}
+
+function pickReplyToMessageId(session: any) {
+  const values = [
+    session?.quote?.messageId,
+    session?.quote?.id,
+    session?.event?.reply?.messageId,
+    session?.event?.reply?.id,
+    session?.reply?.messageId,
+    session?.reply?.id,
+  ]
+  for (const value of values) {
+    const text = safeString(value).trim()
+    if (text) return text
+  }
+  return ''
+}
+
+function summarizeQuote(session: any) {
+  const quote = session?.quote
+  if (!quote || typeof quote !== 'object') return undefined
+  const messageId = safeString(quote?.messageId || quote?.id || '').trim() || undefined
+  const userId = safeString(quote?.user?.id || quote?.author?.userId || quote?.author?.id || '').trim() || undefined
+  const nickname = safeString(quote?.user?.name || quote?.author?.name || quote?.author?.nick || '').trim() || undefined
+  const content = safeString(quote?.content || quote?.message?.content || '').trim() || undefined
+  if (!messageId && !userId && !nickname && !content) return undefined
+  return { messageId, userId, nickname, content }
+}
+
+function persistInboundMessage(agentDir: string, session: any, identity: any) {
+  const platform = safeString(session?.platform || '').trim()
+  const botId = safeString(session?.selfId || session?.bot?.selfId || '').trim()
+  const chatId = getChatId(session)
+  const chatKey = composeChatKey(platform, chatId, botId)
+  const messageId = pickMessageId(session)
+  if (!chatKey || !messageId) return null
+  const userId = pickUserId(session)
+  return saveKoishiMessage(agentDir, {
+    messageId,
+    replyToMessageId: pickReplyToMessageId(session) || undefined,
+    chatKey,
+    platform,
+    botId: botId || undefined,
+    chatId,
+    chatType: getChatType(session),
+    receivedAt: new Date().toISOString(),
+    platformTimestamp: Number.isFinite(Number(session?.timestamp)) ? Number(session.timestamp) : undefined,
+    userId: userId || undefined,
+    nickname: pickSenderNickname(session) || undefined,
+    chatName: pickChatName(session) || undefined,
+    trust: trustOf(identity, platform, userId),
+    text: getIncomingText(session) || undefined,
+    rawContent: safeString(session?.content || '').trim() || undefined,
+    strippedContent: safeString(session?.stripped?.content || '').trim() || undefined,
+    elements: normalizeElementSummary(session?.elements),
+    quote: summarizeQuote(session),
+  })
+}
+
+function lookupReplySession(agentDir: string, chatKey: string, replyToMessageId: string) {
+  const nextChatKey = safeString(chatKey).trim()
+  const nextReplyToMessageId = safeString(replyToMessageId).trim()
+  if (!nextChatKey || !nextReplyToMessageId) return null
+  const linked = findKoishiMessageByChatAndId(agentDir, nextChatKey, nextReplyToMessageId)
+  const sessionId = safeString(linked?.sessionId || '').trim()
+  const sessionFile = safeString(linked?.sessionFile || '').trim()
+  if (!sessionId && !sessionFile) return null
+  return {
+    linked,
+    sessionId: sessionId || undefined,
+    sessionFile: sessionFile || undefined,
+  }
 }
 
 function wrapKoishiBridgePrompt(text: string, meta: KoishiBridgePromptMeta) {
@@ -386,6 +472,7 @@ class KoishiChatController {
   app: any
   chatKey: string
   dataDir: string
+  agentDir: string
   statePath: string
   state: KoishiChatState
   client: RinDaemonFrontendClient | null = null
@@ -407,6 +494,7 @@ class KoishiChatController {
     this.app = app
     this.chatKey = chatKey
     this.dataDir = dataDir
+    this.agentDir = path.resolve(dataDir, '..')
     this.statePath = chatStatePath(dataDir, chatKey)
     this.state = readJsonFile<KoishiChatState>(this.statePath, { chatKey })
     if (!this.state.chatKey) this.state.chatKey = chatKey
@@ -541,15 +629,51 @@ class KoishiChatController {
     return `${this.chatKey}:${Date.now()}:${this.turnSeq}`
   }
 
+  currentSessionId() {
+    return safeString(this.session?.sessionManager?.getSessionId?.() || '').trim()
+  }
+
+  private markProcessedMessage(messageId?: string) {
+    const nextMessageId = safeString(messageId || '').trim()
+    if (!nextMessageId) return
+    updateKoishiMessage(this.agentDir, this.chatKey, nextMessageId, {
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile: safeString(this.session?.sessionManager?.getSessionFile?.() || this.state.piSessionFile || '').trim() || undefined,
+      processedAt: new Date().toISOString(),
+    })
+  }
+
+  async resumeSessionFile(sessionFile: string) {
+    const wanted = safeString(sessionFile).trim()
+    if (!wanted) return { changed: false, sessionId: this.currentSessionId() || undefined }
+    await this.connect()
+    if (!this.session) return { changed: false, sessionId: undefined }
+    const before = safeString(this.session.sessionManager.getSessionFile?.() || '').trim()
+    if (before !== wanted) {
+      await this.session.switchSession(wanted).catch(() => {})
+    }
+    if (!this.session.sessionManager.getSessionName?.()) {
+      await this.session.setSessionName(this.chatKey)
+    }
+    this.state.piSessionFile = safeString(this.session.sessionManager.getSessionFile?.() || wanted || this.state.piSessionFile || '').trim() || undefined
+    this.saveState()
+    return {
+      changed: before !== wanted,
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile: safeString(this.session.sessionManager.getSessionFile?.() || '').trim() || undefined,
+    }
+  }
+
   private waitForTurn(tag: string) {
     return new Promise<any>((resolve, reject) => {
       this.turnWaiters.set(tag, { resolve, reject })
     })
   }
 
-  async runCommand(commandLine: string, replyToMessageId = '') {
+  async runCommand(commandLine: string, replyToMessageId = '', incomingMessageId = '') {
     await this.connect()
     if (!this.client || !this.session) throw new Error('koishi_session_not_connected')
+    this.markProcessedMessage(incomingMessageId)
     const response: any = await this.client.send({ type: 'run_command', commandLine })
     if (!response || response.success !== true) {
       throw new Error(String(response?.error || 'rin_run_command_failed'))
@@ -561,12 +685,13 @@ class KoishiChatController {
     }
     delete this.state.processing
     this.saveState()
+    this.markProcessedMessage(incomingMessageId)
     const text = safeString(data?.text || '').trim()
     if (text) await sendText(this.app, this.chatKey, text, replyToMessageId)
     return data
   }
 
-  async runTurn(input: { text: string; attachments: SavedAttachment[]; replyToMessageId?: string }, mode: 'prompt' | 'interrupt_prompt' = 'prompt') {
+  async runTurn(input: { text: string; attachments: SavedAttachment[]; replyToMessageId?: string; incomingMessageId?: string }, mode: 'prompt' | 'interrupt_prompt' = 'prompt') {
     await this.connect()
     if (!this.client || !this.session) throw new Error('koishi_session_not_connected')
 
@@ -581,6 +706,7 @@ class KoishiChatController {
     this.state.piSessionFile = safeString(this.session.sessionManager.getSessionFile?.() || this.state.piSessionFile || '').trim() || undefined
     this.state.processing = { text: input.text, attachments, startedAt: Date.now(), replyToMessageId: safeString(input.replyToMessageId || '').trim() || undefined }
     this.saveState()
+    this.markProcessedMessage(input.incomingMessageId)
 
     const completion = this.waitForTurn(tag)
     this.startTyping()
@@ -592,6 +718,7 @@ class KoishiChatController {
     this.state.piSessionFile = safeString(payload?.sessionFile || this.session.sessionManager.getSessionFile?.() || this.state.piSessionFile || '').trim() || undefined
     delete this.state.processing
     this.saveState()
+    this.markProcessedMessage(input.incomingMessageId)
 
     await Promise.all(this.pendingOutboundTasks.splice(0))
     const finalText = safeString(this.latestAssistantText || '').trim()
@@ -703,25 +830,43 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
     return controller
   }
 
+  app.middleware(async (session: any, next: () => Promise<any>) => {
+    try {
+      persistInboundMessage(runtime.agentDir, session, getIdentity())
+    } catch (error: any) {
+      logger.warn(`koishi inbound save failed err=${safeString(error?.message || error)}`)
+    }
+    return await next()
+  }, true)
+
   for (const item of commandRows) {
     registeredCommandNames.add(item.name)
     app.command(`${item.name} [args:text]`, item.description || '', { slash: true })
       .action(async ({ session }: any, argsText: any) => {
+        const identity = getIdentity()
         const platform = safeString(session?.platform || '').trim()
-        const trust = trustOf(getIdentity(), platform, pickUserId(session))
+        const trust = trustOf(identity, platform, pickUserId(session))
         if (item.name !== 'help' && !canRunCommand(trust, item.name)) return ''
         try { session.__rinKoishiCommandHandled = true } catch {}
         const chatKey = composeChatKey(platform, getChatId(session), safeString(session?.selfId || session?.bot?.selfId || '').trim())
+        const messageId = pickMessageId(session)
+        const replyToMessageId = pickReplyToMessageId(session)
         if (!chatKey) return ''
 
         if (item.name === 'help') {
           const lines = commandRows.map((entry) => `/${entry.name}${entry.description ? ` — ${entry.description}` : ''}`)
-          await sendText(app, chatKey, lines.join('\n'), safeString(session?.messageId || '').trim()).catch(() => {})
+          await sendText(app, chatKey, lines.join('\n'), messageId).catch(() => {})
           return ''
         }
 
+        const controller = getController(chatKey)
+        const replySession = lookupReplySession(runtime.agentDir, chatKey, replyToMessageId)
+        if (replySession?.sessionFile) {
+          await controller.resumeSessionFile(replySession.sessionFile).catch(() => {})
+        }
+
         const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ''}`
-        void getController(chatKey).runCommand(text, safeString(session?.messageId || '').trim()).catch((error) => {
+        void controller.runCommand(text, messageId, messageId).catch((error) => {
           logger.warn(`koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`)
         })
         return ''
@@ -733,6 +878,13 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
     const identity = getIdentity()
     const decision = await shouldProcessText(session, identity, registeredCommandNames)
     if (!decision.allow) return await next()
+    const messageId = pickMessageId(session)
+    const replyToMessageId = pickReplyToMessageId(session)
+    const controller = getController(decision.chatKey)
+    const replySession = lookupReplySession(runtime.agentDir, decision.chatKey, replyToMessageId)
+    if (replySession?.sessionFile) {
+      await controller.resumeSessionFile(replySession.sessionFile).catch(() => {})
+    }
     const attachments = await extractInboundAttachments(session, chatStateDir(dataDir, decision.chatKey))
     const text = wrapKoishiBridgePrompt(decision.text, {
       source: 'koishi-bridge',
@@ -742,10 +894,11 @@ export async function startKoishi(options: { additionalExtensionPaths?: string[]
       userId: pickUserId(session),
       nickname: pickSenderNickname(session),
       identity: trustOf(identity, safeString(session?.platform || '').trim(), pickUserId(session)),
+      replyToMessageId: replyToMessageId || undefined,
     })
-    void getController(decision.chatKey).runTurn({ text, attachments, replyToMessageId: safeString(session?.messageId || '').trim() }, 'interrupt_prompt').catch((error) => {
+    void controller.runTurn({ text, attachments, replyToMessageId: messageId, incomingMessageId: messageId }, 'interrupt_prompt').catch((error) => {
       logger.warn(`koishi turn failed chatKey=${decision.chatKey} err=${safeString((error as any)?.message || error)}`)
-      void sendText(app, decision.chatKey, `Koishi error: ${safeString((error as any)?.message || error || 'koishi_turn_failed')}`, safeString(session?.messageId || '').trim()).catch(() => {})
+      void sendText(app, decision.chatKey, `Koishi error: ${safeString((error as any)?.message || error || 'koishi_turn_failed')}`, messageId).catch(() => {})
     })
     return ''
   }, true)

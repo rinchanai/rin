@@ -8,6 +8,7 @@ type KoishiBridgePromptMeta = {
   userId?: string
   nickname?: string
   identity?: string
+  replyToMessageId?: string
 }
 
 const KOISHI_BRIDGE_PROMPT_META_PREFIX = '[[rin-koishi-bridge-meta:'
@@ -70,6 +71,7 @@ function buildHeader(body: string, meta: KoishiBridgePromptMeta | null, fallback
     lines.push(`sender user id: ${safeString(meta.userId).trim() || 'unknown'}`)
     lines.push(`sender nickname: ${safeString(meta.nickname).trim() || 'unknown'}`)
     lines.push(`sender identity: ${safeString(meta.identity).trim() || 'OTHER'}`)
+    if (safeString(meta.replyToMessageId).trim()) lines.push(`reply to message id: ${safeString(meta.replyToMessageId).trim()}`)
   }
   return `${lines.join('\n')}\n---\n${body}`
 }
