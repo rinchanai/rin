@@ -19,9 +19,9 @@ Implementation note:
   - `recall`: project/topic/history memory recalled only when needed
 - maintains an append-only event ledger under `memory/events/`
 - auto-processes new events for storage maintenance, chronicles, and graph refresh
-- performs semantic memory extraction in the extension layer with the active agent model, then persists structured candidates through the memory store
+- performs semantic memory extraction in the extension layer with the active agent model when a session is being shut down or when switching sessions with `/new`, then persists structured candidates through the memory store
 - auto-maintains session chronicle recall docs from the event ledger
-- auto-builds episode docs in the extension layer with the active agent model and appends structured turn summaries into session-scoped recall history
+- auto-builds episode docs in the extension layer with the active agent model during session shutdown or `/new` session switch handoff, appending structured summaries into session-scoped recall history
 - auto-builds a relation graph across active memory docs for low-cost associative recall
 - auto-runs lifecycle reconciliation conservatively for storage/index maintenance without regex-driven semantic promotion across layers
 - retrieval remains local and lightweight: markdown docs + frontmatter + event jsonl + lexical scoring + relation graph; no vector index is required today
@@ -55,7 +55,8 @@ Implementation note:
   - `core_voice_style`
   - `core_methodology`
   - `core_values`
-- event logging and processing are automatic through extension hooks
+- event logging and local processing are automatic through extension hooks
+- LLM-backed memory extraction / episode synthesis are no longer per-turn; they run on `session_shutdown` and on `session_switch` with `reason === "new"`
 - progressive prompt exposure is intentionally skill-like: short index entry first
 - includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
 - `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript

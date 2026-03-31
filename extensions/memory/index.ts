@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
+import { SessionManager, type ExtensionAPI } from '@mariozechner/pi-coding-agent'
 import { Text } from '@mariozechner/pi-tui'
 
 import { synthesizeEpisodeTurn } from './episode-synth.js'
@@ -42,6 +42,36 @@ function triggerInitConversation(pi: ExtensionAPI, mode: 'auto' | 'manual', busy
 		content: mode === 'auto' ? 'Begin memory onboarding.' : 'Begin requested memory onboarding.',
 		display: false,
 	}, busy ? { triggerTurn: true, deliverAs: 'followUp' } : { triggerTurn: true })
+}
+
+function branchToMessages(entries: any[]): any[] {
+	return entries
+		.filter((entry) => entry?.type === 'message' && entry?.message)
+		.map((entry) => entry.message)
+}
+
+function loadMessagesFromSessionFile(sessionFile: string): any[] {
+	const file = String(sessionFile || '').trim()
+	if (!file) return []
+	try {
+		return branchToMessages(SessionManager.open(file).getBranch())
+	} catch {
+		return []
+	}
+}
+
+async function processSessionMemory(ctx: any, messages: any[], opts: { sessionFile?: string, sessionId?: string, trigger: string }) {
+	if (!Array.isArray(messages) || messages.length === 0) return
+	const sessionFile = String(opts.sessionFile || '').trim()
+	await extractAndPersistTurnMemory(ctx as any, messages, {
+		sessionFile,
+		trigger: opts.trigger,
+	})
+	await synthesizeEpisodeTurn(ctx as any, messages, {
+		sessionFile,
+		sessionId: String(opts.sessionId || '').trim(),
+	})
+	await executeMemoryTool({ action: 'process', sessionFile })
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
@@ -125,18 +155,22 @@ export default function memoryExtension(pi: ExtensionAPI) {
 		})
 	})
 
-	pi.on('agent_end', async (event, ctx) => {
-		const messages = Array.isArray((event as any)?.messages) ? (event as any).messages : []
-		await extractAndPersistTurnMemory(ctx as any, messages, {
-			sessionFile: sessionMeta(ctx).sessionFile,
-			trigger: 'extension:agent_end_extractor',
-		})
-		await synthesizeEpisodeTurn(ctx as any, messages, {
+	pi.on('session_shutdown', async (_event, ctx) => {
+		await processSessionMemory(ctx, branchToMessages(ctx?.sessionManager?.getBranch?.() || []), {
 			sessionFile: sessionMeta(ctx).sessionFile,
 			sessionId: sessionMeta(ctx).sessionId,
+			trigger: 'extension:session_shutdown_extractor',
 		})
-		await executeMemoryTool({ action: 'process', sessionFile: sessionMeta(ctx).sessionFile })
-		await refreshOnboardingCompletion()
+	})
+
+	pi.on('session_switch', async (event, ctx) => {
+		if (event?.reason !== 'new') return
+		const previousSessionFile = String(event?.previousSessionFile || '').trim()
+		if (!previousSessionFile) return
+		await processSessionMemory(ctx, loadMessagesFromSessionFile(previousSessionFile), {
+			sessionFile: previousSessionFile,
+			trigger: 'extension:session_switch_new_extractor',
+		})
 	})
 
 	pi.registerCommand('init', {
@@ -150,6 +184,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
 
 	pi.on('before_agent_start', async (event, ctx) => {
 		await executeMemoryTool({ action: 'process', sessionFile: sessionMeta(ctx).sessionFile })
+		await refreshOnboardingCompletion()
 		const { systemPrompt } = await compilePromptMemory(String(event?.prompt || ''))
 		const blocks: string[] = []
 		if (systemPrompt && !String(event.systemPrompt || '').includes(systemPrompt)) blocks.push(systemPrompt)
