@@ -2,6 +2,13 @@
 
 Rin's builtin long-term memory extension.
 
+Implementation note:
+- the extension is extension-first
+- semantic extraction and episode synthesis happen in extension modules
+- `store.ts` is the storage/index backend
+- `service.ts` is only a compatibility shim
+- a future hybrid retrieval layer can be added without changing markdown as the source of truth
+
 ## What it now does
 
 - registers the `rin_memory` tool
@@ -11,14 +18,13 @@ Rin's builtin long-term memory extension.
   - `progressive`: long-form expandable global or directional memory, exposed as skill-like `name + desc` entries
   - `recall`: project/topic/history memory recalled only when needed
 - maintains an append-only event ledger under `memory/events/`
-- auto-processes new events into:
-  - resident memories for short global methodology / voice / value cues
-  - progressive memories for long-form domain-wide working preferences
-  - recall memories for project-specific context
+- auto-processes new events for storage maintenance, chronicles, and graph refresh
+- performs semantic memory extraction in the extension layer with the active agent model, then persists structured candidates through the memory store
 - auto-maintains session chronicle recall docs from the event ledger
-- auto-builds independent episode docs from the event ledger with structured summaries, emerging preferences, decisions, files, open threads, and timelines
+- auto-builds episode docs in the extension layer with the active agent model and appends structured turn summaries into session-scoped recall history
 - auto-builds a relation graph across active memory docs for low-cost associative recall
-- auto-runs lifecycle reconciliation, including observation counts, replacement-aware updates, and promotion from weaker layers when repeated evidence accumulates
+- auto-runs lifecycle reconciliation conservatively for storage/index maintenance without regex-driven semantic promotion across layers
+- retrieval remains local and lightweight: markdown docs + frontmatter + event jsonl + lexical scoring + relation graph; no vector index is required today
 - compiles per-turn prompt memory conservatively with:
   - resident memory
   - progressive memory index
@@ -52,10 +58,11 @@ Rin's builtin long-term memory extension.
 - event logging and processing are automatic through extension hooks
 - progressive prompt exposure is intentionally skill-like: short index entry first
 - includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
-- `/init` is intentionally lightweight: it must establish three basics early, then continue naturally through ordinary chat
-- the three required basics are:
-  - how to address the user
-  - relationship / identity framing
-  - language / tone / style
-- anything beyond those three is intentionally open-ended and should be discovered naturally rather than forced by checklist
+- `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript
+- onboarding order is intentionally structured, but the agent should handle that order conversationally rather than through a rigid extension-side phase machine:
+  - first establish the user's preferred language
+  - then ask the user to define the assistant's own name / identity / relationship framing
+  - then ask how to address the user
+  - finally ask for the assistant's default voice/style preferences
+- anything beyond those basics is intentionally open-ended and should be discovered naturally rather than forced by checklist
 - repeated or corrected init content should supersede older memory rather than creating stale duplicates
