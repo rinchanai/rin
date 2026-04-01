@@ -68,3 +68,49 @@ test("rpc restore resumes once and avoids full model refresh churn", async () =>
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
   assert.ok(events.some((event) => event?.type === "rin_status"));
 });
+
+test("rpc refreshState ignores unattached empty state while a session is expected", async () => {
+  const target = {
+    sessionFile: "/tmp/demo.jsonl",
+    sessionId: "",
+    pendingMessageCount: 2,
+    lastSessionStats: undefined,
+    modelRegistry: {
+      sync: async () => {
+        throw new Error("should_not_sync_models");
+      },
+    },
+    call: async (type) => {
+      assert.equal(type, "get_state");
+      return {
+        sessionFile: undefined,
+        sessionId: "",
+        pendingMessageCount: 0,
+      };
+    },
+    applyState: () => {
+      throw new Error("should_not_apply_empty_state");
+    },
+    refreshMessages: async () => {
+      throw new Error("should_not_refresh_messages");
+    },
+    refreshSessionData: async () => {
+      throw new Error("should_not_refresh_session");
+    },
+    reconcilePendingQueues(count) {
+      this.seenPendingCount = count;
+    },
+    computeSessionStats() {
+      return { ok: true };
+    },
+  };
+
+  await RpcInteractiveSession.prototype.refreshState.call(target, {
+    messages: true,
+    session: true,
+    models: true,
+  });
+
+  assert.equal(target.seenPendingCount, undefined);
+  assert.equal(target.lastSessionStats, undefined);
+});
