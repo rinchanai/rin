@@ -1,3 +1,4 @@
+import os from "node:os";
 import path from "node:path";
 
 import { buildUserShell } from "../rin-lib/system.js";
@@ -23,12 +24,15 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   if (parsed.tmuxSession && parsed.tmuxList)
     throw new Error("rin_tmux_mode_conflict");
 
-  const runtimeEnv = parsed.installDir
-    ? {
-        [RIN_DIR_ENV]: parsed.installDir,
-        [PI_AGENT_DIR_ENV]: parsed.installDir,
-      }
-    : {};
+  const runtimeEnv = {
+    ...(parsed.installDir
+      ? {
+          [RIN_DIR_ENV]: parsed.installDir,
+          [PI_AGENT_DIR_ENV]: parsed.installDir,
+        }
+      : {}),
+    RIN_INVOKING_SYSTEM_USER: os.userInfo().username,
+  };
 
   if (parsed.tmuxList) {
     const launch = buildUserShell(
