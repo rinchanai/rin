@@ -75,6 +75,36 @@ test("service shim re-exports store implementation", async () => {
   });
 });
 
+test("memory search returns paths and get is unsupported", async () => {
+  await withTempRoot(async (root) => {
+    const saved = await store.saveMemory(
+      {
+        title: "flicker fix history",
+        content: "We previously fixed a reconnect flicker in the TUI.",
+        summary: "reconnect flicker fix history",
+        exposure: "recall",
+        scope: "project",
+        kind: "history",
+      },
+      root,
+    );
+
+    const result = await store.executeMemoryAction(
+      { action: "search", query: "reconnect flicker" },
+      root,
+    );
+    assert.ok(Array.isArray(result.results));
+    assert.ok(result.results.length >= 1);
+    assert.equal(result.results[0].path, saved.doc.path);
+    assert.equal("content" in result.results[0], false);
+
+    await assert.rejects(
+      () => store.executeMemoryAction({ action: "get", path: saved.doc.path }, root),
+      /unsupported_memory_action:get/,
+    );
+  });
+});
+
 test("processPendingEvents updates chronicles without regex-driven auto extraction", async () => {
   await withTempRoot(async (root) => {
     await store.ensureMemoryLayout(store.resolveMemoryRoot(root));
@@ -96,21 +126,15 @@ test("processPendingEvents updates chronicles without regex-driven auto extracti
     assert.deepEqual(processed.applied, []);
     assert.ok(processed.chronicles_updated >= 1);
 
-    const chronicle = await store
-      .getMemory("2026-01-01-demo-session", root)
-      .catch(() => null);
-    if (chronicle) {
-      assert.ok(String(chronicle.content).includes(String(logged.event.id)));
-    } else {
-      const memories = await store.listMemories(
-        { exposure: "recall", limit: 50 },
-        root,
-      );
-      const chronicleDoc = memories.results.find((item) =>
-        item.tags?.includes?.("chronicle"),
-      );
-      assert.ok(chronicleDoc, "expected chronicle doc to exist");
-    }
+    const memories = await store.listMemories(
+      { exposure: "recall", limit: 50 },
+      root,
+    );
+    const chronicleDoc = memories.results.find((item) =>
+      item.tags?.includes?.("chronicle"),
+    );
+    assert.ok(chronicleDoc, "expected chronicle doc to exist");
+    assert.ok(String(chronicleDoc.path || "").endsWith(".md"));
 
     const doctor = await store.doctorMemory(root);
     assert.equal(

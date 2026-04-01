@@ -22,7 +22,6 @@ export const memoryToolParameters = Type.Object({
   action: Type.Union([
     Type.Literal("list"),
     Type.Literal("search"),
-    Type.Literal("get"),
     Type.Literal("save"),
     Type.Literal("delete"),
     Type.Literal("move"),
