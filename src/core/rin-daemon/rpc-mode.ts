@@ -43,6 +43,7 @@ export async function runCustomRpcMode(
         await session.agent.waitForIdle();
         emitTurnEvent("complete", requestTag, {
           sessionFile: session.sessionFile,
+          sessionId: session.sessionId,
         });
       } catch (error: any) {
         emitTurnEvent("error", requestTag, {
@@ -175,7 +176,11 @@ export async function runCustomRpcMode(
         return done(id, "prompt");
       case "interrupt_prompt":
         startInterruptTurnTask(String(command.requestTag || ""), async () => {
-          await session.interruptPrompt(command.message, command.images);
+          await session.prompt(command.message, {
+            images: command.images,
+            streamingBehavior: "steer",
+            source: "rpc" as any,
+          });
         });
         return done(id, "interrupt_prompt");
       case "steer":
@@ -188,6 +193,8 @@ export async function runCustomRpcMode(
         );
       case "abort":
         return run(id, type, () => session.abort());
+      case "attach_session":
+        return done(id, type, getSessionState(session));
       case "get_state":
         return done(id, type, getSessionState(session));
       case "cycle_model":

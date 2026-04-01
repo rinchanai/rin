@@ -72,6 +72,12 @@ export async function startDaemon(
   } catch {}
   ensureDir(path.dirname(socketPath));
 
+  const hasSessionSelector = (command: any) =>
+    Boolean(
+      (typeof command?.sessionFile === "string" && command.sessionFile) ||
+      (typeof command?.sessionId === "string" && command.sessionId),
+    );
+
   const selfHandleCommand = async (
     connection: ConnectionState,
     command: any,
@@ -80,30 +86,51 @@ export async function startDaemon(
     const type = String(command?.type || "unknown") as
       | RinRpcCommandType
       | "unknown";
+    const selectorPresent = hasSessionSelector(command);
 
-    if (type === "get_state" && !connection.attachedWorker) {
+    if (
+      type === "get_state" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       writeLine(
         connection.socket,
         response(id, type, true, emptySessionState()),
       );
       return true;
     }
-    if (type === "get_messages" && !connection.attachedWorker) {
+    if (
+      type === "get_messages" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       writeLine(connection.socket, response(id, type, true, { messages: [] }));
       return true;
     }
-    if (type === "get_session_entries" && !connection.attachedWorker) {
+    if (
+      type === "get_session_entries" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       writeLine(connection.socket, response(id, type, true, { entries: [] }));
       return true;
     }
-    if (type === "get_session_tree" && !connection.attachedWorker) {
+    if (
+      type === "get_session_tree" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       writeLine(
         connection.socket,
         response(id, type, true, { tree: [], leafId: null }),
       );
       return true;
     }
-    if (type === "get_commands" && !connection.attachedWorker) {
+    if (
+      type === "get_commands" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       workerPool.requestWorker(
         workerPool.getCatalogWorker(),
         connection,
@@ -112,7 +139,11 @@ export async function startDaemon(
       );
       return true;
     }
-    if (type === "get_available_models" && !connection.attachedWorker) {
+    if (
+      type === "get_available_models" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       workerPool.requestWorker(
         workerPool.getCatalogWorker(),
         connection,
@@ -121,7 +152,11 @@ export async function startDaemon(
       );
       return true;
     }
-    if (type === "get_oauth_state" && !connection.attachedWorker) {
+    if (
+      type === "get_oauth_state" &&
+      !connection.attachedWorker &&
+      !selectorPresent
+    ) {
       workerPool.requestWorker(
         workerPool.getCatalogWorker(),
         connection,

@@ -70,6 +70,7 @@ const SESSION_SCOPED_COMMANDS = new Set([
   "get_last_assistant_text",
   "get_messages",
   "run_command",
+  "attach_session",
   "fork",
   "set_model",
   "set_session_name",

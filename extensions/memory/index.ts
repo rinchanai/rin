@@ -19,6 +19,8 @@ import {
   refreshOnboardingCompletion,
 } from "./lib.js";
 
+let installerAutoInitConsumed = false;
+
 function stringifyMessageContent(content: any): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -239,6 +241,14 @@ export default function memoryExtension(pi: ExtensionAPI) {
       action: "process",
       sessionFile: sessionMeta(ctx).sessionFile,
     });
+    if (
+      !installerAutoInitConsumed &&
+      String(process.env.RIN_INSTALL_AUTO_INIT || "").trim() === "1"
+    ) {
+      await markOnboardingPrompted("auto:installer");
+      installerAutoInitConsumed = true;
+      process.env.RIN_INSTALL_AUTO_INIT = "";
+    }
     await refreshOnboardingCompletion();
     const { systemPrompt } = await compilePromptMemory(
       String(event?.prompt || ""),

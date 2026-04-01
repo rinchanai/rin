@@ -43,7 +43,7 @@ test("installer interactive helpers describe dir state and plan text", () => {
   });
   assert.ok(plan.includes("Target daemon user: bob"));
   assert.ok(plan.includes("Model auth status: ready"));
-  assert.ok(plan.includes("Rin safety boundary:"));
+  assert.ok(!plan.includes("Rin safety boundary:"));
   assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
 
   const safety = interactive.buildInstallSafetyBoundaryText();

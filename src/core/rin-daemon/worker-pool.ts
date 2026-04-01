@@ -25,6 +25,11 @@ export type WorkerHandle = {
   keepAliveUntil: number;
 };
 
+type SessionSelector = {
+  sessionFile?: string;
+  sessionId?: string;
+};
+
 function writeLine(socket: net.Socket, payload: unknown) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
 }
@@ -32,6 +37,7 @@ function writeLine(socket: net.Socket, payload: unknown) {
 export class WorkerPool {
   private workers = new Set<WorkerHandle>();
   private workersBySessionFile = new Map<string, WorkerHandle>();
+  private workersBySessionId = new Map<string, WorkerHandle>();
   private catalogWorker: WorkerHandle | undefined;
   private workerSeq = 0;
 
@@ -64,12 +70,7 @@ export class WorkerPool {
     if (!this.workers.has(worker)) return;
     this.workers.delete(worker);
     if (this.catalogWorker === worker) this.catalogWorker = undefined;
-    if (
-      worker.sessionFile &&
-      this.workersBySessionFile.get(worker.sessionFile) === worker
-    ) {
-      this.workersBySessionFile.delete(worker.sessionFile);
-    }
+    this.deleteWorkerSessionRefs(worker);
     for (const connection of Array.from(worker.connections)) {
       if (connection.attachedWorker === worker)
         connection.attachedWorker = undefined;
@@ -150,20 +151,26 @@ export class WorkerPool {
 
   resolveWorkerForCommand(connection: ConnectionState, command: any) {
     const type = String(command?.type || "unknown");
+    const selector = this.getSessionSelector(command);
 
     if (type === "new_session") {
       return this.createWorker(connection);
     }
 
     if (type === "switch_session") {
-      const sessionPath =
-        typeof command?.sessionPath === "string" ? command.sessionPath : "";
-      if (sessionPath && this.workersBySessionFile.has(sessionPath)) {
-        return this.workersBySessionFile.get(sessionPath)!;
-      }
-      return this.createWorker(connection);
+      const wanted =
+        selector.sessionFile ||
+        (typeof command?.sessionPath === "string" ? command.sessionPath : "");
+      const existing = this.findWorkerBySelector({ sessionFile: wanted });
+      return existing || this.createWorker(connection);
     }
 
+    if (type === "attach_session") {
+      return this.findWorkerBySelector(selector);
+    }
+
+    const selectedWorker = this.findWorkerBySelector(selector);
+    if (selectedWorker) return selectedWorker;
     if (connection.attachedWorker) return connection.attachedWorker;
     if (isSessionScopedCommand(type)) return undefined;
     return undefined;
@@ -208,18 +215,16 @@ export class WorkerPool {
       payload.success === true
     ) {
       const data = payload.data || {};
-      if (typeof data.sessionFile === "string" && data.sessionFile) {
-        if (
-          worker.sessionFile &&
-          this.workersBySessionFile.get(worker.sessionFile) === worker
-        ) {
-          this.workersBySessionFile.delete(worker.sessionFile);
-        }
-        worker.sessionFile = data.sessionFile;
-        this.workersBySessionFile.set(worker.sessionFile, worker);
-      }
-      worker.sessionId =
-        typeof data.sessionId === "string" ? data.sessionId : worker.sessionId;
+      this.setWorkerSessionRefs(worker, {
+        sessionFile:
+          typeof data.sessionFile === "string" && data.sessionFile
+            ? data.sessionFile
+            : undefined,
+        sessionId:
+          typeof data.sessionId === "string" && data.sessionId
+            ? data.sessionId
+            : undefined,
+      });
       worker.isStreaming = Boolean(data.isStreaming);
       worker.isCompacting = Boolean(data.isCompacting);
       return;
@@ -253,20 +258,17 @@ export class WorkerPool {
         Date.now() + 10_000,
       );
     }
-    if (
-      payload.type === "rpc_turn_event" &&
-      payload.event === "complete" &&
-      typeof payload.sessionFile === "string" &&
-      payload.sessionFile
-    ) {
-      if (
-        worker.sessionFile &&
-        this.workersBySessionFile.get(worker.sessionFile) === worker
-      ) {
-        this.workersBySessionFile.delete(worker.sessionFile);
-      }
-      worker.sessionFile = payload.sessionFile;
-      this.workersBySessionFile.set(worker.sessionFile, worker);
+    if (payload.type === "rpc_turn_event" && payload.event === "complete") {
+      this.setWorkerSessionRefs(worker, {
+        sessionFile:
+          typeof payload.sessionFile === "string" && payload.sessionFile
+            ? payload.sessionFile
+            : undefined,
+        sessionId:
+          typeof payload.sessionId === "string" && payload.sessionId
+            ? payload.sessionId
+            : undefined,
+      });
     }
   }
 
@@ -336,12 +338,7 @@ export class WorkerPool {
     });
 
     child.on("exit", (code, signal) => {
-      if (
-        worker.sessionFile &&
-        this.workersBySessionFile.get(worker.sessionFile) === worker
-      ) {
-        this.workersBySessionFile.delete(worker.sessionFile);
-      }
+      this.deleteWorkerSessionRefs(worker);
       this.workers.delete(worker);
       for (const connection of Array.from(worker.connections)) {
         if (connection.attachedWorker === worker)
@@ -365,5 +362,71 @@ export class WorkerPool {
     connection.attachedWorker = worker;
     worker.connections.add(connection);
     worker.lastUsedAt = Date.now();
+  }
+
+  private getSessionSelector(command: any): SessionSelector {
+    const sessionFile =
+      typeof command?.sessionFile === "string" && command.sessionFile
+        ? command.sessionFile
+        : typeof command?.sessionPath === "string" && command.sessionPath
+          ? command.sessionPath
+          : undefined;
+    const sessionId =
+      typeof command?.sessionId === "string" && command.sessionId
+        ? command.sessionId
+        : undefined;
+    return { sessionFile, sessionId };
+  }
+
+  private findWorkerBySelector(selector: SessionSelector) {
+    if (
+      selector.sessionFile &&
+      this.workersBySessionFile.has(selector.sessionFile)
+    ) {
+      return this.workersBySessionFile.get(selector.sessionFile);
+    }
+    if (selector.sessionId && this.workersBySessionId.has(selector.sessionId)) {
+      return this.workersBySessionId.get(selector.sessionId);
+    }
+    return undefined;
+  }
+
+  private deleteWorkerSessionRefs(worker: WorkerHandle) {
+    if (
+      worker.sessionFile &&
+      this.workersBySessionFile.get(worker.sessionFile) === worker
+    ) {
+      this.workersBySessionFile.delete(worker.sessionFile);
+    }
+    if (
+      worker.sessionId &&
+      this.workersBySessionId.get(worker.sessionId) === worker
+    ) {
+      this.workersBySessionId.delete(worker.sessionId);
+    }
+    worker.sessionFile = undefined;
+    worker.sessionId = undefined;
+  }
+
+  private setWorkerSessionRefs(worker: WorkerHandle, next: SessionSelector) {
+    if (
+      worker.sessionFile &&
+      this.workersBySessionFile.get(worker.sessionFile) === worker &&
+      worker.sessionFile !== next.sessionFile
+    ) {
+      this.workersBySessionFile.delete(worker.sessionFile);
+    }
+    if (
+      worker.sessionId &&
+      this.workersBySessionId.get(worker.sessionId) === worker &&
+      worker.sessionId !== next.sessionId
+    ) {
+      this.workersBySessionId.delete(worker.sessionId);
+    }
+    worker.sessionFile = next.sessionFile;
+    worker.sessionId = next.sessionId;
+    if (worker.sessionFile)
+      this.workersBySessionFile.set(worker.sessionFile, worker);
+    if (worker.sessionId) this.workersBySessionId.set(worker.sessionId, worker);
   }
 }

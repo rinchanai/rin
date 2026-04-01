@@ -16,7 +16,7 @@ function wait(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("rpc mode routes interrupt_prompt through session.interruptPrompt", async () => {
+test("rpc mode routes interrupt_prompt through session.prompt with steer behavior", async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -40,11 +40,8 @@ test("rpc mode routes interrupt_prompt through session.interruptPrompt", async (
       agent: { waitForIdle: async () => {} },
       bindExtensions: async () => {},
       subscribe: () => {},
-      prompt: async () => {
-        calls.push("prompt");
-      },
-      interruptPrompt: async (message, images) => {
-        calls.push(["interruptPrompt", message, images]);
+      prompt: async (message, options) => {
+        calls.push(["prompt", message, options]);
       },
       steer: async () => {},
       followUp: async () => {},
@@ -102,7 +99,17 @@ test("rpc mode routes interrupt_prompt through session.interruptPrompt", async (
     );
     await wait(10);
 
-    assert.deepEqual(calls, [["interruptPrompt", "hello", ["img"]]]);
+    assert.deepEqual(calls, [
+      [
+        "prompt",
+        "hello",
+        {
+          images: ["img"],
+          streamingBehavior: "steer",
+          source: "rpc",
+        },
+      ],
+    ]);
     assert.ok(lines.join("").includes('"command":"interrupt_prompt"'));
   } finally {
     process.stdin.on = stdinOn;
