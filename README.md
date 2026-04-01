@@ -1,294 +1,111 @@
+[English](README.md) | [中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md)
+
 # Rin
 
-> 一个住在你终端里的 AI 助手。能聊天，能改文件，能记住事情，还能定时帮你做事。
+A terminal-first local AI assistant that can chat, edit files, remember things, search the web, and run scheduled tasks.
 
-Rin 是一个面向终端用户的本地 AI assistant / coding agent。  
-你可以把它理解成：**一个长期陪你工作的终端助手**。
+## What Rin is
 
-和一般的 coding agent、以及 OpenClaw 一类本地 agent 家族相比，Rin 更强调：
+Rin is for people who want more than a one-shot coding agent.
 
-- **更像长期可用的整机产品**，而不只是一个能跑起来的 agent 壳
-- **默认把记忆、定时任务、搜索、聊天桥接接好**，减少用户自己拼装
-- **终端优先，但不只停留在单次对话**
-- **更适合长期陪跑**，而不是每次都从零开始
+It is a local assistant you can keep around in your terminal for day-to-day work:
 
-## 它能帮你做什么
+- ask questions in plain language
+- inspect and modify files
+- keep useful long-term memory
+- set reminders and recurring tasks
+- look up fresh information on the web
+- bridge the same assistant into chat platforms through Koishi
 
-Rin 最吸引人的地方，不是“技术上多先进”，而是它真的能拿来用：
+The goal is simple: make the agent feel like a tool you can actually live with, not just a shell around a model.
 
-- **回答问题**：像聊天一样直接问它
-- **帮你改文件**：整理文档、改配置、写 README、修脚本
-- **帮你记住事情**：记住你的称呼、偏好、常做的项目
-- **帮你查新信息**：遇到最新版本、最新资料时可以联网搜索
-- **帮你设提醒**：比如“明天提醒我检查日志”
-- **帮你做周期任务**：比如“每天早上帮我看看某个目录有没有变化”
-- **接入聊天平台**：把同一个助手接到 Telegram / OneBot
+## Why Rin
 
-如果你不想学太多技术细节，直接记住一句话就够了：
+Rin focuses on a few basics:
 
-**Rin = 一个能在你电脑上长期帮你做事的 AI 助手。**
+- terminal-first workflow
+- built-in memory, not just stateless chats
+- built-in scheduled tasks
+- built-in web search for time-sensitive questions
+- chat bridge support through Koishi
+- one product entrypoint: `rin`
 
-## 为什么选 Rin
+If you want an assistant that stays useful over time, Rin is designed for that.
 
-如果你看过别的 coding agent，或者接触过 OpenClaw 一类 agent 家族，Rin 的差异点可以直接概括成这几条：
+## Quick start
 
-- **更像完整产品，不像半成品壳子**
-- **默认就带记忆、定时任务、搜索、聊天桥接**
-- **上手命令短，安装后直接围绕 `rin` 使用**
-- **适合长期陪跑，而不是一次一配、一次一忘**
-- **对终端用户更友好，不要求先理解整套内部装配**
-
-如果你想要的是一个“能长期用、默认能力够全、装完就能开工”的终端 agent，Rin 会比只提供基础能力的方案更省心。
-
-## 1 分钟快速上手
-
-### 安装
+Install:
 
 ```bash
 ./install.sh
 ```
 
-安装器开始时会先提醒安全边界：Rin 始终按 YOLO 模式运行、没有沙盒、只拥有所选系统用户的用户级权限，但依然可能读取到那个账号能看到的敏感内容；同时，正常对话之外还可能产生额外 token 开销，比如初始化对话、记忆提炼、episode 总结、上下文压缩、subagent、定时任务触发和搜索注入。
-
-安装完成后会自动拉起一次初始化对话 TUI。退出后，下次直接运行 `rin` 即可；如果想重新回到初始化状态，在 Rin 里执行 `/init`。
-
-### 打开 Rin
+Then open Rin:
 
 ```bash
 rin
 ```
 
-### 如果想看看现在运行得好不好
+Check health if needed:
 
 ```bash
 rin doctor
 ```
 
-就这几条，已经够大多数新用户开始用了。
+The installer will warn you about security boundaries and possible extra token usage. That can include initialization, memory processing, summarization, subagents, scheduled tasks, and web search.
 
-## 你可以直接这样对 Rin 说
+## What you can ask Rin to do
 
-如果你已经打开了 `rin`，其实很多时候不用先学复杂命令，直接说你想做什么就行。
+Once Rin is open, you can just talk to it.
 
-比如你可以直接这样说：
+Examples:
 
-- `帮我看看这个目录里都有什么`
-- `给这个项目写一个 README`
-- `把这个说明文档整理得更容易看`
-- `记住以后叫我什么`
-- `帮我查一下这个工具的最新官方说明`
-- `明天下午提醒我检查日志`
-- `每小时帮我看看这个目录有没有新文件`
-- `把刚才说的内容总结成待办清单`
+- `Look through this directory and tell me what matters.`
+- `Rewrite this README.`
+- `Clean up this config file.`
+- `Remember that I prefer short answers.`
+- `Remind me tomorrow afternoon to check the logs.`
+- `Check the latest official docs for this tool.`
+- `Watch this folder every hour and tell me if something changes.`
 
-如果你不知道怎么开口，一个很实用的句式是：
-
-- `帮我看看……`
-- `帮我整理……`
-- `帮我修改……`
-- `帮我记住……`
-- `帮我提醒……`
-- `帮我查一下……`
-
-把它当成一个住在终端里的长期助手就好，不用一开始就背很多术语。
-
-## 新手最常用的命令
+## Core commands
 
 ```bash
-rin              # 打开 Rin
-rin doctor       # 查看运行状态
-rin start        # 启动后台服务
-rin stop         # 停止后台服务
-rin restart      # 重启后台服务
-rin update       # 更新 Rin
+rin            # open Rin
+rin doctor     # inspect health and configuration
+rin start      # start the daemon
+rin stop       # stop the daemon
+rin restart    # restart the daemon
+rin update     # update Rin
 ```
 
-如果你只想先试试，优先记这两条：
+## Key built-in capabilities
 
-```bash
-rin
-rin doctor
-```
+Rin comes with a few things wired in by default:
 
-## 为什么它对普通用户也有用
+- long-term memory
+- scheduled tasks and reminders
+- live web search
+- Koishi chat bridge
+- subagents for delegated work
 
-很多 coding agent 都很强，但常见问题也很明显：
+## When to use `rin --std`
 
-- 能跑，但更像半成品或框架
-- 单次会话体验不错，但长期使用成本高
-- 记忆、提醒、搜索、桥接这些能力要自己补
-- 更适合会折腾的人，不够像“拿来就用的日常工具”
+Normally, use `rin`.
 
-Rin 想补的就是这块空白。
+`rin --std` is mainly a troubleshooting fallback when the default RPC mode has problems and you need a foreground session to recover or debug.
 
-### 它不只是“陪你聊天”
+## Docs
 
-Rin 的目标是帮你在电脑里真正做事，比如：
-
-- 帮你整理文档
-- 帮你生成说明文件
-- 帮你检查某些目录或文件
-- 帮你修改简单配置
-- 帮你把重复动作自动化
-
-### 它可以长期使用
-
-Rin 有自己的记忆系统。  
-这意味着它可以逐渐记住：
-
-- 你喜欢它怎么称呼你
-- 你偏好的说话风格
-- 你经常在做什么项目
-- 哪些信息值得长期保留
-
-所以它更像“长期助手”，而不是“一次性聊天页面”。
-
-### 它可以替你盯事
-
-Rin 内建定时任务能力。  
-你可以让它：
-
-- 晚一点提醒你
-- 明天再追你一次
-- 每隔一段时间自动检查某件事
-- 按 cron 规则周期执行任务
-
-### 它可以查最新信息
-
-当你问的是“最新版本”“最近更新”“官网文档”这类内容时，Rin 可以直接搜索，而不是只靠旧知识硬猜。
-
-## 适合哪些人
-
-Rin 适合这些用户：
-
-- 想在终端里有一个长期助手的人
-- 想让 AI 真的帮自己处理电脑上的事情的人
-- 想要“记忆 + 提醒 + 搜索 + 聊天”放在一起的人
-- 想把同一个助手同时用在终端和聊天软件里的人
-
-即使你不是程序员，只要你愿意在终端里输入几条命令，也完全可以开始用它。
-
-## 你可以怎么开始用
-
-如果你是第一次接触 Rin，我建议就按这个顺序：
-
-### 第一步：安装
-
-```bash
-./install.sh
-```
-
-### 第二步：打开
-
-```bash
-rin
-```
-
-### 第三步：直接像聊天一样用
-
-比如你可以马上试：
-
-- “帮我看看这个目录里都有什么”
-- “给这个项目写一个 README”
-- “记住我以后想让你叫我什么”
-- “明天下午提醒我检查这个文件”
-- “帮我查一下某个工具的最新说明”
-
-很多时候，不需要先研究文档，直接说出你想做什么就行。
-
-## 默认打开方式
-
-### `rin`
-
-默认模式。  
-通常体验更完整，适合长期日常使用。
-
-如果 RPC 模式出了问题，再把 `rin --std` 当作排障/修复用的后备入口即可。
-
-## 安装后会发生什么
-
-安装完成后，Rin 通常会把自己的数据放在：
-
-```text
-~/.rin/
-```
-
-里面大致会有：
-
-- 设置
-- 认证信息
-- 会话记录
-- 记忆数据
-- 后台运行数据
-- 文档
-
-你不需要一开始就理解这些目录。  
-对大多数用户来说，先会这几件事就足够：
-
-- 安装：`./install.sh`
-- 打开：`rin`
-- 查状态：`rin doctor`
-- RPC 有问题时再试：`rin --std`
-
-## 如果你想知道它背后还有什么能力
-
-Rin 当前默认还内建了这些能力：
-
-- **长期记忆**
-- **定时任务**
-- **Web 搜索**
-- **Koishi 聊天桥接**
-- **项目规则发现**
-- **子代理能力**
-
-不过对新用户来说，不需要一开始就把这些都学完。  
-先把它当成一个会聊天、会记事、会帮你做事的终端助手来用就可以。
-
-## 常见问题
-
-### 我不是程序员，也能用吗？
-
-可以。  
-如果你能接受在终端里输入几条命令，就能开始用。
-
-### 我应该先记住哪些命令？
-
-先记这两个就够了：
-
-```bash
-rin
-rin doctor
-```
-
-### `rin` 和 `rin --std` 有什么区别？
-
-- `rin`：默认模式，通常更适合长期使用
-- `rin --std`：前台标准模式，主要用于 RPC 模式报错后的排障或修复
-
-### 它和别的 coding agent / OpenClaw 家族比，差别在哪？
-
-Rin 的重点不是只做一个“能跑的 agent”，而是尽量把终端用户真会长期用的能力直接整合好：
-
-- 默认就有长期记忆
-- 默认就有定时任务
-- 默认就有 Web 搜索
-- 默认就能接 Koishi 聊天桥
-- 默认就围绕 `rin` 这个产品入口来使用
-
-也就是说，它更强调：**少拼装、少配置、直接拿来长期用。**
-
-## 想继续了解
-
-如果你已经开始用了，想再深入一点，可以继续看：
+If you want more detail, start here:
 
 - [`docs/rin/README.md`](docs/rin/README.md)
 - [`docs/rin/capabilities.md`](docs/rin/capabilities.md)
 - [`docs/rin/runtime-layout.md`](docs/rin/runtime-layout.md)
 - [`docs/rin/builtin-extensions.md`](docs/rin/builtin-extensions.md)
 
----
+## Short version
 
-如果你愿意，我下一步还可以继续帮你做两件很适合非技术用户的事：
+Install it, run `rin`, and ask for what you need.
 
-1. 给 README 再补一个 **“你可以直接复制的示例提问”** 小节
-2. 再写一个 `docs/user-guide.md`，做成 **真正的新手上手指南**
+That is the main idea.
