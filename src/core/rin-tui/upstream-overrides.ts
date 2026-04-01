@@ -89,10 +89,8 @@ export async function applyRinTuiOverrides() {
       async function handleEventWithSessionBootState(event: any) {
         if (event?.type === "rin_status") {
           if (event.phase === "end") {
-            if (!this?.session?.isStreaming && !this?.session?.isCompacting) {
-              this.stopWorkingAnimation?.();
-              this.ui?.requestRender?.();
-            }
+            this.stopWorkingAnimation?.();
+            this.ui?.requestRender?.();
             return;
           }
           const message =
