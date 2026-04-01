@@ -126,8 +126,8 @@ export async function startUpdater(deps: {
       "",
       "Recommended next commands:",
       `- doctor: rin doctor${userSuffix}`,
-      `- RPC TUI: rin${userSuffix}`,
-      `- std TUI: rin --std${userSuffix}`,
+      `- open Rin: rin${userSuffix}`,
+      "- if RPC mode fails, try `rin --std` only as a troubleshooting fallback",
     ]
       .filter(Boolean)
       .join("\n"),
@@ -135,6 +135,6 @@ export async function startUpdater(deps: {
   );
 
   outro(
-    `Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with rin${userSuffix} or rin --std${userSuffix}.` : `Use rin start${userSuffix} if you need to start the daemon manually.`}`,
+    `Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with rin${userSuffix}.` : `Use rin start${userSuffix} if you need to start the daemon manually.`}`,
   );
 }

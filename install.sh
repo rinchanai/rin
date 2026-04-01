@@ -91,6 +91,11 @@ fetch() {
 
 ARCHIVE_URL="$REPO_URL/archive/refs/heads/main.tar.gz"
 : >"$LOGFILE"
+
+say "[rin-install] Safety boundary: Rin always runs in YOLO mode, without a sandbox, with user-level permissions."
+say "[rin-install] It may read files, modify files, run commands, access network resources, and expose sensitive local/project data to the active model/provider."
+say "[rin-install] Extra token usage may also come from init onboarding, memory extraction, episode synthesis, context compaction, subagents, scheduled tasks, and web-search context injection."
+
 run_step "Fetching installer from GitHub main" fetch "$ARCHIVE_URL" "$ARCHIVE"
 mkdir -p "$SRC_DIR"
 run_step "Preparing installer source" tar -xzf "$ARCHIVE" -C "$SRC_DIR" --strip-components=1
