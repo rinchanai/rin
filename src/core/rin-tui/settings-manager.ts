@@ -5,39 +5,39 @@ export function createSettingsManager() {
     editorPaddingX: 0,
     autocompleteMaxVisible: 8,
     hideThinkingBlock: false,
-    theme: 'dark',
+    theme: "dark",
     enableSkillCommands: false,
     showImages: true,
     imageAutoResize: true,
     blockImages: false,
-    transport: 'stdio',
+    transport: "stdio",
     collapseChangelog: false,
-    doubleEscapeAction: 'none',
-    treeFilterMode: 'all',
+    doubleEscapeAction: "none",
+    treeFilterMode: "all",
     quietStartup: false,
-    codeBlockIndent: '  ',
+    codeBlockIndent: "  ",
     branchSummarySkipPrompt: false,
     lastChangelogVersion: undefined as string | undefined,
     enabledModels: undefined as string[] | undefined,
     defaultProvider: undefined as string | undefined,
     defaultModel: undefined as string | undefined,
-    steeringMode: 'all' as 'all' | 'one-at-a-time',
-    followUpMode: 'one-at-a-time' as 'all' | 'one-at-a-time',
-  }
+    steeringMode: "all" as "all" | "one-at-a-time",
+    followUpMode: "one-at-a-time" as "all" | "one-at-a-time",
+  };
   const globalSettings = {
     packages: [] as any[],
     extensions: [] as string[],
     skills: [] as string[],
     prompts: [] as string[],
     themes: [] as string[],
-  }
+  };
   const projectSettings = {
     packages: [] as any[],
     extensions: [] as string[],
     skills: [] as string[],
     prompts: [] as string[],
     themes: [] as string[],
-  }
+  };
   return {
     getShowHardwareCursor: () => values.showHardwareCursor,
     getClearOnShrink: () => values.clearOnShrink,
@@ -62,38 +62,96 @@ export function createSettingsManager() {
     getBranchSummarySkipPrompt: () => values.branchSummarySkipPrompt,
     getGlobalSettings: () => ({ ...globalSettings }),
     getProjectSettings: () => ({ ...projectSettings }),
-    setShowImages: (v: boolean) => { values.showImages = v },
-    setImageAutoResize: (v: boolean) => { values.imageAutoResize = v },
-    setBlockImages: (v: boolean) => { values.blockImages = v },
-    setEnableSkillCommands: (v: boolean) => { values.enableSkillCommands = v },
-    setTransport: (v: string) => { values.transport = v },
-    setTheme: (v: string) => { values.theme = v },
-    setHideThinkingBlock: (v: boolean) => { values.hideThinkingBlock = v },
-    setCollapseChangelog: (v: boolean) => { values.collapseChangelog = v },
-    setQuietStartup: (v: boolean) => { values.quietStartup = v },
-    setDoubleEscapeAction: (v: string) => { values.doubleEscapeAction = v },
-    setTreeFilterMode: (v: string) => { values.treeFilterMode = v },
-    setShowHardwareCursor: (v: boolean) => { values.showHardwareCursor = v },
-    setEditorPaddingX: (v: number) => { values.editorPaddingX = v },
-    setAutocompleteMaxVisible: (v: number) => { values.autocompleteMaxVisible = v },
-    setClearOnShrink: (v: boolean) => { values.clearOnShrink = v },
-    setLastChangelogVersion: (v?: string) => { values.lastChangelogVersion = v },
-    setEnabledModels: (v?: string[]) => { values.enabledModels = v && v.length ? [...v] : undefined },
-    setSteeringMode: (v: 'all' | 'one-at-a-time') => { values.steeringMode = v },
-    setFollowUpMode: (v: 'all' | 'one-at-a-time') => { values.followUpMode = v },
-    setDefaultModelAndProvider: (provider: string, modelId: string) => {
-      values.defaultProvider = provider
-      values.defaultModel = modelId
+    setShowImages: (v: boolean) => {
+      values.showImages = v;
     },
-    setPackages: (v: any[]) => { globalSettings.packages = [...v] },
-    setProjectPackages: (v: any[]) => { projectSettings.packages = [...v] },
-    setExtensionPaths: (v: string[]) => { globalSettings.extensions = [...v] },
-    setProjectExtensionPaths: (v: string[]) => { projectSettings.extensions = [...v] },
-    setSkillPaths: (v: string[]) => { globalSettings.skills = [...v] },
-    setProjectSkillPaths: (v: string[]) => { projectSettings.skills = [...v] },
-    setPromptTemplatePaths: (v: string[]) => { globalSettings.prompts = [...v] },
-    setProjectPromptTemplatePaths: (v: string[]) => { projectSettings.prompts = [...v] },
-    setThemePaths: (v: string[]) => { globalSettings.themes = [...v] },
-    setProjectThemePaths: (v: string[]) => { projectSettings.themes = [...v] },
-  }
+    setImageAutoResize: (v: boolean) => {
+      values.imageAutoResize = v;
+    },
+    setBlockImages: (v: boolean) => {
+      values.blockImages = v;
+    },
+    setEnableSkillCommands: (v: boolean) => {
+      values.enableSkillCommands = v;
+    },
+    setTransport: (v: string) => {
+      values.transport = v;
+    },
+    setTheme: (v: string) => {
+      values.theme = v;
+    },
+    setHideThinkingBlock: (v: boolean) => {
+      values.hideThinkingBlock = v;
+    },
+    setCollapseChangelog: (v: boolean) => {
+      values.collapseChangelog = v;
+    },
+    setQuietStartup: (v: boolean) => {
+      values.quietStartup = v;
+    },
+    setDoubleEscapeAction: (v: string) => {
+      values.doubleEscapeAction = v;
+    },
+    setTreeFilterMode: (v: string) => {
+      values.treeFilterMode = v;
+    },
+    setShowHardwareCursor: (v: boolean) => {
+      values.showHardwareCursor = v;
+    },
+    setEditorPaddingX: (v: number) => {
+      values.editorPaddingX = v;
+    },
+    setAutocompleteMaxVisible: (v: number) => {
+      values.autocompleteMaxVisible = v;
+    },
+    setClearOnShrink: (v: boolean) => {
+      values.clearOnShrink = v;
+    },
+    setLastChangelogVersion: (v?: string) => {
+      values.lastChangelogVersion = v;
+    },
+    setEnabledModels: (v?: string[]) => {
+      values.enabledModels = v && v.length ? [...v] : undefined;
+    },
+    setSteeringMode: (v: "all" | "one-at-a-time") => {
+      values.steeringMode = v;
+    },
+    setFollowUpMode: (v: "all" | "one-at-a-time") => {
+      values.followUpMode = v;
+    },
+    setDefaultModelAndProvider: (provider: string, modelId: string) => {
+      values.defaultProvider = provider;
+      values.defaultModel = modelId;
+    },
+    setPackages: (v: any[]) => {
+      globalSettings.packages = [...v];
+    },
+    setProjectPackages: (v: any[]) => {
+      projectSettings.packages = [...v];
+    },
+    setExtensionPaths: (v: string[]) => {
+      globalSettings.extensions = [...v];
+    },
+    setProjectExtensionPaths: (v: string[]) => {
+      projectSettings.extensions = [...v];
+    },
+    setSkillPaths: (v: string[]) => {
+      globalSettings.skills = [...v];
+    },
+    setProjectSkillPaths: (v: string[]) => {
+      projectSettings.skills = [...v];
+    },
+    setPromptTemplatePaths: (v: string[]) => {
+      globalSettings.prompts = [...v];
+    },
+    setProjectPromptTemplatePaths: (v: string[]) => {
+      projectSettings.prompts = [...v];
+    },
+    setThemePaths: (v: string[]) => {
+      globalSettings.themes = [...v];
+    },
+    setProjectThemePaths: (v: string[]) => {
+      projectSettings.themes = [...v];
+    },
+  };
 }

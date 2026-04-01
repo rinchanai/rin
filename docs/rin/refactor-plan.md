@@ -543,15 +543,15 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 
 ## 7. 组件处理策略总表
 
-| 组件 | 策略 | 说明 |
-| --- | --- | --- |
-| session | 强化 | 成为唯一核心对象 |
-| memory store | 强化 | 保留 markdown 本体，只拆职责 |
-| memory derivation | 减重 | extractor / episode / onboarding 从 core 中拆出 |
-| koishi bridge | 减重 | 从重子系统收束为 chat bridge adapter |
-| installer / updater | 减重 | 从全能入口拆为多阶段模型 |
-| search / SearXNG | 收边界 | 保留选型，只治理生命周期与重复基础设施 |
-| jiti / source fallback | 删除 | 纯运行边界负债，直接砍掉 |
+| 组件                   | 策略   | 说明                                            |
+| ---------------------- | ------ | ----------------------------------------------- |
+| session                | 强化   | 成为唯一核心对象                                |
+| memory store           | 强化   | 保留 markdown 本体，只拆职责                    |
+| memory derivation      | 减重   | extractor / episode / onboarding 从 core 中拆出 |
+| koishi bridge          | 减重   | 从重子系统收束为 chat bridge adapter            |
+| installer / updater    | 减重   | 从全能入口拆为多阶段模型                        |
+| search / SearXNG       | 收边界 | 保留选型，只治理生命周期与重复基础设施          |
+| jiti / source fallback | 删除   | 纯运行边界负债，直接砍掉                        |
 
 ---
 

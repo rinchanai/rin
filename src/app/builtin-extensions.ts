@@ -1,5 +1,5 @@
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 /**
  * App-level builtin extension manifest.
@@ -9,23 +9,29 @@ import { fileURLToPath } from 'node:url'
  * or install them manually.
  */
 function repoRootFromHere() {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
+  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 }
 
 export function getBuiltinExtensionPaths() {
-  const root = repoRootFromHere()
+  const root = repoRootFromHere();
   return [
-    path.join(root, 'dist', 'extensions', 'discover-attention-resources', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'web-search', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'memory', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'reset-system-prompt', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'message-header', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'rin-project-docs', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'freeze-session-runtime', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'tui-input-compat', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'subagent', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'cron', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'koishi-send-message', 'index.js'),
-    path.join(root, 'dist', 'extensions', 'koishi-get-message', 'index.js'),
-  ]
+    path.join(
+      root,
+      "dist",
+      "extensions",
+      "discover-attention-resources",
+      "index.js",
+    ),
+    path.join(root, "dist", "extensions", "web-search", "index.js"),
+    path.join(root, "dist", "extensions", "memory", "index.js"),
+    path.join(root, "dist", "extensions", "reset-system-prompt", "index.js"),
+    path.join(root, "dist", "extensions", "message-header", "index.js"),
+    path.join(root, "dist", "extensions", "rin-project-docs", "index.js"),
+    path.join(root, "dist", "extensions", "freeze-session-runtime", "index.js"),
+    path.join(root, "dist", "extensions", "tui-input-compat", "index.js"),
+    path.join(root, "dist", "extensions", "subagent", "index.js"),
+    path.join(root, "dist", "extensions", "cron", "index.js"),
+    path.join(root, "dist", "extensions", "koishi-send-message", "index.js"),
+    path.join(root, "dist", "extensions", "koishi-get-message", "index.js"),
+  ];
 }

@@ -3,6 +3,7 @@
 Adds a per-message header before the user body.
 
 Features:
+
 - always generates a hidden per-turn header context separated from the body with `---`
 - always includes the message send time
 - for Koishi bridge messages, also includes chatKey, chat name, sender user id, nickname, and bridge identity

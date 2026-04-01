@@ -30,9 +30,6 @@ The tool returns a JSON object like:
 
 ```json
 {
-  "paths": [
-    "/abs/path/to/AGENTS.md",
-    "/abs/path/to/.agents/skills/foo"
-  ]
+  "paths": ["/abs/path/to/AGENTS.md", "/abs/path/to/.agents/skills/foo"]
 }
 ```

@@ -1,7 +1,7 @@
-import { BUILTIN_SLASH_COMMANDS } from '../rin-lib/rpc.js'
+import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 
 export function writeJsonLine(value: unknown) {
-  process.stdout.write(`${JSON.stringify(value)}\n`)
+  process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
 export function getSessionState(session: any) {
@@ -18,131 +18,200 @@ export function getSessionState(session: any) {
     autoCompactionEnabled: session.autoCompactionEnabled,
     messageCount: session.messages.length,
     pendingMessageCount: session.pendingMessageCount,
-  }
+  };
 }
 
-export function getSlashCommands(session: any, builtinSlashCommands: any[] = BUILTIN_SLASH_COMMANDS) {
-  const commands: any[] = []
+export function getSlashCommands(
+  session: any,
+  builtinSlashCommands: any[] = BUILTIN_SLASH_COMMANDS,
+) {
+  const commands: any[] = [];
   for (const command of builtinSlashCommands) {
-    commands.push({ name: command.name, description: command.description, source: 'builtin' })
+    commands.push({
+      name: command.name,
+      description: command.description,
+      source: "builtin",
+    });
   }
-  for (const command of session.extensionRunner?.getRegisteredCommands?.() ?? []) {
-    commands.push({ name: command.invocationName, description: command.description, source: 'extension', sourceInfo: command.sourceInfo })
+  for (const command of session.extensionRunner?.getRegisteredCommands?.() ??
+    []) {
+    commands.push({
+      name: command.invocationName,
+      description: command.description,
+      source: "extension",
+      sourceInfo: command.sourceInfo,
+    });
   }
   for (const template of session.promptTemplates ?? []) {
-    commands.push({ name: template.name, description: template.description, source: 'prompt', sourceInfo: template.sourceInfo })
+    commands.push({
+      name: template.name,
+      description: template.description,
+      source: "prompt",
+      sourceInfo: template.sourceInfo,
+    });
   }
   for (const skill of session.resourceLoader?.getSkills?.().skills ?? []) {
-    commands.push({ name: `skill:${skill.name}`, description: skill.description, source: 'skill', sourceInfo: skill.sourceInfo })
+    commands.push({
+      name: `skill:${skill.name}`,
+      description: skill.description,
+      source: "skill",
+      sourceInfo: skill.sourceInfo,
+    });
   }
-  return commands
+  return commands;
 }
 
 export function getOAuthState(session: any) {
-  const authStorage = session.modelRegistry.authStorage
+  const authStorage = session.modelRegistry.authStorage;
   const credentials = Object.fromEntries(
     authStorage.list().map((providerId: string) => {
-      const credential = authStorage.get(providerId)
-      return [providerId, credential ? { type: credential.type } : undefined]
+      const credential = authStorage.get(providerId);
+      return [providerId, credential ? { type: credential.type } : undefined];
     }),
-  )
+  );
   const providers = authStorage.getOAuthProviders().map((provider: any) => ({
     id: provider.id,
     name: provider.name,
     usesCallbackServer: Boolean(provider.usesCallbackServer),
-  }))
-  return { credentials, providers }
+  }));
+  return { credentials, providers };
 }
 
 export function splitCommandArgs(text: string) {
-  const args: string[] = []
-  let current = ''
-  let quote: string | null = null
-  for (const char of String(text || '')) {
+  const args: string[] = [];
+  let current = "";
+  let quote: string | null = null;
+  for (const char of String(text || "")) {
     if (quote) {
-      if (char === quote) quote = null
-      else current += char
-      continue
+      if (char === quote) quote = null;
+      else current += char;
+      continue;
     }
     if (char === '"' || char === "'") {
-      quote = char
-      continue
+      quote = char;
+      continue;
     }
-    if (char === ' ' || char === '\t') {
+    if (char === " " || char === "\t") {
       if (current) {
-        args.push(current)
-        current = ''
+        args.push(current);
+        current = "";
       }
-      continue
+      continue;
     }
-    current += char
+    current += char;
   }
-  if (current) args.push(current)
-  return args
+  if (current) args.push(current);
+  return args;
 }
 
 export function formatSessionStats(stats: any) {
   return [
-    `Session ID: ${String(stats?.sessionId || '')}`,
-    `Session File: ${String(stats?.sessionFile || 'In-memory')}`,
+    `Session ID: ${String(stats?.sessionId || "")}`,
+    `Session File: ${String(stats?.sessionFile || "In-memory")}`,
     `Messages: ${String(stats?.totalMessages || 0)} (user=${String(stats?.userMessages || 0)}, assistant=${String(stats?.assistantMessages || 0)}, toolResults=${String(stats?.toolResults || 0)})`,
     `Tool Calls: ${String(stats?.toolCalls || 0)}`,
     `Tokens: ${String(stats?.tokens?.total || 0)} (input=${String(stats?.tokens?.input || 0)}, output=${String(stats?.tokens?.output || 0)}, cacheRead=${String(stats?.tokens?.cacheRead || 0)}, cacheWrite=${String(stats?.tokens?.cacheWrite || 0)})`,
     `Cost: ${String(stats?.cost || 0)}`,
-  ].join('\n')
+  ].join("\n");
 }
 
-export async function runBuiltinCommand(session: any, commandLine: string, deps: { SessionManager: any }) {
-  const trimmed = String(commandLine || '').trim()
-  if (!trimmed.startsWith('/')) return { handled: false }
-  const [name = '', ...rest] = splitCommandArgs(trimmed.slice(1))
-  const argsText = rest.join(' ').trim()
-  const command = name.trim()
-  if (!command) return { handled: false }
+export async function runBuiltinCommand(
+  session: any,
+  commandLine: string,
+  deps: { SessionManager: any },
+) {
+  const trimmed = String(commandLine || "").trim();
+  if (!trimmed.startsWith("/")) return { handled: false };
+  const [name = "", ...rest] = splitCommandArgs(trimmed.slice(1));
+  const argsText = rest.join(" ").trim();
+  const command = name.trim();
+  if (!command) return { handled: false };
 
   switch (command) {
-    case 'new':
-      await session.newSession()
-      return { handled: true, text: 'Started a new session.' }
-    case 'compact':
-      await session.compact(argsText || undefined)
-      return { handled: true, text: 'Compacted session.' }
-    case 'reload':
-      await session.reload()
-      return { handled: true, text: 'Reloaded extensions, prompts, skills, and themes.' }
-    case 'session':
-      return { handled: true, text: formatSessionStats(session.getSessionStats()) }
-    case 'resume': {
-      const sessions = await deps.SessionManager.list(session.sessionManager.getCwd(), session.sessionManager.getSessionDir())
+    case "new":
+      await session.newSession();
+      return { handled: true, text: "Started a new session." };
+    case "compact":
+      await session.compact(argsText || undefined);
+      return { handled: true, text: "Compacted session." };
+    case "reload":
+      await session.reload();
+      return {
+        handled: true,
+        text: "Reloaded extensions, prompts, skills, and themes.",
+      };
+    case "session":
+      return {
+        handled: true,
+        text: formatSessionStats(session.getSessionStats()),
+      };
+    case "resume": {
+      const sessions = await deps.SessionManager.list(
+        session.sessionManager.getCwd(),
+        session.sessionManager.getSessionDir(),
+      );
       if (!argsText) {
         const lines = sessions.slice(0, 20).map((item: any) => {
-          const label = String(item?.name || item?.id || '').trim() || String(item?.id || '')
-          return `${String(item?.id || '')} — ${label}`
-        })
-        return { handled: true, text: lines.length ? ['Available sessions:', ...lines].join('\n') : 'No sessions available.' }
+          const label =
+            String(item?.name || item?.id || "").trim() ||
+            String(item?.id || "");
+          return `${String(item?.id || "")} — ${label}`;
+        });
+        return {
+          handled: true,
+          text: lines.length
+            ? ["Available sessions:", ...lines].join("\n")
+            : "No sessions available.",
+        };
       }
-      const match = sessions.find((item: any) => String(item?.id || '') === argsText)
-      if (!match) return { handled: true, text: `Session not found: ${argsText}` }
-      await session.switchSession(String(match.path || ''))
-      return { handled: true, text: `Resumed session: ${String(match.id || '')}` }
+      const match = sessions.find(
+        (item: any) => String(item?.id || "") === argsText,
+      );
+      if (!match)
+        return { handled: true, text: `Session not found: ${argsText}` };
+      await session.switchSession(String(match.path || ""));
+      return {
+        handled: true,
+        text: `Resumed session: ${String(match.id || "")}`,
+      };
     }
-    case 'model': {
+    case "model": {
       if (!rest.length) {
-        const models = await session.modelRegistry.getAvailable()
-        const lines = models.slice(0, 50).map((model: any) => `${String(model.provider || '')}/${String(model.id || '')}`)
-        return { handled: true, text: lines.length ? ['Available models:', ...lines].join('\n') : 'No models available.' }
+        const models = await session.modelRegistry.getAvailable();
+        const lines = models
+          .slice(0, 50)
+          .map(
+            (model: any) =>
+              `${String(model.provider || "")}/${String(model.id || "")}`,
+          );
+        return {
+          handled: true,
+          text: lines.length
+            ? ["Available models:", ...lines].join("\n")
+            : "No models available.",
+        };
       }
-      const [targetRef = '', thinkingLevel = ''] = rest
-      const [provider = '', modelId = ''] = String(targetRef).split('/', 2)
-      if (!provider || !modelId) return { handled: true, text: 'Usage: /model <provider/model> [thinking-level]' }
-      const models = await session.modelRegistry.getAvailable()
-      const match = models.find((model: any) => model.provider === provider && model.id === modelId)
-      if (!match) return { handled: true, text: `Model not found: ${targetRef}` }
-      await session.setModel(match)
-      if (thinkingLevel) await session.setThinkingLevel(thinkingLevel)
-      return { handled: true, text: `Model set to: ${provider}/${modelId}${thinkingLevel ? ` (${thinkingLevel})` : ''}` }
+      const [targetRef = "", thinkingLevel = ""] = rest;
+      const [provider = "", modelId = ""] = String(targetRef).split("/", 2);
+      if (!provider || !modelId)
+        return {
+          handled: true,
+          text: "Usage: /model <provider/model> [thinking-level]",
+        };
+      const models = await session.modelRegistry.getAvailable();
+      const match = models.find(
+        (model: any) => model.provider === provider && model.id === modelId,
+      );
+      if (!match)
+        return { handled: true, text: `Model not found: ${targetRef}` };
+      await session.setModel(match);
+      if (thinkingLevel) await session.setThinkingLevel(thinkingLevel);
+      return {
+        handled: true,
+        text: `Model set to: ${provider}/${modelId}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
+      };
     }
     default:
-      return { handled: false }
+      return { handled: false };
   }
 }

@@ -1,119 +1,153 @@
-import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 type KoishiBridgePromptMeta = {
-  source?: string
-  sentAt?: number
-  chatKey?: string
-  chatName?: string
-  userId?: string
-  nickname?: string
-  identity?: string
-  replyToMessageId?: string
-}
+  source?: string;
+  sentAt?: number;
+  chatKey?: string;
+  chatName?: string;
+  userId?: string;
+  nickname?: string;
+  identity?: string;
+  replyToMessageId?: string;
+};
 
-const KOISHI_BRIDGE_PROMPT_META_PREFIX = '[[rin-koishi-bridge-meta:'
+const KOISHI_BRIDGE_PROMPT_META_PREFIX = "[[rin-koishi-bridge-meta:";
 
 function buildKoishiSystemPromptBlock(meta: KoishiBridgePromptMeta) {
   return [
-    `- The current Koishi chatKey is: ${safeString(meta.chatKey).trim() || 'unknown'}`,
-    `- The current chat name is: ${safeString(meta.chatName).trim() || 'unknown'}`,
-    '- In Koishi bridge chats, sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.',
-    '- `sender identity` uses the bridge trust classification: `OWNER` = configured owner, `TRUSTED` = trusted user, `OTHER` = unknown or untrusted user.',
-    '- When replying in Koishi bridge chats, do not use Markdown. Reply in plain text only. Do not use headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.',
-    '- In group chats, do not proactively disclose the owner\'s private information, even when talking with the owner.',
-    '- In group chats, only disclose the owner\'s private information when the owner explicitly asks you in the current conversation to share that specific part.',
-    '- In group chats, if a non-OWNER asks about the owner\'s private information, do not disclose it. Ask the owner to say it directly if needed.',
-    '- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.',
-    '- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.',
-  ].join('\n')
+    `- The current Koishi chatKey is: ${safeString(meta.chatKey).trim() || "unknown"}`,
+    `- The current chat name is: ${safeString(meta.chatName).trim() || "unknown"}`,
+    "- In Koishi bridge chats, sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.",
+    "- `sender identity` uses the bridge trust classification: `OWNER` = configured owner, `TRUSTED` = trusted user, `OTHER` = unknown or untrusted user.",
+    "- When replying in Koishi bridge chats, do not use Markdown. Reply in plain text only. Do not use headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.",
+    "- In group chats, do not proactively disclose the owner's private information, even when talking with the owner.",
+    "- In group chats, only disclose the owner's private information when the owner explicitly asks you in the current conversation to share that specific part.",
+    "- In group chats, if a non-OWNER asks about the owner's private information, do not disclose it. Ask the owner to say it directly if needed.",
+    "- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.",
+    "- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
+  ].join("\n");
 }
 
 function safeString(value: unknown) {
-  if (value == null) return ''
-  return String(value)
+  if (value == null) return "";
+  return String(value);
 }
 
 function pad2(value: number) {
-  return String(value).padStart(2, '0')
+  return String(value).padStart(2, "0");
 }
 
 function formatTimestamp(value: number) {
-  const date = new Date(Number.isFinite(value) ? value : Date.now())
-  const year = date.getFullYear()
-  const month = pad2(date.getMonth() + 1)
-  const day = pad2(date.getDate())
-  const hour = pad2(date.getHours())
-  const minute = pad2(date.getMinutes())
-  const second = pad2(date.getSeconds())
-  const offsetMinutes = -date.getTimezoneOffset()
-  const sign = offsetMinutes >= 0 ? '+' : '-'
-  const offsetHours = pad2(Math.floor(Math.abs(offsetMinutes) / 60))
-  const offsetRemainder = pad2(Math.abs(offsetMinutes) % 60)
-  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${sign}${offsetHours}:${offsetRemainder}`
+  const date = new Date(Number.isFinite(value) ? value : Date.now());
+  const year = date.getFullYear();
+  const month = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const hour = pad2(date.getHours());
+  const minute = pad2(date.getMinutes());
+  const second = pad2(date.getSeconds());
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const offsetHours = pad2(Math.floor(Math.abs(offsetMinutes) / 60));
+  const offsetRemainder = pad2(Math.abs(offsetMinutes) % 60);
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${sign}${offsetHours}:${offsetRemainder}`;
 }
 
 function decodeKoishiBridgeMeta(text: string) {
-  const input = safeString(text)
-  if (!input.startsWith(KOISHI_BRIDGE_PROMPT_META_PREFIX)) return { meta: null as KoishiBridgePromptMeta | null, body: input }
-  const end = input.indexOf(']]')
-  if (end < 0) return { meta: null as KoishiBridgePromptMeta | null, body: input }
-  const encoded = input.slice(KOISHI_BRIDGE_PROMPT_META_PREFIX.length, end).trim()
-  if (!encoded) return { meta: null as KoishiBridgePromptMeta | null, body: input }
+  const input = safeString(text);
+  if (!input.startsWith(KOISHI_BRIDGE_PROMPT_META_PREFIX))
+    return { meta: null as KoishiBridgePromptMeta | null, body: input };
+  const end = input.indexOf("]]");
+  if (end < 0)
+    return { meta: null as KoishiBridgePromptMeta | null, body: input };
+  const encoded = input
+    .slice(KOISHI_BRIDGE_PROMPT_META_PREFIX.length, end)
+    .trim();
+  if (!encoded)
+    return { meta: null as KoishiBridgePromptMeta | null, body: input };
   try {
-    const meta = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')) as KoishiBridgePromptMeta
-    const body = input.slice(end + 2).replace(/^\s*\n/, '')
-    return { meta, body }
+    const meta = JSON.parse(
+      Buffer.from(encoded, "base64").toString("utf8"),
+    ) as KoishiBridgePromptMeta;
+    const body = input.slice(end + 2).replace(/^\s*\n/, "");
+    return { meta, body };
   } catch {
-    return { meta: null as KoishiBridgePromptMeta | null, body: input }
+    return { meta: null as KoishiBridgePromptMeta | null, body: input };
   }
 }
 
-function buildHeader(body: string, meta: KoishiBridgePromptMeta | null, fallbackTimestamp: number) {
-  const lines = [`sent at: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`]
-  if (meta?.source === 'koishi-bridge') {
-    lines.push(`chatKey: ${safeString(meta.chatKey).trim() || 'unknown'}`)
-    lines.push(`chat name: ${safeString(meta.chatName).trim() || 'unknown'}`)
-    lines.push(`sender user id: ${safeString(meta.userId).trim() || 'unknown'}`)
-    lines.push(`sender nickname: ${safeString(meta.nickname).trim() || 'unknown'}`)
-    lines.push(`sender identity: ${safeString(meta.identity).trim() || 'OTHER'}`)
-    if (safeString(meta.replyToMessageId).trim()) lines.push(`reply to message id: ${safeString(meta.replyToMessageId).trim()}`)
+function buildHeader(
+  body: string,
+  meta: KoishiBridgePromptMeta | null,
+  fallbackTimestamp: number,
+) {
+  const lines = [
+    `sent at: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`,
+  ];
+  if (meta?.source === "koishi-bridge") {
+    lines.push(`chatKey: ${safeString(meta.chatKey).trim() || "unknown"}`);
+    lines.push(`chat name: ${safeString(meta.chatName).trim() || "unknown"}`);
+    lines.push(
+      `sender user id: ${safeString(meta.userId).trim() || "unknown"}`,
+    );
+    lines.push(
+      `sender nickname: ${safeString(meta.nickname).trim() || "unknown"}`,
+    );
+    lines.push(
+      `sender identity: ${safeString(meta.identity).trim() || "OTHER"}`,
+    );
+    if (safeString(meta.replyToMessageId).trim())
+      lines.push(
+        `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
+      );
   }
-  return `${lines.join('\n')}\n---\n${body}`
+  return `${lines.join("\n")}\n---\n${body}`;
 }
 
 export default function messageHeaderExtension(pi: ExtensionAPI) {
-  const pendingContexts: Array<{ meta: KoishiBridgePromptMeta | null; body: string; sentAt: number }> = []
+  const pendingContexts: Array<{
+    meta: KoishiBridgePromptMeta | null;
+    body: string;
+    sentAt: number;
+  }> = [];
 
-  pi.on('input', async (event) => {
-    if (event.source === 'extension') return { action: 'continue' }
+  pi.on("input", async (event) => {
+    if (event.source === "extension") return { action: "continue" };
 
-    const originalText = safeString(event.text)
-    const { meta, body } = decodeKoishiBridgeMeta(originalText)
+    const originalText = safeString(event.text);
+    const { meta, body } = decodeKoishiBridgeMeta(originalText);
     pendingContexts.push({
-      meta: meta?.source === 'koishi-bridge' ? meta : null,
+      meta: meta?.source === "koishi-bridge" ? meta : null,
       body,
       sentAt: Number(meta?.sentAt) || Date.now(),
-    })
-    return { action: 'continue' }
-  })
+    });
+    return { action: "continue" };
+  });
 
-  pi.on('before_agent_start', async (event) => {
-    const current = pendingContexts.shift() || { meta: null, body: safeString(event.prompt), sentAt: Date.now() }
-    const result: { systemPrompt?: string; message?: { customType: string; content: string; display: boolean } } = {
+  pi.on("before_agent_start", async (event) => {
+    const current = pendingContexts.shift() || {
+      meta: null,
+      body: safeString(event.prompt),
+      sentAt: Date.now(),
+    };
+    const result: {
+      systemPrompt?: string;
+      message?: { customType: string; content: string; display: boolean };
+    } = {
       message: {
-        customType: 'message-header-context',
+        customType: "message-header-context",
         content: buildHeader(current.body, current.meta, current.sentAt),
         display: false,
       },
-    }
+    };
 
-    if (current.meta?.source === 'koishi-bridge') {
-      const block = buildKoishiSystemPromptBlock(current.meta)
+    if (current.meta?.source === "koishi-bridge") {
+      const block = buildKoishiSystemPromptBlock(current.meta);
       if (!safeString(event.systemPrompt).includes(block)) {
-        result.systemPrompt = `${safeString(event.systemPrompt).trimEnd()}\n\n${block}`.trimEnd()
+        result.systemPrompt =
+          `${safeString(event.systemPrompt).trimEnd()}\n\n${block}`.trimEnd();
       }
     }
 
-    return result
-  })
+    return result;
+  });
 }

@@ -1,114 +1,157 @@
-import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-agent-core'
+import type {
+  AgentEvent,
+  AgentMessage,
+  ThinkingLevel,
+} from "@mariozechner/pi-agent-core";
 
-import { loadRinCodingAgent } from '../rin-lib/loader.js'
-import { getRuntimeSessionDir, resolveRuntimeProfile } from '../rin-lib/runtime.js'
-import { RinDaemonFrontendClient } from './rpc-client.js'
-import { handleRpcSessionEvent } from './events.js'
-import { loadRpcLocalExtensions } from './extensions.js'
-import { setRpcAutoCompaction, cycleRpcModel, cycleRpcThinkingLevel, setRpcFollowUpMode, setRpcModel, setRpcSteeringMode, setRpcThinkingLevel } from './model-settings.js'
-import { queueOfflineOperation, emitConnectionLost, type PendingRpcOperation } from './reconnect.js'
-import { createModelRegistry } from './rpc-model-registry.js'
-import { createSettingsManager } from './settings-manager.js'
-import { computeAvailableThinkingLevels, extractText, getLastAssistantText } from './session-helpers.js'
-import { hydrateRpcSettings } from './settings-hydration.js'
-import { computeSessionStats, getContextUsage, reconcilePendingQueues } from './stats.js'
-import { applyRpcMessages, applyRpcSessionState, applyRpcSessionTree, getSessionBranch, resetRpcLocalSessionState } from './state-utils.js'
+import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import {
+  getRuntimeSessionDir,
+  resolveRuntimeProfile,
+} from "../rin-lib/runtime.js";
+import { RinDaemonFrontendClient } from "./rpc-client.js";
+import { handleRpcSessionEvent } from "./events.js";
+import { loadRpcLocalExtensions } from "./extensions.js";
+import {
+  setRpcAutoCompaction,
+  cycleRpcModel,
+  cycleRpcThinkingLevel,
+  setRpcFollowUpMode,
+  setRpcModel,
+  setRpcSteeringMode,
+  setRpcThinkingLevel,
+} from "./model-settings.js";
+import {
+  queueOfflineOperation,
+  emitConnectionLost,
+  type PendingRpcOperation,
+} from "./reconnect.js";
+import { createModelRegistry } from "./rpc-model-registry.js";
+import { createSettingsManager } from "./settings-manager.js";
+import {
+  computeAvailableThinkingLevels,
+  extractText,
+  getLastAssistantText,
+} from "./session-helpers.js";
+import { hydrateRpcSettings } from "./settings-hydration.js";
+import {
+  computeSessionStats,
+  getContextUsage,
+  reconcilePendingQueues,
+} from "./stats.js";
+import {
+  applyRpcMessages,
+  applyRpcSessionState,
+  applyRpcSessionTree,
+  getSessionBranch,
+  resetRpcLocalSessionState,
+} from "./state-utils.js";
 
 type RpcExtensionBindings = {
-  uiContext?: any
-  commandContextActions?: any
-  shutdownHandler?: () => void
-  onError?: (error: any) => void
-}
+  uiContext?: any;
+  commandContextActions?: any;
+  shutdownHandler?: () => void;
+  onError?: (error: any) => void;
+};
 
-const REFRESH_MESSAGES = { messages: true } as const
-const REFRESH_MODELS = { models: true } as const
-const REFRESH_SESSION = { session: true } as const
-const REFRESH_MESSAGES_AND_SESSION = { messages: true, session: true } as const
-const REFRESH_ALL = { messages: true, models: true, session: true } as const
+const REFRESH_MESSAGES = { messages: true } as const;
+const REFRESH_MODELS = { models: true } as const;
+const REFRESH_SESSION = { session: true } as const;
+const REFRESH_MESSAGES_AND_SESSION = { messages: true, session: true } as const;
+const REFRESH_ALL = { messages: true, models: true, session: true } as const;
 
 class RemoteAgent {
   constructor(private client: RinDaemonFrontendClient) {}
 
   abort() {
-    void this.client.abort().catch(() => {})
+    void this.client.abort().catch(() => {});
   }
 
   waitForIdle(timeout = 60000) {
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
-        unsubscribe()
-        reject(new Error('rin_wait_for_idle_timeout'))
-      }, timeout)
+        unsubscribe();
+        reject(new Error("rin_wait_for_idle_timeout"));
+      }, timeout);
       const unsubscribe = this.client.subscribe((event) => {
-        if (event.type !== 'ui') return
-        if ((event.payload as any)?.type !== 'agent_end') return
-        clearTimeout(timer)
-        unsubscribe()
-        resolve()
-      })
-    })
+        if (event.type !== "ui") return;
+        if ((event.payload as any)?.type !== "agent_end") return;
+        clearTimeout(timer);
+        unsubscribe();
+        resolve();
+      });
+    });
   }
 
   async setTransport(_transport: string) {}
 }
 
-type RefreshFlags = { messages?: boolean; models?: boolean; session?: boolean }
+type RefreshFlags = { messages?: boolean; models?: boolean; session?: boolean };
 
-const RUNTIME_PROFILE = resolveRuntimeProfile()
-const RUNTIME_SESSION_DIR = getRuntimeSessionDir(RUNTIME_PROFILE.cwd, RUNTIME_PROFILE.agentDir)
+const RUNTIME_PROFILE = resolveRuntimeProfile();
+const RUNTIME_SESSION_DIR = getRuntimeSessionDir(
+  RUNTIME_PROFILE.cwd,
+  RUNTIME_PROFILE.agentDir,
+);
 
 export class RpcInteractiveSession {
-  public agent: RemoteAgent
-  public settingsManager: any
-  public modelRegistry: any
-  public resourceLoader: any
-  public sessionManager: any
+  public agent: RemoteAgent;
+  public settingsManager: any;
+  public modelRegistry: any;
+  public resourceLoader: any;
+  public sessionManager: any;
 
-  public scopedModels: any[] = []
-  public promptTemplates: any[] = []
-  public extensionRunner: any = undefined
-  public model: any = null
-  public thinkingLevel: ThinkingLevel = 'medium'
-  public steeringMode: 'all' | 'one-at-a-time' = 'all'
-  public followUpMode: 'all' | 'one-at-a-time' = 'one-at-a-time'
-  public systemPrompt = ''
-  public isStreaming = false
-  public isCompacting = false
-  public isBashRunning = false
-  public retryAttempt = 0
-  public pendingMessageCount = 0
-  public autoCompactionEnabled = false
-  public messages: AgentMessage[] = []
-  public state: any = { messages: this.messages, model: null, thinkingLevel: this.thinkingLevel }
+  public scopedModels: any[] = [];
+  public promptTemplates: any[] = [];
+  public extensionRunner: any = undefined;
+  public model: any = null;
+  public thinkingLevel: ThinkingLevel = "medium";
+  public steeringMode: "all" | "one-at-a-time" = "all";
+  public followUpMode: "all" | "one-at-a-time" = "one-at-a-time";
+  public systemPrompt = "";
+  public isStreaming = false;
+  public isCompacting = false;
+  public isBashRunning = false;
+  public retryAttempt = 0;
+  public pendingMessageCount = 0;
+  public autoCompactionEnabled = false;
+  public messages: AgentMessage[] = [];
+  public state: any = {
+    messages: this.messages,
+    model: null,
+    thinkingLevel: this.thinkingLevel,
+  };
 
-  private sessionId = ''
-  private sessionFile?: string
-  private sessionName?: string
-  private leafId: string | null = null
-  private entries: any[] = []
-  private tree: any[] = []
-  private entryById = new Map<string, any>()
-  private labelsById = new Map<string, string | undefined>()
-  private lastSessionStats: any = undefined
-  private steeringMessages: string[] = []
-  private followUpMessages: string[] = []
-  private detachedBlankSession = false
-  private listeners = new Set<(event: AgentEvent) => void>()
-  private unsubscribeClient?: () => void
-  private extensionBindings: RpcExtensionBindings = {}
-  private additionalExtensionPaths: string[]
-  private reconnecting = false
-  private reconnectTimer: NodeJS.Timeout | null = null
-  private queuedOfflineOps: PendingRpcOperation[] = []
-  private activeTurn: PendingRpcOperation | null = null
-  private disposed = false
+  private sessionId = "";
+  private sessionFile?: string;
+  private sessionName?: string;
+  private leafId: string | null = null;
+  private entries: any[] = [];
+  private tree: any[] = [];
+  private entryById = new Map<string, any>();
+  private labelsById = new Map<string, string | undefined>();
+  private lastSessionStats: any = undefined;
+  private steeringMessages: string[] = [];
+  private followUpMessages: string[] = [];
+  private detachedBlankSession = false;
+  private listeners = new Set<(event: AgentEvent) => void>();
+  private unsubscribeClient?: () => void;
+  private extensionBindings: RpcExtensionBindings = {};
+  private additionalExtensionPaths: string[];
+  private reconnecting = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private queuedOfflineOps: PendingRpcOperation[] = [];
+  private activeTurn: PendingRpcOperation | null = null;
+  private disposed = false;
 
-  constructor(public client: RinDaemonFrontendClient, additionalExtensionPaths: string[] = []) {
-    this.additionalExtensionPaths = [...additionalExtensionPaths]
-    this.agent = new RemoteAgent(client)
-    this.settingsManager = createSettingsManager()
-    this.modelRegistry = createModelRegistry(client)
+  constructor(
+    public client: RinDaemonFrontendClient,
+    additionalExtensionPaths: string[] = [],
+  ) {
+    this.additionalExtensionPaths = [...additionalExtensionPaths];
+    this.agent = new RemoteAgent(client);
+    this.settingsManager = createSettingsManager();
+    this.modelRegistry = createModelRegistry(client);
     this.resourceLoader = {
       getThemes: () => ({ themes: [], diagnostics: [] }),
       getSkills: () => ({ skills: [], diagnostics: [] }),
@@ -116,7 +159,7 @@ export class RpcInteractiveSession {
       getExtensions: () => ({ extensions: [], errors: [] }),
       getAgentsFiles: () => ({ agentsFiles: [] }),
       getPathMetadata: () => new Map(),
-    }
+    };
     this.sessionManager = {
       getSessionFile: () => this.sessionFile,
       getSessionId: () => this.sessionId,
@@ -127,275 +170,388 @@ export class RpcInteractiveSession {
       buildSessionContext: () => ({
         messages: this.messages,
         thinkingLevel: this.thinkingLevel,
-        model: this.model ? { provider: this.model.provider, modelId: this.model.id } : null,
+        model: this.model
+          ? { provider: this.model.provider, modelId: this.model.id }
+          : null,
       }),
       getEntries: () => [...this.entries],
       getSessionName: () => this.sessionName,
       getTree: () => [...this.tree],
       getLeafId: () => this.leafId,
-      appendLabelChange: (entryId: string, label: string | undefined) => void this.setEntryLabel(entryId, label).catch(() => {}),
+      appendLabelChange: (entryId: string, label: string | undefined) =>
+        void this.setEntryLabel(entryId, label).catch(() => {}),
       getCwd: () => RUNTIME_PROFILE.cwd,
       getSessionDir: () => RUNTIME_SESSION_DIR,
-      appendSessionInfo: (name: string) => void this.setSessionName(name).catch(() => {}),
-    }
+      appendSessionInfo: (name: string) =>
+        void this.setSessionName(name).catch(() => {}),
+    };
   }
 
   async connect() {
-    this.disposed = false
-    await this.client.connect()
-    this.unsubscribeClient?.()
+    this.disposed = false;
+    await this.client.connect();
+    this.unsubscribeClient?.();
     this.unsubscribeClient = this.client.subscribe((event) => {
-      if (event.type === 'ui' && event.name === 'connection_lost') {
-        this.handleConnectionLost()
-        return
+      if (event.type === "ui" && event.name === "connection_lost") {
+        this.handleConnectionLost();
+        return;
       }
-      if (event.type === 'ui' && event.name === 'connection_restored') {
-        void this.handleConnectionRestored().catch(() => {})
-        return
+      if (event.type === "ui" && event.name === "connection_restored") {
+        void this.handleConnectionRestored().catch(() => {});
+        return;
       }
-      if (event.type !== 'ui') return
-      const payload: any = event.payload
-      if (!payload || payload.type === 'response') return
-      if (payload.type === 'oauth_login_event') {
-        this.modelRegistry.authStorage.handleEvent(payload)
-        return
+      if (event.type !== "ui") return;
+      const payload: any = event.payload;
+      if (!payload || payload.type === "response") return;
+      if (payload.type === "oauth_login_event") {
+        this.modelRegistry.authStorage.handleEvent(payload);
+        return;
       }
-      this.handleRpcEvent(payload)
-    })
-    await this.hydrateSettingsManager()
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    void this.modelRegistry.sync().catch(() => {})
+      this.handleRpcEvent(payload);
+    });
+    await this.hydrateSettingsManager();
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+    void this.modelRegistry.sync().catch(() => {});
   }
 
   async disconnect() {
-    this.disposed = true
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
-    this.reconnectTimer = null
-    this.unsubscribeClient?.()
-    this.unsubscribeClient = undefined
-    await this.client.disconnect()
+    this.disposed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.unsubscribeClient?.();
+    this.unsubscribeClient = undefined;
+    await this.client.disconnect();
   }
 
   subscribe(listener: (event: AgentEvent) => void) {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
-  async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[]; source?: string; requestTag?: string }) {
-    if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images, { source: options?.source, requestTag: options?.requestTag })
-    if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images, { source: options?.source, requestTag: options?.requestTag })
-    await this.sendOrQueue({ mode: 'prompt', message, images: options?.images, source: options?.source, requestTag: options?.requestTag })
+  async prompt(
+    message: string,
+    options?: {
+      streamingBehavior?: "steer" | "followUp";
+      images?: any[];
+      source?: string;
+      requestTag?: string;
+    },
+  ) {
+    if (options?.streamingBehavior === "steer")
+      return await this.interruptPrompt(message, options.images, {
+        source: options?.source,
+        requestTag: options?.requestTag,
+      });
+    if (options?.streamingBehavior === "followUp")
+      return await this.followUp(message, options.images, {
+        source: options?.source,
+        requestTag: options?.requestTag,
+      });
+    await this.sendOrQueue({
+      mode: "prompt",
+      message,
+      images: options?.images,
+      source: options?.source,
+      requestTag: options?.requestTag,
+    });
   }
 
-  async interruptPrompt(message: string, images?: any[], options?: { source?: string; requestTag?: string }) {
-    await this.sendOrQueue({ mode: 'interrupt_prompt', message, images, source: options?.source, requestTag: options?.requestTag })
+  async interruptPrompt(
+    message: string,
+    images?: any[],
+    options?: { source?: string; requestTag?: string },
+  ) {
+    await this.sendOrQueue({
+      mode: "interrupt_prompt",
+      message,
+      images,
+      source: options?.source,
+      requestTag: options?.requestTag,
+    });
   }
 
-  async steer(message: string, images?: any[], options?: { source?: string; requestTag?: string }) {
-    this.enqueuePending('steeringMessages', message)
-    await this.sendOrQueue({ mode: 'steer', message, images, source: options?.source, requestTag: options?.requestTag })
+  async steer(
+    message: string,
+    images?: any[],
+    options?: { source?: string; requestTag?: string },
+  ) {
+    this.enqueuePending("steeringMessages", message);
+    await this.sendOrQueue({
+      mode: "steer",
+      message,
+      images,
+      source: options?.source,
+      requestTag: options?.requestTag,
+    });
   }
 
-  async followUp(message: string, images?: any[], options?: { source?: string; requestTag?: string }) {
-    this.enqueuePending('followUpMessages', message)
-    await this.sendOrQueue({ mode: 'follow_up', message, images, source: options?.source, requestTag: options?.requestTag })
+  async followUp(
+    message: string,
+    images?: any[],
+    options?: { source?: string; requestTag?: string },
+  ) {
+    this.enqueuePending("followUpMessages", message);
+    await this.sendOrQueue({
+      mode: "follow_up",
+      message,
+      images,
+      source: options?.source,
+      requestTag: options?.requestTag,
+    });
   }
 
   clearQueue() {
-    const queued = { steering: [...this.steeringMessages], followUp: [...this.followUpMessages] }
-    this.steeringMessages = []
-    this.followUpMessages = []
-    this.syncPendingCount()
-    return queued
+    const queued = {
+      steering: [...this.steeringMessages],
+      followUp: [...this.followUpMessages],
+    };
+    this.steeringMessages = [];
+    this.followUpMessages = [];
+    this.syncPendingCount();
+    return queued;
   }
 
-  getSteeringMessages() { return [...this.steeringMessages] }
-  getFollowUpMessages() { return [...this.followUpMessages] }
-  async abort() { await this.client.abort() }
+  getSteeringMessages() {
+    return [...this.steeringMessages];
+  }
+  getFollowUpMessages() {
+    return [...this.followUpMessages];
+  }
+  async abort() {
+    await this.client.abort();
+  }
 
   async newSession(_options?: { parentSession?: string }) {
-    await this.client.send({ type: 'detach_session' }).catch(() => {})
-    this.resetLocalSessionState()
-    this.detachedBlankSession = true
-    return true
+    await this.client.send({ type: "detach_session" }).catch(() => {});
+    this.resetLocalSessionState();
+    this.detachedBlankSession = true;
+    return true;
   }
 
   async switchSession(sessionPath: string) {
-    const data = await this.call('switch_session', { sessionPath })
-    this.detachedBlankSession = false
-    await this.refreshState(REFRESH_ALL)
-    return !Boolean(data?.cancelled)
+    const data = await this.call("switch_session", { sessionPath });
+    this.detachedBlankSession = false;
+    await this.refreshState(REFRESH_ALL);
+    return !Boolean(data?.cancelled);
   }
 
   async renameSession(sessionPath: string, name: string) {
-    await this.call('rename_session', { sessionPath, name })
-    if (this.sessionFile === sessionPath) await this.refreshState(REFRESH_SESSION)
+    await this.call("rename_session", { sessionPath, name });
+    if (this.sessionFile === sessionPath)
+      await this.refreshState(REFRESH_SESSION);
   }
 
-  async listSessions(scope: 'cwd' | 'all' = 'cwd', _onProgress?: (loaded: number, total: number) => void) {
-    const data = await this.call('list_sessions', { scope })
-    return Array.isArray(data?.sessions) ? data.sessions : []
+  async listSessions(
+    scope: "cwd" | "all" = "cwd",
+    _onProgress?: (loaded: number, total: number) => void,
+  ) {
+    const data = await this.call("list_sessions", { scope });
+    return Array.isArray(data?.sessions) ? data.sessions : [];
   }
 
   async setModel(model: any) {
-    await setRpcModel(this as any, model, () => this.refreshState(REFRESH_MODELS))
+    await setRpcModel(this as any, model, () =>
+      this.refreshState(REFRESH_MODELS),
+    );
   }
 
-  setScopedModels(scopedModels: Array<{ model: any; thinkingLevel?: ThinkingLevel }>) {
-    this.scopedModels = [...scopedModels]
+  setScopedModels(
+    scopedModels: Array<{ model: any; thinkingLevel?: ThinkingLevel }>,
+  ) {
+    this.scopedModels = [...scopedModels];
   }
 
-  async cycleModel(direction?: 'forward' | 'backward') {
-    return await cycleRpcModel(this as any, direction, () => this.modelRegistry.getAvailable(), () => this.refreshState(REFRESH_MODELS))
+  async cycleModel(direction?: "forward" | "backward") {
+    return await cycleRpcModel(
+      this as any,
+      direction,
+      () => this.modelRegistry.getAvailable(),
+      () => this.refreshState(REFRESH_MODELS),
+    );
   }
 
   setThinkingLevel(level: ThinkingLevel) {
-    setRpcThinkingLevel(this as any, level)
+    setRpcThinkingLevel(this as any, level);
   }
 
   cycleThinkingLevel(): ThinkingLevel | undefined {
-    return cycleRpcThinkingLevel(this as any)
+    return cycleRpcThinkingLevel(this as any);
   }
 
-  getAvailableThinkingLevels() { return computeAvailableThinkingLevels(this.model) }
-
-  setSteeringMode(mode: 'all' | 'one-at-a-time') {
-    setRpcSteeringMode(this as any, mode)
+  getAvailableThinkingLevels() {
+    return computeAvailableThinkingLevels(this.model);
   }
 
-  setFollowUpMode(mode: 'all' | 'one-at-a-time') {
-    setRpcFollowUpMode(this as any, mode)
+  setSteeringMode(mode: "all" | "one-at-a-time") {
+    setRpcSteeringMode(this as any, mode);
+  }
+
+  setFollowUpMode(mode: "all" | "one-at-a-time") {
+    setRpcFollowUpMode(this as any, mode);
   }
 
   async compact(customInstructions?: string) {
-    const data = await this.call('compact', { customInstructions })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    return data
+    const data = await this.call("compact", { customInstructions });
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+    return data;
   }
 
-  abortCompaction() { void this.client.abort().catch(() => {}) }
+  abortCompaction() {
+    void this.client.abort().catch(() => {});
+  }
   abortBranchSummary() {}
 
   setAutoCompactionEnabled(enabled: boolean) {
-    setRpcAutoCompaction(this as any, enabled)
+    setRpcAutoCompaction(this as any, enabled);
   }
 
   async executeBash(command: string) {
-    this.isBashRunning = true
+    this.isBashRunning = true;
     try {
-      const data = await this.call('bash', { command })
-      await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-      return data
+      const data = await this.call("bash", { command });
+      await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+      return data;
     } finally {
-      this.isBashRunning = false
+      this.isBashRunning = false;
     }
   }
 
   async ensureSessionReady() {
-    await this.ensureRemoteSession()
+    await this.ensureRemoteSession();
     return {
       sessionFile: this.sessionFile,
       sessionId: this.sessionId,
       sessionName: this.sessionName,
-    }
+    };
   }
 
   async runCommand(commandLine: string) {
-    await this.ensureRemoteSession()
-    const data = await this.call('run_command', { commandLine })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    return data
+    await this.ensureRemoteSession();
+    const data = await this.call("run_command", { commandLine });
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+    return data;
   }
 
-  recordBashResult(_command: string, _result: any, _options?: { excludeFromContext?: boolean }) {}
+  recordBashResult(
+    _command: string,
+    _result: any,
+    _options?: { excludeFromContext?: boolean },
+  ) {}
 
   async abortBash() {
-    await this.call('abort_bash')
-    this.isBashRunning = false
+    await this.call("abort_bash");
+    this.isBashRunning = false;
   }
 
-  abortRetry() { void this.client.send({ type: 'abort_retry' }).catch(() => {}) }
-  get isRetrying() { return this.retryAttempt > 0 }
-  get autoRetryEnabled() { return false }
+  abortRetry() {
+    void this.client.send({ type: "abort_retry" }).catch(() => {});
+  }
+  get isRetrying() {
+    return this.retryAttempt > 0;
+  }
+  get autoRetryEnabled() {
+    return false;
+  }
   setAutoRetryEnabled(_enabled: boolean) {}
 
   setSessionName(name: string) {
-    this.sessionName = name
-    return this.call('set_session_name', { name }).then(async () => {
-      await this.refreshState(REFRESH_SESSION)
-    })
+    this.sessionName = name;
+    return this.call("set_session_name", { name }).then(async () => {
+      await this.refreshState(REFRESH_SESSION);
+    });
   }
 
   async setEntryLabel(entryId: string, label: string | undefined) {
-    await this.call('set_entry_label', { entryId, label })
-    await this.refreshState(REFRESH_SESSION)
+    await this.call("set_entry_label", { entryId, label });
+    await this.refreshState(REFRESH_SESSION);
   }
 
   async fork(entryId: string) {
-    const data = await this.call('fork', { entryId })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    return { cancelled: Boolean(data?.cancelled), selectedText: String(data?.text || '') }
+    const data = await this.call("fork", { entryId });
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+    return {
+      cancelled: Boolean(data?.cancelled),
+      selectedText: String(data?.text || ""),
+    };
   }
 
-  async navigateTree(targetId: string, options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string }) {
-    const data = await this.call('navigate_tree', {
+  async navigateTree(
+    targetId: string,
+    options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    },
+  ) {
+    const data = await this.call("navigate_tree", {
       targetId,
       summarize: options?.summarize,
       customInstructions: options?.customInstructions,
       replaceInstructions: options?.replaceInstructions,
       label: options?.label,
-    })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    });
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     return {
       cancelled: Boolean(data?.cancelled),
       aborted: Boolean(data?.aborted),
-      editorText: typeof data?.editorText === 'string' ? data.editorText : '',
+      editorText: typeof data?.editorText === "string" ? data.editorText : "",
       summaryEntry: data?.summaryEntry,
-    }
+    };
   }
 
   getUserMessagesForForking() {
     return this.entries
-      .filter((entry: any) => entry?.type === 'message' && entry.message?.role === 'user')
-      .map((entry: any) => ({ entryId: String(entry.id), text: extractText(entry.message?.content) }))
-      .filter((entry: any) => entry.text)
+      .filter(
+        (entry: any) =>
+          entry?.type === "message" && entry.message?.role === "user",
+      )
+      .map((entry: any) => ({
+        entryId: String(entry.id),
+        text: extractText(entry.message?.content),
+      }))
+      .filter((entry: any) => entry.text);
   }
 
   getSessionStats() {
-    this.lastSessionStats = this.computeSessionStats()
-    return this.lastSessionStats
+    this.lastSessionStats = this.computeSessionStats();
+    return this.lastSessionStats;
   }
 
   getContextUsage() {
-    return getContextUsage(this.model, this.messages, this.getBranch())
+    return getContextUsage(this.model, this.messages, this.getBranch());
   }
 
   async exportToHtml(outputPath?: string) {
-    const data = await this.call('export_html', { outputPath })
-    return String(data?.path || '')
+    const data = await this.call("export_html", { outputPath });
+    return String(data?.path || "");
   }
 
   async exportToJsonl(outputPath?: string) {
-    const data = await this.call('export_jsonl', { outputPath })
-    return String(data?.path || '')
+    const data = await this.call("export_jsonl", { outputPath });
+    return String(data?.path || "");
   }
 
   async importFromJsonl(inputPath: string) {
-    const data = await this.call('import_jsonl', { inputPath })
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    return !Boolean(data?.cancelled)
+    const data = await this.call("import_jsonl", { inputPath });
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+    return !Boolean(data?.cancelled);
   }
 
-  getLastAssistantText() { return getLastAssistantText(this.messages) }
-  getToolDefinition() { return undefined }
+  getLastAssistantText() {
+    return getLastAssistantText(this.messages);
+  }
+  getToolDefinition() {
+    return undefined;
+  }
 
   async reload() {
-    await this.modelRegistry.sync()
+    await this.modelRegistry.sync();
     if (!this.detachedBlankSession) {
-      await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+      await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     }
     if (this.extensionRunner) {
-      await this.loadLocalExtensions(true)
+      await this.loadLocalExtensions(true);
     }
   }
 
@@ -403,174 +559,210 @@ export class RpcInteractiveSession {
     this.extensionBindings = {
       ...this.extensionBindings,
       ...bindings,
-    }
-    await this.loadLocalExtensions(false)
+    };
+    await this.loadLocalExtensions(false);
   }
 
   private async loadLocalExtensions(forceReload: boolean) {
-    await loadRpcLocalExtensions(this as any, forceReload, RUNTIME_PROFILE)
+    await loadRpcLocalExtensions(this as any, forceReload, RUNTIME_PROFILE);
   }
 
   private handleRpcEvent(payload: any) {
-    if (payload?.type === 'extension_ui_request') return
-    void handleRpcSessionEvent(this as any, payload, () => this.refreshState(REFRESH_MESSAGES_AND_SESSION))
+    if (payload?.type === "extension_ui_request") return;
+    void handleRpcSessionEvent(this as any, payload, () =>
+      this.refreshState(REFRESH_MESSAGES_AND_SESSION),
+    );
   }
 
   private emitEvent(event: AgentEvent) {
     for (const listener of this.listeners) {
-      try { listener(event) } catch {}
+      try {
+        listener(event);
+      } catch {}
     }
   }
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
-    queueOfflineOperation(this as any, operation)
+    queueOfflineOperation(this as any, operation);
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
     if (!this.client.isConnected()) {
-      this.queueOfflineOperation(operation)
-      return
+      this.queueOfflineOperation(operation);
+      return;
     }
     try {
-      await this.ensureRemoteSession()
-      this.isStreaming = true
-      this.activeTurn = operation
-      await this.call(operation.mode, { message: operation.message, images: operation.images, source: operation.source, requestTag: operation.requestTag })
+      await this.ensureRemoteSession();
+      this.isStreaming = true;
+      this.activeTurn = operation;
+      await this.call(operation.mode, {
+        message: operation.message,
+        images: operation.images,
+        source: operation.source,
+        requestTag: operation.requestTag,
+      });
     } catch (error: any) {
-      const message = String(error?.message || error || '')
+      const message = String(error?.message || error || "");
       if (/rin_tui_not_connected|rin_disconnected/.test(message)) {
-        this.queueOfflineOperation(operation)
-        return
+        this.queueOfflineOperation(operation);
+        return;
       }
-      throw error
+      throw error;
     }
   }
 
   private handleConnectionLost() {
-    emitConnectionLost(this as any)
+    emitConnectionLost(this as any);
   }
 
   private ensureReconnectLoop() {
-    if (this.reconnecting || this.disposed) return
-    this.reconnecting = true
+    if (this.reconnecting || this.disposed) return;
+    this.reconnecting = true;
     const tick = async () => {
-      if (this.disposed) return
+      if (this.disposed) return;
       try {
-        await this.client.connect()
+        await this.client.connect();
       } catch {
-        this.reconnectTimer = setTimeout(() => { void tick() }, 1000)
+        this.reconnectTimer = setTimeout(() => {
+          void tick();
+        }, 1000);
       }
-    }
-    void tick()
+    };
+    void tick();
   }
 
   private async handleConnectionRestored() {
-    if (this.disposed) return
-    this.reconnecting = false
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
-    this.reconnectTimer = null
-    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Resuming session...', statusText: 'Daemon connection restored.' } as any)
+    if (this.disposed) return;
+    this.reconnecting = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.emitEvent({
+      type: "rin_status",
+      phase: "update",
+      message: "Resuming session...",
+      statusText: "Daemon connection restored.",
+    } as any);
     try {
       if (this.sessionFile) {
-        await this.call('switch_session', { sessionPath: this.sessionFile })
+        await this.call("switch_session", { sessionPath: this.sessionFile });
       }
-      await this.refreshState(REFRESH_ALL)
+      await this.refreshState(REFRESH_ALL);
       if (this.activeTurn) {
-        await this.call('interrupt_prompt', {
-          message: 'Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.',
-        })
+        await this.call("interrupt_prompt", {
+          message:
+            "Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.",
+        });
       }
-      const queued = [...this.queuedOfflineOps]
-      this.queuedOfflineOps = []
+      const queued = [...this.queuedOfflineOps];
+      this.queuedOfflineOps = [];
       for (const operation of queued) {
-        await this.sendOrQueue(operation)
+        await this.sendOrQueue(operation);
       }
     } finally {
       if (!this.isStreaming && !this.isCompacting) {
-        this.emitEvent({ type: 'rin_status', phase: 'end' } as any)
+        this.emitEvent({ type: "rin_status", phase: "end" } as any);
       }
     }
   }
 
-  private enqueuePending(queue: 'steeringMessages' | 'followUpMessages', message: string) {
-    this[queue].push(message)
-    this.syncPendingCount()
+  private enqueuePending(
+    queue: "steeringMessages" | "followUpMessages",
+    message: string,
+  ) {
+    this[queue].push(message);
+    this.syncPendingCount();
   }
 
   private async hydrateSettingsManager() {
-    await hydrateRpcSettings(this.settingsManager, RUNTIME_PROFILE)
+    await hydrateRpcSettings(this.settingsManager, RUNTIME_PROFILE);
   }
 
   private resetLocalSessionState() {
-    resetRpcLocalSessionState(this as any)
+    resetRpcLocalSessionState(this as any);
   }
 
   private async ensureRemoteSession() {
-    if (!this.detachedBlankSession && this.sessionFile) return
-    const data = await this.call('new_session')
-    if (data && data.cancelled) throw new Error('rin_new_session_cancelled')
+    if (!this.detachedBlankSession && this.sessionFile) return;
+    const data = await this.call("new_session");
+    if (data && data.cancelled) throw new Error("rin_new_session_cancelled");
 
     if (this.model) {
-      await this.call('set_model', { provider: this.model.provider, modelId: this.model.id })
+      await this.call("set_model", {
+        provider: this.model.provider,
+        modelId: this.model.id,
+      });
     }
-    await this.call('set_thinking_level', { level: this.thinkingLevel })
-    await this.call('set_steering_mode', { mode: this.steeringMode })
-    await this.call('set_follow_up_mode', { mode: this.followUpMode })
-    await this.call('set_auto_compaction', { enabled: this.autoCompactionEnabled })
+    await this.call("set_thinking_level", { level: this.thinkingLevel });
+    await this.call("set_steering_mode", { mode: this.steeringMode });
+    await this.call("set_follow_up_mode", { mode: this.followUpMode });
+    await this.call("set_auto_compaction", {
+      enabled: this.autoCompactionEnabled,
+    });
 
-    this.detachedBlankSession = false
-    await this.refreshState(REFRESH_ALL)
+    this.detachedBlankSession = false;
+    await this.refreshState(REFRESH_ALL);
   }
 
   private async call(type: string, payload: Record<string, unknown> = {}) {
-    const response: any = await this.client.send({ type, ...payload })
+    const response: any = await this.client.send({ type, ...payload });
     if (!response || response.success !== true) {
-      throw new Error(String(response?.error || 'rin_request_failed'))
+      throw new Error(String(response?.error || "rin_request_failed"));
     }
-    return response.data
+    return response.data;
   }
 
   private async refreshState(flags: RefreshFlags = {}) {
-    this.applyState(await this.call('get_state'))
+    this.applyState(await this.call("get_state"));
     await Promise.all([
       flags.models ? this.modelRegistry.sync() : Promise.resolve(),
       flags.messages ? this.refreshMessages() : Promise.resolve(),
       flags.session ? this.refreshSessionData() : Promise.resolve(),
-    ])
-    this.reconcilePendingQueues(this.pendingMessageCount)
-    this.lastSessionStats = this.computeSessionStats()
+    ]);
+    this.reconcilePendingQueues(this.pendingMessageCount);
+    this.lastSessionStats = this.computeSessionStats();
   }
 
   private applyState(state: any) {
-    applyRpcSessionState(this as any, state)
+    applyRpcSessionState(this as any, state);
   }
 
   private async refreshMessages() {
-    const data = await this.call('get_messages')
-    applyRpcMessages(this as any, data)
+    const data = await this.call("get_messages");
+    applyRpcMessages(this as any, data);
   }
 
   private async refreshSessionData() {
     const [entriesData, treeData] = await Promise.all([
-      this.call('get_session_entries'),
-      this.call('get_session_tree'),
-    ])
-    applyRpcSessionTree(this as any, entriesData, treeData)
+      this.call("get_session_entries"),
+      this.call("get_session_tree"),
+    ]);
+    applyRpcSessionTree(this as any, entriesData, treeData);
   }
 
   private getBranch(fromId?: string) {
-    return getSessionBranch(this.entryById, this.leafId, fromId)
+    return getSessionBranch(this.entryById, this.leafId, fromId);
   }
 
   private computeSessionStats() {
-    return computeSessionStats(this.model, this.sessionFile, this.sessionId, this.entries, this.getContextUsage())
+    return computeSessionStats(
+      this.model,
+      this.sessionFile,
+      this.sessionId,
+      this.entries,
+      this.getContextUsage(),
+    );
   }
 
   private reconcilePendingQueues(targetCount: number) {
-    reconcilePendingQueues(this.steeringMessages, this.followUpMessages, targetCount)
+    reconcilePendingQueues(
+      this.steeringMessages,
+      this.followUpMessages,
+      targetCount,
+    );
   }
 
   private syncPendingCount() {
-    this.pendingMessageCount = this.steeringMessages.length + this.followUpMessages.length
+    this.pendingMessageCount =
+      this.steeringMessages.length + this.followUpMessages.length;
   }
 }
