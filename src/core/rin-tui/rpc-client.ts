@@ -67,9 +67,9 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
         socket.removeListener("error", onError);
         this.socket = socket;
         this.state.buffer = "";
-        socket.on("data", (chunk) => this.handleChunk(String(chunk)));
-        socket.on("close", () => this.handleDisconnect());
-        socket.on("error", () => this.handleDisconnect());
+        socket.on("data", (chunk) => this.handleChunk(String(chunk), socket));
+        socket.on("close", () => this.handleDisconnect(true, socket));
+        socket.on("error", () => this.handleDisconnect(true, socket));
         this.connectPromise = null;
         if (wasDisconnected) {
           this.emit({
@@ -95,7 +95,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
     try {
       socket.destroy();
     } catch {}
-    this.handleDisconnect(false);
+    this.handleDisconnect(false, socket);
   }
 
   subscribe(listener: (event: InteractiveFrontendEvent) => void) {
@@ -210,7 +210,8 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
     });
   }
 
-  private handleChunk(chunk: string) {
+  private handleChunk(chunk: string, socket?: net.Socket) {
+    if (socket && this.socket !== socket) return;
     parseJsonl(chunk, this.state, (line) => this.handleLine(line));
   }
 
@@ -235,7 +236,9 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
     this.emit(event);
   }
 
-  private handleDisconnect(emitEvent = true) {
+  private handleDisconnect(emitEvent = true, socket?: net.Socket) {
+    if (socket && this.socket && this.socket !== socket) return;
+    if (!this.socket && !this.connectPromise) return;
     this.socket = null;
     this.connectPromise = null;
     for (const [id, pending] of this.pending.entries()) {
