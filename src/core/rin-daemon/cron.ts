@@ -1,10 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
-
-import { loadRinSessionManagerModule } from '../rin-lib/loader.js'
-import { createConfiguredAgentSession, getRuntimeSessionDir } from '../rin-lib/runtime.js'
-import { enqueueChatOutboxPayload } from '../rin-lib/chat-outbox.js'
+import { readJsonFile, writeJsonAtomic } from '../platform/fs.js'
+import { safeString } from '../platform/process.js'
+import { executeCronTask } from './cron-execution.js'
+import { computeNextRunAt, cronTasksPath, nextCronAt, normalizeIso, nowIso } from './cron-utils.js'
 
 export type CronTaskTarget = {
   kind: 'agent_prompt'
@@ -82,157 +81,11 @@ export type CronTaskInput = {
   target?: CronTaskTarget
 }
 
-function safeString(value: unknown) {
-  if (value == null) return ''
-  return String(value)
-}
 
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true })
-}
-
-function readJson<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
-
-function writeJsonAtomic(filePath: string, value: unknown, mode = 0o600) {
-  ensureDir(path.dirname(filePath))
-  const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), { mode })
-  fs.renameSync(tmp, filePath)
-  try { fs.chmodSync(filePath, mode) } catch {}
-}
-
-function normalizeIso(value: unknown, field: string) {
-  const text = safeString(value).trim()
-  if (!text) return undefined
-  const ts = Date.parse(text)
-  if (!Number.isFinite(ts)) throw new Error(`cron_invalid_${field}`)
-  return new Date(ts).toISOString()
-}
-
-function nowIso() {
-  return new Date().toISOString()
-}
-
-function cronRoot(agentDir: string) {
-  return path.join(path.resolve(agentDir), 'data', 'cron')
-}
-
-function cronTasksPath(agentDir: string) {
-  return path.join(cronRoot(agentDir), 'tasks.json')
-}
-
-function cronTaskRunId(task: CronTaskRecord) {
-  return `${task.id}:${task.runCount}:${Date.now()}`
-}
-
-function summarizeText(value: string, max = 1200) {
-  const text = safeString(value).replace(/\r/g, '').trim()
-  if (!text) return ''
-  if (text.length <= max) return text
-  return `${text.slice(0, max - 1).trimEnd()}…`
-}
-
-function formatCronField(field: string, min: number, max: number) {
-  const allowed = new Set<number>()
-  const chunks = field.split(',').map((item) => item.trim()).filter(Boolean)
-  if (!chunks.length) throw new Error('cron_invalid_expression')
-
-  for (const chunk of chunks) {
-    const [rangePart, stepPart] = chunk.split('/')
-    const step = stepPart == null ? 1 : Number(stepPart)
-    if (!Number.isInteger(step) || step <= 0) throw new Error('cron_invalid_expression')
-
-    let start = min
-    let end = max
-    if (rangePart !== '*') {
-      const rangeMatch = rangePart.match(/^(\d+)(?:-(\d+))?$/)
-      if (!rangeMatch) throw new Error('cron_invalid_expression')
-      start = Number(rangeMatch[1])
-      end = rangeMatch[2] == null ? start : Number(rangeMatch[2])
-    }
-
-    if (!Number.isInteger(start) || !Number.isInteger(end) || start < min || end > max || start > end) {
-      throw new Error('cron_invalid_expression')
-    }
-
-    for (let value = start; value <= end; value += step) allowed.add(value)
-  }
-
-  return allowed
-}
-
-function nextCronAt(expression: string, afterTs: number) {
-  const parts = safeString(expression).trim().split(/\s+/)
-  if (parts.length !== 5) throw new Error('cron_invalid_expression')
-  const [minuteField, hourField, dayField, monthField, weekField] = parts
-  const minutes = formatCronField(minuteField, 0, 59)
-  const hours = formatCronField(hourField, 0, 23)
-  const days = formatCronField(dayField, 1, 31)
-  const months = formatCronField(monthField, 1, 12)
-  const weeks = formatCronField(weekField, 0, 6)
-
-  const start = new Date(afterTs)
-  start.setSeconds(0, 0)
-  start.setMinutes(start.getMinutes() + 1)
-
-  for (let i = 0; i < 366 * 24 * 60 * 2; i += 1) {
-    const candidate = new Date(start.getTime() + i * 60_000)
-    if (!minutes.has(candidate.getMinutes())) continue
-    if (!hours.has(candidate.getHours())) continue
-    if (!days.has(candidate.getDate())) continue
-    if (!months.has(candidate.getMonth() + 1)) continue
-    if (!weeks.has(candidate.getDay())) continue
-    return candidate.toISOString()
-  }
-
-  throw new Error('cron_next_run_not_found')
-}
-
-function computeNextRunAt(task: CronTaskRecord, referenceTs: number) {
-  if (task.completedAt || !task.enabled) return undefined
-
-  if (task.termination?.stopAt) {
-    const stopTs = Date.parse(task.termination.stopAt)
-    if (Number.isFinite(stopTs) && referenceTs > stopTs) return undefined
-  }
-  if (task.termination?.maxRuns && task.runCount >= task.termination.maxRuns) return undefined
-
-  if (task.trigger.kind === 'once') {
-    const runTs = Date.parse(task.trigger.runAt)
-    if (!Number.isFinite(runTs) || runTs <= referenceTs || task.runCount > 0) return undefined
-    return new Date(runTs).toISOString()
-  }
-
-  if (task.trigger.kind === 'cron') {
-    return nextCronAt(task.trigger.expression, referenceTs)
-  }
-
-  const intervalMs = Math.max(1_000, Number(task.trigger.intervalMs || 0))
-  if (task.lastStartedAt) {
-    return new Date(Date.parse(task.lastStartedAt) + intervalMs).toISOString()
-  }
-  const startTs = task.trigger.startAt ? Date.parse(task.trigger.startAt) : referenceTs
-  return new Date(Number.isFinite(startTs) ? startTs : referenceTs).toISOString()
-}
-
-async function sendKoishiText(agentDir: string, payload: { chatKey: string; taskId: string; runId: string; text: string }) {
-  enqueueChatOutboxPayload(agentDir, {
-    type: 'text_delivery',
-    createdAt: nowIso(),
-    ...payload,
-  })
-}
 
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>()
   private timer: NodeJS.Timeout | null = null
-  private sessionManagerModulePromise = loadRinSessionManagerModule()
   private dispatching = false
 
   constructor(private options: { agentDir: string; cwd: string; additionalExtensionPaths?: string[] }) {}
@@ -439,7 +292,7 @@ export class CronScheduler {
 
   private load() {
     const file = cronTasksPath(this.options.agentDir)
-    const rows = readJson<CronTaskRecord[]>(file, [])
+    const rows = readJsonFile<CronTaskRecord[]>(file, [])
     this.tasks.clear()
     for (const row of rows) {
       if (!row || typeof row !== 'object' || !row.id) continue
@@ -484,131 +337,11 @@ export class CronScheduler {
     }
   }
 
-  private async resolveSessionFile(task: CronTaskRecord) {
-    if (task.session.mode === 'specific' || task.session.mode === 'current') {
-      return task.session.sessionFile
-    }
-    if (task.dedicatedSessionFile) return task.dedicatedSessionFile
-    return undefined
-  }
-
   private async executeTask(task: CronTaskRecord) {
-    const runId = cronTaskRunId(task)
-    try {
-      if (task.target.kind === 'shell_command') {
-        const result = await this.executeShellTask(task)
-        task.lastResultText = result
-        if (task.chatKey) {
-          await sendKoishiText(this.options.agentDir, {
-            chatKey: task.chatKey,
-            taskId: task.id,
-            runId,
-            text: [`[Scheduled task${task.name ? `: ${task.name}` : ''}]`, result].filter(Boolean).join('\n\n'),
-          }).catch(() => {})
-        }
-      } else {
-        const result = await this.executeAgentTask(task)
-        task.lastResultText = result
-        if (task.chatKey && result) {
-          await sendKoishiText(this.options.agentDir, {
-            chatKey: task.chatKey,
-            taskId: task.id,
-            runId,
-            text: [`[Scheduled task${task.name ? `: ${task.name}` : ''}]`, result].filter(Boolean).join('\n\n'),
-          }).catch(() => {})
-        }
-      }
-    } catch (error: any) {
-      task.lastError = safeString(error?.message || error || 'cron_task_failed')
-      if (task.chatKey) {
-        await sendKoishiText(this.options.agentDir, {
-          chatKey: task.chatKey,
-          taskId: task.id,
-          runId,
-          text: `[Scheduled task${task.name ? `: ${task.name}` : ''}] failed\n\n${task.lastError}`,
-        }).catch(() => {})
-      }
-    } finally {
-      task.running = false
-      task.lastFinishedAt = nowIso()
-      task.updatedAt = nowIso()
-      if (!task.completedAt && task.termination?.maxRuns && task.runCount >= task.termination.maxRuns) {
-        task.completedAt = nowIso()
-        task.completionReason = 'max_runs_reached'
-        task.enabled = false
-        task.nextRunAt = undefined
-      }
-      if (!task.completedAt && task.termination?.stopAt) {
-        const stopTs = Date.parse(task.termination.stopAt)
-        if (Number.isFinite(stopTs) && Date.now() >= stopTs) {
-          task.completedAt = nowIso()
-          task.completionReason = 'stop_time_reached'
-          task.enabled = false
-          task.nextRunAt = undefined
-        }
-      }
-      if (!task.completedAt && task.trigger.kind !== 'interval') {
-        task.nextRunAt = computeNextRunAt(task, Date.now())
-      }
-      this.save()
+    await executeCronTask(task, this.options)
+    if (!task.completedAt && task.trigger.kind !== 'interval') {
+      task.nextRunAt = computeNextRunAt(task, Date.now())
     }
-  }
-
-  private async executeShellTask(task: CronTaskRecord) {
-    if (task.target.kind !== 'shell_command') throw new Error('cron_invalid_shell_task')
-    const { command } = task.target
-    const shell = task.target.shell || process.env.SHELL || '/bin/sh'
-    return await new Promise<string>((resolve, reject) => {
-      const child = spawn(shell, ['-lc', command], {
-        cwd: task.cwd || this.options.cwd,
-        env: { ...process.env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
-      let stdout = ''
-      let stderr = ''
-      child.stdout.on('data', (chunk) => { stdout += String(chunk) })
-      child.stderr.on('data', (chunk) => { stderr += String(chunk) })
-      child.on('error', reject)
-      child.on('close', (code, signal) => {
-        const body = [
-          `Command: ${command}`,
-          `Exit: ${signal ? `signal ${signal}` : code ?? 0}`,
-          stdout.trim() ? `stdout:\n${summarizeText(stdout, 4000)}` : '',
-          stderr.trim() ? `stderr:\n${summarizeText(stderr, 4000)}` : '',
-        ].filter(Boolean).join('\n\n')
-        if (code === 0 && !signal) resolve(body)
-        else reject(new Error(body || 'cron_command_failed'))
-      })
-    })
-  }
-
-  private async executeAgentTask(task: CronTaskRecord) {
-    if (task.target.kind !== 'agent_prompt') throw new Error('cron_invalid_agent_task')
-    const { prompt } = task.target
-    const { SessionManager } = await this.sessionManagerModulePromise
-    const targetSessionFile = await this.resolveSessionFile(task)
-    const sessionDir = getRuntimeSessionDir(task.cwd || this.options.cwd, this.options.agentDir)
-    const sessionManager = targetSessionFile
-      ? SessionManager.open(targetSessionFile, sessionDir)
-      : SessionManager.create(task.cwd || this.options.cwd, sessionDir)
-    const { session } = await createConfiguredAgentSession({
-      cwd: task.cwd || this.options.cwd,
-      agentDir: this.options.agentDir,
-      additionalExtensionPaths: this.options.additionalExtensionPaths ?? [],
-      sessionManager,
-    })
-    try {
-      await session.prompt(prompt, {
-        expandPromptTemplates: false,
-        source: 'rpc' as any,
-      })
-      await session.agent.waitForIdle()
-      const sessionFile = safeString(session.sessionFile || session.sessionManager?.getSessionFile?.() || '').trim() || undefined
-      if (task.session.mode === 'dedicated' && sessionFile) task.dedicatedSessionFile = sessionFile
-      const finalText = summarizeText(safeString(session.getLastAssistantText?.() || ''), 4000)
-      return finalText || `Scheduled agent turn finished in session ${sessionFile || '(ephemeral)'}`
-    } finally {
-      try { await session.abort() } catch {}
-    }
+    this.save()
   }
 }

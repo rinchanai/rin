@@ -1,19 +1,14 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { getAgentDir, type ExtensionAPI } from '@mariozechner/pi-coding-agent'
 import { Text } from '@mariozechner/pi-tui'
 import { Type } from '@sinclair/typebox'
-import jiti from '@mariozechner/jiti'
 
 async function loadMessageStoreModule() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
   const distPath = path.join(root, 'dist', 'core', 'rin-koishi', 'message-store.js')
-  if (fs.existsSync(distPath)) return await import(pathToFileURL(distPath).href)
-  const sourcePath = path.join(root, 'src', 'core', 'rin-koishi', 'message-store.ts')
-  const sourceLoader = jiti(import.meta.url, { interopDefault: true, moduleCache: true })
-  return await sourceLoader.import(sourcePath)
+  return await import(pathToFileURL(distPath).href)
 }
 
 function safeString(value: unknown) {

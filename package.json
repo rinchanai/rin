@@ -10,7 +10,11 @@
     "rin-install": "dist/app/rin-install/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --pretty false && chmod +x dist/app/rin/main.js dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-koishi/main.js dist/app/rin-install/main.js",
+    "build:vendor": "node scripts/build-third-party.mjs",
+    "build:core": "tsc -p tsconfig.json --pretty false",
+    "build:extensions": "node scripts/build-extensions.mjs",
+    "build": "npm run build:vendor && npm run build:core && npm run build:extensions && chmod +x dist/app/rin/main.js dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-koishi/main.js dist/app/rin-install/main.js",
+    "test": "npm run build && node --test tests/*.test.mjs extensions/memory/memory.test.mjs",
     "lint": "eslint . --ext .ts --max-warnings 0",
     "lint:fix": "eslint . --ext .ts --fix"
   },
@@ -19,8 +23,8 @@
     "@koishijs/plugin-adapter-telegram": "^4.5.11",
     "@koishijs/plugin-http": "^0.6.3",
     "@koishijs/plugin-proxy-agent": "^0.3.3",
-    "@mariozechner/jiti": "^2.6.5",
     "@mariozechner/pi-agent-core": "^0.64.0",
+    "@mariozechner/pi-coding-agent": "file:third_party/pi-coding-agent",
     "@mariozechner/pi-ai": "^0.64.0",
     "@mariozechner/pi-tui": "^0.64.0",
     "@silvia-odwyer/photon-node": "^0.3.4",

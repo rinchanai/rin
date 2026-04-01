@@ -2,18 +2,20 @@
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import net from 'node:net'
-import { execFileSync, spawn } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { cancel, confirm, intro, isCancel, note, outro, select, spinner, text } from '@clack/prompts'
+import { cancel, confirm, intro, isCancel, note, outro, select, text } from '@clack/prompts'
 
-import { loadRinCodingAgent } from '../rin-lib/loader.js'
-import { pickPrivilegeCommand, shellQuote } from '../rin-lib/system.js'
+import { runFinalizeInstallPlanInChild, type FinalizeInstallOptions } from './apply-plan.js'
+import { appConfigDirForUser, ensureDir, publishInstalledRuntime, pruneInstalledReleases, readInstallerJson, readJsonFile, runPrivileged, syncInstalledDocs, writeJsonFile, writeJsonFileWithPrivilege, writeLaunchersForUser } from './fs-utils.js'
+import { buildFinalRequirements, buildInstallPlanText, describeInstallDirState, promptKoishiSetup, promptProviderSetup, promptTargetInstall } from './interactive.js'
+import { reconcileInstallerManifest, persistInstallerOutputs } from './persist.js'
+import { collectDaemonFailureDetails, daemonSocketPathForUser, installDaemonService, reconcileSystemdUserService, refreshManagedServiceFiles, waitForSocket } from './service.js'
+import { startUpdater } from './updater.js'
 
 function listSystemUsers() {
   const users: Array<{ name: string; uid: number; gid: number; home: string; shell: string }> = []
-
   if (process.platform === 'darwin') {
     try {
       const raw = execFileSync('dscl', ['.', '-list', '/Users', 'UniqueID'], { encoding: 'utf8' })
@@ -22,8 +24,7 @@ function listSystemUsers() {
         if (!match) continue
         const [, name, uidRaw] = match
         const uid = Number(uidRaw || 0)
-        if (!name || !Number.isFinite(uid) || uid < 500) continue
-        if (name === 'nobody') continue
+        if (!name || !Number.isFinite(uid) || uid < 500 || name === 'nobody') continue
         let home = ''
         let shell = ''
         let gid = 20
@@ -49,10 +50,7 @@ function listSystemUsers() {
       const [name = '', , uidRaw = '', gidRaw = '', , home = '', shell = ''] = line.split(':')
       const uid = Number(uidRaw || 0)
       const gid = Number(gidRaw || 0)
-      if (!name) continue
-      if (!Number.isFinite(uid) || !Number.isFinite(gid)) continue
-      if (uid < 1000) continue
-      if (name === 'nobody') continue
+      if (!name || !Number.isFinite(uid) || !Number.isFinite(gid) || uid < 1000 || name === 'nobody') continue
       if (/nologin|false/.test(shell)) continue
       users.push({ name, uid, gid, home, shell } as any)
     }
@@ -73,9 +71,7 @@ export function detectCurrentUser() {
     process.env.SUDO_USER,
     process.env.LOGNAME,
     process.env.USER,
-    (() => {
-      try { return os.userInfo().username } catch { return '' }
-    })(),
+    (() => { try { return os.userInfo().username } catch { return '' } })(),
   ].map((value) => String(value || '').trim()).filter(Boolean)
   return candidates[0] || 'unknown'
 }
@@ -96,886 +92,33 @@ function targetHomeForUser(targetUser: string) {
 function summarizeDirState(dir: string) {
   try {
     const entries = fs.readdirSync(dir)
-    return {
-      exists: true,
-      entryCount: entries.length,
-      sample: entries.slice(0, 8),
-    }
+    return { exists: true, entryCount: entries.length, sample: entries.slice(0, 8) }
   } catch {
-    return {
-      exists: false,
-      entryCount: 0,
-      sample: [] as string[],
-    }
+    return { exists: false, entryCount: 0, sample: [] as string[] }
   }
-}
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true })
 }
 
 function repoRootFromHere() {
   return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 }
 
-function readJsonFile<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
-
-function readJsonFileWithPrivilege<T>(filePath: string, fallback: T): T {
-  const privilegeCommand = pickPrivilegeCommand()
-  try {
-    const raw = execFileSync(privilegeCommand, ['cat', filePath], { encoding: 'utf8' })
-    return JSON.parse(String(raw || '')) as T
-  } catch {
-    return fallback
-  }
-}
-
-function readInstallerJson<T>(filePath: string, fallback: T, elevated = false): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
-  } catch (error: any) {
-    const code = String(error?.code || '')
-    if (code === 'EACCES' || code === 'EPERM') {
-      if (!elevated) throw error
-      return readJsonFileWithPrivilege(filePath, fallback)
-    }
-    return fallback
-  }
-}
-
-function writeJsonFile(filePath: string, value: unknown) {
-  ensureDir(path.dirname(filePath))
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-}
-
-function writeTextFile(filePath: string, value: string, mode = 0o600) {
-  ensureDir(path.dirname(filePath))
-  fs.writeFileSync(filePath, value, 'utf8')
-  fs.chmodSync(filePath, mode)
-}
-
-function writeExecutable(filePath: string, content: string) {
-  writeTextFile(filePath, content, 0o755)
-}
-
-function launcherScript(candidates: string[]) {
-  const checks = candidates.map((candidate) => `if [ -f ${shellQuote(candidate)} ]; then exec ${shellQuote(process.execPath)} ${shellQuote(candidate)} "$@"; fi`).join('\n')
-  return `#!/usr/bin/env sh
-${checks}
-echo "rin: installed runtime entry not found" >&2
-exit 1
-`
-}
-
-function launcherTargetsForInstallDir(installDir: string) {
-  return {
-    rin: [
-      path.join(installDir, 'app', 'current', 'dist', 'app', 'rin', 'main.js'),
-      path.join(installDir, 'app', 'current', 'dist', 'index.js'),
-    ],
-    rinInstall: [
-      path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-install', 'main.js'),
-    ],
-  }
-}
-
-function writeLaunchersForUser(userName: string, installDir: string) {
-  const binDir = path.join(homeForUser(userName), '.local', 'bin')
-  const targets = launcherTargetsForInstallDir(installDir)
-  writeExecutable(path.join(binDir, 'rin'), launcherScript(targets.rin))
-  writeExecutable(path.join(binDir, 'rin-install'), launcherScript(targets.rinInstall))
-  return {
-    rinPath: path.join(binDir, 'rin'),
-    rinInstallPath: path.join(binDir, 'rin-install'),
-  }
-}
-
-function appConfigDirForUser(userName: string) {
-  const home = homeForUser(userName)
-  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'rin')
-  return path.join(home, '.config', 'rin')
-}
-
-function runPrivileged(command: string, args: string[]) {
-  const privilegeCommand = pickPrivilegeCommand()
-  execFileSync(privilegeCommand, [command, ...args], { stdio: 'inherit' })
-}
-
-function runCommandAsUser(targetUser: string, command: string, args: string[], extraEnv: Record<string, string> = {}) {
-  const envArgs = Object.entries(extraEnv).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-  const shellCommand = [...envArgs, JSON.stringify(command), ...args.map((arg) => JSON.stringify(arg))].join(' ')
-  const isRoot = typeof process.getuid === 'function' ? process.getuid() === 0 : false
-
-  if (isRoot && fs.existsSync('/usr/sbin/runuser')) {
-    execFileSync('/usr/sbin/runuser', ['-u', targetUser, '--', 'sh', '-lc', shellCommand], { stdio: 'inherit' })
-    return
-  }
-
-  const privilegeCommand = pickPrivilegeCommand()
-  if (privilegeCommand.endsWith('doas') || privilegeCommand.endsWith('sudo')) {
-    execFileSync(privilegeCommand, ['-u', targetUser, 'sh', '-lc', shellCommand], { stdio: 'inherit' })
-    return
-  }
-
-  execFileSync(privilegeCommand, ['sh', '-lc', shellCommand], { stdio: 'inherit' })
-}
-
-function writeTextFileWithPrivilege(filePath: string, value: string, ownerUser?: string, ownerGroup?: string | number, mode = 0o600) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-write-'))
-  const tempFile = path.join(tempDir, 'payload')
-  try {
-    fs.writeFileSync(tempFile, value, 'utf8')
-    runPrivileged('mkdir', ['-p', path.dirname(filePath)])
-    runPrivileged('install', ['-m', String(mode.toString(8)), tempFile, filePath])
-    if (ownerUser && process.platform !== 'win32') {
-      const owner = ownerGroup != null && `${ownerGroup}` !== '' ? `${ownerUser}:${ownerGroup}` : ownerUser
-      runPrivileged('chown', [owner, filePath])
-    }
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true })
-  }
-}
-
-function writeJsonFileWithPrivilege(filePath: string, value: unknown, ownerUser?: string, ownerGroup?: string | number) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-write-'))
-  const tempFile = path.join(tempDir, 'payload.json')
-  const privilegeCommand = pickPrivilegeCommand()
-  try {
-    fs.writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
-    execFileSync(privilegeCommand, ['mkdir', '-p', path.dirname(filePath)], { stdio: 'inherit' })
-    execFileSync(privilegeCommand, ['install', '-m', '600', tempFile, filePath], { stdio: 'inherit' })
-    if (ownerUser && process.platform !== 'win32') {
-      const owner = ownerGroup != null && `${ownerGroup}` !== '' ? `${ownerUser}:${ownerGroup}` : ownerUser
-      execFileSync(privilegeCommand, ['chown', owner, filePath], { stdio: 'inherit' })
-    }
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true })
-  }
-}
-
-function computeAvailableThinkingLevels(model: { provider: string; id: string; reasoning: boolean }) {
-  if (!model.reasoning) return ['off']
-  const id = String(model.id || '').toLowerCase()
-  const provider = String(model.provider || '').toLowerCase()
-  return provider === 'openai' && id.includes('codex-max')
-    ? ['off', 'minimal', 'low', 'medium', 'high', 'xhigh']
-    : ['off', 'minimal', 'low', 'medium', 'high']
-}
-
-async function loadModelChoices() {
-  const { getProviders, getModels } = await import('@mariozechner/pi-ai')
-  const merged = new Map<string, { provider: string; id: string; reasoning: boolean; available: boolean }>()
-
-  for (const provider of getProviders()) {
-    for (const model of getModels(provider as any)) {
-      merged.set(`${(model as any).provider || provider}/${(model as any).id || ''}`, {
-        provider: String((model as any).provider || provider),
-        id: String((model as any).id || ''),
-        reasoning: Boolean((model as any).reasoning),
-        available: false,
-      })
-    }
-  }
-
-  const choices = [...merged.values()].filter((model) => model.provider && model.id)
-  choices.sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id))
-  return choices
-}
-
-async function createInstallerAuthStorage(installDir: string) {
-  const codingAgentModule = await loadRinCodingAgent()
-  const { AuthStorage } = codingAgentModule as any
-  const authPath = path.join(installDir, 'auth.json')
-  const existing = readJsonFile<any>(authPath, {})
-  return AuthStorage.inMemory(existing)
-}
-
-async function configureProviderAuth(provider: string, installDir: string) {
-  const authStorage = await createInstallerAuthStorage(installDir)
-  if (authStorage.hasAuth?.(provider)) {
-    return { available: true, authKind: 'existing', authData: authStorage.getAll?.() || {} }
-  }
-
-  const oauthProviders = Array.isArray(authStorage.getOAuthProviders?.()) ? authStorage.getOAuthProviders() : []
-  const oauthProvider = oauthProviders.find((entry: any) => entry.id === provider)
-
-  if (oauthProvider) {
-    const loginSpinner = spinner()
-    let lastAuthUrl = ''
-    loginSpinner.start(`Starting ${oauthProvider.name || provider} login...`)
-    try {
-      await authStorage.login(provider, {
-        onAuth(info: { url: string; instructions?: string }) {
-          lastAuthUrl = String(info?.url || '')
-          loginSpinner.stop(`Open this URL to continue login:\n${lastAuthUrl}${info?.instructions ? `\n${info.instructions}` : ''}`)
-        },
-        async onPrompt(prompt: { message: string; placeholder?: string }) {
-          return String(ensureNotCancelled(await text({
-            message: prompt.message || 'Enter login value.',
-            placeholder: prompt.placeholder,
-            validate(value) {
-              if (!String(value || '').trim()) return 'A value is required.'
-            },
-          }))).trim()
-        },
-        onProgress(message: string) {
-          loginSpinner.message(message || `Waiting for ${oauthProvider.name || provider} login...`)
-        },
-        async onManualCodeInput() {
-          return String(ensureNotCancelled(await text({
-            message: 'Paste the redirect URL or code from the browser.',
-            placeholder: lastAuthUrl ? 'paste the final redirect URL or device code' : 'paste the code',
-            validate(value) {
-              if (!String(value || '').trim()) return 'A value is required.'
-            },
-          }))).trim()
-        },
-        signal: AbortSignal.timeout(10 * 60 * 1000),
-      })
-      loginSpinner.stop(`${oauthProvider.name || provider} login complete.`)
-      return { available: true, authKind: 'oauth', authData: authStorage.getAll?.() || {} }
-    } catch (error: any) {
-      loginSpinner.stop(`Login failed for ${oauthProvider.name || provider}.`)
-      throw error
-    }
-  }
-
-  const token = String(ensureNotCancelled(await text({
-    message: `Enter the API key or token for ${provider}.`,
-    placeholder: 'token',
-    validate(value) {
-      if (!String(value || '').trim()) return 'A token is required.'
-    },
-  }))).trim()
-  authStorage.set(provider, { type: 'api_key', key: token })
-  return { available: true, authKind: 'api_key', authData: authStorage.getAll?.() || {} }
-}
-
-function syncTree(sourcePath: string, destPath: string) {
-  execFileSync('rm', ['-rf', destPath], { stdio: 'inherit' })
-  ensureDir(path.dirname(destPath))
-  execFileSync('cp', ['-a', sourcePath, destPath], { stdio: 'inherit' })
-}
-
-function syncInstalledDocTree(sourceDir: string, destDir: string, targetUser: string, elevated = false) {
-  if (!fs.existsSync(sourceDir)) return null
-
-  if (elevated) {
-    const target = findSystemUser(targetUser) as any
-    const targetGroup = target?.name ? String(target?.gid ?? '') : ''
-    runPrivileged('rm', ['-rf', destDir])
-    runPrivileged('mkdir', ['-p', path.dirname(destDir)])
-    runPrivileged('cp', ['-a', sourceDir, destDir])
-    if (target?.name) {
-      runPrivileged('chown', ['-R', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, destDir])
-    }
-    return destDir
-  }
-
-  syncTree(sourceDir, destDir)
-  return destDir
-}
-
-function syncInstalledDocs(sourceRoot: string, installDir: string, targetUser: string, elevated = false) {
-  const installedRinDocsDir = syncInstalledDocTree(
-    path.join(sourceRoot, 'docs', 'rin'),
-    path.join(installDir, 'docs', 'rin'),
-    targetUser,
-    elevated,
-  )
-
-  const piDocRoot = path.join(sourceRoot, 'third_party', 'pi-coding-agent')
-  const piInstallRoot = path.join(installDir, 'docs', 'pi')
-  const installedPiDocs: string[] = []
-  for (const name of ['README.md', 'CHANGELOG.md', 'docs', 'examples']) {
-    const synced = syncInstalledDocTree(path.join(piDocRoot, name), path.join(piInstallRoot, name), targetUser, elevated)
-    if (synced) installedPiDocs.push(synced)
-  }
-
-  return {
-    rin: installedRinDocsDir,
-    pi: installedPiDocs,
-  }
-}
-
-function releaseIdNow() {
-  return new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, 'Z')
-}
-
-function publishInstalledRuntime(sourceRoot: string, installDir: string, targetUser: string, elevated = false) {
-  const releaseRoot = path.join(installDir, 'app', 'releases', releaseIdNow())
-  const currentLink = path.join(installDir, 'app', 'current')
-  const currentTmpLink = `${currentLink}.tmp`
-
-  if (elevated) {
-    const target = findSystemUser(targetUser) as any
-    const targetGroup = target?.name ? String(target?.gid ?? '') : ''
-    runPrivileged('mkdir', ['-p', releaseRoot])
-    for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
-      runPrivileged('rm', ['-rf', path.join(releaseRoot, name)])
-      runPrivileged('cp', ['-a', path.join(sourceRoot, name), path.join(releaseRoot, name)])
-    }
-    try { runPrivileged('rm', ['-rf', currentTmpLink]) } catch {}
-    runPrivileged('ln', ['-s', releaseRoot, currentTmpLink])
-    try { runPrivileged('rm', ['-rf', currentLink]) } catch {}
-    runPrivileged('mv', [currentTmpLink, currentLink])
-    if (target?.name) {
-      runPrivileged('chown', ['-R', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, releaseRoot])
-      try { runPrivileged('chown', ['-h', `${target.name}${targetGroup ? `:${targetGroup}` : ''}`, currentLink]) } catch {}
-    }
-    return { releaseRoot, currentLink }
-  }
-
-  ensureDir(path.dirname(releaseRoot))
-  for (const name of ['dist', 'node_modules', 'third_party', 'extensions', 'package.json']) {
-    syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name))
-  }
-
-  try { fs.rmSync(currentTmpLink, { recursive: true, force: true }) } catch {}
-  fs.symlinkSync(releaseRoot, currentTmpLink)
-  try { fs.rmSync(currentLink, { recursive: true, force: true }) } catch {}
-  fs.renameSync(currentTmpLink, currentLink)
-
-  return { releaseRoot, currentLink }
-}
-
-function listInstalledReleaseNames(installDir: string, elevated = false) {
-  const releasesDir = path.join(installDir, 'app', 'releases')
-  if (!elevated) {
-    try {
-      return fs.readdirSync(releasesDir, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name)
-    } catch {
-      return [] as string[]
-    }
-  }
-
-  const privilegeCommand = pickPrivilegeCommand()
-  try {
-    const raw = execFileSync(privilegeCommand, [
-      process.execPath,
-      '-e',
-      `const fs=require('node:fs');const dir=process.argv[1];try{const names=fs.readdirSync(dir,{withFileTypes:true}).filter((entry)=>entry.isDirectory()).map((entry)=>entry.name);process.stdout.write(JSON.stringify(names));}catch{process.stdout.write('[]')}`,
-      releasesDir,
-    ], { encoding: 'utf8' })
-    const parsed = JSON.parse(String(raw || '[]'))
-    return Array.isArray(parsed) ? parsed.map((value) => String(value)) : []
-  } catch {
-    return [] as string[]
-  }
-}
-
-function pruneInstalledReleases(installDir: string, keepCount: number, currentReleaseRoot: string, elevated = false) {
-  const releasesDir = path.join(installDir, 'app', 'releases')
-  const currentReleaseName = path.basename(currentReleaseRoot)
-  const names = listInstalledReleaseNames(installDir, elevated)
-    .sort((a, b) => b.localeCompare(a))
-
-  const keep = new Set(names.slice(0, Math.max(keepCount, 1)))
-  keep.add(currentReleaseName)
-
-  const removed: string[] = []
-  for (const name of names) {
-    if (keep.has(name)) continue
-    const releasePath = path.join(releasesDir, name)
-    if (elevated) runPrivileged('rm', ['-rf', releasePath])
-    else fs.rmSync(releasePath, { recursive: true, force: true })
-    removed.push(releasePath)
-  }
-
-  return { keepCount: Math.max(keepCount, 1), kept: [...keep].sort((a, b) => b.localeCompare(a)), removed }
-}
-
-function resolveDaemonEntryForInstall(installDir: string) {
-  const currentStyle = path.join(installDir, 'app', 'current', 'dist', 'app', 'rin-daemon', 'daemon.js')
-  if (fs.existsSync(currentStyle)) return currentStyle
-  const legacyStyle = path.join(installDir, 'app', 'current', 'dist', 'daemon.js')
-  if (fs.existsSync(legacyStyle)) return legacyStyle
-  return path.join(repoRootFromHere(), 'dist', 'app', 'rin-daemon', 'daemon.js')
-}
-
-function buildLaunchdPlist(targetUser: string, installDir: string) {
-  const label = `com.rin.daemon.${String(targetUser).replace(/[^A-Za-z0-9_.-]+/g, '-')}`
-  const targetHome = targetHomeForUser(targetUser)
-  const daemonEntry = resolveDaemonEntryForInstall(installDir)
-  const stdoutPath = path.join(installDir, 'data', 'logs', 'daemon.stdout.log')
-  const stderrPath = path.join(installDir, 'data', 'logs', 'daemon.stderr.log')
-  const plistPath = path.join(targetHome, 'Library', 'LaunchAgents', `${label}.plist`)
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
-    <key>Label</key>
-    <string>${label}</string>
-    <key>ProgramArguments</key>
-    <array>
-      <string>${process.execPath}</string>
-      <string>${daemonEntry}</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-      <key>RIN_DIR</key>
-      <string>${installDir}</string>
-    </dict>
-    <key>WorkingDirectory</key>
-    <string>${targetHome}</string>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${stdoutPath}</string>
-    <key>StandardErrorPath</key>
-    <string>${stderrPath}</string>
-  </dict>
-</plist>
-`
-  return { label, plistPath, plist, stdoutPath, stderrPath }
-}
-
-function installLaunchdAgent(targetUser: string, installDir: string, elevated = false) {
-  const target = findSystemUser(targetUser) as any
-  const uid = Number(target?.uid ?? -1)
-  if (uid < 0) throw new Error(`rin_launchd_target_user_not_found:${targetUser}`)
-
-  const { label, plistPath, plist, stdoutPath, stderrPath } = buildLaunchdPlist(targetUser, installDir)
-  if (elevated) {
-    runPrivileged('mkdir', ['-p', path.dirname(plistPath)])
-    runPrivileged('mkdir', ['-p', path.dirname(stdoutPath)])
-    writeTextFileWithPrivilege(plistPath, plist, targetUser, target?.gid, 0o644)
-    try { runPrivileged('launchctl', ['bootout', `gui/${uid}`, plistPath]) } catch {}
-    runPrivileged('launchctl', ['bootstrap', `gui/${uid}`, plistPath])
-    try { runPrivileged('launchctl', ['kickstart', '-k', `gui/${uid}/${label}`]) } catch {}
-  } else {
-    ensureDir(path.dirname(plistPath))
-    ensureDir(path.dirname(stdoutPath))
-    writeTextFile(plistPath, plist, 0o644)
-    try { execFileSync('launchctl', ['bootout', `gui/${uid}`, plistPath], { stdio: 'ignore' }) } catch {}
-    execFileSync('launchctl', ['bootstrap', `gui/${uid}`, plistPath], { stdio: 'inherit' })
-    try { execFileSync('launchctl', ['kickstart', '-k', `gui/${uid}/${label}`], { stdio: 'inherit' }) } catch {}
-  }
-
-  return { kind: 'launchd' as const, label, servicePath: plistPath, stdoutPath, stderrPath }
-}
-
-function buildSystemdUserService(targetUser: string, installDir: string) {
-  const daemonEntry = resolveDaemonEntryForInstall(installDir)
-  const targetHome = targetHomeForUser(targetUser)
-  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
-  const unitPath = path.join(targetHome, '.config', 'systemd', 'user', unitName)
-  const service = `[Unit]
-Description=Rin daemon for ${targetUser}
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=${targetHome}
-Environment=RIN_DIR=${installDir}
-ExecStart=${process.execPath} ${daemonEntry}
-Restart=always
-RestartSec=2
-
-[Install]
-WantedBy=default.target
-`
-  return { kind: 'systemd' as const, label: unitName, servicePath: unitPath, service }
-}
-
-function installSystemdUserService(targetUser: string, installDir: string, elevated = false) {
-  const target = findSystemUser(targetUser) as any
-  const spec = buildSystemdUserService(targetUser, installDir)
-  const systemctl = fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : 'systemctl'
-  const loginctl = fs.existsSync('/usr/bin/loginctl') ? '/usr/bin/loginctl' : 'loginctl'
-  const uid = Number(target?.uid ?? -1)
-  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : ''
-  const userEnv = runtimeDir && fs.existsSync(runtimeDir)
-    ? { XDG_RUNTIME_DIR: runtimeDir, DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus` }
-    : {}
-
-  if (elevated) {
-    writeTextFileWithPrivilege(spec.servicePath, spec.service, targetUser, target?.gid, 0o644)
-    try { runPrivileged(loginctl, ['enable-linger', targetUser]) } catch {}
-    runCommandAsUser(targetUser, systemctl, ['--user', 'daemon-reload'], userEnv)
-    runCommandAsUser(targetUser, systemctl, ['--user', 'enable', '--now', spec.label], userEnv)
-  } else {
-    writeTextFile(spec.servicePath, spec.service, 0o644)
-    execFileSync(systemctl, ['--user', 'daemon-reload'], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
-    execFileSync(systemctl, ['--user', 'enable', '--now', spec.label], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
-  }
-
-  return spec
-}
-
-function refreshManagedServiceFiles(targetUser: string, installDir: string, elevated = false) {
-  if (process.platform !== 'linux') return
-  const targetHome = targetHomeForUser(targetUser)
-  const unitDir = path.join(targetHome, '.config', 'systemd', 'user')
-  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
-  const candidateFiles = [
-    path.join(unitDir, unitName),
-    path.join(unitDir, 'rin-daemon.service'),
-  ]
-
-  for (const filePath of candidateFiles) {
-    if (!fs.existsSync(filePath)) continue
-    const spec = buildSystemdUserService(targetUser, installDir)
-    if (elevated) writeTextFileWithPrivilege(filePath, spec.service, targetUser, findSystemUser(targetUser)?.gid, 0o644)
-    else writeTextFile(filePath, spec.service, 0o644)
-  }
-}
-
-function systemdUserContext(targetUser: string) {
-  const systemctl = fs.existsSync('/usr/bin/systemctl') ? '/usr/bin/systemctl' : (fs.existsSync('/bin/systemctl') ? '/bin/systemctl' : '')
-  const target = findSystemUser(targetUser) as any
-  const uid = Number(target?.uid ?? -1)
-  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : ''
-  const userEnv = runtimeDir && fs.existsSync(runtimeDir)
-    ? { XDG_RUNTIME_DIR: runtimeDir, DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus` }
-    : {}
-  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, '-')}.service`
-  const units = [unitName, 'rin-daemon.service']
-  return { systemctl, userEnv, units }
-}
-
-function captureCommandAsUser(targetUser: string, command: string, args: string[], extraEnv: Record<string, string> = {}) {
-  const envArgs = Object.entries(extraEnv).map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-  const shellCommand = [...envArgs, JSON.stringify(command), ...args.map((arg) => JSON.stringify(arg))].join(' ')
-  const isRoot = typeof process.getuid === 'function' ? process.getuid() === 0 : false
-
-  if (isRoot && fs.existsSync('/usr/sbin/runuser')) {
-    return execFileSync('/usr/sbin/runuser', ['-u', targetUser, '--', 'sh', '-lc', shellCommand], { encoding: 'utf8' })
-  }
-
-  const privilegeCommand = pickPrivilegeCommand()
-  if (privilegeCommand.endsWith('doas') || privilegeCommand.endsWith('sudo')) {
-    return execFileSync(privilegeCommand, ['-u', targetUser, 'sh', '-lc', shellCommand], { encoding: 'utf8' })
-  }
-
-  return execFileSync(privilegeCommand, ['sh', '-lc', shellCommand], { encoding: 'utf8' })
-}
-
-function collectDaemonFailureDetails(targetUser: string, installDir: string) {
-  const socketPath = daemonSocketPathForUser(targetUser)
-  const lines = [
-    `targetUser=${targetUser}`,
-    `installDir=${installDir}`,
-    `socketPath=${socketPath}`,
-    `socketReady=no`,
-  ]
-
-  if (process.platform === 'linux') {
-    const { systemctl, userEnv, units } = systemdUserContext(targetUser)
-    const effectiveUser = (() => {
-      try { return os.userInfo().username } catch { return '' }
-    })()
-    if (systemctl) {
-      for (const unit of units) {
-        try {
-          const status = targetUser && targetUser !== effectiveUser
-            ? captureCommandAsUser(targetUser, systemctl, ['--user', 'status', unit, '--no-pager', '-l'], userEnv)
-            : execFileSync(systemctl, ['--user', 'status', unit, '--no-pager', '-l'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
-          lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...String(status).trim().split(/\r?\n/).slice(0, 20))
-          break
-        } catch (error: any) {
-          const text = String(error?.stdout || error?.stderr || error?.message || '').trim()
-          if (text) {
-            lines.push(`serviceUnit=${unit}`, 'serviceStatus:', ...text.split(/\r?\n/).slice(0, 20))
-            break
-          }
-        }
-      }
-      for (const unit of units) {
-        try {
-          const journal = targetUser && targetUser !== effectiveUser
-            ? captureCommandAsUser(targetUser, 'journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], userEnv)
-            : execFileSync('journalctl', ['--user', '-u', unit, '-n', '20', '--no-pager'], { encoding: 'utf8', env: { ...process.env, ...userEnv } })
-          if (String(journal || '').trim()) {
-            lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20))
-            break
-          }
-        } catch {}
-      }
-    }
-  }
-
-  return lines.join('\n')
-}
-
-function reconcileSystemdUserService(targetUser: string, installDir: string, action: 'start' | 'restart', elevated = false) {
-  if (process.platform !== 'linux') return false
-  const { systemctl, userEnv, units } = systemdUserContext(targetUser)
-  if (!systemctl) return false
-
-  if (elevated) {
-    runCommandAsUser(targetUser, systemctl, ['--user', 'daemon-reload'], userEnv)
-    for (const unit of units) {
-      try {
-        runCommandAsUser(targetUser, systemctl, ['--user', action, unit], userEnv)
-        return true
-      } catch {}
-    }
-    return false
-  }
-
-  execFileSync(systemctl, ['--user', 'daemon-reload'], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
-  for (const unit of units) {
-    try {
-      execFileSync(systemctl, ['--user', action, unit], { stdio: 'inherit', env: { ...process.env, ...userEnv } })
-      return true
-    } catch {}
-  }
-  return false
-}
-
-function installDaemonService(targetUser: string, installDir: string, elevated = false) {
-  if (process.platform === 'darwin') return installLaunchdAgent(targetUser, installDir, elevated)
-  if (process.platform === 'linux' && (fs.existsSync('/usr/bin/systemctl') || fs.existsSync('/bin/systemctl'))) {
-    return installSystemdUserService(targetUser, installDir, elevated)
-  }
-  throw new Error(`rin_service_install_unsupported:${process.platform}`)
-}
-
-function daemonSocketPathForUser(targetUser: string) {
-  const target = findSystemUser(targetUser) as any
-  if (process.platform === 'darwin') return path.join(targetHomeForUser(targetUser), 'Library', 'Caches', 'rin-daemon', 'daemon.sock')
-  const uid = Number(target?.uid ?? -1)
-  if (uid >= 0) return path.join('/run/user', String(uid), 'rin-daemon', 'daemon.sock')
-  return path.join(targetHomeForUser(targetUser), '.cache', 'rin-daemon', 'daemon.sock')
-}
-
-async function waitForSocket(socketPath: string, timeoutMs = 5000, targetUser?: string) {
-  const startedAt = Date.now()
-  const currentUser = (() => {
-    try { return os.userInfo().username } catch { return '' }
-  })()
-  while (Date.now() - startedAt < timeoutMs) {
-    const ok = await new Promise<boolean>((resolve) => {
-      if (targetUser && targetUser !== currentUser) {
-        try {
-          const probe = captureCommandAsUser(targetUser, process.execPath, [
-            '-e',
-            `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),300);`,
-          ])
-          void probe
-          resolve(true)
-          return
-        } catch {
-          resolve(false)
-          return
-        }
-      }
-      const socket = net.createConnection(socketPath)
-      let done = false
-      const finish = (value: boolean) => {
-        if (done) return
-        done = true
-        try { socket.destroy() } catch {}
-        resolve(value)
-      }
-      socket.once('connect', () => finish(true))
-      socket.once('error', () => finish(false))
-      setTimeout(() => finish(false), 300)
-    })
-    if (ok) return true
-    await new Promise((resolve) => setTimeout(resolve, 150))
-  }
-  return false
-}
-
-
 function describeOwnership(targetUser: string, installDir: string) {
   const target = findSystemUser(targetUser) as any
   const targetUid = Number(target?.uid ?? -1)
   const targetGid = Number(target?.gid ?? -1)
-
   try {
     const stat = fs.statSync(installDir)
     let writable = true
-    try {
-      fs.accessSync(installDir, fs.constants.W_OK)
-    } catch {
-      writable = false
-    }
-    return {
-      ownerMatches: targetUid >= 0 ? stat.uid === targetUid : true,
-      writable,
-      statUid: stat.uid,
-      statGid: stat.gid,
-      targetUid,
-      targetGid,
-    }
+    try { fs.accessSync(installDir, fs.constants.W_OK) } catch { writable = false }
+    return { ownerMatches: targetUid >= 0 ? stat.uid === targetUid : true, writable, statUid: stat.uid, statGid: stat.gid, targetUid, targetGid }
   } catch {
-    return {
-      ownerMatches: true,
-      writable: true,
-      statUid: -1,
-      statGid: -1,
-      targetUid,
-      targetGid,
-    }
+    return { ownerMatches: true, writable: true, statUid: -1, statGid: -1, targetUid, targetGid }
   }
 }
 
 function shouldUseElevatedWrite(targetUser: string, ownership: ReturnType<typeof describeOwnership>) {
   const effectiveUser = os.userInfo().username
   return targetUser !== effectiveUser || !ownership.ownerMatches || !ownership.writable
-}
-
-function reconcileInstallerManifest(options: {
-  targetUser: string
-  installDir: string
-  provider?: string
-  modelId?: string
-  thinkingLevel?: string
-  koishiConfig?: any
-  elevated?: boolean
-}) {
-  const target = findSystemUser(options.targetUser) as any
-  const ownerUser = target?.name || options.targetUser
-  const ownerGroup = target?.gid
-  if (!options.elevated) ensureDir(options.installDir)
-
-  const manifestPath = path.join(options.installDir, 'installer.json')
-  const legacyManifestPath = path.join(options.installDir, 'config', 'installer.json')
-  const manifestJson = readInstallerJson<any>(manifestPath, readInstallerJson<any>(legacyManifestPath, {}, Boolean(options.elevated)), Boolean(options.elevated))
-  manifestJson.targetUser = options.targetUser
-  manifestJson.installDir = options.installDir
-  if (options.provider) manifestJson.defaultProvider = options.provider
-  if (options.modelId) manifestJson.defaultModel = options.modelId
-  if (options.thinkingLevel) manifestJson.defaultThinkingLevel = options.thinkingLevel
-  if (options.koishiConfig) manifestJson.koishi = options.koishiConfig
-  manifestJson.updatedAt = new Date().toISOString()
-
-  if (options.elevated) {
-    writeJsonFileWithPrivilege(manifestPath, manifestJson, ownerUser, ownerGroup)
-    try { runPrivileged('rm', ['-f', legacyManifestPath]) } catch {}
-  } else {
-    writeJsonFile(manifestPath, manifestJson)
-    try { fs.rmSync(legacyManifestPath, { force: true }) } catch {}
-  }
-
-  return { manifestPath, legacyManifestPath }
-}
-
-async function persistInstallerOutputs(options: {
-  currentUser: string
-  targetUser: string
-  installDir: string
-  provider: string
-  modelId: string
-  thinkingLevel: string
-  koishiDescription: string
-  koishiDetail: string
-  koishiConfig: any
-  authData: any
-  elevated?: boolean
-}) {
-  const target = findSystemUser(options.targetUser) as any
-  const ownerUser = target?.name || options.targetUser
-  const ownerGroup = target?.gid
-  if (!options.elevated) ensureDir(options.installDir)
-
-  const settingsPath = path.join(options.installDir, 'settings.json')
-  const settingsJson = readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated))
-  if (options.provider) settingsJson.defaultProvider = options.provider
-  if (options.modelId) settingsJson.defaultModel = options.modelId
-  if (options.thinkingLevel) settingsJson.defaultThinkingLevel = options.thinkingLevel
-  if (options.koishiConfig) {
-    settingsJson.koishi ||= {}
-    if (options.koishiConfig.telegram) settingsJson.koishi.telegram = options.koishiConfig.telegram
-    if (options.koishiConfig.onebot) settingsJson.koishi.onebot = options.koishiConfig.onebot
-  }
-
-  const authPath = path.join(options.installDir, 'auth.json')
-  const authJson = readInstallerJson<any>(authPath, {}, Boolean(options.elevated))
-  const nextAuthJson = { ...authJson, ...(options.authData || {}) }
-
-  const launcherPath = path.join(appConfigDirForUser(options.currentUser), 'install.json')
-  const launcherJson = readJsonFile<any>(launcherPath, {})
-  launcherJson.defaultTargetUser = options.targetUser
-  launcherJson.defaultInstallDir = options.installDir
-  launcherJson.updatedAt = new Date().toISOString()
-  launcherJson.installedBy = options.currentUser
-
-  const { manifestPath } = reconcileInstallerManifest({
-    targetUser: options.targetUser,
-    installDir: options.installDir,
-    provider: options.provider,
-    modelId: options.modelId,
-    thinkingLevel: options.thinkingLevel,
-    koishiConfig: options.koishiConfig || {},
-    elevated: options.elevated,
-  })
-
-  if (options.elevated) {
-    writeJsonFileWithPrivilege(settingsPath, settingsJson, ownerUser, ownerGroup)
-    writeJsonFileWithPrivilege(authPath, nextAuthJson, ownerUser, ownerGroup)
-  } else {
-    writeJsonFile(settingsPath, settingsJson)
-    writeJsonFile(authPath, nextAuthJson)
-  }
-  writeJsonFile(launcherPath, launcherJson)
-  const launchers = writeLaunchersForUser(options.currentUser, options.installDir)
-
-  return { settingsPath, authPath, launcherPath, manifestPath, ...launchers }
-}
-
-type FinalizeInstallOptions = {
-  currentUser: string
-  targetUser: string
-  installDir: string
-  provider?: string
-  modelId?: string
-  thinkingLevel?: string
-  koishiDescription?: string
-  koishiDetail?: string
-  koishiConfig?: any
-  authData?: any
-  sourceRoot?: string
-}
-
-async function runFinalizeInstallPlanInChild(options: FinalizeInstallOptions, message: string) {
-  const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rin-install-'))
-  const resultPath = path.join(resultDir, 'result.json')
-  const errorPath = path.join(resultDir, 'error.txt')
-  const child = spawn(process.execPath, [process.argv[1] || fileURLToPath(import.meta.url)], {
-    stdio: 'ignore',
-    env: {
-      ...process.env,
-      RIN_INSTALL_APPLY_PLAN: JSON.stringify(options),
-      RIN_INSTALL_APPLY_RESULT: resultPath,
-      RIN_INSTALL_APPLY_ERROR: errorPath,
-    },
-  })
-
-  const waitSpinner = spinner()
-  waitSpinner.start(message)
-
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    child.once('error', reject)
-    child.once('exit', (code) => resolve(code ?? 1))
-  })
-
-  if (exitCode === 0 && fs.existsSync(resultPath)) {
-    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'))
-    waitSpinner.stop(result.installedService ? 'Runtime updated and daemon is ready.' : 'Runtime updated.')
-    try { fs.rmSync(resultDir, { recursive: true, force: true }) } catch {}
-    return result
-  }
-
-  const errorText = fs.existsSync(errorPath)
-    ? String(fs.readFileSync(errorPath, 'utf8') || '').trim()
-    : `rin_installer_apply_failed:${exitCode}`
-  waitSpinner.stop('Update failed.')
-  try { fs.rmSync(resultDir, { recursive: true, force: true }) } catch {}
-  throw new Error(errorText || `rin_installer_apply_failed:${exitCode}`)
 }
 
 async function applyInstalledRuntime(options: FinalizeInstallOptions & { persistInstallerState?: boolean; daemonFailureCode: string }) {
@@ -985,8 +128,6 @@ async function applyInstalledRuntime(options: FinalizeInstallOptions & { persist
   const provider = String(options.provider || '')
   const modelId = String(options.modelId || '')
   const thinkingLevel = String(options.thinkingLevel || '')
-  const koishiDescription = String(options.koishiDescription || 'disabled for now')
-  const koishiDetail = String(options.koishiDetail || '')
   const koishiConfig = options.koishiConfig || null
   const authData = options.authData || {}
   const sourceRoot = String(options.sourceRoot || '').trim() || repoRootFromHere()
@@ -996,53 +137,50 @@ async function applyInstalledRuntime(options: FinalizeInstallOptions & { persist
   const installServiceNow = process.platform === 'darwin' || process.platform === 'linux'
   const useElevatedWrite = shouldUseElevatedWrite(targetUser, ownership)
   const useElevatedService = installServiceNow && targetUser !== currentUser
+  const serviceDeps = { findSystemUser, targetHomeForUser, repoRootFromHere }
 
-  const publishedRuntime = publishInstalledRuntime(sourceRoot, installDir, targetUser, useElevatedWrite)
-  const installedDocs = syncInstalledDocs(sourceRoot, installDir, targetUser, useElevatedWrite)
+  const publishedRuntime = publishInstalledRuntime(sourceRoot, installDir, targetUser, useElevatedWrite, { findSystemUser })
+  const installedDocs = syncInstalledDocs(sourceRoot, installDir, targetUser, useElevatedWrite, { findSystemUser })
   const prunedReleases = pruneInstalledReleases(installDir, 3, publishedRuntime.releaseRoot, useElevatedWrite)
-  const installerManifest = reconcileInstallerManifest({
-    targetUser,
-    installDir,
-    provider,
-    modelId,
-    thinkingLevel,
-    koishiConfig,
-    elevated: useElevatedWrite,
+  const installerManifest = reconcileInstallerManifest({ targetUser, installDir, provider, modelId, thinkingLevel, koishiConfig, elevated: useElevatedWrite }, {
+    findSystemUser,
+    ensureDir,
+    readInstallerJson,
+    writeJsonFileWithPrivilege,
+    writeJsonFile,
+    runPrivileged,
   })
-  refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite)
-  reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite)
+  refreshManagedServiceFiles(targetUser, installDir, useElevatedWrite, serviceDeps)
+  reconcileSystemdUserService(targetUser, installDir, 'restart', useElevatedWrite, { findSystemUser })
 
   const written = persistInstallerState
-    ? await persistInstallerOutputs({
-      currentUser,
-      targetUser,
-      installDir,
-      provider,
-      modelId,
-      thinkingLevel,
-      koishiDescription,
-      koishiDetail,
-      koishiConfig,
-      authData,
-      elevated: useElevatedWrite,
+    ? await persistInstallerOutputs({ currentUser, targetUser, installDir, provider, modelId, thinkingLevel, koishiConfig, authData, elevated: useElevatedWrite }, {
+      findSystemUser,
+      ensureDir,
+      readInstallerJson,
+      writeJsonFileWithPrivilege,
+      writeJsonFile,
+      appConfigDirForUser: (user) => appConfigDirForUser(user, homeForUser),
+      readJsonFile,
+      writeLaunchersForUser: (user, dir) => writeLaunchersForUser(user, dir, homeForUser),
+      reconcileInstallerManifest,
+      runPrivileged,
     })
     : undefined
 
   let installedService: null | { kind: 'launchd' | 'systemd'; label: string; servicePath: string; stdoutPath?: string; stderrPath?: string; service?: string } = null
-  if (installServiceNow && (process.platform === 'darwin' || process.platform === 'linux')) {
+  if (installServiceNow) {
     try {
-      installedService = installDaemonService(targetUser, installDir, useElevatedService)
+      installedService = installDaemonService(targetUser, installDir, useElevatedService, serviceDeps)
     } catch (error) {
       if (persistInstallerState) throw error
       installedService = null
     }
   }
 
-  const daemonReady = installedService
-    ? await waitForSocket(daemonSocketPathForUser(targetUser), 5000, targetUser)
-    : false
+  const daemonReady = installedService ? await waitForSocket(daemonSocketPathForUser(targetUser, serviceDeps), 5000, targetUser) : false
   if (!daemonReady && installServiceNow && installedService) {
-    throw new Error(`${options.daemonFailureCode}\n${collectDaemonFailureDetails(targetUser, installDir)}`)
+    throw new Error(`${options.daemonFailureCode}\n${collectDaemonFailureDetails(targetUser, installDir, { findSystemUser, targetHomeForUser })}`)
   }
 
   return {
@@ -1059,190 +197,20 @@ async function applyInstalledRuntime(options: FinalizeInstallOptions & { persist
     daemonReady,
     ownership,
     serviceHint: process.platform === 'darwin'
-      ? installServiceNow
-        ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.'
-        : 'You skipped launchd installation for now; start the daemon explicitly when needed.'
+      ? installServiceNow ? 'A macOS launchd LaunchAgent will be installed and started for this daemon.' : 'You skipped launchd installation for now; start the daemon explicitly when needed.'
       : process.platform === 'linux'
-        ? installServiceNow
-          ? 'A Linux user service will be installed and started for this daemon when supported.'
-          : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
+        ? installServiceNow ? 'A Linux user service will be installed and started for this daemon when supported.' : 'You skipped dedicated Linux service installation for now; start the daemon explicitly when needed.'
         : 'No dedicated service was installed; the installer will not start the daemon for you.',
   }
 }
 
-export async function finalizeCoreUpdate(options: {
-  currentUser: string
-  targetUser: string
-  installDir: string
-  sourceRoot?: string
-}) {
-  const result = await applyInstalledRuntime({
-    ...options,
-    persistInstallerState: false,
-    daemonFailureCode: 'rin_core_update_daemon_not_ready',
-  })
-
-  return {
-    ...result,
-    mode: 'core-only' as const,
-  }
+export async function finalizeCoreUpdate(options: { currentUser: string; targetUser: string; installDir: string; sourceRoot?: string }) {
+  const result = await applyInstalledRuntime({ ...options, persistInstallerState: false, daemonFailureCode: 'rin_core_update_daemon_not_ready' })
+  return { ...result, mode: 'core-only' as const }
 }
 
 export async function finalizeInstallPlan(options: FinalizeInstallOptions) {
-  return await applyInstalledRuntime({
-    ...options,
-    persistInstallerState: true,
-    daemonFailureCode: 'rin_installer_daemon_not_ready',
-  })
-}
-
-type InstalledTarget = {
-  targetUser: string
-  installDir: string
-  ownerHome: string
-  source: 'manifest' | 'systemd' | 'launchd'
-}
-
-function discoverInstalledTargets() {
-  const rows: InstalledTarget[] = []
-  const seen = new Set<string>()
-
-  const add = (targetUser: string, installDir: string, ownerHome: string, source: InstalledTarget['source']) => {
-    const nextTargetUser = String(targetUser || '').trim()
-    const nextInstallDir = String(installDir || '').trim()
-    const nextOwnerHome = String(ownerHome || '').trim()
-    if (!nextTargetUser || !nextInstallDir || !nextOwnerHome) return
-    const key = `${nextTargetUser}\t${nextInstallDir}\t${nextOwnerHome}`
-    if (seen.has(key)) return
-    seen.add(key)
-    rows.push({ targetUser: nextTargetUser, installDir: nextInstallDir, ownerHome: nextOwnerHome, source })
-  }
-
-  const scanHome = (homeDir: string) => {
-    const userName = path.basename(homeDir)
-    const manifestPath = path.join(homeDir, '.rin', 'installer.json')
-    const legacyManifestPath = path.join(homeDir, '.rin', 'config', 'installer.json')
-    const manifest = readJsonFile<any>(manifestPath, readJsonFile<any>(legacyManifestPath, null))
-    if (manifest && typeof manifest === 'object') {
-      add(String(manifest.targetUser || userName), String(manifest.installDir || path.join(homeDir, '.rin')), homeDir, 'manifest')
-    }
-
-    const systemdDir = path.join(homeDir, '.config', 'systemd', 'user')
-    try {
-      for (const entry of fs.readdirSync(systemdDir)) {
-        if (!/^rin-daemon(?:-.+)?\.service$/.test(entry)) continue
-        const filePath = path.join(systemdDir, entry)
-        const text = fs.readFileSync(filePath, 'utf8')
-        const match = text.match(/^Environment=RIN_DIR=(.+)$/m)
-        add(userName, match ? match[1].trim() : path.join(homeDir, '.rin'), homeDir, 'systemd')
-      }
-    } catch {}
-
-    const launchAgentsDir = path.join(homeDir, 'Library', 'LaunchAgents')
-    try {
-      for (const entry of fs.readdirSync(launchAgentsDir)) {
-        if (!/^com\.rin\.daemon\..+\.plist$/.test(entry)) continue
-        const filePath = path.join(launchAgentsDir, entry)
-        const text = fs.readFileSync(filePath, 'utf8')
-        const match = text.match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/)
-        add(userName, match ? match[1].trim() : path.join(homeDir, '.rin'), homeDir, 'launchd')
-      }
-    } catch {}
-  }
-
-  for (const root of ['/home', '/Users']) {
-    try {
-      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue
-        scanHome(path.join(root, entry.name))
-      }
-    } catch {}
-  }
-
-  return rows.sort((a, b) => a.targetUser.localeCompare(b.targetUser) || a.installDir.localeCompare(b.installDir) || a.ownerHome.localeCompare(b.ownerHome))
-}
-
-async function startUpdater() {
-  const currentUser = detectCurrentUser()
-  intro('Rin Updater')
-
-  const targets = discoverInstalledTargets()
-  if (!targets.length) {
-    note('No installed Rin daemon targets were discovered on this system.', 'Update targets')
-    outro('Nothing updated.')
-    return
-  }
-
-  const target = targets.length === 1
-    ? targets[0]!
-    : targets[Number(ensureNotCancelled(await select({
-      message: 'Choose an installed Rin target to update.',
-      options: targets.map((item, index) => ({
-        value: index,
-        label: `${item.targetUser} → ${item.installDir}`,
-        hint: `${item.ownerHome} · ${item.source}`,
-      })),
-    })))]!
-
-  const installDir = String(process.env.RIN_UPDATE_INSTALL_DIR || target.installDir).trim() || target.installDir
-  const targetUser = String(process.env.RIN_UPDATE_TARGET_USER || target.targetUser).trim() || target.targetUser
-
-  note([
-    `Current user: ${currentUser}`,
-    `Selected daemon user: ${targetUser}`,
-    `Install dir: ${installDir}`,
-    `Discovered from: ${target.source}`,
-    `Owner home: ${target.ownerHome}`,
-    '',
-    'Updater policy:',
-    '- publish a new runtime release into the existing install dir',
-    '- prune old runtime releases and keep only the 3 most recent ones',
-    '- refresh launchers and installer metadata for the current user',
-    '- refresh managed daemon service files and restart the daemon when applicable',
-    '- preserve existing provider/auth/settings unless changed elsewhere',
-  ].join('\n'), 'Update plan')
-
-  const shouldProceed = ensureNotCancelled(await confirm({
-    message: 'Publish the latest built runtime to this installed target now?',
-    initialValue: true,
-  }))
-  if (!shouldProceed) {
-    outro('Updater finished without writing changes.')
-    return
-  }
-
-  const result = await runFinalizeInstallPlanInChild({
-    currentUser,
-    targetUser,
-    installDir,
-    sourceRoot: repoRootFromHere(),
-  }, 'Publishing runtime and refreshing the installed target...')
-
-  const { written, publishedRuntime, installedDocs, installedDocsDir, installedService, daemonReady, serviceHint } = result
-  const userSuffix = currentUser === targetUser ? '' : ` -u ${targetUser}`
-
-  note([
-    `Written: ${written.launcherPath}`,
-    `Written: ${written.rinPath}`,
-    `Written: ${written.rinInstallPath}`,
-    `Written: ${publishedRuntime.currentLink}`,
-    `Written: ${publishedRuntime.releaseRoot}`,
-    installedDocsDir ? `Written: ${installedDocsDir}` : '',
-    ...(Array.isArray(installedDocs?.pi) ? installedDocs.pi.map((item: string) => `Written: ${item}`) : []),
-    result.prunedReleases.removed.length ? `Removed old releases: ${result.prunedReleases.removed.length}` : 'Removed old releases: 0',
-    installedService ? `Written: ${installedService.servicePath}` : '',
-    installedService ? `${installedService.kind} label: ${installedService.label}` : '',
-    '',
-    `Service/platform note: ${serviceHint}`,
-    `Daemon started now: ${daemonReady ? 'yes' : 'no'}`,
-    '',
-    'Recommended next commands:',
-    `- doctor: rin doctor${userSuffix}`,
-    `- RPC TUI: rin${userSuffix}`,
-    `- std TUI: rin --std${userSuffix}`,
-  ].filter(Boolean).join('\n'), 'Updated target')
-
-  outro(`Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with rin${userSuffix} or rin --std${userSuffix}.` : `Use rin start${userSuffix} if you need to start the daemon manually.`}`)
+  return await applyInstalledRuntime({ ...options, persistInstallerState: true, daemonFailureCode: 'rin_installer_daemon_not_ready' })
 }
 
 export async function startInstaller() {
@@ -1261,218 +229,30 @@ export async function startInstaller() {
   }
 
   if (String(process.env.RIN_INSTALL_MODE || '').trim().toLowerCase() === 'update') {
-    await startUpdater()
+    await startUpdater({ detectCurrentUser, repoRootFromHere, ensureNotCancelled })
     return
   }
 
   const currentUser = detectCurrentUser()
   const allUsers = listSystemUsers()
-  const otherUsers = allUsers.filter((entry) => entry.name !== currentUser)
-  const existingCandidates = otherUsers.length ? otherUsers : allUsers.filter((entry) => entry.name !== currentUser).length ? allUsers.filter((entry) => entry.name !== currentUser) : allUsers
-
   intro('Rin Installer')
 
-  const targetMode = ensureNotCancelled(await select({
-    message: 'Choose the target user for the Rin daemon.',
-    options: [
-      { value: 'current', label: `Current user`, hint: currentUser },
-      { value: 'existing', label: 'Existing other user', hint: existingCandidates.length ? `${existingCandidates.length} user(s)` : 'none found' },
-      { value: 'new', label: 'New user', hint: 'enter a username' },
-    ],
-  }))
-
-  let targetUser = currentUser
-  if (targetMode === 'existing') {
-    if (!existingCandidates.length) {
-      note([
-        'No eligible existing users were found on this system.',
-        `Detected current user: ${currentUser}`,
-        `Visible users: ${allUsers.map((entry) => entry.name).join(', ') || 'none'}`,
-      ].join('\n'), 'Target user')
-      outro('Nothing installed.')
-      return
-    }
-    targetUser = ensureNotCancelled(await select({
-      message: 'Choose the existing user to host the Rin daemon.',
-      options: existingCandidates.map((entry) => ({
-        value: entry.name,
-        label: entry.name,
-        hint: `${entry.home} · uid ${entry.uid}`,
-      })),
-    }))
-  } else if (targetMode === 'new') {
-    targetUser = ensureNotCancelled(await text({
-      message: 'Enter the new username to create for the Rin daemon.',
-      placeholder: 'rin',
-      validate(value) {
-        const next = String(value || '').trim()
-        if (!next) return 'Username is required.'
-        if (!/^[a-z_][a-z0-9_-]*[$]?$/i.test(next)) return 'Use a normal Unix username.'
-      },
-    }))
+  const promptApi = { ensureNotCancelled, select, text, confirm }
+  const target = await promptTargetInstall(promptApi, currentUser, allUsers, targetHomeForUser)
+  if (target.cancelled) {
+    note(['No eligible existing users were found on this system.', `Detected current user: ${currentUser}`, `Visible users: ${allUsers.map((entry) => entry.name).join(', ') || 'none'}`].join('\n'), 'Target user')
+    outro('Nothing installed.')
+    return
   }
 
-  const defaultDir = path.join(targetHomeForUser(targetUser), '.rin')
-  const installDir = String(ensureNotCancelled(await text({
-    message: 'Choose the Rin data directory for the daemon user.',
-    placeholder: defaultDir,
-    defaultValue: defaultDir,
-    validate(value) {
-      const next = String(value || '').trim()
-      if (!next) return 'Directory is required.'
-      if (!path.isAbsolute(next)) return 'Use an absolute path.'
-    },
-  }))).trim()
+  const { targetUser, installDir } = target
+  const installDirNote = describeInstallDirState(installDir, summarizeDirState(installDir))
+  note(installDirNote.text, installDirNote.title)
 
-  const state = summarizeDirState(installDir)
-  if (state.exists) {
-    note([
-      `Directory exists: ${installDir}`,
-      `Existing entries: ${state.entryCount}`,
-      state.sample.length ? `Sample: ${state.sample.join(', ')}` : '',
-      '',
-      'Installer policy:',
-      '- keep unknown files untouched',
-      '- keep existing config unless a required file must be updated',
-      '- only remove old files when they are known legacy Rin artifacts',
-    ].filter(Boolean).join('\n'), 'Existing directory')
-  } else {
-    note([
-      `Directory will be created: ${installDir}`,
-      '',
-      'Installer policy:',
-      '- create only the files Rin needs',
-      '- future updates should preserve unknown files',
-    ].join('\n'), 'Install directory')
-  }
+  const { provider, modelId, thinkingLevel, authResult } = await promptProviderSetup(promptApi, installDir, readJsonFile)
+  const { koishiDescription, koishiDetail, koishiConfig } = await promptKoishiSetup(promptApi)
 
-  const shouldConfigureProvider = ensureNotCancelled(await confirm({
-    message: 'Configure a provider now?',
-    initialValue: true,
-  }))
-
-  let provider = ''
-  let modelId = ''
-  let thinkingLevel = ''
-  let authResult: any = { available: false, authKind: 'skipped', authData: {} }
-
-  if (shouldConfigureProvider) {
-    const loadSpinner = spinner()
-    loadSpinner.start('Loading provider and model choices...')
-    const models = await loadModelChoices()
-    loadSpinner.stop('Provider and model choices loaded.')
-
-    const providerNames = [...new Set(models.map((model) => model.provider).filter(Boolean))]
-    if (!providerNames.length) {
-      throw new Error('rin_installer_no_models_available')
-    }
-
-    provider = String(ensureNotCancelled(await select({
-      message: 'Choose a provider to authenticate and use.',
-      options: providerNames.map((name) => {
-        const scoped = models.filter((model) => model.provider === name)
-        const availableCount = scoped.filter((model) => model.available).length
-        return {
-          value: name,
-          label: name,
-          hint: availableCount ? `${availableCount}/${scoped.length} ready` : `${scoped.length} models`,
-        }
-      }),
-    })))
-
-    authResult = await configureProviderAuth(String(provider), installDir)
-
-    const providerModels = models.filter((model) => model.provider === provider)
-    if (!providerModels.length) {
-      throw new Error(`rin_installer_no_models_for_provider:${provider}`)
-    }
-    modelId = String(ensureNotCancelled(await select({
-      message: 'Choose a model.',
-      options: providerModels.map((model) => ({
-        value: model.id,
-        label: model.id,
-        hint: [authResult.available || model.available ? 'ready' : 'needs auth/config', model.reasoning ? 'reasoning' : 'no reasoning'].join(' · '),
-      })),
-    })))
-
-    const model = providerModels.find((entry) => entry.id === modelId)!
-    thinkingLevel = String(ensureNotCancelled(await select({
-      message: 'Choose the default thinking level.',
-      options: computeAvailableThinkingLevels(model).map((level) => ({
-        value: level,
-        label: level,
-      })),
-    })))
-  }
-
-  const enableKoishi = ensureNotCancelled(await confirm({
-    message: 'Configure a Koishi adapter now?',
-    initialValue: false,
-  }))
-
-  let koishiDescription = 'disabled for now'
-  let koishiDetail = ''
-  let koishiConfig: any = null
-  if (enableKoishi) {
-    const adapter = ensureNotCancelled(await select({
-      message: 'Choose a Koishi adapter.',
-      options: [
-        { value: 'telegram', label: 'Telegram', hint: 'bot token' },
-        { value: 'onebot', label: 'OneBot', hint: 'endpoint URL' },
-      ],
-    })) as 'telegram' | 'onebot'
-
-    koishiDescription = adapter
-    if (adapter === 'telegram') {
-      const token = String(ensureNotCancelled(await text({
-        message: 'Enter the Telegram bot token.',
-        placeholder: '123456:ABCDEF...',
-        validate(value) {
-          if (!String(value || '').trim()) return 'Token is required.'
-        },
-      }))).trim()
-      koishiDetail = 'Koishi token: [saved to target settings.json]'
-      koishiConfig = { telegram: { token, protocol: 'polling', slash: true } }
-    } else {
-      const endpoint = String(ensureNotCancelled(await text({
-        message: 'Enter the OneBot endpoint URL.',
-        placeholder: 'http://127.0.0.1:5700',
-        validate(value) {
-          const next = String(value || '').trim()
-          if (!next) return 'Endpoint is required.'
-          try {
-            new URL(next)
-          } catch {
-            return 'Use a valid URL.'
-          }
-        },
-      }))).trim()
-      koishiDetail = `Koishi endpoint: ${endpoint}`
-      koishiConfig = { onebot: { endpoint, protocol: endpoint.startsWith('ws') ? 'ws' : 'http', selfId: '', token: '' } }
-    }
-  }
-
-  note([
-    `Current user: ${currentUser}`,
-    `Target daemon user: ${targetUser}`,
-    `Install dir: ${installDir}`,
-    `Provider: ${provider || 'skipped for now'}`,
-    `Model: ${modelId || 'skipped for now'}`,
-    `Thinking level: ${thinkingLevel || 'skipped for now'}`,
-    `Model auth status: ${provider ? (authResult.available ? 'ready' : 'needs auth/config later') : 'skipped for now'}`,
-    `Koishi: ${koishiDescription}`,
-    koishiDetail,
-    '',
-    'Planned command shape:',
-    '- `rin` → RPC TUI for the target user',
-    '- `rin --std` → std TUI for the target user',
-    '- `rin --tmux <session_name>` → attach/create a hidden Rin tmux session for the target user',
-    '- `rin --tmux-list` → list Rin tmux sessions for the target user',
-    '',
-    'Safety reminder:',
-    '- This agent runs with the full permissions of its system user account.',
-    '- Treat it like a shell-capable operator on that account and use it carefully.',
-  ].filter(Boolean).join('\n'), 'Install plan')
+  note(buildInstallPlanText({ currentUser, targetUser, installDir, provider, modelId, thinkingLevel, authAvailable: Boolean(authResult.available), koishiDescription, koishiDetail }), 'Install plan')
 
   const ownership = describeOwnership(targetUser, installDir)
   if (!ownership.ownerMatches && ownership.targetUid >= 0) {
@@ -1483,47 +263,19 @@ export async function startInstaller() {
       'The installer will still write config if it can, but you may want to fix ownership before switching fully.',
     ].join('\n'), 'Ownership check')
   }
-
-  if (!ownership.writable) {
-    note('The selected install directory is not writable by the current installer process.', 'Ownership check')
-  }
+  if (!ownership.writable) note('The selected install directory is not writable by the current installer process.', 'Ownership check')
 
   const installServiceNow = process.platform === 'darwin' || process.platform === 'linux'
   const needsElevatedWrite = !ownership.writable
   const needsElevatedService = installServiceNow && targetUser !== currentUser
-  const finalRequirements = [
-    'write configuration and launchers',
-    'publish the runtime into the install directory',
-    installServiceNow ? 'install and start the daemon service' : 'skip daemon service installation on this platform',
-    needsElevatedWrite || needsElevatedService ? 'use sudo/doas if needed for the selected target and install dir' : 'no extra privilege escalation currently predicted',
-  ]
-
-  const shouldProceed = ensureNotCancelled(await confirm({
-    message: [
-      'Finalize installation now?',
-      ...finalRequirements.map((item) => `- ${item}`),
-    ].join('\n'),
-    initialValue: true,
-  }))
-
+  const finalRequirements = buildFinalRequirements({ installServiceNow, needsElevatedWrite, needsElevatedService })
+  const shouldProceed = ensureNotCancelled(await confirm({ message: ['Finalize installation now?', ...finalRequirements.map((item) => `- ${item}`)].join('\n'), initialValue: true }))
   if (!shouldProceed) {
     outro('Installer finished without writing changes.')
     return
   }
 
-  const result = await runFinalizeInstallPlanInChild({
-    currentUser,
-    targetUser,
-    installDir,
-    provider,
-    modelId,
-    thinkingLevel,
-    koishiDescription,
-    koishiDetail,
-    koishiConfig,
-    authData: authResult.authData || {},
-  }, needsElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...')
-
+  const result = await runFinalizeInstallPlanInChild({ currentUser, targetUser, installDir, provider, modelId, thinkingLevel, koishiDescription, koishiDetail, koishiConfig, authData: authResult.authData || {} }, needsElevatedWrite ? 'Publishing runtime and writing configuration with elevated permissions...' : 'Publishing runtime and writing configuration...', { ensureNotCancelled })
   const { written, publishedRuntime, installedDocs, installedDocsDir, installedService, daemonReady, serviceHint } = result
 
   note([
@@ -1570,3 +322,16 @@ export async function startInstaller() {
   outro(`Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; open with rin${userSuffix} or rin --std${userSuffix}.` : `Daemon was not started by the installer; use rin start${userSuffix}, then rin${userSuffix} or rin --std${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ''}`)
 }
 
+async function main() {
+  await startInstaller()
+}
+
+const isDirectEntry = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+
+if (isDirectEntry) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error || 'rin_installer_failed')
+    console.error(message)
+    process.exit(1)
+  })
+}

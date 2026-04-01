@@ -5,6 +5,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { defaultDaemonSocketPath, safeString } from '../rin-lib/common.js'
+import type { RinRpcCommandType } from '../rin-lib/rpc-types.js'
 import { loadRinSessionManagerModule } from '../rin-lib/loader.js'
 import { getKoishiSidecarStatus } from '../rin-koishi/service.js'
 import { emptySessionState, response } from '../rin-lib/rpc.js'
@@ -50,7 +51,7 @@ export async function startDaemon(options: { socketPath?: string; workerPath?: s
 
   const selfHandleCommand = async (connection: ConnectionState, command: any) => {
     const id = command?.id
-    const type = String(command?.type || 'unknown')
+    const type = String(command?.type || 'unknown') as RinRpcCommandType | 'unknown'
 
     if (type === 'get_state' && !connection.attachedWorker) {
       writeLine(connection.socket, response(id, type, true, emptySessionState()))

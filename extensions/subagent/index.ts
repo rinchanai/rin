@@ -1,6 +1,7 @@
 import path from 'node:path'
 
-import { StringEnum, type Message, type ThinkingLevel, VALID_THINKING_LEVELS } from '@mariozechner/pi-ai'
+import { StringEnum } from '@mariozechner/pi-ai'
+import type { AgentMessage as Message, ThinkingLevel } from '@mariozechner/pi-agent-core'
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
 import { Container, Markdown, Spacer, Text } from '@mariozechner/pi-tui'
 import { Type } from '@sinclair/typebox'
@@ -8,6 +9,8 @@ import { Type } from '@sinclair/typebox'
 import { getBuiltinExtensionPaths } from '../../src/app/builtin-extensions.js'
 import { loadRinCodingAgent } from '../../src/core/rin-lib/loader.js'
 import { createConfiguredAgentSession } from '../../src/core/rin-lib/runtime.js'
+import { buildSubagentAgentText, formatUsage, formatTokens, getFinalOutput, summarizeTaskResult, type TaskResult, type UsageStats } from './format-utils.js'
+import { buildModelLookup, compareModelIds, getProviderSummaries, normalizeModelRef, splitModelRef, type ProviderModelSummary, VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from './model-utils.js'
 
 const MAX_PARALLEL_TASKS = 8
 
@@ -49,38 +52,6 @@ type ToolParams = {
 	}>
 }
 
-type UsageStats = {
-	input: number
-	output: number
-	cacheRead: number
-	cacheWrite: number
-	cost: number
-	contextTokens: number
-	turns: number
-}
-
-type TaskResult = {
-	index: number
-	prompt: string
-	requestedModel?: string
-	requestedThinkingLevel?: ThinkingLevel
-	cwd: string
-	status: 'pending' | 'running' | 'done' | 'error'
-	exitCode: number
-	stopReason?: string
-	errorMessage?: string
-	output: string
-	model?: string
-	usage: UsageStats
-	messages: Message[]
-}
-
-type ProviderModelSummary = {
-	provider: string
-	count: number
-	top3: string[]
-	all: string[]
-}
 
 type SubagentDetails = {
 	action: 'run' | 'list_models'
@@ -101,93 +72,6 @@ function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
 	return run
 }
 
-function normalizeModelRef(value?: string): string | undefined {
-	const text = String(value || '').trim()
-	if (!text) return undefined
-	return text.replace(/^@/, '')
-}
-
-function splitModelRef(value: string): { provider: string; modelId: string } | undefined {
-	const text = normalizeModelRef(value)
-	if (!text) return undefined
-	const slash = text.indexOf('/')
-	if (slash <= 0 || slash === text.length - 1) return undefined
-	return {
-		provider: text.slice(0, slash),
-		modelId: text.slice(slash + 1),
-	}
-}
-
-function modelSortKey(id: string): string {
-	const text = id.toLowerCase()
-	const date = text.match(/(20\d{2})(\d{2})(\d{2})/)
-	if (date) return `4-${date[0]}`
-	if (/\b(latest|preview|exp|experimental)\b/.test(text)) return `3-${text}`
-	const nums = [...text.matchAll(/\d+/g)].map((m) => m[0].padStart(4, '0')).join('-')
-	if (nums) return `2-${nums}-${text}`
-	return `1-${text}`
-}
-
-function compareModelIds(a: string, b: string): number {
-	const keyA = modelSortKey(a)
-	const keyB = modelSortKey(b)
-	if (keyA === keyB) return a.localeCompare(b)
-	return keyB.localeCompare(keyA)
-}
-
-function formatTokens(value: number): string {
-	if (!value) return '0'
-	if (value < 1000) return String(value)
-	if (value < 10_000) return `${(value / 1000).toFixed(1)}k`
-	if (value < 1_000_000) return `${Math.round(value / 1000)}k`
-	return `${(value / 1_000_000).toFixed(1)}M`
-}
-
-function formatUsage(usage: UsageStats, model?: string): string {
-	const parts: string[] = []
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? 's' : ''}`)
-	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`)
-	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`)
-	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`)
-	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`)
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`)
-	if (usage.contextTokens) parts.push(`ctx:${formatTokens(usage.contextTokens)}`)
-	if (model) parts.push(model)
-	return parts.join(' ')
-}
-
-function getFinalOutput(messages: Message[]): string {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i]
-		if (msg.role !== 'assistant') continue
-		const text = msg.content.filter((part) => part.type === 'text').map((part) => part.text).join('\n').trim()
-		if (text) return text
-	}
-	return ''
-}
-
-async function getProviderSummaries(ctx: any): Promise<ProviderModelSummary[]> {
-	const availableModels = await Promise.resolve(ctx.modelRegistry.getAvailable())
-	const grouped = new Map<string, string[]>()
-
-	for (const model of availableModels) {
-		const list = grouped.get(model.provider) ?? []
-		list.push(model.id)
-		grouped.set(model.provider, list)
-	}
-
-	return Array.from(grouped.entries())
-		.map(([provider, ids]) => {
-			const all = [...new Set(ids)].sort(compareModelIds)
-			return {
-				provider,
-				count: all.length,
-				top3: all.slice(0, 3),
-				all,
-			}
-		})
-		.sort((a, b) => a.provider.localeCompare(b.provider))
-}
 
 function formatModelList(details: SubagentDetails): string {
 	const lines: string[] = []
@@ -204,14 +88,6 @@ function formatModelList(details: SubagentDetails): string {
 		lines.push(`- ${provider.provider}: ${provider.top3.join(', ') || '(none)'}${provider.count > 3 ? ` (+${provider.count - 3} more)` : ''}`)
 	}
 	return lines.join('\n')
-}
-
-function buildModelLookup(providers: ProviderModelSummary[]): Set<string> {
-	const models = new Set<string>()
-	for (const provider of providers) {
-		for (const model of provider.all) models.add(`${provider.provider}/${model}`)
-	}
-	return models
 }
 
 function getSubagentExtensionPaths(): string[] {
@@ -234,27 +110,6 @@ async function createIsolatedSession(cwd: string) {
 	})
 }
 
-function summarizeTaskResult(result: TaskResult): string {
-	const model = result.model || result.requestedModel || '(default model)'
-	const preview = (result.output || result.errorMessage || '(no output)').replace(/\s+/g, ' ').trim()
-	return `${result.index}. [${result.status}] ${model} — ${preview.slice(0, 180)}${preview.length > 180 ? '…' : ''}`
-}
-
-function buildSubagentAgentText(results: TaskResult[]): string {
-	const failed = results.filter((result) => result.exitCode !== 0).length
-	return [
-		`subagent results=${results.length} failed=${failed}`,
-		...results.map((result) => {
-			const model = result.model || result.requestedModel || '(default model)'
-			const preview = (result.output || result.errorMessage || '(no output)').replace(/\s+/g, ' ').trim()
-			return [
-				`${result.index}. status=${result.status} exit=${result.exitCode} model=${model}`,
-				`cwd=${result.cwd}`,
-				preview ? `preview=${preview.slice(0, 220)}${preview.length > 220 ? '…' : ''}` : '',
-			].filter(Boolean).join('\n')
-		}),
-	].join('\n\n')
-}
 
 function buildSubagentUserText(results: TaskResult[]): string {
 	const failed = results.filter((result) => result.exitCode !== 0)
@@ -468,7 +323,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				}
 			}
 
-			const progressResults = tasks.map((task, index) => ({
+			const progressResults: TaskResult[] = tasks.map((task, index) => ({
 				index: index + 1,
 				prompt: task.prompt,
 				requestedModel: task.model,
@@ -564,7 +419,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
 				if (task.errorMessage) container.addChild(new Text(theme.fg('error', task.errorMessage), 0, 0))
 				if (task.output) {
 					container.addChild(new Spacer(1))
-					container.addChild(new Markdown(task.output.trim(), 0, 0))
+					container.addChild(new Text(task.output.trim(), 0, 0))
 				}
 				const usage = formatUsage(task.usage, task.model)
 				if (usage) container.addChild(new Text(theme.fg('muted', usage), 0, 0))
