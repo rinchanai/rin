@@ -319,14 +319,6 @@ export async function searchMemories(
   };
 }
 
-export async function getMemory(target: string, rootOverride = "") {
-  const root = resolveMemoryRoot(rootOverride);
-  await ensureMemoryLayout(root);
-  const doc = await resolveMemoryDoc(root, target);
-  if (!doc) throw new Error(`memory_not_found:${target}`);
-  return { ...previewMemoryDoc(doc), content: doc.content };
-}
-
 export async function saveMemory(
   params: Record<string, any> = {},
   rootOverride = "",
@@ -536,11 +528,6 @@ export async function executeMemoryAction(
     return await searchMemories(
       safeString(params.query || ""),
       params,
-      rootOverride,
-    );
-  if (action === "get")
-    return await getMemory(
-      safeString(params.path || params.id || params.query || ""),
       rootOverride,
     );
   if (action === "save") return await saveMemory(params, rootOverride);

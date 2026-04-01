@@ -103,25 +103,6 @@ export function formatMemoryResult(action: string, response: any): string {
       );
     return parts.join("\n\n");
   }
-  if (action === "get") {
-    const meta = [
-      `id=${String(response?.id || "")}`,
-      `exposure=${String(response?.exposure || "")}`,
-      `scope=${String(response?.scope || "")}`,
-      `kind=${String(response?.kind || "")}`,
-      response?.resident_slot ? `slot=${String(response.resident_slot)}` : "",
-      `path=${String(response?.path || "")}`,
-    ]
-      .filter(Boolean)
-      .join(" • ");
-    return [
-      String(response?.title || response?.id || "Memory document"),
-      meta,
-      String(response?.content || "").trim(),
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-  }
   if (action === "save")
     return `Saved memory: ${String(response?.doc?.title || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
   if (action === "delete")
@@ -262,20 +243,6 @@ export function formatMemoryAgentResult(action: string, response: any): string {
         ].join("\n"),
       );
     return parts.join("\n\n");
-  }
-  if (action === "get") {
-    return [
-      String(response?.title || response?.id || "Memory document"),
-      `id=${String(response?.id || "")}`,
-      `exposure=${String(response?.exposure || "")}`,
-      `scope=${String(response?.scope || "")}`,
-      `kind=${String(response?.kind || "")}`,
-      response?.resident_slot ? `slot=${String(response.resident_slot)}` : "",
-      `path=${String(response?.path || "")}`,
-      "read file separately if full body is needed",
-    ]
-      .filter(Boolean)
-      .join("\n");
   }
   if (action === "save")
     return `memory save\npath=${String(response?.doc?.path || "")}`;

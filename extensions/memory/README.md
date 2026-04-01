@@ -41,7 +41,6 @@ Implementation note:
 
 - `list`
 - `search`
-- `get`
 - `save`
 - `delete`
 - `move`
@@ -51,6 +50,11 @@ Implementation note:
 - `events`
 - `event_search`
 - `process`
+
+`memory.search` is the discovery entrypoint:
+- it returns candidate ids, metadata, scores, and file paths
+- it does not return full document bodies
+- if full contents are needed, use the normal `read` tool on the returned path
 
 ## Notes
 
