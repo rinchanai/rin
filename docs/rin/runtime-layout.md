@@ -15,6 +15,28 @@ Rin's agent working directory is usually `~/.rin/`.
 - `app/current/`: the currently active runtime
 - `app/releases/<timestamp>/`: runtime release directories
 
+## User-scoped launcher paths
+
+Rin launchers are user-scoped, not global.
+
+Typical launcher paths:
+
+- `~/.local/bin/rin`
+- `~/.local/bin/rin-install`
+
+Important implications for the agent:
+
+- do not assume the current local account always has a `rin` command in PATH
+- the user who owns the launcher can differ from the daemon target user
+- the account currently running the agent can also differ from both of the above
+- when `rin` is missing, that does not by itself mean Rin is not installed
+
+In other words, keep these roles separate:
+
+- launcher-owning user
+- daemon target user
+- current local account running the agent
+
 ## `app/current/`
 
 `app/current/` is the stable entrypoint for the currently active runtime.

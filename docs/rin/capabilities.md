@@ -9,6 +9,24 @@ This document summarizes only the capabilities and conventions an agent needs as
 - do not proactively steer users toward `rin --std` in normal guidance
 - mention `rin --std` mainly when RPC mode is failing and the user needs a foreground fallback for troubleshooting or repair
 
+## Self-update behavior
+
+Rin can update itself even when the current local account does not have a `rin` launcher.
+
+As an agent, prefer this decision order when the user asks you to upgrade Rin:
+
+1. try `rin update`
+2. if `rin` is missing, try `~/.local/bin/rin update`
+3. if no launcher exists for the current account, try the installed runtime entry directly:
+   - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
+4. if `installDir` or `targetUser` is unknown, discover them first from Rin install metadata or managed service files
+
+Important implications:
+
+- do not treat “current account has no `rin` command” as equivalent to “Rin cannot self-update”
+- reason in terms of installed runtime path, target user, launcher ownership, and permissions
+- prefer the stable `app/current/` path over release-specific timestamps when invoking an installed runtime directly
+
 ## Memory
 
 Rin provides its own memory system. As an agent, you should know that:
