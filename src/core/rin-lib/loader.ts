@@ -2,12 +2,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const repoRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-  "..",
-);
+function resolveRepoRoot() {
+  const startDir = path.dirname(fileURLToPath(import.meta.url));
+  let current = startDir;
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = path.join(current, "third_party", "pi-coding-agent");
+    if (fs.existsSync(path.join(candidate, "dist", "index.js"))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return path.resolve(startDir, "..", "..", "..");
+}
+
+const repoRoot = resolveRepoRoot();
 const codingAgentRoot = path.join(repoRoot, "third_party", "pi-coding-agent");
 const codingAgentDistRoot = path.join(codingAgentRoot, "dist");
 
