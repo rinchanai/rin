@@ -146,6 +146,8 @@ export class RpcInteractiveSession {
   private disposed = false;
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
+  private restorePromise: Promise<void> | null = null;
+  private restoreResumeSent = false;
 
   constructor(
     public client: RinDaemonFrontendClient,
@@ -602,6 +604,7 @@ export class RpcInteractiveSession {
       await this.ensureRemoteSession();
       this.isStreaming = true;
       this.activeTurn = operation;
+      this.restoreResumeSent = false;
       await this.call(operation.mode, {
         message: operation.message,
         images: operation.images,
@@ -629,6 +632,7 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
+    this.restoreResumeSent = false;
     emitConnectionLost(this as any);
   }
 
@@ -650,38 +654,45 @@ export class RpcInteractiveSession {
 
   private async handleConnectionRestored() {
     if (this.disposed) return;
-    this.reconnecting = false;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = null;
-    this.emitEvent({
-      type: "rin_status",
-      phase: "update",
-      message: "Resuming session...",
-      statusText: "Daemon connection restored.",
-    } as any);
-    try {
-      if (this.sessionFile) {
-        await this.call("switch_session", { sessionPath: this.sessionFile });
-      } else if (this.sessionId) {
-        await this.call("attach_session", { sessionId: this.sessionId });
+    if (this.restorePromise) return await this.restorePromise;
+    this.restorePromise = (async () => {
+      this.reconnecting = false;
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      this.emitEvent({
+        type: "rin_status",
+        phase: "update",
+        message: "Resuming session...",
+        statusText: "Daemon connection restored.",
+      } as any);
+      try {
+        if (this.sessionFile) {
+          await this.call("switch_session", { sessionPath: this.sessionFile });
+        } else if (this.sessionId) {
+          await this.call("attach_session", { sessionId: this.sessionId });
+        }
+        await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+        if (this.activeTurn && !this.restoreResumeSent) {
+          this.restoreResumeSent = true;
+          await this.call("interrupt_prompt", {
+            message:
+              "Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.",
+          });
+        }
+        const queued = [...this.queuedOfflineOps];
+        this.queuedOfflineOps = [];
+        for (const operation of queued) {
+          await this.sendOrQueue(operation);
+        }
+      } finally {
+        if (!this.isStreaming && !this.isCompacting) {
+          this.emitEvent({ type: "rin_status", phase: "end" } as any);
+        }
       }
-      await this.refreshState(REFRESH_ALL);
-      if (this.activeTurn) {
-        await this.call("interrupt_prompt", {
-          message:
-            "Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.",
-        });
-      }
-      const queued = [...this.queuedOfflineOps];
-      this.queuedOfflineOps = [];
-      for (const operation of queued) {
-        await this.sendOrQueue(operation);
-      }
-    } finally {
-      if (!this.isStreaming && !this.isCompacting) {
-        this.emitEvent({ type: "rin_status", phase: "end" } as any);
-      }
-    }
+    })().finally(() => {
+      this.restorePromise = null;
+    });
+    return await this.restorePromise;
   }
 
   private enqueuePending(
