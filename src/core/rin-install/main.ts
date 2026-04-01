@@ -43,8 +43,6 @@ import {
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
-import { buildUserShell } from "../rin-lib/system.js";
-import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 import {
   reconcileInstallerManifest,
   persistInstallerOutputs,
@@ -448,46 +446,16 @@ export async function finalizeInstallPlan(options: FinalizeInstallOptions) {
   });
 }
 
-async function markInstallerOnboardingPending(installDir: string) {
-  const onboardingModule = await import(
-    pathToFileURL(
-      path.join(
-        repoRootFromHere(),
-        "dist",
-        "extensions",
-        "memory",
-        "onboarding.js",
-      ),
-    ).href
-  );
-  await onboardingModule.markOnboardingPrompted(
-    () => installDir,
-    "auto:installer",
-  );
-}
-
 async function launchInstallerInitTui(options: {
-  currentUser: string;
-  targetUser: string;
-  installDir: string;
+  rinPath: string;
+  sourceRoot: string;
 }) {
-  const runtimeEnv = {
-    [RIN_DIR_ENV]: options.installDir,
-    [PI_AGENT_DIR_ENV]: options.installDir,
-    RIN_INVOKING_SYSTEM_USER: options.currentUser,
-  };
-  const launch = buildUserShell(
-    options.targetUser,
-    [
-      process.execPath,
-      path.join(repoRootFromHere(), "dist", "app", "rin-tui", "main.js"),
-      "--rpc",
-    ],
-    runtimeEnv,
-  );
-  return await runCommand(launch.command, launch.args, {
-    env: launch.env,
-    cwd: repoRootFromHere(),
+  return await runCommand(options.rinPath, [], {
+    env: {
+      ...process.env,
+      RIN_INSTALL_AUTO_INIT: "1",
+    },
+    cwd: options.sourceRoot,
   });
 }
 
@@ -578,7 +546,7 @@ export async function startInstaller() {
       koishiDescription,
       koishiDetail,
     }),
-    "Install plan",
+    "Install choices",
   );
 
   const ownership = describeOwnership(targetUser, installDir);
@@ -669,36 +637,12 @@ export async function startInstaller() {
       installedService
         ? `${installedService.kind} label: ${installedService.label}`
         : "",
-      "",
-      "Launcher note:",
-      `- installer command shims are written for ${currentUser} under ${path.join(homeForUser(currentUser), ".local", "bin")}`,
-      "- ensure that directory is on your PATH when launching `rin` or `rin-install`",
-      "",
-      "Recommended first commands:",
-      `- start daemon: rin start${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
-      `- enter Rin: rin${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
-      `- attach/create tmux TUI: rin -t main${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
-      "",
-      "Default launcher behavior:",
-      "- `rin` uses the saved target user and install dir",
-      "- `rin` in RPC mode expects the daemon to already be running",
-      "- use `rin start`, `rin stop`, `rin restart`, or `rin doctor` for daemon control",
-      "- if RPC mode fails, try `rin --std` only as a repair/troubleshooting fallback",
-      "- `rin -t <name>` attaches/creates a hidden tmux TUI session",
-      "",
-      `Service/platform note: ${serviceHint}`,
-      `Daemon started now: ${daemonReady ? "yes" : "no"}`,
-      "",
-      "Safety reminder:",
-      "- This agent runs with the full permissions of its system user account.",
-      "- Treat it like a shell-capable operator on that account and use it carefully.",
     ].join("\n"),
     "Written paths",
   );
 
   const userSuffix = currentUser === targetUser ? "" : ` -u ${targetUser}`;
   if (daemonReady) {
-    await markInstallerOnboardingPending(installDir);
     note(
       [
         "Installation is done. Rin will now open an initialization TUI.",
@@ -706,7 +650,10 @@ export async function startInstaller() {
       ].join("\n"),
       "Launching init",
     );
-    await launchInstallerInitTui({ currentUser, targetUser, installDir });
+    await launchInstallerInitTui({
+      rinPath: written.rinPath,
+      sourceRoot: repoRootFromHere(),
+    });
     note(
       buildPostInstallInitExitText({ currentUser, targetUser }),
       "After init",
@@ -714,7 +661,7 @@ export async function startInstaller() {
   }
 
   outro(
-    `Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; use rin${userSuffix} next time.` : `Daemon was not started by the installer; use rin start${userSuffix}, then rin${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ""}`,
+    `Installer wrote config for ${targetUser}.${installedService ? ` (${installedService.kind} service installed).` : ""}`,
   );
 }
 

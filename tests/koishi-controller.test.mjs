@@ -78,20 +78,19 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
       return { sessionFile: "/tmp/turn-chat.jsonl", sessionId: "session-turn" };
     },
     prompt: async (_message, options) => {
-      calls.push(`prompt:${options?.requestTag ? "tagged" : "untagged"}`);
+      calls.push(
+        `prompt:${options?.requestTag ? "tagged" : "untagged"}:${options?.streamingBehavior || "none"}`,
+      );
       queueMicrotask(() => {
         const waiter = controller.turnWaiters.get(options.requestTag);
         waiter?.resolve({ sessionFile: "/tmp/turn-chat.jsonl" });
       });
-    },
-    interruptPrompt: async () => {
-      throw new Error("interruptPrompt should not be used for prompt mode");
     },
     setSessionName: async () => {},
   };
 
   await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
 
-  assert.deepEqual(calls, ["ensureSessionReady", "prompt:tagged"]);
+  assert.deepEqual(calls, ["ensureSessionReady", "prompt:tagged:none"]);
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });

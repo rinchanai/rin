@@ -348,17 +348,12 @@ export class KoishiChatController {
     this.markProcessedMessage(input.incomingMessageId);
     const completion = this.waitForTurn(tag);
     this.startTyping();
-    if (mode === "interrupt_prompt")
-      await this.session.interruptPrompt(text, images, {
-        requestTag: tag,
-        source: "koishi-bridge",
-      });
-    else
-      await this.session.prompt(text, {
-        images,
-        requestTag: tag,
-        source: "koishi-bridge",
-      });
+    await this.session.prompt(text, {
+      images,
+      requestTag: tag,
+      source: "koishi-bridge",
+      streamingBehavior: mode === "interrupt_prompt" ? "steer" : undefined,
+    });
     const payload = await completion;
     if (this.activeTag !== tag) return;
     const replyToMessageId = safeString(

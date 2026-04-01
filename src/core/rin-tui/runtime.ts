@@ -9,6 +9,7 @@ import {
   getRuntimeSessionDir,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
+import { isSessionScopedCommand } from "../rin-lib/rpc.js";
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { handleRpcSessionEvent } from "./events.js";
 import { loadRpcLocalExtensions } from "./extensions.js";
@@ -324,10 +325,10 @@ export class RpcInteractiveSession {
   }
 
   async newSession(_options?: { parentSession?: string }) {
-    await this.client.send({ type: "detach_session" }).catch(() => {});
-    this.resetLocalSessionState();
-    this.detachedBlankSession = true;
-    return true;
+    const data = await this.call("new_session");
+    this.detachedBlankSession = false;
+    await this.refreshState(REFRESH_ALL);
+    return !Boolean(data?.cancelled);
   }
 
   async switchSession(sessionPath: string) {
@@ -446,7 +447,7 @@ export class RpcInteractiveSession {
   }
 
   abortRetry() {
-    void this.client.send({ type: "abort_retry" }).catch(() => {});
+    void this.call("abort_retry").catch(() => {});
   }
   get isRetrying() {
     return this.retryAttempt > 0;
@@ -596,7 +597,8 @@ export class RpcInteractiveSession {
       this.queueOfflineOperation(operation);
       return;
     }
-    try {
+
+    const sendOperation = async () => {
       await this.ensureRemoteSession();
       this.isStreaming = true;
       this.activeTurn = operation;
@@ -606,10 +608,20 @@ export class RpcInteractiveSession {
         source: operation.source,
         requestTag: operation.requestTag,
       });
+    };
+
+    try {
+      await sendOperation();
     } catch (error: any) {
       const message = String(error?.message || error || "");
       if (/rin_tui_not_connected|rin_disconnected/.test(message)) {
         this.queueOfflineOperation(operation);
+        return;
+      }
+      if (/rin_no_attached_session/.test(message) && this.sessionFile) {
+        await this.call("switch_session", { sessionPath: this.sessionFile });
+        await this.refreshState(REFRESH_ALL);
+        await sendOperation();
         return;
       }
       throw error;
@@ -650,6 +662,8 @@ export class RpcInteractiveSession {
     try {
       if (this.sessionFile) {
         await this.call("switch_session", { sessionPath: this.sessionFile });
+      } else if (this.sessionId) {
+        await this.call("attach_session", { sessionId: this.sessionId });
       }
       await this.refreshState(REFRESH_ALL);
       if (this.activeTurn) {
@@ -687,7 +701,8 @@ export class RpcInteractiveSession {
   }
 
   private async ensureRemoteSession() {
-    if (!this.detachedBlankSession && this.sessionFile) return;
+    if (!this.detachedBlankSession && (this.sessionFile || this.sessionId))
+      return;
     const data = await this.call("new_session");
     if (data && data.cancelled) throw new Error("rin_new_session_cancelled");
 
@@ -708,8 +723,24 @@ export class RpcInteractiveSession {
     await this.refreshState(REFRESH_ALL);
   }
 
+  private buildSessionCommandPayload(
+    type: string,
+    payload: Record<string, unknown>,
+  ) {
+    if (!isSessionScopedCommand(type)) return payload;
+    if (type === "switch_session" || type === "attach_session") return payload;
+    if (type === "new_session" || type === "detach_session") return payload;
+    if (payload.sessionFile || payload.sessionId) return payload;
+    if (this.sessionFile) return { ...payload, sessionFile: this.sessionFile };
+    if (this.sessionId) return { ...payload, sessionId: this.sessionId };
+    return payload;
+  }
+
   private async call(type: string, payload: Record<string, unknown> = {}) {
-    const response: any = await this.client.send({ type, ...payload });
+    const response: any = await this.client.send({
+      type,
+      ...this.buildSessionCommandPayload(type, payload),
+    });
     if (!response || response.success !== true) {
       throw new Error(String(response?.error || "rin_request_failed"));
     }

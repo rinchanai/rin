@@ -349,7 +349,6 @@ export function buildInstallPlanText(options: {
     koishiDetail,
   } = options;
   return [
-    `Current user: ${currentUser}`,
     `Target daemon user: ${targetUser}`,
     `Install dir: ${installDir}`,
     `Provider: ${provider || "skipped for now"}`,
@@ -358,13 +357,6 @@ export function buildInstallPlanText(options: {
     `Model auth status: ${provider ? (authAvailable ? "ready" : "needs auth/config later") : "skipped for now"}`,
     `Koishi: ${koishiDescription}`,
     koishiDetail,
-    "",
-    "Planned command shape:",
-    "- `rin` → RPC TUI for the target user",
-    "- `rin --tmux <session_name>` → attach/create a hidden Rin tmux session for the target user",
-    "- `rin --tmux-list` → list Rin tmux sessions for the target user",
-    "",
-    buildInstallSafetyBoundaryText(),
   ]
     .filter(Boolean)
     .join("\n");
