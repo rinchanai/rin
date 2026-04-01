@@ -8,6 +8,19 @@ import {
 
 const SESSION_STARTING_MESSAGE = "Creating session...";
 
+function stopPendingToolTimers(target: any) {
+  const pendingTools = target?.pendingTools;
+  if (!pendingTools || typeof pendingTools.values !== "function") return;
+  for (const component of pendingTools.values()) {
+    const state = component?.rendererState;
+    if (!state?.interval) continue;
+    clearInterval(state.interval);
+    state.interval = undefined;
+    state.endedAt ??= Date.now();
+    component.invalidate?.();
+  }
+}
+
 let applied = false;
 
 export async function applyRinTuiOverrides() {
@@ -88,6 +101,7 @@ export async function applyRinTuiOverrides() {
     InteractiveMode.prototype.handleEvent =
       async function handleEventWithSessionBootState(event: any) {
         if (event?.type === "rin_status") {
+          stopPendingToolTimers(this);
           if (event.phase === "end") {
             this.stopWorkingAnimation?.();
             this.ui?.requestRender?.();
