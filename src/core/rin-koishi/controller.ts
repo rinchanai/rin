@@ -195,13 +195,20 @@ export class KoishiChatController {
     return { changed: before !== wanted, sessionId: this.currentSessionId() || undefined, sessionFile: safeString(this.session.sessionManager.getSessionFile?.() || '').trim() || undefined }
   }
   private waitForTurn(tag: string) { return new Promise<any>((resolve, reject) => { this.turnWaiters.set(tag, { resolve, reject }) }) }
+  private async ensureSessionReady() {
+    if (!this.session) throw new Error('koishi_session_not_connected')
+    const result = await this.session.ensureSessionReady()
+    this.state.piSessionFile = safeString(this.session.sessionManager.getSessionFile?.() || result?.sessionFile || this.state.piSessionFile || '').trim() || undefined
+    if (!this.session.sessionManager.getSessionName?.()) await this.session.setSessionName(this.chatKey)
+    this.saveState()
+    return result
+  }
   async runCommand(commandLine: string, replyToMessageId = '', incomingMessageId = '') {
     await this.connect()
-    if (!this.client || !this.session) throw new Error('koishi_session_not_connected')
+    if (!this.session) throw new Error('koishi_session_not_connected')
+    await this.ensureSessionReady()
     this.markProcessedMessage(incomingMessageId)
-    const response: any = await this.client.send({ type: 'run_command', commandLine })
-    if (!response || response.success !== true) throw new Error(String(response?.error || 'rin_run_command_failed'))
-    const data = response.data || {}
+    const data: any = await this.session.runCommand(commandLine)
     this.state.piSessionFile = safeString(this.session.sessionManager.getSessionFile?.() || this.state.piSessionFile || '').trim() || undefined
     if (!this.session.sessionManager.getSessionName?.()) await this.session.setSessionName(this.chatKey)
     delete this.state.processing
@@ -213,7 +220,8 @@ export class KoishiChatController {
   }
   async runTurn(input: { text: string; attachments: SavedAttachment[]; replyToMessageId?: string; incomingMessageId?: string }, mode: 'prompt' | 'interrupt_prompt' = 'prompt') {
     await this.connect()
-    if (!this.client || !this.session) throw new Error('koishi_session_not_connected')
+    if (!this.session) throw new Error('koishi_session_not_connected')
+    await this.ensureSessionReady()
     const { text, images, attachments } = await restorePromptParts({ text: input.text, attachments: input.attachments, startedAt: Date.now() })
     const tag = this.nextRequestTag()
     this.activeTag = tag
@@ -224,7 +232,8 @@ export class KoishiChatController {
     this.markProcessedMessage(input.incomingMessageId)
     const completion = this.waitForTurn(tag)
     this.startTyping()
-    await this.client.send({ type: mode, message: text, images, requestTag: tag })
+    if (mode === 'interrupt_prompt') await this.session.interruptPrompt(text, images, { requestTag: tag, source: 'koishi-bridge' })
+    else await this.session.prompt(text, { images, requestTag: tag, source: 'koishi-bridge' })
     const payload = await completion
     if (this.activeTag !== tag) return
     const replyToMessageId = safeString(this.state.processing?.replyToMessageId || input.replyToMessageId || '').trim()

@@ -103,7 +103,7 @@ export async function runCustomRpcMode(session: any, deps: { SessionManager: any
         return done(id, 'prompt')
       case 'interrupt_prompt':
         startInterruptTurnTask(String(command.requestTag || ''), async () => {
-          await session.prompt(command.message, { images: command.images, source: 'rpc' as any })
+          await session.interruptPrompt(command.message, command.images)
         })
         return done(id, 'interrupt_prompt')
       case 'steer': return run(id, type, () => session.steer(command.message, command.images))

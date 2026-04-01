@@ -181,24 +181,24 @@ export class RpcInteractiveSession {
     return () => this.listeners.delete(listener)
   }
 
-  async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[]; source?: string }) {
-    if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images)
-    if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images)
-    await this.sendOrQueue({ mode: 'prompt', message, images: options?.images, source: options?.source })
+  async prompt(message: string, options?: { streamingBehavior?: 'steer' | 'followUp'; images?: any[]; source?: string; requestTag?: string }) {
+    if (options?.streamingBehavior === 'steer') return await this.interruptPrompt(message, options.images, { source: options?.source, requestTag: options?.requestTag })
+    if (options?.streamingBehavior === 'followUp') return await this.followUp(message, options.images, { source: options?.source, requestTag: options?.requestTag })
+    await this.sendOrQueue({ mode: 'prompt', message, images: options?.images, source: options?.source, requestTag: options?.requestTag })
   }
 
-  async interruptPrompt(message: string, images?: any[]) {
-    await this.sendOrQueue({ mode: 'interrupt_prompt', message, images })
+  async interruptPrompt(message: string, images?: any[], options?: { source?: string; requestTag?: string }) {
+    await this.sendOrQueue({ mode: 'interrupt_prompt', message, images, source: options?.source, requestTag: options?.requestTag })
   }
 
-  async steer(message: string, images?: any[]) {
+  async steer(message: string, images?: any[], options?: { source?: string; requestTag?: string }) {
     this.enqueuePending('steeringMessages', message)
-    await this.sendOrQueue({ mode: 'steer', message, images })
+    await this.sendOrQueue({ mode: 'steer', message, images, source: options?.source, requestTag: options?.requestTag })
   }
 
-  async followUp(message: string, images?: any[]) {
+  async followUp(message: string, images?: any[], options?: { source?: string; requestTag?: string }) {
     this.enqueuePending('followUpMessages', message)
-    await this.sendOrQueue({ mode: 'follow_up', message, images })
+    await this.sendOrQueue({ mode: 'follow_up', message, images, source: options?.source, requestTag: options?.requestTag })
   }
 
   clearQueue() {
@@ -289,6 +289,22 @@ export class RpcInteractiveSession {
     } finally {
       this.isBashRunning = false
     }
+  }
+
+  async ensureSessionReady() {
+    await this.ensureRemoteSession()
+    return {
+      sessionFile: this.sessionFile,
+      sessionId: this.sessionId,
+      sessionName: this.sessionName,
+    }
+  }
+
+  async runCommand(commandLine: string) {
+    await this.ensureRemoteSession()
+    const data = await this.call('run_command', { commandLine })
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION)
+    return data
   }
 
   recordBashResult(_command: string, _result: any, _options?: { excludeFromContext?: boolean }) {}
@@ -419,7 +435,7 @@ export class RpcInteractiveSession {
       await this.ensureRemoteSession()
       this.isStreaming = true
       this.activeTurn = operation
-      await this.call(operation.mode, { message: operation.message, images: operation.images, source: operation.source })
+      await this.call(operation.mode, { message: operation.message, images: operation.images, source: operation.source, requestTag: operation.requestTag })
     } catch (error: any) {
       const message = String(error?.message || error || '')
       if (/rin_tui_not_connected|rin_disconnected/.test(message)) {
