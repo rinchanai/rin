@@ -19,26 +19,35 @@ export function applyRpcSessionState(
   },
   state: any,
 ) {
-  target.model = state?.model ?? null;
-  target.thinkingLevel = state?.thinkingLevel ?? target.thinkingLevel;
-  target.steeringMode = state?.steeringMode ?? target.steeringMode;
-  target.followUpMode = state?.followUpMode ?? target.followUpMode;
+  const sessionId = String(state?.sessionId || "");
+  const sessionFile =
+    typeof state?.sessionFile === "string" ? state.sessionFile : undefined;
+  const hasRemoteSession = Boolean(sessionFile || sessionId);
+
+  if (hasRemoteSession) {
+    target.model = state?.model ?? null;
+    target.thinkingLevel = state?.thinkingLevel ?? target.thinkingLevel;
+    target.steeringMode = state?.steeringMode ?? target.steeringMode;
+    target.followUpMode = state?.followUpMode ?? target.followUpMode;
+    target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
+    target.settingsManager.setSteeringMode(target.steeringMode);
+    target.settingsManager.setFollowUpMode(target.followUpMode);
+  }
+
   target.isStreaming = Boolean(state?.isStreaming);
   target.isCompacting = Boolean(state?.isCompacting);
   target.pendingMessageCount = Number(state?.pendingMessageCount || 0);
-  target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
-  target.sessionId = String(state?.sessionId || target.sessionId || "");
-  target.sessionFile =
-    typeof state?.sessionFile === "string" ? state.sessionFile : undefined;
+  target.sessionId = sessionId;
+  target.sessionFile = sessionFile;
   target.sessionName =
     typeof state?.sessionName === "string"
       ? state.sessionName
-      : target.sessionName;
-  if (target.sessionFile) target.detachedBlankSession = false;
+      : hasRemoteSession
+        ? undefined
+        : target.sessionName;
+  target.detachedBlankSession = !hasRemoteSession;
   target.state.model = target.model;
   target.state.thinkingLevel = target.thinkingLevel;
-  target.settingsManager.setSteeringMode(target.steeringMode);
-  target.settingsManager.setFollowUpMode(target.followUpMode);
 }
 
 export function applyRpcMessages(

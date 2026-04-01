@@ -17,6 +17,11 @@ const formatUtils = await import(
     path.join(rootDir, "dist", "extensions", "subagent", "format-utils.js"),
   ).href
 );
+const subagentIndex = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "extensions", "subagent", "index.js"),
+  ).href
+);
 
 test("subagent model utils normalize and sort model refs", () => {
   assert.equal(modelUtils.normalizeModelRef("@openai/gpt-5"), "openai/gpt-5");
@@ -62,4 +67,48 @@ test("subagent format utils summarize results", () => {
       })
       .includes("↑1.2k"),
   );
+});
+
+test("subagent applies model and thinking without session-level persistence", async () => {
+  const calls = [];
+  const session = {
+    modelRegistry: {
+      find(provider, modelId) {
+        if (provider === "openai" && modelId === "gpt-5") {
+          return { provider, id: modelId, reasoning: true };
+        }
+        return undefined;
+      },
+      hasConfiguredAuth() {
+        return true;
+      },
+    },
+    getAvailableThinkingLevels() {
+      return ["off", "minimal", "low", "medium"];
+    },
+    agent: {
+      setModel(model) {
+        calls.push(["agent.setModel", model.provider, model.id]);
+      },
+      setThinkingLevel(level) {
+        calls.push(["agent.setThinkingLevel", level]);
+      },
+    },
+    setModel() {
+      calls.push(["session.setModel"]);
+    },
+    setThinkingLevel() {
+      calls.push(["session.setThinkingLevel"]);
+    },
+  };
+
+  await subagentIndex.applySubagentTaskPreferences(session, {
+    model: "openai/gpt-5",
+    thinkingLevel: "xhigh",
+  });
+
+  assert.deepEqual(calls, [
+    ["agent.setModel", "openai", "gpt-5"],
+    ["agent.setThinkingLevel", "medium"],
+  ]);
 });

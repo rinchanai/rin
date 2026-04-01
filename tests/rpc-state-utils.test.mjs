@@ -18,8 +18,8 @@ const reconnect = await import(
 
 test("rpc state utils derive branch and apply state", () => {
   const target = {
-    model: null,
-    thinkingLevel: "medium",
+    model: { provider: "openai", id: "gpt-5" },
+    thinkingLevel: "high",
     steeringMode: "all",
     followUpMode: "one-at-a-time",
     isStreaming: false,
@@ -29,10 +29,25 @@ test("rpc state utils derive branch and apply state", () => {
     sessionId: "",
     sessionFile: undefined,
     sessionName: undefined,
-    detachedBlankSession: true,
+    detachedBlankSession: false,
     state: {},
     settingsManager: { setSteeringMode() {}, setFollowUpMode() {} },
   };
+
+  stateUtils.applyRpcSessionState(target, {
+    sessionId: "",
+    sessionFile: undefined,
+    thinkingLevel: "medium",
+    steeringMode: "one-at-a-time",
+    followUpMode: "all",
+    isStreaming: false,
+  });
+  assert.equal(target.detachedBlankSession, true);
+  assert.equal(target.model.id, "gpt-5");
+  assert.equal(target.thinkingLevel, "high");
+  assert.equal(target.steeringMode, "all");
+  assert.equal(target.followUpMode, "one-at-a-time");
+
   stateUtils.applyRpcSessionState(target, {
     sessionId: "s1",
     sessionFile: "/tmp/x",
