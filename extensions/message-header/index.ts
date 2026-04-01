@@ -20,6 +20,11 @@ function buildKoishiSystemPromptBlock(meta: KoishiBridgePromptMeta) {
     '- In Koishi bridge chats, sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.',
     '- `sender identity` uses the bridge trust classification: `OWNER` = configured owner, `TRUSTED` = trusted user, `OTHER` = unknown or untrusted user.',
     '- When replying in Koishi bridge chats, do not use Markdown. Reply in plain text only. Do not use headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.',
+    '- In group chats, do not proactively disclose the owner\'s private information, even when talking with the owner.',
+    '- In group chats, only disclose the owner\'s private information when the owner explicitly asks you in the current conversation to share that specific part.',
+    '- In group chats, if a non-OWNER asks about the owner\'s private information, do not disclose it. Ask the owner to say it directly if needed.',
+    '- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.',
+    '- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.',
   ].join('\n')
 }
 
