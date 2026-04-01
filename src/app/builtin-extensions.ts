@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +10,17 @@ import { fileURLToPath } from "node:url";
  * or install them manually.
  */
 function repoRootFromHere() {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const startDir = path.dirname(fileURLToPath(import.meta.url));
+  let current = startDir;
+  for (let i = 0; i < 8; i += 1) {
+    if (fs.existsSync(path.join(current, "package.json"))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return path.resolve(startDir, "..", "..");
 }
 
 export function getBuiltinExtensionPaths() {

@@ -13,7 +13,17 @@ function getAgentDir() {
 }
 
 function repoRootFromHere() {
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const startDir = path.dirname(fileURLToPath(import.meta.url));
+  let current = startDir;
+  for (let i = 0; i < 8; i += 1) {
+    if (fs.existsSync(path.join(current, "package.json"))) {
+      return current;
+    }
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return path.resolve(startDir, "..", "..");
 }
 
 function collectExistingPaths(candidates: string[]) {
