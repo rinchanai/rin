@@ -1,7 +1,8 @@
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 
-import { buildUserShell } from "../rin-lib/system.js";
+import { buildUserShell, isTmuxNoServerError } from "../rin-lib/system.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 
 import {
@@ -11,6 +12,31 @@ import {
   repoRootFromHere,
   runCommand,
 } from "./shared.js";
+
+async function runCommandCapture(
+  command: string,
+  args: string[],
+  options: any = {},
+) {
+  return await new Promise<{ code: number; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn(command, args, { ...options, stdio: "pipe" });
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (chunk) => {
+        stdout += String(chunk);
+      });
+      child.stderr?.on("data", (chunk) => {
+        stderr += String(chunk);
+      });
+      child.on("error", reject);
+      child.on("exit", (code, signal) => {
+        if (signal) return reject(new Error(`terminated:${signal}`));
+        resolve({ code: code ?? 0, stdout, stderr });
+      });
+    },
+  );
+}
 
 export async function launchDefaultRin(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
@@ -55,11 +81,16 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
       ["tmux", "-L", tmuxSocketName, "list-sessions"],
       runtimeEnv,
     );
-    const code = await runCommand(launch.command, launch.args, {
+    const result = await runCommandCapture(launch.command, launch.args, {
       env: launch.env,
       cwd: repoRoot,
     });
-    process.exit(code);
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr)
+      process.stderr.write(result.stderr);
+    process.exit(
+      isTmuxNoServerError(result.code, result.stderr) ? 0 : result.code,
+    );
   }
 
   if (parsed.tmuxSession) {
