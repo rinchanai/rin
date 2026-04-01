@@ -6,57 +6,14 @@ import crypto from 'node:crypto'
 import net from 'node:net'
 import { spawn, spawnSync } from 'node:child_process'
 
-const USER_AGENT = 'Rin web search/1.0'
+import { ensureDir, ensurePrivateDir } from '../platform/fs.js'
+import { acquireProcessLock } from '../sidecar/common.js'
+import { isPidAlive, safeString, sleep } from '../platform/process.js'
+import { dataRootForState, instanceRootForState, instanceSettingsFileForState, instanceStateFileForState, listInstanceIds, readInstanceState, readRuntimeBootstrapState, removeInstanceState, runtimeLockPathForState, runtimePipBinForState, runtimePythonBinForState, runtimeRootForState, runtimeSourceDirForState, runtimeTmpDirForState, runtimeVenvDirForState, writeInstanceState, writeRuntimeBootstrapState } from './paths.js'
+import { searchWeb as performWebSearch, safeText, type WebSearchRequest, type WebSearchResponse } from './query.js'
+
 const START_TIMEOUT_MS = 90_000
-const SEARCH_TIMEOUT_MS = 8_000
 const RIN_WEB_SEARCH_BASE_URL_ENV = 'RIN_WEB_SEARCH_BASE_URL'
-
-type WebSearchRequest = {
-  q: string
-  limit?: number
-  domains?: string[]
-  freshness?: 'day' | 'week' | 'month' | 'year'
-  language?: string
-}
-
-type WebSearchResponse = {
-  ok: boolean
-  query: string
-  results: Array<Record<string, any>>
-  engine?: string
-  attempts?: Array<Record<string, any>>
-  error?: string
-}
-
-function safeString(v: unknown): string {
-  if (v == null) return ''
-  return String(v)
-}
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true })
-}
-
-function ensurePrivateDir(dir: string) {
-  ensureDir(dir)
-  try { fs.chmodSync(dir, 0o700) } catch {}
-}
-
-function readJson<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T
-  } catch {
-    return fallback
-  }
-}
-
-function writeJsonAtomic(filePath: string, value: unknown, mode = 0o600) {
-  ensurePrivateDir(path.dirname(filePath))
-  const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), { mode })
-  fs.renameSync(tmp, filePath)
-  try { fs.chmodSync(filePath, mode) } catch {}
-}
 
 function findExecutableOnPath(name: string): string {
   const raw = safeString(process.env.PATH)
@@ -72,106 +29,6 @@ function findExecutableOnPath(name: string): string {
   return ''
 }
 
-function isPidAlive(pid: unknown): boolean {
-  const n = Number(pid || 0)
-  if (!Number.isFinite(n) || n <= 1) return false
-  try {
-    process.kill(n, 0)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function safeText(value: unknown): string {
-  if (value == null) return ''
-  return String(value).replace(/\s+/g, ' ').trim()
-}
-
-function dataRootForState(stateRoot: string): string {
-  return path.join(path.resolve(stateRoot), 'data', 'web-search')
-}
-
-function runtimeRootForState(stateRoot: string): string {
-  return path.join(dataRootForState(stateRoot), 'runtime')
-}
-
-function instancesRootForState(stateRoot: string): string {
-  return path.join(dataRootForState(stateRoot), 'instances')
-}
-
-function runtimeLockPathForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), 'install.lock')
-}
-
-function runtimeSourceDirForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), 'src')
-}
-
-function runtimeVenvDirForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), 'venv')
-}
-
-function runtimeTmpDirForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), 'tmp')
-}
-
-function runtimeBootstrapStateFileForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), 'bootstrap.json')
-}
-
-function runtimePythonBinForState(stateRoot: string): string {
-  const dir = runtimeVenvDirForState(stateRoot)
-  return process.platform === 'win32' ? path.join(dir, 'Scripts', 'python.exe') : path.join(dir, 'bin', 'python')
-}
-
-function runtimePipBinForState(stateRoot: string): string {
-  const dir = runtimeVenvDirForState(stateRoot)
-  return process.platform === 'win32' ? path.join(dir, 'Scripts', 'pip.exe') : path.join(dir, 'bin', 'pip')
-}
-
-function instanceRootForState(stateRoot: string, instanceId: string): string {
-  return path.join(instancesRootForState(stateRoot), instanceId)
-}
-
-function instanceStateFileForState(stateRoot: string, instanceId: string): string {
-  return path.join(instanceRootForState(stateRoot, instanceId), 'state.json')
-}
-
-function instanceSettingsFileForState(stateRoot: string, instanceId: string): string {
-  return path.join(instanceRootForState(stateRoot, instanceId), 'settings.yml')
-}
-
-function readRuntimeBootstrapState(stateRoot: string) {
-  return readJson<any>(runtimeBootstrapStateFileForState(stateRoot), null)
-}
-
-function writeRuntimeBootstrapState(stateRoot: string, value: any) {
-  writeJsonAtomic(runtimeBootstrapStateFileForState(stateRoot), value)
-}
-
-function readInstanceState(stateRoot: string, instanceId: string) {
-  return readJson<any>(instanceStateFileForState(stateRoot, instanceId), null)
-}
-
-function listInstanceIds(stateRoot: string) {
-  try {
-    return fs.readdirSync(instancesRootForState(stateRoot), { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort()
-  } catch {
-    return []
-  }
-}
-
-function writeInstanceState(stateRoot: string, instanceId: string, value: any) {
-  writeJsonAtomic(instanceStateFileForState(stateRoot, instanceId), value)
-}
 
 function runCommandSync(command: string, args: string[], options: any = {}) {
   const result = spawnSync(command, args, {
@@ -185,32 +42,6 @@ function runCommandSync(command: string, args: string[], options: any = {}) {
   throw new Error(`${path.basename(command)}:${detail}`)
 }
 
-async function acquireFileLock(lockPath: string, timeoutMs = 20_000) {
-  ensurePrivateDir(path.dirname(lockPath))
-  const startedAt = Date.now()
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const fd = fs.openSync(lockPath, 'wx', 0o600)
-      fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() }))
-      try { fs.closeSync(fd) } catch {}
-      return () => { try { fs.rmSync(lockPath, { force: true }) } catch {} }
-    } catch {
-      let stale = false
-      try {
-        const state = JSON.parse(fs.readFileSync(lockPath, 'utf8'))
-        if (!isPidAlive(Number(state?.pid || 0))) stale = true
-      } catch {
-        stale = true
-      }
-      if (stale) {
-        try { fs.rmSync(lockPath, { force: true }) } catch {}
-        continue
-      }
-      await sleep(100)
-    }
-  }
-  throw new Error(`web_search_lock_timeout:${lockPath}`)
-}
 
 async function getFreePort() {
   return await new Promise<number>((resolve, reject) => {
@@ -319,7 +150,9 @@ async function ensureSearxngSidecar(stateRoot: string, options: { logger?: any; 
     return { ok: true, instanceId, baseUrl: safeString(existing.baseUrl).trim(), reused: true }
   }
 
-  const release = await acquireFileLock(runtimeLockPathForState(stateRoot))
+  const release = await acquireProcessLock(runtimeLockPathForState(stateRoot)).catch((error: any) => {
+    throw new Error(String(error?.message || error || `web_search_lock_timeout:${runtimeLockPathForState(stateRoot)}`))
+  })
   let child: ReturnType<typeof spawn> | null = null
   try {
     const runtime = ensureSearxngRuntimeInstalled(stateRoot, logger)
@@ -371,7 +204,7 @@ async function ensureSearxngSidecar(stateRoot: string, options: { logger?: any; 
   } finally {
     try { release() } catch {}
     if (child && !(Number(child.pid || 0) > 1 && isPidAlive(child.pid))) {
-      try { fs.rmSync(instanceStateFileForState(stateRoot, instanceId), { force: true }) } catch {}
+      removeInstanceState(stateRoot, instanceId)
     }
   }
 }
@@ -410,111 +243,8 @@ async function cleanupOrphanSearxngSidecars(stateRoot: string, options: { logger
   return { ok: true, cleaned }
 }
 
-function normalizeSearchRequest(raw: WebSearchRequest) {
-  const q = safeText(raw?.q)
-  const limit = Math.max(1, Math.min(8, Number(raw?.limit || 5) || 5))
-  const language = safeText(raw?.language) || 'all'
-  const freshness = ['day', 'week', 'month', 'year'].includes(safeText(raw?.freshness).toLowerCase())
-    ? safeText(raw?.freshness).toLowerCase()
-    : ''
-  const domains = Array.isArray(raw?.domains)
-    ? Array.from(new Set(raw.domains.map((item: any) => safeText(item)).filter(Boolean))).slice(0, 8)
-    : []
-  return { q, limit, language, freshness, domains }
-}
-
-function buildSearchQuery(request: ReturnType<typeof normalizeSearchRequest>) {
-  const domainTerms = request.domains.map((domain) => `site:${domain}`)
-  return [request.q, ...domainTerms].filter(Boolean).join(' ')
-}
-
-function hostOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return ''
-  }
-}
-
-async function fetchJson(url: string, { method = 'GET', headers = {}, body = undefined, timeoutMs = SEARCH_TIMEOUT_MS }: any = {}) {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(new Error(`timeout:${timeoutMs}`)), Math.max(1, timeoutMs))
-  try {
-    const res = await fetch(url, { method, headers, body, signal: controller.signal })
-    const text = await res.text()
-    let json: any = null
-    try { json = text ? JSON.parse(text) : null } catch {}
-    if (!res.ok) throw new Error(`http_${res.status}:${safeText(text || res.statusText)}`)
-    return json
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 async function searchWeb({ q, limit, domains, freshness, language }: WebSearchRequest): Promise<WebSearchResponse> {
-  const request = normalizeSearchRequest({ q, limit, domains, freshness, language })
-  if (!request.q) throw new Error('web_search_query_required')
-  const baseUrl = resolveWebSearchBaseUrl()
-  if (!baseUrl) throw new Error('web_search_sidecar_unavailable')
-
-  const attempts: Array<Record<string, any>> = []
-  const preferredEngines = ['google', 'bing', 'duckduckgo']
-  let lastError = ''
-
-  for (const engine of preferredEngines) {
-    const url = new URL('/search', `${baseUrl}/`)
-    url.searchParams.set('q', buildSearchQuery(request))
-    url.searchParams.set('format', 'json')
-    url.searchParams.set('language', request.language)
-    url.searchParams.set('safesearch', '1')
-    url.searchParams.set('pageno', '1')
-    url.searchParams.set('categories', 'general')
-    url.searchParams.set('engines', engine)
-    if (request.freshness) url.searchParams.set('time_range', request.freshness)
-
-    try {
-      const data = await fetchJson(url.toString(), {
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': USER_AGENT,
-        },
-      })
-
-      const rows = Array.isArray(data?.results) ? data.results : []
-      const results = rows.slice(0, request.limit).map((item: any, index: number) => ({
-        position: index + 1,
-        title: safeText(item?.title) || '(untitled)',
-        url: safeText(item?.url),
-        domain: hostOf(safeText(item?.url)),
-        snippet: safeText(item?.content || item?.description).slice(0, 400),
-        engine: safeText(item?.engine) || engine,
-        publishedDate: safeText(item?.publishedDate || item?.published_date),
-      })).filter((item: any) => item.url)
-
-      attempts.push({ engine, ok: true, results: results.length })
-      if (results.length > 0) {
-        return {
-          ok: true,
-          query: request.q,
-          engine,
-          attempts,
-          results,
-        }
-      }
-    } catch (error: any) {
-      lastError = safeText(error?.message || error || 'web_search_failed')
-      attempts.push({ engine, ok: false, error: lastError })
-    }
-  }
-
-  return {
-    ok: false,
-    query: request.q,
-    engine: preferredEngines[preferredEngines.length - 1],
-    attempts,
-    results: [],
-    error: lastError || 'web_search_no_results',
-  }
+  return await performWebSearch(resolveWebSearchBaseUrl(), { q, limit, domains, freshness, language })
 }
 
 function getSearxngSidecarStatus(stateRoot: string) {

@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createJiti } from '@mariozechner/jiti';
+import { pathToFileURL } from 'node:url';
 
-const jiti = createJiti(import.meta.url, { interopDefault: true, moduleCache: false });
-const lib = await jiti.import('./lib.ts');
-const store = await jiti.import('./store.ts');
-const service = await jiti.import('./service.ts');
+const rootDir = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..', '..');
+const lib = await import(pathToFileURL(path.join(rootDir, 'dist', 'extensions', 'memory', 'lib.js')).href);
+const store = await import(pathToFileURL(path.join(rootDir, 'dist', 'extensions', 'memory', 'store.js')).href);
+const service = await import(pathToFileURL(path.join(rootDir, 'dist', 'extensions', 'memory', 'service.js')).href);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'rin-memory-test-'));

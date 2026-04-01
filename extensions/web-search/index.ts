@@ -1,11 +1,9 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { Type } from '@sinclair/typebox'
 import type { ExtensionAPI } from '@mariozechner/pi-coding-agent'
 import { Text } from '@mariozechner/pi-tui'
-import jiti from '@mariozechner/jiti'
 
 function trimSnippet(value: string, max = 220): string {
 	const text = String(value || '').replace(/\s+/g, ' ').trim()
@@ -54,14 +52,7 @@ function formatAgentResults(response: any): string {
 async function loadSearchWeb() {
 	const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 	const distPath = path.join(root, 'dist', 'core', 'rin-web-search', 'service.js')
-	if (fs.existsSync(distPath)) {
-		const mod = await import(pathToFileURL(distPath).href)
-		return mod.searchWeb as (params: any) => Promise<any>
-	}
-
-	const sourcePath = path.join(root, 'src', 'core', 'rin-web-search', 'service.ts')
-	const sourceLoader = jiti(import.meta.url, { interopDefault: true, moduleCache: true })
-	const mod = await sourceLoader.import(sourcePath)
+	const mod = await import(pathToFileURL(distPath).href)
 	return mod.searchWeb as (params: any) => Promise<any>
 }
 

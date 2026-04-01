@@ -3,22 +3,22 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from '@mariozechner/pi-a
 import { loadRinCodingAgent } from '../rin-lib/loader.js'
 import { getRuntimeSessionDir, resolveRuntimeProfile } from '../rin-lib/runtime.js'
 import { RinDaemonFrontendClient } from './rpc-client.js'
+import { handleRpcSessionEvent } from './events.js'
+import { loadRpcLocalExtensions } from './extensions.js'
+import { setRpcAutoCompaction, cycleRpcModel, cycleRpcThinkingLevel, setRpcFollowUpMode, setRpcModel, setRpcSteeringMode, setRpcThinkingLevel } from './model-settings.js'
+import { queueOfflineOperation, emitConnectionLost, type PendingRpcOperation } from './reconnect.js'
 import { createModelRegistry } from './rpc-model-registry.js'
 import { createSettingsManager } from './settings-manager.js'
-import { calculateContextTokens, computeAvailableThinkingLevels, estimateContextTokens, extractText, getLastAssistantText } from './session-helpers.js'
+import { computeAvailableThinkingLevels, extractText, getLastAssistantText } from './session-helpers.js'
+import { hydrateRpcSettings } from './settings-hydration.js'
+import { computeSessionStats, getContextUsage, reconcilePendingQueues } from './stats.js'
+import { applyRpcMessages, applyRpcSessionState, applyRpcSessionTree, getSessionBranch, resetRpcLocalSessionState } from './state-utils.js'
 
 type RpcExtensionBindings = {
   uiContext?: any
   commandContextActions?: any
   shutdownHandler?: () => void
   onError?: (error: any) => void
-}
-
-type PendingRpcOperation = {
-  mode: 'prompt' | 'interrupt_prompt' | 'steer' | 'follow_up'
-  message: string
-  images?: any[]
-  source?: string
 }
 
 const REFRESH_MESSAGES = { messages: true } as const
@@ -238,14 +238,7 @@ export class RpcInteractiveSession {
   }
 
   async setModel(model: any) {
-    if (this.detachedBlankSession) {
-      this.model = model
-      this.state.model = model
-      this.settingsManager.setDefaultModelAndProvider(model.provider, model.id)
-      return
-    }
-    await this.call('set_model', { provider: model.provider, modelId: model.id })
-    await this.refreshState(REFRESH_MODELS)
+    await setRpcModel(this as any, model, () => this.refreshState(REFRESH_MODELS))
   }
 
   setScopedModels(scopedModels: Array<{ model: any; thinkingLevel?: ThinkingLevel }>) {
@@ -253,53 +246,25 @@ export class RpcInteractiveSession {
   }
 
   async cycleModel(direction?: 'forward' | 'backward') {
-    if (this.detachedBlankSession) {
-      const available = this.scopedModels.length > 0
-        ? this.scopedModels.map((entry) => entry.model)
-        : this.modelRegistry.getAvailable()
-      if (available.length <= 1) return undefined
-      const step = direction === 'backward' ? -1 : 1
-      const currentIndex = Math.max(0, available.findIndex((model: any) => model?.provider === this.model?.provider && model?.id === this.model?.id))
-      const next = available[(currentIndex + step + available.length) % available.length]
-      if (!next) return undefined
-      this.model = next
-      this.state.model = next
-      this.settingsManager.setDefaultModelAndProvider(next.provider, next.id)
-      return { model: next, thinkingLevel: this.thinkingLevel }
-    }
-    const data = await this.call('cycle_model')
-    await this.refreshState(REFRESH_MODELS)
-    return data ?? undefined
+    return await cycleRpcModel(this as any, direction, () => this.modelRegistry.getAvailable(), () => this.refreshState(REFRESH_MODELS))
   }
 
   setThinkingLevel(level: ThinkingLevel) {
-    const available = this.getAvailableThinkingLevels()
-    const next = available.includes(level) ? level : available[available.length - 1]!
-    this.thinkingLevel = next
-    this.state.thinkingLevel = next
-    void this.client.send({ type: 'set_thinking_level', level: next }).catch(() => {})
+    setRpcThinkingLevel(this as any, level)
   }
 
   cycleThinkingLevel(): ThinkingLevel | undefined {
-    const levels = this.getAvailableThinkingLevels()
-    if (levels.length <= 1) return undefined
-    const next = levels[(Math.max(0, levels.indexOf(this.thinkingLevel)) + 1) % levels.length]!
-    this.setThinkingLevel(next)
-    return next
+    return cycleRpcThinkingLevel(this as any)
   }
 
   getAvailableThinkingLevels() { return computeAvailableThinkingLevels(this.model) }
 
   setSteeringMode(mode: 'all' | 'one-at-a-time') {
-    this.steeringMode = mode
-    this.settingsManager.setSteeringMode(mode)
-    void this.client.send({ type: 'set_steering_mode', mode }).catch(() => {})
+    setRpcSteeringMode(this as any, mode)
   }
 
   setFollowUpMode(mode: 'all' | 'one-at-a-time') {
-    this.followUpMode = mode
-    this.settingsManager.setFollowUpMode(mode)
-    void this.client.send({ type: 'set_follow_up_mode', mode }).catch(() => {})
+    setRpcFollowUpMode(this as any, mode)
   }
 
   async compact(customInstructions?: string) {
@@ -312,8 +277,7 @@ export class RpcInteractiveSession {
   abortBranchSummary() {}
 
   setAutoCompactionEnabled(enabled: boolean) {
-    this.autoCompactionEnabled = enabled
-    void this.client.send({ type: 'set_auto_compaction', enabled }).catch(() => {})
+    setRpcAutoCompaction(this as any, enabled)
   }
 
   async executeBash(command: string) {
@@ -387,41 +351,7 @@ export class RpcInteractiveSession {
   }
 
   getContextUsage() {
-    const contextWindow = Number(this.model?.contextWindow || 0)
-    if (contextWindow <= 0) return undefined
-
-    const branch = this.getBranch()
-    let latestCompactionIndex = -1
-    for (let i = branch.length - 1; i >= 0; i--) {
-      if (branch[i]?.type === 'compaction') {
-        latestCompactionIndex = i
-        break
-      }
-    }
-
-    if (latestCompactionIndex >= 0) {
-      let hasPostCompactionUsage = false
-      for (let i = branch.length - 1; i > latestCompactionIndex; i--) {
-        const entry = branch[i]
-        const message: any = entry?.type === 'message' ? entry.message : null
-        const usage = message?.role === 'assistant' ? message?.usage : undefined
-        const stopReason = String(message?.stopReason || '')
-        if (usage && stopReason !== 'aborted' && stopReason !== 'error') {
-          if (calculateContextTokens(usage) > 0) hasPostCompactionUsage = true
-          break
-        }
-      }
-      if (!hasPostCompactionUsage) {
-        return { tokens: null, contextWindow, percent: null }
-      }
-    }
-
-    const tokens = estimateContextTokens(this.messages)
-    return {
-      tokens,
-      contextWindow,
-      percent: (tokens / contextWindow) * 100,
-    }
+    return getContextUsage(this.model, this.messages, this.getBranch())
   }
 
   async exportToHtml(outputPath?: string) {
@@ -462,90 +392,12 @@ export class RpcInteractiveSession {
   }
 
   private async loadLocalExtensions(forceReload: boolean) {
-    const codingAgentModule: any = await loadRinCodingAgent()
-    const { createEventBus, discoverAndLoadExtensions, ExtensionRunner } = codingAgentModule
-
-    const eventBus = createEventBus()
-    const result = await discoverAndLoadExtensions(
-      this.additionalExtensionPaths,
-      RUNTIME_PROFILE.cwd,
-      RUNTIME_PROFILE.agentDir,
-      eventBus,
-    )
-
-    const runner = new ExtensionRunner(
-      result.extensions,
-      result.runtime,
-      RUNTIME_PROFILE.cwd,
-      this.sessionManager,
-      this.modelRegistry,
-    )
-
-    runner.bindCore(
-      {
-        sendMessage: (message: string, options?: { images?: any[] }) => {
-          void this.prompt(message, { images: options?.images, source: 'extension' as any }).catch(() => {})
-        },
-        sendUserMessage: (content: any) => {
-          const text = extractText(content)
-          if (!text) return
-          void this.prompt(text, { source: 'extension' as any }).catch(() => {})
-        },
-        appendEntry: () => {},
-        setSessionName: (name: string) => { void this.setSessionName(name).catch(() => {}) },
-        getSessionName: () => this.sessionName,
-        setLabel: (entryId: string, label: string | undefined) => { void this.setEntryLabel(entryId, label).catch(() => {}) },
-        getActiveTools: () => [],
-        getAllTools: () => [],
-        setActiveTools: () => {},
-        refreshTools: () => {},
-        getCommands: () => runner.getRegisteredCommands(),
-        setModel: async (model: any) => { await this.setModel(model) },
-        getThinkingLevel: () => this.thinkingLevel,
-        setThinkingLevel: (level: ThinkingLevel) => { this.setThinkingLevel(level) },
-      },
-      {
-        getModel: () => this.model,
-        isIdle: () => !this.isStreaming,
-        getSignal: () => undefined,
-        abort: () => { void this.abort().catch(() => {}) },
-        hasPendingMessages: () => this.pendingMessageCount > 0,
-        shutdown: () => this.extensionBindings.shutdownHandler?.(),
-        getContextUsage: () => this.getContextUsage(),
-        compact: (options?: { customInstructions?: string }) => { void this.compact(options?.customInstructions).catch(() => {}) },
-        getSystemPrompt: () => this.systemPrompt,
-      },
-    )
-
-    runner.setUIContext(this.extensionBindings.uiContext)
-    runner.bindCommandContext(this.extensionBindings.commandContextActions)
-    if (this.extensionBindings.onError) runner.onError(this.extensionBindings.onError)
-
-    this.extensionRunner = runner
-
-    if (forceReload || result.extensions.length > 0) {
-      await runner.emit({ type: 'session_start' })
-    }
+    await loadRpcLocalExtensions(this as any, forceReload, RUNTIME_PROFILE)
   }
 
   private handleRpcEvent(payload: any) {
-    if (!payload || typeof payload !== 'object') return
-    if (payload.type === 'agent_start') this.isStreaming = true
-    if (payload.type === 'compaction_start') this.isCompacting = true
-    if (payload.type === 'compaction_end') {
-      this.isCompacting = false
-      void this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    }
-    if (payload.type === 'auto_retry_start') this.retryAttempt = Number(payload.attempt || 1)
-    if (payload.type === 'auto_retry_end') this.retryAttempt = 0
-    if (payload.type === 'agent_end') {
-      this.isStreaming = false
-      this.activeTurn = null
-      this.emitEvent({ type: 'rin_status', phase: 'end' } as any)
-      void this.refreshState(REFRESH_MESSAGES_AND_SESSION)
-    }
-    if (payload.type === 'extension_ui_request') return
-    this.emitEvent(payload as AgentEvent)
+    if (payload?.type === 'extension_ui_request') return
+    void handleRpcSessionEvent(this as any, payload, () => this.refreshState(REFRESH_MESSAGES_AND_SESSION))
   }
 
   private emitEvent(event: AgentEvent) {
@@ -555,9 +407,7 @@ export class RpcInteractiveSession {
   }
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
-    this.queuedOfflineOps.push(operation)
-    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Waiting daemon...', statusText: `Queued message while daemon is offline (${this.queuedOfflineOps.length} queued)` } as any)
-    this.ensureReconnectLoop()
+    queueOfflineOperation(this as any, operation)
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
@@ -581,9 +431,7 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
-    if (this.disposed) return
-    this.emitEvent({ type: 'rin_status', phase: 'update', message: 'Waiting daemon...', statusText: this.activeTurn ? 'Connection lost while processing. Will resume after daemon returns.' : 'Daemon disconnected. New messages will be queued until it returns.' } as any)
-    this.ensureReconnectLoop()
+    emitConnectionLost(this as any)
   }
 
   private ensureReconnectLoop() {
@@ -634,53 +482,11 @@ export class RpcInteractiveSession {
   }
 
   private async hydrateSettingsManager() {
-    try {
-      const codingAgentModule: any = await loadRinCodingAgent()
-      const SettingsManager = codingAgentModule?.SettingsManager
-      if (!SettingsManager?.create) return
-      const settings = SettingsManager.create(RUNTIME_PROFILE.cwd, RUNTIME_PROFILE.agentDir)
-      this.settingsManager.setShowHardwareCursor(Boolean(settings.getShowHardwareCursor?.()))
-      this.settingsManager.setClearOnShrink(Boolean(settings.getClearOnShrink?.()))
-      this.settingsManager.setEditorPaddingX(Number(settings.getEditorPaddingX?.() ?? 0))
-      this.settingsManager.setAutocompleteMaxVisible(Number(settings.getAutocompleteMaxVisible?.() ?? 8))
-      this.settingsManager.setHideThinkingBlock(Boolean(settings.getHideThinkingBlock?.()))
-      this.settingsManager.setTheme(String(settings.getTheme?.() || 'dark'))
-      this.settingsManager.setEnableSkillCommands(Boolean(settings.getEnableSkillCommands?.()))
-      this.settingsManager.setShowImages(Boolean(settings.getShowImages?.()))
-      this.settingsManager.setImageAutoResize(Boolean(settings.getImageAutoResize?.()))
-      this.settingsManager.setBlockImages(Boolean(settings.getBlockImages?.()))
-      this.settingsManager.setTransport(String(settings.getTransport?.() || 'stdio'))
-      this.settingsManager.setCollapseChangelog(Boolean(settings.getCollapseChangelog?.()))
-      this.settingsManager.setDoubleEscapeAction(String(settings.getDoubleEscapeAction?.() || 'none'))
-      this.settingsManager.setTreeFilterMode(String(settings.getTreeFilterMode?.() || 'all'))
-      this.settingsManager.setQuietStartup(Boolean(settings.getQuietStartup?.()))
-      this.settingsManager.setLastChangelogVersion(settings.getLastChangelogVersion?.())
-      this.settingsManager.setEnabledModels(settings.getEnabledModels?.())
-      this.settingsManager.setSteeringMode(settings.getSteeringMode?.() || 'all')
-      this.settingsManager.setFollowUpMode(settings.getFollowUpMode?.() || 'one-at-a-time')
-      const provider = String(settings.getDefaultProvider?.() || '')
-      const modelId = String(settings.getDefaultModel?.() || '')
-      if (provider && modelId) this.settingsManager.setDefaultModelAndProvider(provider, modelId)
-    } catch {}
+    await hydrateRpcSettings(this.settingsManager, RUNTIME_PROFILE)
   }
 
   private resetLocalSessionState() {
-    this.isStreaming = false
-    this.isCompacting = false
-    this.isBashRunning = false
-    this.retryAttempt = 0
-    this.messages = []
-    this.entries = []
-    this.tree = []
-    this.leafId = null
-    this.entryById = new Map()
-    this.labelsById = new Map()
-    this.sessionFile = undefined
-    this.sessionId = ''
-    this.sessionName = undefined
-    this.lastSessionStats = undefined
-    this.clearQueue()
-    this.state = { ...this.state, messages: this.messages, model: this.model, thinkingLevel: this.thinkingLevel }
+    resetRpcLocalSessionState(this as any)
   }
 
   private async ensureRemoteSession() {
@@ -720,28 +526,12 @@ export class RpcInteractiveSession {
   }
 
   private applyState(state: any) {
-    this.model = state?.model ?? null
-    this.thinkingLevel = state?.thinkingLevel ?? this.thinkingLevel
-    this.steeringMode = state?.steeringMode ?? this.steeringMode
-    this.followUpMode = state?.followUpMode ?? this.followUpMode
-    this.isStreaming = Boolean(state?.isStreaming)
-    this.isCompacting = Boolean(state?.isCompacting)
-    this.pendingMessageCount = Number(state?.pendingMessageCount || 0)
-    this.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled)
-    this.sessionId = String(state?.sessionId || this.sessionId || '')
-    this.sessionFile = typeof state?.sessionFile === 'string' ? state.sessionFile : undefined
-    this.sessionName = typeof state?.sessionName === 'string' ? state.sessionName : this.sessionName
-    if (this.sessionFile) this.detachedBlankSession = false
-    this.state.model = this.model
-    this.state.thinkingLevel = this.thinkingLevel
-    this.settingsManager.setSteeringMode(this.steeringMode)
-    this.settingsManager.setFollowUpMode(this.followUpMode)
+    applyRpcSessionState(this as any, state)
   }
 
   private async refreshMessages() {
     const data = await this.call('get_messages')
-    this.messages = Array.isArray(data?.messages) ? data.messages : []
-    this.state.messages = this.messages
+    applyRpcMessages(this as any, data)
   }
 
   private async refreshSessionData() {
@@ -749,92 +539,19 @@ export class RpcInteractiveSession {
       this.call('get_session_entries'),
       this.call('get_session_tree'),
     ])
-    this.entries = Array.isArray(entriesData?.entries) ? entriesData.entries : []
-    this.tree = Array.isArray(treeData?.tree) ? treeData.tree : []
-    this.leafId = typeof treeData?.leafId === 'string' ? treeData.leafId : null
-    this.entryById = new Map(this.entries.map((entry: any) => [String(entry.id), entry]))
-    this.labelsById = new Map()
-    this.visitTree(this.tree, (node) => {
-      if (node?.entry?.id) this.labelsById.set(String(node.entry.id), node.label)
-    })
-  }
-
-  private visitTree(nodes: any[], visit: (node: any) => void) {
-    for (const node of nodes) {
-      visit(node)
-      if (Array.isArray(node?.children)) this.visitTree(node.children, visit)
-    }
+    applyRpcSessionTree(this as any, entriesData, treeData)
   }
 
   private getBranch(fromId?: string) {
-    const targetId = fromId ?? this.leafId
-    if (!targetId) return []
-    const branch: any[] = []
-    let current = this.entryById.get(targetId)
-    while (current) {
-      branch.push(current)
-      if (!current.parentId) break
-      current = this.entryById.get(current.parentId)
-    }
-    return branch.reverse()
+    return getSessionBranch(this.entryById, this.leafId, fromId)
   }
 
   private computeSessionStats() {
-    let userMessages = 0
-    let assistantMessages = 0
-    let toolCalls = 0
-    let toolResults = 0
-    let input = 0
-    let output = 0
-    let cacheRead = 0
-    let cacheWrite = 0
-    let cost = 0
-
-    for (const entry of this.entries) {
-      if (entry?.type !== 'message' || !entry.message) continue
-      const message = entry.message
-      if (message.role === 'user') userMessages += 1
-      if (message.role === 'assistant') {
-        assistantMessages += 1
-        const usage = (message as any).usage || {}
-        input += Number(usage.input || 0)
-        output += Number(usage.output || 0)
-        cacheRead += Number(usage.cacheRead || 0)
-        cacheWrite += Number(usage.cacheWrite || 0)
-        cost += Number(usage.cost?.total || 0)
-        for (const part of Array.isArray((message as any).content) ? (message as any).content : []) {
-          if (part?.type === 'toolCall') toolCalls += 1
-        }
-      }
-      if (message.role === 'toolResult') toolResults += 1
-    }
-
-    const contextWindow = Number(this.model?.contextWindow || 0)
-    const totalTokens = input + output + cacheRead + cacheWrite
-    return {
-      sessionFile: this.sessionFile,
-      sessionId: this.sessionId,
-      userMessages,
-      assistantMessages,
-      toolCalls,
-      toolResults,
-      totalMessages: userMessages + assistantMessages + toolResults,
-      tokens: { input, output, cacheRead, cacheWrite, total: totalTokens },
-      cost,
-      contextUsage: this.getContextUsage(),
-    }
+    return computeSessionStats(this.model, this.sessionFile, this.sessionId, this.entries, this.getContextUsage())
   }
 
   private reconcilePendingQueues(targetCount: number) {
-    let total = this.steeringMessages.length + this.followUpMessages.length
-    while (total > targetCount && this.steeringMessages.length > 0) {
-      this.steeringMessages.shift()
-      total -= 1
-    }
-    while (total > targetCount && this.followUpMessages.length > 0) {
-      this.followUpMessages.shift()
-      total -= 1
-    }
+    reconcilePendingQueues(this.steeringMessages, this.followUpMessages, targetCount)
   }
 
   private syncPendingCount() {

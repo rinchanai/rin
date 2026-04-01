@@ -15,17 +15,17 @@ function repoRootFromHere() {
 export function getBuiltinExtensionPaths() {
   const root = repoRootFromHere()
   return [
-    path.join(root, 'extensions', 'discover-attention-resources', 'index.ts'),
-    path.join(root, 'extensions', 'web-search', 'index.ts'),
-    path.join(root, 'extensions', 'memory', 'index.ts'),
-    path.join(root, 'extensions', 'reset-system-prompt', 'index.ts'),
-    path.join(root, 'extensions', 'message-header', 'index.ts'),
-    path.join(root, 'extensions', 'rin-project-docs', 'index.ts'),
-    path.join(root, 'extensions', 'freeze-session-runtime', 'index.ts'),
-    path.join(root, 'extensions', 'tui-input-compat', 'index.ts'),
-    path.join(root, 'extensions', 'subagent', 'index.ts'),
-    path.join(root, 'extensions', 'cron', 'index.ts'),
-    path.join(root, 'extensions', 'koishi-send-message', 'index.ts'),
-    path.join(root, 'extensions', 'koishi-get-message', 'index.ts'),
+    path.join(root, 'dist', 'extensions', 'discover-attention-resources', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'web-search', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'memory', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'reset-system-prompt', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'message-header', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'rin-project-docs', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'freeze-session-runtime', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'tui-input-compat', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'subagent', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'cron', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'koishi-send-message', 'index.js'),
+    path.join(root, 'dist', 'extensions', 'koishi-get-message', 'index.js'),
   ]
 }
