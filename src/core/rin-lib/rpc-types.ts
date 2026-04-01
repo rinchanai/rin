@@ -1,6 +1,7 @@
 export type RinRpcCommandType =
   | "prompt"
   | "interrupt_prompt"
+  | "resume_interrupted_turn"
   | "steer"
   | "follow_up"
   | "abort"

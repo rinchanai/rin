@@ -275,6 +275,17 @@ export class RpcInteractiveSession {
     });
   }
 
+  async resumeInterruptedTurn(options?: {
+    source?: string;
+    requestTag?: string;
+  }) {
+    await this.ensureRemoteSession();
+    await this.call("resume_interrupted_turn", {
+      source: options?.source,
+      requestTag: options?.requestTag,
+    });
+  }
+
   async steer(
     message: string,
     images?: any[],
@@ -674,10 +685,7 @@ export class RpcInteractiveSession {
         await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
         if (this.activeTurn && !this.restoreResumeSent) {
           this.restoreResumeSent = true;
-          await this.call("interrupt_prompt", {
-            message:
-              "Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.",
-          });
+          await this.resumeInterruptedTurn({ source: "rpc-reconnect" });
         }
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];

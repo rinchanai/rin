@@ -1,5 +1,6 @@
 import { parseJsonl } from "../rin-lib/common.js";
 import { fail, ok } from "../rin-lib/rpc.js";
+import { RESUME_INTERRUPTED_TURN_TEXT } from "../rin-lib/resume.js";
 import {
   getOAuthState,
   getSessionState,
@@ -183,6 +184,24 @@ export async function runCustomRpcMode(
           });
         });
         return done(id, "interrupt_prompt");
+      case "resume_interrupted_turn":
+        startInterruptTurnTask(String(command.requestTag || ""), async () => {
+          await session.sendCustomMessage(
+            {
+              customType: "rin_resume_interrupted_turn",
+              content: [{ type: "text", text: RESUME_INTERRUPTED_TURN_TEXT }],
+              display: false,
+              details: {
+                source:
+                  typeof command.source === "string" && command.source
+                    ? command.source
+                    : "rpc",
+              },
+            },
+            { triggerTurn: true },
+          );
+        });
+        return done(id, "resume_interrupted_turn");
       case "steer":
         return run(id, type, () =>
           session.steer(command.message, command.images),
