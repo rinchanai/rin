@@ -3,6 +3,7 @@ export type PendingRpcOperation = {
   message: string
   images?: any[]
   source?: string
+  requestTag?: string
 }
 
 export function queueOfflineOperation(target: {
