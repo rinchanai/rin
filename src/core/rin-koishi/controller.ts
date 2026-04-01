@@ -407,15 +407,47 @@ export class KoishiChatController {
       .find((message: any) => message?.role === "user");
     const lastUserText = extractTextFromContent(currentLastUser?.content);
     const pending = this.state.processing;
-    const recovered =
+    const shouldResumeInternally =
       safeString(lastUserText).trim() ===
-      safeString(buildPromptText(pending.text, pending.attachments)).trim()
-        ? "Please continue answering the previous user message. Your previous response was interrupted by a daemon restart. Continue directly without restarting from the beginning unless necessary."
-        : pending.text;
+      safeString(buildPromptText(pending.text, pending.attachments)).trim();
     this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
+    if (shouldResumeInternally) {
+      const tag = this.nextRequestTag();
+      this.activeTag = tag;
+      const completion = this.waitForTurn(tag);
+      this.startTyping();
+      await this.session.resumeInterruptedTurn({
+        source: "koishi-bridge",
+        requestTag: tag,
+      });
+      const payload = await completion;
+      if (this.activeTag !== tag) return;
+      this.state.piSessionFile =
+        safeString(
+          payload?.sessionFile ||
+            this.session.sessionManager.getSessionFile?.() ||
+            this.state.piSessionFile ||
+            "",
+        ).trim() || undefined;
+      delete this.state.processing;
+      this.saveState();
+      await Promise.all(this.pendingOutboundTasks.splice(0));
+      const finalText = safeString(this.latestAssistantText || "").trim();
+      if (finalText)
+        await sendText(
+          this.app,
+          this.chatKey,
+          finalText,
+          this.h,
+          safeString(pending.replyToMessageId || "").trim(),
+        );
+      for (const image of this.pendingOutboundImages.splice(0))
+        await sendImageFile(this.app, this.chatKey, image.path, this.h);
+      return;
+    }
     await this.runTurn(
       {
-        text: recovered,
+        text: pending.text,
         attachments: pending.attachments,
         replyToMessageId: pending.replyToMessageId,
       },

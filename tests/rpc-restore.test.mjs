@@ -33,6 +33,9 @@ test("rpc restore resumes once and avoids full model refresh churn", async () =>
       calls.push({ type, payload });
       return {};
     },
+    resumeInterruptedTurn: async (options) => {
+      calls.push({ type: "resume_interrupted_turn", payload: options });
+    },
     refreshState: async (flags) => {
       refreshes.push(flags);
       await refreshGate;
@@ -59,7 +62,7 @@ test("rpc restore resumes once and avoids full model refresh churn", async () =>
     1,
   );
   assert.equal(
-    calls.filter((item) => item.type === "interrupt_prompt").length,
+    calls.filter((item) => item.type === "resume_interrupted_turn").length,
     1,
   );
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
