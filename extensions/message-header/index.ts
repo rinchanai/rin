@@ -1,6 +1,8 @@
+import os from "node:os";
+
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-type KoishiBridgePromptMeta = {
+type TurnPromptMeta = {
   source?: string;
   sentAt?: number;
   chatKey?: string;
@@ -9,11 +11,16 @@ type KoishiBridgePromptMeta = {
   nickname?: string;
   identity?: string;
   replyToMessageId?: string;
+  invokingSystemUser?: string;
 };
 
-const KOISHI_BRIDGE_PROMPT_META_PREFIX = "[[rin-koishi-bridge-meta:";
+type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 
-function buildKoishiSystemPromptBlock(meta: KoishiBridgePromptMeta) {
+const KOISHI_BRIDGE_PROMPT_META_PREFIX = "[[rin-koishi-bridge-meta:";
+const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
+const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
+
+function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
   return [
     `- The current Koishi chatKey is: ${safeString(meta.chatKey).trim() || "unknown"}`,
     `- The current chat name is: ${safeString(meta.chatName).trim() || "unknown"}`,
@@ -25,6 +32,20 @@ function buildKoishiSystemPromptBlock(meta: KoishiBridgePromptMeta) {
     "- In group chats, if a non-OWNER asks about the owner's private information, do not disclose it. Ask the owner to say it directly if needed.",
     "- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.",
     "- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
+  ].join("\n");
+}
+
+function buildCrossUserSystemPromptBlock(
+  meta: TurnPromptMeta,
+  agentSystemUser: string,
+) {
+  const invokingSystemUser = safeString(meta.invokingSystemUser).trim();
+  if (!invokingSystemUser || invokingSystemUser === agentSystemUser) return "";
+  return [
+    `- The agent currently exists and executes as the local system user: ${agentSystemUser}`,
+    `- The human user is currently using the machine as the system user: ${invokingSystemUser}`,
+    "- These two system users are different. The user's shell environment, home directory, file ownership, permissions, services, and available files may differ from the agent's local account.",
+    "- When reasoning about paths, configs, permissions, process ownership, or side effects, explicitly distinguish the invoking user's environment from the agent's own runtime environment.",
   ].join("\n");
 }
 
@@ -52,32 +73,108 @@ function formatTimestamp(value: number) {
   return `${year}-${month}-${day} ${hour}:${minute}:${second} ${sign}${offsetHours}:${offsetRemainder}`;
 }
 
-function decodeKoishiBridgeMeta(text: string) {
+function encodePromptMeta(prefix: string, meta: TurnPromptMeta, body: string) {
+  const encoded = Buffer.from(JSON.stringify(meta), "utf8").toString("base64");
+  return `${prefix}${encoded}]]\n${body}`;
+}
+
+function tryDecodePromptMeta(text: string, prefix: string) {
   const input = safeString(text);
-  if (!input.startsWith(KOISHI_BRIDGE_PROMPT_META_PREFIX))
-    return { meta: null as KoishiBridgePromptMeta | null, body: input };
+  if (!input.startsWith(prefix)) {
+    return {
+      found: false,
+      meta: null as TurnPromptMeta | null,
+      body: input,
+    };
+  }
   const end = input.indexOf("]]");
-  if (end < 0)
-    return { meta: null as KoishiBridgePromptMeta | null, body: input };
-  const encoded = input
-    .slice(KOISHI_BRIDGE_PROMPT_META_PREFIX.length, end)
-    .trim();
-  if (!encoded)
-    return { meta: null as KoishiBridgePromptMeta | null, body: input };
+  if (end < 0) {
+    return {
+      found: false,
+      meta: null as TurnPromptMeta | null,
+      body: input,
+    };
+  }
+  const encoded = input.slice(prefix.length, end).trim();
+  if (!encoded) {
+    return {
+      found: false,
+      meta: null as TurnPromptMeta | null,
+      body: input,
+    };
+  }
   try {
     const meta = JSON.parse(
       Buffer.from(encoded, "base64").toString("utf8"),
-    ) as KoishiBridgePromptMeta;
+    ) as TurnPromptMeta;
     const body = input.slice(end + 2).replace(/^\s*\n/, "");
-    return { meta, body };
+    return { found: true, meta, body };
   } catch {
-    return { meta: null as KoishiBridgePromptMeta | null, body: input };
+    return {
+      found: false,
+      meta: null as TurnPromptMeta | null,
+      body: input,
+    };
   }
+}
+
+function decodePromptMeta(text: string) {
+  let body = safeString(text);
+  let found = false;
+  const mergedMeta: TurnPromptMeta = {};
+
+  while (true) {
+    const runtimeMeta = tryDecodePromptMeta(
+      body,
+      RIN_RUNTIME_PROMPT_META_PREFIX,
+    );
+    if (runtimeMeta.found) {
+      Object.assign(mergedMeta, runtimeMeta.meta || {});
+      body = runtimeMeta.body;
+      found = true;
+      continue;
+    }
+
+    const koishiMeta = tryDecodePromptMeta(
+      body,
+      KOISHI_BRIDGE_PROMPT_META_PREFIX,
+    );
+    if (koishiMeta.found) {
+      Object.assign(mergedMeta, koishiMeta.meta || {});
+      body = koishiMeta.body;
+      found = true;
+      continue;
+    }
+
+    break;
+  }
+
+  return {
+    meta: found ? mergedMeta : null,
+    body,
+  };
+}
+
+function getRuntimeRole(): RuntimeRole {
+  const argv = process.argv.slice(1);
+  if (argv.includes("--rpc")) return "rpc-frontend";
+  if (argv.includes("--std")) return "std-tui";
+  return "agent-runtime";
+}
+
+function getCrossUserPromptMeta(): TurnPromptMeta | null {
+  const invokingSystemUser = safeString(
+    process.env[INVOKING_SYSTEM_USER_ENV],
+  ).trim();
+  const agentSystemUser = safeString(os.userInfo().username).trim();
+  if (!invokingSystemUser || !agentSystemUser) return null;
+  if (invokingSystemUser === agentSystemUser) return null;
+  return { invokingSystemUser };
 }
 
 function buildHeader(
   body: string,
-  meta: KoishiBridgePromptMeta | null,
+  meta: TurnPromptMeta | null,
   fallbackTimestamp: number,
 ) {
   const lines = [
@@ -100,34 +197,68 @@ function buildHeader(
         `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
       );
   }
+  if (safeString(meta?.invokingSystemUser).trim()) {
+    lines.push(
+      `invoking system user: ${safeString(meta?.invokingSystemUser).trim()}`,
+    );
+    lines.push(
+      `agent system user: ${safeString(os.userInfo().username).trim()}`,
+    );
+  }
   return `${lines.join("\n")}\n---\n${body}`;
 }
 
 export default function messageHeaderExtension(pi: ExtensionAPI) {
   const pendingContexts: Array<{
-    meta: KoishiBridgePromptMeta | null;
+    meta: TurnPromptMeta | null;
     body: string;
     sentAt: number;
   }> = [];
+  const runtimeRole = getRuntimeRole();
 
   pi.on("input", async (event) => {
     if (event.source === "extension") return { action: "continue" };
 
-    const originalText = safeString(event.text);
-    const { meta, body } = decodeKoishiBridgeMeta(originalText);
+    const input = safeString(event.text);
+    const decoded = decodePromptMeta(input);
+    const crossUserMeta = getCrossUserPromptMeta();
+
+    if (runtimeRole === "rpc-frontend") {
+      if (decoded.meta) return { action: "continue" };
+      if (!crossUserMeta) return { action: "continue" };
+      return {
+        action: "transform",
+        text: encodePromptMeta(
+          RIN_RUNTIME_PROMPT_META_PREFIX,
+          crossUserMeta,
+          input,
+        ),
+      };
+    }
+
+    const mergedMeta = {
+      ...(decoded.meta || {}),
+      ...(runtimeRole === "std-tui" ? crossUserMeta || {} : {}),
+    };
+    const hasMeta = Object.keys(mergedMeta).length > 0;
     pendingContexts.push({
-      meta: meta?.source === "koishi-bridge" ? meta : null,
-      body,
-      sentAt: Number(meta?.sentAt) || Date.now(),
+      meta: hasMeta ? mergedMeta : null,
+      body: decoded.body,
+      sentAt: Number(decoded.meta?.sentAt) || Date.now(),
     });
+
+    if (decoded.meta) {
+      return { action: "transform", text: decoded.body };
+    }
     return { action: "continue" };
   });
 
   pi.on("before_agent_start", async (event) => {
+    const fallback = decodePromptMeta(safeString(event.prompt));
     const current = pendingContexts.shift() || {
-      meta: null,
-      body: safeString(event.prompt),
-      sentAt: Date.now(),
+      meta: fallback.meta,
+      body: fallback.body,
+      sentAt: Number(fallback.meta?.sentAt) || Date.now(),
     };
     const result: {
       systemPrompt?: string;
@@ -140,11 +271,24 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
       },
     };
 
-    if (current.meta?.source === "koishi-bridge") {
-      const block = buildKoishiSystemPromptBlock(current.meta);
-      if (!safeString(event.systemPrompt).includes(block)) {
+    const blocks = [
+      current.meta?.source === "koishi-bridge"
+        ? buildKoishiSystemPromptBlock(current.meta)
+        : "",
+      buildCrossUserSystemPromptBlock(
+        current.meta || {},
+        safeString(os.userInfo().username).trim() || "unknown",
+      ),
+    ].filter(Boolean);
+
+    if (blocks.length > 0) {
+      const currentPrompt = safeString(event.systemPrompt).trimEnd();
+      const missingBlocks = blocks.filter(
+        (block) => !currentPrompt.includes(block),
+      );
+      if (missingBlocks.length > 0) {
         result.systemPrompt =
-          `${safeString(event.systemPrompt).trimEnd()}\n\n${block}`.trimEnd();
+          `${currentPrompt}\n\n${missingBlocks.join("\n\n")}`.trimEnd();
       }
     }
 
