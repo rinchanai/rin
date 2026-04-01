@@ -305,6 +305,27 @@ export async function promptKoishiSetup(prompt: PromptApi) {
   return { koishiDescription, koishiDetail, koishiConfig };
 }
 
+export function buildInstallSafetyBoundaryText() {
+  return [
+    "Rin safety boundary:",
+    "- Rin always runs in YOLO mode.",
+    "- There is no sandbox for shell/file actions.",
+    "- Rin acts with the full user-level permissions of the selected system account.",
+    "- It may read files, modify files, run commands, and access network resources available to that account.",
+    "- Prompts, tool outputs, file contents, memory context, and search results may be sent to the active model/provider, so sensitive data may be exposed.",
+    "",
+    "Possible extra token overhead beyond your visible chat turns:",
+    "- prompt-resident memory blocks injected into normal turns",
+    "- the first-run /init onboarding conversation",
+    "- memory extraction during session shutdown or `/new` handoff",
+    "- episode synthesis during session shutdown or `/new` handoff",
+    "- context compaction / summarization when the session grows large",
+    "- subagent runs when the assistant chooses or is asked to delegate work",
+    "- scheduled task / Koishi-triggered agent runs that create their own turns",
+    "- web-search result text added into the model context when search is used",
+  ].join("\n");
+}
+
 export function buildInstallPlanText(options: {
   currentUser: string;
   targetUser: string;
@@ -340,16 +361,31 @@ export function buildInstallPlanText(options: {
     "",
     "Planned command shape:",
     "- `rin` → RPC TUI for the target user",
-    "- `rin --std` → std TUI for the target user",
     "- `rin --tmux <session_name>` → attach/create a hidden Rin tmux session for the target user",
     "- `rin --tmux-list` → list Rin tmux sessions for the target user",
     "",
-    "Safety reminder:",
-    "- This agent runs with the full permissions of its system user account.",
-    "- Treat it like a shell-capable operator on that account and use it carefully.",
+    buildInstallSafetyBoundaryText(),
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+export function buildPostInstallInitExitText(options: {
+  currentUser: string;
+  targetUser: string;
+}) {
+  const userSuffix =
+    options.currentUser === options.targetUser
+      ? ""
+      : ` -u ${options.targetUser}`;
+  return [
+    "Initialization TUI exited.",
+    "",
+    "Next time:",
+    `- open Rin: rin${userSuffix}`,
+    `- check daemon state if needed: rin doctor${userSuffix}`,
+    "- restart onboarding from inside Rin with `/init`",
+  ].join("\n");
 }
 
 export function buildFinalRequirements(options: {

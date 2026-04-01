@@ -2,7 +2,7 @@
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
@@ -36,11 +36,15 @@ import {
 import {
   buildFinalRequirements,
   buildInstallPlanText,
+  buildInstallSafetyBoundaryText,
+  buildPostInstallInitExitText,
   describeInstallDirState,
   promptKoishiSetup,
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
+import { buildUserShell } from "../rin-lib/system.js";
+import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 import {
   reconcileInstallerManifest,
   persistInstallerOutputs,
@@ -54,6 +58,17 @@ import {
   waitForSocket,
 } from "./service.js";
 import { startUpdater } from "./updater.js";
+
+function runCommand(command: string, args: string[], options: any = {}) {
+  return new Promise<number>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: "inherit", ...options });
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (signal) return reject(new Error(`terminated:${signal}`));
+      resolve(code ?? 0);
+    });
+  });
+}
 
 function listSystemUsers() {
   const users: Array<{
@@ -433,6 +448,49 @@ export async function finalizeInstallPlan(options: FinalizeInstallOptions) {
   });
 }
 
+async function markInstallerOnboardingPending(installDir: string) {
+  const onboardingModule = await import(
+    pathToFileURL(
+      path.join(
+        repoRootFromHere(),
+        "dist",
+        "extensions",
+        "memory",
+        "onboarding.js",
+      ),
+    ).href
+  );
+  await onboardingModule.markOnboardingPrompted(
+    () => installDir,
+    "auto:installer",
+  );
+}
+
+async function launchInstallerInitTui(options: {
+  currentUser: string;
+  targetUser: string;
+  installDir: string;
+}) {
+  const runtimeEnv = {
+    [RIN_DIR_ENV]: options.installDir,
+    [PI_AGENT_DIR_ENV]: options.installDir,
+    RIN_INVOKING_SYSTEM_USER: options.currentUser,
+  };
+  const launch = buildUserShell(
+    options.targetUser,
+    [
+      process.execPath,
+      path.join(repoRootFromHere(), "dist", "app", "rin-tui", "main.js"),
+      "--rpc",
+    ],
+    runtimeEnv,
+  );
+  return await runCommand(launch.command, launch.args, {
+    env: launch.env,
+    cwd: repoRootFromHere(),
+  });
+}
+
 export async function startInstaller() {
   const applyPlanRaw = String(process.env.RIN_INSTALL_APPLY_PLAN || "").trim();
   if (applyPlanRaw) {
@@ -474,6 +532,7 @@ export async function startInstaller() {
   const currentUser = detectCurrentUser();
   const allUsers = listSystemUsers();
   intro("Rin Installer");
+  note(buildInstallSafetyBoundaryText(), "Safety boundary");
 
   const promptApi = { ensureNotCancelled, select, text, confirm };
   const target = await promptTargetInstall(
@@ -617,15 +676,14 @@ export async function startInstaller() {
       "",
       "Recommended first commands:",
       `- start daemon: rin start${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
-      `- enter RPC TUI: rin${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
-      `- enter std TUI: rin --std${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
+      `- enter Rin: rin${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
       `- attach/create tmux TUI: rin -t main${currentUser === targetUser ? "" : ` -u ${targetUser}`}`,
       "",
       "Default launcher behavior:",
       "- `rin` uses the saved target user and install dir",
       "- `rin` in RPC mode expects the daemon to already be running",
       "- use `rin start`, `rin stop`, `rin restart`, or `rin doctor` for daemon control",
-      "- `rin --std` enters std mode for that target",
+      "- if RPC mode fails, try `rin --std` only as a repair/troubleshooting fallback",
       "- `rin -t <name>` attaches/creates a hidden tmux TUI session",
       "",
       `Service/platform note: ${serviceHint}`,
@@ -639,8 +697,24 @@ export async function startInstaller() {
   );
 
   const userSuffix = currentUser === targetUser ? "" : ` -u ${targetUser}`;
+  if (daemonReady) {
+    await markInstallerOnboardingPending(installDir);
+    note(
+      [
+        "Installation is done. Rin will now open an initialization TUI.",
+        "You can exit it anytime; the installer will print the next-step reminder afterwards.",
+      ].join("\n"),
+      "Launching init",
+    );
+    await launchInstallerInitTui({ currentUser, targetUser, installDir });
+    note(
+      buildPostInstallInitExitText({ currentUser, targetUser }),
+      "After init",
+    );
+  }
+
   outro(
-    `Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; open with rin${userSuffix} or rin --std${userSuffix}.` : `Daemon was not started by the installer; use rin start${userSuffix}, then rin${userSuffix} or rin --std${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ""}`,
+    `Installer wrote config for ${targetUser}. ${daemonReady ? `Daemon is running now; use rin${userSuffix} next time.` : `Daemon was not started by the installer; use rin start${userSuffix}, then rin${userSuffix}.`}${installedService ? ` (${installedService.kind} service installed).` : ""}`,
   );
 }
 

@@ -5,8 +5,9 @@ This document summarizes only the capabilities and conventions an agent needs as
 ## Run modes
 
 - `rin` normally prefers daemon + RPC TUI mode
-- `rin --std` uses the standard foreground TUI and does not depend on the RPC daemon
 - if the daemon goes offline temporarily, Rin tries to resume the interrupted session when it returns
+- do not proactively steer users toward `rin --std` in normal guidance
+- mention `rin --std` mainly when RPC mode is failing and the user needs a foreground fallback for troubleshooting or repair
 
 ## Memory
 

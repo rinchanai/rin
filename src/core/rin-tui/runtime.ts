@@ -143,6 +143,8 @@ export class RpcInteractiveSession {
   private queuedOfflineOps: PendingRpcOperation[] = [];
   private activeTurn: PendingRpcOperation | null = null;
   private disposed = false;
+  private pendingRefreshFlags: RefreshFlags = {};
+  private refreshLoopPromise: Promise<void> | null = null;
 
   constructor(
     public client: RinDaemonFrontendClient,
@@ -569,8 +571,11 @@ export class RpcInteractiveSession {
 
   private handleRpcEvent(payload: any) {
     if (payload?.type === "extension_ui_request") return;
-    void handleRpcSessionEvent(this as any, payload, () =>
-      this.refreshState(REFRESH_MESSAGES_AND_SESSION),
+    void handleRpcSessionEvent(
+      this as any,
+      payload,
+      () => this.queueRefreshState(REFRESH_MESSAGES),
+      () => this.queueRefreshState(REFRESH_MESSAGES_AND_SESSION),
     );
   }
 
@@ -720,6 +725,31 @@ export class RpcInteractiveSession {
     ]);
     this.reconcilePendingQueues(this.pendingMessageCount);
     this.lastSessionStats = this.computeSessionStats();
+  }
+
+  private queueRefreshState(flags: RefreshFlags = {}) {
+    this.pendingRefreshFlags = {
+      messages: this.pendingRefreshFlags.messages || flags.messages,
+      models: this.pendingRefreshFlags.models || flags.models,
+      session: this.pendingRefreshFlags.session || flags.session,
+    };
+    if (this.refreshLoopPromise) return this.refreshLoopPromise;
+    this.refreshLoopPromise = (async () => {
+      while (
+        this.pendingRefreshFlags.messages ||
+        this.pendingRefreshFlags.models ||
+        this.pendingRefreshFlags.session
+      ) {
+        const next = this.pendingRefreshFlags;
+        this.pendingRefreshFlags = {};
+        try {
+          await this.refreshState(next);
+        } catch {}
+      }
+    })().finally(() => {
+      this.refreshLoopPromise = null;
+    });
+    return this.refreshLoopPromise;
   }
 
   private applyState(state: any) {

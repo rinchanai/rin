@@ -43,6 +43,19 @@ test("installer interactive helpers describe dir state and plan text", () => {
   });
   assert.ok(plan.includes("Target daemon user: bob"));
   assert.ok(plan.includes("Model auth status: ready"));
+  assert.ok(plan.includes("Rin safety boundary:"));
+  assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
+
+  const safety = interactive.buildInstallSafetyBoundaryText();
+  assert.ok(safety.includes("YOLO mode"));
+  assert.ok(safety.includes("memory extraction"));
+
+  const initExit = interactive.buildPostInstallInitExitText({
+    currentUser: "alice",
+    targetUser: "bob",
+  });
+  assert.ok(initExit.includes("open Rin: rin -u bob"));
+  assert.ok(initExit.includes("/init"));
 });
 
 test("installer interactive helpers compute final requirements", () => {
