@@ -767,18 +767,7 @@ export class RpcInteractiveSession {
   }
 
   private async refreshState(flags: RefreshFlags = {}) {
-    const state = await this.call("get_state");
-    const remoteSessionFile =
-      typeof state?.sessionFile === "string" ? state.sessionFile : "";
-    const remoteSessionId = String(state?.sessionId || "");
-    const hasRemoteSession = Boolean(remoteSessionFile || remoteSessionId);
-    const expectsAttachedSession = Boolean(this.sessionFile || this.sessionId);
-
-    if (!hasRemoteSession && expectsAttachedSession) {
-      return;
-    }
-
-    this.applyState(state);
+    this.applyState(await this.call("get_state"));
     await Promise.all([
       flags.models ? this.modelRegistry.sync() : Promise.resolve(),
       flags.messages ? this.refreshMessages() : Promise.resolve(),
