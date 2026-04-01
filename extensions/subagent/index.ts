@@ -207,6 +207,33 @@ function buildRunUpdate(results: TaskResult[], detailsBase: SubagentDetails) {
   };
 }
 
+export async function applySubagentTaskPreferences(
+  session: any,
+  task: {
+    model?: string;
+    thinkingLevel?: ThinkingLevel;
+  },
+) {
+  if (task.model) {
+    const parts = splitModelRef(task.model);
+    const model = parts
+      ? session.modelRegistry.find(parts.provider, parts.modelId)
+      : undefined;
+    if (!model) throw new Error(`Unknown model: ${task.model}`);
+    if (!session.modelRegistry.hasConfiguredAuth?.(model)) {
+      throw new Error(`No API key for ${task.model}`);
+    }
+    session.agent.setModel(model);
+  }
+  if (task.thinkingLevel) {
+    const available = session.getAvailableThinkingLevels();
+    const level = available.includes(task.thinkingLevel)
+      ? task.thinkingLevel
+      : available[available.length - 1];
+    session.agent.setThinkingLevel(level);
+  }
+}
+
 async function runTask(
   task: {
     prompt: string;
@@ -281,15 +308,7 @@ async function runTask(
         abortListener = () => signal.removeEventListener("abort", onAbort);
       }
     }
-    if (task.model) {
-      const parts = splitModelRef(task.model);
-      const model = parts
-        ? session.modelRegistry.find(parts.provider, parts.modelId)
-        : undefined;
-      if (!model) throw new Error(`Unknown model: ${task.model}`);
-      await session.setModel(model);
-    }
-    if (task.thinkingLevel) session.setThinkingLevel(task.thinkingLevel);
+    await applySubagentTaskPreferences(session, task);
     await session.prompt(task.prompt, {
       expandPromptTemplates: false,
       source: "extension",
