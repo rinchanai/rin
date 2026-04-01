@@ -160,16 +160,33 @@ rin update
 
 这也是 Rin 能“自我升级”的基础：只要当前环境能调用到它自己的 launcher，就可以直接执行 `rin update`。
 
-但要注意两个边界：
+但更完整地说，Rin 的“自我升级”不应该只等于“当前账号 shell 里刚好有 `rin`”。
 
-- 如果助手当前所在账号没有 `rin` 这个 launcher，就**不能假装自己能直接 `rin update`**
-- 如果 launcher 在别的用户下面，应该切到那个用户执行，或显式使用那个用户的 launcher 路径
+如果用户要求 agent 升级，而 agent 当前账号**没有** `rin` 这个 launcher，仍然可以走下面这条等价路径：
 
-实操上可以按这个顺序判断：
+```bash
+node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
+```
 
-1. 当前 shell 里能不能直接运行 `rin update`
-2. 不行的话，当前用户的 `~/.local/bin/rin update` 能不能运行
-3. 再不行，就说明 launcher 不在当前账号；应切到实际安装/维护 Rin 的用户后再更新
+这本质上就是绕过用户级 launcher，直接调用已安装 runtime 的 CLI 入口。`rin` launcher 平时做的事情，本来也只是把命令转发到这个 runtime 入口。
+
+所以，面向 agent 的升级策略应该是：
+
+1. 先试当前 shell 里的 `rin update`
+2. 不行再试当前用户的 `~/.local/bin/rin update`
+3. 如果当前账号没有 launcher，但**知道 install dir 和 target user**，直接执行：
+
+```bash
+node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
+```
+
+4. 如果 install dir / target user 也还不知道，再去从安装清单或 service 配置里发现目标，再执行上面的 runtime 入口
+
+也就是说，正确的能力边界不是“当前账号有没有 `rin` 命令”，而是：
+
+- 能不能定位到已安装的 Rin runtime
+- 能不能确定要更新哪个 target user / install dir
+- 当前账号对那个 install dir 是否有足够权限
 
 如果你是把 Rin 当成长期助手来用，这一点很重要：
 
@@ -177,7 +194,14 @@ rin update
 - “daemon 以哪个 target user 身份运行”
 - “哪个用户持有 `rin` launcher”
 
-这三件事相关，但**不一定是同一个用户视角**。文档、脚本、以及助手自己做升级判断时，都应该先分清楚这一点。
+这三件事相关，但**不一定是同一个用户视角**。
+
+其中：
+
+- `rin` / `~/.local/bin/rin` 解决的是“launcher 在不在当前账号”
+- `<installDir>/app/current/dist/app/rin/main.js` 解决的是“即使没有 launcher，能不能直接调用已安装 runtime”
+
+对于想让 agent 具备自我升级能力的场景，文档和实现都应该优先按这套顺序思考，而不是把“没有 `rin` 命令”直接等同于“不能升级”。
 
 ## 为什么它对普通用户也有用
 
