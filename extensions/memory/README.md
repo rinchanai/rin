@@ -6,6 +6,7 @@ The primary tool name is `memory`.
 For compatibility with older prompts and integrations, `rin_memory` remains available as an alias for now.
 
 Implementation note:
+
 - the extension is extension-first
 - semantic extraction and episode synthesis happen in extension modules
 - `store.ts` is the storage/index backend

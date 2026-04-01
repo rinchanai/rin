@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "rin local ci: docker 未安装，无法运行本地容器化提交检查。" >&2
+  exit 1
+fi
+
+image_tag="rin-local-ci:latest"
+
+echo "rin local ci: building container image..."
+docker build -f .ci/local-ci/Dockerfile -t "$image_tag" .
+
+format_targets="$({
+  git diff --cached --name-only --diff-filter=ACMR
+} | grep -E '^(src|tests|scripts|extensions|docs)/.*\.(ts|js|mjs|md|json|yml|yaml)$|^(README\.md|package(-lock)?\.json|tsconfig.*\.json|eslint\.config\.mjs)$' || true)"
+
+tree_id="$(git write-tree)"
+
+echo "rin local ci: running format, lint, test in container..."
+git archive --format=tar "$tree_id" | docker run --rm --network none -e FORMAT_TARGETS="$format_targets" -i "$image_tag"
