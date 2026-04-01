@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -11,13 +12,16 @@ async function loadMessageStoreModule() {
     "..",
     "..",
   );
-  const distPath = path.join(
-    root,
-    "dist",
-    "core",
-    "rin-koishi",
-    "message-store.js",
-  );
+  const candidates = [
+    path.join(root, "core", "rin-koishi", "message-store.js"),
+    path.join(root, "dist", "core", "rin-koishi", "message-store.js"),
+  ];
+  const distPath = candidates.find((filePath) => fs.existsSync(filePath));
+  if (!distPath) {
+    throw new Error(
+      `rin_koishi_message_store_not_found:${candidates.join(" | ")}`,
+    );
+  }
   return await import(pathToFileURL(distPath).href);
 }
 

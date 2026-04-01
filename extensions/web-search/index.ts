@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -68,13 +69,16 @@ async function loadSearchWeb() {
     "..",
     "..",
   );
-  const distPath = path.join(
-    root,
-    "dist",
-    "core",
-    "rin-web-search",
-    "service.js",
-  );
+  const candidates = [
+    path.join(root, "core", "rin-web-search", "service.js"),
+    path.join(root, "dist", "core", "rin-web-search", "service.js"),
+  ];
+  const distPath = candidates.find((filePath) => fs.existsSync(filePath));
+  if (!distPath) {
+    throw new Error(
+      `rin_web_search_service_not_found:${candidates.join(" | ")}`,
+    );
+  }
   const mod = await import(pathToFileURL(distPath).href);
   return mod.searchWeb as (params: any) => Promise<any>;
 }

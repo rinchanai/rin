@@ -36,7 +36,14 @@ async function loadOutboxModule() {
     "..",
     "..",
   );
-  const distPath = path.join(root, "dist", "core", "rin-lib", "chat-outbox.js");
+  const candidates = [
+    path.join(root, "core", "rin-lib", "chat-outbox.js"),
+    path.join(root, "dist", "core", "rin-lib", "chat-outbox.js"),
+  ];
+  const distPath = candidates.find((filePath) => fs.existsSync(filePath));
+  if (!distPath) {
+    throw new Error(`rin_chat_outbox_not_found:${candidates.join(" | ")}`);
+  }
   return await import(pathToFileURL(distPath).href);
 }
 
