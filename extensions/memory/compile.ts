@@ -6,7 +6,8 @@ import {
 } from "./core/types.js";
 import { previewMemoryDoc } from "./core/schema.js";
 import { safeString, trimText } from "./core/utils.js";
-import { excerptForRecall, lexicalScore } from "./relevance.js";
+import { excerptForRecall } from "./relevance.js";
+import { searchMemoryDocs } from "./search.js";
 
 function residentPromptLine(slot: string, body: string): string {
   const text = safeString(body).trim();
@@ -80,37 +81,17 @@ export function compileFromDocsAndEvents(
   );
   const expandedProgressives = !query
     ? []
-    : progressiveDocs
-        .map((doc) => ({
-          doc,
-          score: lexicalScore(query, doc) + (doc.scope === "domain" ? 0.4 : 0),
-        }))
-        .filter((row) => row.score >= 0.9)
-        .sort(
-          (a, b) =>
-            b.score - a.score ||
-            safeString(b.doc.updated_at).localeCompare(
-              safeString(a.doc.updated_at),
-            ),
-        )
-        .slice(0, expandedProgressiveLimit)
-        .map((row) => row.doc);
+    : searchMemoryDocs(progressiveDocs, query, {
+        limit: expandedProgressiveLimit,
+      }).map((row) => row.doc);
 
   const recallDocs = !query
     ? []
-    : docs
-        .filter((doc) => doc.exposure === "recall")
-        .map((doc) => ({ doc, score: lexicalScore(query, doc) }))
-        .filter((row) => row.score >= 1.2)
-        .sort(
-          (a, b) =>
-            b.score - a.score ||
-            safeString(b.doc.updated_at).localeCompare(
-              safeString(a.doc.updated_at),
-            ),
-        )
-        .slice(0, recallLimit)
-        .map((row) => row.doc);
+    : searchMemoryDocs(
+        docs.filter((doc) => doc.exposure === "recall"),
+        query,
+        { limit: recallLimit },
+      ).map((row) => row.doc);
 
   return {
     root,

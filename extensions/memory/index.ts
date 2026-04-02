@@ -83,15 +83,14 @@ export default function memoryExtension(pi: ExtensionAPI) {
       description:
         "Search and save the markdown-backed long-term memory library with resident, progressive, and recall layers.",
       promptSnippet:
-        "Use `memory` to search or save long-term memory in three layers: resident, progressive, and recall.",
+        "Prefer using `memory.search` to recover missing context before answering.",
       promptGuidelines: [
-        "Use `memory.search` when a response depends on past context, preferences, or project history.",
-        "Use `memory.save` only for stable information worth keeping beyond the current turn.",
-        "Resident memory is for short always-on baselines like identity, voice, methodology, and values.",
-        "Progressive memory is for important longer-lived guidance that should be disclosed gradually.",
-        "Recall memory is for everything else that should be found only when relevant.",
-        "`memory.search` returns paths and metadata, not full bodies. Use `read` on the returned path if you need the full document.",
-        "Before saving, search first and update or supersede existing memory instead of creating duplicates.",
+        "Prefer using `memory.search` to recover context.",
+        "Use a few distinctive keywords instead of full sentences.",
+        "Start with exact names or unique terms, and broaden only if needed.",
+        "Do not assume historical context is already in the current prompt.",
+        "`memory.search` returns paths and metadata first; use `read` only when you need the full document.",
+        "Use `memory.save` only for stable information worth keeping beyond the current turn, and search before saving to avoid duplicates.",
       ],
       parameters: memoryToolParameters,
       execute: async (_toolCallId, params) => {

@@ -92,10 +92,13 @@ export default function webSearchExtension(pi: ExtensionAPI) {
     description:
       "Search the live web for fresh facts, current documentation, recent releases, and other information that may have changed after pretraining.",
     promptSnippet:
-      "Search the live web for up-to-date facts and current sources when stale memory would be risky.",
+      "Prefer using `web_search` to establish a factual baseline before answering.",
     promptGuidelines: [
-      "Use `web_search` proactively for current, recent, official, version-sensitive, or otherwise drift-prone facts. Do not rely on memory when fresh external information is likely to matter.",
-      "When the user asks for the latest or up-to-date answer, search first and treat the returned results as the working factual baseline unless they clearly conflict.",
+      "Prefer using `web_search` to establish a factual baseline.",
+      "Use a few distinctive keywords instead of full sentences.",
+      "Start with exact names or unique terms, and broaden only if needed.",
+      "Do not rely on memory alone when fresh external information could matter.",
+      "When unsure, search first and then answer.",
     ],
     parameters: Type.Object({
       q: Type.String({ description: "Focused search query." }),

@@ -21,7 +21,8 @@ import {
   residentPath,
   writeMemoryDoc,
 } from "./docs.js";
-import { activeDocsOnly, lexicalScore } from "./relevance.js";
+import { activeDocsOnly } from "./relevance.js";
+import { searchMemoryDocs } from "./search.js";
 import {
   normalizeList,
   nowIso,
@@ -78,23 +79,14 @@ export async function searchMemories(
   const root = resolveMemoryRoot(rootOverride);
   await ensureMemoryLayout(root);
   const exposureFilter = safeString(params.exposure || "").trim();
-  const limit = Math.max(1, Number(params.limit || 20) || 20);
-  const docs = activeDocsOnly(await loadMemoryDocs(root)).filter(
-    (doc) => !exposureFilter || doc.exposure === exposureFilter,
-  );
-  const results = docs
-    .map((doc) => ({ doc, score: lexicalScore(query, doc) }))
-    .filter((row) => row.score > 0)
-    .sort(
-      (a, b) =>
-        b.score - a.score ||
-        safeString(b.doc.updated_at).localeCompare(
-          safeString(a.doc.updated_at),
-        ),
-    )
-    .slice(0, limit);
+  const limit = Math.max(1, Number(params.limit || 8) || 8);
+  const docs = activeDocsOnly(await loadMemoryDocs(root));
+  const results = searchMemoryDocs(docs, query, {
+    limit,
+    exposure: exposureFilter,
+  });
   return {
-    query,
+    query: results[0]?.query || query,
     count: results.length,
     results: results.map((row) => ({
       score: row.score,
