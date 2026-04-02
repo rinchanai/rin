@@ -21,7 +21,7 @@ function createCli() {
       "-t, --tmux <session>",
       "Create or attach a hidden Rin tmux session",
     )
-    .option("--tmux-list", "List hidden Rin tmux sessions")
+    .option("--tmux-list", "List hidden Rin tmux windows")
     .help();
 
   cli.command(

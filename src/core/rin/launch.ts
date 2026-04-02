@@ -38,6 +38,18 @@ async function runCommandCapture(
   );
 }
 
+export function buildTmuxListArgs(socketName: string) {
+  return [
+    "tmux",
+    "-L",
+    socketName,
+    "list-windows",
+    "-a",
+    "-F",
+    "#{session_name}:#{window_index}: #{window_name}",
+  ];
+}
+
 export async function launchDefaultRin(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
@@ -78,7 +90,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   if (parsed.tmuxList) {
     const launch = buildUserShell(
       targetUser,
-      ["tmux", "-L", tmuxSocketName, "list-sessions"],
+      buildTmuxListArgs(tmuxSocketName),
       runtimeEnv,
     );
     const result = await runCommandCapture(launch.command, launch.args, {
