@@ -27,12 +27,54 @@ const loaderModule = await import(
   ).href
 );
 
-test("rin_status end stops lingering working animation when no work remains", async () => {
+test("rin_status updates show a plain status message without touching working animation", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let statusText;
+  let started = 0;
+  const interactiveModeModule = await import(
+    pathToFileURL(
+      path.join(
+        rootDir,
+        "third_party",
+        "pi-coding-agent",
+        "dist",
+        "modes",
+        "interactive",
+        "interactive-mode.js",
+      ),
+    ).href
+  );
+
+  const instance = {
+    ui: { requestRender() {} },
+    showStatus(message) {
+      statusText = message;
+    },
+    startWorkingAnimation() {
+      started += 1;
+    },
+  };
+
+  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    {
+      type: "rin_status",
+      phase: "update",
+      message: "Waiting daemon...",
+      statusText: "Daemon connection restored.",
+    },
+  );
+
+  assert.equal(statusText, "Daemon connection restored.");
+  assert.equal(started, 0);
+});
+
+test("rin_status end does not stop an active upstream working animation", async () => {
   await overrides.applyRinTuiOverrides();
 
   let stopped = 0;
   let renders = 0;
-
   const interactiveModeModule = await import(
     pathToFileURL(
       path.join(
@@ -47,28 +89,22 @@ test("rin_status end stops lingering working animation when no work remains", as
     ).href
   );
 
-  const loadingAnimation = {
-    stop() {
+  const instance = {
+    loadingAnimation: {
+      stop() {
+        stopped += 1;
+      },
+    },
+    ui: {
+      requestRender() {
+        renders += 1;
+      },
+    },
+    stopWorkingAnimation() {
       stopped += 1;
     },
   };
 
-  const instance = {
-    session: { isStreaming: false, isCompacting: false },
-    loadingAnimation,
-    ui: {
-      requestRender() {
-        renders += 1;
-      },
-    },
-    stopWorkingAnimation() {
-      if (this.loadingAnimation) {
-        this.loadingAnimation.stop();
-        this.loadingAnimation = undefined;
-      }
-    },
-  };
-
   await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
     instance,
     {
@@ -77,55 +113,7 @@ test("rin_status end stops lingering working animation when no work remains", as
     },
   );
 
-  assert.equal(stopped, 1);
-  assert.equal(renders, 1);
-  assert.equal(instance.loadingAnimation, undefined);
-});
-
-test("rin_status end restores working animation while stream is still active", async () => {
-  await overrides.applyRinTuiOverrides();
-
-  let startedWith;
-  let renders = 0;
-  const interactiveModeModule = await import(
-    pathToFileURL(
-      path.join(
-        rootDir,
-        "third_party",
-        "pi-coding-agent",
-        "dist",
-        "modes",
-        "interactive",
-        "interactive-mode.js",
-      ),
-    ).href
-  );
-
-  const instance = {
-    defaultWorkingMessage: "Working...",
-    session: { isStreaming: true, isCompacting: false },
-    ui: {
-      requestRender() {
-        renders += 1;
-      },
-    },
-    startWorkingAnimation(message) {
-      startedWith = message;
-    },
-    stopWorkingAnimation() {
-      throw new Error("should_not_stop");
-    },
-  };
-
-  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
-    instance,
-    {
-      type: "rin_status",
-      phase: "end",
-    },
-  );
-
-  assert.equal(startedWith, "Working...");
+  assert.equal(stopped, 0);
   assert.equal(renders, 1);
 });
 
@@ -133,8 +121,7 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
   await overrides.applyRinTuiOverrides();
 
   let invalidated = 0;
-  let retryStopped = 0;
-  let compactionStopped = 0;
+  let shownStatus;
   const interval = setInterval(() => {}, 1000);
   const interactiveModeModule = await import(
     pathToFileURL(
@@ -159,13 +146,11 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
 
   const instance = {
     pendingTools: new Map([["tool-1", component]]),
-    retryLoader: { stop() { retryStopped += 1; } },
-    autoCompactionLoader: { stop() { compactionStopped += 1; } },
-    statusContainer: { clear() {} },
     session: { isStreaming: true, isCompacting: false },
     ui: { requestRender() {} },
-    startWorkingAnimation() {},
-    showStatus() {},
+    showStatus(message) {
+      shownStatus = message;
+    },
   };
 
   await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
@@ -180,10 +165,7 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
   assert.equal(component.rendererState.interval, undefined);
   assert.equal(typeof component.rendererState.endedAt, "number");
   assert.equal(invalidated, 1);
-  assert.equal(retryStopped, 1);
-  assert.equal(compactionStopped, 1);
-  assert.equal(instance.retryLoader, undefined);
-  assert.equal(instance.autoCompactionLoader, undefined);
+  assert.equal(shownStatus, "Waiting daemon...");
 });
 
 test("loader stop clears render interval", () => {
