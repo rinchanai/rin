@@ -21,28 +21,6 @@ function stopPendingToolTimers(target: any) {
   }
 }
 
-function stopLoader(target: any, key: string) {
-  const loader = target?.[key];
-  if (!loader) return false;
-  loader.stop?.();
-  target[key] = undefined;
-  return true;
-}
-
-function stopTransientAnimations(
-  target: any,
-  options: { includeWorking?: boolean } = {},
-) {
-  const stopped = [
-    options.includeWorking ? stopLoader(target, "loadingAnimation") : false,
-    stopLoader(target, "retryLoader"),
-    stopLoader(target, "autoCompactionLoader"),
-  ].some(Boolean);
-  if (stopped) {
-    target?.statusContainer?.clear?.();
-  }
-}
-
 let applied = false;
 
 export async function applyRinTuiOverrides() {
@@ -123,33 +101,21 @@ export async function applyRinTuiOverrides() {
     InteractiveMode.prototype.handleEvent =
       async function handleEventWithSessionBootState(event: any) {
         if (event?.type === "rin_status") {
-          const hasActiveWork = Boolean(
-            this?.session?.isStreaming || this?.session?.isCompacting,
-          );
           stopPendingToolTimers(this);
-          stopTransientAnimations(this, { includeWorking: event.phase !== "end" });
-          if (event.phase === "end") {
-            if (hasActiveWork) {
-              this.startWorkingAnimation?.(this?.defaultWorkingMessage);
-            } else {
-              this.stopWorkingAnimation?.();
-            }
-            this.ui?.requestRender?.();
-            return;
-          }
-          const message =
-            typeof event.message === "string" && event.message.trim()
-              ? event.message
-              : this?.defaultWorkingMessage;
-          this.startWorkingAnimation?.(message);
           if (
-            typeof event.statusText === "string" &&
-            event.statusText.trim() &&
+            event.phase !== "end" &&
             typeof this.showStatus === "function"
           ) {
-            this.showStatus(event.statusText);
+            const statusText =
+              typeof event.statusText === "string" && event.statusText.trim()
+                ? event.statusText
+                : typeof event.message === "string" && event.message.trim()
+                  ? event.message
+                  : "Daemon status changed.";
+            this.showStatus(statusText);
+          } else {
+            this.ui?.requestRender?.();
           }
-          this.ui?.requestRender?.();
           return;
         }
 
