@@ -21,6 +21,25 @@ function stopPendingToolTimers(target: any) {
   }
 }
 
+function stopLoader(target: any, key: string) {
+  const loader = target?.[key];
+  if (!loader) return false;
+  loader.stop?.();
+  target[key] = undefined;
+  return true;
+}
+
+function stopTransientAnimations(target: any) {
+  const stopped = [
+    stopLoader(target, "loadingAnimation"),
+    stopLoader(target, "retryLoader"),
+    stopLoader(target, "autoCompactionLoader"),
+  ].some(Boolean);
+  if (stopped) {
+    target?.statusContainer?.clear?.();
+  }
+}
+
 let applied = false;
 
 export async function applyRinTuiOverrides() {
@@ -102,6 +121,7 @@ export async function applyRinTuiOverrides() {
       async function handleEventWithSessionBootState(event: any) {
         if (event?.type === "rin_status") {
           stopPendingToolTimers(this);
+          stopTransientAnimations(this);
           if (event.phase === "end") {
             this.stopWorkingAnimation?.();
             this.ui?.requestRender?.();

@@ -86,6 +86,8 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
   await overrides.applyRinTuiOverrides();
 
   let invalidated = 0;
+  let retryStopped = 0;
+  let compactionStopped = 0;
   const interval = setInterval(() => {}, 1000);
   const interactiveModeModule = await import(
     pathToFileURL(
@@ -110,6 +112,9 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
 
   const instance = {
     pendingTools: new Map([["tool-1", component]]),
+    retryLoader: { stop() { retryStopped += 1; } },
+    autoCompactionLoader: { stop() { compactionStopped += 1; } },
+    statusContainer: { clear() {} },
     session: { isStreaming: true, isCompacting: false },
     ui: { requestRender() {} },
     startWorkingAnimation() {},
@@ -128,6 +133,10 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
   assert.equal(component.rendererState.interval, undefined);
   assert.equal(typeof component.rendererState.endedAt, "number");
   assert.equal(invalidated, 1);
+  assert.equal(retryStopped, 1);
+  assert.equal(compactionStopped, 1);
+  assert.equal(instance.retryLoader, undefined);
+  assert.equal(instance.autoCompactionLoader, undefined);
 });
 
 test("loader stop clears render interval", () => {
