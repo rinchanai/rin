@@ -13,6 +13,9 @@ const rpc = await import(
 const shared = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "shared.js")).href
 );
+const launch = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "launch.js")).href
+);
 
 test("rpc helpers build success and failure envelopes", () => {
   assert.deepEqual(rpc.ok("1", "get_state", { ok: true }), {
@@ -40,4 +43,16 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.equal(parsed.targetUser, "demo");
   assert.equal(parsed.std, true);
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
+});
+
+test("tmux list targets windows across hidden Rin sessions", () => {
+  assert.deepEqual(launch.buildTmuxListArgs("rin-demo"), [
+    "tmux",
+    "-L",
+    "rin-demo",
+    "list-windows",
+    "-a",
+    "-F",
+    "#{session_name}:#{window_index}: #{window_name}",
+  ]);
 });
