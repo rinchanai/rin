@@ -261,7 +261,10 @@ const taskSchema = Type.Object({
     }),
   ),
   trigger: Type.Object({
-    kind: StringEnum(["interval", "cron", "once"] as const),
+    kind: StringEnum(["interval", "cron", "once"] as const, {
+      description:
+        "Trigger kind. Allowed values: `interval`, `cron`, or `once`.",
+    }),
     intervalMs: Type.Optional(
       Type.Number({
         description:
@@ -301,7 +304,10 @@ const taskSchema = Type.Object({
   ),
   session: Type.Optional(
     Type.Object({
-      mode: StringEnum(["current", "dedicated", "specific"] as const),
+      mode: StringEnum(["current", "dedicated", "specific"] as const, {
+        description:
+          "Session binding mode. Allowed values: `current`, `dedicated`, or `specific`.",
+      }),
       sessionFile: Type.Optional(
         Type.String({
           description:
@@ -311,7 +317,10 @@ const taskSchema = Type.Object({
     }),
   ),
   target: Type.Object({
-    kind: StringEnum(["agent_prompt", "shell_command"] as const),
+    kind: StringEnum(["agent_prompt", "shell_command"] as const, {
+      description:
+        "Task target kind. Allowed values: `agent_prompt` or `shell_command`.",
+    }),
     prompt: Type.Optional(
       Type.String({
         description: "Instruction for scheduled agent execution.",
