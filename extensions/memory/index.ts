@@ -4,8 +4,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
-import { synthesizeEpisodeTurn } from "./episode-synth.js";
-import { extractAndPersistTurnMemory } from "./extractor.js";
+import { maintainMemory } from "./maintainer.js";
 import {
   buildOnboardingPrompt,
   compilePromptMemory,
@@ -22,23 +21,10 @@ import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
 
-function stringifyMessageContent(content: any): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter((part) => part?.type === "text")
-      .map((part) => String(part?.text || ""))
-      .join("\n");
-  }
-  return "";
-}
-
 function sessionMeta(ctx: any) {
   return {
     sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
     sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
-    cwd: String(ctx?.cwd || "").trim(),
-    chatKey: String(ctx?.sessionManager?.getSessionName?.() || "").trim(),
   };
 }
 
@@ -79,19 +65,14 @@ function loadMessagesFromSessionFile(sessionFile: string): any[] {
 async function processSessionMemory(
   ctx: any,
   messages: any[],
-  opts: { sessionFile?: string; sessionId?: string; trigger: string },
+  opts: { sessionFile?: string; trigger: string },
 ) {
   if (!Array.isArray(messages) || messages.length === 0) return;
-  const sessionFile = String(opts.sessionFile || "").trim();
-  await extractAndPersistTurnMemory(ctx as any, messages, {
-    sessionFile,
+  await maintainMemory(ctx as any, {
+    messages,
     trigger: opts.trigger,
+    mode: "session",
   });
-  await synthesizeEpisodeTurn(ctx as any, messages, {
-    sessionFile,
-    sessionId: String(opts.sessionId || "").trim(),
-  });
-  await executeMemoryTool({ action: "process", sessionFile });
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
@@ -100,18 +81,17 @@ export default function memoryExtension(pi: ExtensionAPI) {
       name,
       label,
       description:
-        "Manage the markdown-backed long-term memory library, event ledger, automatic consolidation, and context recall pipeline.",
+        "Search and save the markdown-backed long-term memory library with resident, progressive, and recall layers.",
       promptSnippet:
-        "Manage the markdown-backed long-term memory system with resident memory, progressive memory, recall memory, and event ledger processing.",
+        "Use `memory` to search or save long-term memory in three layers: resident, progressive, and recall.",
       promptGuidelines: [
-        "Use `memory` for long-term reusable memory, project recall, event history, and memory maintenance. Use it when you need to save, inspect, search, move, process, or review memory state.",
-        "When answering a request that depends on shared past context, earlier decisions, or previous sessions, use `memory.search` first instead of relying on vague recollection.",
-        "When handling memory state, first use `memory` to discover the target document or slot instead of acting from assumptions about internal file paths or storage layout.",
-        "`memory.search` is for discovery and returns candidate paths. If you need full contents, use the normal `read` tool on those paths instead of expecting `memory` to inline file bodies.",
-        "For correcting a mistaken save, reclassification, or relocation between resident/progressive/recall, prefer `memory` tool actions such as `search`, `move`, `save`, or `delete` rather than editing files based only on inferred implementation knowledge.",
-        "Resident memory is for short global always-on baselines, including identity, voice/style, methodology, and values/worldview that should always guide behavior. Progressive memory is for longer global or directional guidance that should appear as an expandable entry. Recall memory is for everything that should only be remembered when needed.",
-        "Prefer searching and then reading the relevant memory files instead of assuming recall/episode/history content has already been injected into the prompt. Resident and progressive index are the only prompt-resident layers.",
-        "Before saving a new memory, search first and prefer updating, moving, or consolidating an existing memory instead of creating duplicates.",
+        "Use `memory.search` when a response depends on past context, preferences, or project history.",
+        "Use `memory.save` only for stable information worth keeping beyond the current turn.",
+        "Resident memory is for short always-on baselines like identity, voice, methodology, and values.",
+        "Progressive memory is for important longer-lived guidance that should be disclosed gradually.",
+        "Recall memory is for everything else that should be found only when relevant.",
+        "`memory.search` returns paths and metadata, not full bodies. Use `read` on the returned path if you need the full document.",
+        "Before saving, search first and update or supersede existing memory instead of creating duplicates.",
       ],
       parameters: memoryToolParameters,
       execute: async (_toolCallId, params) => {
@@ -158,59 +138,13 @@ export default function memoryExtension(pi: ExtensionAPI) {
   registerMemoryTool("memory", "Memory");
   registerMemoryTool("rin_memory", "Memory (legacy alias)");
 
-  pi.on("input", async (event, ctx) => {
-    const text = String(event?.text || "").trim();
-    if (!text) return;
-    await executeMemoryTool({
-      action: "log_event",
-      kind: "user_input",
-      text,
-      summary: `user: ${text}`,
-      source: `input:${String(event?.source || "interactive")}`,
-      ...sessionMeta(ctx),
-    });
-    await executeMemoryTool({
-      action: "process",
-      sessionFile: sessionMeta(ctx).sessionFile,
-    });
-  });
-
-  pi.on("tool_execution_end", async (event, ctx) => {
-    const text = stringifyMessageContent(event?.result?.content);
-    await executeMemoryTool({
-      action: "log_event",
-      kind: "tool_result",
-      text: text || JSON.stringify(event?.result?.details || {}, null, 2),
-      summary: `${String(event?.toolName || "tool")}${event?.isError ? " (error)" : ""}: ${text || "completed"}`,
-      toolName: String(event?.toolName || ""),
-      isError: Boolean(event?.isError),
-      source: `tool:${String(event?.toolName || "")}`,
-      ...sessionMeta(ctx),
-    });
-  });
-
-  pi.on("message_end", async (event, ctx) => {
-    if (event?.message?.role !== "assistant") return;
-    const text = stringifyMessageContent(event.message.content);
-    if (!text) return;
-    await executeMemoryTool({
-      action: "log_event",
-      kind: "assistant_message",
-      text,
-      summary: `assistant: ${text}`,
-      source: "assistant:message_end",
-      ...sessionMeta(ctx),
-    });
-  });
-
   pi.on("session_shutdown", async (_event, ctx) => {
     await processSessionMemory(
       ctx,
       branchToMessages(ctx?.sessionManager?.getBranch?.() || []),
       {
         sessionFile: sessionMeta(ctx).sessionFile,
-        sessionId: sessionMeta(ctx).sessionId,
-        trigger: "extension:session_shutdown_extractor",
+        trigger: "extension:session_shutdown_maintainer",
       },
     );
   });
@@ -224,7 +158,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
       loadMessagesFromSessionFile(previousSessionFile),
       {
         sessionFile: previousSessionFile,
-        trigger: "extension:session_switch_new_extractor",
+        trigger: "extension:session_switch_new_maintainer",
       },
     );
   });
@@ -243,11 +177,28 @@ export default function memoryExtension(pi: ExtensionAPI) {
     },
   });
 
+  pi.registerCommand("memory-consolidate", {
+    description: "Run a low-frequency LLM memory cleanup pass.",
+    handler: async (_args, ctx) => {
+      const result = await maintainMemory(ctx as any, {
+        mode: "consolidate",
+        trigger: "extension:manual_memory_consolidation",
+      });
+      if (result?.skipped) {
+        ctx.ui.notify(
+          `Memory consolidation skipped: ${String(result.skipped)}`,
+          "info",
+        );
+        return;
+      }
+      ctx.ui.notify(
+        `Memory consolidation finished: ${String(result?.appliedCount || 0)} change(s).`,
+        "info",
+      );
+    },
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
-    await executeMemoryTool({
-      action: "process",
-      sessionFile: sessionMeta(ctx).sessionFile,
-    });
     if (
       !installerAutoInitConsumed &&
       String(process.env.RIN_INSTALL_AUTO_INIT || "").trim() === "1"

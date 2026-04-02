@@ -3,21 +3,17 @@ import fssync from "node:fs";
 import path from "node:path";
 
 import {
-  CHRONICLE_TAG,
   MemoryDoc,
   MemoryExposure,
-  MemoryEvent,
   RESIDENT_LIMITS,
   RESIDENT_SLOTS,
 } from "./core/types.js";
 import {
-  normalizeFrontmatter,
   parseMarkdownDoc,
   previewMemoryDoc,
   renderMarkdownDoc,
 } from "./core/schema.js";
-import { eventChronicleLine, sessionKey } from "./events.js";
-import { nowIso, safeString, slugify, uniqueStrings } from "./core/utils.js";
+import { safeString } from "./core/utils.js";
 
 export async function walkMarkdownFiles(dirPath: string): Promise<string[]> {
   if (!fssync.existsSync(dirPath)) return [];
@@ -109,58 +105,6 @@ export function assertResidentDoc(doc: MemoryDoc): void {
 export async function writeMemoryDoc(doc: MemoryDoc) {
   await fs.mkdir(path.dirname(doc.path), { recursive: true });
   await fs.writeFile(doc.path, renderMarkdownDoc(doc), "utf8");
-}
-
-export async function appendChronicleEntry(
-  rootDir: string,
-  event: MemoryEvent,
-) {
-  const session = sessionKey(event);
-  const date =
-    safeString(event.created_at).slice(0, 10) || nowIso().slice(0, 10);
-  const id = slugify(`${date}-${session}`, `${date}-session`);
-  const filePath = genericDocPath(rootDir, "recall", id, "chronicles");
-  const existing = fssync.existsSync(filePath)
-    ? parseMarkdownDoc(filePath, await fs.readFile(filePath, "utf8"))
-    : normalizeFrontmatter(
-        {
-          id,
-          title: `${date} ${session} chronicle`,
-          exposure: "recall",
-          fidelity: "exact",
-          summary: `Chronological memory chronicle for ${session} on ${date}.`,
-          tags: [CHRONICLE_TAG, session],
-          triggers: ["history", "timeline", "recent"],
-          scope: "session",
-          kind: "history",
-          source: "memory:event-ledger",
-        },
-        filePath,
-        "",
-      );
-  const marker = `<!-- event:${event.id} -->`;
-  if (existing.content.includes(marker)) return false;
-  existing.path = filePath;
-  existing.updated_at = nowIso();
-  existing.tags = uniqueStrings([...existing.tags, CHRONICLE_TAG, session]);
-  existing.triggers = uniqueStrings([
-    ...existing.triggers,
-    "history",
-    "timeline",
-    "recent",
-  ]);
-  existing.scope = "session";
-  existing.kind = "history";
-  existing.summary = `Chronological memory chronicle for ${session} on ${date}.`;
-  existing.content = [
-    existing.content.trim(),
-    marker,
-    eventChronicleLine(event),
-  ]
-    .filter(Boolean)
-    .join("\n");
-  await writeMemoryDoc(existing);
-  return true;
 }
 
 export function previewDocs(docs: MemoryDoc[]) {

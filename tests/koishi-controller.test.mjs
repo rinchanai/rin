@@ -28,6 +28,8 @@ async function createController(chatKey = "telegram/1:2") {
   controller.connect = async () => {};
   controller.startTyping = () => {};
   controller.stopTyping = () => {};
+  controller.scheduleIdleDetach = () => {};
+  controller.clearIdleDetachTimer = () => {};
   return controller;
 }
 
@@ -87,10 +89,41 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
       });
     },
     setSessionName: async () => {},
+    switchSession: async () => {},
   };
 
   await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
 
   assert.deepEqual(calls, ["ensureSessionReady", "prompt:tagged:none"]);
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
+});
+
+test("koishi controller reattaches saved session file before bootstrapping a detached session", async () => {
+  const controller = await createController("telegram/7:7");
+  const calls = [];
+  controller.state.piSessionFile = "/tmp/saved-chat.jsonl";
+
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => undefined,
+      getSessionId: () => "",
+      getSessionName: () => "telegram/7:7",
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(`switch:${sessionPath}`);
+    },
+    ensureSessionReady: async () => {
+      calls.push("ensureSessionReady");
+      return { sessionFile: "/tmp/saved-chat.jsonl", sessionId: "session-7" };
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.ensureSessionReady();
+
+  assert.deepEqual(calls, [
+    "switch:/tmp/saved-chat.jsonl",
+    "ensureSessionReady",
+  ]);
+  assert.equal(controller.state.piSessionFile, "/tmp/saved-chat.jsonl");
 });

@@ -109,42 +109,16 @@ test("memory search returns paths and get is unsupported", async () => {
   });
 });
 
-test("processPendingEvents updates chronicles without regex-driven auto extraction", async () => {
+test("doctorMemory reports missing resident slots without event machinery", async () => {
   await withTempRoot(async (root) => {
     await store.ensureMemoryLayout(store.resolveMemoryRoot(root));
-
-    await store.logMemoryEvent(
-      {
-        kind: "user_input",
-        text: "以后请叫我主人，并且你做我的女仆。",
-        summary: "user: onboarding preference",
-        sessionFile: "/tmp/demo-session.jsonl",
-        sessionId: "demo-session",
-        cwd: "/tmp/demo-project",
-      },
-      root,
-    );
-
-    const processed = await store.processPendingEvents({}, root);
-    assert.equal(processed.applied_count, 0);
-    assert.deepEqual(processed.applied, []);
-    assert.ok(processed.chronicles_updated >= 1);
-
-    const memories = await store.listMemories(
-      { exposure: "recall", limit: 50 },
-      root,
-    );
-    const chronicleDoc = memories.results.find((item) =>
-      item.tags?.includes?.("chronicle"),
-    );
-    assert.ok(chronicleDoc, "expected chronicle doc to exist");
-    assert.ok(String(chronicleDoc.path || "").endsWith(".md"));
 
     const doctor = await store.doctorMemory(root);
     assert.equal(
       doctor.resident_missing_slots.includes("owner_identity"),
       true,
     );
+    assert.equal(doctor.counts.recall, 0);
   });
 });
 

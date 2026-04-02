@@ -23,14 +23,6 @@ export const memoryToolParameters = Type.Object({
     Type.Literal("list"),
     Type.Literal("search"),
     Type.Literal("save"),
-    Type.Literal("delete"),
-    Type.Literal("move"),
-    Type.Literal("compile"),
-    Type.Literal("doctor"),
-    Type.Literal("log_event"),
-    Type.Literal("events"),
-    Type.Literal("event_search"),
-    Type.Literal("process"),
   ]),
   query: Type.Optional(Type.String()),
   id: Type.Optional(Type.String()),
@@ -84,13 +76,6 @@ export const memoryToolParameters = Type.Object({
   sensitivity: Type.Optional(Type.String()),
   source: Type.Optional(Type.String()),
   limit: Type.Optional(Type.Number({ minimum: 1 })),
-  since: Type.Optional(Type.String()),
-  sessionFile: Type.Optional(Type.String()),
-  kindFilter: Type.Optional(Type.String()),
-  text: Type.Optional(Type.String()),
-  created_at: Type.Optional(Type.String()),
-  toolName: Type.Optional(Type.String()),
-  isError: Type.Optional(Type.Boolean()),
 });
 
 export function resolveAgentDir(): string {

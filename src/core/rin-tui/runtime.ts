@@ -448,6 +448,12 @@ export class RpcInteractiveSession {
     return data;
   }
 
+  async detachSession() {
+    await this.call("detach_session");
+    resetRpcLocalSessionState(this as any);
+    this.detachedBlankSession = true;
+  }
+
   recordBashResult(
     _command: string,
     _result: any,

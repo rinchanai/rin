@@ -22,7 +22,7 @@ export type WorkerHandle = {
   isStreaming: boolean;
   isCompacting: boolean;
   lastUsedAt: number;
-  keepAliveUntil: number;
+  releaseRequested: boolean;
 };
 
 type SessionSelector = {
@@ -45,8 +45,6 @@ export class WorkerPool {
     private options: {
       workerPath: string;
       cwd: string;
-      maxWorkers: number;
-      idleTtlMs: number;
       onWorkerSpawn?: (
         requester: ConnectionState | undefined,
         worker: WorkerHandle,
@@ -60,10 +58,7 @@ export class WorkerPool {
     worker.connections.delete(connection);
     connection.attachedWorker = undefined;
     worker.lastUsedAt = Date.now();
-    worker.keepAliveUntil = Math.max(
-      worker.keepAliveUntil,
-      Date.now() + 10_000,
-    );
+    this.maybeReleaseWorker(worker);
   }
 
   destroyWorker(worker: WorkerHandle) {
@@ -96,24 +91,8 @@ export class WorkerPool {
   }
 
   evictDetachedWorkers() {
-    const now = Date.now();
-    const detached = Array.from(this.workers)
-      .filter(
-        (worker) =>
-          worker.connections.size === 0 &&
-          !worker.isStreaming &&
-          !worker.isCompacting &&
-          now >= worker.keepAliveUntil,
-      )
-      .sort((a, b) => a.lastUsedAt - b.lastUsedAt);
-
-    for (const worker of detached) {
-      if (
-        this.workers.size <= this.options.maxWorkers &&
-        now - worker.lastUsedAt < this.options.idleTtlMs
-      )
-        break;
-      this.destroyWorker(worker);
+    for (const worker of Array.from(this.workers)) {
+      this.maybeReleaseWorker(worker);
     }
   }
 
@@ -132,10 +111,7 @@ export class WorkerPool {
   ) {
     if (attach) this.attachWorker(connection, worker);
     worker.lastUsedAt = Date.now();
-    worker.keepAliveUntil = Math.max(
-      worker.keepAliveUntil,
-      Date.now() + 10_000,
-    );
+    worker.releaseRequested = false;
     if (command?.id)
       worker.pendingResponses.set(String(command.id), connection);
     worker.child.stdin.write(`${JSON.stringify(command)}\n`);
@@ -193,7 +169,7 @@ export class WorkerPool {
         isStreaming: worker.isStreaming,
         isCompacting: worker.isCompacting,
         lastUsedAt: worker.lastUsedAt,
-        keepAliveUntil: worker.keepAliveUntil,
+        releaseRequested: worker.releaseRequested,
         role: this.catalogWorker === worker ? "catalog" : "session",
       })),
     };
@@ -227,36 +203,23 @@ export class WorkerPool {
       });
       worker.isStreaming = Boolean(data.isStreaming);
       worker.isCompacting = Boolean(data.isCompacting);
+      this.maybeReleaseWorker(worker);
       return;
     }
 
     if (payload.type === "agent_start") {
       worker.isStreaming = true;
-      worker.keepAliveUntil = Math.max(
-        worker.keepAliveUntil,
-        Date.now() + 30_000,
-      );
     }
     if (payload.type === "agent_end") {
       worker.isStreaming = false;
-      worker.keepAliveUntil = Math.max(
-        worker.keepAliveUntil,
-        Date.now() + 10_000,
-      );
+      this.maybeReleaseWorker(worker);
     }
     if (payload.type === "compaction_start") {
       worker.isCompacting = true;
-      worker.keepAliveUntil = Math.max(
-        worker.keepAliveUntil,
-        Date.now() + 30_000,
-      );
     }
     if (payload.type === "compaction_end") {
       worker.isCompacting = false;
-      worker.keepAliveUntil = Math.max(
-        worker.keepAliveUntil,
-        Date.now() + 10_000,
-      );
+      this.maybeReleaseWorker(worker);
     }
     if (payload.type === "rpc_turn_event" && payload.event === "complete") {
       this.setWorkerSessionRefs(worker, {
@@ -289,7 +252,7 @@ export class WorkerPool {
       isStreaming: false,
       isCompacting: false,
       lastUsedAt: Date.now(),
-      keepAliveUntil: Date.now(),
+      releaseRequested: false,
     };
     this.workers.add(worker);
 
@@ -362,6 +325,20 @@ export class WorkerPool {
     connection.attachedWorker = worker;
     worker.connections.add(connection);
     worker.lastUsedAt = Date.now();
+    worker.releaseRequested = false;
+  }
+
+  private maybeReleaseWorker(worker: WorkerHandle) {
+    if (!this.workers.has(worker)) return;
+    if (worker.connections.size > 0) {
+      worker.releaseRequested = false;
+      return;
+    }
+    if (worker.isStreaming || worker.isCompacting) {
+      worker.releaseRequested = true;
+      return;
+    }
+    this.destroyWorker(worker);
   }
 
   private getSessionSelector(command: any): SessionSelector {
