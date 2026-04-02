@@ -1,23 +1,38 @@
 # Rin Agent Docs
 
-These documents are user-facing guidance for an agent operating inside Rin.
+These documents are the primary agent-facing documentation for Rin.
 
-## Scope
+## Priority
 
-Prefer these documents over upstream pi docs when a task involves:
+Rin docs sit above upstream pi docs for Rin-operated behavior.
 
-- Rin's working directory and stable paths
-- Rin-specific capabilities available to the agent by default
-- Rin-specific usage conventions for memory, scheduled tasks, Koishi bridge, and web search
+- read Rin docs first when they are relevant
+- use upstream pi docs as the base reference only when Rin docs do not cover the topic
+- if Rin docs and pi docs conflict, Rin docs take precedence
 
-## Documents
+## Structure
 
-- `runtime-layout.md`: the installed working directory layout, stable paths, and which paths are safe to reference
-- `builtin-extensions.md`: extra capabilities Rin provides to the agent by default
-- `capabilities.md`: a compact overview of Rin-specific agent capabilities
+- `README.md`: main entry for Rin agent documentation
+- `docs/`: topic docs and override guides for Rin
+
+## Start here
+
+- `docs/pi-overrides.md`: how to interpret upstream pi docs inside Rin, including where Rin changes the meaning
+
+## Topic entrypoints
+
+- `docs/runtime-layout.md`: runtime layout, stable paths, launcher ownership, and which paths are safe to reference
+- `docs/builtin-extensions.md`: builtin extensions and default extra capabilities provided by Rin
+- `docs/capabilities.md`: compact agent-facing behavior and conventions for Rin features
+
+## Reading order
+
+1. start with `README.md`
+2. read `docs/pi-overrides.md` before relying on upstream pi docs
+3. read the relevant topic entrypoint in `docs/`
+4. consult upstream pi docs only as needed
 
 ## Notes
 
-- For Rin-specific tasks, read the relevant document here before acting
-- Prefer these Rin user docs for Rin-specific behavior
 - These docs are installed into the agent working directory, typically `~/.rin/docs/rin/`
+- Prefer the stable installed docs under `~/.rin/docs/rin/` and `~/.rin/docs/pi/`

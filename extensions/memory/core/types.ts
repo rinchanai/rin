@@ -15,14 +15,13 @@ export type MemoryStatus = "active" | "superseded" | "invalidated";
 
 export type MemoryDoc = {
   id: string;
-  title: string;
+  name: string;
   exposure: MemoryExposure;
   fidelity: MemoryFidelity;
   resident_slot: string;
-  summary: string;
+  description: string;
   tags: string[];
   aliases: string[];
-  triggers: string[];
   scope: MemoryScope;
   kind: MemoryKind;
   sensitivity: string;

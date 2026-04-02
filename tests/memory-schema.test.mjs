@@ -16,12 +16,12 @@ const schema = await import(
 test("memory schema parses and renders markdown docs consistently", () => {
   const doc = schema.parseMarkdownDoc(
     "/tmp/demo.md",
-    `---\ntitle: Demo\nexposure: recall\ntags:\n  - one\n  - two\n---\nhello world\n`,
+    `---\nname: Demo\nexposure: recall\ntags:\n  - one\n  - two\n---\nhello world\n`,
   );
-  assert.equal(doc.title, "Demo");
+  assert.equal(doc.name, "Demo");
   assert.deepEqual(doc.tags, ["one", "two"]);
   const rendered = schema.renderMarkdownDoc(doc);
-  assert.ok(rendered.includes("title: Demo"));
+  assert.ok(rendered.includes("name: Demo"));
   assert.ok(rendered.includes("hello world"));
 });
 

@@ -14,8 +14,8 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
   if (!q) return 0;
   const haystack = normalizeNeedle(
     [
-      doc.title,
-      doc.summary,
+      doc.name,
+      doc.description,
       doc.content,
       doc.id,
       doc.resident_slot,
@@ -23,7 +23,6 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
       doc.kind,
       ...doc.tags,
       ...doc.aliases,
-      ...doc.triggers,
     ].join(" \n "),
   );
   if (!haystack) return 0;
@@ -87,7 +86,7 @@ export function excerptForRecall(
   query: string,
   max = 240,
 ): string {
-  const text = [doc.summary, doc.content]
+  const text = [doc.description, doc.content]
     .filter(Boolean)
     .join("\n")
     .replace(/\s+/g, " ")
@@ -110,12 +109,11 @@ function memoryRelationFeatures(doc: MemoryDoc): string[] {
     .join("\n");
   return uniqueStrings(
     [
-      ...conceptTokens(doc.title),
-      ...conceptTokens(doc.summary),
+      ...conceptTokens(doc.name),
+      ...conceptTokens(doc.description),
       ...conceptTokens(contentSample),
       ...doc.tags.map((item) => normalizeNeedle(item)),
       ...doc.aliases.map((item) => normalizeNeedle(item)),
-      ...doc.triggers.map((item) => normalizeNeedle(item)),
       normalizeNeedle(doc.scope),
       normalizeNeedle(doc.kind),
     ].filter(Boolean),
@@ -135,11 +133,7 @@ export function relationScore(
   const sharedTags = a.tags.filter((item) =>
     b.tags.some((other) => normalizeNeedle(other) === normalizeNeedle(item)),
   );
-  const sharedTriggers = a.triggers.filter((item) =>
-    b.triggers.some(
-      (other) => normalizeNeedle(other) === normalizeNeedle(item),
-    ),
-  );
+  const sharedTriggers: string[] = [];
   let score =
     Math.min(6, overlap) * 0.7 +
     sharedTags.length * 1.3 +
@@ -150,7 +144,7 @@ export function relationScore(
   const reason = sharedTags.length
     ? "shared-tags"
     : sharedTriggers.length
-      ? "shared-triggers"
+      ? "shared-description"
       : overlap >= 3
         ? "shared-concepts"
         : a.scope === b.scope

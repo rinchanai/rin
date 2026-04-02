@@ -1,8 +1,7 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
-import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
@@ -16,23 +15,12 @@ import { Type } from "@sinclair/typebox";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "Rin fetch/1.0";
-const FetchModeSchema = StringEnum(["text", "raw", "file"] as const, {
-  description:
-    'Fetch mode: "text" = extract readable text, "raw" = raw response text, "file" = download to disk.',
-});
 
 const FetchParamsSchema = Type.Object({
   url: Type.String({ description: "HTTP or HTTPS URL to fetch." }),
-  mode: Type.Optional(FetchModeSchema),
-  outputPath: Type.Optional(
-    Type.String({
-      description:
-        'Optional output path for mode="file". Relative paths resolve from the current working directory.',
-    }),
-  ),
 });
 
-type FetchMode = "text" | "raw" | "file";
+type FetchMode = "text";
 
 type FetchDetails = {
   url: string;
@@ -45,7 +33,6 @@ type FetchDetails = {
   charset?: string;
   bytes: number;
   title?: string;
-  outputPath?: string;
   fullOutputPath?: string;
   truncated?: boolean;
 };
@@ -200,71 +187,6 @@ function isTextLike(mimeType: string) {
   );
 }
 
-function sanitizeFilenamePart(value: string) {
-  const cleaned = String(value || "")
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 120);
-  return cleaned || "download";
-}
-
-function extensionFromMimeType(mimeType: string) {
-  const map: Record<string, string> = {
-    "text/html": ".html",
-    "text/plain": ".txt",
-    "application/json": ".json",
-    "text/markdown": ".md",
-    "application/pdf": ".pdf",
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/webp": ".webp",
-    "image/gif": ".gif",
-    "application/zip": ".zip",
-    "application/gzip": ".gz",
-  };
-  return map[mimeType] || "";
-}
-
-function filenameFromContentDisposition(value: string | null) {
-  const text = String(value || "");
-  const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(text);
-  if (utf8Match?.[1]) {
-    try {
-      return sanitizeFilenamePart(decodeURIComponent(utf8Match[1]));
-    } catch {
-      return sanitizeFilenamePart(utf8Match[1]);
-    }
-  }
-  const quoted = /filename="([^"]+)"/i.exec(text);
-  if (quoted?.[1]) return sanitizeFilenamePart(quoted[1]);
-  const plain = /filename=([^;]+)/i.exec(text);
-  if (plain?.[1]) return sanitizeFilenamePart(plain[1]);
-  return "";
-}
-
-function pickOutputFilename(
-  finalUrl: string,
-  headers: Headers,
-  mimeType: string,
-) {
-  const fromHeader = filenameFromContentDisposition(
-    headers.get("content-disposition"),
-  );
-  if (fromHeader) return fromHeader;
-  try {
-    const url = new URL(finalUrl);
-    const last = path.posix.basename(url.pathname || "");
-    const base = sanitizeFilenamePart(last && last !== "/" ? last : "download");
-    if (path.extname(base)) return base;
-    const ext = extensionFromMimeType(mimeType);
-    return `${base}${ext}`;
-  } catch {
-    const ext = extensionFromMimeType(mimeType);
-    return `download${ext}`;
-  }
-}
-
 async function writeTempText(
   prefix: string,
   filename: string,
@@ -294,20 +216,13 @@ export default function fetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "fetch",
     label: "Fetch URL",
-    description: `Fetch a specific HTTP/HTTPS URL directly. mode="text" extracts readable text from webpages, mode="raw" returns raw response text, and mode="file" downloads to disk. Text output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
-    promptSnippet:
-      "Fetch a specific URL directly when you already have the link. Supports readable text extraction, raw response text, and file downloads.",
-    promptGuidelines: [
-      "Use `fetch` when the user provides a concrete URL and wants you to read or download it directly instead of searching the web.",
-      "Prefer mode=`text` for webpages, mode=`raw` when exact response text matters, and mode=`file` when the goal is to save the resource locally.",
-    ],
+    description: `Fetch text content from a specific HTTP/HTTPS URL. Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
+    promptSnippet: "Fetch content from a specific URL.",
+    promptGuidelines: ["Use `fetch` to get the plain-text version of a page."],
     parameters: FetchParamsSchema,
-    async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      const mode: FetchMode = (params.mode as FetchMode | undefined) || "text";
+    async execute(_toolCallId, params, signal, onUpdate) {
+      const mode: FetchMode = "text";
       const url = normalizeUrl(params.url);
-      if (mode !== "file" && params.outputPath) {
-        throw new Error('outputPath is only valid when mode="file"');
-      }
 
       onUpdate?.({
         content: [{ type: "text", text: `Fetching ${url}...` }],
@@ -330,9 +245,7 @@ export default function fetchExtension(pi: ExtensionAPI) {
           headers: {
             "user-agent": USER_AGENT,
             accept:
-              mode === "file"
-                ? "*/*"
-                : "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.2",
+              "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.2",
           },
           signal: controller.signal,
         });
@@ -376,46 +289,17 @@ export default function fetchExtension(pi: ExtensionAPI) {
         );
       }
 
-      if (mode === "file") {
-        const resolvedPath = params.outputPath
-          ? path.resolve(ctx.cwd, params.outputPath)
-          : path.join(
-              await mkdtemp(path.join(tmpdir(), "rin-fetch-")),
-              pickOutputFilename(details.finalUrl, response.headers, mimeType),
-            );
-        await withFileMutationQueue(resolvedPath, async () => {
-          await mkdir(path.dirname(resolvedPath), { recursive: true });
-          await writeFile(resolvedPath, buffer);
-        });
-        details.outputPath = resolvedPath;
-        const text = [
-          `Downloaded: ${details.finalUrl}`,
-          `Saved to: ${resolvedPath}`,
-          `Status: ${details.status} ${details.statusText}`.trim(),
-          `MIME: ${details.mimeType}`,
-          `Bytes: ${details.bytes}`,
-        ].join("\n");
-        return {
-          content: [{ type: "text", text }],
-          details,
-        };
-      }
-
       const decoded = normalizeRawText(decodeBuffer(buffer, charset));
       let bodyText = decoded;
-      if (mode === "text") {
-        if (isProbablyHtml(mimeType, decoded)) {
-          details.title = extractHtmlTitle(decoded) || undefined;
-          bodyText = htmlToText(decoded);
-        } else if (mimeType.includes("json")) {
-          bodyText = maybePrettyJson(decoded);
-        } else if (isTextLike(mimeType)) {
-          bodyText = normalizePlainText(decoded);
-        } else {
-          throw new Error(
-            `Fetch returned non-text content (${mimeType}). Use mode="file" to download it instead.`,
-          );
-        }
+      if (isProbablyHtml(mimeType, decoded)) {
+        details.title = extractHtmlTitle(decoded) || undefined;
+        bodyText = htmlToText(decoded);
+      } else if (mimeType.includes("json")) {
+        bodyText = maybePrettyJson(decoded);
+      } else if (isTextLike(mimeType)) {
+        bodyText = normalizePlainText(decoded);
+      } else {
+        throw new Error(`Fetch returned non-text content (${mimeType}).`);
       }
 
       const fullText = formatTextResponse(details, bodyText);
@@ -425,10 +309,9 @@ export default function fetchExtension(pi: ExtensionAPI) {
       });
       let resultText = truncation.content;
       if (truncation.truncated) {
-        const extension = mode === "raw" ? ".txt" : ".md";
         const fullOutputPath = await writeTempText(
           "rin-fetch-",
-          `response${extension}`,
+          "response.md",
           fullText,
         );
         details.truncated = true;
@@ -442,34 +325,24 @@ export default function fetchExtension(pi: ExtensionAPI) {
       };
     },
     renderCall(args, theme) {
-      const mode = args.mode ? ` (${args.mode})` : "";
       return new Text(
-        `${theme.fg("toolTitle", theme.bold("fetch"))}${theme.fg("muted", mode)} ${theme.fg("accent", String(args.url || ""))}`,
+        `${theme.fg("toolTitle", theme.bold("fetch"))} ${theme.fg("accent", String(args.url || ""))}`,
         0,
         0,
       );
     },
-    renderResult(result, { expanded, isPartial }, theme) {
+    renderResult(result, { isPartial }, theme) {
       if (isPartial) return new Text(theme.fg("warning", "Fetching..."), 0, 0);
       const details = (result.details || {}) as FetchDetails;
       if (!details.finalUrl) {
-        const fallback =
-          result.content?.[0]?.type === "text"
-            ? result.content[0].text
-            : "(no output)";
-        return new Text(fallback, 0, 0);
+        return new Text(theme.fg("muted", "fetch complete"), 0, 0);
       }
+
       let text = theme.fg("success", `${details.status} ${details.mimeType}`);
       if (details.title) text += `\n${theme.fg("accent", details.title)}`;
       text += `\n${theme.fg("dim", details.finalUrl)}`;
-      if (details.outputPath)
-        text += `\n${theme.fg("muted", details.outputPath)}`;
       if (details.truncated && details.fullOutputPath) {
-        text += `\n${theme.fg("warning", `truncated → ${details.fullOutputPath}`)}`;
-      }
-      if (expanded && result.content?.[0]?.type === "text") {
-        const lines = result.content[0].text.split("\n").slice(0, 16);
-        text += `\n\n${theme.fg("dim", lines.join("\n"))}`;
+        text += `\n${theme.fg("warning", `full output → ${details.fullOutputPath}`)}`;
       }
       return new Text(text, 0, 0);
     },

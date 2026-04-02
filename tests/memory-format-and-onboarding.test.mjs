@@ -19,9 +19,17 @@ const onboarding = await import(
 
 test("memory format builds compact compiled prompt", () => {
   const text = format.buildCompiledMemoryPrompt({
-    resident: "[core_voice_style] 简洁",
+    resident_prompt_docs: [
+      {
+        name: "Core Voice Style",
+        resident_slot: "core_voice_style",
+        path: "/tmp/core_voice_style.md",
+        content: "简洁",
+      },
+    ],
     recall_context: "- search note",
   });
+  assert.ok(text.includes("# Memory"));
   assert.ok(text.includes("## Resident Memory"));
   assert.ok(text.includes("## Relevant Recall"));
 });

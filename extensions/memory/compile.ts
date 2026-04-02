@@ -17,14 +17,16 @@ function residentPromptLine(slot: string, body: string): string {
 
 function progressiveIndexLine(doc: MemoryDoc): string {
   const desc = trimText(
-    doc.summary || excerptForRecall(doc, "", 160) || "Read this when relevant.",
+    doc.description ||
+      excerptForRecall(doc, "", 160) ||
+      "Read this when relevant.",
     180,
   );
-  return `- ${doc.title}: ${desc}`;
+  return `- ${doc.name}: ${desc}`;
 }
 
 function renderExpandedDoc(doc: MemoryDoc): string {
-  return [`### ${doc.title}`, safeString(doc.content).trim()]
+  return [`### ${doc.name}`, safeString(doc.content).trim()]
     .filter(Boolean)
     .join("\n\n");
 }
@@ -32,7 +34,7 @@ function renderExpandedDoc(doc: MemoryDoc): string {
 function renderRecallContext(doc: MemoryDoc, query: string): string {
   const excerpt = excerptForRecall(doc, query, 260);
   const meta = [doc.scope, doc.kind].filter(Boolean).join(" • ");
-  return [`- ${doc.title}${meta ? ` — ${meta}` : ""}`, excerpt]
+  return [`- ${doc.name}${meta ? ` — ${meta}` : ""}`, excerpt]
     .filter(Boolean)
     .join("\n  ");
 }
@@ -111,6 +113,12 @@ export function compileFromDocsAndEvents(
     recall_context: recallDocs
       .map((doc) => renderRecallContext(doc, query))
       .join("\n\n"),
+    resident_prompt_docs: resident.map((doc) => ({
+      name: doc.name,
+      resident_slot: doc.resident_slot,
+      path: doc.path,
+      content: safeString(doc.content).trim(),
+    })),
     resident_docs: resident.map(previewMemoryDoc),
     progressive_docs: progressiveDocs
       .slice(0, progressiveIndexLimit)

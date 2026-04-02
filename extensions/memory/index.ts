@@ -3,6 +3,7 @@ import {
   type ExtensionAPI,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
+import { Type } from "@sinclair/typebox";
 
 import { maintainMemory } from "./maintainer.js";
 import {
@@ -14,7 +15,6 @@ import {
   getOnboardingState,
   isOnboardingActive,
   markOnboardingPrompted,
-  memoryToolParameters,
   refreshOnboardingCompletion,
 } from "./lib.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
@@ -75,67 +75,128 @@ async function processSessionMemory(
   });
 }
 
-export default function memoryExtension(pi: ExtensionAPI) {
-  const registerMemoryTool = (name: "memory" | "rin_memory", label: string) => {
-    pi.registerTool({
-      name,
-      label,
-      description:
-        "Search and save the markdown-backed long-term memory library with resident, progressive, and recall layers.",
-      promptSnippet:
-        "Prefer using `memory.search` to recover missing context before answering.",
-      promptGuidelines: [
-        "Prefer using `memory.search` to recover context.",
-        "Use a few distinctive keywords instead of full sentences.",
-        "Start with exact names or unique terms, and broaden only if needed.",
-        "Do not assume historical context is already in the current prompt.",
-        "`memory.search` returns paths and metadata first; use `read` only when you need the full document.",
-        "Use `memory.save` only for stable information worth keeping beyond the current turn, and search before saving to avoid duplicates.",
-      ],
-      parameters: memoryToolParameters,
-      execute: async (_toolCallId, params) => {
-        const action = String((params as any)?.action || "").trim();
-        try {
-          const response = await executeMemoryTool(params as any);
-          const prepared = await prepareToolTextOutput({
-            agentText: formatMemoryAgentResult(action, response),
-            userText: formatMemoryResult(action, response),
-            tempPrefix: "rin-memory-",
-            filename: `memory-${action || "result"}.txt`,
-          });
-          return {
-            content: [{ type: "text", text: prepared.agentText }],
-            details: { ...response, ...prepared },
-          };
-        } catch (error: any) {
-          const message = String(
-            error?.message || error || "memory_action_failed",
-          );
-          return {
-            content: [{ type: "text", text: message }],
-            details: {
-              ok: false,
-              error: message,
-              agentText: message,
-              userText: `Memory 操作失败：${message}`,
-            },
-            isError: true,
-          };
-        }
-      },
-      renderResult(result) {
-        const details = result.details as any;
-        const fallback =
-          result.content?.[0]?.type === "text"
-            ? result.content[0].text
-            : "(no output)";
-        return new Text(String(details?.userText || fallback), 0, 0);
-      },
-    });
-  };
+const searchMemoryParams = Type.Object({
+  query: Type.String({ description: "Search query." }),
+  limit: Type.Optional(Type.Number({ minimum: 1 })),
+  fidelity: Type.Optional(
+    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")]),
+  ),
+});
 
-  registerMemoryTool("memory", "Memory");
-  registerMemoryTool("rin_memory", "Memory (legacy alias)");
+const saveMemoryParams = Type.Object({
+  id: Type.Optional(Type.String()),
+  path: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
+  content: Type.String({ description: "Memory content." }),
+  description: Type.Optional(Type.String()),
+  exposure: Type.Optional(
+    Type.Union([
+      Type.Literal("resident"),
+      Type.Literal("progressive"),
+      Type.Literal("recall"),
+    ]),
+  ),
+  residentSlot: Type.Optional(Type.String()),
+  tags: Type.Optional(Type.Array(Type.String())),
+  aliases: Type.Optional(Type.Array(Type.String())),
+  scope: Type.Optional(
+    Type.Union([
+      Type.Literal("global"),
+      Type.Literal("domain"),
+      Type.Literal("project"),
+      Type.Literal("session"),
+    ]),
+  ),
+  kind: Type.Optional(
+    Type.Union([
+      Type.Literal("identity"),
+      Type.Literal("style"),
+      Type.Literal("method"),
+      Type.Literal("value"),
+      Type.Literal("preference"),
+      Type.Literal("rule"),
+      Type.Literal("knowledge"),
+      Type.Literal("history"),
+    ]),
+  ),
+  status: Type.Optional(
+    Type.Union([
+      Type.Literal("active"),
+      Type.Literal("superseded"),
+      Type.Literal("invalidated"),
+    ]),
+  ),
+  observationCount: Type.Optional(Type.Number({ minimum: 1 })),
+  supersedes: Type.Optional(Type.Array(Type.String())),
+  sensitivity: Type.Optional(Type.String()),
+  source: Type.Optional(Type.String()),
+});
+
+async function executeNamedMemoryAction(action: string, params: any) {
+  const input = { ...params, action };
+  try {
+    const response = await executeMemoryTool(input);
+    const prepared = await prepareToolTextOutput({
+      agentText: formatMemoryAgentResult(action, response),
+      userText: formatMemoryResult(action, response),
+      tempPrefix: "rin-memory-",
+      filename: `memory-${action}.txt`,
+    });
+    return {
+      content: [{ type: "text" as const, text: prepared.agentText }],
+      details: { ...response, ...prepared },
+    };
+  } catch (error: any) {
+    const message = String(error?.message || error || "memory_action_failed");
+    return {
+      content: [{ type: "text" as const, text: message }],
+      details: {
+        ok: false,
+        error: message,
+        agentText: message,
+        userText: `Memory 操作失败：${message}`,
+      },
+      isError: true,
+    };
+  }
+}
+
+function renderMemoryResult(result: any) {
+  const details = result.details as any;
+  const fallback =
+    result.content?.[0]?.type === "text"
+      ? result.content[0].text
+      : "(no output)";
+  return new Text(String(details?.userText || fallback), 0, 0);
+}
+
+export default function memoryExtension(pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "search_memory",
+    label: "Search Memory",
+    description:
+      "Search long-term memory. Returns matching paths and metadata first.",
+    promptSnippet: "Search long-term memory.",
+    promptGuidelines: [
+      "Use `search_memory` to search memory files and read them.",
+    ],
+    parameters: searchMemoryParams,
+    execute: async (_toolCallId, params) =>
+      await executeNamedMemoryAction("search", params),
+    renderResult: renderMemoryResult,
+  });
+
+  pi.registerTool({
+    name: "save_memory",
+    label: "Save Memory",
+    description: "Save stable information to long-term memory.",
+    promptSnippet: "Save long-term memory.",
+    promptGuidelines: ["Use `save_memory` to persist specific information."],
+    parameters: saveMemoryParams,
+    execute: async (_toolCallId, params) =>
+      await executeNamedMemoryAction("save", params),
+    renderResult: renderMemoryResult,
+  });
 
   pi.on("session_shutdown", async (_event, ctx) => {
     await processSessionMemory(
@@ -227,9 +288,18 @@ export default function memoryExtension(pi: ExtensionAPI) {
       );
     }
     if (!blocks.length) return;
+    const current = String(event.systemPrompt || "").trimEnd();
+    const memoryBlock = blocks.join("\n\n").trim();
+    const projectContextMarker = "\n\n# Project Context\n\n";
+    const idx = current.indexOf(projectContextMarker);
+    if (idx >= 0) {
+      return {
+        systemPrompt:
+          `${current.slice(0, idx).trimEnd()}\n\n${memoryBlock}${current.slice(idx)}`.trimEnd(),
+      };
+    }
     return {
-      systemPrompt:
-        `${String(event.systemPrompt || "").trimEnd()}\n\n${blocks.join("\n\n")}`.trimEnd(),
+      systemPrompt: `${current}\n\n${memoryBlock}`.trimEnd(),
     };
   });
 }

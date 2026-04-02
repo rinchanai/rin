@@ -21,15 +21,14 @@ const compile = await import(
 test("memory relevance scores docs and relations", () => {
   const docA = {
     id: "a",
-    title: "SearXNG search",
-    summary: "search stack",
+    name: "SearXNG search",
+    description: "search stack searxng",
     content: "Use SearXNG search adapter",
     resident_slot: "",
     scope: "project",
     kind: "knowledge",
     tags: ["search"],
     aliases: [],
-    triggers: ["searxng"],
     exposure: "recall",
     status: "active",
     canonical: false,
@@ -37,9 +36,9 @@ test("memory relevance scores docs and relations", () => {
   const docB = {
     ...docA,
     id: "b",
-    title: "Search notes",
+    name: "Search notes",
     content: "SearXNG tuning notes",
-    triggers: ["search"],
+    description: "Use SearXNG",
   };
   assert.ok(relevance.lexicalScore("searxng", docA) > 0);
   assert.ok(relevance.relationScore(docA, docB).score > 0);
@@ -50,8 +49,8 @@ test("memory compile renders resident and recall context", () => {
   const docs = [
     {
       id: "voice",
-      title: "Voice",
-      summary: "",
+      name: "Voice",
+      description: "",
       content: "简洁自然",
       resident_slot: "core_voice_style",
       scope: "global",
@@ -67,15 +66,14 @@ test("memory compile renders resident and recall context", () => {
     },
     {
       id: "search-note",
-      title: "Search note",
-      summary: "Use SearXNG",
+      name: "Search note",
+      description: "Use SearXNG",
       content: "Keep SearXNG design.",
       resident_slot: "",
       scope: "project",
       kind: "knowledge",
       tags: ["search"],
       aliases: [],
-      triggers: ["searxng"],
       exposure: "recall",
       fidelity: "fuzzy",
       status: "active",

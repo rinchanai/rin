@@ -89,17 +89,9 @@ export default function webSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_search",
     label: "Web Search",
-    description:
-      "Search the live web for fresh facts, current documentation, recent releases, and other information that may have changed after pretraining.",
-    promptSnippet:
-      "Prefer using `web_search` to establish a factual baseline before answering.",
-    promptGuidelines: [
-      "Prefer using `web_search` to establish a factual baseline.",
-      "Use a few distinctive keywords instead of full sentences.",
-      "Start with exact names or unique terms, and broaden only if needed.",
-      "Do not rely on memory alone when fresh external information could matter.",
-      "When unsure, search first and then answer.",
-    ],
+    description: "Search the web for fresh information.",
+    promptSnippet: "Search live information.",
+    promptGuidelines: ["Use `web_search` to search live information."],
     parameters: Type.Object({
       q: Type.String({ description: "Focused search query." }),
       limit: Type.Optional(Type.Number({ minimum: 1, maximum: 8 })),
