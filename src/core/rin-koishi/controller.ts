@@ -26,6 +26,7 @@ import {
 const INTERIM_PREFIX = "··· ";
 const TYPING_INTERVAL_MS = 4000;
 const INTERIM_MIN_INTERVAL_MS = 1500;
+const SESSION_IDLE_DETACH_MS = 60_000;
 
 export class KoishiChatController {
   app: any;
@@ -46,6 +47,7 @@ export class KoishiChatController {
   interimSentText = "";
   interimSentAt = 0;
   typingTimer: NodeJS.Timeout | null = null;
+  idleDetachTimer: NodeJS.Timeout | null = null;
   latestAssistantText = "";
   pendingCompletedAssistantText = "";
   pendingOutboundImages: SavedAttachment[] = [];
@@ -166,6 +168,7 @@ export class KoishiChatController {
 
   dispose() {
     this.stopTyping();
+    this.clearIdleDetachTimer();
     for (const waiter of this.turnWaiters.values())
       waiter.reject(new Error("koishi_controller_disposed"));
     this.turnWaiters.clear();
@@ -176,6 +179,29 @@ export class KoishiChatController {
 
   private saveState() {
     writeJsonFile(this.statePath, this.state);
+  }
+  private clearIdleDetachTimer() {
+    if (!this.idleDetachTimer) return;
+    clearTimeout(this.idleDetachTimer);
+    this.idleDetachTimer = null;
+  }
+  private scheduleIdleDetach() {
+    this.clearIdleDetachTimer();
+    this.idleDetachTimer = setTimeout(() => {
+      void this.detachIdleSession().catch(() => {});
+    }, SESSION_IDLE_DETACH_MS);
+  }
+  private async detachIdleSession() {
+    this.clearIdleDetachTimer();
+    if (!this.session || this.turnWaiters.size > 0) return;
+    const currentSessionFile = safeString(
+      this.session.sessionManager.getSessionFile?.() ||
+        this.state.piSessionFile ||
+        "",
+    ).trim();
+    if (currentSessionFile) this.state.piSessionFile = currentSessionFile;
+    await this.session.detachSession?.().catch(() => {});
+    this.saveState();
   }
   private startTyping() {
     this.stopTyping();
@@ -233,6 +259,7 @@ export class KoishiChatController {
     });
   }
   async resumeSessionFile(sessionFile: string) {
+    this.clearIdleDetachTimer();
     const wanted = safeString(sessionFile).trim();
     if (!wanted)
       return {
@@ -272,6 +299,14 @@ export class KoishiChatController {
   }
   private async ensureSessionReady() {
     if (!this.session) throw new Error("koishi_session_not_connected");
+    this.clearIdleDetachTimer();
+    const wanted = safeString(this.state.piSessionFile || "").trim();
+    const current = safeString(
+      this.session.sessionManager.getSessionFile?.() || "",
+    ).trim();
+    if (!current && wanted) {
+      await this.session.switchSession(wanted).catch(() => {});
+    }
     const result = await this.session.ensureSessionReady();
     this.state.piSessionFile =
       safeString(
@@ -309,6 +344,7 @@ export class KoishiChatController {
     const text = safeString(data?.text || "").trim();
     if (text)
       await sendText(this.app, this.chatKey, text, this.h, replyToMessageId);
+    this.scheduleIdleDetach();
     return data;
   }
   async runTurn(
@@ -397,6 +433,7 @@ export class KoishiChatController {
         file.name,
         replyToMessageId,
       ).catch(() => {});
+    this.scheduleIdleDetach();
   }
   async recoverIfNeeded() {
     if (!this.state.processing) return;
@@ -443,6 +480,7 @@ export class KoishiChatController {
         );
       for (const image of this.pendingOutboundImages.splice(0))
         await sendImageFile(this.app, this.chatKey, image.path, this.h);
+      this.scheduleIdleDetach();
       return;
     }
     await this.runTurn(

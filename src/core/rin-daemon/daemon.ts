@@ -37,19 +37,9 @@ export async function startDaemon(
     path.join(path.dirname(new URL(import.meta.url).pathname), "worker.js");
   const runtime = resolveRuntimeProfile();
   const sessionManagerModulePromise = loadRinSessionManagerModule();
-  const maxWorkers = Math.max(
-    1,
-    Number(process.env.RIN_DAEMON_MAX_WORKERS || 8),
-  );
-  const idleTtlMs = Math.max(
-    60_000,
-    Number(process.env.RIN_DAEMON_IDLE_TTL_MS || 15 * 60_000),
-  );
   const workerPool = new WorkerPool({
     workerPath,
     cwd: runtime.cwd,
-    maxWorkers,
-    idleTtlMs,
     onWorkerSpawn: (requester, worker) => {
       if (requester)
         writeLine(requester.socket, {
@@ -211,8 +201,6 @@ export async function startDaemon(
         response(id, type, true, {
           socketPath,
           ...workerPool.getStatusSnapshot(),
-          maxWorkers,
-          idleTtlMs,
           taskCount: cronScheduler.listTasks().length,
           webSearch: getSearxngSidecarStatus(runtime.agentDir),
           koishi: getKoishiSidecarStatus(runtime.agentDir),
