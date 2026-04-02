@@ -19,11 +19,13 @@ import {
 } from "./onboarding.js";
 
 export const memoryToolParameters = Type.Object({
-  action: Type.Union([
-    Type.Literal("list"),
-    Type.Literal("search"),
-    Type.Literal("save"),
-  ]),
+  action: Type.Union(
+    [Type.Literal("list"), Type.Literal("search"), Type.Literal("save")],
+    {
+      description:
+        "Memory tool action. Allowed values: `list`, `search`, or `save`.",
+    },
+  ),
   query: Type.Optional(Type.String()),
   id: Type.Optional(Type.String()),
   path: Type.Optional(Type.String()),
@@ -31,50 +33,96 @@ export const memoryToolParameters = Type.Object({
   content: Type.Optional(Type.String()),
   description: Type.Optional(Type.String()),
   exposure: Type.Optional(
-    Type.Union([
-      Type.Literal("resident"),
-      Type.Literal("progressive"),
-      Type.Literal("recall"),
-    ]),
+    Type.Union(
+      [
+        Type.Literal("resident"),
+        Type.Literal("progressive"),
+        Type.Literal("recall"),
+      ],
+      {
+        description:
+          "Optional memory layer. Allowed values: `resident`, `progressive`, or `recall`.",
+      },
+    ),
   ),
   fidelity: Type.Optional(
-    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")]),
+    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")], {
+      description:
+        "Optional match fidelity. Allowed values: `exact` or `fuzzy` only.",
+    }),
   ),
-  residentSlot: Type.Optional(Type.String()),
+  residentSlot: Type.Optional(
+    Type.Union(
+      [
+        Type.Literal("agent_identity"),
+        Type.Literal("owner_identity"),
+        Type.Literal("core_voice_style"),
+        Type.Literal("core_methodology"),
+        Type.Literal("core_values"),
+      ],
+      {
+        description:
+          "Resident slot name. Use only with `exposure: resident`. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
+      },
+    ),
+  ),
   tags: Type.Optional(Type.Array(Type.String())),
   aliases: Type.Optional(Type.Array(Type.String())),
   scope: Type.Optional(
-    Type.Union([
-      Type.Literal("global"),
-      Type.Literal("domain"),
-      Type.Literal("project"),
-      Type.Literal("session"),
-    ]),
+    Type.Union(
+      [
+        Type.Literal("global"),
+        Type.Literal("domain"),
+        Type.Literal("project"),
+        Type.Literal("session"),
+      ],
+      {
+        description:
+          "Optional memory scope. Allowed values: `global`, `domain`, `project`, or `session`.",
+      },
+    ),
   ),
   kind: Type.Optional(
-    Type.Union([
-      Type.Literal("identity"),
-      Type.Literal("style"),
-      Type.Literal("method"),
-      Type.Literal("value"),
-      Type.Literal("preference"),
-      Type.Literal("rule"),
-      Type.Literal("knowledge"),
-      Type.Literal("history"),
-    ]),
+    Type.Union(
+      [
+        Type.Literal("identity"),
+        Type.Literal("style"),
+        Type.Literal("method"),
+        Type.Literal("value"),
+        Type.Literal("preference"),
+        Type.Literal("rule"),
+        Type.Literal("knowledge"),
+        Type.Literal("history"),
+      ],
+      {
+        description:
+          "Optional memory kind. Allowed values: `identity`, `style`, `method`, `value`, `preference`, `rule`, `knowledge`, or `history`.",
+      },
+    ),
   ),
   status: Type.Optional(
-    Type.Union([
-      Type.Literal("active"),
-      Type.Literal("superseded"),
-      Type.Literal("invalidated"),
-    ]),
+    Type.Union(
+      [
+        Type.Literal("active"),
+        Type.Literal("superseded"),
+        Type.Literal("invalidated"),
+      ],
+      {
+        description:
+          "Optional memory status. Allowed values: `active`, `superseded`, or `invalidated`.",
+      },
+    ),
   ),
   observationCount: Type.Optional(Type.Number({ minimum: 1 })),
   supersedes: Type.Optional(Type.Array(Type.String())),
   sensitivity: Type.Optional(Type.String()),
   source: Type.Optional(Type.String()),
-  limit: Type.Optional(Type.Number({ minimum: 1 })),
+  limit: Type.Optional(
+    Type.Number({
+      minimum: 1,
+      description: "Maximum number of matches to return.",
+    }),
+  ),
 });
 
 export function resolveAgentDir(): string {

@@ -103,14 +103,24 @@ export default function webSearchExtension(pi: ExtensionAPI) {
         ),
       ),
       freshness: Type.Optional(
-        Type.Union([
-          Type.Literal("day"),
-          Type.Literal("week"),
-          Type.Literal("month"),
-          Type.Literal("year"),
-        ]),
+        Type.Union(
+          [
+            Type.Literal("day"),
+            Type.Literal("week"),
+            Type.Literal("month"),
+            Type.Literal("year"),
+          ],
+          {
+            description:
+              "Optional recency filter. Allowed values: `day`, `week`, `month`, or `year`.",
+          },
+        ),
       ),
-      language: Type.Optional(Type.String()),
+      language: Type.Optional(
+        Type.String({
+          description: "Optional language hint such as `zh-CN` or `en`.",
+        }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       const searchWeb = await loadSearchWeb();
