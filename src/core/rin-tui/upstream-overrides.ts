@@ -29,9 +29,12 @@ function stopLoader(target: any, key: string) {
   return true;
 }
 
-function stopTransientAnimations(target: any) {
+function stopTransientAnimations(
+  target: any,
+  options: { includeWorking?: boolean } = {},
+) {
   const stopped = [
-    stopLoader(target, "loadingAnimation"),
+    options.includeWorking ? stopLoader(target, "loadingAnimation") : false,
     stopLoader(target, "retryLoader"),
     stopLoader(target, "autoCompactionLoader"),
   ].some(Boolean);
@@ -120,10 +123,17 @@ export async function applyRinTuiOverrides() {
     InteractiveMode.prototype.handleEvent =
       async function handleEventWithSessionBootState(event: any) {
         if (event?.type === "rin_status") {
+          const hasActiveWork = Boolean(
+            this?.session?.isStreaming || this?.session?.isCompacting,
+          );
           stopPendingToolTimers(this);
-          stopTransientAnimations(this);
+          stopTransientAnimations(this, { includeWorking: event.phase !== "end" });
           if (event.phase === "end") {
-            this.stopWorkingAnimation?.();
+            if (hasActiveWork) {
+              this.startWorkingAnimation?.(this?.defaultWorkingMessage);
+            } else {
+              this.stopWorkingAnimation?.();
+            }
             this.ui?.requestRender?.();
             return;
           }

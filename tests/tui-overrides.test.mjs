@@ -27,7 +27,7 @@ const loaderModule = await import(
   ).href
 );
 
-test("rin_status end always stops lingering working animation", async () => {
+test("rin_status end stops lingering working animation when no work remains", async () => {
   await overrides.applyRinTuiOverrides();
 
   let stopped = 0;
@@ -54,7 +54,7 @@ test("rin_status end always stops lingering working animation", async () => {
   };
 
   const instance = {
-    session: { isStreaming: true, isCompacting: false },
+    session: { isStreaming: false, isCompacting: false },
     loadingAnimation,
     ui: {
       requestRender() {
@@ -80,6 +80,53 @@ test("rin_status end always stops lingering working animation", async () => {
   assert.equal(stopped, 1);
   assert.equal(renders, 1);
   assert.equal(instance.loadingAnimation, undefined);
+});
+
+test("rin_status end restores working animation while stream is still active", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let startedWith;
+  let renders = 0;
+  const interactiveModeModule = await import(
+    pathToFileURL(
+      path.join(
+        rootDir,
+        "third_party",
+        "pi-coding-agent",
+        "dist",
+        "modes",
+        "interactive",
+        "interactive-mode.js",
+      ),
+    ).href
+  );
+
+  const instance = {
+    defaultWorkingMessage: "Working...",
+    session: { isStreaming: true, isCompacting: false },
+    ui: {
+      requestRender() {
+        renders += 1;
+      },
+    },
+    startWorkingAnimation(message) {
+      startedWith = message;
+    },
+    stopWorkingAnimation() {
+      throw new Error("should_not_stop");
+    },
+  };
+
+  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    {
+      type: "rin_status",
+      phase: "end",
+    },
+  );
+
+  assert.equal(startedWith, "Working...");
+  assert.equal(renders, 1);
 });
 
 test("rin_status freezes pending tool timers after daemon interruption", async () => {
