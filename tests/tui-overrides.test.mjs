@@ -27,11 +27,10 @@ const loaderModule = await import(
   ).href
 );
 
-test("rin_status updates show a plain status message without touching working animation", async () => {
+test("rin_status shows waiting daemon only while active work is interrupted", async () => {
   await overrides.applyRinTuiOverrides();
 
-  let statusText;
-  let started = 0;
+  let startedWith;
   const interactiveModeModule = await import(
     pathToFileURL(
       path.join(
@@ -47,12 +46,10 @@ test("rin_status updates show a plain status message without touching working an
   );
 
   const instance = {
+    session: { isStreaming: true, isCompacting: false },
     ui: { requestRender() {} },
-    showStatus(message) {
-      statusText = message;
-    },
-    startWorkingAnimation() {
-      started += 1;
+    startWorkingAnimation(message) {
+      startedWith = message;
     },
   };
 
@@ -66,14 +63,14 @@ test("rin_status updates show a plain status message without touching working an
     },
   );
 
-  assert.equal(statusText, "Daemon connection restored.");
-  assert.equal(started, 0);
+  assert.equal(startedWith, "Waiting daemon...");
 });
 
-test("rin_status end does not stop an active upstream working animation", async () => {
+test("rin_status end keeps active work in working state", async () => {
   await overrides.applyRinTuiOverrides();
 
   let stopped = 0;
+  let startedWith;
   let renders = 0;
   const interactiveModeModule = await import(
     pathToFileURL(
@@ -90,6 +87,8 @@ test("rin_status end does not stop an active upstream working animation", async 
   );
 
   const instance = {
+    defaultWorkingMessage: "Working...",
+    session: { isStreaming: true, isCompacting: false },
     loadingAnimation: {
       stop() {
         stopped += 1;
@@ -99,6 +98,9 @@ test("rin_status end does not stop an active upstream working animation", async 
       requestRender() {
         renders += 1;
       },
+    },
+    startWorkingAnimation(message) {
+      startedWith = message;
     },
     stopWorkingAnimation() {
       stopped += 1;
@@ -114,14 +116,53 @@ test("rin_status end does not stop an active upstream working animation", async 
   );
 
   assert.equal(stopped, 0);
+  assert.equal(startedWith, "Working...");
   assert.equal(renders, 1);
+});
+
+test("rin_status restores working after reconnect when work remains active", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let startedWith;
+  const interactiveModeModule = await import(
+    pathToFileURL(
+      path.join(
+        rootDir,
+        "third_party",
+        "pi-coding-agent",
+        "dist",
+        "modes",
+        "interactive",
+        "interactive-mode.js",
+      ),
+    ).href
+  );
+
+  const instance = {
+    defaultWorkingMessage: "Working...",
+    session: { isStreaming: true, isCompacting: false },
+    ui: { requestRender() {} },
+    startWorkingAnimation(message) {
+      startedWith = message;
+    },
+  };
+
+  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    {
+      type: "rin_status",
+      phase: "end",
+    },
+  );
+
+  assert.equal(startedWith, "Working...");
 });
 
 test("rin_status freezes pending tool timers after daemon interruption", async () => {
   await overrides.applyRinTuiOverrides();
 
   let invalidated = 0;
-  let shownStatus;
+  let startedWith;
   const interval = setInterval(() => {}, 1000);
   const interactiveModeModule = await import(
     pathToFileURL(
@@ -148,8 +189,8 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
     pendingTools: new Map([["tool-1", component]]),
     session: { isStreaming: true, isCompacting: false },
     ui: { requestRender() {} },
-    showStatus(message) {
-      shownStatus = message;
+    startWorkingAnimation(message) {
+      startedWith = message;
     },
   };
 
@@ -165,7 +206,7 @@ test("rin_status freezes pending tool timers after daemon interruption", async (
   assert.equal(component.rendererState.interval, undefined);
   assert.equal(typeof component.rendererState.endedAt, "number");
   assert.equal(invalidated, 1);
-  assert.equal(shownStatus, "Waiting daemon...");
+  assert.equal(startedWith, "Waiting daemon...");
 });
 
 test("loader stop clears render interval", () => {

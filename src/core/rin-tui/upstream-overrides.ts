@@ -7,6 +7,8 @@ import {
 } from "../rin-lib/loader.js";
 
 const SESSION_STARTING_MESSAGE = "Creating session...";
+const SESSION_RESUMING_MESSAGE = "Resuming session...";
+const DAEMON_WAITING_MESSAGE = "Waiting daemon...";
 
 function stopPendingToolTimers(target: any) {
   const pendingTools = target?.pendingTools;
@@ -102,20 +104,31 @@ export async function applyRinTuiOverrides() {
       async function handleEventWithSessionBootState(event: any) {
         if (event?.type === "rin_status") {
           stopPendingToolTimers(this);
-          if (
-            event.phase !== "end" &&
-            typeof this.showStatus === "function"
-          ) {
-            const statusText =
-              typeof event.statusText === "string" && event.statusText.trim()
-                ? event.statusText
-                : typeof event.message === "string" && event.message.trim()
-                  ? event.message
-                  : "Daemon status changed.";
-            this.showStatus(statusText);
-          } else {
-            this.ui?.requestRender?.();
+          const message =
+            typeof event.message === "string" && event.message.trim()
+              ? event.message.trim()
+              : "";
+          const hasActiveWork = Boolean(
+            this?.session?.isStreaming || this?.session?.isCompacting,
+          );
+          const isSessionStatus =
+            message === SESSION_STARTING_MESSAGE ||
+            message === SESSION_RESUMING_MESSAGE;
+          const shouldShowWaiting =
+            event.phase !== "end" && hasActiveWork && message === DAEMON_WAITING_MESSAGE;
+          const shouldShowSessionStatus = event.phase !== "end" && isSessionStatus;
+
+          if (shouldShowWaiting || shouldShowSessionStatus) {
+            this.startWorkingAnimation?.(message);
+          } else if (event.phase === "end") {
+            if (hasActiveWork) {
+              this.startWorkingAnimation?.(this?.defaultWorkingMessage);
+            } else {
+              this.stopWorkingAnimation?.();
+            }
           }
+
+          this.ui?.requestRender?.();
           return;
         }
 
