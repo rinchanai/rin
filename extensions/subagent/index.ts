@@ -21,6 +21,7 @@ import {
   type TaskResult,
   type UsageStats,
 } from "./format-utils.js";
+import { prepareToolTextOutput } from "../shared/tool-text.js";
 import {
   buildModelLookup,
   compareModelIds,
@@ -111,6 +112,8 @@ type SubagentDetails = {
   results?: TaskResult[];
   agentText?: string;
   userText?: string;
+  fullOutputPath?: string;
+  truncated?: boolean;
 };
 
 let sessionCreationQueue: Promise<unknown> = Promise.resolve();
@@ -372,17 +375,21 @@ export default function subagentExtension(pi: ExtensionAPI) {
       };
 
       if (params.action === "list_models") {
-        const userText = formatModelList(detailsBase);
-        const agentText = [
-          `subagent_models providers=${detailsBase.providers.length}`,
-          ...detailsBase.providers.map(
-            (provider) =>
-              `${provider.provider}: ${provider.top3.join(", ")}${provider.count > 3 ? ` (+${provider.count - 3})` : ""}`,
-          ),
-        ].join("\n");
+        const prepared = await prepareToolTextOutput({
+          agentText: [
+            `subagent_models providers=${detailsBase.providers.length}`,
+            ...detailsBase.providers.map(
+              (provider) =>
+                `${provider.provider}: ${provider.top3.join(", ")}${provider.count > 3 ? ` (+${provider.count - 3})` : ""}`,
+            ),
+          ].join("\n"),
+          userText: formatModelList(detailsBase),
+          tempPrefix: "rin-subagent-models-",
+          filename: "subagent-models.txt",
+        });
         return {
-          content: [{ type: "text", text: agentText }],
-          details: { ...detailsBase, agentText, userText },
+          content: [{ type: "text", text: prepared.agentText }],
+          details: { ...detailsBase, ...prepared },
         };
       }
 
@@ -493,18 +500,21 @@ export default function subagentExtension(pi: ExtensionAPI) {
         ),
       );
       const failed = results.filter((result) => result.exitCode !== 0);
-      const agentText = buildSubagentAgentText(results);
-      const userText = buildSubagentUserText(results);
+      const prepared = await prepareToolTextOutput({
+        agentText: buildSubagentAgentText(results),
+        userText: buildSubagentUserText(results),
+        tempPrefix: "rin-subagent-",
+        filename: "subagent.txt",
+      });
       const details: SubagentDetails = {
         ...detailsBase,
         action: "run",
         results,
-        agentText,
-        userText,
+        ...prepared,
       };
 
       return {
-        content: [{ type: "text", text: agentText }],
+        content: [{ type: "text", text: prepared.agentText }],
         details,
         isError: failed.length > 0,
       };

@@ -5,6 +5,8 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { prepareToolTextOutput } from "../shared/tool-text.js";
+
 function defaultDaemonSocketPath() {
   const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
   if (runtimeDir) return `${runtimeDir}/rin-daemon/daemon.sock`;
@@ -438,11 +440,15 @@ export default function cronExtension(pi: ExtensionAPI) {
         });
       else throw new Error(`Unsupported action: ${action}`);
 
-      const { agentText, userText } = buildTexts(action, data, params as any);
+      const prepared = await prepareToolTextOutput({
+        ...buildTexts(action, data, params as any),
+        tempPrefix: "rin-scheduled-tasks-",
+        filename: "scheduled-tasks.txt",
+      });
 
       return {
-        content: [{ type: "text", text: agentText }],
-        details: { ...data, agentText, userText },
+        content: [{ type: "text", text: prepared.agentText }],
+        details: { ...data, ...prepared },
       };
     },
     renderResult(result) {

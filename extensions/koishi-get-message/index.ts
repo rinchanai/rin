@@ -6,6 +6,8 @@ import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { prepareToolTextOutput } from "../shared/tool-text.js";
+
 async function loadMessageStoreModule() {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -74,19 +76,24 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
             ),
           ].join("\n\n")
         : `koishi_get_message\nnot_found messageId=${messageId}${chatKey ? `\nchatKey=${chatKey}` : ""}`;
-      const userText = matches.length
-        ? [
-            "找到这些消息：",
-            ...matches.map(
-              (item: any, index: number) =>
-                `${index + 1}.\n${summarizeKoishiMessageRecord(item)}`,
-            ),
-          ].join("\n\n")
-        : `未找到消息：${messageId}${chatKey ? `（chatKey=${chatKey}）` : ""}`;
+      const prepared = await prepareToolTextOutput({
+        agentText,
+        userText: matches.length
+          ? [
+              "找到这些消息：",
+              ...matches.map(
+                (item: any, index: number) =>
+                  `${index + 1}.\n${summarizeKoishiMessageRecord(item)}`,
+              ),
+            ].join("\n\n")
+          : `未找到消息：${messageId}${chatKey ? `（chatKey=${chatKey}）` : ""}`,
+        tempPrefix: "rin-koishi-message-",
+        filename: "koishi-message.txt",
+      });
 
       return {
-        content: [{ type: "text", text: agentText }],
-        details: { messageId, chatKey, matches, agentText, userText },
+        content: [{ type: "text", text: prepared.agentText }],
+        details: { messageId, chatKey, matches, ...prepared },
         isError: !matches.length,
       };
     },

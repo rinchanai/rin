@@ -60,6 +60,14 @@ Rin provides live web search. As an agent, you should know that:
 - for latest, time-sensitive, version-sensitive, or potentially changed information, you should search proactively
 - do not rely only on stale memory for those questions
 
+## Direct URL fetch
+
+Rin provides a `fetch` tool. As an agent, you should know that:
+
+- use it when the user already gave you a specific URL and wants it read or downloaded directly
+- prefer it over `web_search` when discovery is not needed
+- use `mode="text"` for readable webpage text and `mode="file"` for downloads
+
 ## Attention resources
 
 Rin provides the `discover_attention_resources` tool. As an agent, you should know that:

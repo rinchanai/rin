@@ -34,6 +34,7 @@ export function getBuiltinExtensionPaths() {
       "index.js",
     ),
     path.join(root, "dist", "extensions", "web-search", "index.js"),
+    path.join(root, "dist", "extensions", "fetch", "index.js"),
     path.join(root, "dist", "extensions", "memory", "index.js"),
     path.join(root, "dist", "extensions", "reset-system-prompt", "index.js"),
     path.join(root, "dist", "extensions", "message-header", "index.js"),

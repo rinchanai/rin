@@ -99,7 +99,11 @@ test("memory search returns paths and get is unsupported", async () => {
     assert.equal("content" in result.results[0], false);
 
     await assert.rejects(
-      () => store.executeMemoryAction({ action: "get", path: saved.doc.path }, root),
+      () =>
+        store.executeMemoryAction(
+          { action: "get", path: saved.doc.path },
+          root,
+        ),
       /unsupported_memory_action:get/,
     );
   });
@@ -109,7 +113,7 @@ test("processPendingEvents updates chronicles without regex-driven auto extracti
   await withTempRoot(async (root) => {
     await store.ensureMemoryLayout(store.resolveMemoryRoot(root));
 
-    const logged = await store.logMemoryEvent(
+    await store.logMemoryEvent(
       {
         kind: "user_input",
         text: "以后请叫我主人，并且你做我的女仆。",
