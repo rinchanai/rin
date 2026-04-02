@@ -27,9 +27,9 @@ export const memoryToolParameters = Type.Object({
   query: Type.Optional(Type.String()),
   id: Type.Optional(Type.String()),
   path: Type.Optional(Type.String()),
-  title: Type.Optional(Type.String()),
+  name: Type.Optional(Type.String()),
   content: Type.Optional(Type.String()),
-  summary: Type.Optional(Type.String()),
+  description: Type.Optional(Type.String()),
   exposure: Type.Optional(
     Type.Union([
       Type.Literal("resident"),
@@ -43,7 +43,6 @@ export const memoryToolParameters = Type.Object({
   residentSlot: Type.Optional(Type.String()),
   tags: Type.Optional(Type.Array(Type.String())),
   aliases: Type.Optional(Type.Array(Type.String())),
-  triggers: Type.Optional(Type.Array(Type.String())),
   scope: Type.Optional(
     Type.Union([
       Type.Literal("global"),

@@ -2,8 +2,7 @@
 
 Rin's builtin long-term memory extension.
 
-The primary tool name is `memory`.
-For compatibility with older prompts and integrations, `rin_memory` remains available as an alias for now.
+The memory tools are `search_memory` and `save_memory`.
 
 Implementation note:
 
@@ -15,8 +14,7 @@ Implementation note:
 
 ## What it now does
 
-- registers the `memory` tool as the primary name
-- keeps `rin_memory` as a compatibility alias
+- registers `search_memory` and `save_memory`
 - stores memory under `~/.rin/memory/` (or the active agent dir)
 - keeps three explicit layers:
   - `resident`: short always-on global baselines
@@ -33,15 +31,14 @@ Implementation note:
   - progressive memory index
 - keeps retrieval local and lightweight with markdown frontmatter plus lexical search over title, tags, aliases, triggers, summary, and body
 
-## Tool actions
+## Tools
 
-The public `memory` tool supports only:
+The public memory tools are:
 
-- `list`
-- `search`
-- `save`
+- `search_memory`
+- `save_memory`
 
-`memory.search` is the discovery entrypoint:
+`search_memory` is the discovery entrypoint:
 
 - it returns candidate ids, metadata, scores, and file paths
 - it does not return full document bodies

@@ -15,8 +15,8 @@ function createMemoryMiniSearch(
   const miniSearch = new MiniSearch<IndexedMemoryDoc>({
     idField: "_search_id",
     fields: [
-      "title",
-      "summary",
+      "name",
+      "description",
       "content",
       "id",
       "resident_slot",
@@ -24,12 +24,11 @@ function createMemoryMiniSearch(
       "kind",
       "tags",
       "aliases",
-      "triggers",
     ],
     storeFields: [
       "path",
-      "title",
-      "summary",
+      "name",
+      "description",
       "exposure",
       "scope",
       "kind",
@@ -38,13 +37,12 @@ function createMemoryMiniSearch(
     ],
     searchOptions: {
       boost: {
-        title: 6,
+        name: 6,
         id: 5,
         resident_slot: 5,
         tags: 4,
         aliases: 4,
-        triggers: 4,
-        summary: 3,
+        description: 3,
         kind: 2,
         scope: 1.5,
         content: 1,

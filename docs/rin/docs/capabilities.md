@@ -42,7 +42,7 @@ Rin provides scheduled task support. As an agent, you should know that:
 
 - you can create one-time, interval, and cron-style tasks
 - it is suitable for reminders, periodic checks, delayed follow-ups, and background automation
-- when a task is permanently finished, mark it complete so it does not linger forever
+- when a task should stop running without being removed, pause it; when it should be removed entirely, delete it
 
 ## Koishi bridge
 
@@ -51,7 +51,7 @@ Rin can bridge chat platforms through Koishi. As an agent, you should know that:
 - the sender in a Koishi bridge chat is not the local shell user; it is the chat-platform sender
 - the prompt may include `chatKey`, chat name, sender identity, and related context
 - in Koishi bridge chats, avoid Markdown in replies
-- `koishi_send_message` should only be used when the user explicitly asks to send something to a specific `chatKey`
+- `send_chat_msg` should only be used when the user explicitly asks to send something to a specific `chatKey`
 
 ## Web search
 
@@ -64,13 +64,13 @@ Rin provides live web search. As an agent, you should know that:
 
 Rin provides a `fetch` tool. As an agent, you should know that:
 
-- use it when the user already gave you a specific URL and wants it read or downloaded directly
+- use it when the user already gave you a specific URL and wants it read directly
 - prefer it over `web_search` when discovery is not needed
-- use `mode="text"` for readable webpage text and `mode="file"` for downloads
+- it returns readable text content rather than downloading files
 
 ## Attention resources
 
-Rin provides the `discover_attention_resources` tool. As an agent, you should know that:
+Rin provides the `rules` tool. As an agent, you should know that:
 
 - it can discover ancestor `AGENTS.md` / `CLAUDE.md` files
 - it can also discover `.agents/skills/*/SKILL.md`

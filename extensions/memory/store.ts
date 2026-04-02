@@ -104,16 +104,16 @@ export async function saveMemory(
   const content = safeString(params.content || "").trim();
   if (!content) throw new Error("memory_content_required");
   const exposure = ensureExposure(safeString(params.exposure || "recall"));
-  const title =
-    safeString(params.title || "").trim() ||
+  const name =
+    safeString(params.name || "").trim() ||
     content.split(/\r?\n/)[0].trim().slice(0, 80) ||
     "memory";
   const id =
     safeString(params.id || "").trim() ||
-    slugify(title, `memory-${sha(content).slice(0, 8)}`);
+    slugify(name, `memory-${sha(content).slice(0, 8)}`);
   const doc: MemoryDoc = {
     id,
-    title,
+    name,
     exposure,
     fidelity: ensureFidelity(
       safeString(
@@ -121,10 +121,9 @@ export async function saveMemory(
       ),
     ),
     resident_slot: safeString(params.residentSlot || "").trim(),
-    summary: safeString(params.summary || "").trim(),
+    description: safeString(params.description || "").trim(),
     tags: normalizeList(params.tags || []),
     aliases: normalizeList(params.aliases || []),
-    triggers: normalizeList(params.triggers || []),
     scope: ensureScope(
       safeString(
         params.scope || (exposure === "resident" ? "global" : "project"),

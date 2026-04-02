@@ -58,13 +58,7 @@ const TaskSchema = Type.Object({
   ),
 });
 
-const ParamsSchema = Type.Object({
-  action: Type.Optional(
-    StringEnum(["run", "list_models"] as const, {
-      description:
-        "run = execute one or more subagents. list_models = show currently available models, grouped by provider.",
-    }),
-  ),
+const RunParamsSchema = Type.Object({
   prompt: Type.Optional(
     Type.String({ description: "Prompt for single-task mode." }),
   ),
@@ -89,8 +83,7 @@ const ParamsSchema = Type.Object({
   ),
 });
 
-type ToolParams = {
-  action?: "run" | "list_models";
+type RunToolParams = {
   prompt?: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
@@ -237,6 +230,178 @@ export async function applySubagentTaskPreferences(
   }
 }
 
+async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
+  const providers = await getProviderSummaries(ctx);
+  const detailsBase: SubagentDetails = {
+    action: "list_models",
+    backend: "in-process-session",
+    currentModel: ctx.model
+      ? `${ctx.model.provider}/${ctx.model.id}`
+      : undefined,
+    currentThinkingLevel,
+    providers,
+  };
+  const prepared = await prepareToolTextOutput({
+    agentText: [
+      `subagent_models providers=${detailsBase.providers.length}`,
+      ...detailsBase.providers.map(
+        (provider) =>
+          `${provider.provider}: ${provider.top3.join(", ")}${provider.count > 3 ? ` (+${provider.count - 3} more)` : ""}`,
+      ),
+    ].join("\n"),
+    userText: formatModelList(detailsBase),
+    tempPrefix: "rin-subagent-models-",
+    filename: "subagent-models.txt",
+  });
+  return {
+    content: [{ type: "text" as const, text: prepared.agentText }],
+    details: { ...detailsBase, ...prepared },
+  };
+}
+
+async function runSubagentResult(
+  params: RunToolParams,
+  signal: AbortSignal | undefined,
+  onUpdate: any,
+  ctx: any,
+  currentThinkingLevel: ThinkingLevel,
+) {
+  const providers = await getProviderSummaries(ctx);
+  const detailsBase: SubagentDetails = {
+    action: "run",
+    backend: "in-process-session",
+    currentModel: ctx.model
+      ? `${ctx.model.provider}/${ctx.model.id}`
+      : undefined,
+    currentThinkingLevel,
+    providers,
+  };
+
+  const hasTasks = Array.isArray(params.tasks) && params.tasks.length > 0;
+  const hasSingle = Boolean(String(params.prompt || "").trim());
+  if (Number(hasTasks) + Number(hasSingle) !== 1) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: "Provide exactly one mode: either `prompt` for a single subagent, or `tasks` for parallel subagents.",
+        },
+      ],
+      details: detailsBase,
+      isError: true,
+    };
+  }
+
+  if (hasTasks && (params.tasks?.length || 0) > MAX_PARALLEL_TASKS) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `Too many parallel tasks (${params.tasks?.length}). Max is ${MAX_PARALLEL_TASKS}.`,
+        },
+      ],
+      details: detailsBase,
+      isError: true,
+    };
+  }
+
+  const availableModels = buildModelLookup(providers);
+  const tasks = hasTasks
+    ? (params.tasks || []).map((task) => ({
+        prompt: task.prompt,
+        model: normalizeModelRef(task.model),
+        thinkingLevel: task.thinkingLevel,
+        cwd: task.cwd,
+      }))
+    : [
+        {
+          prompt: String(params.prompt || ""),
+          model:
+            normalizeModelRef(params.model) ||
+            (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
+          thinkingLevel: params.thinkingLevel || currentThinkingLevel,
+          cwd: params.cwd,
+        },
+      ];
+
+  for (const task of tasks) {
+    if (!String(task.prompt || "").trim()) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "Every subagent task needs a non-empty prompt.",
+          },
+        ],
+        details: detailsBase,
+        isError: true,
+      };
+    }
+    if (task.model && !availableModels.has(task.model)) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Unknown or unavailable model: ${task.model}\n\n${formatModelList(detailsBase)}`,
+          },
+        ],
+        details: detailsBase,
+        isError: true,
+      };
+    }
+  }
+
+  const progressResults: TaskResult[] = tasks.map((task, index) => ({
+    index: index + 1,
+    prompt: task.prompt,
+    requestedModel: task.model,
+    requestedThinkingLevel: task.thinkingLevel,
+    cwd: task.cwd || ctx.cwd,
+    status: "pending" as const,
+    exitCode: 0,
+    output: "",
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: 0,
+      contextTokens: 0,
+      turns: 0,
+    },
+    messages: [] as Message[],
+  }));
+  onUpdate?.(buildRunUpdate(progressResults, detailsBase));
+
+  const results = await Promise.all(
+    tasks.map((task, index) =>
+      runTask(task, index + 1, ctx.cwd, signal, (partial) => {
+        progressResults[index] = partial;
+        onUpdate?.(buildRunUpdate(progressResults, detailsBase));
+      }),
+    ),
+  );
+  const failed = results.filter((result) => result.exitCode !== 0);
+  const prepared = await prepareToolTextOutput({
+    agentText: buildSubagentAgentText(results),
+    userText: buildSubagentUserText(results),
+    tempPrefix: "rin-subagent-",
+    filename: "subagent.txt",
+  });
+  const details: SubagentDetails = {
+    ...detailsBase,
+    action: "run",
+    results,
+    ...prepared,
+  };
+
+  return {
+    content: [{ type: "text" as const, text: prepared.agentText }],
+    details,
+    isError: failed.length > 0,
+  };
+}
+
 async function runTask(
   task: {
     prompt: string;
@@ -344,205 +509,42 @@ async function runTask(
 
 export default function subagentExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "subagent",
-    label: "Subagent",
-    description:
-      "Run isolated subagents with an explicit prompt, model, and thinking level using in-process agent sessions, or list currently available models, showing the latest 3 per provider. Supports single-task and parallel execution; parallel tasks all complete before the tool returns. Works in both std and daemon/RPC-backed modes because it uses the same session runtime underneath.",
-    promptSnippet:
-      "Run isolated subagents with chosen prompt/model/thinking, or list currently available models (latest 3 per provider).",
+    name: "run_subagent",
+    label: "Run Subagent",
+    description: "Run subagents.",
+    promptSnippet: "Run subagents.",
     promptGuidelines: [
-      "Use `subagent` by default for any simple independent task that does not need the current conversation context.",
-      "If the user asks to use a subagent, use `subagent`.",
-      "If the user wants another model for the work, use `subagent`.",
-      "If the work can be split into parallel independent tasks, use `subagent`.",
-      "Stay in the main agent only when the task clearly depends on rich current-turn context or requires tightly interleaved follow-up with your own reasoning.",
-      "Call `subagent` with action `list_models` before choosing a model when model availability matters.",
-      "Use exact model references in provider/model form from the tool output.",
+      "Use `run_subagent` to start a subagent session.",
+      "Use `run_subagent` for simple independent tasks that do not depend on the current conversation context.",
+      "Use `run_subagent` when the user asks for a subagent or wants a different model.",
+      "Use `run_subagent` for parallelizable tasks.",
     ],
-    parameters: ParamsSchema,
-
+    parameters: RunParamsSchema,
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
-      const params = rawParams as ToolParams;
-      const providers = await getProviderSummaries(ctx);
-      const detailsBase: SubagentDetails = {
-        action: params.action === "list_models" ? "list_models" : "run",
-        backend: "in-process-session",
-        currentModel: ctx.model
-          ? `${ctx.model.provider}/${ctx.model.id}`
-          : undefined,
-        currentThinkingLevel: pi.getThinkingLevel(),
-        providers,
-      };
-
-      if (params.action === "list_models") {
-        const prepared = await prepareToolTextOutput({
-          agentText: [
-            `subagent_models providers=${detailsBase.providers.length}`,
-            ...detailsBase.providers.map(
-              (provider) =>
-                `${provider.provider}: ${provider.top3.join(", ")}${provider.count > 3 ? ` (+${provider.count - 3})` : ""}`,
-            ),
-          ].join("\n"),
-          userText: formatModelList(detailsBase),
-          tempPrefix: "rin-subagent-models-",
-          filename: "subagent-models.txt",
-        });
-        return {
-          content: [{ type: "text", text: prepared.agentText }],
-          details: { ...detailsBase, ...prepared },
-        };
-      }
-
-      const hasTasks = Array.isArray(params.tasks) && params.tasks.length > 0;
-      const hasSingle = Boolean(String(params.prompt || "").trim());
-      if (Number(hasTasks) + Number(hasSingle) !== 1) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Provide exactly one mode: either `prompt` for a single subagent, or `tasks` for parallel subagents.",
-            },
-          ],
-          details: detailsBase,
-          isError: true,
-        };
-      }
-
-      if (hasTasks && (params.tasks?.length || 0) > MAX_PARALLEL_TASKS) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Too many parallel tasks (${params.tasks?.length}). Max is ${MAX_PARALLEL_TASKS}.`,
-            },
-          ],
-          details: detailsBase,
-          isError: true,
-        };
-      }
-
-      const availableModels = buildModelLookup(providers);
-      const tasks = hasTasks
-        ? (params.tasks || []).map((task) => ({
-            prompt: task.prompt,
-            model: normalizeModelRef(task.model),
-            thinkingLevel: task.thinkingLevel,
-            cwd: task.cwd,
-          }))
-        : [
-            {
-              prompt: String(params.prompt || ""),
-              model:
-                normalizeModelRef(params.model) ||
-                (ctx.model
-                  ? `${ctx.model.provider}/${ctx.model.id}`
-                  : undefined),
-              thinkingLevel: params.thinkingLevel || pi.getThinkingLevel(),
-              cwd: params.cwd,
-            },
-          ];
-
-      for (const task of tasks) {
-        if (!String(task.prompt || "").trim()) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Every subagent task needs a non-empty prompt.",
-              },
-            ],
-            details: detailsBase,
-            isError: true,
-          };
-        }
-        if (task.model && !availableModels.has(task.model)) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Unknown or unavailable model: ${task.model}\n\n${formatModelList(detailsBase)}`,
-              },
-            ],
-            details: detailsBase,
-            isError: true,
-          };
-        }
-      }
-
-      const progressResults: TaskResult[] = tasks.map((task, index) => ({
-        index: index + 1,
-        prompt: task.prompt,
-        requestedModel: task.model,
-        requestedThinkingLevel: task.thinkingLevel,
-        cwd: task.cwd || ctx.cwd,
-        status: "pending" as const,
-        exitCode: 0,
-        output: "",
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          cost: 0,
-          contextTokens: 0,
-          turns: 0,
-        },
-        messages: [] as Message[],
-      }));
-      onUpdate?.(buildRunUpdate(progressResults, detailsBase));
-
-      const results = await Promise.all(
-        tasks.map((task, index) =>
-          runTask(task, index + 1, ctx.cwd, signal, (partial) => {
-            progressResults[index] = partial;
-            onUpdate?.(buildRunUpdate(progressResults, detailsBase));
-          }),
-        ),
+      return await runSubagentResult(
+        rawParams as RunToolParams,
+        signal,
+        onUpdate,
+        ctx,
+        pi.getThinkingLevel(),
       );
-      const failed = results.filter((result) => result.exitCode !== 0);
-      const prepared = await prepareToolTextOutput({
-        agentText: buildSubagentAgentText(results),
-        userText: buildSubagentUserText(results),
-        tempPrefix: "rin-subagent-",
-        filename: "subagent.txt",
-      });
-      const details: SubagentDetails = {
-        ...detailsBase,
-        action: "run",
-        results,
-        ...prepared,
-      };
-
-      return {
-        content: [{ type: "text", text: prepared.agentText }],
-        details,
-        isError: failed.length > 0,
-      };
     },
-
     renderCall(args, theme) {
-      if (args.action === "list_models") {
-        return new Text(
-          theme.fg("toolTitle", theme.bold("subagent ")) +
-            theme.fg("accent", "list_models"),
-          0,
-          0,
-        );
-      }
-
       if (Array.isArray(args.tasks) && args.tasks.length > 0) {
         let text =
-          theme.fg("toolTitle", theme.bold("subagent ")) +
+          theme.fg("toolTitle", theme.bold("run_subagent ")) +
           theme.fg("accent", `parallel (${args.tasks.length})`);
         for (const task of args.tasks.slice(0, 3)) {
           const model = task.model ? ` [${task.model}]` : "";
           const preview = String(task.prompt || "")
             .replace(/\s+/g, " ")
             .trim();
-          text += `\n  ${theme.fg("muted", "•")} ${theme.fg("dim", preview.slice(0, 70))}${preview.length > 70 ? "…" : ""}${theme.fg("muted", model)}`;
+          text += `
+  ${theme.fg("muted", "•")} ${theme.fg("dim", preview.slice(0, 70))}${preview.length > 70 ? "…" : ""}${theme.fg("muted", model)}`;
         }
         if (args.tasks.length > 3)
-          text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
+          text += `
+  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
         return new Text(text, 0, 0);
       }
 
@@ -551,14 +553,14 @@ export default function subagentExtension(pi: ExtensionAPI) {
         .replace(/\s+/g, " ")
         .trim();
       return new Text(
-        theme.fg("toolTitle", theme.bold("subagent ")) +
+        theme.fg("toolTitle", theme.bold("run_subagent ")) +
           theme.fg("accent", "run") +
-          `\n  ${theme.fg("dim", preview.slice(0, 100))}${preview.length > 100 ? "…" : ""}${theme.fg("muted", model)}`,
+          `
+  ${theme.fg("dim", preview.slice(0, 100))}${preview.length > 100 ? "…" : ""}${theme.fg("muted", model)}`,
         0,
         0,
       );
     },
-
     renderResult(result, { expanded }, theme) {
       const details = result.details as SubagentDetails | undefined;
       if (!details) {
@@ -570,18 +572,16 @@ export default function subagentExtension(pi: ExtensionAPI) {
         );
       }
 
-      if (details.action === "list_models" || !details.results) {
-        return new Text(
-          String(details.userText || formatModelList(details)),
-          0,
-          0,
-        );
+      if (!details.results) {
+        return new Text(String(details.userText || "(no output)"), 0, 0);
       }
 
       if (!expanded) {
         let text = theme.fg(
           "toolTitle",
-          theme.bold(details.results.length > 1 ? "parallel " : "subagent "),
+          theme.bold(
+            details.results.length > 1 ? "parallel " : "run_subagent ",
+          ),
         );
         text += theme.fg(
           "accent",
@@ -593,12 +593,18 @@ export default function subagentExtension(pi: ExtensionAPI) {
           const preview = (task.output || task.errorMessage || "(no output)")
             .replace(/\s+/g, " ")
             .trim();
-          text += `\n\n${icon} ${theme.fg("accent", task.model || task.requestedModel || "(default model)")}`;
-          text += `\n${theme.fg("dim", preview.slice(0, 220))}${preview.length > 220 ? "…" : ""}`;
+          text += `
+
+${icon} ${theme.fg("accent", task.model || task.requestedModel || "(default model)")}`;
+          text += `
+${theme.fg("dim", preview.slice(0, 220))}${preview.length > 220 ? "…" : ""}`;
           const usage = formatUsage(task.usage, undefined);
-          if (usage) text += `\n${theme.fg("muted", usage)}`;
+          if (usage)
+            text += `
+${theme.fg("muted", usage)}`;
         }
-        text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+        text += `
+${theme.fg("muted", "(Ctrl+O to expand)")}`;
         return new Text(text, 0, 0);
       }
 
@@ -608,7 +614,9 @@ export default function subagentExtension(pi: ExtensionAPI) {
           theme.fg(
             "toolTitle",
             theme.bold(
-              details.results.length > 1 ? "parallel subagents" : "subagent",
+              details.results.length > 1
+                ? "parallel subagents"
+                : "run_subagent",
             ),
           ),
           0,
@@ -646,6 +654,39 @@ export default function subagentExtension(pi: ExtensionAPI) {
         if (usage) container.addChild(new Text(theme.fg("muted", usage), 0, 0));
       }
       return container;
+    },
+  });
+
+  pi.registerTool({
+    name: "list_models",
+    label: "List Models",
+    description: "List available models.",
+    promptSnippet: "List available models.",
+    promptGuidelines: [
+      "Use `list_models` to get the currently available LLM models.",
+    ],
+    parameters: Type.Object({}),
+    async execute(_toolCallId, _rawParams, _signal, _onUpdate, ctx) {
+      return await listModelsResult(ctx, pi.getThinkingLevel());
+    },
+    renderCall(_args, theme) {
+      return new Text(theme.fg("toolTitle", theme.bold("list_models")), 0, 0);
+    },
+    renderResult(result, _state, theme) {
+      const details = result.details as SubagentDetails | undefined;
+      if (!details) {
+        const first = result.content[0];
+        return new Text(
+          first?.type === "text" ? first.text : "(no output)",
+          0,
+          0,
+        );
+      }
+      return new Text(
+        String(details.userText || formatModelList(details)),
+        0,
+        0,
+      );
     },
   });
 }

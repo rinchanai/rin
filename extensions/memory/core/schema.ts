@@ -90,24 +90,23 @@ export function normalizeFrontmatter(
 ): MemoryDoc {
   const exposure = ensureExposure(safeString(raw.exposure || "recall"));
   const residentSlot = safeString(raw.resident_slot || "").trim();
-  const title =
-    safeString(raw.title || "").trim() ||
+  const name =
+    safeString(raw.name || "").trim() ||
     (residentSlot
       ? residentSlot.replace(/_/g, " ")
       : path.basename(filePath, ".md"));
   const id =
     safeString(raw.id || "").trim() ||
-    slugify(title, path.basename(filePath, ".md"));
+    slugify(name, path.basename(filePath, ".md"));
   return {
     id,
-    title,
+    name,
     exposure,
     fidelity: ensureFidelity(safeString(raw.fidelity || "fuzzy")),
     resident_slot: residentSlot,
-    summary: safeString(raw.summary || "").trim(),
+    description: safeString(raw.description || "").trim(),
     tags: normalizeList(raw.tags || ""),
     aliases: normalizeList(raw.aliases || ""),
-    triggers: normalizeList(raw.triggers || ""),
     scope: ensureScope(
       safeString(raw.scope || (exposure === "resident" ? "global" : "project")),
     ),
@@ -152,14 +151,13 @@ export function parseMarkdownDoc(filePath: string, text: string): MemoryDoc {
 export function renderMarkdownDoc(doc: MemoryDoc): string {
   const fm = {
     id: doc.id,
-    title: doc.title,
+    name: doc.name,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
     ...(doc.resident_slot ? { resident_slot: doc.resident_slot } : {}),
-    ...(doc.summary ? { summary: doc.summary } : {}),
+    ...(doc.description ? { description: doc.description } : {}),
     ...(doc.tags.length ? { tags: doc.tags } : {}),
     ...(doc.aliases.length ? { aliases: doc.aliases } : {}),
-    ...(doc.triggers.length ? { triggers: doc.triggers } : {}),
     ...(doc.scope ? { scope: doc.scope } : {}),
     ...(doc.kind ? { kind: doc.kind } : {}),
     ...(doc.sensitivity ? { sensitivity: doc.sensitivity } : {}),
@@ -178,14 +176,13 @@ export function renderMarkdownDoc(doc: MemoryDoc): string {
 export function previewMemoryDoc(doc: MemoryDoc): Record<string, any> {
   return {
     id: doc.id,
-    title: doc.title,
+    name: doc.name,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
     resident_slot: doc.resident_slot || undefined,
-    summary: doc.summary || undefined,
+    description: doc.description || undefined,
     tags: doc.tags,
     aliases: doc.aliases,
-    triggers: doc.triggers,
     scope: doc.scope,
     kind: doc.kind,
     sensitivity: doc.sensitivity,

@@ -1,28 +1,97 @@
+function escapeXml(text: string): string {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function toTitleCase(text: string): string {
+  return String(text || "")
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildResidentMemoryPrompt(result: any): string {
+  const docs = Array.isArray(result?.resident_prompt_docs)
+    ? result.resident_prompt_docs
+    : Array.isArray(result?.resident_docs)
+      ? result.resident_docs
+      : [];
+  if (!docs.length) return "";
+  const lines = ["## Resident Memory", ""];
+  for (const doc of docs) {
+    const title = toTitleCase(
+      String(doc?.name || doc?.resident_slot || doc?.id || "Untitled").trim(),
+    );
+    const body = String(doc?.content || doc?.preview || "").trim();
+    const path = String(doc?.path || "").trim();
+    if (!body) continue;
+    lines.push(`### ${title}`);
+    if (path) lines.push(path);
+    lines.push("");
+    lines.push(body);
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+
+function buildProgressiveMemoryDescription(doc: any): string {
+  return String(doc?.description || "").trim();
+}
+
+function buildProgressiveMemoryPrompt(result: any): string {
+  const docs = Array.isArray(result?.progressive_docs)
+    ? result.progressive_docs
+    : [];
+  if (!docs.length) return "";
+  const lines = ["## Progressive Memory", "", "<available_memory>"];
+  for (const doc of docs) {
+    lines.push("  <memory>");
+    lines.push(
+      `    <name>${escapeXml(String(doc?.name || doc?.id || "Untitled"))}</name>`,
+    );
+    const description = buildProgressiveMemoryDescription(doc);
+    if (description) {
+      lines.push(`    <description>${escapeXml(description)}</description>`);
+    }
+    lines.push(
+      `    <location>${escapeXml(String(doc?.path || ""))}</location>`,
+    );
+    lines.push("  </memory>");
+  }
+  lines.push("</available_memory>");
+  return lines.join("\n").trim();
+}
+
 export function buildCompiledMemoryPrompt(result: any): string {
-  const blocks = [
-    ["## Resident Memory", String(result?.resident || "").trim()],
-    ["## Progressive Memory", String(result?.progressive_index || "").trim()],
+  const sections = [
+    buildResidentMemoryPrompt(result),
+    buildProgressiveMemoryPrompt(result),
     [
       "## Expanded Progressive Memory",
       String(result?.progressive_expanded || "").trim(),
-    ],
-    ["## Relevant Recall", String(result?.recall_context || "").trim()],
-  ].filter(([, body]) => body);
-  return blocks
-    .map(([title, body]) => `${title}\n${body}`)
-    .join("\n\n")
-    .trim();
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    ["## Relevant Recall", String(result?.recall_context || "").trim()]
+      .filter(Boolean)
+      .join("\n"),
+  ].filter((body) => String(body || "").trim());
+  if (!sections.length) return "";
+  return ["# Memory", ...sections].join("\n\n").trim();
 }
 
 export function buildSystemPromptMemory(result: any): string {
-  const blocks = [
-    ["## Resident Memory", String(result?.resident || "").trim()],
-    ["## Progressive Memory", String(result?.progressive_index || "").trim()],
-  ].filter(([, body]) => body);
-  return blocks
-    .map(([title, body]) => `${title}\n${body}`)
-    .join("\n\n")
-    .trim();
+  const sections = [
+    buildResidentMemoryPrompt(result),
+    buildProgressiveMemoryPrompt(result),
+  ].filter((body) => String(body || "").trim());
+  if (!sections.length) return "";
+  return ["# Memory", ...sections].join("\n\n").trim();
 }
 
 export function formatMemoryResult(action: string, response: any): string {
@@ -39,7 +108,7 @@ export function formatMemoryResult(action: string, response: any): string {
             : "";
         const scope = String(item?.scope || "").trim();
         const kind = String(item?.kind || "").trim();
-        return `- ${String(item?.title || item?.id || "(untitled)")} [${String(item?.exposure || "")}]${scope ? ` scope=${scope}` : ""}${kind ? ` kind=${kind}` : ""}${slot ? ` slot=${slot}` : ""}${tags} path=${String(item?.path || "")}`;
+        return `- ${String(item?.name || item?.id || "(untitled)")} [${String(item?.exposure || "")}]${scope ? ` scope=${scope}` : ""}${kind ? ` kind=${kind}` : ""}${slot ? ` slot=${slot}` : ""}${tags} path=${String(item?.path || "")}`;
       }),
     ].join("\n");
   }
@@ -51,7 +120,7 @@ export function formatMemoryResult(action: string, response: any): string {
     return [
       `Memory matches for: ${String(response?.query || "")}`,
       ...rows.map((item: any, index: number) => {
-        const summary = String(item?.summary || "").trim();
+        const summary = String(item?.description || "").trim();
         const meta = [
           `score=${Number(item?.score || 0).toFixed(2)}`,
           String(item?.exposure || "").trim(),
@@ -60,7 +129,7 @@ export function formatMemoryResult(action: string, response: any): string {
           .filter(Boolean)
           .join(" • ");
         return [
-          `${index + 1}. ${String(item?.title || item?.id || "(untitled)")} — ${meta}`,
+          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")} — ${meta}`,
           String(item?.path || ""),
           summary,
         ]
@@ -71,7 +140,7 @@ export function formatMemoryResult(action: string, response: any): string {
   }
 
   if (action === "save")
-    return `Saved memory: ${String(response?.doc?.title || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
+    return `Saved memory: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
 
   if (action === "compile")
     return (
@@ -105,7 +174,7 @@ export function formatMemoryAgentResult(action: string, response: any): string {
       `memory list ${rows.length}`,
       ...rows.map((item: any, index: number) =>
         [
-          `${index + 1}. ${String(item?.title || item?.id || "(untitled)")}`,
+          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")}`,
           String(item?.exposure || "").trim(),
           String(item?.scope || "").trim(),
           String(item?.kind || "").trim(),
@@ -126,7 +195,7 @@ export function formatMemoryAgentResult(action: string, response: any): string {
       `memory search ${String(response?.query || "")} (${rows.length})`,
       ...rows.map((item: any, index: number) =>
         [
-          `${index + 1}. ${String(item?.title || item?.id || "(untitled)")}`,
+          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")}`,
           `score=${Number(item?.score || 0).toFixed(2)}`,
           String(item?.exposure || "").trim(),
           String(item?.scope || "").trim(),

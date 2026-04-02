@@ -173,17 +173,13 @@ function formatPartForUser(part: KoishiMessagePart) {
 
 export default function koishiSendMessageExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "koishi_send_message",
-    label: "Koishi Send Message",
+    name: "send_chat_msg",
+    label: "Send Chat Message",
     description:
-      "Queue a message to a specific Koishi chatKey. Supports text, @ mentions, images, and files.",
-    promptSnippet:
-      "Send a message to another Koishi chat when the user explicitly asks to notify or forward something there.",
+      "Send a message to a specific chatKey. Supports text, mentions, images, and files.",
+    promptSnippet: "Send a message to a specific chat.",
     promptGuidelines: [
-      "Use `koishi_send_message` only when the user explicitly wants to send or forward something into a specific Koishi chat.",
-      "Do not use this tool just to reply in the current chat; normal assistant output already does that.",
-      "Always require an explicit `chatKey`.",
-      "Prefer structured `parts` for mixed content; `text` is just a convenience shortcut for simple plain-text messages.",
+      "Use `send_chat_msg` to send content to a specific chat only when the user explicitly asks.",
     ],
     parameters: Type.Object({
       chatKey: Type.String({
@@ -249,7 +245,7 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       });
 
       const agentText = [
-        "koishi_send_message queued",
+        "send_chat_msg queued",
         `chatKey=${chatKey}`,
         `requestId=${requestId}`,
         `outbox=${filePath}`,

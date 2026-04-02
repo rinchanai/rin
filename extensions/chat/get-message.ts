@@ -34,12 +34,13 @@ function safeString(value: unknown) {
 
 export default function koishiGetMessageExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "koishi_get_message",
-    label: "Koishi Get Message",
-    description:
-      "Look up stored inbound Koishi messages by platform message ID, including reply target and recorded agent session linkage.",
-    promptSnippet:
-      "Look up stored Koishi inbound messages by message ID when you need the original message body, reply chain, or linked session id.",
+    name: "get_chat_msg",
+    label: "Get Chat Message",
+    description: "Get a specific chat message.",
+    promptSnippet: "Get a specific chat message.",
+    promptGuidelines: [
+      "Use `get_chat_msg` to get the content of a specific chat message.",
+    ],
     parameters: Type.Object({
       messageId: Type.String({
         description: "Platform message ID to look up.",
@@ -69,13 +70,13 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
       );
       const agentText = matches.length
         ? [
-            "koishi_get_message",
+            "get_chat_msg",
             ...matches.map(
               (item: any, index: number) =>
                 `match ${index + 1}\n${describeKoishiMessageRecord(item)}`,
             ),
           ].join("\n\n")
-        : `koishi_get_message\nnot_found messageId=${messageId}${chatKey ? `\nchatKey=${chatKey}` : ""}`;
+        : `get_chat_msg\nnot_found messageId=${messageId}${chatKey ? `\nchatKey=${chatKey}` : ""}`;
       const prepared = await prepareToolTextOutput({
         agentText,
         userText: matches.length
