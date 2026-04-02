@@ -5,6 +5,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { prepareToolTextOutput } from "../shared/tool-text.js";
+
 function normalizeInputPath(input: string, cwd: string): string {
   const value = input.trim();
   if (value === "~") return homedir();
@@ -111,13 +113,18 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
         stats = statSync(targetPath);
       } catch {
         const error = `Path does not exist: ${targetPath}`;
+        const prepared = await prepareToolTextOutput({
+          agentText: formatAgentText([], error),
+          userText: formatUserText(targetPath, [], error),
+          tempPrefix: "rin-attention-resources-",
+          filename: "attention-resources.txt",
+        });
         return {
-          content: [{ type: "text", text: formatAgentText([], error) }],
+          content: [{ type: "text", text: prepared.agentText }],
           details: {
             paths: [],
             error: true,
-            agentText: formatAgentText([], error),
-            userText: formatUserText(targetPath, [], error),
+            ...prepared,
           },
         };
       }
@@ -129,11 +136,15 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
         ...listAncestorContextFiles(targetDir),
         ...collectSkillPaths(join(targetDir, ".agents", "skills")),
       ];
-      const agentText = formatAgentText(paths);
-      const userText = formatUserText(targetDir, paths);
+      const prepared = await prepareToolTextOutput({
+        agentText: formatAgentText(paths),
+        userText: formatUserText(targetDir, paths),
+        tempPrefix: "rin-attention-resources-",
+        filename: "attention-resources.txt",
+      });
       return {
-        content: [{ type: "text", text: agentText }],
-        details: { paths, agentText, userText },
+        content: [{ type: "text", text: prepared.agentText }],
+        details: { paths, ...prepared },
       };
     },
     renderResult(result) {

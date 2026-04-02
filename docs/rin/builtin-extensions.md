@@ -9,6 +9,8 @@ This document describes the extra capabilities Rin gives the agent.
   - helps the agent find ancestor `AGENTS.md` / `CLAUDE.md` files and `.agents/skills`
 - `web-search`
   - provides live web search
+- `fetch`
+  - provides direct URL fetching and file download support
 - `memory`
   - provides Rin memory tools and memory-related prompt support
 - `reset-system-prompt`

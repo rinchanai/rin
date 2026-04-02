@@ -18,6 +18,7 @@ import {
   memoryToolParameters,
   refreshOnboardingCompletion,
 } from "./lib.js";
+import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
 
@@ -117,11 +118,15 @@ export default function memoryExtension(pi: ExtensionAPI) {
         const action = String((params as any)?.action || "").trim();
         try {
           const response = await executeMemoryTool(params as any);
-          const agentText = formatMemoryAgentResult(action, response);
-          const userText = formatMemoryResult(action, response);
+          const prepared = await prepareToolTextOutput({
+            agentText: formatMemoryAgentResult(action, response),
+            userText: formatMemoryResult(action, response),
+            tempPrefix: "rin-memory-",
+            filename: `memory-${action || "result"}.txt`,
+          });
           return {
-            content: [{ type: "text", text: agentText }],
-            details: { ...response, agentText, userText },
+            content: [{ type: "text", text: prepared.agentText }],
+            details: { ...response, ...prepared },
           };
         } catch (error: any) {
           const message = String(

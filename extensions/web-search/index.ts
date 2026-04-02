@@ -6,6 +6,8 @@ import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
+import { prepareToolTextOutput } from "../shared/tool-text.js";
+
 function trimSnippet(value: string, max = 220): string {
   const text = String(value || "")
     .replace(/\s+/g, " ")
@@ -123,11 +125,15 @@ export default function webSearchExtension(pi: ExtensionAPI) {
         results: [],
         error: String(error?.message || error || "web_search_failed"),
       }));
-      const agentText = formatAgentResults(response);
-      const userText = formatResults(response);
+      const prepared = await prepareToolTextOutput({
+        agentText: formatAgentResults(response),
+        userText: formatResults(response),
+        tempPrefix: "rin-web-search-",
+        filename: "web-search.txt",
+      });
       return {
-        content: [{ type: "text", text: agentText }],
-        details: { ...response, agentText, userText },
+        content: [{ type: "text", text: prepared.agentText }],
+        details: { ...response, ...prepared },
         isError: response?.ok !== true,
       };
     },

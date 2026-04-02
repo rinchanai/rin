@@ -28,6 +28,7 @@ const result = spawnSync(
 const requiredOutputs = [
   path.join(repoRoot, "dist", "extensions", "memory", "index.js"),
   path.join(repoRoot, "dist", "extensions", "web-search", "index.js"),
+  path.join(repoRoot, "dist", "extensions", "fetch", "index.js"),
   path.join(repoRoot, "dist", "extensions", "subagent", "index.js"),
 ];
 

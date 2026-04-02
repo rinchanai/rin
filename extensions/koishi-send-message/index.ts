@@ -6,6 +6,8 @@ import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { prepareToolTextOutput } from "../shared/tool-text.js";
+
 type KoishiMessagePart =
   | {
       type: "text";
@@ -256,22 +258,26 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         ),
       ].join("\n");
 
-      const userText = [
-        `已加入发送队列，目标聊天：${chatKey}`,
-        `消息片段共 ${parts.length} 个：`,
-        ...parts.map((part) => formatPartForUser(part)),
-        `出站文件：${filePath}`,
-      ].join("\n");
+      const prepared = await prepareToolTextOutput({
+        agentText,
+        userText: [
+          `已加入发送队列，目标聊天：${chatKey}`,
+          `消息片段共 ${parts.length} 个：`,
+          ...parts.map((part) => formatPartForUser(part)),
+          `出站文件：${filePath}`,
+        ].join("\n"),
+        tempPrefix: "rin-koishi-send-",
+        filename: "koishi-send.txt",
+      });
 
       return {
-        content: [{ type: "text", text: agentText }],
+        content: [{ type: "text", text: prepared.agentText }],
         details: {
           chatKey,
           requestId,
           parts,
           outboxPath: filePath,
-          agentText,
-          userText,
+          ...prepared,
         },
       };
     },
