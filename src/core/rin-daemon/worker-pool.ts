@@ -38,7 +38,6 @@ export class WorkerPool {
   private workers = new Set<WorkerHandle>();
   private workersBySessionFile = new Map<string, WorkerHandle>();
   private workersBySessionId = new Map<string, WorkerHandle>();
-  private catalogWorker: WorkerHandle | undefined;
   private workerSeq = 0;
 
   constructor(
@@ -64,7 +63,6 @@ export class WorkerPool {
   destroyWorker(worker: WorkerHandle) {
     if (!this.workers.has(worker)) return;
     this.workers.delete(worker);
-    if (this.catalogWorker === worker) this.catalogWorker = undefined;
     this.deleteWorkerSessionRefs(worker);
     for (const connection of Array.from(worker.connections)) {
       if (connection.attachedWorker === worker)
@@ -94,13 +92,6 @@ export class WorkerPool {
     for (const worker of Array.from(this.workers)) {
       this.maybeReleaseWorker(worker);
     }
-  }
-
-  getCatalogWorker() {
-    if (!this.catalogWorker || !this.workers.has(this.catalogWorker)) {
-      this.catalogWorker = this.createWorker();
-    }
-    return this.catalogWorker;
   }
 
   requestWorker(
@@ -155,10 +146,6 @@ export class WorkerPool {
   getStatusSnapshot() {
     return {
       workerCount: this.workers.size,
-      catalogWorkerId:
-        this.catalogWorker && this.workers.has(this.catalogWorker)
-          ? this.catalogWorker.id
-          : undefined,
       workers: Array.from(this.workers).map((worker) => ({
         id: worker.id,
         pid: worker.child.pid ?? null,
@@ -170,7 +157,7 @@ export class WorkerPool {
         isCompacting: worker.isCompacting,
         lastUsedAt: worker.lastUsedAt,
         releaseRequested: worker.releaseRequested,
-        role: this.catalogWorker === worker ? "catalog" : "session",
+        role: "session",
       })),
     };
   }
@@ -283,6 +270,7 @@ export class WorkerPool {
           const connection = worker.pendingResponses.get(String(payload.id))!;
           worker.pendingResponses.delete(String(payload.id));
           writeLine(connection.socket, payload);
+          this.maybeReleaseWorker(worker);
           return;
         }
 
@@ -312,6 +300,13 @@ export class WorkerPool {
           signal: signal ?? null,
         });
       }
+      for (const connection of new Set(worker.pendingResponses.values())) {
+        writeLine(connection.socket, {
+          type: "worker_exit",
+          code: code ?? null,
+          signal: signal ?? null,
+        });
+      }
       worker.connections.clear();
       worker.pendingResponses.clear();
     });
@@ -332,6 +327,10 @@ export class WorkerPool {
     if (!this.workers.has(worker)) return;
     if (worker.connections.size > 0) {
       worker.releaseRequested = false;
+      return;
+    }
+    if (worker.pendingResponses.size > 0) {
+      worker.releaseRequested = true;
       return;
     }
     if (worker.isStreaming || worker.isCompacting) {

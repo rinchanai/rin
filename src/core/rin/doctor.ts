@@ -40,10 +40,7 @@ export async function runDoctor(parsed: ParsedArgs) {
   }
 
   if (daemonStatus) {
-    lines.push(
-      `daemonWorkerCount=${String(daemonStatus.workerCount ?? 0)}`,
-      `daemonCatalogWorkerId=${String(daemonStatus.catalogWorkerId || "")}`,
-    );
+    lines.push(`daemonWorkerCount=${String(daemonStatus.workerCount ?? 0)}`);
     const workerLines = Array.isArray(daemonStatus.workers)
       ? daemonStatus.workers.map((worker: any) => {
           const sessionFile = worker.sessionFile
