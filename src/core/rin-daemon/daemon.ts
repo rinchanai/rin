@@ -12,6 +12,11 @@ import { emptySessionState, response } from "../rin-lib/rpc.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
+import {
+  getCatalogOAuthState,
+  listCatalogCommands,
+  listCatalogModels,
+} from "./catalog.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
 function ensureDir(dir: string) {
@@ -121,11 +126,15 @@ export async function startDaemon(
       !connection.attachedWorker &&
       !selectorPresent
     ) {
-      workerPool.requestWorker(
-        workerPool.getCatalogWorker(),
-        connection,
-        command,
-        false,
+      writeLine(
+        connection.socket,
+        response(id, type, true, {
+          commands: await listCatalogCommands({
+            cwd: runtime.cwd,
+            agentDir: runtime.agentDir,
+            additionalExtensionPaths: options.additionalExtensionPaths,
+          }),
+        }),
       );
       return true;
     }
@@ -134,11 +143,15 @@ export async function startDaemon(
       !connection.attachedWorker &&
       !selectorPresent
     ) {
-      workerPool.requestWorker(
-        workerPool.getCatalogWorker(),
-        connection,
-        command,
-        false,
+      writeLine(
+        connection.socket,
+        response(id, type, true, {
+          models: await listCatalogModels({
+            cwd: runtime.cwd,
+            agentDir: runtime.agentDir,
+            additionalExtensionPaths: options.additionalExtensionPaths,
+          }),
+        }),
       );
       return true;
     }
@@ -147,11 +160,18 @@ export async function startDaemon(
       !connection.attachedWorker &&
       !selectorPresent
     ) {
-      workerPool.requestWorker(
-        workerPool.getCatalogWorker(),
-        connection,
-        command,
-        false,
+      writeLine(
+        connection.socket,
+        response(
+          id,
+          type,
+          true,
+          await getCatalogOAuthState({
+            cwd: runtime.cwd,
+            agentDir: runtime.agentDir,
+            additionalExtensionPaths: options.additionalExtensionPaths,
+          }),
+        ),
       );
       return true;
     }
