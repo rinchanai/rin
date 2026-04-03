@@ -142,6 +142,9 @@ export function formatMemoryResult(action: string, response: any): string {
   if (action === "save")
     return `Saved memory: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
 
+  if (action === "save_resident")
+    return `Saved resident memory: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
+
   if (action === "compile")
     return (
       buildCompiledMemoryPrompt(response) || "No compiled memory available."
@@ -209,6 +212,9 @@ export function formatMemoryAgentResult(action: string, response: any): string {
 
   if (action === "save")
     return `memory save\npath=${String(response?.doc?.path || "")}`;
+
+  if (action === "save_resident")
+    return `memory save_resident\npath=${String(response?.doc?.path || "")}`;
 
   if (action === "compile") {
     const sections = [

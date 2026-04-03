@@ -122,14 +122,30 @@ test("doctorMemory reports missing resident slots without event machinery", asyn
   });
 });
 
+test("saveMemory rejects resident exposure", async () => {
+  await withTempRoot(async (root) => {
+    await assert.rejects(
+      () =>
+        store.saveMemory(
+          {
+            content: "owner identity",
+            exposure: "resident",
+            residentSlot: "owner_identity",
+          },
+          root,
+        ),
+      /resident_memory_uses_save_resident_memory/,
+    );
+  });
+});
+
 test("compileMemory includes saved resident memory from markdown source", async () => {
   await withTempRoot(async (root) => {
-    await store.saveMemory(
+    await store.saveResidentMemoryDoc(
       {
-        title: "owner identity",
-        content: "用户希望默认称呼其为主人。",
-        summary: "默认称呼用户为主人。",
-        exposure: "resident",
+        name: "owner identity",
+        content: "Call the user Master by default.",
+        description: "Default address for the user.",
         residentSlot: "owner_identity",
         scope: "global",
         kind: "preference",
@@ -137,10 +153,13 @@ test("compileMemory includes saved resident memory from markdown source", async 
       root,
     );
 
-    const compiled = await store.compileMemory({ query: "怎么称呼用户" }, root);
+    const compiled = await store.compileMemory(
+      { query: "how to address the user" },
+      root,
+    );
     assert.ok(
       String(compiled.resident).includes(
-        "[owner_identity] 用户希望默认称呼其为主人。",
+        "[owner_identity] Call the user Master by default.",
       ),
     );
   });

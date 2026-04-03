@@ -20,10 +20,15 @@ import {
 
 export const memoryToolParameters = Type.Object({
   action: Type.Union(
-    [Type.Literal("list"), Type.Literal("search"), Type.Literal("save")],
+    [
+      Type.Literal("list"),
+      Type.Literal("search"),
+      Type.Literal("save"),
+      Type.Literal("save_resident"),
+    ],
     {
       description:
-        "Memory tool action. Allowed values: `list`, `search`, or `save`.",
+        "Memory tool action. Allowed values: `list`, `search`, `save`, or `save_resident`.",
     },
   ),
   query: Type.Optional(Type.String()),
@@ -33,17 +38,10 @@ export const memoryToolParameters = Type.Object({
   content: Type.Optional(Type.String()),
   description: Type.Optional(Type.String()),
   exposure: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("resident"),
-        Type.Literal("progressive"),
-        Type.Literal("recall"),
-      ],
-      {
-        description:
-          "Optional memory layer. Allowed values: `resident`, `progressive`, or `recall`.",
-      },
-    ),
+    Type.Union([Type.Literal("progressive"), Type.Literal("recall")], {
+      description:
+        "Optional memory layer. Allowed values: `progressive` or `recall`.",
+    }),
   ),
   fidelity: Type.Optional(
     Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")], {

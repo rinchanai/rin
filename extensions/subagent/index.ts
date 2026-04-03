@@ -1,38 +1,27 @@
-import path from "node:path";
-
 import { StringEnum } from "@mariozechner/pi-ai";
-import type {
-  AgentMessage as Message,
-  ThinkingLevel,
-} from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { getBuiltinExtensionPaths } from "../../src/app/builtin-extensions.js";
-import { loadRinCodingAgent } from "../../src/core/rin-lib/loader.js";
-import { createConfiguredAgentSession } from "../../src/core/rin-lib/runtime.js";
+import {
+  applySubagentTaskPreferences,
+  executeSubagentRun,
+  getSubagentBackendInfo,
+} from "../../src/core/subagent/service.js";
+import type {
+  ProviderModelSummary,
+  RunSubagentParams,
+  SubagentBackendInfo,
+  TaskResult,
+} from "../../src/core/subagent/types.js";
+import { prepareToolTextOutput } from "../shared/tool-text.js";
 import {
   buildSubagentAgentText,
   formatUsage,
-  formatTokens,
-  getFinalOutput,
   summarizeTaskResult,
-  type TaskResult,
-  type UsageStats,
 } from "./format-utils.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
-import {
-  buildModelLookup,
-  compareModelIds,
-  getProviderSummaries,
-  normalizeModelRef,
-  splitModelRef,
-  type ProviderModelSummary,
-  VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS,
-} from "./model-utils.js";
-
-const MAX_PARALLEL_TASKS = 8;
+import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
 
 const ThinkingLevelSchema = StringEnum(
   VALID_THINKING_LEVELS as ThinkingLevel[],
@@ -83,19 +72,6 @@ const RunParamsSchema = Type.Object({
   ),
 });
 
-type RunToolParams = {
-  prompt?: string;
-  model?: string;
-  thinkingLevel?: ThinkingLevel;
-  cwd?: string;
-  tasks?: Array<{
-    prompt: string;
-    model?: string;
-    thinkingLevel?: ThinkingLevel;
-    cwd?: string;
-  }>;
-};
-
 type SubagentDetails = {
   action: "run" | "list_models";
   backend: "in-process-session";
@@ -109,18 +85,9 @@ type SubagentDetails = {
   truncated?: boolean;
 };
 
-let sessionCreationQueue: Promise<unknown> = Promise.resolve();
-
-function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
-  const run = sessionCreationQueue.then(fn, fn);
-  sessionCreationQueue = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
-}
-
-function formatModelList(details: SubagentDetails): string {
+function formatModelList(
+  details: SubagentDetails | SubagentBackendInfo,
+): string {
   const lines: string[] = [];
   lines.push(`Backend: ${details.backend}`);
   lines.push(`Current model: ${details.currentModel ?? "(not set)"}`);
@@ -137,26 +104,6 @@ function formatModelList(details: SubagentDetails): string {
     );
   }
   return lines.join("\n");
-}
-
-function getSubagentExtensionPaths(): string[] {
-  return getBuiltinExtensionPaths().filter((entry) => {
-    const normalized = entry.split(path.sep).join("/");
-    return !normalized.endsWith("/extensions/subagent/index.ts");
-  });
-}
-
-async function createIsolatedSession(cwd: string) {
-  const codingAgentModule = await loadRinCodingAgent();
-  const { SessionManager } = codingAgentModule as any;
-  const sessionManager = SessionManager.inMemory(cwd);
-  return await withSessionCreationLock(async () => {
-    return await createConfiguredAgentSession({
-      cwd,
-      additionalExtensionPaths: getSubagentExtensionPaths(),
-      sessionManager,
-    });
-  });
 }
 
 function buildSubagentUserText(results: TaskResult[]): string {
@@ -179,7 +126,10 @@ function buildSubagentUserText(results: TaskResult[]): string {
       ].join("\n\n");
 }
 
-function buildRunUpdate(results: TaskResult[], detailsBase: SubagentDetails) {
+function buildRunUpdate(
+  results: TaskResult[],
+  detailsBase: SubagentBackendInfo,
+) {
   const done = results.filter((result) => result.status === "done").length;
   const failed = results.filter((result) => result.status === "error").length;
   const running = results.filter(
@@ -203,44 +153,8 @@ function buildRunUpdate(results: TaskResult[], detailsBase: SubagentDetails) {
   };
 }
 
-export async function applySubagentTaskPreferences(
-  session: any,
-  task: {
-    model?: string;
-    thinkingLevel?: ThinkingLevel;
-  },
-) {
-  if (task.model) {
-    const parts = splitModelRef(task.model);
-    const model = parts
-      ? session.modelRegistry.find(parts.provider, parts.modelId)
-      : undefined;
-    if (!model) throw new Error(`Unknown model: ${task.model}`);
-    if (!session.modelRegistry.hasConfiguredAuth?.(model)) {
-      throw new Error(`No API key for ${task.model}`);
-    }
-    session.agent.setModel(model);
-  }
-  if (task.thinkingLevel) {
-    const available = session.getAvailableThinkingLevels();
-    const level = available.includes(task.thinkingLevel)
-      ? task.thinkingLevel
-      : available[available.length - 1];
-    session.agent.setThinkingLevel(level);
-  }
-}
-
 async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
-  const providers = await getProviderSummaries(ctx);
-  const detailsBase: SubagentDetails = {
-    action: "list_models",
-    backend: "in-process-session",
-    currentModel: ctx.model
-      ? `${ctx.model.provider}/${ctx.model.id}`
-      : undefined,
-    currentThinkingLevel,
-    providers,
-  };
+  const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
   const prepared = await prepareToolTextOutput({
     agentText: [
       `subagent_models providers=${detailsBase.providers.length}`,
@@ -255,143 +169,60 @@ async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
   });
   return {
     content: [{ type: "text" as const, text: prepared.agentText }],
-    details: { ...detailsBase, ...prepared },
+    details: {
+      ...detailsBase,
+      action: "list_models" as const,
+      ...prepared,
+    },
   };
 }
 
 async function runSubagentResult(
-  params: RunToolParams,
+  params: RunSubagentParams,
   signal: AbortSignal | undefined,
   onUpdate: any,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
 ) {
-  const providers = await getProviderSummaries(ctx);
+  const run = await executeSubagentRun({
+    params,
+    signal,
+    ctx,
+    currentThinkingLevel,
+    onProgress(results, details) {
+      onUpdate?.(buildRunUpdate(results, details));
+    },
+  });
+
   const detailsBase: SubagentDetails = {
     action: "run",
-    backend: "in-process-session",
-    currentModel: ctx.model
-      ? `${ctx.model.provider}/${ctx.model.id}`
-      : undefined,
-    currentThinkingLevel,
-    providers,
+    backend: run.backend,
+    currentModel: run.currentModel,
+    currentThinkingLevel: run.currentThinkingLevel,
+    providers: run.providers,
   };
 
-  const hasTasks = Array.isArray(params.tasks) && params.tasks.length > 0;
-  const hasSingle = Boolean(String(params.prompt || "").trim());
-  if (Number(hasTasks) + Number(hasSingle) !== 1) {
+  if (run.ok === false) {
+    const suffix = run.error.startsWith("Unknown or unavailable model:")
+      ? `\n\n${formatModelList(detailsBase)}`
+      : "";
     return {
-      content: [
-        {
-          type: "text" as const,
-          text: "Provide exactly one mode: either `prompt` for a single subagent, or `tasks` for parallel subagents.",
-        },
-      ],
+      content: [{ type: "text" as const, text: `${run.error}${suffix}` }],
       details: detailsBase,
       isError: true,
     };
   }
 
-  if (hasTasks && (params.tasks?.length || 0) > MAX_PARALLEL_TASKS) {
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `Too many parallel tasks (${params.tasks?.length}). Max is ${MAX_PARALLEL_TASKS}.`,
-        },
-      ],
-      details: detailsBase,
-      isError: true,
-    };
-  }
-
-  const availableModels = buildModelLookup(providers);
-  const tasks = hasTasks
-    ? (params.tasks || []).map((task) => ({
-        prompt: task.prompt,
-        model: normalizeModelRef(task.model),
-        thinkingLevel: task.thinkingLevel,
-        cwd: task.cwd,
-      }))
-    : [
-        {
-          prompt: String(params.prompt || ""),
-          model:
-            normalizeModelRef(params.model) ||
-            (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
-          thinkingLevel: params.thinkingLevel || currentThinkingLevel,
-          cwd: params.cwd,
-        },
-      ];
-
-  for (const task of tasks) {
-    if (!String(task.prompt || "").trim()) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: "Every subagent task needs a non-empty prompt.",
-          },
-        ],
-        details: detailsBase,
-        isError: true,
-      };
-    }
-    if (task.model && !availableModels.has(task.model)) {
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: `Unknown or unavailable model: ${task.model}\n\n${formatModelList(detailsBase)}`,
-          },
-        ],
-        details: detailsBase,
-        isError: true,
-      };
-    }
-  }
-
-  const progressResults: TaskResult[] = tasks.map((task, index) => ({
-    index: index + 1,
-    prompt: task.prompt,
-    requestedModel: task.model,
-    requestedThinkingLevel: task.thinkingLevel,
-    cwd: task.cwd || ctx.cwd,
-    status: "pending" as const,
-    exitCode: 0,
-    output: "",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      cost: 0,
-      contextTokens: 0,
-      turns: 0,
-    },
-    messages: [] as Message[],
-  }));
-  onUpdate?.(buildRunUpdate(progressResults, detailsBase));
-
-  const results = await Promise.all(
-    tasks.map((task, index) =>
-      runTask(task, index + 1, ctx.cwd, signal, (partial) => {
-        progressResults[index] = partial;
-        onUpdate?.(buildRunUpdate(progressResults, detailsBase));
-      }),
-    ),
-  );
-  const failed = results.filter((result) => result.exitCode !== 0);
+  const failed = run.results.filter((result) => result.exitCode !== 0);
   const prepared = await prepareToolTextOutput({
-    agentText: buildSubagentAgentText(results),
-    userText: buildSubagentUserText(results),
+    agentText: buildSubagentAgentText(run.results),
+    userText: buildSubagentUserText(run.results),
     tempPrefix: "rin-subagent-",
     filename: "subagent.txt",
   });
   const details: SubagentDetails = {
     ...detailsBase,
-    action: "run",
-    results,
+    results: run.results,
     ...prepared,
   };
 
@@ -402,110 +233,7 @@ async function runSubagentResult(
   };
 }
 
-async function runTask(
-  task: {
-    prompt: string;
-    model?: string;
-    thinkingLevel?: ThinkingLevel;
-    cwd?: string;
-  },
-  index: number,
-  defaultCwd: string,
-  signal?: AbortSignal,
-  onProgress?: (result: TaskResult) => void,
-): Promise<TaskResult> {
-  const cwd = task.cwd || defaultCwd;
-  const messages: Message[] = [];
-  const result: TaskResult = {
-    index,
-    prompt: task.prompt,
-    requestedModel: task.model,
-    requestedThinkingLevel: task.thinkingLevel,
-    cwd,
-    status: "pending",
-    exitCode: 0,
-    output: "",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      cost: 0,
-      contextTokens: 0,
-      turns: 0,
-    },
-    messages,
-  };
-
-  const { session } = await createIsolatedSession(cwd);
-  result.status = "running";
-  onProgress?.({ ...result, messages: [...result.messages] });
-  const unsubscribe = session.subscribe((event: any) => {
-    if (event?.type !== "message_end" || !event.message) return;
-    const message = event.message as Message;
-    messages.push(message);
-    if (message.role !== "assistant") return;
-    result.output = getFinalOutput(messages);
-    result.stopReason = message.stopReason;
-    result.errorMessage = message.errorMessage;
-    if (message.model) result.model = `${message.provider}/${message.model}`;
-    const usage = message.usage;
-    if (usage) {
-      result.usage.turns += 1;
-      result.usage.input += usage.input || 0;
-      result.usage.output += usage.output || 0;
-      result.usage.cacheRead += usage.cacheRead || 0;
-      result.usage.cacheWrite += usage.cacheWrite || 0;
-      result.usage.cost += usage.cost?.total || 0;
-      result.usage.contextTokens =
-        usage.totalTokens || result.usage.contextTokens;
-    }
-    onProgress?.({ ...result, messages: [...result.messages] });
-  });
-
-  let abortListener: (() => void) | undefined;
-
-  try {
-    if (signal) {
-      const onAbort = () => {
-        void session.abort().catch(() => {});
-      };
-      if (signal.aborted) onAbort();
-      else {
-        signal.addEventListener("abort", onAbort, { once: true });
-        abortListener = () => signal.removeEventListener("abort", onAbort);
-      }
-    }
-    await applySubagentTaskPreferences(session, task);
-    await session.prompt(task.prompt, {
-      expandPromptTemplates: false,
-      source: "extension",
-    });
-    await session.agent.waitForIdle();
-    result.output = result.output || getFinalOutput(messages);
-    const failed =
-      result.stopReason === "error" || result.stopReason === "aborted";
-    result.exitCode = failed ? 1 : 0;
-    result.status = failed ? "error" : "done";
-    onProgress?.({ ...result, messages: [...result.messages] });
-    return result;
-  } catch (error: any) {
-    result.exitCode = 1;
-    result.status = "error";
-    result.errorMessage = String(error?.message || error || "subagent_failed");
-    onProgress?.({ ...result, messages: [...result.messages] });
-    return result;
-  } finally {
-    abortListener?.();
-    unsubscribe();
-    try {
-      await session.abort();
-    } catch {}
-    try {
-      session.dispose?.();
-    } catch {}
-  }
-}
+export { applySubagentTaskPreferences };
 
 export default function subagentExtension(pi: ExtensionAPI) {
   pi.registerTool({
@@ -522,7 +250,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
     parameters: RunParamsSchema,
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
       return await runSubagentResult(
-        rawParams as RunToolParams,
+        rawParams as RunSubagentParams,
         signal,
         onUpdate,
         ctx,

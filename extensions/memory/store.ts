@@ -95,6 +95,46 @@ export async function searchMemories(
   };
 }
 
+export async function saveResidentMemoryDoc(
+  params: Record<string, any> = {},
+  rootOverride = "",
+) {
+  const root = resolveMemoryRoot(rootOverride);
+  await ensureMemoryLayout(root);
+  const content = safeString(params.content || "").trim();
+  if (!content) throw new Error("memory_content_required");
+  const residentSlot = safeString(params.residentSlot || "").trim();
+  const doc: MemoryDoc = {
+    id:
+      safeString(params.id || "").trim() || slugify(residentSlot, residentSlot),
+    name:
+      safeString(params.name || "").trim() ||
+      residentSlot.replace(/_/g, " ") ||
+      "resident memory",
+    exposure: "resident",
+    fidelity: ensureFidelity(safeString(params.fidelity || "exact")),
+    resident_slot: residentSlot,
+    description: safeString(params.description || "").trim(),
+    tags: normalizeList(params.tags || []),
+    aliases: normalizeList(params.aliases || []),
+    scope: ensureScope(safeString(params.scope || "global")),
+    kind: ensureKind(safeString(params.kind || "preference")),
+    sensitivity: safeString(params.sensitivity || "normal").trim() || "normal",
+    source: safeString(params.source || "").trim(),
+    updated_at: nowIso(),
+    last_observed_at: nowIso(),
+    observation_count: Math.max(1, Number(params.observationCount || 1) || 1),
+    status: ensureStatus(safeString(params.status || "active")),
+    supersedes: normalizeList(params.supersedes || []),
+    canonical: true,
+    path: residentPath(root, residentSlot),
+    content,
+  };
+  assertResidentDoc(doc);
+  await writeMemoryDoc(doc);
+  return { status: "ok", action: "save_resident", doc: previewMemoryDoc(doc) };
+}
+
 export async function saveMemory(
   params: Record<string, any> = {},
   rootOverride = "",
@@ -104,6 +144,9 @@ export async function saveMemory(
   const content = safeString(params.content || "").trim();
   if (!content) throw new Error("memory_content_required");
   const exposure = ensureExposure(safeString(params.exposure || "recall"));
+  if (exposure === "resident") {
+    throw new Error("resident_memory_uses_save_resident_memory");
+  }
   const name =
     safeString(params.name || "").trim() ||
     content.split(/\r?\n/)[0].trim().slice(0, 80) ||
@@ -115,25 +158,13 @@ export async function saveMemory(
     id,
     name,
     exposure,
-    fidelity: ensureFidelity(
-      safeString(
-        params.fidelity || (exposure === "resident" ? "exact" : "fuzzy"),
-      ),
-    ),
-    resident_slot: safeString(params.residentSlot || "").trim(),
+    fidelity: ensureFidelity(safeString(params.fidelity || "fuzzy")),
+    resident_slot: "",
     description: safeString(params.description || "").trim(),
     tags: normalizeList(params.tags || []),
     aliases: normalizeList(params.aliases || []),
-    scope: ensureScope(
-      safeString(
-        params.scope || (exposure === "resident" ? "global" : "project"),
-      ),
-    ),
-    kind: ensureKind(
-      safeString(
-        params.kind || (exposure === "resident" ? "preference" : "knowledge"),
-      ),
-    ),
+    scope: ensureScope(safeString(params.scope || "project")),
+    kind: ensureKind(safeString(params.kind || "knowledge")),
     sensitivity: safeString(params.sensitivity || "normal").trim() || "normal",
     source: safeString(params.source || "").trim(),
     updated_at: nowIso(),
@@ -141,16 +172,10 @@ export async function saveMemory(
     observation_count: Math.max(1, Number(params.observationCount || 1) || 1),
     status: ensureStatus(safeString(params.status || "active")),
     supersedes: normalizeList(params.supersedes || []),
-    canonical: exposure === "resident",
-    path: "",
+    canonical: false,
+    path: genericDocPath(root, exposure, id),
     content,
   };
-  if (exposure === "resident") {
-    assertResidentDoc({ ...doc, path: residentPath(root, doc.resident_slot) });
-    doc.path = residentPath(root, doc.resident_slot);
-  } else {
-    doc.path = genericDocPath(root, exposure, id);
-  }
   await writeMemoryDoc(doc);
   return { status: "ok", action: "save", doc: previewMemoryDoc(doc) };
 }
@@ -230,6 +255,8 @@ export async function executeMemoryAction(
       rootOverride,
     );
   if (action === "save") return await saveMemory(params, rootOverride);
+  if (action === "save_resident")
+    return await saveResidentMemoryDoc(params, rootOverride);
   if (action === "compile") return await compileMemory(params, rootOverride);
   if (action === "doctor") return await doctorMemory(rootOverride);
   throw new Error(`unsupported_memory_action:${action}`);

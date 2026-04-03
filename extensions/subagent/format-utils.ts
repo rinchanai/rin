@@ -1,30 +1,8 @@
 import type { AgentMessage as Message } from "@mariozechner/pi-agent-core";
 
-export type UsageStats = {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-  cost: number;
-  contextTokens: number;
-  turns: number;
-};
+import type { TaskResult, UsageStats } from "../../src/core/subagent/types.js";
 
-export type TaskResult = {
-  index: number;
-  prompt: string;
-  requestedModel?: string;
-  requestedThinkingLevel?: any;
-  cwd: string;
-  status: "pending" | "running" | "done" | "error";
-  exitCode: number;
-  stopReason?: string;
-  errorMessage?: string;
-  output: string;
-  model?: string;
-  usage: UsageStats;
-  messages: Message[];
-};
+export type { TaskResult, UsageStats };
 
 export function formatTokens(value: number): string {
   if (!value) return "0";
