@@ -17,6 +17,10 @@ import {
   markOnboardingPrompted,
   refreshOnboardingCompletion,
 } from "./lib.js";
+import {
+  normalizeGeneralMemoryDraft,
+  refineResidentSlot,
+} from "./processing.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
@@ -98,32 +102,10 @@ const saveMemoryParams = Type.Object({
   content: Type.String({ description: "Memory content." }),
   description: Type.Optional(Type.String()),
   exposure: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("resident"),
-        Type.Literal("progressive"),
-        Type.Literal("recall"),
-      ],
-      {
-        description:
-          "Optional memory layer. Allowed values: `resident`, `progressive`, or `recall`.",
-      },
-    ),
-  ),
-  residentSlot: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("agent_identity"),
-        Type.Literal("owner_identity"),
-        Type.Literal("core_voice_style"),
-        Type.Literal("core_methodology"),
-        Type.Literal("core_values"),
-      ],
-      {
-        description:
-          "Resident slot name. Use only with `exposure: resident`. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
-      },
-    ),
+    Type.Union([Type.Literal("progressive"), Type.Literal("recall")], {
+      description:
+        "Optional memory layer. Allowed values: `progressive` or `recall`.",
+    }),
   ),
   tags: Type.Optional(Type.Array(Type.String())),
   aliases: Type.Optional(Type.Array(Type.String())),
@@ -178,6 +160,24 @@ const saveMemoryParams = Type.Object({
   source: Type.Optional(Type.String()),
 });
 
+const saveResidentMemoryParams = Type.Object({
+  residentSlot: Type.Union(
+    [
+      Type.Literal("agent_identity"),
+      Type.Literal("owner_identity"),
+      Type.Literal("core_voice_style"),
+      Type.Literal("core_methodology"),
+      Type.Literal("core_values"),
+    ],
+    {
+      description:
+        "Resident slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
+    },
+  ),
+  content: Type.String({ description: "New resident memory entry." }),
+  source: Type.Optional(Type.String()),
+});
+
 async function executeNamedMemoryAction(action: string, params: any) {
   const input = { ...params, action };
   try {
@@ -201,6 +201,103 @@ async function executeNamedMemoryAction(action: string, params: any) {
         error: message,
         agentText: message,
         userText: `Memory 操作失败：${message}`,
+      },
+      isError: true,
+    };
+  }
+}
+
+async function executeSaveMemoryAction(
+  params: any,
+  ctx: any,
+  currentThinkingLevel: any,
+) {
+  try {
+    const normalized = await normalizeGeneralMemoryDraft({
+      ctx,
+      currentThinkingLevel,
+      draft: {
+        name: params.name,
+        description: params.description,
+        content: params.content,
+        exposure: params.exposure,
+        scope: params.scope,
+        kind: params.kind,
+      },
+    });
+    const response = await executeMemoryTool({
+      ...params,
+      action: "save",
+      name: normalized.name || params.name,
+      description: normalized.description || params.description,
+      content: normalized.content,
+    });
+    const prepared = await prepareToolTextOutput({
+      agentText: formatMemoryAgentResult("save", response),
+      userText: formatMemoryResult("save", response),
+      tempPrefix: "rin-memory-",
+      filename: "memory-save.txt",
+    });
+    return {
+      content: [{ type: "text" as const, text: prepared.agentText }],
+      details: { ...response, ...prepared, normalized },
+    };
+  } catch (error: any) {
+    const message = String(error?.message || error || "memory_action_failed");
+    return {
+      content: [{ type: "text" as const, text: message }],
+      details: {
+        ok: false,
+        error: message,
+        agentText: message,
+        userText: `Memory 操作失败：${message}`,
+      },
+      isError: true,
+    };
+  }
+}
+
+async function executeSaveResidentMemoryAction(
+  params: any,
+  ctx: any,
+  currentThinkingLevel: any,
+) {
+  try {
+    const refined = await refineResidentSlot({
+      ctx,
+      currentThinkingLevel,
+      residentSlot: params.residentSlot,
+      incomingContent: params.content,
+      rootDir: String(ctx?.agentDir || "").trim(),
+    });
+    const response = await executeMemoryTool({
+      action: "save_resident",
+      residentSlot: params.residentSlot,
+      name: refined.name,
+      content: refined.content,
+      source: params.source,
+    });
+    const prepared = await prepareToolTextOutput({
+      agentText: `memory save_resident\npath=${String(response?.doc?.path || refined.path || "")}`,
+      userText: `Saved resident memory: ${String(response?.doc?.name || refined.name || params.residentSlot)}\n${String(response?.doc?.path || refined.path || "")}`,
+      tempPrefix: "rin-memory-",
+      filename: "memory-save-resident.txt",
+    });
+    return {
+      content: [{ type: "text" as const, text: prepared.agentText }],
+      details: { ...response, ...prepared, refined },
+    };
+  } catch (error: any) {
+    const message = String(
+      error?.message || error || "resident_memory_action_failed",
+    );
+    return {
+      content: [{ type: "text" as const, text: message }],
+      details: {
+        ok: false,
+        error: message,
+        agentText: message,
+        userText: `Resident memory 操作失败：${message}`,
       },
       isError: true,
     };
@@ -239,8 +336,23 @@ export default function memoryExtension(pi: ExtensionAPI) {
     promptSnippet: "Save long-term memory.",
     promptGuidelines: ["Use `save_memory` to persist specific information."],
     parameters: saveMemoryParams,
-    execute: async (_toolCallId, params) =>
-      await executeNamedMemoryAction("save", params),
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
+      await executeSaveMemoryAction(params, ctx, pi.getThinkingLevel()),
+    renderResult: renderMemoryResult,
+  });
+
+  pi.registerTool({
+    name: "save_resident_memory",
+    label: "Save Resident Memory",
+    description: "Persist memories into the system prompt.",
+    promptSnippet:
+      "Use `save_resident_memory` to persist memories into the system prompt.",
+    promptGuidelines: [
+      "Use `save_resident_memory` for agent identity, owner identity, core voice style, core methodology, or core values when the information should be known or followed in most situations and can be expressed in a single sentence.",
+    ],
+    parameters: saveResidentMemoryParams,
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
+      await executeSaveResidentMemoryAction(params, ctx, pi.getThinkingLevel()),
     renderResult: renderMemoryResult,
   });
 

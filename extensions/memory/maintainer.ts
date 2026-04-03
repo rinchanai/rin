@@ -211,7 +211,9 @@ function normalizeOperation(raw: any): MaintenanceOperation | null {
 }
 
 async function saveDoc(service: any, params: Record<string, any>) {
-  return await service.saveMemory(params);
+  return params.exposure === "resident"
+    ? await service.saveResidentMemoryDoc(params)
+    : await service.saveMemory(params);
 }
 
 async function applyOperation(
