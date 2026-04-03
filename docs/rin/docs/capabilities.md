@@ -24,6 +24,7 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
 Important implications:
 
 - do not treat “current account has no `rin` command” as equivalent to “Rin cannot self-update”
+- the current local account may be only the execution account; the launcher may belong to a different interactive account, and that is a normal setup
 - reason in terms of installed runtime path, target user, launcher ownership, and permissions
 - prefer the stable `app/current/` path over release-specific timestamps when invoking an installed runtime directly
 
