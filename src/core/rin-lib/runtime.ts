@@ -84,7 +84,17 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)",
     );
   }
-  for (const guideline of promptGuidelines) addGuideline(guideline);
+  const deferredMemorySaveGuidelines: string[] = [];
+  for (const guideline of promptGuidelines) {
+    if (
+      guideline.startsWith("Use save_memory ") ||
+      guideline.startsWith("Use save_resident_memory ")
+    ) {
+      deferredMemorySaveGuidelines.push(guideline);
+      continue;
+    }
+    addGuideline(guideline);
+  }
   addGuideline(
     "Always use skill-creator (/home/rin/.rin/docs/rin/builtin-skills/skill-creator/SKILL.md) to maintain standard Agent Skills format memory documents.",
   );
@@ -92,6 +102,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   addGuideline(
     "Each memory document should contain only one topic; when multiple topics are related, prefer designing an index document to build a tree structure and disclose only that index.",
   );
+  for (const guideline of deferredMemorySaveGuidelines) addGuideline(guideline);
   addGuideline(
     "When introducing a new topic or concept, always search memory and the web first so the information is current.",
   );

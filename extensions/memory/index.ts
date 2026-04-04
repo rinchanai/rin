@@ -343,7 +343,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
       "Search long-term memory. Returns matching paths and metadata first.",
     promptSnippet: "Search long-term memory.",
     promptGuidelines: [
-      "Use `search_memory` to search memory files and read them.",
+      "Use search_memory to search memory files and read them.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params) =>
@@ -354,10 +354,10 @@ export default function memoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "save_memory",
     label: "Save Memory",
-    description: "Save long-term memories.",
-    promptSnippet: "Use `save_memory` to persist memory documents.",
+    description: "Persist memory documents.",
+    promptSnippet: "Persist memory documents.",
     promptGuidelines: [
-      "Use `save_memory` for long-term information intended as standalone documents rather than resident system-prompt memories.",
+      "Use save_memory for long-term information intended as standalone documents rather than resident system-prompt memories.",
     ],
     parameters: saveMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
@@ -368,11 +368,10 @@ export default function memoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "save_resident_memory",
     label: "Save Resident Memory",
-    description: "Persist memories into the system prompt.",
-    promptSnippet:
-      "Use `save_resident_memory` to persist memories into the system prompt.",
+    description: "Persist memories into system prompt.",
+    promptSnippet: "Persist memories into system prompt.",
     promptGuidelines: [
-      "Use `save_resident_memory` for agent identity, owner identity, core voice style, core methodology, or core values when the information should be known or followed in most situations and can be expressed in a single sentence.",
+      "Use save_resident_memory for agent identity, owner identity, core voice style, core methodology, or core values when the information should be known or followed in most situations and can be expressed in a single sentence.",
     ],
     parameters: saveResidentMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
