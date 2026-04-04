@@ -120,6 +120,22 @@ export function formatMemoryResult(action: string, response: any): string {
     return [
       `Memory matches for: ${String(response?.query || "")}`,
       ...rows.map((item: any, index: number) => {
+        if (String(item?.sourceType || "") === "transcript") {
+          const meta = [
+            `score=${Number(item?.score || 0).toFixed(2)}`,
+            String(item?.role || "").trim(),
+            String(item?.timestamp || "").trim(),
+          ]
+            .filter(Boolean)
+            .join(" • ");
+          return [
+            `${index + 1}. Transcript — ${meta}`,
+            String(item?.sessionFile || "").trim(),
+            String(item?.preview || item?.description || "").trim(),
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
         const summary = String(item?.description || "").trim();
         const meta = [
           `score=${Number(item?.score || 0).toFixed(2)}`,
@@ -197,15 +213,25 @@ export function formatMemoryAgentResult(action: string, response: any): string {
     return [
       `memory search ${String(response?.query || "")} (${rows.length})`,
       ...rows.map((item: any, index: number) =>
-        [
-          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")}`,
-          `score=${Number(item?.score || 0).toFixed(2)}`,
-          String(item?.exposure || "").trim(),
-          String(item?.scope || "").trim(),
-          `path=${String(item?.path || "")}`,
-        ]
-          .filter(Boolean)
-          .join(" | "),
+        String(item?.sourceType || "") === "transcript"
+          ? [
+              `${index + 1}. transcript`,
+              `score=${Number(item?.score || 0).toFixed(2)}`,
+              String(item?.role || "").trim(),
+              String(item?.timestamp || "").trim(),
+              `session=${String(item?.sessionFile || "")}`,
+            ]
+              .filter(Boolean)
+              .join(" | ")
+          : [
+              `${index + 1}. ${String(item?.name || item?.id || "(untitled)")}`,
+              `score=${Number(item?.score || 0).toFixed(2)}`,
+              String(item?.exposure || "").trim(),
+              String(item?.scope || "").trim(),
+              `path=${String(item?.path || "")}`,
+            ]
+              .filter(Boolean)
+              .join(" | "),
       ),
     ].join("\n");
   }

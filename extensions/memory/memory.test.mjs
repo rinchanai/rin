@@ -23,6 +23,11 @@ const service = await import(
     path.join(rootDir, "dist", "extensions", "memory", "service.js"),
   ).href
 );
+const transcripts = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "extensions", "memory", "transcripts.js"),
+  ).href
+);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-memory-test-"));
@@ -106,6 +111,39 @@ test("memory search returns paths and get is unsupported", async () => {
         ),
       /unsupported_memory_action:get/,
     );
+  });
+});
+
+test("memory search includes archived transcripts", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-04T11:11:11.000Z",
+        sessionId: "session-1",
+        sessionFile: "/tmp/session-1.jsonl",
+        role: "user",
+        content: [{ type: "text", text: "铃酱会保存对话原文吗" }],
+      },
+      root,
+    );
+
+    const sessionPath = transcripts.getTranscriptArchivePath(
+      {
+        timestamp: "2026-04-04T11:11:11.000Z",
+        sessionId: "session-1",
+      },
+      root,
+    );
+    assert.match(sessionPath, /2026[\\/]04[\\/]session-1\.jsonl$/);
+
+    const result = await store.executeMemoryAction(
+      { action: "search", query: "对话原文" },
+      root,
+    );
+    assert.ok(Array.isArray(result.results));
+    assert.equal(result.results[0].sourceType, "transcript");
+    assert.match(result.results[0].path, /2026[\\/]04[\\/]session-1\.jsonl$/);
+    assert.match(result.results[0].preview, /对话原文/);
   });
 });
 

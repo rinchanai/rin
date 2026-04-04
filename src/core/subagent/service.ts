@@ -12,7 +12,6 @@ import {
   buildModelLookup,
   getProviderSummaries,
   normalizeModelRef,
-  splitModelRef,
 } from "./models.js";
 import type {
   RunSubagentParams,
@@ -41,7 +40,10 @@ function getSubagentExtensionPaths(): string[] {
   });
 }
 
-async function createIsolatedSession(cwd: string) {
+async function createIsolatedSession(
+  cwd: string,
+  options: { modelRef?: string; thinkingLevel?: ThinkingLevel } = {},
+) {
   const codingAgentModule = await loadRinCodingAgent();
   const { SessionManager } = codingAgentModule as any;
   const sessionManager = SessionManager.inMemory(cwd);
@@ -50,35 +52,20 @@ async function createIsolatedSession(cwd: string) {
       cwd,
       additionalExtensionPaths: getSubagentExtensionPaths(),
       sessionManager,
+      modelRef: options.modelRef,
+      thinkingLevel: options.thinkingLevel,
     });
   });
 }
 
-export async function applySubagentTaskPreferences(
-  session: any,
-  task: {
-    model?: string;
-    thinkingLevel?: ThinkingLevel;
-  },
-) {
-  if (task.model) {
-    const parts = splitModelRef(task.model);
-    const model = parts
-      ? session.modelRegistry.find(parts.provider, parts.modelId)
-      : undefined;
-    if (!model) throw new Error(`Unknown model: ${task.model}`);
-    if (!session.modelRegistry.hasConfiguredAuth?.(model)) {
-      throw new Error(`No API key for ${task.model}`);
-    }
-    session.agent.setModel(model);
-  }
-  if (task.thinkingLevel) {
-    const available = session.getAvailableThinkingLevels();
-    const level = available.includes(task.thinkingLevel)
-      ? task.thinkingLevel
-      : available[available.length - 1];
-    session.agent.setThinkingLevel(level);
-  }
+export function applySubagentTaskPreferences(task: {
+  model?: string;
+  thinkingLevel?: ThinkingLevel;
+}) {
+  return {
+    modelRef: task.model,
+    thinkingLevel: task.thinkingLevel,
+  };
 }
 
 export async function getSubagentBackendInfo(
@@ -286,7 +273,10 @@ export async function runSubagentTask(
     messages,
   };
 
-  const { session } = await createIsolatedSession(cwd);
+  const { session } = await createIsolatedSession(
+    cwd,
+    applySubagentTaskPreferences(task),
+  );
   result.status = "running";
   onProgress?.({ ...result, messages: [...result.messages] });
   const unsubscribe = session.subscribe((event: any) => {
@@ -325,7 +315,6 @@ export async function runSubagentTask(
         abortListener = () => signal.removeEventListener("abort", onAbort);
       }
     }
-    await applySubagentTaskPreferences(session, task);
     await session.prompt(task.prompt, {
       expandPromptTemplates: false,
       source: "extension",

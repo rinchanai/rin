@@ -242,11 +242,18 @@ export async function createConfiguredAgentSession(
     agentDir?: string;
     additionalExtensionPaths?: string[];
     sessionManager?: any;
+    modelRef?: string;
+    thinkingLevel?: any;
   } = {},
 ) {
   const codingAgentModule = await loadRinCodingAgent();
-  const { createAgentSession, DefaultResourceLoader, SettingsManager } =
-    codingAgentModule as any;
+  const {
+    createAgentSession,
+    DefaultResourceLoader,
+    SettingsManager,
+    AuthStorage,
+    ModelRegistry,
+  } = codingAgentModule as any;
 
   const { cwd, agentDir } = resolveRuntimeProfile({
     cwd: options.cwd,
@@ -268,12 +275,38 @@ export async function createConfiguredAgentSession(
   });
   await resourceLoader.reload();
 
+  const authStorage = AuthStorage.create(path.join(agentDir, "auth.json"));
+  const modelRegistry = new ModelRegistry(
+    authStorage,
+    path.join(agentDir, "models.json"),
+  );
+
+  let resolvedModel: any = undefined;
+  const modelRef = String(options.modelRef || "").trim();
+  if (modelRef) {
+    const slash = modelRef.indexOf("/");
+    if (slash <= 0 || slash >= modelRef.length - 1) {
+      throw new Error(`invalid_model_ref:${modelRef}`);
+    }
+    const provider = modelRef.slice(0, slash);
+    const modelId = modelRef.slice(slash + 1);
+    resolvedModel = modelRegistry.find(provider, modelId);
+    if (!resolvedModel) throw new Error(`unknown_model:${modelRef}`);
+    if (!modelRegistry.hasConfiguredAuth(resolvedModel)) {
+      throw new Error(`No API key for ${modelRef}`);
+    }
+  }
+
   const result = await createAgentSession({
     cwd,
     agentDir,
     settingsManager,
     resourceLoader,
     sessionManager: options.sessionManager,
+    authStorage,
+    modelRegistry,
+    model: resolvedModel,
+    thinkingLevel: options.thinkingLevel,
   });
 
   applyRinPromptBuilder(result.session);

@@ -32,6 +32,7 @@ import {
   wrapKoishiBridgePrompt,
 } from "./chat-helpers.js";
 import { KoishiChatController, loadKoishiSettings } from "./controller.js";
+import { appendKoishiChatLog } from "./chat-log.js";
 import { discoverRpcCommands, shouldProcessText } from "./decision.js";
 import {
   composeChatKey,
@@ -98,6 +99,26 @@ export async function startKoishi(
   app.middleware(async (session: any, next: () => Promise<any>) => {
     try {
       persistInboundMessage(runtime.agentDir, session, getIdentity(), trustOf);
+      const platform = safeString(session?.platform || "").trim();
+      const botId = safeString(
+        session?.selfId || session?.bot?.selfId || "",
+      ).trim();
+      const chatKey = composeChatKey(platform, getChatId(session), botId);
+      const text = safeString(
+        session?.stripped?.content || session?.content || "",
+      ).trim();
+      if (chatKey && text) {
+        appendKoishiChatLog(runtime.agentDir, {
+          timestamp: new Date().toISOString(),
+          chatKey,
+          role: "user",
+          text,
+          messageId: pickMessageId(session) || undefined,
+          replyToMessageId: pickReplyToMessageId(session) || undefined,
+          userId: pickUserId(session) || undefined,
+          nickname: pickSenderNickname(session) || undefined,
+        });
+      }
     } catch (error: any) {
       logger.warn(
         `koishi inbound save failed err=${safeString(error?.message || error)}`,
@@ -137,6 +158,13 @@ export async function startKoishi(
           await sendText(app, chatKey, lines.join("\n"), h, messageId).catch(
             () => {},
           );
+          appendKoishiChatLog(runtime.agentDir, {
+            timestamp: new Date().toISOString(),
+            chatKey,
+            role: "assistant",
+            text: lines.join("\n"),
+            replyToMessageId: messageId || undefined,
+          });
           return "";
         }
 
@@ -218,13 +246,17 @@ export async function startKoishi(
         logger.warn(
           `koishi turn failed chatKey=${decision.chatKey} err=${safeString((error as any)?.message || error)}`,
         );
-        void sendText(
-          app,
-          decision.chatKey,
-          `Koishi error: ${safeString((error as any)?.message || error || "koishi_turn_failed")}`,
-          h,
-          messageId,
-        ).catch(() => {});
+        const errorText = `Koishi error: ${safeString((error as any)?.message || error || "koishi_turn_failed")}`;
+        appendKoishiChatLog(runtime.agentDir, {
+          timestamp: new Date().toISOString(),
+          chatKey: decision.chatKey,
+          role: "assistant",
+          text: errorText,
+          replyToMessageId: messageId || undefined,
+        });
+        void sendText(app, decision.chatKey, errorText, h, messageId).catch(
+          () => {},
+        );
       });
     return "";
   }, true);
