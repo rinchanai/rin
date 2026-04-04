@@ -643,7 +643,12 @@ export class InteractiveMode {
 	 * Check npm registry for a newer version.
 	 */
 	private async checkForNewVersion(): Promise<string | undefined> {
-		if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) return undefined;
+		if (
+			process.env.PI_SKIP_VERSION_CHECK ||
+			process.env.PI_OFFLINE ||
+			!this.settingsManager.getVersionCheck()
+		)
+			return undefined;
 
 		try {
 			const response = await fetch("https://registry.npmjs.org/@mariozechner/pi-coding-agent/latest", {
@@ -3313,7 +3318,7 @@ export class InteractiveMode {
 					},
 					onTransportChange: (transport) => {
 						this.settingsManager.setTransport(transport);
-						this.session.agent.setTransport(transport);
+						this.session.agent.transport = transport;
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);

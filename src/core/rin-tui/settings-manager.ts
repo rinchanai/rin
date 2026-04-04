@@ -15,6 +15,7 @@ export function createSettingsManager() {
     doubleEscapeAction: "none",
     treeFilterMode: "all",
     quietStartup: false,
+    versionCheck: false,
     codeBlockIndent: "  ",
     branchSummarySkipPrompt: false,
     lastChangelogVersion: undefined as string | undefined,
@@ -54,6 +55,7 @@ export function createSettingsManager() {
     getDoubleEscapeAction: () => values.doubleEscapeAction,
     getTreeFilterMode: () => values.treeFilterMode,
     getQuietStartup: () => values.quietStartup,
+    getVersionCheck: () => values.versionCheck,
     getLastChangelogVersion: () => values.lastChangelogVersion,
     getEnabledModels: () => values.enabledModels,
     getSteeringMode: () => values.steeringMode,
@@ -88,6 +90,9 @@ export function createSettingsManager() {
     },
     setQuietStartup: (v: boolean) => {
       values.quietStartup = v;
+    },
+    setVersionCheck: (v: boolean) => {
+      values.versionCheck = v;
     },
     setDoubleEscapeAction: (v: string) => {
       values.doubleEscapeAction = v;
