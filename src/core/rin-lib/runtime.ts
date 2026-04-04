@@ -3,9 +3,6 @@ import path from "node:path";
 
 import { loadRinCodingAgent } from "./loader.js";
 
-const RIN_OPENING =
-  "You are an expert assistant operating inside pi, a cli agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
-
 function escapeXml(text: string) {
   return text
     .replace(/&/g, "&amp;")
@@ -135,8 +132,6 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   let prompt = String(loaderSystemPrompt || "").trim();
   if (!prompt) {
     prompt = [
-      RIN_OPENING,
-      "",
       "Available tools:",
       toolsList,
       "",
