@@ -23,6 +23,7 @@ import {
 } from "./docs.js";
 import { activeDocsOnly } from "./relevance.js";
 import { searchMemoryDocs } from "./search.js";
+import { searchTranscriptArchive } from "./transcripts.js";
 import {
   normalizeList,
   nowIso,
@@ -39,7 +40,7 @@ export function resolveMemoryRoot(rootOverride = ""): string {
 }
 
 export async function ensureMemoryLayout(rootDir: string): Promise<void> {
-  for (const rel of ["resident", "progressive", "recall"]) {
+  for (const rel of ["resident", "progressive", "recall", "transcripts"]) {
     await fs.mkdir(path.join(rootDir, rel), { recursive: true });
   }
 }
@@ -81,17 +82,26 @@ export async function searchMemories(
   const exposureFilter = safeString(params.exposure || "").trim();
   const limit = Math.max(1, Number(params.limit || 8) || 8);
   const docs = activeDocsOnly(await loadMemoryDocs(root));
-  const results = searchMemoryDocs(docs, query, {
+  const docResults = searchMemoryDocs(docs, query, {
     limit,
     exposure: exposureFilter,
-  });
+  }).map((row) => ({
+    sourceType: "memory",
+    score: row.score,
+    ...previewMemoryDoc(row.doc),
+  }));
+  const transcriptResults = await searchTranscriptArchive(
+    query,
+    params,
+    rootOverride,
+  );
+  const results = [...docResults, ...transcriptResults]
+    .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0))
+    .slice(0, limit);
   return {
-    query: results[0]?.query || query,
+    query,
     count: results.length,
-    results: results.map((row) => ({
-      score: row.score,
-      ...previewMemoryDoc(row.doc),
-    })),
+    results,
   };
 }
 

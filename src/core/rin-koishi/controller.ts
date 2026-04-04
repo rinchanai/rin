@@ -14,6 +14,7 @@ import {
   persistImageParts,
   safeString,
 } from "./chat-helpers.js";
+import { appendKoishiChatLog } from "./chat-log.js";
 import {
   buildPromptText,
   restorePromptParts,
@@ -244,6 +245,24 @@ export class KoishiChatController {
       this.session?.sessionManager?.getSessionId?.() || "",
     ).trim();
   }
+  private logAssistantText(text: string, replyToMessageId = "") {
+    const nextText = safeString(text).trim();
+    if (!nextText) return;
+    appendKoishiChatLog(this.agentDir, {
+      timestamp: new Date().toISOString(),
+      chatKey: this.chatKey,
+      role: "assistant",
+      text: nextText,
+      replyToMessageId: safeString(replyToMessageId).trim() || undefined,
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile:
+        safeString(
+          this.session?.sessionManager?.getSessionFile?.() ||
+            this.state.piSessionFile ||
+            "",
+        ).trim() || undefined,
+    });
+  }
   private markProcessedMessage(messageId?: string) {
     const nextMessageId = safeString(messageId || "").trim();
     if (!nextMessageId) return;
@@ -342,8 +361,10 @@ export class KoishiChatController {
     this.saveState();
     this.markProcessedMessage(incomingMessageId);
     const text = safeString(data?.text || "").trim();
-    if (text)
+    if (text) {
       await sendText(this.app, this.chatKey, text, this.h, replyToMessageId);
+      this.logAssistantText(text, replyToMessageId);
+    }
     this.scheduleIdleDetach();
     return data;
   }
@@ -407,7 +428,7 @@ export class KoishiChatController {
     this.markProcessedMessage(input.incomingMessageId);
     await Promise.all(this.pendingOutboundTasks.splice(0));
     const finalText = safeString(this.latestAssistantText || "").trim();
-    if (finalText)
+    if (finalText) {
       await sendText(
         this.app,
         this.chatKey,
@@ -415,6 +436,8 @@ export class KoishiChatController {
         this.h,
         replyToMessageId,
       );
+      this.logAssistantText(finalText, replyToMessageId);
+    }
     for (const image of this.pendingOutboundImages.splice(0))
       await sendImageFile(
         this.app,
@@ -470,14 +493,19 @@ export class KoishiChatController {
       this.saveState();
       await Promise.all(this.pendingOutboundTasks.splice(0));
       const finalText = safeString(this.latestAssistantText || "").trim();
-      if (finalText)
+      if (finalText) {
+        const replyToMessageId = safeString(
+          pending.replyToMessageId || "",
+        ).trim();
         await sendText(
           this.app,
           this.chatKey,
           finalText,
           this.h,
-          safeString(pending.replyToMessageId || "").trim(),
+          replyToMessageId,
         );
+        this.logAssistantText(finalText, replyToMessageId);
+      }
       for (const image of this.pendingOutboundImages.splice(0))
         await sendImageFile(this.app, this.chatKey, image.path, this.h);
       this.scheduleIdleDetach();

@@ -69,46 +69,14 @@ test("subagent format utils summarize results", () => {
   );
 });
 
-test("subagent applies model and thinking without session-level persistence", async () => {
-  const calls = [];
-  const session = {
-    modelRegistry: {
-      find(provider, modelId) {
-        if (provider === "openai" && modelId === "gpt-5") {
-          return { provider, id: modelId, reasoning: true };
-        }
-        return undefined;
-      },
-      hasConfiguredAuth() {
-        return true;
-      },
-    },
-    getAvailableThinkingLevels() {
-      return ["off", "minimal", "low", "medium"];
-    },
-    agent: {
-      setModel(model) {
-        calls.push(["agent.setModel", model.provider, model.id]);
-      },
-      setThinkingLevel(level) {
-        calls.push(["agent.setThinkingLevel", level]);
-      },
-    },
-    setModel() {
-      calls.push(["session.setModel"]);
-    },
-    setThinkingLevel() {
-      calls.push(["session.setThinkingLevel"]);
-    },
-  };
-
-  await subagentIndex.applySubagentTaskPreferences(session, {
+test("subagent task preferences are construction-time only", async () => {
+  const prefs = await subagentIndex.applySubagentTaskPreferences({
     model: "openai/gpt-5",
     thinkingLevel: "xhigh",
   });
 
-  assert.deepEqual(calls, [
-    ["agent.setModel", "openai", "gpt-5"],
-    ["agent.setThinkingLevel", "medium"],
-  ]);
+  assert.deepEqual(prefs, {
+    modelRef: "openai/gpt-5",
+    thinkingLevel: "xhigh",
+  });
 });

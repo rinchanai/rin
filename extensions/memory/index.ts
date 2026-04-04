@@ -26,6 +26,7 @@ import {
   refineResidentSlot,
   writeMemoryDocWithSkillCreator,
 } from "./processing.js";
+import { appendTranscriptArchiveEntry } from "./transcripts.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
@@ -44,6 +45,38 @@ function sessionMeta(ctx: any) {
     sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
     sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
   };
+}
+
+function extractTranscriptText(content: any): string {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      return part.type === "text" ? String(part.text || "") : "";
+    })
+    .filter(Boolean)
+    .join("")
+    .trim();
+}
+
+async function archiveMessageTranscript(message: any, ctx: any) {
+  const role = String(message?.role || "").trim();
+  if (role !== "user" && role !== "assistant") return;
+  const text = extractTranscriptText(message?.content);
+  if (!text) return;
+  const meta = sessionMeta(ctx);
+  await appendTranscriptArchiveEntry(
+    {
+      timestamp:
+        String(message?.timestamp || "").trim() || new Date().toISOString(),
+      sessionId: meta.sessionId,
+      sessionFile: meta.sessionFile,
+      role,
+      content: message?.content,
+    },
+    String(ctx?.agentDir || "").trim(),
+  );
 }
 
 function triggerInitConversation(
@@ -377,6 +410,10 @@ export default function memoryExtension(pi: ExtensionAPI) {
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeSaveResidentMemoryAction(params, ctx, pi.getThinkingLevel()),
     renderResult: renderMemoryResult,
+  });
+
+  pi.on("message_end", async (event, ctx) => {
+    await archiveMessageTranscript(event?.message, ctx);
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
