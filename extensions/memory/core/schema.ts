@@ -52,20 +52,26 @@ export function ensureScope(
 
 export function ensureKind(
   value: string,
-  fallback: MemoryKind = "knowledge",
+  fallback: MemoryKind = "fact",
 ): MemoryKind {
   const normalized = safeString(value).trim();
+  if (
+    normalized === "skill" ||
+    normalized === "instruction" ||
+    normalized === "rule" ||
+    normalized === "fact" ||
+    normalized === "index"
+  )
+    return normalized;
   if (
     normalized === "identity" ||
     normalized === "style" ||
     normalized === "method" ||
     normalized === "value" ||
-    normalized === "preference" ||
-    normalized === "rule" ||
-    normalized === "knowledge" ||
-    normalized === "history"
+    normalized === "preference"
   )
-    return normalized;
+    return "instruction";
+  if (normalized === "knowledge" || normalized === "history") return "fact";
   return fallback;
 }
 
@@ -83,49 +89,80 @@ export function ensureStatus(
   return fallback;
 }
 
+function frontmatterValue(raw: Record<string, any>, key: string): any {
+  const metadata =
+    raw && typeof raw.metadata === "object" && raw.metadata ? raw.metadata : {};
+  if (raw[key] != null) return raw[key];
+  if (metadata[key] != null) return metadata[key];
+  return undefined;
+}
+
 export function normalizeFrontmatter(
   raw: Record<string, any>,
   filePath: string,
   content: string,
 ): MemoryDoc {
-  const exposure = ensureExposure(safeString(raw.exposure || "recall"));
-  const residentSlot = safeString(raw.resident_slot || "").trim();
+  const exposure = ensureExposure(
+    safeString(frontmatterValue(raw, "exposure") || "recall"),
+  );
+  const residentSlot = safeString(
+    frontmatterValue(raw, "resident_slot") || "",
+  ).trim();
   const name =
-    safeString(raw.name || "").trim() ||
+    safeString(raw.name || raw.title || "").trim() ||
     (residentSlot
       ? residentSlot.replace(/_/g, " ")
       : path.basename(filePath, ".md"));
   const id =
-    safeString(raw.id || "").trim() ||
+    safeString(frontmatterValue(raw, "id") || "").trim() ||
     slugify(name, path.basename(filePath, ".md"));
   return {
     id,
     name,
     exposure,
-    fidelity: ensureFidelity(safeString(raw.fidelity || "fuzzy")),
+    fidelity: ensureFidelity(
+      safeString(frontmatterValue(raw, "fidelity") || "fuzzy"),
+    ),
     resident_slot: residentSlot,
-    description: safeString(raw.description || "").trim(),
-    tags: normalizeList(raw.tags || ""),
-    aliases: normalizeList(raw.aliases || ""),
+    description: safeString(raw.description || raw.summary || "").trim(),
+    tags: normalizeList(frontmatterValue(raw, "tags") || ""),
+    aliases: normalizeList(frontmatterValue(raw, "aliases") || ""),
     scope: ensureScope(
-      safeString(raw.scope || (exposure === "resident" ? "global" : "project")),
+      safeString(
+        frontmatterValue(raw, "scope") ||
+          (exposure === "resident" ? "global" : "project"),
+      ),
     ),
     kind: ensureKind(
       safeString(
-        raw.kind || (exposure === "resident" ? "preference" : "knowledge"),
+        frontmatterValue(raw, "kind") ||
+          (exposure === "resident" ? "instruction" : "fact"),
       ),
     ),
-    sensitivity: safeString(raw.sensitivity || "normal").trim() || "normal",
-    source: safeString(raw.source || "").trim(),
-    updated_at: safeString(raw.updated_at || "").trim() || nowIso(),
+    sensitivity:
+      safeString(frontmatterValue(raw, "sensitivity") || "normal").trim() ||
+      "normal",
+    source: safeString(frontmatterValue(raw, "source") || "").trim(),
+    updated_at:
+      safeString(frontmatterValue(raw, "updated_at") || "").trim() || nowIso(),
     last_observed_at:
-      safeString(raw.last_observed_at || raw.updated_at || "").trim() ||
-      nowIso(),
-    observation_count: Math.max(1, Number(raw.observation_count || 1) || 1),
-    status: ensureStatus(safeString(raw.status || "active")),
-    supersedes: normalizeList(raw.supersedes || ""),
+      safeString(
+        frontmatterValue(raw, "last_observed_at") ||
+          frontmatterValue(raw, "updated_at") ||
+          "",
+      ).trim() || nowIso(),
+    observation_count: Math.max(
+      1,
+      Number(frontmatterValue(raw, "observation_count") || 1) || 1,
+    ),
+    status: ensureStatus(
+      safeString(frontmatterValue(raw, "status") || "active"),
+    ),
+    supersedes: normalizeList(frontmatterValue(raw, "supersedes") || ""),
     canonical:
-      raw.canonical == null ? exposure === "resident" : Boolean(raw.canonical),
+      frontmatterValue(raw, "canonical") == null
+        ? exposure === "resident"
+        : Boolean(frontmatterValue(raw, "canonical")),
     path: filePath,
     content,
   };
@@ -150,12 +187,12 @@ export function parseMarkdownDoc(filePath: string, text: string): MemoryDoc {
 
 export function renderMarkdownDoc(doc: MemoryDoc): string {
   const fm = {
-    id: doc.id,
     name: doc.name,
+    ...(doc.description ? { description: doc.description } : {}),
+    id: doc.id,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
     ...(doc.resident_slot ? { resident_slot: doc.resident_slot } : {}),
-    ...(doc.description ? { description: doc.description } : {}),
     ...(doc.tags.length ? { tags: doc.tags } : {}),
     ...(doc.aliases.length ? { aliases: doc.aliases } : {}),
     ...(doc.scope ? { scope: doc.scope } : {}),

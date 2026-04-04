@@ -84,7 +84,7 @@ test("memory search returns paths and get is unsupported", async () => {
         summary: "reconnect flicker fix history",
         exposure: "recall",
         scope: "project",
-        kind: "history",
+        kind: "fact",
       },
       root,
     );
@@ -148,7 +148,7 @@ test("compileMemory includes saved resident memory from markdown source", async 
         description: "Default address for the user.",
         residentSlot: "owner_identity",
         scope: "global",
-        kind: "preference",
+        kind: "instruction",
       },
       root,
     );

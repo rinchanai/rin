@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import {
   SessionManager,
   type ExtensionAPI,
@@ -16,14 +18,26 @@ import {
   isOnboardingActive,
   markOnboardingPrompted,
   refreshOnboardingCompletion,
+  resolveAgentDir,
 } from "./lib.js";
+import { resolveMemoryDoc } from "./docs.js";
 import {
-  normalizeGeneralMemoryDraft,
+  buildMemoryDraftDoc,
   refineResidentSlot,
+  writeMemoryDocWithSkillCreator,
 } from "./processing.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
+
+const bundledSkillCreatorPath = path.join(
+  resolveAgentDir(),
+  "docs",
+  "rin",
+  "builtin-skills",
+  "skill-creator",
+  "SKILL.md",
+);
 
 function sessionMeta(ctx: any) {
   return {
@@ -74,6 +88,7 @@ async function processSessionMemory(
   if (!Array.isArray(messages) || messages.length === 0) return;
   await maintainMemory(ctx as any, {
     messages,
+    sessionFile: opts.sessionFile,
     trigger: opts.trigger,
     mode: "session",
   });
@@ -126,18 +141,15 @@ const saveMemoryParams = Type.Object({
   kind: Type.Optional(
     Type.Union(
       [
-        Type.Literal("identity"),
-        Type.Literal("style"),
-        Type.Literal("method"),
-        Type.Literal("value"),
-        Type.Literal("preference"),
+        Type.Literal("skill"),
+        Type.Literal("instruction"),
         Type.Literal("rule"),
-        Type.Literal("knowledge"),
-        Type.Literal("history"),
+        Type.Literal("fact"),
+        Type.Literal("index"),
       ],
       {
         description:
-          "Optional memory kind. Allowed values: `identity`, `style`, `method`, `value`, `preference`, `rule`, `knowledge`, or `history`.",
+          "Optional memory kind. Allowed values: `skill`, `instruction`, `rule`, `fact`, or `index`.",
       },
     ),
   ),
@@ -213,9 +225,8 @@ async function executeSaveMemoryAction(
   currentThinkingLevel: any,
 ) {
   try {
-    const normalized = await normalizeGeneralMemoryDraft({
-      ctx,
-      currentThinkingLevel,
+    const drafted = buildMemoryDraftDoc({
+      rootDir: String(ctx?.agentDir || "").trim(),
       draft: {
         name: params.name,
         description: params.description,
@@ -223,15 +234,26 @@ async function executeSaveMemoryAction(
         exposure: params.exposure,
         scope: params.scope,
         kind: params.kind,
+        path: params.path,
       },
     });
-    const response = await executeMemoryTool({
-      ...params,
-      action: "save",
-      name: normalized.name || params.name,
-      description: normalized.description || params.description,
-      content: normalized.content,
+    await writeMemoryDocWithSkillCreator({
+      ctx,
+      currentThinkingLevel,
+      skillCreatorPath: bundledSkillCreatorPath,
+      targetPath: drafted.path,
+      draftDoc: drafted.draftDoc,
     });
+    const doc = await resolveMemoryDoc(drafted.root, drafted.path);
+    const response = {
+      status: "ok",
+      action: "save",
+      doc: {
+        id: doc?.id || "",
+        name: doc?.name || drafted.name,
+        path: doc?.path || drafted.path,
+      },
+    };
     const prepared = await prepareToolTextOutput({
       agentText: formatMemoryAgentResult("save", response),
       userText: formatMemoryResult("save", response),
@@ -240,7 +262,7 @@ async function executeSaveMemoryAction(
     });
     return {
       content: [{ type: "text" as const, text: prepared.agentText }],
-      details: { ...response, ...prepared, normalized },
+      details: { ...response, ...prepared, drafted },
     };
   } catch (error: any) {
     const message = String(error?.message || error || "memory_action_failed");
@@ -332,9 +354,11 @@ export default function memoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "save_memory",
     label: "Save Memory",
-    description: "Save stable information to long-term memory.",
-    promptSnippet: "Save long-term memory.",
-    promptGuidelines: ["Use `save_memory` to persist specific information."],
+    description: "Save long-term memories.",
+    promptSnippet: "Use `save_memory` to persist memory documents.",
+    promptGuidelines: [
+      "Use `save_memory` for long-term information intended as standalone documents rather than resident system-prompt memories.",
+    ],
     parameters: saveMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeSaveMemoryAction(params, ctx, pi.getThinkingLevel()),

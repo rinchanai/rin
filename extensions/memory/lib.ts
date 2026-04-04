@@ -83,18 +83,15 @@ export const memoryToolParameters = Type.Object({
   kind: Type.Optional(
     Type.Union(
       [
-        Type.Literal("identity"),
-        Type.Literal("style"),
-        Type.Literal("method"),
-        Type.Literal("value"),
-        Type.Literal("preference"),
+        Type.Literal("skill"),
+        Type.Literal("instruction"),
         Type.Literal("rule"),
-        Type.Literal("knowledge"),
-        Type.Literal("history"),
+        Type.Literal("fact"),
+        Type.Literal("index"),
       ],
       {
         description:
-          "Optional memory kind. Allowed values: `identity`, `style`, `method`, `value`, `preference`, `rule`, `knowledge`, or `history`.",
+          "Optional memory kind. Allowed values: `skill`, `instruction`, `rule`, `fact`, or `index`.",
       },
     ),
   ),

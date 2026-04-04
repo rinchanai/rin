@@ -1,6 +1,8 @@
-import { complete, type Model } from "@mariozechner/pi-ai";
+import type { Model } from "@mariozechner/pi-ai";
 
-import { loadMemoryService } from "./lib.js";
+import { executeSubagentRun } from "../../src/core/subagent/service.js";
+import { openBoundSession } from "../../src/core/session/factory.js";
+import { loadMemoryService, resolveAgentDir } from "./lib.js";
 
 type ExtensionCtxLike = {
   model?: Model<any> | null;
@@ -24,15 +26,7 @@ type MaintenanceOperation = {
   summary?: string;
   content?: string;
   scope?: "global" | "domain" | "project" | "session";
-  kind?:
-    | "identity"
-    | "style"
-    | "method"
-    | "value"
-    | "preference"
-    | "rule"
-    | "knowledge"
-    | "history";
+  kind?: "skill" | "instruction" | "rule" | "fact" | "index";
   tags?: string[];
   aliases?: string[];
   triggers?: string[];
@@ -59,7 +53,7 @@ Schema:
       "summary": string,
       "content": string,
       "scope": "global" | "domain" | "project" | "session",
-      "kind": "identity" | "style" | "method" | "value" | "preference" | "rule" | "knowledge" | "history",
+      "kind": "skill" | "instruction" | "rule" | "fact" | "index",
       "tags": string[],
       "aliases": string[],
       "triggers": string[],
@@ -85,6 +79,9 @@ Rules:
 - Prefer fewer, clearer, higher-quality docs.
 - Prefer [] over weak guesses.
 - Do not record one-off planning chatter or implementation noise.
+- Every memory file should stay focused on one topic.
+- Memory files should follow the standard Agent Skills style: a clear name, a clear description, and a markdown body.
+- When related files need structure, prefer creating an index doc instead of mixing topics into one file.
 - If an existing doc is bloated but still right, use rewrite.
 - If a new cleaner doc should replace one or more older docs, use supersede and list replaced ids in supersedes.
 - If a doc is stale, duplicate, or low-value, use invalidate.
@@ -236,7 +233,7 @@ async function applyOperation(
         (operation.exposure === "progressive" ? "domain" : "project"),
       kind:
         operation.kind ||
-        (operation.exposure === "progressive" ? "preference" : "knowledge"),
+        (operation.exposure === "progressive" ? "instruction" : "fact"),
       tags: operation.tags || [],
       aliases: operation.aliases || [],
       triggers: operation.triggers || [],
@@ -320,22 +317,16 @@ async function applyOperation(
 }
 
 export async function maintainMemory(
-  ctx: ExtensionCtxLike,
+  ctx: ExtensionCtxLike & { cwd?: string; sessionManager?: any },
   opts: {
     messages?: any[];
+    sessionFile?: string;
     trigger?: string;
     mode?: "session" | "consolidate";
     limit?: number;
   } = {},
 ) {
-  const model = ctx.model;
-  if (!model || !ctx.modelRegistry?.getApiKeyAndHeaders)
-    return { skipped: "no-model" };
-  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-  if (!auth.ok || !auth.apiKey)
-    return {
-      skipped: auth.ok ? "no-api-key" : safeString(auth.error || "auth-failed"),
-    };
+  if (!ctx.model) return { skipped: "no-model" };
 
   const service = await loadMemoryService();
   const docs = (await service.loadActiveMemoryDocs()) as any[];
@@ -348,14 +339,63 @@ export async function maintainMemory(
   const transcript = Array.isArray(opts.messages)
     ? turnTranscript(opts.messages)
     : "";
+  const mode = opts.mode || (transcript ? "session" : "consolidate");
+
+  if (mode === "session") {
+    const sessionFile = safeString(opts.sessionFile || "").trim();
+    if (!sessionFile) return { skipped: "no-session-file" };
+    const cwd = safeString(
+      ctx.cwd || ctx.sessionManager?.getCwd?.() || "",
+    ).trim();
+    if (!cwd) return { skipped: "no-cwd" };
+
+    const { session } = await openBoundSession({
+      cwd,
+      agentDir: resolveAgentDir(),
+      sessionFile,
+    });
+    try {
+      const forkTargets = session.getUserMessagesForForking?.() || [];
+      const latest = forkTargets[forkTargets.length - 1];
+      if (latest?.entryId) {
+        const result = await session.fork(latest.entryId);
+        if (result?.cancelled) return { skipped: "fork-cancelled" };
+      }
+      const prompt =
+        "Review this session, save durable memories with save_resident_memory or save_memory as needed, and ignore noise and one-off planning.";
+      await session.prompt(prompt, {
+        expandPromptTemplates: false,
+        source: "extension",
+      });
+      await session.agent.waitForIdle();
+      const finalText = safeString(
+        session.getLastAssistantText?.() || "",
+      ).trim();
+      return {
+        skipped: "",
+        mode,
+        transcriptUsed: false,
+        sessionFile,
+        forked: Boolean(latest?.entryId),
+        saved: true,
+        output: finalText,
+      };
+    } finally {
+      try {
+        await session.abort();
+      } catch {}
+      try {
+        session.dispose?.();
+      } catch {}
+    }
+  }
 
   if (!batch.length && !transcript) return { skipped: "no-input" };
-
   const compiled = await service.compileMemory({
     query: transcript || "memory",
   });
   const prompt = [
-    `Maintenance mode: ${opts.mode || (transcript ? "session" : "consolidate")}`,
+    `Maintenance mode: ${mode}`,
     "",
     "Current resident memory:",
     safeString(compiled?.resident || "").trim() || "(none)",
@@ -373,32 +413,21 @@ export async function maintainMemory(
     "Return only high-confidence library maintenance operations.",
   ].join("\n");
 
-  const response = await complete(
-    model,
-    {
-      systemPrompt: MAINTENANCE_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [{ type: "text", text: prompt }],
-          timestamp: Date.now(),
-        },
-      ],
+  const consolidationRun = await executeSubagentRun({
+    params: {
+      prompt: `${MAINTENANCE_SYSTEM_PROMPT}\n\n${prompt}`,
     },
-    {
-      apiKey: auth.apiKey,
-      headers: auth.headers,
-      signal: ctx.signal,
-      reasoningEffort: "medium",
-    },
-  );
+    ctx,
+    currentThinkingLevel: "medium" as any,
+  });
+  if (consolidationRun.ok === false)
+    return {
+      skipped: safeString(
+        consolidationRun.error || "memory_maintenance_failed",
+      ),
+    };
 
-  const text = response.content
-    .filter(
-      (part): part is { type: "text"; text: string } => part.type === "text",
-    )
-    .map((part) => part.text)
-    .join("\n");
+  const text = safeString(consolidationRun.results[0]?.output || "");
   const parsed = extractJson(text);
   const operations = (
     Array.isArray(parsed?.operations) ? parsed.operations : []
@@ -420,7 +449,7 @@ export async function maintainMemory(
 
   return {
     skipped: "",
-    mode: opts.mode || (transcript ? "session" : "consolidate"),
+    mode,
     transcriptUsed: Boolean(transcript),
     scanned: batch.length,
     operationCount: operations.length,
