@@ -216,9 +216,9 @@ export default function fetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "fetch",
     label: "Fetch URL",
-    description: `Fetch text content from a specific HTTP/HTTPS URL. Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
-    promptSnippet: "Fetch content from a specific URL.",
-    promptGuidelines: ["Use `fetch` to get the plain-text version of a page."],
+    description: `Fetch text content from a specific URL. Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
+    promptSnippet: "Fetch text content from a specific URL.",
+    promptGuidelines: ["Use fetch to get the plain-text version of a page."],
     parameters: FetchParamsSchema,
     async execute(_toolCallId, params, signal, onUpdate) {
       const mode: FetchMode = "text";

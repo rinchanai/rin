@@ -148,7 +148,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
     description: "List rules for a target directory.",
     promptSnippet: "List rules for a target directory.",
     promptGuidelines: [
-      "Use `rules` to get directory-level rules when switching directory context, including `AGENTS.md` and skills.",
+      "Use rules to get directory-level rules when switching directory context, including AGENTS.md and skills.",
     ],
     parameters: Type.Object({
       path: Type.String({

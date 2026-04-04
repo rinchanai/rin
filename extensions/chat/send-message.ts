@@ -179,7 +179,7 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       "Send a message to a specific chatKey. Supports text, mentions, images, and files.",
     promptSnippet: "Send a message to a specific chat.",
     promptGuidelines: [
-      "Use `send_chat_msg` to send content to a specific chat only when the user explicitly asks.",
+      "Use send_chat_msg to send content to a specific chat only when the user explicitly asks.",
     ],
     parameters: Type.Object({
       chatKey: Type.String({

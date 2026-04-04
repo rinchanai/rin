@@ -242,10 +242,10 @@ export default function subagentExtension(pi: ExtensionAPI) {
     description: "Run subagents.",
     promptSnippet: "Run subagents.",
     promptGuidelines: [
-      "Use `run_subagent` to start a subagent session.",
-      "Use `run_subagent` for simple independent tasks that do not depend on the current conversation context.",
-      "Use `run_subagent` when the user asks for a subagent or wants a different model.",
-      "Use `run_subagent` for parallelizable tasks.",
+      "Use run_subagent to start a subagent session.",
+      "Use run_subagent for simple independent tasks that do not depend on the current conversation context.",
+      "Use run_subagent when the user asks for a subagent or wants a different model.",
+      "Use run_subagent for parallelizable tasks.",
     ],
     parameters: RunParamsSchema,
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
@@ -391,7 +391,7 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
     description: "List available models.",
     promptSnippet: "List available models.",
     promptGuidelines: [
-      "Use `list_models` to get the currently available LLM models.",
+      "Use list_models to get the currently available LLM models.",
     ],
     parameters: Type.Object({}),
     async execute(_toolCallId, _rawParams, _signal, _onUpdate, ctx) {

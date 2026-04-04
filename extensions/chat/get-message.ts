@@ -39,7 +39,7 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
     description: "Get a specific chat message.",
     promptSnippet: "Get a specific chat message.",
     promptGuidelines: [
-      "Use `get_chat_msg` to get the content of a specific chat message.",
+      "Use get_chat_msg to get the content of a specific chat message.",
     ],
     parameters: Type.Object({
       messageId: Type.String({

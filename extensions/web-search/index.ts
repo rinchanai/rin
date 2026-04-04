@@ -91,7 +91,7 @@ export default function webSearchExtension(pi: ExtensionAPI) {
     label: "Web Search",
     description: "Search the web for fresh information.",
     promptSnippet: "Search live information.",
-    promptGuidelines: ["Use `web_search` to search live information."],
+    promptGuidelines: ["Use web_search to search live information."],
     parameters: Type.Object({
       q: Type.String({ description: "Focused search query." }),
       limit: Type.Optional(Type.Number({ minimum: 1, maximum: 8 })),

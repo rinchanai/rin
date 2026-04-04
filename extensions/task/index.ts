@@ -417,7 +417,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "List Tasks",
     description: "List scheduled tasks.",
     promptSnippet: "List scheduled tasks.",
-    promptGuidelines: ["Use `list_tasks` to list scheduled tasks."],
+    promptGuidelines: ["Use list_tasks to list scheduled tasks."],
     parameters: Type.Object({}),
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("list", params, ctx),
@@ -429,7 +429,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "Get Task",
     description: "Get a specific scheduled task.",
     promptSnippet: "Get a specific scheduled task.",
-    promptGuidelines: ["Use `get_task` to view a specific scheduled task."],
+    promptGuidelines: ["Use get_task to view a specific scheduled task."],
     parameters: taskIdSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("get", params, ctx),
@@ -441,7 +441,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "Save Task",
     description: "Create or update a scheduled task.",
     promptSnippet: "Create or update a scheduled task.",
-    promptGuidelines: ["Use `save_task` to create or update a scheduled task."],
+    promptGuidelines: ["Use save_task to create or update a scheduled task."],
     parameters: taskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("save", params, ctx),
@@ -454,21 +454,21 @@ export default function cronExtension(pi: ExtensionAPI) {
       "Delete Task",
       "delete",
       "Delete a scheduled task.",
-      "Use `delete_task` to delete a scheduled task.",
+      "Use delete_task to delete a scheduled task.",
     ],
     [
       "pause_task",
       "Pause Task",
       "pause",
       "Pause a scheduled task.",
-      "Use `pause_task` to pause a scheduled task.",
+      "Use pause_task to pause a scheduled task.",
     ],
     [
       "resume_task",
       "Resume Task",
       "resume",
       "Resume a scheduled task.",
-      "Use `resume_task` to resume a scheduled task.",
+      "Use resume_task to resume a scheduled task.",
     ],
   ] as const) {
     pi.registerTool({
