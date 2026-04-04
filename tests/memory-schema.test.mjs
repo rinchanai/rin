@@ -22,6 +22,7 @@ test("memory schema parses and renders markdown docs consistently", () => {
   assert.deepEqual(doc.tags, ["one", "two"]);
   const rendered = schema.renderMarkdownDoc(doc);
   assert.ok(rendered.includes("name: Demo"));
+  assert.ok(rendered.includes("exposure: recall"));
   assert.ok(rendered.includes("hello world"));
 });
 
@@ -32,6 +33,6 @@ test("memory schema normalizes defaults for resident docs", () => {
     "hello",
   );
   assert.equal(doc.scope, "global");
-  assert.equal(doc.kind, "preference");
+  assert.equal(doc.kind, "instruction");
   assert.equal(doc.resident_slot, "owner_identity");
 });

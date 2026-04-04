@@ -1,15 +1,7 @@
 export type MemoryExposure = "resident" | "progressive" | "recall";
 export type MemoryFidelity = "exact" | "fuzzy";
 export type MemoryScope = "global" | "domain" | "project" | "session";
-export type MemoryKind =
-  | "identity"
-  | "style"
-  | "method"
-  | "value"
-  | "preference"
-  | "rule"
-  | "knowledge"
-  | "history";
+export type MemoryKind = "skill" | "instruction" | "rule" | "fact" | "index";
 
 export type MemoryStatus = "active" | "superseded" | "invalidated";
 

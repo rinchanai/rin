@@ -52,6 +52,7 @@ export type CronTaskRecord = {
   id: string;
   createdAt: string;
   updatedAt: string;
+  builtIn?: boolean;
   createdFrom?: {
     sessionFile?: string;
     sessionId?: string;
@@ -90,6 +91,37 @@ export type CronTaskInput = {
   session?: CronTaskSessionBinding;
   target?: CronTaskTarget;
 };
+
+function createBuiltInCronTasks(options: { cwd: string }): CronTaskRecord[] {
+  const now = nowIso();
+  return [
+    {
+      id: "builtin_memory_nightly_consolidation",
+      builtIn: true,
+      createdAt: now,
+      updatedAt: now,
+      name: "memory-nightly-consolidation",
+      enabled: true,
+      cwd: options.cwd,
+      trigger: {
+        kind: "cron",
+        expression: "0 4 * * *",
+        timezone: "local",
+      },
+      session: {
+        mode: "dedicated",
+      },
+      target: {
+        kind: "agent_prompt",
+        prompt:
+          "Run a full consolidation of all memory documents, remove duplicate or low-value documents, and let newer content replace older content.",
+      },
+      nextRunAt: undefined,
+      runCount: 0,
+      running: false,
+    },
+  ];
+}
 
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>();
@@ -375,13 +407,21 @@ export class CronScheduler {
         : row.nextRunAt || computeNextRunAt(row, Date.now());
       this.tasks.set(String(row.id), row);
     }
+    for (const task of createBuiltInCronTasks({ cwd: this.options.cwd })) {
+      task.running = false;
+      task.lastError = task.lastError ? safeString(task.lastError) : undefined;
+      task.nextRunAt = task.completedAt
+        ? undefined
+        : task.nextRunAt || computeNextRunAt(task, Date.now());
+      this.tasks.set(task.id, task);
+    }
     this.save();
   }
 
   private save() {
     writeJsonAtomic(
       cronTasksPath(this.options.agentDir),
-      Array.from(this.tasks.values()),
+      Array.from(this.tasks.values()).filter((task) => !task.builtIn),
     );
   }
 

@@ -5,30 +5,24 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { resolveAgentDir } from "./lib.js";
-import { safeString } from "./core/utils.js";
+import { safeString, sha, slugify } from "./core/utils.js";
 import { RESIDENT_LIMITS, RESIDENT_SLOTS } from "./core/types.js";
-import { loadMemoryDocs, residentPath } from "./docs.js";
+import { genericDocPath, loadMemoryDocs, residentPath } from "./docs.js";
 import { resolveMemoryRoot } from "./store.js";
 
 type MemoryProcessingSettings = {
   processingModel?: string;
+  thinkingLevel?: ThinkingLevel;
 };
 
-type GeneralMemoryDraft = {
+export type GeneralMemoryDraft = {
   name?: string;
   description?: string;
   content: string;
   exposure?: "progressive" | "recall";
   scope?: "global" | "domain" | "project" | "session";
-  kind?:
-    | "identity"
-    | "style"
-    | "method"
-    | "value"
-    | "preference"
-    | "rule"
-    | "knowledge"
-    | "history";
+  kind?: "skill" | "instruction" | "rule" | "fact" | "index";
+  path?: string;
 };
 
 function extractJson(text: string): any {
@@ -73,7 +67,11 @@ export async function resolveMemoryProcessingSettings(
   ctx: any,
 ): Promise<MemoryProcessingSettings> {
   const settings = await readSettingsJson();
-  const configuredModel = safeString(settings?.memory?.processingModel).trim();
+  const memoryProvider = safeString(settings?.memory?.provider).trim();
+  const memoryModel = safeString(settings?.memory?.model).trim();
+  const legacyProcessingModel = safeString(
+    settings?.memory?.processingModel,
+  ).trim();
   const fallbackCurrent = ctx?.model
     ? `${ctx.model.provider}/${ctx.model.id}`
     : "";
@@ -82,9 +80,15 @@ export async function resolveMemoryProcessingSettings(
     safeString(settings?.defaultModel).trim()
       ? `${safeString(settings.defaultProvider).trim()}/${safeString(settings.defaultModel).trim()}`
       : "";
+  const configuredModel =
+    memoryProvider && memoryModel
+      ? `${memoryProvider}/${memoryModel}`
+      : legacyProcessingModel;
+  const thinkingLevel = safeString(settings?.memory?.thinking).trim();
   return {
     processingModel:
       configuredModel || fallbackCurrent || fallbackDefault || undefined,
+    thinkingLevel: thinkingLevel ? (thinkingLevel as ThinkingLevel) : undefined,
   };
 }
 
@@ -99,7 +103,7 @@ async function runMemoryProcessor(options: {
     params: {
       prompt: options.prompt,
       model: options.processingModel || settings.processingModel,
-      thinkingLevel: options.currentThinkingLevel,
+      thinkingLevel: settings.thinkingLevel || options.currentThinkingLevel,
     },
     ctx: options.ctx,
     currentThinkingLevel: options.currentThinkingLevel,
@@ -113,10 +117,60 @@ async function runMemoryProcessor(options: {
   return { output, settings };
 }
 
-export async function normalizeGeneralMemoryDraft(options: {
+export function buildMemoryDraftDoc(options: {
+  rootDir: string;
+  draft: GeneralMemoryDraft;
+}) {
+  const root = resolveMemoryRoot(options.rootDir);
+  const exposure =
+    options.draft.exposure === "progressive" ? "progressive" : "recall";
+  const name =
+    safeString(options.draft.name || "").trim() ||
+    safeString(options.draft.content || "")
+      .split(/\r?\n/)[0]
+      .trim()
+      .slice(0, 80) ||
+    "memory";
+  const id = slugify(name, `memory-${sha(options.draft.content).slice(0, 8)}`);
+  const targetPath = safeString(options.draft.path || "").trim()
+    ? safeString(options.draft.path).trim()
+    : genericDocPath(root, exposure, id);
+  const kind = safeString(options.draft.kind || "fact").trim() || "fact";
+  const scope =
+    safeString(options.draft.scope || "").trim() ||
+    (exposure === "progressive" ? "domain" : "project");
+  const description = safeString(options.draft.description || "").trim();
+  const content = safeString(options.draft.content || "").trim();
+  const draftDoc = [
+    "---",
+    `name: ${name}`,
+    ...(description ? [`description: ${description}`] : []),
+    `exposure: ${exposure}`,
+    `kind: ${kind}`,
+    `scope: ${scope}`,
+    "---",
+    content,
+    "",
+  ].join("\n");
+  return {
+    root,
+    path: targetPath,
+    name,
+    description,
+    kind,
+    exposure,
+    scope,
+    content,
+    draftDoc,
+  };
+}
+
+export async function writeMemoryDocWithSkillCreator(options: {
   ctx: any;
   currentThinkingLevel: ThinkingLevel;
-  draft: GeneralMemoryDraft;
+  skillCreatorPath: string;
+  targetPath: string;
+  draftDoc: string;
 }) {
   const settings = await resolveMemoryProcessingSettings(options.ctx);
   const { output } = await runMemoryProcessor({
@@ -124,28 +178,19 @@ export async function normalizeGeneralMemoryDraft(options: {
     currentThinkingLevel: options.currentThinkingLevel,
     processingModel: settings.processingModel,
     prompt: [
-      "You normalize a memory document draft.",
-      "Return JSON only.",
-      "Schema:",
-      '{"name":string,"description":string,"content":string}',
-      "Rules:",
-      "- Write all fields in English.",
-      "- Preserve facts and meaning; do not invent details.",
-      "- Keep the name short and reusable.",
-      "- Keep description to one concise sentence when possible.",
-      "- Keep content concise, stable, and searchable.",
-      "- Output plain markdown/text in content, not YAML or code fences.",
+      `Read and follow the bundled skill-creator reference at ${options.skillCreatorPath}.`,
+      `Write the final memory document to this exact path: ${options.targetPath}`,
+      "Use the draft below as the starting point.",
+      "Keep the document in standard Agent Skills format.",
+      "Keep it focused on one topic.",
+      "Use progressive exposure for more general reusable memory and recall for more specialized memory; both can store skills, facts, reference material, or rules.",
+      "Write the file to disk and then output only the final saved path.",
       "Draft:",
-      JSON.stringify(options.draft, null, 2),
-    ].join("\n"),
+      options.draftDoc,
+    ].join("\n\n"),
   });
-  const parsed = extractJson(output);
-  const content = safeString(parsed?.content).trim();
-  if (!content) throw new Error("memory_processing_invalid_content");
   return {
-    name: safeString(parsed?.name).trim(),
-    description: safeString(parsed?.description).trim(),
-    content,
+    output: extractPlainText(output),
   };
 }
 

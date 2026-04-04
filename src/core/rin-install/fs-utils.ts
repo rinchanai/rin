@@ -272,6 +272,13 @@ export function syncInstalledDocs(
     elevated,
     deps,
   );
+  syncInstalledDocTree(
+    path.join(sourceRoot, "third_party", "anthropics-skills", "skill-creator"),
+    path.join(installDir, "docs", "rin", "builtin-skills", "skill-creator"),
+    targetUser,
+    elevated,
+    deps,
+  );
   const piDocRoot = path.join(sourceRoot, "third_party", "pi-coding-agent");
   const piInstallRoot = path.join(installDir, "docs", "pi");
   const installedPiDocs: string[] = [];

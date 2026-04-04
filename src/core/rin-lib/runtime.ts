@@ -89,6 +89,13 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   }
   for (const guideline of promptGuidelines) addGuideline(guideline);
   addGuideline(
+    "Always use skill-creator (/home/rin/.rin/docs/rin/builtin-skills/skill-creator/SKILL.md) to maintain standard Agent Skills format memory documents.",
+  );
+  addGuideline("All memory documents use the standard Agent Skills format.");
+  addGuideline(
+    "Each memory document should contain only one topic; when multiple topics are related, prefer designing an index document to build a tree structure and disclose only that index.",
+  );
+  addGuideline(
     "When introducing a new topic or concept, always search memory and the web first so the information is current.",
   );
   addGuideline(
