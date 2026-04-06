@@ -24,6 +24,10 @@ export const MAX_PARALLEL_SUBAGENT_TASKS = 8;
 
 let sessionCreationQueue: Promise<unknown> = Promise.resolve();
 
+function safeString(value: unknown): string {
+  return typeof value === "string" ? value : String(value || "");
+}
+
 function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = sessionCreationQueue.then(fn, fn);
   sessionCreationQueue = run.then(
@@ -36,7 +40,10 @@ function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
 function getSubagentExtensionPaths(): string[] {
   return getBuiltinExtensionPaths().filter((entry) => {
     const normalized = entry.split(path.sep).join("/");
-    return !normalized.endsWith("/extensions/subagent/index.ts");
+    return (
+      !normalized.endsWith("/extensions/subagent/index.ts") &&
+      !normalized.endsWith("/extensions/subagent/index.js")
+    );
   });
 }
 
@@ -154,6 +161,39 @@ function getFinalOutput(messages: Message[]): string {
     if (text) return text;
   }
   return "";
+}
+
+function syncResultFromSession(session: any, result: TaskResult): void {
+  const sessionMessages = Array.isArray(session?.messages)
+    ? (session.messages as Message[])
+    : Array.isArray(session?.agent?.state?.messages)
+      ? (session.agent.state.messages as Message[])
+      : [];
+
+  result.messages.length = 0;
+  result.messages.push(...sessionMessages);
+  result.output = safeString(session?.getLastAssistantText?.() || "").trim();
+
+  for (let i = sessionMessages.length - 1; i >= 0; i -= 1) {
+    const message = sessionMessages[i] as any;
+    if (message?.role !== "assistant") continue;
+    result.stopReason = message.stopReason;
+    result.errorMessage = message.errorMessage;
+    if (message.model) {
+      result.model = `${message.provider}/${message.model}`;
+    }
+    const usage = message.usage;
+    result.usage = {
+      input: usage?.input || 0,
+      output: usage?.output || 0,
+      cacheRead: usage?.cacheRead || 0,
+      cacheWrite: usage?.cacheWrite || 0,
+      cost: usage?.cost?.total || 0,
+      contextTokens: usage?.totalTokens || 0,
+      turns: usage ? 1 : 0,
+    };
+    break;
+  }
 }
 
 function makePendingResult(
@@ -320,6 +360,7 @@ export async function runSubagentTask(
       source: "extension",
     });
     await session.agent.waitForIdle();
+    syncResultFromSession(session, result);
     result.output = result.output || getFinalOutput(messages);
     const failed =
       result.stopReason === "error" || result.stopReason === "aborted";
