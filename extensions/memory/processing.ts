@@ -177,17 +177,7 @@ export async function writeMemoryDocWithSkillCreator(options: {
     ctx: options.ctx,
     currentThinkingLevel: options.currentThinkingLevel,
     processingModel: settings.processingModel,
-    prompt: [
-      `Read and follow the bundled skill-creator reference at ${options.skillCreatorPath}.`,
-      `Write the final memory document to this exact path: ${options.targetPath}`,
-      "Use the draft below as the starting point.",
-      "Keep the document in standard Agent Skills format.",
-      "Keep it focused on one topic.",
-      "Use progressive exposure for more general reusable memory and recall for more specialized memory; both can store skills, facts, reference material, or rules.",
-      "Write the file to disk and then output only the final saved path.",
-      "Draft:",
-      options.draftDoc,
-    ].join("\n\n"),
+    prompt: `Turn the draft below into a polished final memory document, write it to this exact path: ${options.targetPath}, and output only the saved file path.\n\nDraft:\n${options.draftDoc}`,
   });
   return {
     output: extractPlainText(output),
