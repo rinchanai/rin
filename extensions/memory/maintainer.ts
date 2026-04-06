@@ -362,7 +362,7 @@ export async function maintainMemory(
         if (result?.cancelled) return { skipped: "fork-cancelled" };
       }
       const prompt =
-        "Review this session, save durable memories with save_resident_memory or save_memory as needed, and ignore noise and one-off planning.";
+        "Extract durable session memories using save_resident_memory when appropriate, and use save_memory to comprehensively capture concepts, relationships, skills, facts, and anything else that belongs in memory across separate topic documents.";
       await session.prompt(prompt, {
         expandPromptTemplates: false,
         source: "extension",

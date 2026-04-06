@@ -1,5 +1,3 @@
-import path from "node:path";
-
 import {
   SessionManager,
   type ExtensionAPI,
@@ -18,7 +16,6 @@ import {
   isOnboardingActive,
   markOnboardingPrompted,
   refreshOnboardingCompletion,
-  resolveAgentDir,
 } from "./lib.js";
 import { resolveMemoryDoc } from "./docs.js";
 import {
@@ -30,15 +27,6 @@ import { appendTranscriptArchiveEntry } from "./transcripts.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
-
-const bundledSkillCreatorPath = path.join(
-  resolveAgentDir(),
-  "docs",
-  "rin",
-  "builtin-skills",
-  "skill-creator",
-  "SKILL.md",
-);
 
 function sessionMeta(ctx: any) {
   return {
@@ -270,21 +258,22 @@ async function executeSaveMemoryAction(
         path: params.path,
       },
     });
-    await writeMemoryDocWithSkillCreator({
+    const saved = await writeMemoryDocWithSkillCreator({
       ctx,
       currentThinkingLevel,
-      skillCreatorPath: bundledSkillCreatorPath,
-      targetPath: drafted.path,
+      memoryRoot: drafted.root,
       draftDoc: drafted.draftDoc,
     });
-    const doc = await resolveMemoryDoc(drafted.root, drafted.path);
+    const savedPath = String(saved?.output || "").trim();
+    if (!savedPath) throw new Error("memory_save_missing_path");
+    const doc = await resolveMemoryDoc(drafted.root, savedPath);
     const response = {
       status: "ok",
       action: "save",
       doc: {
         id: doc?.id || "",
         name: doc?.name || drafted.name,
-        path: doc?.path || drafted.path,
+        path: doc?.path || savedPath,
       },
     };
     const prepared = await prepareToolTextOutput({

@@ -114,7 +114,7 @@ function createBuiltInCronTasks(options: { cwd: string }): CronTaskRecord[] {
       target: {
         kind: "agent_prompt",
         prompt:
-          "Run a full consolidation of all memory documents, remove duplicate or low-value documents, and let newer content replace older content.",
+          "Review last 24h original session transcripts to adjust memory by creating, deleting, promoting, or demoting entries. Deduplicate low-value memory to prevent users from needing to repeat themselves.",
       },
       nextRunAt: undefined,
       runCount: 0,
