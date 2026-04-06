@@ -168,8 +168,7 @@ export function buildMemoryDraftDoc(options: {
 export async function writeMemoryDocWithSkillCreator(options: {
   ctx: any;
   currentThinkingLevel: ThinkingLevel;
-  skillCreatorPath: string;
-  targetPath: string;
+  memoryRoot: string;
   draftDoc: string;
 }) {
   const settings = await resolveMemoryProcessingSettings(options.ctx);
@@ -177,7 +176,7 @@ export async function writeMemoryDocWithSkillCreator(options: {
     ctx: options.ctx,
     currentThinkingLevel: options.currentThinkingLevel,
     processingModel: settings.processingModel,
-    prompt: `Turn the draft below into a polished final memory document, write it to this exact path: ${options.targetPath}, and output only the saved file path.\n\nDraft:\n${options.draftDoc}`,
+    prompt: `Use the draft below to update the most relevant existing memory document or create a new one under ${options.memoryRoot}. Output only the saved file path.\n\nDraft:\n${options.draftDoc}`,
   });
   return {
     output: extractPlainText(output),
@@ -213,7 +212,7 @@ export async function refineResidentSlot(options: {
     currentThinkingLevel: options.currentThinkingLevel,
     processingModel: settings.processingModel,
     prompt: [
-      "Rewrite the text in English, refining the wording, merging duplicates, and resolving conflicts by prioritizing later items, then output only the final content.",
+      "Refine the wording, merge duplicates, and resolve conflicts in favor of later items, returning only the final content.",
       appended,
     ].join("\n\n"),
   });
