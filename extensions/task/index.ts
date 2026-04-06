@@ -72,27 +72,8 @@ function createTaskId() {
   return `cron_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function wrapAgentPrompt(
-  taskId: string,
-  taskName: string | undefined,
-  prompt: string,
-  chatKey: string | undefined,
-) {
-  const body = String(prompt || "").trim();
-  if (!body) return body;
-  if (body.includes("[Scheduled task managed by save_task]")) return body;
-  return [
-    "[Scheduled task managed by save_task]",
-    `Task ID: ${taskId}`,
-    taskName ? `Task name: ${taskName}` : "",
-    chatKey ? `Bound chat: ${chatKey}` : "",
-    "This message was triggered by a daemon scheduled task.",
-    "Continue using this same session across future runs.",
-    "",
-    body,
-  ]
-    .filter(Boolean)
-    .join("\n");
+function wrapAgentPrompt(prompt: string) {
+  return String(prompt || "").trim();
 }
 
 function buildTaskForSave(
@@ -117,12 +98,7 @@ function buildTaskForSave(
     input?.target?.kind === "agent_prompt"
       ? {
           kind: "agent_prompt",
-          prompt: wrapAgentPrompt(
-            taskId,
-            taskName,
-            String(input?.target?.prompt || ""),
-            typeof chatKey === "string" ? chatKey : undefined,
-          ),
+          prompt: wrapAgentPrompt(String(input?.target?.prompt || "")),
         }
       : input?.target
         ? {
