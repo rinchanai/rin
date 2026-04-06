@@ -5,6 +5,10 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import {
+  enqueueMemoryMaintenanceJob,
+  spawnQueuedMemoryWorker,
+} from "./async-jobs.js";
 import { maintainMemory } from "./maintainer.js";
 import {
   buildOnboardingPrompt,
@@ -104,15 +108,29 @@ function loadMessagesFromSessionFile(sessionFile: string): any[] {
 async function processSessionMemory(
   ctx: any,
   messages: any[],
-  opts: { sessionFile?: string; trigger: string },
+  opts: { sessionFile?: string; trigger: string; snapshotKey?: string },
 ) {
-  if (!Array.isArray(messages) || messages.length === 0) return;
-  await maintainMemory(ctx as any, {
-    messages,
-    sessionFile: opts.sessionFile,
+  const sessionFile = String(opts.sessionFile || "").trim();
+  const agentDir = String(ctx?.agentDir || "").trim();
+  const cwd = String(ctx?.cwd || ctx?.sessionManager?.getCwd?.() || "").trim();
+  if (
+    !Array.isArray(messages) ||
+    messages.length === 0 ||
+    !sessionFile ||
+    !agentDir ||
+    !cwd
+  ) {
+    return;
+  }
+  await enqueueMemoryMaintenanceJob({
+    agentDir,
+    cwd,
+    sessionFile,
     trigger: opts.trigger,
-    mode: "session",
+    snapshotKey: opts.snapshotKey,
+    messages,
   });
+  spawnQueuedMemoryWorker(agentDir);
 }
 
 const searchMemoryParams = Type.Object({
@@ -403,6 +421,33 @@ export default function memoryExtension(pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     await archiveMessageTranscript(event?.message, ctx);
+  });
+
+  pi.on("session_before_compact", async (event, ctx) => {
+    const preparation = event?.preparation;
+    const messages = [
+      ...(Array.isArray(preparation?.messagesToSummarize)
+        ? preparation.messagesToSummarize
+        : []),
+      ...(Array.isArray(preparation?.turnPrefixMessages)
+        ? preparation.turnPrefixMessages
+        : []),
+    ];
+    await processSessionMemory(ctx, messages, {
+      sessionFile: sessionMeta(ctx).sessionFile,
+      trigger: "extension:session_compaction_maintainer",
+      snapshotKey: [
+        "compaction",
+        String(preparation?.firstKeptEntryId || "").trim(),
+        String(preparation?.tokensBefore || "").trim(),
+      ]
+        .filter(Boolean)
+        .join(":"),
+    });
+  });
+
+  pi.on("session_compact", async (_event, ctx) => {
+    await ctx.reload();
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
