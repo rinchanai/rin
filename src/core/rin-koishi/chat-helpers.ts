@@ -232,21 +232,16 @@ export function extractImageParts(content: any) {
 export function extractExistingFilePaths(text: string) {
   const out: string[] = [];
   const seen = new Set<string>();
-  const patterns = [/(?:file:\/\/)?(\/[^\s'"`<>]+)/g, /(~\/[^\s'"`<>]+)/g];
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
-      const raw = safeString(match[1] || "").trim();
-      if (!raw) continue;
-      const expanded = raw.startsWith("~/")
-        ? path.join(process.env.HOME || "", raw.slice(2))
-        : raw;
-      const resolved = path.resolve(expanded);
-      if (seen.has(resolved)) continue;
-      if (!fs.existsSync(resolved)) continue;
-      if (!fs.statSync(resolved).isFile()) continue;
-      seen.add(resolved);
-      out.push(resolved);
-    }
+  const pattern = /file:\/\/(\/[^\s'"`<>]+)/g;
+  for (const match of text.matchAll(pattern)) {
+    const raw = safeString(match[1] || "").trim();
+    if (!raw) continue;
+    const resolved = path.resolve(raw);
+    if (seen.has(resolved)) continue;
+    if (!fs.existsSync(resolved)) continue;
+    if (!fs.statSync(resolved).isFile()) continue;
+    seen.add(resolved);
+    out.push(resolved);
   }
   return out.slice(0, 8);
 }

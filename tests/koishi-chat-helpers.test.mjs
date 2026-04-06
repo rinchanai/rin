@@ -53,3 +53,21 @@ test("koishi chat helpers persist outbound image parts", async () => {
     assert.ok(stat.isFile());
   });
 });
+
+test("koishi chat helpers only auto-attach explicit file URLs, not plain paths", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "demo.txt");
+    await fs.writeFile(filePath, "demo", "utf8");
+
+    assert.deepEqual(
+      helpers.extractExistingFilePaths(`Path for reference only: ${filePath}`),
+      [],
+    );
+    assert.deepEqual(
+      helpers.extractExistingFilePaths(
+        `Explicit attachment: file://${filePath}`,
+      ),
+      [filePath],
+    );
+  });
+});
