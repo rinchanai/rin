@@ -130,6 +130,61 @@ function turnTranscript(messages: any[]): string {
     .join("\n\n");
 }
 
+async function extractSessionMemoryFromMessages(options: {
+  cwd: string;
+  agentDir: string;
+  messages: any[];
+  additionalExtensionPaths?: string[];
+}) {
+  const transcript = turnTranscript(options.messages);
+  if (!transcript.trim()) return { skipped: "no-transcript" };
+
+  const { session } = await openBoundSession({
+    cwd: options.cwd,
+    agentDir: options.agentDir,
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  });
+  try {
+    await session.sendCustomMessage(
+      {
+        customType: "memory_session_transcript",
+        display: false,
+        content: [
+          {
+            type: "text",
+            text: [
+              "Use the archived transcript below as the authoritative conversation context for memory extraction.",
+              transcript,
+            ].join("\n\n"),
+          },
+        ],
+      },
+      { triggerTurn: false },
+    );
+    const prompt =
+      "Extract durable session memories using save_resident_memory when appropriate, and use save_memory to comprehensively capture concepts, relationships, skills, facts, and anything else that belongs in memory across separate topic documents.";
+    await session.prompt(prompt, {
+      expandPromptTemplates: false,
+      source: "extension",
+    });
+    await session.agent.waitForIdle();
+    const finalText = safeString(session.getLastAssistantText?.() || "").trim();
+    return {
+      skipped: "",
+      transcriptUsed: true,
+      saved: true,
+      output: finalText,
+    };
+  } finally {
+    try {
+      await session.abort();
+    } catch {}
+    try {
+      session.dispose?.();
+    } catch {}
+  }
+}
+
 function trimDocContent(text: string, maxChars = 2200): string {
   const raw = safeString(text).trim();
   if (raw.length <= maxChars) return raw;
@@ -324,9 +379,14 @@ export async function maintainMemory(
     trigger?: string;
     mode?: "session" | "consolidate";
     limit?: number;
+    additionalExtensionPaths?: string[];
   } = {},
 ) {
-  if (!ctx.model) return { skipped: "no-model" };
+  const transcript = Array.isArray(opts.messages)
+    ? turnTranscript(opts.messages)
+    : "";
+  const mode = opts.mode || (transcript ? "session" : "consolidate");
+  if (mode !== "session" && !ctx.model) return { skipped: "no-model" };
 
   const service = await loadMemoryService();
   const docs = (await service.loadActiveMemoryDocs()) as any[];
@@ -336,10 +396,6 @@ export async function maintainMemory(
       String(b.updated_at || "").localeCompare(String(a.updated_at || "")),
     )
     .slice(0, limit);
-  const transcript = Array.isArray(opts.messages)
-    ? turnTranscript(opts.messages)
-    : "";
-  const mode = opts.mode || (transcript ? "session" : "consolidate");
 
   if (mode === "session") {
     const sessionFile = safeString(opts.sessionFile || "").trim();
@@ -349,9 +405,25 @@ export async function maintainMemory(
     ).trim();
     if (!cwd) return { skipped: "no-cwd" };
 
+    if (Array.isArray(opts.messages) && opts.messages.length > 0) {
+      const extracted = await extractSessionMemoryFromMessages({
+        cwd,
+        agentDir: resolveAgentDir(),
+        messages: opts.messages,
+        additionalExtensionPaths: opts.additionalExtensionPaths,
+      });
+      return {
+        ...extracted,
+        mode,
+        sessionFile,
+        forked: false,
+      };
+    }
+
     const { session } = await openBoundSession({
       cwd,
       agentDir: resolveAgentDir(),
+      additionalExtensionPaths: opts.additionalExtensionPaths,
       sessionFile,
     });
     try {

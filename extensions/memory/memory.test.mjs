@@ -28,6 +28,11 @@ const transcripts = await import(
     path.join(rootDir, "dist", "extensions", "memory", "transcripts.js"),
   ).href
 );
+const asyncJobs = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "extensions", "memory", "async-jobs.js"),
+  ).href
+);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-memory-test-"));
@@ -144,6 +149,68 @@ test("memory search includes archived transcripts", async () => {
     assert.equal(result.results[0].sourceType, "transcript");
     assert.match(result.results[0].path, /2026[\\/]04[\\/]session-1\.jsonl$/);
     assert.match(result.results[0].preview, /对话原文/);
+  });
+});
+
+test("queued memory maintenance jobs deduplicate by session file", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      cwd: "/tmp/project-a",
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "first",
+    });
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      cwd: "/tmp/project-a",
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "second",
+    });
+
+    const queuePath = path.join(
+      root,
+      "memory",
+      "state",
+      "maintenance-queue.json",
+    );
+    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].trigger, "second");
+    assert.equal(queue[0].sessionFile, path.resolve("/tmp/session-a.jsonl"));
+  });
+});
+
+test("compaction snapshot jobs stay distinct for the same session", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      cwd: "/tmp/project-a",
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "compaction-a",
+      snapshotKey: "compaction:first-kept-a",
+      messages: [{ role: "user", content: [{ type: "text", text: "alpha" }] }],
+    });
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      cwd: "/tmp/project-a",
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "compaction-b",
+      snapshotKey: "compaction:first-kept-b",
+      messages: [{ role: "user", content: [{ type: "text", text: "beta" }] }],
+    });
+
+    const queuePath = path.join(
+      root,
+      "memory",
+      "state",
+      "maintenance-queue.json",
+    );
+    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    assert.equal(queue.length, 2);
+    assert.equal(queue[0].snapshotKey, "compaction:first-kept-a");
+    assert.equal(queue[1].snapshotKey, "compaction:first-kept-b");
+    assert.equal(queue[0].messages[0].content[0].text, "alpha");
+    assert.equal(queue[1].messages[0].content[0].text, "beta");
   });
 });
 
