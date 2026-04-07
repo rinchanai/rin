@@ -9,7 +9,7 @@ export async function runSessionPrompt(options: {
   additionalExtensionPaths?: string[];
   sessionFile?: string;
 }) {
-  const { session } = await openBoundSession(options);
+  const { session, runtime } = await openBoundSession(options);
   try {
     await session.prompt(options.prompt, {
       expandPromptTemplates: false,
@@ -25,6 +25,9 @@ export async function runSessionPrompt(options: {
   } finally {
     try {
       await session.abort();
+    } catch {}
+    try {
+      await runtime.dispose();
     } catch {}
   }
 }

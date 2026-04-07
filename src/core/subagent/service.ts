@@ -313,7 +313,7 @@ export async function runSubagentTask(
     messages,
   };
 
-  const { session } = await createIsolatedSession(
+  const { session, runtime } = await createIsolatedSession(
     cwd,
     applySubagentTaskPreferences(task),
   );
@@ -381,7 +381,7 @@ export async function runSubagentTask(
       await session.abort();
     } catch {}
     try {
-      session.dispose?.();
+      await runtime.dispose();
     } catch {}
   }
 }

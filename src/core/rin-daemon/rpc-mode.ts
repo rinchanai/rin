@@ -10,10 +10,22 @@ import {
 } from "./worker-helpers.js";
 
 export async function runCustomRpcMode(
-  session: any,
+  runtimeOrSession: any,
   deps: { SessionManager: any; builtinSlashCommands: any[] },
 ) {
   const { SessionManager, builtinSlashCommands } = deps;
+  const runtime =
+    runtimeOrSession && runtimeOrSession.session
+      ? runtimeOrSession
+      : {
+          session: runtimeOrSession,
+          newSession: runtimeOrSession.newSession?.bind(runtimeOrSession),
+          switchSession: runtimeOrSession.switchSession?.bind(runtimeOrSession),
+          fork: runtimeOrSession.fork?.bind(runtimeOrSession),
+          importFromJsonl:
+            runtimeOrSession.importFromJsonl?.bind(runtimeOrSession),
+        };
+  const getSession = () => runtime.session;
   const output = (obj: unknown) => writeJsonLine(obj);
   const done = (id: string | undefined, type: string, value?: unknown) =>
     ok(id, type, value);
@@ -41,6 +53,7 @@ export async function runCustomRpcMode(
       emitTurnEvent("start", requestTag);
       try {
         await task();
+        const session = getSession();
         await session.agent.waitForIdle();
         emitTurnEvent("complete", requestTag, {
           sessionFile: session.sessionFile,
@@ -65,6 +78,7 @@ export async function runCustomRpcMode(
     interruptQueue = interruptQueue
       .then(
         async () => {
+          const session = getSession();
           if (session.isStreaming || session.isCompacting)
             await session.abort();
           try {
@@ -73,6 +87,7 @@ export async function runCustomRpcMode(
           startTurnTask(requestTag, task);
         },
         async () => {
+          const session = getSession();
           if (session.isStreaming || session.isCompacting)
             await session.abort();
           try {
@@ -124,42 +139,61 @@ export async function runCustomRpcMode(
     activeLogins.delete(loginId);
   };
 
-  await session.bindExtensions({
-    commandContextActions: {
-      waitForIdle: () => session.agent.waitForIdle(),
-      newSession: async (options) => await session.newSession(options),
-      fork: async (entryId) => ({
-        cancelled: (await session.fork(entryId)).cancelled,
-      }),
-      navigateTree: async (targetId, options) => ({
-        cancelled: (
-          await session.navigateTree(targetId, {
-            summarize: options?.summarize,
-            customInstructions: options?.customInstructions,
-            replaceInstructions: options?.replaceInstructions,
-            label: options?.label,
-          })
-        ).cancelled,
-      }),
-      switchSession: async (sessionPath) =>
-        await session.switchSession(sessionPath),
-      reload: async () => {
-        await session.reload();
+  let unsubscribeSessionEvents: (() => void) | undefined;
+  const bindCurrentSession = async () => {
+    const session = getSession();
+    await session.bindExtensions({
+      commandContextActions: {
+        waitForIdle: () => getSession().agent.waitForIdle(),
+        newSession: async (options) => {
+          const result = await runtime.newSession(options);
+          await bindCurrentSession();
+          return result;
+        },
+        fork: async (entryId) => {
+          const result = await runtime.fork(entryId);
+          await bindCurrentSession();
+          return { cancelled: result.cancelled };
+        },
+        navigateTree: async (targetId, options) => ({
+          cancelled: (
+            await getSession().navigateTree(targetId, {
+              summarize: options?.summarize,
+              customInstructions: options?.customInstructions,
+              replaceInstructions: options?.replaceInstructions,
+              label: options?.label,
+            })
+          ).cancelled,
+        }),
+        switchSession: async (sessionPath) => {
+          const result = await runtime.switchSession(sessionPath);
+          await bindCurrentSession();
+          return result;
+        },
+        reload: async () => {
+          await getSession().reload();
+        },
       },
-    },
-    onError: (err) => {
-      output({
-        type: "extension_error",
-        extensionPath: err.extensionPath,
-        event: err.event,
-        error: err.error,
-      });
-    },
-  });
+      onError: (err) => {
+        output({
+          type: "extension_error",
+          extensionPath: err.extensionPath,
+          event: err.event,
+          error: err.error,
+        });
+      },
+    });
 
-  session.subscribe((event: unknown) => output(event));
+    unsubscribeSessionEvents?.();
+    unsubscribeSessionEvents = session.subscribe((event: unknown) =>
+      output(event),
+    );
+  };
+
+  await bindCurrentSession();
 
   const handleCommand = async (command: any) => {
+    const session = getSession();
     const id = command?.id;
     const type = String(command?.type || "unknown");
     switch (type) {
@@ -298,8 +332,12 @@ export async function runCustomRpcMode(
         return run(
           id,
           type,
-          () => session.importFromJsonl(command.inputPath),
-          (value) => ({ cancelled: !value }),
+          async () => {
+            const value = await runtime.importFromJsonl(command.inputPath);
+            await bindCurrentSession();
+            return value;
+          },
+          (value) => ({ cancelled: Boolean(value?.cancelled) }),
         );
       case "get_fork_messages":
         return done(id, type, {
@@ -318,7 +356,7 @@ export async function runCustomRpcMode(
           id,
           type,
           () =>
-            runBuiltinCommand(session, String(command.commandLine || ""), {
+            runBuiltinCommand(runtime, String(command.commandLine || ""), {
               SessionManager,
             }),
           (value) => value,
@@ -328,25 +366,40 @@ export async function runCustomRpcMode(
           id,
           type,
           () =>
-            session.newSession(
-              command.parentSession
-                ? { parentSession: command.parentSession }
-                : undefined,
-            ),
+            runtime
+              .newSession(
+                command.parentSession
+                  ? { parentSession: command.parentSession }
+                  : undefined,
+              )
+              .then(async (value: any) => {
+                await bindCurrentSession();
+                return value;
+              }),
           (value) => ({ cancelled: Boolean(value?.cancelled) }),
         );
       case "switch_session":
         return run(
           id,
           type,
-          () => session.switchSession(command.sessionPath),
+          () =>
+            runtime
+              .switchSession(command.sessionPath)
+              .then(async (value: any) => {
+                await bindCurrentSession();
+                return value;
+              }),
           (value) => ({ cancelled: Boolean(value?.cancelled) }),
         );
       case "fork":
         return run(
           id,
           type,
-          () => session.fork(command.entryId),
+          () =>
+            runtime.fork(command.entryId).then(async (value: any) => {
+              await bindCurrentSession();
+              return value;
+            }),
           (value) => ({ text: value.selectedText, cancelled: value.cancelled }),
         );
       case "list_sessions": {

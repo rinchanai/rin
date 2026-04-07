@@ -10,10 +10,10 @@ export async function startWorker(
   options: { additionalExtensionPaths?: string[] } = {},
 ) {
   const sessionManagerModule = await loadRinSessionManagerModule();
-  const { session } = await createConfiguredAgentSession({
+  const { runtime } = await createConfiguredAgentSession({
     additionalExtensionPaths: options.additionalExtensionPaths,
   });
-  await runCustomRpcMode(session, {
+  await runCustomRpcMode(runtime, {
     SessionManager: sessionManagerModule.SessionManager,
     builtinSlashCommands: BUILTIN_SLASH_COMMANDS,
   });
