@@ -46,11 +46,11 @@ function buildRinDocsBlock(agentDir: string) {
     `- Additional Pi docs: ${path.join(piRoot, "docs")}`,
     `- Pi examples: ${path.join(piRoot, "examples")} (extensions, custom tools, SDK)`,
     "- Read Rin docs proactively whenever the task involves Rin itself, including installation, update, repair, launcher behavior, runtime layout, daemon behavior, builtin capabilities, extensions, prompts, skills, TUI, chat bridge behavior, or stable documentation paths.",
-    "- Do not wait for the user to explicitly ask for documentation before reading relevant Rin docs.",
+    "- Read relevant Rin docs as soon as the task touches Rin, without waiting for an explicit documentation request from the user.",
     "- Start with Rin docs before relying on Pi docs for Rin-operated behavior.",
     "- Recommended Rin reading order: README.md -> docs/pi-overrides.md -> relevant topic docs in docs/.",
     "- For update / install / repair / launcher / runtime-path tasks, read docs/capabilities.md and docs/runtime-layout.md before acting.",
-    "- Use Pi docs mainly as the base reference for topics Rin docs do not cover.",
+    "- Use Pi docs as the base reference for the remaining topics that Rin docs leave uncovered.",
     "- Topic map: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)",
   ].join("\n");
 }
