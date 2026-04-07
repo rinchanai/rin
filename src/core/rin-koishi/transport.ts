@@ -9,6 +9,7 @@ import type {
   ChatOutboxPayload,
 } from "../rin-lib/chat-outbox.js";
 import { findBot, parseChatKey } from "./support.js";
+import { appendKoishiChatLog } from "./chat-log.js";
 import type { KoishiChatState, SavedAttachment } from "./chat-helpers.js";
 import {
   ensureDir,
@@ -43,7 +44,10 @@ export async function sendText(
     throw new Error(
       `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
     );
-  const content = replyToMessageId ? [h.quote(replyToMessageId), text] : text;
+  const textNode = h.text(safeString(text));
+  const content = replyToMessageId
+    ? [h.quote(replyToMessageId), textNode]
+    : [textNode];
   await bot.sendMessage(parsed.chatId, content);
 }
 
@@ -94,24 +98,42 @@ export async function sendGenericFile(
   await bot.sendMessage(parsed.chatId, content);
 }
 
-export function messagePartToNode(part: ChatMessagePart, h: any) {
-  if (part.type === "text") return part.text;
+export async function messagePartToNode(part: ChatMessagePart, h: any) {
+  if (part.type === "text") return h.text(part.text);
   if (part.type === "at")
     return h.at(part.id, part.name ? { name: part.name } : undefined);
   if (part.type === "image") {
-    const src = safeString(part.path).trim()
-      ? toFileUrl(path.resolve(part.path!)).href
-      : safeString(part.url).trim();
-    return h.image(src, safeString(part.mimeType).trim() || undefined);
+    const localPath = safeString(part.path).trim();
+    if (localPath) {
+      const buffer = await fs.promises.readFile(path.resolve(localPath));
+      return h.image(buffer, safeString(part.mimeType).trim() || "image/png");
+    }
+    return h.image(safeString(part.url).trim());
   }
-  const src = safeString(part.path).trim()
-    ? toFileUrl(path.resolve(part.path!)).href
-    : safeString(part.url).trim();
-  return h.file(src, safeString(part.mimeType).trim() || undefined, {
-    name:
-      safeString(part.name).trim() ||
-      (safeString(part.path).trim() ? path.basename(part.path!) : undefined),
-  });
+  const localPath = safeString(part.path).trim();
+  if (localPath) {
+    const buffer = await fs.promises.readFile(path.resolve(localPath));
+    return h.file(
+      buffer,
+      safeString(part.mimeType).trim() || "application/octet-stream",
+      {
+        name:
+          safeString(part.name).trim() ||
+          (safeString(part.path).trim()
+            ? path.basename(part.path!)
+            : undefined),
+      },
+    );
+  }
+  return h.file(
+    safeString(part.url).trim(),
+    safeString(part.mimeType).trim() || undefined,
+    {
+      name:
+        safeString(part.name).trim() ||
+        (safeString(part.path).trim() ? path.basename(part.path!) : undefined),
+    },
+  );
 }
 
 export function planTelegramDeliveries(parts: ChatMessagePart[]) {
@@ -148,17 +170,24 @@ export function planTelegramDeliveries(parts: ChatMessagePart[]) {
 
 export async function sendOutboxPayload(
   app: any,
+  agentDir: string,
   payload: ChatOutboxPayload,
   h: any,
 ) {
   if (payload?.type === "text_delivery") {
-    await sendText(
-      app,
-      safeString(payload.chatKey).trim(),
-      safeString(payload.text).trim(),
-      h,
-      safeString(payload.replyToMessageId).trim(),
-    );
+    const chatKey = safeString(payload.chatKey).trim();
+    const text = safeString(payload.text).trim();
+    const replyToMessageId = safeString(payload.replyToMessageId).trim();
+    await sendText(app, chatKey, text, h, replyToMessageId);
+    if (chatKey && text) {
+      appendKoishiChatLog(agentDir, {
+        timestamp: new Date().toISOString(),
+        chatKey,
+        role: "assistant",
+        text,
+        replyToMessageId: replyToMessageId || undefined,
+      });
+    }
     return;
   }
   if (payload?.type !== "parts_delivery") return;
@@ -179,16 +208,34 @@ export async function sendOutboxPayload(
   if (!plannedBatches.length) throw new Error("koishi_outbox_empty_message");
 
   let nextReplyToMessageId = safeString(payload.replyToMessageId).trim();
+  const loggedTexts: string[] = [];
   for (const batch of plannedBatches) {
-    const nodes = batch
-      .map((part) => messagePartToNode(part, h))
-      .filter(Boolean);
+    const nodes = (
+      await Promise.all(batch.map((part) => messagePartToNode(part, h)))
+    ).filter(Boolean);
     if (!nodes.length) continue;
+    const batchText = batch
+      .filter((part) => part.type === "text")
+      .map((part) => safeString((part as any).text).trim())
+      .filter(Boolean)
+      .join("\n");
+    if (batchText) loggedTexts.push(batchText);
     const content = nextReplyToMessageId
       ? [h.quote(nextReplyToMessageId), ...nodes]
       : nodes;
     await bot.sendMessage(parsed.chatId, content);
     nextReplyToMessageId = "";
+  }
+  const finalLoggedText = loggedTexts.join("\n\n").trim();
+  if (finalLoggedText) {
+    appendKoishiChatLog(agentDir, {
+      timestamp: new Date().toISOString(),
+      chatKey,
+      role: "assistant",
+      text: finalLoggedText,
+      replyToMessageId:
+        safeString(payload.replyToMessageId).trim() || undefined,
+    });
   }
 }
 

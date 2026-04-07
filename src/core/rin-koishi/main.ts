@@ -243,10 +243,16 @@ export async function startKoishi(
         "interrupt_prompt",
       )
       .catch((error) => {
+        const errorMessage = safeString((error as any)?.message || error);
         logger.warn(
-          `koishi turn failed chatKey=${decision.chatKey} err=${safeString((error as any)?.message || error)}`,
+          `koishi turn failed chatKey=${decision.chatKey} err=${errorMessage}`,
         );
-        const errorText = `Koishi error: ${safeString((error as any)?.message || error || "koishi_turn_failed")}`;
+        const errorText =
+          /rin_timeout:|rin_disconnected:|rin_tui_not_connected/.test(
+            errorMessage,
+          )
+            ? "Koishi bridge timed out while forwarding the turn. Please retry in a moment."
+            : `Koishi error: ${errorMessage || "koishi_turn_failed"}`;
         appendKoishiChatLog(runtime.agentDir, {
           timestamp: new Date().toISOString(),
           chatKey: decision.chatKey,

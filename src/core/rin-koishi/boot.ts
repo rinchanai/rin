@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { chatOutboxDir } from "../rin-lib/chat-outbox.js";
 import { listJsonFiles, safeString } from "./chat-helpers.js";
@@ -99,18 +100,22 @@ export async function drainKoishiOutbox(
   h: any,
   logger: any,
 ) {
-  for (const filePath of listJsonFiles(chatOutboxDir(agentDir))) {
+  const outboxDir = chatOutboxDir(agentDir);
+  const failedDir = path.join(outboxDir, "failed");
+  for (const filePath of listJsonFiles(outboxDir)) {
     let payload: any = null;
     try {
       payload = readJsonFile<any>(filePath, null);
-      await sendOutboxPayload(app, payload, h);
+      await sendOutboxPayload(app, agentDir, payload, h);
+      fs.rmSync(filePath, { force: true });
     } catch (error: any) {
       logger.warn(
         `koishi outbox failed file=${filePath} err=${safeString(error?.message || error)}`,
       );
-    } finally {
       try {
-        fs.rmSync(filePath, { force: true });
+        fs.mkdirSync(failedDir, { recursive: true });
+        const failedPath = path.join(failedDir, path.basename(filePath));
+        fs.renameSync(filePath, failedPath);
       } catch {}
     }
   }

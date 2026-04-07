@@ -204,7 +204,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`rin_timeout:${String(command?.type || "command")}`));
-      }, 30000);
+      }, 120000);
       this.pending.set(id, { resolve, reject, timer });
       this.socket.write(`${JSON.stringify({ ...command, id })}\n`);
     });
