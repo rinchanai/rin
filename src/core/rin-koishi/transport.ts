@@ -114,6 +114,38 @@ export function messagePartToNode(part: ChatMessagePart, h: any) {
   });
 }
 
+export function planTelegramDeliveries(parts: ChatMessagePart[]) {
+  const normalized = Array.isArray(parts) ? parts.filter(Boolean) : [];
+  const assetCount = normalized.filter(
+    (part) => part.type === "image" || part.type === "file",
+  ).length;
+  const textLikeCount = normalized.filter(
+    (part) => part.type === "text" || part.type === "at",
+  ).length;
+  if (assetCount <= 1 || !textLikeCount) return [normalized];
+
+  const leadTextParts = normalized.filter(
+    (part) => part.type === "text" || part.type === "at",
+  );
+  const assetBatches: ChatMessagePart[][] = [];
+  let currentBatch: ChatMessagePart[] = [];
+  let currentType = "";
+
+  for (const part of normalized) {
+    if (part.type !== "image" && part.type !== "file") continue;
+    if (currentBatch.length && currentType !== part.type) {
+      assetBatches.push(currentBatch);
+      currentBatch = [];
+    }
+    currentType = part.type;
+    currentBatch.push(part);
+  }
+  if (currentBatch.length) assetBatches.push(currentBatch);
+
+  if (!leadTextParts.length || !assetBatches.length) return [normalized];
+  return [leadTextParts, ...assetBatches];
+}
+
 export async function sendOutboxPayload(
   app: any,
   payload: ChatOutboxPayload,
@@ -138,15 +170,26 @@ export async function sendOutboxPayload(
     throw new Error(
       `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
     );
-  const nodes = (Array.isArray(payload.parts) ? payload.parts : [])
-    .map((part) => messagePartToNode(part, h))
-    .filter(Boolean);
-  if (!nodes.length) throw new Error("koishi_outbox_empty_message");
-  const replyToMessageId = safeString(payload.replyToMessageId).trim();
-  const content = replyToMessageId
-    ? [h.quote(replyToMessageId), ...nodes]
-    : nodes;
-  await bot.sendMessage(parsed.chatId, content);
+
+  const rawParts = Array.isArray(payload.parts) ? payload.parts : [];
+  const plannedBatches =
+    parsed.platform === "telegram"
+      ? planTelegramDeliveries(rawParts)
+      : [rawParts];
+  if (!plannedBatches.length) throw new Error("koishi_outbox_empty_message");
+
+  let nextReplyToMessageId = safeString(payload.replyToMessageId).trim();
+  for (const batch of plannedBatches) {
+    const nodes = batch
+      .map((part) => messagePartToNode(part, h))
+      .filter(Boolean);
+    if (!nodes.length) continue;
+    const content = nextReplyToMessageId
+      ? [h.quote(nextReplyToMessageId), ...nodes]
+      : nodes;
+    await bot.sendMessage(parsed.chatId, content);
+    nextReplyToMessageId = "";
+  }
 }
 
 export function buildPromptText(text: string, attachments: SavedAttachment[]) {
