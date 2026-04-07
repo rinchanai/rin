@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import net from "node:net";
+import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -12,11 +14,7 @@ import {
   chatStateDir,
   listChatStateFiles,
 } from "../chat-bridge/session-binding.js";
-import {
-  buildAllowedCommandRows,
-  drainKoishiOutbox,
-  syncTelegramCommands,
-} from "./boot.js";
+import { buildAllowedCommandRows, syncTelegramCommands } from "./boot.js";
 import {
   ensureDir,
   extractInboundAttachments,
@@ -40,7 +38,8 @@ import {
   materializeKoishiConfig,
   trustOf,
 } from "./support.js";
-import { sendText } from "./transport.js";
+import { koishiRpcSocketPath } from "./rpc.js";
+import { sendOutboxPayload, sendText } from "./transport.js";
 
 const require = createRequire(import.meta.url);
 const { Loader, Logger, h } = require("koishi") as {
@@ -272,13 +271,64 @@ export async function startKoishi(
     void syncTelegramCommands(app, logger, commandRows);
   });
 
-  let cronOutboxTimer: NodeJS.Timeout | null = null;
+  const rpcSocketPath = koishiRpcSocketPath(runtime.agentDir);
+  try {
+    fs.rmSync(rpcSocketPath, { force: true });
+  } catch {}
+  ensureDir(path.dirname(rpcSocketPath));
+  const rpcServer = net.createServer((socket) => {
+    let buffer = "";
+    const writeLine = (payload: unknown) => {
+      if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
+    };
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        let line = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line.trim()) continue;
+        void (async () => {
+          let command: any;
+          try {
+            command = JSON.parse(line);
+          } catch {
+            writeLine({ success: false, error: "invalid_json" });
+            return;
+          }
+          try {
+            if (safeString(command?.type).trim() !== "send_chat") {
+              writeLine({
+                success: false,
+                error: "unsupported_server_request",
+              });
+              return;
+            }
+            await sendOutboxPayload(app, runtime.agentDir, command?.payload, h);
+            writeLine({ success: true, data: { delivered: true } });
+          } catch (error: any) {
+            writeLine({
+              success: false,
+              error: safeString(error?.message || error) || "koishi_rpc_failed",
+            });
+          }
+        })();
+      }
+    });
+  });
+
   await app.start();
+  await new Promise<void>((resolve, reject) => {
+    rpcServer.once("error", reject);
+    rpcServer.listen(rpcSocketPath, () => {
+      rpcServer.off("error", reject);
+      resolve();
+    });
+  });
   await syncTelegramCommands(app, logger, commandRows);
-  cronOutboxTimer = setInterval(() => {
-    void drainKoishiOutbox(app, runtime.agentDir, h, logger).catch(() => {});
-  }, 1000);
-  void drainKoishiOutbox(app, runtime.agentDir, h, logger).catch(() => {});
   logger.info(
     `koishi started bots=${JSON.stringify(app.bots.map((bot: any) => ({ platform: bot.platform, selfId: bot.selfId, status: bot.status })))}`,
   );
@@ -293,8 +343,13 @@ export async function startKoishi(
   }
 
   const shutdown = async () => {
-    if (cronOutboxTimer) clearInterval(cronOutboxTimer);
     for (const controller of controllers.values()) controller.dispose();
+    try {
+      await new Promise<void>((resolve) => rpcServer.close(() => resolve()));
+    } catch {}
+    try {
+      fs.rmSync(rpcSocketPath, { force: true });
+    } catch {}
     try {
       await app.stop();
     } catch {}
