@@ -116,10 +116,11 @@ export function formatSessionStats(stats: any) {
 }
 
 export async function runBuiltinCommand(
-  session: any,
+  runtime: any,
   commandLine: string,
   deps: { SessionManager: any },
 ) {
+  const session = runtime.session;
   const trimmed = String(commandLine || "").trim();
   if (!trimmed.startsWith("/")) return { handled: false };
   const [name = "", ...rest] = splitCommandArgs(trimmed.slice(1));
@@ -129,7 +130,7 @@ export async function runBuiltinCommand(
 
   switch (command) {
     case "new":
-      await session.newSession();
+      await runtime.newSession();
       return { handled: true, text: "Started a new session." };
     case "compact":
       await session.compact(argsText || undefined);
@@ -169,7 +170,7 @@ export async function runBuiltinCommand(
       );
       if (!match)
         return { handled: true, text: `Session not found: ${argsText}` };
-      await session.switchSession(String(match.path || ""));
+      await runtime.switchSession(String(match.path || ""));
       return {
         handled: true,
         text: `Resumed session: ${String(match.id || "")}`,

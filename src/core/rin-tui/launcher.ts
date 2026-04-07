@@ -79,11 +79,11 @@ export async function startTui(
     await ensureSearxngSidecar(runtime.agentDir, {
       instanceId: webSearchInstanceId,
     }).catch(() => {});
-    const { session } = await createConfiguredAgentSession({
+    const { runtime: sessionRuntime } = await createConfiguredAgentSession({
       additionalExtensionPaths: options.additionalExtensionPaths,
     });
     profile.mark("std-session-created");
-    const interactiveMode = new InteractiveMode(session);
+    const interactiveMode = new InteractiveMode(sessionRuntime);
     try {
       await interactiveMode.run();
     } finally {

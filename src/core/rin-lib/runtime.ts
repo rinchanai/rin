@@ -337,35 +337,8 @@ export async function createConfiguredAgentSession(
     sessionManager: initialSessionManager,
   });
 
-  const session: any = new Proxy(
-    {},
-    {
-      get(_target, prop) {
-        if (prop === "runtime") return runtime;
-        if (prop === "newSession") return runtime.newSession.bind(runtime);
-        if (prop === "switchSession")
-          return runtime.switchSession.bind(runtime);
-        if (prop === "fork") return runtime.fork.bind(runtime);
-        if (prop === "importFromJsonl")
-          return runtime.importFromJsonl.bind(runtime);
-        if (prop === "dispose") return runtime.dispose.bind(runtime);
-        const current = runtime.session as any;
-        const value = current?.[prop as any];
-        return typeof value === "function" ? value.bind(current) : value;
-      },
-      set(_target, prop, value) {
-        const current = runtime.session as any;
-        current[prop as any] = value;
-        return true;
-      },
-      has(_target, prop) {
-        return prop in (runtime.session as any);
-      },
-    },
-  );
-
   return {
-    session,
+    session: runtime.session,
     runtime,
     extensionsResult: runtime.session.resourceLoader.getExtensions(),
     modelFallbackMessage: runtime.modelFallbackMessage,
