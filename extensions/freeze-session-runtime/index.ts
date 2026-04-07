@@ -87,15 +87,7 @@ export default function freezeSessionRuntimeExtension(pi: ExtensionAPI) {
     restore(ctx);
   });
 
-  pi.on("session_switch", async (_event, ctx) => {
-    restore(ctx);
-  });
-
   pi.on("session_tree", async (_event, ctx) => {
-    restore(ctx);
-  });
-
-  pi.on("session_fork", async (_event, ctx) => {
     restore(ctx);
   });
 

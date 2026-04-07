@@ -5,7 +5,7 @@ import { getAgentDir, getDocsPath } from "../config.js";
 import { AgentSession } from "./agent-session.js";
 import { AuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
-import type { ExtensionRunner, LoadExtensionsResult, ToolDefinition } from "./extensions/index.js";
+import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.js";
 import { convertToLlm } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
 import { findInitialModel } from "./model-resolver.js";
@@ -47,7 +47,7 @@ export interface CreateAgentSessionOptions {
 
 	/** Auth storage for credentials. Default: AuthStorage.create(agentDir/auth.json) */
 	authStorage?: AuthStorage;
-	/** Model registry. Default: new ModelRegistry(authStorage, agentDir/models.json) */
+	/** Model registry. Default: ModelRegistry.create(authStorage, agentDir/models.json) */
 	modelRegistry?: ModelRegistry;
 
 	/** Model to use. Default: from settings, else first available */
@@ -70,6 +70,8 @@ export interface CreateAgentSessionOptions {
 
 	/** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
 	settingsManager?: SettingsManager;
+	/** Session start event metadata for extension runtime startup. */
+	sessionStartEvent?: SessionStartEvent;
 }
 
 /** Result from createAgentSession */
@@ -84,6 +86,7 @@ export interface CreateAgentSessionResult {
 
 // Re-exports
 
+export * from "./agent-session-runtime.js";
 export type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -172,7 +175,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
 	const authStorage = options.authStorage ?? AuthStorage.create(authPath);
-	const modelRegistry = options.modelRegistry ?? new ModelRegistry(authStorage, modelsPath);
+	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
@@ -349,6 +352,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		initialActiveToolNames,
 		extensionRunnerRef,
+		sessionStartEvent: options.sessionStartEvent,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

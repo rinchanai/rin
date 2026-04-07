@@ -107,23 +107,13 @@ export async function executeCronTask(
         chatKey: task.chatKey,
         taskId: task.id,
         runId,
-        text: [`[Scheduled task${task.name ? `: ${task.name}` : ""}]`, result]
-          .filter(Boolean)
-          .join("\n\n"),
+        text: result,
       }).catch(() => {});
     }
   } catch (error: any) {
     task.lastError = String(
       error?.message || error || "cron_task_failed",
     ).trim();
-    if (task.chatKey) {
-      await sendKoishiText(options.agentDir, {
-        chatKey: task.chatKey,
-        taskId: task.id,
-        runId,
-        text: `[Scheduled task${task.name ? `: ${task.name}` : ""}] failed\n\n${task.lastError}`,
-      }).catch(() => {});
-    }
   } finally {
     task.running = false;
     task.lastFinishedAt = nowIso();

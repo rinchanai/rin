@@ -258,11 +258,10 @@ export async function createConfiguredAgentSession(
 ) {
   const codingAgentModule = await loadRinCodingAgent();
   const {
-    createAgentSession,
-    DefaultResourceLoader,
-    SettingsManager,
-    AuthStorage,
-    ModelRegistry,
+    createAgentSessionRuntime,
+    createAgentSessionServices,
+    createAgentSessionFromServices,
+    SessionManager,
   } = codingAgentModule as any;
 
   const { cwd, agentDir } = resolveRuntimeProfile({
@@ -272,53 +271,103 @@ export async function createConfiguredAgentSession(
 
   applyRuntimeProfileEnvironment({ agentDir });
 
-  if (process.cwd() !== cwd) {
-    process.chdir(cwd);
-  }
+  const initialSessionManager =
+    options.sessionManager ||
+    SessionManager.create(cwd, getRuntimeSessionDir(cwd, agentDir));
 
-  const settingsManager = SettingsManager.create(cwd, agentDir);
-  const resourceLoader = new DefaultResourceLoader({
-    cwd,
+  const createRuntime = async ({
+    cwd: runtimeCwd,
+    agentDir: runtimeAgentDir,
+    sessionManager,
+    sessionStartEvent,
+  }: {
+    cwd: string;
+    agentDir: string;
+    sessionManager: any;
+    sessionStartEvent?: any;
+  }) => {
+    if (process.cwd() !== runtimeCwd) {
+      process.chdir(runtimeCwd);
+    }
+    applyRuntimeProfileEnvironment({ agentDir: runtimeAgentDir });
+
+    const services = await createAgentSessionServices({
+      cwd: runtimeCwd,
+      agentDir: runtimeAgentDir,
+      resourceLoaderOptions: {
+        additionalExtensionPaths: options.additionalExtensionPaths ?? [],
+      },
+    });
+
+    let resolvedModel: any = undefined;
+    const modelRef = String(options.modelRef || "").trim();
+    if (modelRef) {
+      const slash = modelRef.indexOf("/");
+      if (slash <= 0 || slash >= modelRef.length - 1) {
+        throw new Error(`invalid_model_ref:${modelRef}`);
+      }
+      const provider = modelRef.slice(0, slash);
+      const modelId = modelRef.slice(slash + 1);
+      resolvedModel = services.modelRegistry.find(provider, modelId);
+      if (!resolvedModel) throw new Error(`unknown_model:${modelRef}`);
+      if (!services.modelRegistry.hasConfiguredAuth(resolvedModel)) {
+        throw new Error(`No API key for ${modelRef}`);
+      }
+    }
+
+    const result = await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+      model: resolvedModel,
+      thinkingLevel: options.thinkingLevel,
+    });
+
+    applyRinPromptBuilder(result.session);
+    return {
+      ...result,
+      services,
+      diagnostics: services.diagnostics,
+    };
+  };
+
+  const runtime = await createAgentSessionRuntime(createRuntime, {
+    cwd: initialSessionManager.getCwd?.() || cwd,
     agentDir,
-    settingsManager,
-    additionalExtensionPaths: options.additionalExtensionPaths ?? [],
+    sessionManager: initialSessionManager,
   });
-  await resourceLoader.reload();
 
-  const authStorage = AuthStorage.create(path.join(agentDir, "auth.json"));
-  const modelRegistry = new ModelRegistry(
-    authStorage,
-    path.join(agentDir, "models.json"),
+  const session: any = new Proxy(
+    {},
+    {
+      get(_target, prop) {
+        if (prop === "runtime") return runtime;
+        if (prop === "newSession") return runtime.newSession.bind(runtime);
+        if (prop === "switchSession")
+          return runtime.switchSession.bind(runtime);
+        if (prop === "fork") return runtime.fork.bind(runtime);
+        if (prop === "importFromJsonl")
+          return runtime.importFromJsonl.bind(runtime);
+        if (prop === "dispose") return runtime.dispose.bind(runtime);
+        const current = runtime.session as any;
+        const value = current?.[prop as any];
+        return typeof value === "function" ? value.bind(current) : value;
+      },
+      set(_target, prop, value) {
+        const current = runtime.session as any;
+        current[prop as any] = value;
+        return true;
+      },
+      has(_target, prop) {
+        return prop in (runtime.session as any);
+      },
+    },
   );
 
-  let resolvedModel: any = undefined;
-  const modelRef = String(options.modelRef || "").trim();
-  if (modelRef) {
-    const slash = modelRef.indexOf("/");
-    if (slash <= 0 || slash >= modelRef.length - 1) {
-      throw new Error(`invalid_model_ref:${modelRef}`);
-    }
-    const provider = modelRef.slice(0, slash);
-    const modelId = modelRef.slice(slash + 1);
-    resolvedModel = modelRegistry.find(provider, modelId);
-    if (!resolvedModel) throw new Error(`unknown_model:${modelRef}`);
-    if (!modelRegistry.hasConfiguredAuth(resolvedModel)) {
-      throw new Error(`No API key for ${modelRef}`);
-    }
-  }
-
-  const result = await createAgentSession({
-    cwd,
-    agentDir,
-    settingsManager,
-    resourceLoader,
-    sessionManager: options.sessionManager,
-    authStorage,
-    modelRegistry,
-    model: resolvedModel,
-    thinkingLevel: options.thinkingLevel,
-  });
-
-  applyRinPromptBuilder(result.session);
-  return result;
+  return {
+    session,
+    runtime,
+    extensionsResult: runtime.session.resourceLoader.getExtensions(),
+    modelFallbackMessage: runtime.modelFallbackMessage,
+  };
 }
