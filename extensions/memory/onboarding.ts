@@ -68,13 +68,13 @@ export function buildOnboardingPrompt(
     "If the user already provided information from later steps early, remember it and use it; do not force redundant questions.",
     "When a stable fact becomes clear, proactively call memory to save or update it.",
     "For onboarding or preference updates, first use the memory tool to inspect or resolve the target slot/doc instead of acting from assumptions about the underlying files.",
-    "Use resident slots:",
+    "Use memory prompt slots:",
     "- agent_identity = assistant name/identity/relationship framing",
     "- owner_identity = user name/addressing/stable identity cues",
     "- core_voice_style = default language, tone, brevity, and chat style",
     "Prefer updating existing memory over creating duplicates.",
-    "Stable global work-method preferences, methodology, and values belong in always-on memory, not recall-only memory.",
-    "Once those three resident slots are established clearly enough, stop onboarding and continue normally.",
+    "Stable global work-method preferences, methodology, and values belong in always-on memory prompts, not only in detailed memory docs.",
+    "Once those three memory prompt slots are established clearly enough, stop onboarding and continue normally.",
   ].join("\n");
 }
 
@@ -95,8 +95,8 @@ export async function getOnboardingStatus(
 ) {
   const service = await loadMemoryService();
   const doctor = await service.doctorMemory(resolveAgentDir());
-  const missing = Array.isArray(doctor?.resident_missing_slots)
-    ? doctor.resident_missing_slots
+  const missing = Array.isArray(doctor?.missing_memory_prompt_slots)
+    ? doctor.missing_memory_prompt_slots
     : [];
   const requiredMissing = REQUIRED_INIT_SLOTS.filter((slot) =>
     missing.includes(slot),

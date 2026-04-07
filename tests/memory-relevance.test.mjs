@@ -24,12 +24,12 @@ test("memory relevance scores docs and relations", () => {
     name: "SearXNG search",
     description: "search stack searxng",
     content: "Use SearXNG search adapter",
-    resident_slot: "",
+    memory_prompt_slot: "",
     scope: "project",
     kind: "knowledge",
     tags: ["search"],
     aliases: [],
-    exposure: "recall",
+    exposure: "memory_docs",
     status: "active",
     canonical: false,
   };
@@ -45,20 +45,20 @@ test("memory relevance scores docs and relations", () => {
   assert.equal(relevance.shouldInjectRecentHistory("最近发生了什么"), true);
 });
 
-test("memory compile renders resident and recall context", () => {
+test("memory compile renders memory prompts and memory docs", () => {
   const docs = [
     {
       id: "voice",
       name: "Voice",
       description: "",
       content: "简洁自然",
-      resident_slot: "core_voice_style",
+      memory_prompt_slot: "core_voice_style",
       scope: "global",
       kind: "preference",
       tags: [],
       aliases: [],
       triggers: [],
-      exposure: "resident",
+      exposure: "memory_prompts",
       fidelity: "exact",
       status: "active",
       canonical: true,
@@ -69,12 +69,12 @@ test("memory compile renders resident and recall context", () => {
       name: "Search note",
       description: "Use SearXNG",
       content: "Keep SearXNG design.",
-      resident_slot: "",
+      memory_prompt_slot: "",
       scope: "project",
       kind: "knowledge",
       tags: ["search"],
       aliases: [],
-      exposure: "recall",
+      exposure: "memory_docs",
       fidelity: "fuzzy",
       status: "active",
       canonical: false,
@@ -88,6 +88,6 @@ test("memory compile renders resident and recall context", () => {
     { query: "searxng" },
     "/tmp/memory",
   );
-  assert.ok(out.resident.includes("[core_voice_style] 简洁自然"));
-  assert.ok(out.recall_context.includes("Search note"));
+  assert.ok(out.memory_prompt_context.includes("[core_voice_style] 简洁自然"));
+  assert.ok(out.memory_doc_context.includes("Search note"));
 });

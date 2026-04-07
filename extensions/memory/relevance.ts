@@ -18,7 +18,7 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
       doc.description,
       doc.content,
       doc.id,
-      doc.resident_slot,
+      doc.memory_prompt_slot,
       doc.scope,
       doc.kind,
       ...doc.tags,
@@ -37,9 +37,8 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
     if (haystack.includes(token)) score += 0.45;
   }
   if (doc.id === q) score += 6;
-  if (doc.resident_slot === q) score += 6;
-  if (doc.exposure === "progressive") score += 0.5;
-  if (doc.exposure === "resident") score += 0.2;
+  if (doc.memory_prompt_slot === q) score += 6;
+  if (doc.exposure === "memory_prompts") score += 0.2;
   if (doc.status !== "active") score -= 8;
   if (
     doc.tags.includes(CHRONICLE_TAG) &&

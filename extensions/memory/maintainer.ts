@@ -21,8 +21,8 @@ type MaintenanceOperation = {
   type?: "create" | "rewrite" | "supersede" | "invalidate";
   targetId?: string;
   title?: string;
-  exposure?: "resident" | "progressive" | "recall";
-  residentSlot?: string;
+  exposure?: "memory_prompts" | "memory_docs";
+  memoryPromptSlot?: string;
   summary?: string;
   content?: string;
   scope?: "global" | "domain" | "project" | "session";
@@ -48,8 +48,8 @@ Schema:
       "type": "create" | "rewrite" | "supersede" | "invalidate",
       "targetId": string,
       "title": string,
-      "exposure": "resident" | "progressive" | "recall",
-      "residentSlot": "agent_identity" | "owner_identity" | "core_voice_style" | "core_methodology" | "core_values",
+      "exposure": "memory_prompts" | "memory_docs",
+      "memoryPromptSlot": "agent_identity" | "owner_identity" | "core_voice_style" | "core_methodology" | "core_values",
       "summary": string,
       "content": string,
       "scope": "global" | "domain" | "project" | "session",
@@ -64,11 +64,10 @@ Schema:
 }
 
 Memory architecture:
-- resident: short always-on core baselines only.
-- progressive: important long-lived guidance that should be disclosed gradually.
-- recall: useful searchable memory that should not be prompt-resident by default.
+- memory_prompts: short always-on routing hints and core baselines only.
+- memory_docs: searchable detailed guidance, domain knowledge, and durable long-form memory.
 
-Resident slots are restricted to:
+Memory prompt slots are restricted to:
 - agent_identity
 - owner_identity
 - core_voice_style
@@ -86,9 +85,8 @@ Rules:
 - If a new cleaner doc should replace one or more older docs, use supersede and list replaced ids in supersedes.
 - If a doc is stale, duplicate, or low-value, use invalidate.
 - Use create only when genuinely new durable memory is warranted.
-- Resident docs must stay short and stable.
-- Progressive docs should capture durable guidance, not ephemeral task state.
-- Recall docs should stay useful and searchable.
+- Memory prompt docs must stay short and stable.
+- Memory docs should stay useful and searchable.
 - Do not invent facts not supported by the provided conversation or docs.
 - Favor updating or superseding existing docs over creating more docs.
 - Output valid JSON only.`;
@@ -162,7 +160,7 @@ async function extractSessionMemoryFromMessages(options: {
       { triggerTurn: false },
     );
     const prompt =
-      "Extract durable session memories using save_resident_memory when appropriate, and use save_memory to comprehensively capture concepts, relationships, skills, facts, and anything else that belongs in memory across separate topic documents.";
+      "Extract durable session memories using save_memory_prompt when appropriate, and use save_memory to comprehensively capture concepts, relationships, skills, facts, and anything else that belongs in memory across separate topic documents.";
     await session.prompt(prompt, {
       expandPromptTemplates: false,
       source: "extension",
@@ -197,7 +195,7 @@ function docsPrompt(docs: any[]): string {
       id: doc.id,
       title: doc.title,
       exposure: doc.exposure,
-      resident_slot: doc.resident_slot,
+      memory_prompt_slot: doc.memory_prompt_slot,
       summary: doc.summary,
       scope: doc.scope,
       kind: doc.kind,
@@ -245,7 +243,7 @@ function normalizeOperation(raw: any): MaintenanceOperation | null {
     targetId: safeString(raw?.targetId).trim(),
     title: safeString(raw?.title).trim(),
     exposure: safeString(raw?.exposure).trim() as any,
-    residentSlot: safeString(raw?.residentSlot).trim(),
+    memoryPromptSlot: safeString(raw?.memoryPromptSlot).trim(),
     summary: safeString(raw?.summary).trim(),
     content: safeString(raw?.content).trim(),
     scope: safeString(raw?.scope).trim() as any,
@@ -263,8 +261,8 @@ function normalizeOperation(raw: any): MaintenanceOperation | null {
 }
 
 async function saveDoc(service: any, params: Record<string, any>) {
-  return params.exposure === "resident"
-    ? await service.saveResidentMemoryDoc(params)
+  return params.exposure === "memory_prompts"
+    ? await service.saveMemoryPromptDoc(params)
     : await service.saveMemory(params);
 }
 
@@ -280,15 +278,13 @@ async function applyOperation(
       title: operation.title,
       content: operation.content,
       summary: operation.summary,
-      exposure: operation.exposure || "recall",
-      residentSlot:
-        operation.exposure === "resident" ? operation.residentSlot : "",
-      scope:
-        operation.scope ||
-        (operation.exposure === "progressive" ? "domain" : "project"),
-      kind:
-        operation.kind ||
-        (operation.exposure === "progressive" ? "instruction" : "fact"),
+      exposure: operation.exposure || "memory_docs",
+      memoryPromptSlot:
+        operation.exposure === "memory_prompts"
+          ? operation.memoryPromptSlot
+          : "",
+      scope: operation.scope || "project",
+      kind: operation.kind || "fact",
       tags: operation.tags || [],
       aliases: operation.aliases || [],
       triggers: operation.triggers || [],
@@ -316,9 +312,9 @@ async function applyOperation(
         : operation.content || existing.content,
     summary: operation.summary || existing.summary,
     exposure,
-    residentSlot:
-      exposure === "resident"
-        ? operation.residentSlot || existing.resident_slot
+    memoryPromptSlot:
+      exposure === "memory_prompts"
+        ? operation.memoryPromptSlot || existing.memory_prompt_slot
         : "",
     scope: operation.scope || existing.scope,
     kind: operation.kind || existing.kind,
@@ -346,7 +342,7 @@ async function applyOperation(
         content: oldDoc.content,
         summary: oldDoc.summary,
         exposure: oldDoc.exposure,
-        residentSlot: oldDoc.resident_slot,
+        memoryPromptSlot: oldDoc.memory_prompt_slot,
         scope: oldDoc.scope,
         kind: oldDoc.kind,
         tags: oldDoc.tags,
@@ -434,7 +430,7 @@ export async function maintainMemory(
         if (result?.cancelled) return { skipped: "fork-cancelled" };
       }
       const prompt =
-        "Extract durable session memories using save_resident_memory when appropriate, and use save_memory to comprehensively capture concepts, relationships, skills, facts, and anything else that belongs in memory across separate topic documents.";
+        "Extract durable session memories using save_memory_prompt when appropriate, and use save_memory to comprehensively capture concepts, relationships, skills, facts, and anything else that belongs in memory across separate topic documents.";
       await session.prompt(prompt, {
         expandPromptTemplates: false,
         source: "extension",
@@ -465,15 +461,16 @@ export async function maintainMemory(
   if (!batch.length && !transcript) return { skipped: "no-input" };
   const compiled = await service.compileMemory({
     query: transcript || "memory",
+    domainQuery: safeString(ctx.cwd || "").trim(),
   });
   const prompt = [
     `Maintenance mode: ${mode}`,
     "",
-    "Current resident memory:",
-    safeString(compiled?.resident || "").trim() || "(none)",
+    "Current memory prompts:",
+    safeString(compiled?.memory_prompt_context || "").trim() || "(none)",
     "",
-    "Current progressive index:",
-    safeString(compiled?.progressive_index || "").trim() || "(none)",
+    "Current relevant memory docs:",
+    safeString(compiled?.memory_doc_context || "").trim() || "(none)",
     "",
     "Current active memory docs:",
     docsPrompt(batch),

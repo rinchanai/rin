@@ -1,12 +1,3 @@
-function escapeXml(text: string): string {
-  return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
 function toTitleCase(text: string): string {
   return String(text || "")
     .split(/[_\s-]+/)
@@ -15,17 +6,19 @@ function toTitleCase(text: string): string {
     .join(" ");
 }
 
-function buildResidentMemoryPrompt(result: any): string {
-  const docs = Array.isArray(result?.resident_prompt_docs)
-    ? result.resident_prompt_docs
-    : Array.isArray(result?.resident_docs)
-      ? result.resident_docs
+function buildMemoryPromptBlock(result: any): string {
+  const docs = Array.isArray(result?.memory_prompt_prompt_docs)
+    ? result.memory_prompt_prompt_docs
+    : Array.isArray(result?.memory_prompt_docs)
+      ? result.memory_prompt_docs
       : [];
   if (!docs.length) return "";
-  const lines = ["## Resident Memory", ""];
+  const lines = ["## Memory Prompts", ""];
   for (const doc of docs) {
     const title = toTitleCase(
-      String(doc?.name || doc?.resident_slot || doc?.id || "Untitled").trim(),
+      String(
+        doc?.name || doc?.memory_prompt_slot || doc?.id || "Untitled",
+      ).trim(),
     );
     const body = String(doc?.content || doc?.preview || "").trim();
     const path = String(doc?.path || "").trim();
@@ -39,45 +32,10 @@ function buildResidentMemoryPrompt(result: any): string {
   return lines.join("\n").trim();
 }
 
-function buildProgressiveMemoryDescription(doc: any): string {
-  return String(doc?.description || "").trim();
-}
-
-function buildProgressiveMemoryPrompt(result: any): string {
-  const docs = Array.isArray(result?.progressive_docs)
-    ? result.progressive_docs
-    : [];
-  if (!docs.length) return "";
-  const lines = ["## Progressive Memory", "", "<available_memory>"];
-  for (const doc of docs) {
-    lines.push("  <memory>");
-    lines.push(
-      `    <name>${escapeXml(String(doc?.name || doc?.id || "Untitled"))}</name>`,
-    );
-    const description = buildProgressiveMemoryDescription(doc);
-    if (description) {
-      lines.push(`    <description>${escapeXml(description)}</description>`);
-    }
-    lines.push(
-      `    <location>${escapeXml(String(doc?.path || ""))}</location>`,
-    );
-    lines.push("  </memory>");
-  }
-  lines.push("</available_memory>");
-  return lines.join("\n").trim();
-}
-
 export function buildCompiledMemoryPrompt(result: any): string {
   const sections = [
-    buildResidentMemoryPrompt(result),
-    buildProgressiveMemoryPrompt(result),
-    [
-      "## Expanded Progressive Memory",
-      String(result?.progressive_expanded || "").trim(),
-    ]
-      .filter(Boolean)
-      .join("\n"),
-    ["## Relevant Recall", String(result?.recall_context || "").trim()]
+    buildMemoryPromptBlock(result),
+    ["## Relevant Memory Docs", String(result?.memory_doc_context || "").trim()]
       .filter(Boolean)
       .join("\n"),
   ].filter((body) => String(body || "").trim());
@@ -86,10 +44,9 @@ export function buildCompiledMemoryPrompt(result: any): string {
 }
 
 export function buildSystemPromptMemory(result: any): string {
-  const sections = [
-    buildResidentMemoryPrompt(result),
-    buildProgressiveMemoryPrompt(result),
-  ].filter((body) => String(body || "").trim());
+  const sections = [buildMemoryPromptBlock(result)].filter((body) =>
+    String(body || "").trim(),
+  );
   if (!sections.length) return "";
   return ["# Memory", ...sections].join("\n\n").trim();
 }
@@ -101,7 +58,7 @@ export function formatMemoryResult(action: string, response: any): string {
     return [
       `Memory documents (${rows.length}):`,
       ...rows.map((item: any) => {
-        const slot = String(item?.resident_slot || "").trim();
+        const slot = String(item?.memory_prompt_slot || "").trim();
         const tags =
           Array.isArray(item?.tags) && item.tags.length
             ? ` tags=${item.tags.join(",")}`
@@ -158,8 +115,8 @@ export function formatMemoryResult(action: string, response: any): string {
   if (action === "save")
     return `Saved memory: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
 
-  if (action === "save_resident")
-    return `Saved resident memory: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
+  if (action === "save_memory_prompt")
+    return `Saved memory prompt: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
 
   if (action === "compile")
     return (
@@ -173,10 +130,10 @@ export function formatMemoryResult(action: string, response: any): string {
       `- total docs: ${String(response?.total || 0)}`,
       `- active docs: ${String(response?.active_total || 0)}`,
       `- inactive docs: ${String(response?.inactive_total || 0)}`,
-      Array.isArray(response?.resident_missing_slots) &&
-      response.resident_missing_slots.length
-        ? `- missing resident slots: ${response.resident_missing_slots.join(", ")}`
-        : "- missing resident slots: none",
+      Array.isArray(response?.missing_memory_prompt_slots) &&
+      response.missing_memory_prompt_slots.length
+        ? `- missing memory prompt slots: ${response.missing_memory_prompt_slots.join(", ")}`
+        : "- missing memory prompt slots: none",
     ]
       .filter(Boolean)
       .join("\n");
@@ -197,7 +154,9 @@ export function formatMemoryAgentResult(action: string, response: any): string {
           String(item?.exposure || "").trim(),
           String(item?.scope || "").trim(),
           String(item?.kind || "").trim(),
-          item?.resident_slot ? `slot=${String(item.resident_slot)}` : "",
+          item?.memory_prompt_slot
+            ? `slot=${String(item.memory_prompt_slot)}`
+            : "",
           `path=${String(item?.path || "")}`,
         ]
           .filter(Boolean)
@@ -239,15 +198,13 @@ export function formatMemoryAgentResult(action: string, response: any): string {
   if (action === "save")
     return `memory save\npath=${String(response?.doc?.path || "")}`;
 
-  if (action === "save_resident")
-    return `memory save_resident\npath=${String(response?.doc?.path || "")}`;
+  if (action === "save_memory_prompt")
+    return `memory save_memory_prompt\npath=${String(response?.doc?.path || "")}`;
 
   if (action === "compile") {
     const sections = [
-      ["resident_docs", response?.resident_docs],
-      ["progressive_docs", response?.progressive_docs],
-      ["expanded_progressives", response?.expanded_progressives],
-      ["recall_docs", response?.recall_docs],
+      ["memory_prompts", response?.memory_prompt_docs],
+      ["memory_docs", response?.memory_docs],
     ].filter(([, value]) => Array.isArray(value) && value.length > 0) as Array<
       [string, any[]]
     >;
@@ -270,8 +227,8 @@ export function formatMemoryAgentResult(action: string, response: any): string {
       `root=${String(response?.root || "")}`,
       `total=${String(response?.total || 0)}`,
       `active=${String(response?.active_total || 0)}`,
-      Array.isArray(response?.resident_missing_slots)
-        ? `missing_slots=${response.resident_missing_slots.join(",")}`
+      Array.isArray(response?.missing_memory_prompt_slots)
+        ? `missing_slots=${response.missing_memory_prompt_slots.join(",")}`
         : "",
     ]
       .filter(Boolean)

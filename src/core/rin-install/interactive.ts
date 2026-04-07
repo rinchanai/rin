@@ -315,7 +315,7 @@ export function buildInstallSafetyBoundaryText() {
     "- Prompts, tool outputs, file contents, memory context, and search results may be sent to the active model/provider, so sensitive data may be exposed.",
     "",
     "Possible extra token overhead beyond your visible chat turns:",
-    "- prompt-resident memory blocks injected into normal turns",
+    "- memory prompt blocks injected into normal turns",
     "- the first-run /init onboarding conversation",
     "- memory extraction during session shutdown or `/new` handoff",
     "- episode synthesis during session shutdown or `/new` handoff",

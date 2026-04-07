@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
 
-import { MemoryDoc, RESIDENT_SLOTS } from "./core/types.js";
+import { MemoryDoc, MEMORY_PROMPT_SLOTS } from "./core/types.js";
 import {
   ensureExposure,
   ensureFidelity,
@@ -13,12 +13,13 @@ import {
 } from "./core/schema.js";
 import { compileFromDocsAndEvents } from "./compile.js";
 import {
-  assertResidentDoc,
+  assertMemoryPromptDoc,
   genericDocPath,
   loadMemoryDocs,
   loadMemoryDocsSync,
+  memoryPromptPath,
+  migrateLegacyMemoryLayout,
   previewDocs,
-  residentPath,
   writeMemoryDoc,
 } from "./docs.js";
 import { activeDocsOnly } from "./relevance.js";
@@ -40,7 +41,9 @@ export function resolveMemoryRoot(rootOverride = ""): string {
 }
 
 export async function ensureMemoryLayout(rootDir: string): Promise<void> {
-  for (const rel of ["resident", "progressive", "recall", "transcripts"]) {
+  await fs.mkdir(rootDir, { recursive: true });
+  await migrateLegacyMemoryLayout(rootDir);
+  for (const rel of ["memory_prompts", "memory_docs", "transcripts", "state"]) {
     await fs.mkdir(path.join(rootDir, rel), { recursive: true });
   }
 }
@@ -57,12 +60,15 @@ export async function listMemories(
 ) {
   const root = resolveMemoryRoot(rootOverride);
   await ensureMemoryLayout(root);
-  const exposureFilter = safeString(params.exposure || "").trim();
+  const exposureFilter = ensureExposure(
+    safeString(params.exposure || "memory_docs"),
+  );
   const scopeFilter = safeString(params.scope || "").trim();
   const kindFilter = safeString(params.kind || "").trim();
   const limit = Math.max(1, Number(params.limit || 200) || 200);
+  const hasExposureFilter = safeString(params.exposure || "").trim().length > 0;
   const results = (await loadActiveMemoryDocs(rootOverride))
-    .filter((doc) => !exposureFilter || doc.exposure === exposureFilter)
+    .filter((doc) => !hasExposureFilter || doc.exposure === exposureFilter)
     .filter((doc) => !scopeFilter || doc.scope === scopeFilter)
     .filter((doc) => !kindFilter || doc.kind === kindFilter)
     .sort((a, b) =>
@@ -79,7 +85,8 @@ export async function searchMemories(
 ) {
   const root = resolveMemoryRoot(rootOverride);
   await ensureMemoryLayout(root);
-  const exposureFilter = safeString(params.exposure || "").trim();
+  const exposureRaw = safeString(params.exposure || "").trim();
+  const exposureFilter = exposureRaw ? ensureExposure(exposureRaw) : "";
   const limit = Math.max(1, Number(params.limit || 8) || 8);
   const docs = activeDocsOnly(await loadMemoryDocs(root));
   const docResults = searchMemoryDocs(docs, query, {
@@ -105,7 +112,7 @@ export async function searchMemories(
   };
 }
 
-export async function saveResidentMemoryDoc(
+export async function saveMemoryPromptDoc(
   params: Record<string, any> = {},
   rootOverride = "",
 ) {
@@ -113,17 +120,20 @@ export async function saveResidentMemoryDoc(
   await ensureMemoryLayout(root);
   const content = safeString(params.content || "").trim();
   if (!content) throw new Error("memory_content_required");
-  const residentSlot = safeString(params.residentSlot || "").trim();
+  const memoryPromptSlot = safeString(
+    params.memoryPromptSlot || params.residentSlot || "",
+  ).trim();
   const doc: MemoryDoc = {
     id:
-      safeString(params.id || "").trim() || slugify(residentSlot, residentSlot),
+      safeString(params.id || "").trim() ||
+      slugify(memoryPromptSlot, memoryPromptSlot),
     name:
       safeString(params.name || "").trim() ||
-      residentSlot.replace(/_/g, " ") ||
-      "resident memory",
-    exposure: "resident",
+      memoryPromptSlot.replace(/_/g, " ") ||
+      "memory prompt",
+    exposure: "memory_prompts",
     fidelity: ensureFidelity(safeString(params.fidelity || "exact")),
-    resident_slot: residentSlot,
+    memory_prompt_slot: memoryPromptSlot,
     description: safeString(params.description || "").trim(),
     tags: normalizeList(params.tags || []),
     aliases: normalizeList(params.aliases || []),
@@ -137,12 +147,16 @@ export async function saveResidentMemoryDoc(
     status: ensureStatus(safeString(params.status || "active")),
     supersedes: normalizeList(params.supersedes || []),
     canonical: true,
-    path: residentPath(root, residentSlot),
+    path: memoryPromptPath(root, memoryPromptSlot),
     content,
   };
-  assertResidentDoc(doc);
+  assertMemoryPromptDoc(doc);
   await writeMemoryDoc(doc);
-  return { status: "ok", action: "save_resident", doc: previewMemoryDoc(doc) };
+  return {
+    status: "ok",
+    action: "save_memory_prompt",
+    doc: previewMemoryDoc(doc),
+  };
 }
 
 export async function saveMemory(
@@ -153,9 +167,9 @@ export async function saveMemory(
   await ensureMemoryLayout(root);
   const content = safeString(params.content || "").trim();
   if (!content) throw new Error("memory_content_required");
-  const exposure = ensureExposure(safeString(params.exposure || "recall"));
-  if (exposure === "resident") {
-    throw new Error("resident_memory_uses_save_resident_memory");
+  const exposure = ensureExposure(safeString(params.exposure || "memory_docs"));
+  if (exposure === "memory_prompts") {
+    throw new Error("memory_prompts_use_save_memory_prompt");
   }
   const name =
     safeString(params.name || "").trim() ||
@@ -167,9 +181,9 @@ export async function saveMemory(
   const doc: MemoryDoc = {
     id,
     name,
-    exposure,
+    exposure: "memory_docs",
     fidelity: ensureFidelity(safeString(params.fidelity || "fuzzy")),
-    resident_slot: "",
+    memory_prompt_slot: "",
     description: safeString(params.description || "").trim(),
     tags: normalizeList(params.tags || []),
     aliases: normalizeList(params.aliases || []),
@@ -183,7 +197,7 @@ export async function saveMemory(
     status: ensureStatus(safeString(params.status || "active")),
     supersedes: normalizeList(params.supersedes || []),
     canonical: false,
-    path: genericDocPath(root, exposure, id),
+    path: genericDocPath(root, "memory_docs", id),
     content,
   };
   await writeMemoryDoc(doc);
@@ -234,19 +248,24 @@ export async function doctorMemory(rootOverride = "") {
   await ensureMemoryLayout(root);
   const docs = await loadMemoryDocs(root);
   const activeDocs = activeDocsOnly(docs);
-  const counts = { resident: 0, progressive: 0, recall: 0 };
-  for (const doc of activeDocs) counts[doc.exposure] += 1;
+  const counts = { memory_prompts: 0, memory_docs: 0 };
+  for (const doc of activeDocs) {
+    if (doc.exposure === "memory_prompts") counts.memory_prompts += 1;
+    if (doc.exposure === "memory_docs") counts.memory_docs += 1;
+  }
   return {
     root,
-    resident_slots: RESIDENT_SLOTS,
+    memory_prompt_slots: MEMORY_PROMPT_SLOTS,
     counts,
     total: docs.length,
     active_total: activeDocs.length,
     inactive_total: docs.length - activeDocs.length,
-    resident_missing_slots: RESIDENT_SLOTS.filter(
+    missing_memory_prompt_slots: MEMORY_PROMPT_SLOTS.filter(
       (slot) =>
         !docs.some(
-          (doc) => doc.exposure === "resident" && doc.resident_slot === slot,
+          (doc) =>
+            doc.exposure === "memory_prompts" &&
+            doc.memory_prompt_slot === slot,
         ),
     ),
   };
@@ -265,8 +284,8 @@ export async function executeMemoryAction(
       rootOverride,
     );
   if (action === "save") return await saveMemory(params, rootOverride);
-  if (action === "save_resident")
-    return await saveResidentMemoryDoc(params, rootOverride);
+  if (action === "save_memory_prompt")
+    return await saveMemoryPromptDoc(params, rootOverride);
   if (action === "compile") return await compileMemory(params, rootOverride);
   if (action === "doctor") return await doctorMemory(rootOverride);
   throw new Error(`unsupported_memory_action:${action}`);

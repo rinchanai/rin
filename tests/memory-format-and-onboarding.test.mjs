@@ -19,19 +19,19 @@ const onboarding = await import(
 
 test("memory format builds compact compiled prompt", () => {
   const text = format.buildCompiledMemoryPrompt({
-    resident_prompt_docs: [
+    memory_prompt_prompt_docs: [
       {
         name: "Core Voice Style",
-        resident_slot: "core_voice_style",
+        memory_prompt_slot: "core_voice_style",
         path: "/tmp/core_voice_style.md",
         content: "简洁",
       },
     ],
-    recall_context: "- search note",
+    memory_doc_context: "- search note",
   });
   assert.ok(text.includes("# Memory"));
-  assert.ok(text.includes("## Resident Memory"));
-  assert.ok(text.includes("## Relevant Recall"));
+  assert.ok(text.includes("## Memory Prompts"));
+  assert.ok(text.includes("## Relevant Memory Docs"));
 });
 
 test("memory onboarding helper keeps hidden instructions and pending state", () => {

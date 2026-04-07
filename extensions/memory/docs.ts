@@ -5,8 +5,8 @@ import path from "node:path";
 import {
   MemoryDoc,
   MemoryExposure,
-  RESIDENT_LIMITS,
-  RESIDENT_SLOTS,
+  MEMORY_PROMPT_LIMITS,
+  MEMORY_PROMPT_SLOTS,
 } from "./core/types.js";
 import {
   parseMarkdownDoc,
@@ -71,12 +71,12 @@ export async function resolveMemoryDoc(
     return parseMarkdownDoc(abs, await fs.readFile(abs, "utf8"));
   const docs = await loadMemoryDocs(rootDir);
   return (
-    docs.find((doc) => doc.id === raw || doc.resident_slot === raw) || null
+    docs.find((doc) => doc.id === raw || doc.memory_prompt_slot === raw) || null
   );
 }
 
-export function residentPath(rootDir: string, slot: string): string {
-  return path.join(rootDir, "resident", `${slot}.md`);
+export function memoryPromptPath(rootDir: string, slot: string): string {
+  return path.join(rootDir, "memory_prompts", `${slot}.md`);
 }
 
 export function genericDocPath(
@@ -85,26 +85,93 @@ export function genericDocPath(
   id: string,
   subgroup = "",
 ): string {
+  const base = exposure === "memory_prompts" ? "memory_prompts" : "memory_docs";
   return subgroup
-    ? path.join(rootDir, exposure, subgroup, `${id}.md`)
-    : path.join(rootDir, exposure, `${id}.md`);
+    ? path.join(rootDir, base, subgroup, `${id}.md`)
+    : path.join(rootDir, base, `${id}.md`);
 }
 
-export function assertResidentDoc(doc: MemoryDoc): void {
-  const slot = safeString(doc.resident_slot).trim();
-  if (!RESIDENT_SLOTS.includes(slot as any))
-    throw new Error(`resident_slot_required:${RESIDENT_SLOTS.join(",")}`);
-  const limits = RESIDENT_LIMITS[slot];
-  if (!limits) throw new Error(`resident_slot_invalid:${slot}`);
+export function assertMemoryPromptDoc(doc: MemoryDoc): void {
+  const slot = safeString(doc.memory_prompt_slot).trim();
+  if (!MEMORY_PROMPT_SLOTS.includes(slot as any))
+    throw new Error(
+      `memory_prompt_slot_required:${MEMORY_PROMPT_SLOTS.join(",")}`,
+    );
+  const limits = MEMORY_PROMPT_LIMITS[slot];
+  if (!limits) throw new Error(`memory_prompt_slot_invalid:${slot}`);
   if (!limits.fidelity.includes(doc.fidelity))
-    throw new Error(`resident_fidelity_invalid:${slot}:${doc.fidelity}`);
+    throw new Error(`memory_prompt_fidelity_invalid:${slot}:${doc.fidelity}`);
   if (safeString(doc.content).trim().length > limits.maxChars)
-    throw new Error(`resident_content_too_long:${slot}:${limits.maxChars}`);
+    throw new Error(
+      `memory_prompt_content_too_long:${slot}:${limits.maxChars}`,
+    );
 }
 
 export async function writeMemoryDoc(doc: MemoryDoc) {
   await fs.mkdir(path.dirname(doc.path), { recursive: true });
   await fs.writeFile(doc.path, renderMarkdownDoc(doc), "utf8");
+}
+
+export async function migrateLegacyMemoryLayout(rootDir: string) {
+  const legacyResidentDir = path.join(rootDir, "resident");
+  const legacyProgressiveDir = path.join(rootDir, "progressive");
+  const legacyRecallDir = path.join(rootDir, "recall");
+  const nextPromptDir = path.join(rootDir, "memory_prompts");
+  const nextDocsDir = path.join(rootDir, "memory_docs");
+
+  const migrateFiles = async (
+    files: string[],
+    transform: (doc: MemoryDoc) => MemoryDoc,
+  ) => {
+    for (const filePath of files) {
+      const parsed = parseMarkdownDoc(
+        filePath,
+        await fs.readFile(filePath, "utf8"),
+      );
+      const next = transform(parsed);
+      await writeMemoryDoc(next);
+    }
+  };
+
+  if (fssync.existsSync(legacyResidentDir)) {
+    await fs.mkdir(nextPromptDir, { recursive: true });
+    const files = await walkMarkdownFiles(legacyResidentDir);
+    await migrateFiles(files, (doc) => {
+      const slot = safeString(
+        doc.memory_prompt_slot ||
+          path.basename(filePathFallback(doc.path), ".md"),
+      ).trim();
+      return {
+        ...doc,
+        exposure: "memory_prompts",
+        memory_prompt_slot: slot,
+        canonical: true,
+        path: memoryPromptPath(rootDir, slot),
+      };
+    });
+    await fs.rm(legacyResidentDir, { recursive: true, force: true });
+  }
+
+  const migrateLegacyDocDir = async (dirPath: string) => {
+    if (!fssync.existsSync(dirPath)) return;
+    await fs.mkdir(nextDocsDir, { recursive: true });
+    const files = await walkMarkdownFiles(dirPath);
+    await migrateFiles(files, (doc) => ({
+      ...doc,
+      exposure: "memory_docs",
+      memory_prompt_slot: "",
+      canonical: false,
+      path: genericDocPath(rootDir, "memory_docs", doc.id),
+    }));
+    await fs.rm(dirPath, { recursive: true, force: true });
+  };
+
+  await migrateLegacyDocDir(legacyProgressiveDir);
+  await migrateLegacyDocDir(legacyRecallDir);
+}
+
+function filePathFallback(filePath: string) {
+  return safeString(filePath).trim() || "memory.md";
 }
 
 export function previewDocs(docs: MemoryDoc[]) {

@@ -20,11 +20,13 @@ import {
   isOnboardingActive,
   markOnboardingPrompted,
   refreshOnboardingCompletion,
+  resolveAgentDir,
+  loadMemoryService,
 } from "./lib.js";
 import { resolveMemoryDoc } from "./docs.js";
 import {
   buildMemoryDraftDoc,
-  refineResidentSlot,
+  refineMemoryPromptSlot,
   writeMemoryDocWithSkillCreator,
 } from "./processing.js";
 import { appendTranscriptArchiveEntry } from "./transcripts.js";
@@ -156,9 +158,9 @@ const saveMemoryParams = Type.Object({
   content: Type.String({ description: "Memory content." }),
   description: Type.Optional(Type.String()),
   exposure: Type.Optional(
-    Type.Union([Type.Literal("progressive"), Type.Literal("recall")], {
+    Type.Literal("memory_docs", {
       description:
-        "Optional memory layer. Allowed values: `progressive` or `recall`.",
+        "Optional memory layer. Normal searchable memory uses `memory_docs`.",
     }),
   ),
   tags: Type.Optional(Type.Array(Type.String())),
@@ -211,8 +213,8 @@ const saveMemoryParams = Type.Object({
   source: Type.Optional(Type.String()),
 });
 
-const saveResidentMemoryParams = Type.Object({
-  residentSlot: Type.Union(
+const saveMemoryPromptParams = Type.Object({
+  memoryPromptSlot: Type.Union(
     [
       Type.Literal("agent_identity"),
       Type.Literal("owner_identity"),
@@ -222,10 +224,10 @@ const saveResidentMemoryParams = Type.Object({
     ],
     {
       description:
-        "Resident slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
+        "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
     },
   ),
-  content: Type.String({ description: "New resident memory entry." }),
+  content: Type.String({ description: "New memory prompt entry." }),
   source: Type.Optional(Type.String()),
 });
 
@@ -319,31 +321,31 @@ async function executeSaveMemoryAction(
   }
 }
 
-async function executeSaveResidentMemoryAction(
+async function executeSaveMemoryPromptAction(
   params: any,
   ctx: any,
   currentThinkingLevel: any,
 ) {
   try {
-    const refined = await refineResidentSlot({
+    const refined = await refineMemoryPromptSlot({
       ctx,
       currentThinkingLevel,
-      residentSlot: params.residentSlot,
+      memoryPromptSlot: params.memoryPromptSlot,
       incomingContent: params.content,
       rootDir: String(ctx?.agentDir || "").trim(),
     });
     const response = await executeMemoryTool({
-      action: "save_resident",
-      residentSlot: params.residentSlot,
+      action: "save_memory_prompt",
+      memoryPromptSlot: params.memoryPromptSlot,
       name: refined.name,
       content: refined.content,
       source: params.source,
     });
     const prepared = await prepareToolTextOutput({
-      agentText: `memory save_resident\npath=${String(response?.doc?.path || refined.path || "")}`,
-      userText: `Saved resident memory: ${String(response?.doc?.name || refined.name || params.residentSlot)}\n${String(response?.doc?.path || refined.path || "")}`,
+      agentText: `memory save_memory_prompt\npath=${String(response?.doc?.path || refined.path || "")}`,
+      userText: `Saved memory prompt: ${String(response?.doc?.name || refined.name || params.memoryPromptSlot)}\n${String(response?.doc?.path || refined.path || "")}`,
       tempPrefix: "rin-memory-",
-      filename: "memory-save-resident.txt",
+      filename: "memory-save-memory-prompt.txt",
     });
     return {
       content: [{ type: "text" as const, text: prepared.agentText }],
@@ -351,7 +353,7 @@ async function executeSaveResidentMemoryAction(
     };
   } catch (error: any) {
     const message = String(
-      error?.message || error || "resident_memory_action_failed",
+      error?.message || error || "memory_prompt_action_failed",
     );
     return {
       content: [{ type: "text" as const, text: message }],
@@ -359,7 +361,7 @@ async function executeSaveResidentMemoryAction(
         ok: false,
         error: message,
         agentText: message,
-        userText: `Resident memory 操作失败：${message}`,
+        userText: `Memory prompt 操作失败：${message}`,
       },
       isError: true,
     };
@@ -383,7 +385,8 @@ export default function memoryExtension(pi: ExtensionAPI) {
       "Search long-term memory. Returns matching paths and metadata first.",
     promptSnippet: "Search long-term memory.",
     promptGuidelines: [
-      "Use search_memory to search memory files and read them.",
+      "Use search_memory proactively before substantial work.",
+      "Search both the immediate task and the broader domain.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params) =>
@@ -397,7 +400,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
     description: "Persist memory documents.",
     promptSnippet: "Persist memory documents.",
     promptGuidelines: [
-      "Use save_memory for long-term information intended as standalone documents rather than resident system-prompt memories.",
+      "Use save_memory for detailed searchable memory documents.",
     ],
     parameters: saveMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
@@ -406,16 +409,16 @@ export default function memoryExtension(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "save_resident_memory",
-    label: "Save Resident Memory",
-    description: "Persist memories into system prompt.",
-    promptSnippet: "Persist memories into system prompt.",
+    name: "save_memory_prompt",
+    label: "Save Memory Prompt",
+    description: "Persist short always-on memory prompts.",
+    promptSnippet: "Persist short always-on memory prompts.",
     promptGuidelines: [
-      "Use save_resident_memory for agent identity, owner identity, core voice style, core methodology, or core values when the information should be known or followed in most situations and can be expressed in a single sentence.",
+      "Use save_memory_prompt for short global routing hints like agent identity, owner identity, core voice style, core methodology, or core values.",
     ],
-    parameters: saveResidentMemoryParams,
+    parameters: saveMemoryPromptParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
-      await executeSaveResidentMemoryAction(params, ctx, pi.getThinkingLevel()),
+      await executeSaveMemoryPromptAction(params, ctx, pi.getThinkingLevel()),
     renderResult: renderMemoryResult,
   });
 
@@ -478,7 +481,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
   pi.registerCommand("init", {
     description: "Start or restart memory onboarding conversation.",
     handler: async (_args, ctx) => {
-      await markOnboardingPrompted("manual:/init");
+      await markOnboardingPrompted(resolveAgentDir, "manual:/init");
       ctx.ui.notify(
         ctx.isIdle()
           ? "Memory onboarding started."
@@ -515,13 +518,14 @@ export default function memoryExtension(pi: ExtensionAPI) {
       !installerAutoInitConsumed &&
       String(process.env.RIN_INSTALL_AUTO_INIT || "").trim() === "1"
     ) {
-      await markOnboardingPrompted("auto:installer");
+      await markOnboardingPrompted(resolveAgentDir, "auto:installer");
       installerAutoInitConsumed = true;
       process.env.RIN_INSTALL_AUTO_INIT = "";
     }
-    await refreshOnboardingCompletion();
+    await refreshOnboardingCompletion(resolveAgentDir, loadMemoryService);
     const { systemPrompt } = await compilePromptMemory(
       String(event?.prompt || ""),
+      String(ctx?.cwd || ""),
     );
     const blocks: string[] = [];
     if (
@@ -529,8 +533,8 @@ export default function memoryExtension(pi: ExtensionAPI) {
       !String(event.systemPrompt || "").includes(systemPrompt)
     )
       blocks.push(systemPrompt);
-    const onboarding = getOnboardingState();
-    if (isOnboardingActive(onboarding)) {
+    const onboarding = getOnboardingState(resolveAgentDir);
+    if (isOnboardingActive(resolveAgentDir, onboarding)) {
       blocks.push(
         buildOnboardingPrompt(
           String(onboarding.lastTrigger || "").startsWith("auto:")
