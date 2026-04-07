@@ -114,10 +114,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     "Each memory document should contain only one topic; when multiple topics are related, prefer designing an index document to build a tree structure and disclose only that index.",
   );
   addGuideline(
-    "Always search memory proactively before beginning substantial work.",
-  );
-  addGuideline(
-    "Search memory across all relevant scales, from precise task details to broader domain context.",
+    "Always search memory proactively before beginning substantial work, scanning across all relevant scales from precise task details to broader domain context.",
   );
   addGuideline(
     "Search the web proactively for latest, time-sensitive, version-sensitive, or potentially changed information.",

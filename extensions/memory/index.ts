@@ -386,7 +386,6 @@ export default function memoryExtension(pi: ExtensionAPI) {
     promptSnippet: "Search long-term memory.",
     promptGuidelines: [
       "Use search_memory proactively before substantial work.",
-      "Search across all relevant scales, from precise task details to broader domain context.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params) =>
@@ -400,7 +399,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
     description: "Persist memory documents.",
     promptSnippet: "Persist memory documents.",
     promptGuidelines: [
-      "Use save_memory for detailed searchable memory documents that should be discovered through retrieval.",
+      "Use save_memory for detailed searchable memory documents that should be discovered through retrieval, keeping separate topics in separate documents.",
     ],
     parameters: saveMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>

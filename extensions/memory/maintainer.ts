@@ -160,7 +160,7 @@ async function extractSessionMemoryFromMessages(options: {
       { triggerTurn: false },
     );
     const prompt =
-      "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory. Choose each tool independently based on the role of the information, and keep separate topics in separate documents.";
+      "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory, keeping separate topics in separate documents.";
     await session.prompt(prompt, {
       expandPromptTemplates: false,
       source: "extension",
@@ -430,7 +430,7 @@ export async function maintainMemory(
         if (result?.cancelled) return { skipped: "fork-cancelled" };
       }
       const prompt =
-        "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory. Choose each tool independently based on the role of the information, and keep separate topics in separate documents.";
+        "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory, keeping separate topics in separate documents.";
       await session.prompt(prompt, {
         expandPromptTemplates: false,
         source: "extension",
