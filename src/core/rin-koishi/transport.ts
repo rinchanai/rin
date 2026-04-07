@@ -153,53 +153,6 @@ export async function messagePartToNode(part: ChatMessagePart, h: any) {
   );
 }
 
-export function planTelegramDeliveries(parts: ChatMessagePart[]) {
-  const normalized = Array.isArray(parts) ? parts.filter(Boolean) : [];
-  const assetCount = normalized.filter(
-    (part) => part.type === "image" || part.type === "file",
-  ).length;
-  const textLikeCount = normalized.filter(
-    (part) => part.type === "text" || part.type === "at",
-  ).length;
-  if (assetCount <= 1 || !textLikeCount) return [normalized];
-
-  const firstAssetIndex = normalized.findIndex(
-    (part) => part.type === "image" || part.type === "file",
-  );
-  const tailAssets =
-    firstAssetIndex >= 0 ? normalized.slice(firstAssetIndex) : normalized;
-  const prefixTextWithUniformAssets =
-    firstAssetIndex > 0 &&
-    normalized
-      .slice(0, firstAssetIndex)
-      .every((part) => part.type === "text" || part.type === "at") &&
-    tailAssets.every((part) => part.type === tailAssets[0]?.type);
-  if (prefixTextWithUniformAssets) {
-    return [normalized];
-  }
-
-  const leadTextParts = normalized.filter(
-    (part) => part.type === "text" || part.type === "at",
-  );
-  const assetBatches: ChatMessagePart[][] = [];
-  let currentBatch: ChatMessagePart[] = [];
-  let currentType = "";
-
-  for (const part of normalized) {
-    if (part.type !== "image" && part.type !== "file") continue;
-    if (currentBatch.length && currentType !== part.type) {
-      assetBatches.push(currentBatch);
-      currentBatch = [];
-    }
-    currentType = part.type;
-    currentBatch.push(part);
-  }
-  if (currentBatch.length) assetBatches.push(currentBatch);
-
-  if (!leadTextParts.length || !assetBatches.length) return [normalized];
-  return [leadTextParts, ...assetBatches];
-}
-
 export async function sendOutboxPayload(
   app: any,
   agentDir: string,
@@ -232,33 +185,28 @@ export async function sendOutboxPayload(
       `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
     );
 
-  const rawParts = Array.isArray(payload.parts) ? payload.parts : [];
-  const plannedBatches =
-    parsed.platform === "telegram"
-      ? planTelegramDeliveries(rawParts)
-      : [rawParts];
-  if (!plannedBatches.length) throw new Error("koishi_outbox_empty_message");
+  const rawParts = Array.isArray(payload.parts)
+    ? payload.parts.filter(Boolean)
+    : [];
+  if (!rawParts.length) throw new Error("koishi_outbox_empty_message");
 
-  let nextReplyToMessageId = safeString(payload.replyToMessageId).trim();
-  const loggedTexts: string[] = [];
-  for (const batch of plannedBatches) {
-    const nodes = (
-      await Promise.all(batch.map((part) => messagePartToNode(part, h)))
-    ).filter(Boolean);
-    if (!nodes.length) continue;
-    const batchText = batch
-      .filter((part) => part.type === "text")
-      .map((part) => safeString((part as any).text).trim())
-      .filter(Boolean)
-      .join("\n");
-    if (batchText) loggedTexts.push(batchText);
-    const content = nextReplyToMessageId
-      ? [h.quote(nextReplyToMessageId), ...nodes]
-      : nodes;
-    await sendBotMessage(bot, parsed.chatId, content);
-    nextReplyToMessageId = "";
-  }
-  const finalLoggedText = loggedTexts.join("\n\n").trim();
+  const nodes = (
+    await Promise.all(rawParts.map((part) => messagePartToNode(part, h)))
+  ).filter(Boolean);
+  if (!nodes.length) throw new Error("koishi_outbox_empty_message");
+
+  const replyToMessageId = safeString(payload.replyToMessageId).trim();
+  const content = replyToMessageId
+    ? [h.quote(replyToMessageId), ...nodes]
+    : nodes;
+  await sendBotMessage(bot, parsed.chatId, content);
+
+  const finalLoggedText = rawParts
+    .filter((part) => part.type === "text")
+    .map((part) => safeString((part as any).text).trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
   if (finalLoggedText) {
     appendKoishiChatLog(agentDir, {
       timestamp: new Date().toISOString(),
