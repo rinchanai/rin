@@ -726,6 +726,9 @@ export class RpcInteractiveSession {
 
   private async hydrateSettingsManager() {
     await hydrateRpcSettings(this.settingsManager, RUNTIME_PROFILE);
+    this.autoCompactionEnabled = Boolean(
+      this.settingsManager.getCompactionEnabled?.(),
+    );
   }
 
   private resetLocalSessionState() {
@@ -737,19 +740,6 @@ export class RpcInteractiveSession {
       return;
     const data = await this.call("new_session");
     if (data && data.cancelled) throw new Error("rin_new_session_cancelled");
-
-    if (this.model) {
-      await this.call("set_model", {
-        provider: this.model.provider,
-        modelId: this.model.id,
-      });
-    }
-    await this.call("set_thinking_level", { level: this.thinkingLevel });
-    await this.call("set_steering_mode", { mode: this.steeringMode });
-    await this.call("set_follow_up_mode", { mode: this.followUpMode });
-    await this.call("set_auto_compaction", {
-      enabled: this.autoCompactionEnabled,
-    });
 
     this.detachedBlankSession = false;
     await this.refreshState(REFRESH_ALL);

@@ -50,6 +50,9 @@ export async function hydrateRpcSettings(
     settingsManager.setFollowUpMode(
       settings.getFollowUpMode?.() || "one-at-a-time",
     );
+    settingsManager.setCompactionEnabled(
+      Boolean(settings.getCompactionEnabled?.()),
+    );
     const provider = String(settings.getDefaultProvider?.() || "");
     const modelId = String(settings.getDefaultModel?.() || "");
     if (provider && modelId)
