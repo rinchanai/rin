@@ -144,34 +144,9 @@ function summarizeTask(task: any) {
 }
 
 function summarizeTaskForAgent(task: any) {
-  const trigger =
-    task?.trigger?.kind === "interval"
-      ? `every=${String(task?.trigger?.intervalMs || 0)}ms`
-      : task?.trigger?.kind === "cron"
-        ? `cron=${String(task?.trigger?.expression || "")}`
-        : `once=${String(task?.trigger?.runAt || "")}`;
-  const target =
-    task?.target?.kind === "shell_command"
-      ? `command=${String(task?.target?.command || "")
-          .replace(/\s+/g, " ")
-          .trim()}`
-      : `agent_prompt=${String(task?.target?.prompt || "")
-          .replace(/\s+/g, " ")
-          .trim()}`;
-  return [
-    `${String(task?.id || "")}${task?.name ? ` | name=${String(task.name)}` : ""}`,
-    trigger,
-    target,
-    task?.chatKey ? `chat=${String(task.chatKey)}` : "",
-    `session=${String(task?.session?.mode || "")}${task?.session?.sessionFile ? `:${String(task.session.sessionFile)}` : task?.dedicatedSessionFile ? `:${String(task.dedicatedSessionFile)}` : ""}`,
-    task?.completedAt
-      ? `completed=${String(task.completedAt)}`
-      : task?.enabled === false
-        ? "disabled"
-        : `next=${String(task?.nextRunAt || "pending")}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const id = String(task?.id || "").trim();
+  const name = String(task?.name || "").trim();
+  return name || id || "unnamed_task";
 }
 
 function buildTexts(action: string, data: any, params: any) {

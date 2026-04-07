@@ -90,6 +90,9 @@ export async function loadRpcLocalExtensions(
 
   target.extensionRunner = runner;
   if (forceReload || result.extensions.length > 0) {
-    await runner.emit({ type: "session_start" });
+    await runner.emit({
+      type: "session_start",
+      reason: forceReload ? "reload" : "startup",
+    });
   }
 }

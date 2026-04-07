@@ -446,8 +446,8 @@ export default function memoryExtension(pi: ExtensionAPI) {
     });
   });
 
-  pi.on("session_compact", async (_event, ctx) => {
-    await ctx.reload();
+  pi.on("session_compact", async () => {
+    pi.sendUserMessage("/reload", { deliverAs: "followUp" });
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -461,7 +461,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
     );
   });
 
-  pi.on("session_switch", async (event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
     if (event?.reason !== "new") return;
     const previousSessionFile = String(event?.previousSessionFile || "").trim();
     if (!previousSessionFile) return;
@@ -470,7 +470,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
       loadMessagesFromSessionFile(previousSessionFile),
       {
         sessionFile: previousSessionFile,
-        trigger: "extension:session_switch_new_maintainer",
+        trigger: "extension:session_start_new_maintainer",
       },
     );
   });

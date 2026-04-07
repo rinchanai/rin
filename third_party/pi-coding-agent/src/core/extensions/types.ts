@@ -127,6 +127,9 @@ export interface ExtensionUIContext {
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 
+	/** Set the label shown for hidden thinking blocks. Call with no argument to restore default. */
+	setHiddenThinkingLabel(label?: string): void;
+
 	/** Set a widget to display above or below the editor. Accepts string array or component factory. */
 	setWidget(key: string, content: string[] | undefined, options?: ExtensionWidgetOptions): void;
 	setWidget(
@@ -282,8 +285,6 @@ export interface ExtensionContext {
 	hasPendingMessages(): boolean;
 	/** Gracefully shutdown pi and exit. Available in all contexts. */
 	shutdown(): void;
-	/** Reload runtime resources and rebuild the base system prompt. */
-	reload(): Promise<void>;
 	/** Get current context usage for the active model. */
 	getContextUsage(): ContextUsage | undefined;
 	/** Trigger compaction without awaiting completion. */
@@ -379,6 +380,9 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
 
+	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
+	prepareArguments?: (args: unknown) => Static<TParams>;
+
 	/** Execute the tool. */
 	execute(
 		toolCallId: string,
@@ -398,6 +402,21 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		theme: Theme,
 		context: ToolRenderContext<TState, Static<TParams>>,
 	) => Component;
+}
+
+type AnyToolDefinition = ToolDefinition<any, any, any>;
+
+/**
+ * Preserve parameter inference for standalone tool definitions.
+ *
+ * Use this when assigning a tool to a variable or passing it through arrays such
+ * as `customTools`, where contextual typing would otherwise widen params to
+ * `unknown`.
+ */
+export function defineTool<TParams extends TSchema, TDetails = unknown, TState = any>(
+	tool: ToolDefinition<TParams, TDetails, TState>,
+): ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition {
+	return tool;
 }
 
 // ============================================================================
@@ -422,15 +441,13 @@ export interface ResourcesDiscoverResult {
 // Session Events
 // ============================================================================
 
-/** Fired before session manager creation to allow custom session directory resolution */
-export interface SessionDirectoryEvent {
-	type: "session_directory";
-	cwd: string;
-}
-
-/** Fired on initial session load */
+/** Fired when a session is started, loaded, or reloaded */
 export interface SessionStartEvent {
 	type: "session_start";
+	/** Why this session start happened. */
+	reason: "startup" | "reload" | "new" | "resume" | "fork";
+	/** Previously active session file. Present for "new", "resume", and "fork". */
+	previousSessionFile?: string;
 }
 
 /** Fired before switching to another session (can be cancelled) */
@@ -440,23 +457,10 @@ export interface SessionBeforeSwitchEvent {
 	targetSessionFile?: string;
 }
 
-/** Fired after switching to another session */
-export interface SessionSwitchEvent {
-	type: "session_switch";
-	reason: "new" | "resume";
-	previousSessionFile: string | undefined;
-}
-
 /** Fired before forking a session (can be cancelled) */
 export interface SessionBeforeForkEvent {
 	type: "session_before_fork";
 	entryId: string;
-}
-
-/** Fired after forking a session */
-export interface SessionForkEvent {
-	type: "session_fork";
-	previousSessionFile: string | undefined;
 }
 
 /** Fired before context compaction (can be cancelled or customized) */
@@ -512,12 +516,9 @@ export interface SessionTreeEvent {
 }
 
 export type SessionEvent =
-	| SessionDirectoryEvent
 	| SessionStartEvent
 	| SessionBeforeSwitchEvent
-	| SessionSwitchEvent
 	| SessionBeforeForkEvent
-	| SessionForkEvent
 	| SessionBeforeCompactEvent
 	| SessionCompactEvent
 	| SessionShutdownEvent
@@ -913,16 +914,6 @@ export interface BeforeAgentStartEventResult {
 	systemPrompt?: string;
 }
 
-export interface SessionDirectoryResult {
-	/** Custom session directory path. If multiple extensions return this, the last one wins. */
-	sessionDir?: string;
-}
-
-/** Special startup-only handler. Unlike other events, this receives no ExtensionContext. */
-export type SessionDirectoryHandler = (
-	event: SessionDirectoryEvent,
-) => Promise<SessionDirectoryResult | undefined> | SessionDirectoryResult | undefined;
-
 export interface SessionBeforeSwitchResult {
 	cancel?: boolean;
 }
@@ -973,7 +964,7 @@ export interface RegisteredCommand {
 	name: string;
 	sourceInfo: SourceInfo;
 	description?: string;
-	getArgumentCompletions?: (argumentPrefix: string) => AutocompleteItem[] | null;
+	getArgumentCompletions?: (argumentPrefix: string) => AutocompleteItem[] | null | Promise<AutocompleteItem[] | null>;
 	handler: (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 }
 
@@ -998,15 +989,12 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	on(event: "resources_discover", handler: ExtensionHandler<ResourcesDiscoverEvent, ResourcesDiscoverResult>): void;
-	on(event: "session_directory", handler: SessionDirectoryHandler): void;
 	on(event: "session_start", handler: ExtensionHandler<SessionStartEvent>): void;
 	on(
 		event: "session_before_switch",
 		handler: ExtensionHandler<SessionBeforeSwitchEvent, SessionBeforeSwitchResult>,
 	): void;
-	on(event: "session_switch", handler: ExtensionHandler<SessionSwitchEvent>): void;
 	on(event: "session_before_fork", handler: ExtensionHandler<SessionBeforeForkEvent, SessionBeforeForkResult>): void;
-	on(event: "session_fork", handler: ExtensionHandler<SessionForkEvent>): void;
 	on(
 		event: "session_before_compact",
 		handler: ExtensionHandler<SessionBeforeCompactEvent, SessionBeforeCompactResult>,

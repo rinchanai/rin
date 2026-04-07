@@ -127,9 +127,7 @@ export async function runCustomRpcMode(
   await session.bindExtensions({
     commandContextActions: {
       waitForIdle: () => session.agent.waitForIdle(),
-      newSession: async (options) => ({
-        cancelled: !(await session.newSession(options)),
-      }),
+      newSession: async (options) => await session.newSession(options),
       fork: async (entryId) => ({
         cancelled: (await session.fork(entryId)).cancelled,
       }),
@@ -143,9 +141,8 @@ export async function runCustomRpcMode(
           })
         ).cancelled,
       }),
-      switchSession: async (sessionPath) => ({
-        cancelled: !(await session.switchSession(sessionPath)),
-      }),
+      switchSession: async (sessionPath) =>
+        await session.switchSession(sessionPath),
       reload: async () => {
         await session.reload();
       },
@@ -336,14 +333,14 @@ export async function runCustomRpcMode(
                 ? { parentSession: command.parentSession }
                 : undefined,
             ),
-          (value) => ({ cancelled: !value }),
+          (value) => ({ cancelled: Boolean(value?.cancelled) }),
         );
       case "switch_session":
         return run(
           id,
           type,
           () => session.switchSession(command.sessionPath),
-          (value) => ({ cancelled: !value }),
+          (value) => ({ cancelled: Boolean(value?.cancelled) }),
         );
       case "fork":
         return run(
