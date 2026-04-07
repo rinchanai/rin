@@ -22,8 +22,9 @@ import {
   writeMemoryDoc,
 } from "./docs.js";
 import { activeDocsOnly } from "./relevance.js";
-import { searchIndexedMemoryDocs } from "./search.js";
+import { searchIndexedMemoryDocsByRoot } from "./search.js";
 import { searchTranscriptArchive } from "./transcripts.js";
+import { syncMemoryDocIndex } from "./memory-doc-index.js";
 import {
   normalizeList,
   nowIso,
@@ -86,7 +87,7 @@ export async function searchMemories(
   const exposureRaw = safeString(params.exposure || "").trim();
   const exposureFilter = exposureRaw ? ensureExposure(exposureRaw) : "";
   const limit = Math.max(1, Number(params.limit || 8) || 8);
-  const docResults = searchIndexedMemoryDocs(root, query, {
+  const docResults = searchIndexedMemoryDocsByRoot(root, query, {
     limit,
     exposure: exposureFilter,
   }).map((row) => ({
@@ -203,6 +204,7 @@ export async function saveMemory(
     content,
   };
   await writeMemoryDoc(doc);
+  syncMemoryDocIndex(root);
   return { status: "ok", action: "save", doc: previewMemoryDoc(doc) };
 }
 
@@ -229,7 +231,7 @@ export async function compileMemory(
     : Array.from(
         new Map(
           queries.flatMap((needle) =>
-            searchIndexedMemoryDocs(root, needle, {
+            searchIndexedMemoryDocsByRoot(root, needle, {
               limit,
               exposure: "memory_docs",
             }).map((row) => [row.doc.id, row.doc] as const),
@@ -275,7 +277,7 @@ export function compileMemorySync(
     : Array.from(
         new Map(
           queries.flatMap((needle) =>
-            searchIndexedMemoryDocs(root, needle, {
+            searchIndexedMemoryDocsByRoot(root, needle, {
               limit,
               exposure: "memory_docs",
             }).map((row) => [row.doc.id, row.doc] as const),
