@@ -55,3 +55,38 @@ test("koishi transport restorePromptParts rebuilds image payloads from disk", as
     assert.equal(restored.images[0].mimeType, "image/png");
   });
 });
+
+test("koishi transport compacts mixed telegram text and multiple images into fewer batches", () => {
+  const batches = transport.planTelegramDeliveries([
+    { type: "text", text: "intro" },
+    { type: "text", text: "first" },
+    { type: "image", path: "/tmp/1.png" },
+    { type: "text", text: "second" },
+    { type: "image", path: "/tmp/2.png" },
+  ]);
+  assert.equal(batches.length, 2);
+  assert.deepEqual(
+    batches[0].map((part) => part.type),
+    ["text", "text", "text"],
+  );
+  assert.deepEqual(
+    batches[1].map((part) => part.type),
+    ["image", "image"],
+  );
+});
+
+test("koishi transport telegram compaction preserves asset-type order after stripping text labels", () => {
+  const batches = transport.planTelegramDeliveries([
+    { type: "text", text: "images" },
+    { type: "image", path: "/tmp/1.png" },
+    { type: "text", text: "files" },
+    { type: "file", path: "/tmp/a.txt", name: "a.txt" },
+    { type: "text", text: "more images" },
+    { type: "image", path: "/tmp/2.png" },
+  ]);
+  assert.equal(batches.length, 4);
+  assert.deepEqual(
+    batches.map((batch) => batch[0].type),
+    ["text", "image", "file", "image"],
+  );
+});
