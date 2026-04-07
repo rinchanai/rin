@@ -18,7 +18,6 @@ import {
   loadMemoryDocs,
   loadMemoryDocsSync,
   memoryPromptPath,
-  migrateLegacyMemoryLayout,
   previewDocs,
   writeMemoryDoc,
 } from "./docs.js";
@@ -42,7 +41,6 @@ export function resolveMemoryRoot(rootOverride = ""): string {
 
 export async function ensureMemoryLayout(rootDir: string): Promise<void> {
   await fs.mkdir(rootDir, { recursive: true });
-  await migrateLegacyMemoryLayout(rootDir);
   for (const rel of ["memory_prompts", "memory_docs", "transcripts", "state"]) {
     await fs.mkdir(path.join(rootDir, rel), { recursive: true });
   }

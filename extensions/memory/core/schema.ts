@@ -17,13 +17,8 @@ export function ensureExposure(
   fallback: MemoryExposure = "memory_docs",
 ): MemoryExposure {
   const normalized = safeString(value).trim();
-  if (normalized === "memory_prompts" || normalized === "memory_prompt")
-    return "memory_prompts";
-  if (normalized === "memory_docs" || normalized === "memory_doc")
-    return "memory_docs";
-  if (normalized === "resident") return "memory_prompts";
-  if (normalized === "progressive" || normalized === "recall" || !normalized)
-    return "memory_docs";
+  if (normalized === "memory_prompts") return "memory_prompts";
+  if (normalized === "memory_docs" || !normalized) return "memory_docs";
   return fallback;
 }
 
@@ -107,9 +102,7 @@ export function normalizeFrontmatter(
     safeString(frontmatterValue(raw, "exposure") || "memory_docs"),
   );
   const memoryPromptSlot = safeString(
-    frontmatterValue(raw, "memory_prompt_slot") ||
-      frontmatterValue(raw, "resident_slot") ||
-      "",
+    frontmatterValue(raw, "memory_prompt_slot") || "",
   ).trim();
   const name =
     safeString(raw.name || raw.title || "").trim() ||
