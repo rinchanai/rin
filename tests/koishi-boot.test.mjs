@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -24,6 +26,15 @@ test("koishi boot builds allowed command rows with help first", () => {
     ["help", "new", "model"],
   );
 });
+
+async function withTempDir(fn) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-koishi-boot-test-"));
+  try {
+    await fn(dir);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
 
 test("koishi boot clears common telegram scopes before syncing default commands", async () => {
   const deletes = [];
@@ -77,4 +88,49 @@ test("koishi boot clears common telegram scopes before syncing default commands"
       ],
     },
   ]);
+});
+
+test("koishi boot claims outbox files before sending so concurrent drains do not duplicate delivery", async () => {
+  await withTempDir(async (agentDir) => {
+    const outboxDir = path.join(agentDir, "data", "chat-outbox");
+    await fs.mkdir(outboxDir, { recursive: true });
+    await fs.writeFile(
+      path.join(outboxDir, "one.json"),
+      JSON.stringify({
+        type: "text_delivery",
+        chatKey: "telegram/1:2",
+        text: "hello",
+      }),
+    );
+
+    const sends = [];
+    const app = {
+      bots: [
+        {
+          platform: "telegram",
+          selfId: "1",
+          async sendMessage(chatId, content) {
+            sends.push({ chatId, content });
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            return ["m1"];
+          },
+        },
+      ],
+    };
+    const h = {
+      text(content) {
+        return { type: "text", attrs: { content } };
+      },
+      quote(id) {
+        return { type: "quote", attrs: { id } };
+      },
+    };
+
+    await Promise.all([
+      boot.drainKoishiOutbox(app, agentDir, h, { warn() {} }),
+      boot.drainKoishiOutbox(app, agentDir, h, { warn() {} }),
+    ]);
+
+    assert.equal(sends.length, 1);
+  });
 });
