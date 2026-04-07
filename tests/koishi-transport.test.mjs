@@ -95,23 +95,20 @@ test("koishi transport keeps local image parts as file urls instead of inlining 
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
     await fs.writeFile(imagePath, Buffer.from("abc"));
-    const h = Object.assign(
-      (type, attrs) => ({ type, attrs }),
-      {
-        image(src) {
-          return { type: "img", attrs: { src } };
-        },
-        text(content) {
-          return { type: "text", attrs: { content } };
-        },
-        at(id, options) {
-          return { type: "at", attrs: { id, ...options } };
-        },
-        file(src, mimeType, options) {
-          return { type: "file", attrs: { src, mimeType, ...options } };
-        },
+    const h = Object.assign((type, attrs) => ({ type, attrs }), {
+      image(src) {
+        return { type: "img", attrs: { src } };
       },
-    );
+      text(content) {
+        return { type: "text", attrs: { content } };
+      },
+      at(id, options) {
+        return { type: "at", attrs: { id, ...options } };
+      },
+      file(src, mimeType, options) {
+        return { type: "file", attrs: { src, mimeType, ...options } };
+      },
+    });
     const node = await transport.messagePartToNode(
       { type: "image", path: imagePath, mimeType: "image/png" },
       h,
