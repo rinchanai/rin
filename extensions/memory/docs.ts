@@ -112,68 +112,6 @@ export async function writeMemoryDoc(doc: MemoryDoc) {
   await fs.writeFile(doc.path, renderMarkdownDoc(doc), "utf8");
 }
 
-export async function migrateLegacyMemoryLayout(rootDir: string) {
-  const legacyResidentDir = path.join(rootDir, "resident");
-  const legacyProgressiveDir = path.join(rootDir, "progressive");
-  const legacyRecallDir = path.join(rootDir, "recall");
-  const nextPromptDir = path.join(rootDir, "memory_prompts");
-  const nextDocsDir = path.join(rootDir, "memory_docs");
-
-  const migrateFiles = async (
-    files: string[],
-    transform: (doc: MemoryDoc) => MemoryDoc,
-  ) => {
-    for (const filePath of files) {
-      const parsed = parseMarkdownDoc(
-        filePath,
-        await fs.readFile(filePath, "utf8"),
-      );
-      const next = transform(parsed);
-      await writeMemoryDoc(next);
-    }
-  };
-
-  if (fssync.existsSync(legacyResidentDir)) {
-    await fs.mkdir(nextPromptDir, { recursive: true });
-    const files = await walkMarkdownFiles(legacyResidentDir);
-    await migrateFiles(files, (doc) => {
-      const slot = safeString(
-        doc.memory_prompt_slot ||
-          path.basename(filePathFallback(doc.path), ".md"),
-      ).trim();
-      return {
-        ...doc,
-        exposure: "memory_prompts",
-        memory_prompt_slot: slot,
-        canonical: true,
-        path: memoryPromptPath(rootDir, slot),
-      };
-    });
-    await fs.rm(legacyResidentDir, { recursive: true, force: true });
-  }
-
-  const migrateLegacyDocDir = async (dirPath: string) => {
-    if (!fssync.existsSync(dirPath)) return;
-    await fs.mkdir(nextDocsDir, { recursive: true });
-    const files = await walkMarkdownFiles(dirPath);
-    await migrateFiles(files, (doc) => ({
-      ...doc,
-      exposure: "memory_docs",
-      memory_prompt_slot: "",
-      canonical: false,
-      path: genericDocPath(rootDir, "memory_docs", doc.id),
-    }));
-    await fs.rm(dirPath, { recursive: true, force: true });
-  };
-
-  await migrateLegacyDocDir(legacyProgressiveDir);
-  await migrateLegacyDocDir(legacyRecallDir);
-}
-
-function filePathFallback(filePath: string) {
-  return safeString(filePath).trim() || "memory.md";
-}
-
 export function previewDocs(docs: MemoryDoc[]) {
   return docs.map(previewMemoryDoc);
 }
