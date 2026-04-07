@@ -104,12 +104,8 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     addGuideline(deferredSaveMemoryGuideline);
   }
   addGuideline(
-    "Always use skill-creator (/home/rin/.rin/docs/rin/builtin-skills/skill-creator/SKILL.md) to maintain standard Agent Skills format memory documents.",
-  );
-  addGuideline(
     "Write all memory in English, keeping proper nouns untranslated.",
   );
-  addGuideline("All memory documents use the standard Agent Skills format.");
   addGuideline(
     "Each memory document should contain only one topic; when multiple topics are related, prefer designing an index document to build a tree structure and disclose only that index.",
   );

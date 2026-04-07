@@ -79,7 +79,7 @@ Rules:
 - Prefer [] over weak guesses.
 - Do not record one-off planning chatter or implementation noise.
 - Every memory file should stay focused on one topic.
-- Memory files should follow the standard Agent Skills style: a clear name, a clear description, and a markdown body.
+- Memory files should use a clear name, a clear description, and a markdown body.
 - When related files need structure, prefer creating an index doc instead of mixing topics into one file.
 - If an existing doc is bloated but still right, use rewrite.
 - If a new cleaner doc should replace one or more older docs, use supersede and list replaced ids in supersedes.

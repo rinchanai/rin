@@ -22,7 +22,7 @@ test("memory search query builder stays thin and preserves the query", () => {
   );
 });
 
-test("memory search delegates ranking to MiniSearch and returns the best match first", () => {
+test("memory search ranks SQLite FTS results and returns the best match first", () => {
   const docs = [
     {
       id: "reconnect-flicker",

@@ -22,7 +22,7 @@ import {
   writeMemoryDoc,
 } from "./docs.js";
 import { activeDocsOnly } from "./relevance.js";
-import { searchMemoryDocs } from "./search.js";
+import { searchIndexedMemoryDocs } from "./search.js";
 import { searchTranscriptArchive } from "./transcripts.js";
 import {
   normalizeList,
@@ -86,8 +86,7 @@ export async function searchMemories(
   const exposureRaw = safeString(params.exposure || "").trim();
   const exposureFilter = exposureRaw ? ensureExposure(exposureRaw) : "";
   const limit = Math.max(1, Number(params.limit || 8) || 8);
-  const docs = activeDocsOnly(await loadMemoryDocs(root));
-  const docResults = searchMemoryDocs(docs, query, {
+  const docResults = searchIndexedMemoryDocs(root, query, {
     limit,
     exposure: exposureFilter,
   }).map((row) => ({
@@ -176,6 +175,7 @@ export async function saveMemory(
   const id =
     safeString(params.id || "").trim() ||
     slugify(name, `memory-${sha(content).slice(0, 8)}`);
+  const requestedPath = safeString(params.path || "").trim();
   const doc: MemoryDoc = {
     id,
     name,
@@ -195,7 +195,11 @@ export async function saveMemory(
     status: ensureStatus(safeString(params.status || "active")),
     supersedes: normalizeList(params.supersedes || []),
     canonical: false,
-    path: genericDocPath(root, "memory_docs", id),
+    path: requestedPath
+      ? path.isAbsolute(requestedPath)
+        ? requestedPath
+        : path.join(root, requestedPath)
+      : genericDocPath(root, "memory_docs", id),
     content,
   };
   await writeMemoryDoc(doc);
@@ -209,11 +213,34 @@ export async function compileMemory(
   const root = resolveMemoryRoot(rootOverride);
   await ensureMemoryLayout(root);
   const docs = activeDocsOnly(await loadMemoryDocs(root));
+  const limit = Math.max(
+    0,
+    Number(params.memoryDocLimit == null ? 6 : params.memoryDocLimit) || 6,
+  );
+  const queries = Array.from(
+    new Set(
+      [safeString(params.query || ""), safeString(params.domainQuery || "")]
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+  const memoryDocs = !queries.length
+    ? []
+    : Array.from(
+        new Map(
+          queries.flatMap((needle) =>
+            searchIndexedMemoryDocs(root, needle, {
+              limit,
+              exposure: "memory_docs",
+            }).map((row) => [row.doc.id, row.doc] as const),
+          ),
+        ).values(),
+      ).slice(0, limit);
   return compileFromDocsAndEvents(
     docs,
     [],
     { updated_at: "", edges: [] },
-    params,
+    { ...params, memoryDocs },
     root,
   );
 }
@@ -232,11 +259,34 @@ export function compileMemorySync(
       root,
     );
   const docs = activeDocsOnly(loadMemoryDocsSync(root));
+  const limit = Math.max(
+    0,
+    Number(params.memoryDocLimit == null ? 6 : params.memoryDocLimit) || 6,
+  );
+  const queries = Array.from(
+    new Set(
+      [safeString(params.query || ""), safeString(params.domainQuery || "")]
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+  const memoryDocs = !queries.length
+    ? []
+    : Array.from(
+        new Map(
+          queries.flatMap((needle) =>
+            searchIndexedMemoryDocs(root, needle, {
+              limit,
+              exposure: "memory_docs",
+            }).map((row) => [row.doc.id, row.doc] as const),
+          ),
+        ).values(),
+      ).slice(0, limit);
   return compileFromDocsAndEvents(
     docs,
     [],
     { updated_at: "", edges: [] },
-    params,
+    { ...params, memoryDocs },
     root,
   );
 }
