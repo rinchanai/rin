@@ -11,6 +11,7 @@ import {
 
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { RpcInteractiveSession } from "./runtime.js";
+import { createRpcRuntimeHost } from "./runtime-host.js";
 import { applyRinTuiOverrides } from "./upstream-overrides.js";
 
 type TuiMode = "rpc" | "std";
@@ -96,10 +97,11 @@ export async function startTui(
 
   profile.mark("rpc-session-created");
 
+  const runtimeHost = createRpcRuntimeHost(rpcSession!);
   try {
-    const interactiveMode = new InteractiveMode(rpcSession as any);
+    const interactiveMode = new InteractiveMode(runtimeHost as any);
     await interactiveMode.run();
   } finally {
-    await rpcSession!.disconnect().catch(() => {});
+    await runtimeHost.dispose().catch(() => {});
   }
 }

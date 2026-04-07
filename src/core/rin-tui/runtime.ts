@@ -351,7 +351,7 @@ export class RpcInteractiveSession {
     return !Boolean(data?.cancelled);
   }
 
-  async switchSession(sessionPath: string) {
+  async switchSession(sessionPath: string, _cwdOverride?: string) {
     const data = await this.call("switch_session", { sessionPath });
     this.detachedBlankSession = false;
     await this.refreshState(REFRESH_ALL);
@@ -561,7 +561,7 @@ export class RpcInteractiveSession {
     return String(data?.path || "");
   }
 
-  async importFromJsonl(inputPath: string) {
+  async importFromJsonl(inputPath: string, _cwdOverride?: string) {
     const data = await this.call("import_jsonl", { inputPath });
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     return !Boolean(data?.cancelled);
