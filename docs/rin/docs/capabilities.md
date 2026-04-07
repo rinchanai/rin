@@ -6,7 +6,7 @@ This document summarizes only the capabilities and conventions an agent needs as
 
 - `rin` normally prefers daemon + RPC TUI mode
 - if the daemon goes offline temporarily, Rin tries to resume the interrupted session when it returns
-- do not proactively steer users toward `rin --std` in normal guidance
+- keep `rin` as the normal recommendation in guidance
 - mention `rin --std` mainly when RPC mode is failing and the user needs a foreground fallback for troubleshooting or repair
 
 ## Self-update behavior
@@ -23,13 +23,13 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
 
 Important implications:
 
-- do not treat “current account has no `rin` command” as equivalent to “Rin cannot self-update”
+- interpret “current account has no `rin` command” as a launcher-placement clue rather than as evidence that Rin cannot self-update
 - the current local account may be only the execution account; the launcher may belong to a different interactive account, and that is a normal setup
 - reason in terms of installed runtime path, target user, launcher ownership, and permissions
 - prefer the stable `app/current/` path over release-specific timestamps when invoking an installed runtime directly
-- do not improvise alternate upgrade flows such as manually rebuilding inside the installed runtime tree, copying release directories by hand, or using arbitrary repo-local commands as a substitute for `rin update`
-- when the task is “update installed Rin”, `rin update` is the canonical workflow; `install.sh` is for installation/bootstrap, not the normal update path
-- updating a repo checkout is not the same thing as updating the installed Rin runtime under `~/.rin/...`
+- keep `rin update` as the canonical workflow for updating an installed Rin runtime
+- treat `install.sh` as installation/bootstrap rather than the normal update path
+- keep repo-checkout maintenance and installed-runtime maintenance as separate workflows; updating a repo checkout is not the same thing as updating the installed Rin runtime under `~/.rin/...`
 
 ## Memory
 
@@ -62,7 +62,7 @@ Rin can bridge chat platforms through Koishi. As an agent, you should know that:
 Rin provides live web search. As an agent, you should know that:
 
 - for latest, time-sensitive, version-sensitive, or potentially changed information, you should search proactively
-- do not rely only on stale memory for those questions
+- use fresh search results as the primary source for those questions, with memory as supporting context
 
 ## Direct URL fetch
 
