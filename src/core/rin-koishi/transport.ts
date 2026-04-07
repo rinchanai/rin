@@ -30,6 +30,18 @@ export async function sendTyping(app: any, chatKey: string, h: any) {
   } catch {}
 }
 
+async function sendBotMessage(bot: any, chatId: string, content: any) {
+  const result = await bot.sendMessage(chatId, content);
+  if (!Array.isArray(result) || !result.length) {
+    throw new Error("koishi_send_message_empty_result");
+  }
+  return result;
+}
+
+function localAssetUrl(filePath: string) {
+  return toFileUrl(path.resolve(filePath)).href;
+}
+
 export async function sendText(
   app: any,
   chatKey: string,
@@ -48,7 +60,7 @@ export async function sendText(
   const content = replyToMessageId
     ? [h.quote(replyToMessageId), textNode]
     : [textNode];
-  await bot.sendMessage(parsed.chatId, content);
+  await sendBotMessage(bot, parsed.chatId, content);
 }
 
 export async function sendImageFile(
@@ -66,11 +78,14 @@ export async function sendImageFile(
     throw new Error(
       `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
     );
-  const buffer = await fs.promises.readFile(filePath);
+  const imageNode = h("image", {
+    src: localAssetUrl(filePath),
+    mimeType,
+  });
   const content = replyToMessageId
-    ? [h.quote(replyToMessageId), h.image(buffer, mimeType)]
-    : [h.image(buffer, mimeType)];
-  await bot.sendMessage(parsed.chatId, content);
+    ? [h.quote(replyToMessageId), imageNode]
+    : [imageNode];
+  await sendBotMessage(bot, parsed.chatId, content);
 }
 
 export async function sendGenericFile(
@@ -95,7 +110,7 @@ export async function sendGenericFile(
   const content = replyToMessageId
     ? [h.quote(replyToMessageId), fileNode]
     : [fileNode];
-  await bot.sendMessage(parsed.chatId, content);
+  await sendBotMessage(bot, parsed.chatId, content);
 }
 
 export async function messagePartToNode(part: ChatMessagePart, h: any) {
@@ -105,8 +120,10 @@ export async function messagePartToNode(part: ChatMessagePart, h: any) {
   if (part.type === "image") {
     const localPath = safeString(part.path).trim();
     if (localPath) {
-      const buffer = await fs.promises.readFile(path.resolve(localPath));
-      return h.image(buffer, safeString(part.mimeType).trim() || "image/png");
+      return h("image", {
+        src: localAssetUrl(localPath),
+        mimeType: safeString(part.mimeType).trim() || "image/png",
+      });
     }
     return h.image(safeString(part.url).trim());
   }
@@ -223,7 +240,7 @@ export async function sendOutboxPayload(
     const content = nextReplyToMessageId
       ? [h.quote(nextReplyToMessageId), ...nodes]
       : nodes;
-    await bot.sendMessage(parsed.chatId, content);
+    await sendBotMessage(bot, parsed.chatId, content);
     nextReplyToMessageId = "";
   }
   const finalLoggedText = loggedTexts.join("\n\n").trim();
