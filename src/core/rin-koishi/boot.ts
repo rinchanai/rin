@@ -102,20 +102,32 @@ export async function drainKoishiOutbox(
 ) {
   const outboxDir = chatOutboxDir(agentDir);
   const failedDir = path.join(outboxDir, "failed");
+  const processingDir = path.join(outboxDir, "processing");
   for (const filePath of listJsonFiles(outboxDir)) {
     let payload: any = null;
+    let claimedPath = "";
     try {
-      payload = readJsonFile<any>(filePath, null);
+      fs.mkdirSync(processingDir, { recursive: true });
+      claimedPath = path.join(processingDir, path.basename(filePath));
+      fs.renameSync(filePath, claimedPath);
+    } catch {
+      continue;
+    }
+    try {
+      payload = readJsonFile<any>(claimedPath, null);
       await sendOutboxPayload(app, agentDir, payload, h);
-      fs.rmSync(filePath, { force: true });
+      fs.rmSync(claimedPath, { force: true });
     } catch (error: any) {
       logger.warn(
-        `koishi outbox failed file=${filePath} err=${safeString(error?.message || error)}`,
+        `koishi outbox failed file=${claimedPath || filePath} err=${safeString(error?.message || error)}`,
       );
       try {
         fs.mkdirSync(failedDir, { recursive: true });
-        const failedPath = path.join(failedDir, path.basename(filePath));
-        fs.renameSync(filePath, failedPath);
+        const failedPath = path.join(
+          failedDir,
+          path.basename(claimedPath || filePath),
+        );
+        fs.renameSync(claimedPath || filePath, failedPath);
       } catch {}
     }
   }
