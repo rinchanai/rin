@@ -32,3 +32,55 @@ test("worker helpers split command args and format stats", () => {
   assert.ok(text.includes("Session ID: s1"));
   assert.ok(text.includes("Tool Calls: 2"));
 });
+
+test("runBuiltinCommand uses runtime for session replacement commands", async () => {
+  const calls = [];
+  const runtime = {
+    session: {
+      compact: async () => {
+        calls.push(["compact"]);
+      },
+      reload: async () => {
+        calls.push(["reload"]);
+      },
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: { getAvailable: async () => [] },
+      setModel: async () => {},
+      setThinkingLevel: async () => {},
+    },
+    newSession: async () => {
+      calls.push(["newSession"]);
+      return { cancelled: false };
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(["switchSession", sessionPath]);
+      return { cancelled: false };
+    },
+  };
+
+  const resultNew = await workerHelpers.runBuiltinCommand(runtime, "/new", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(resultNew.handled, true);
+
+  const resultResume = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/resume abc",
+    {
+      SessionManager: {
+        list: async () => [{ id: "abc", path: "/tmp/sessions/abc.jsonl" }],
+      },
+    },
+  );
+  assert.equal(resultResume.handled, true);
+  assert.match(resultResume.text, /Resumed session: abc/);
+
+  assert.deepEqual(calls, [
+    ["newSession"],
+    ["switchSession", "/tmp/sessions/abc.jsonl"],
+  ]);
+});
