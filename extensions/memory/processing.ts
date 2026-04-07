@@ -122,7 +122,8 @@ export function buildMemoryDraftDoc(options: {
   draft: GeneralMemoryDraft;
 }) {
   const root = resolveMemoryRoot(options.rootDir);
-  const exposure = "recall";
+  const exposure =
+    options.draft.exposure === "progressive" ? "progressive" : "recall";
   const name =
     safeString(options.draft.name || "").trim() ||
     safeString(options.draft.content || "")
@@ -135,7 +136,9 @@ export function buildMemoryDraftDoc(options: {
     ? safeString(options.draft.path).trim()
     : genericDocPath(root, exposure, id);
   const kind = safeString(options.draft.kind || "fact").trim() || "fact";
-  const scope = safeString(options.draft.scope || "").trim() || "project";
+  const scope =
+    safeString(options.draft.scope || "").trim() ||
+    (exposure === "progressive" ? "domain" : "project");
   const description = safeString(options.draft.description || "").trim();
   const content = safeString(options.draft.content || "").trim();
   const draftDoc = [
