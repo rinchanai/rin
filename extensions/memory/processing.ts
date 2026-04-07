@@ -190,7 +190,7 @@ export async function refineMemoryPromptSlot(options: {
     currentThinkingLevel: options.currentThinkingLevel,
     processingModel: settings.processingModel,
     prompt: [
-      "Refine the wording, merge duplicates, and resolve conflicts in favor of later items, returning only the final content.",
+      `Produce a short, stable, always-on routing cue for the ${slot} memory prompt slot. Keep it compact, durable, and easy to route from. Resolve conflicts in favor of later items. Return only the final content.`,
       appended,
     ].join("\n\n"),
   });

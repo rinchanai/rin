@@ -386,7 +386,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
     promptSnippet: "Search long-term memory.",
     promptGuidelines: [
       "Use search_memory proactively before substantial work.",
-      "Search both the immediate task and the broader domain.",
+      "Search across all relevant scales, from precise task details to broader domain context.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params) =>
@@ -400,7 +400,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
     description: "Persist memory documents.",
     promptSnippet: "Persist memory documents.",
     promptGuidelines: [
-      "Use save_memory for detailed searchable memory documents.",
+      "Use save_memory for detailed searchable memory documents that should be discovered through retrieval.",
     ],
     parameters: saveMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
@@ -414,7 +414,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
     description: "Persist short always-on memory prompts.",
     promptSnippet: "Persist short always-on memory prompts.",
     promptGuidelines: [
-      "Use save_memory_prompt for short global routing hints like agent identity, owner identity, core voice style, core methodology, or core values.",
+      "Use save_memory_prompt for short always-on routing cues or stable global baselines.",
     ],
     parameters: saveMemoryPromptParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
@@ -523,10 +523,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
       process.env.RIN_INSTALL_AUTO_INIT = "";
     }
     await refreshOnboardingCompletion(resolveAgentDir, loadMemoryService);
-    const { systemPrompt } = await compilePromptMemory(
-      String(event?.prompt || ""),
-      String(ctx?.cwd || ""),
-    );
+    const { systemPrompt } = await compilePromptMemory();
     const blocks: string[] = [];
     if (
       systemPrompt &&

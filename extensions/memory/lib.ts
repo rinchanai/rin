@@ -113,22 +113,6 @@ export async function executeMemoryTool(params: any) {
   return await service.executeMemoryAction(params, resolveAgentDir());
 }
 
-export function buildDomainQuery(prompt = "", cwd = "") {
-  const lower = `${String(prompt || "")} ${String(cwd || "")}`.toLowerCase();
-  const tags = new Set<string>();
-  if (
-    /\b(code|coding|program|programming|debug|bug|fix|refactor|test|build|compile|repo|commit|typescript|javascript|python|rust|go|java|c\+\+|c#)\b/.test(
-      lower,
-    ) ||
-    /\/(src|tests?|extensions|third_party)(\/|$)/.test(lower)
-  ) {
-    tags.add("programming coding software");
-  }
-  const base = path.basename(String(cwd || "").trim());
-  if (base) tags.add(base);
-  return [...tags].join(" ").trim();
-}
-
 export {
   buildOnboardingPrompt,
   formatMemoryAgentResult,
@@ -139,17 +123,9 @@ export {
   refreshOnboardingCompletion,
 };
 
-export async function compilePromptMemory(query = "", cwd = "") {
+export async function compilePromptMemory() {
   const service = await loadMemoryService();
-  const compiled = await service.compileMemory(
-    {
-      query,
-      domainQuery: buildDomainQuery(query, cwd),
-      memoryDocLimit: 6,
-      historyLimit: 3,
-    },
-    resolveAgentDir(),
-  );
+  const compiled = await service.compileMemory({}, resolveAgentDir());
   return {
     compiled,
     prompt: buildCompiledMemoryPrompt(compiled),
