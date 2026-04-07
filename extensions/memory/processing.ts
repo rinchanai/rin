@@ -5,24 +5,14 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { resolveAgentDir } from "./lib.js";
-import { safeString, sha, slugify } from "./core/utils.js";
+import { safeString } from "./core/utils.js";
 import { MEMORY_PROMPT_LIMITS, MEMORY_PROMPT_SLOTS } from "./core/types.js";
-import { genericDocPath, loadMemoryDocs, memoryPromptPath } from "./docs.js";
+import { loadMemoryDocs, memoryPromptPath } from "./docs.js";
 import { resolveMemoryRoot } from "./store.js";
 
 type MemoryProcessingSettings = {
   processingModel?: string;
   thinkingLevel?: ThinkingLevel;
-};
-
-export type GeneralMemoryDraft = {
-  name?: string;
-  description?: string;
-  content: string;
-  exposure?: "memory_docs";
-  scope?: "global" | "domain" | "project" | "session";
-  kind?: "skill" | "instruction" | "rule" | "fact" | "index";
-  path?: string;
 };
 
 function extractPlainText(text: string): string {
@@ -93,69 +83,6 @@ async function runMemoryProcessor(options: {
   );
   if (!output.trim()) throw new Error("memory_processing_empty_output");
   return { output, settings };
-}
-
-export function buildMemoryDraftDoc(options: {
-  rootDir: string;
-  draft: GeneralMemoryDraft;
-}) {
-  const root = resolveMemoryRoot(options.rootDir);
-  const exposure = "memory_docs";
-  const name =
-    safeString(options.draft.name || "").trim() ||
-    safeString(options.draft.content || "")
-      .split(/\r?\n/)[0]
-      .trim()
-      .slice(0, 80) ||
-    "memory";
-  const id = slugify(name, `memory-${sha(options.draft.content).slice(0, 8)}`);
-  const targetPath = safeString(options.draft.path || "").trim()
-    ? safeString(options.draft.path).trim()
-    : genericDocPath(root, exposure, id);
-  const kind = safeString(options.draft.kind || "fact").trim() || "fact";
-  const scope = safeString(options.draft.scope || "").trim() || "project";
-  const description = safeString(options.draft.description || "").trim();
-  const content = safeString(options.draft.content || "").trim();
-  const draftDoc = [
-    "---",
-    `name: ${name}`,
-    ...(description ? [`description: ${description}`] : []),
-    `exposure: ${exposure}`,
-    `kind: ${kind}`,
-    `scope: ${scope}`,
-    "---",
-    content,
-    "",
-  ].join("\n");
-  return {
-    root,
-    path: targetPath,
-    name,
-    description,
-    kind,
-    exposure,
-    scope,
-    content,
-    draftDoc,
-  };
-}
-
-export async function writeMemoryDocWithSkillCreator(options: {
-  ctx: any;
-  currentThinkingLevel: ThinkingLevel;
-  memoryRoot: string;
-  draftDoc: string;
-}) {
-  const settings = await resolveMemoryProcessingSettings(options.ctx);
-  const { output } = await runMemoryProcessor({
-    ctx: options.ctx,
-    currentThinkingLevel: options.currentThinkingLevel,
-    processingModel: settings.processingModel,
-    prompt: `Use the draft below to update the most relevant existing memory document or create a new one under ${options.memoryRoot}. Output only the saved file path.\n\nDraft:\n${options.draftDoc}`,
-  });
-  return {
-    output: extractPlainText(output),
-  };
 }
 
 export async function refineMemoryPromptSlot(options: {

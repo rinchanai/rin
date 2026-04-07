@@ -27,7 +27,7 @@ Implementation note:
 - queues a low-frequency LLM memory maintainer when a session is being shut down or when switching sessions with `/new`, then processes that queue asynchronously in a detached worker
 - includes a low-frequency `memory-consolidate` command that runs the same maintainer in cleanup mode for deduplication, rewrite, and invalidation of stale memory
 - compiles prompt memory conservatively with memory prompts only
-- keeps retrieval local and lightweight with markdown frontmatter plus lexical search over title, tags, aliases, summary, and body
+- keeps retrieval local and lightweight with markdown as the source of truth plus a local SQLite FTS5 shadow index for memory docs
 
 ## Tools
 

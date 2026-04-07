@@ -1,10 +1,16 @@
 import fs from "node:fs/promises";
 import fssync from "node:fs";
 import path from "node:path";
+import BetterSqlite3 from "better-sqlite3";
 
-import MiniSearch from "minisearch";
-
-import { normalizeNeedle, safeString, sha, trimText } from "./core/utils.js";
+import {
+  latinTokens,
+  normalizeNeedle,
+  safeString,
+  sha,
+  trimText,
+  uniqueStrings,
+} from "./core/utils.js";
 
 export type TranscriptArchiveEntry = {
   id: string;
@@ -14,8 +20,6 @@ export type TranscriptArchiveEntry = {
   role: "user" | "assistant";
   text: string;
 };
-
-type IndexedTranscriptEntry = TranscriptArchiveEntry & { _search_id: string };
 
 export function resolveTranscriptRoot(rootOverride = ""): string {
   const base = safeString(rootOverride).trim()
@@ -170,24 +174,31 @@ export async function loadTranscriptArchiveEntries(
   return groups.flat();
 }
 
-function createTranscriptMiniSearch(entries: IndexedTranscriptEntry[]) {
-  const miniSearch = new MiniSearch<IndexedTranscriptEntry>({
-    idField: "_search_id",
-    fields: ["text", "role", "sessionId", "sessionFile"],
-    storeFields: ["timestamp", "sessionId", "sessionFile", "role", "text"],
-    searchOptions: {
-      boost: {
-        text: 5,
-        role: 1,
-        sessionId: 1,
-        sessionFile: 1,
-      },
-      prefix: true,
-      combineWith: "AND",
-    },
-  });
-  miniSearch.addAll(entries);
-  return miniSearch;
+function createCjkTrigrams(value: string): string[] {
+  const chars = [...safeString(value).replace(/\s+/g, "")].filter((char) =>
+    /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(char),
+  );
+  const out: string[] = [];
+  for (let index = 0; index < chars.length - 2; index += 1)
+    out.push(`${chars[index]}${chars[index + 1]}${chars[index + 2]}`);
+  return uniqueStrings(out);
+}
+
+function buildFtsQuery(value: string): string {
+  const raw = safeString(value).trim();
+  if (!raw) return "";
+  const terms = uniqueStrings([
+    ...latinTokens(raw),
+    ...createCjkTrigrams(raw),
+    ...(raw.replace(/\s+/g, "").length >= 3 ? [raw] : []),
+  ]);
+  return terms.length
+    ? terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(" OR ")
+    : "";
+}
+
+function escapeLike(value: string): string {
+  return safeString(value).replace(/([%_\\])/g, "\\$1");
 }
 
 function presentTranscriptResult(
@@ -208,6 +219,65 @@ function presentTranscriptResult(
     description: trimText(entry.text, 160),
     preview: trimText(entry.text, 240),
   };
+}
+
+function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
+  const db = new BetterSqlite3(":memory:");
+  db.exec(`
+    CREATE TABLE entries (
+      id TEXT PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      session_file TEXT NOT NULL,
+      role TEXT NOT NULL,
+      text TEXT NOT NULL
+    );
+  `);
+  db.exec(`
+    CREATE VIRTUAL TABLE entries_fts USING fts5(
+      id UNINDEXED,
+      timestamp,
+      session_id,
+      session_file,
+      role,
+      text,
+      tokenize='trigram'
+    );
+  `);
+  const insertEntry = db.prepare(`
+    INSERT INTO entries (id, timestamp, session_id, session_file, role, text)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const insertFts = db.prepare(`
+    INSERT INTO entries_fts (id, timestamp, session_id, session_file, role, text)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  db.exec("BEGIN;");
+  try {
+    for (const entry of entries) {
+      insertEntry.run(
+        entry.id,
+        entry.timestamp,
+        entry.sessionId,
+        entry.sessionFile,
+        entry.role,
+        entry.text,
+      );
+      insertFts.run(
+        entry.id,
+        entry.timestamp,
+        entry.sessionId,
+        entry.sessionFile,
+        entry.role,
+        entry.text,
+      );
+    }
+    db.exec("COMMIT;");
+  } catch (error) {
+    db.exec("ROLLBACK;");
+    throw error;
+  }
+  return db;
 }
 
 export async function searchTranscriptArchive(
@@ -237,26 +307,59 @@ export async function searchTranscriptArchive(
     );
   if (fidelity === "exact") return substringMatches;
 
-  const indexedEntries = entries.map((entry) => ({
-    ...entry,
-    _search_id: entry.id,
-  }));
-  const rows = createTranscriptMiniSearch(indexedEntries)
-    .search(rawQuery)
-    .slice(0, limit);
-  if (!rows.length) return substringMatches;
-  const entryById = new Map(
-    indexedEntries.map((entry) => [entry._search_id, entry]),
-  );
-  return rows
-    .map((row) => {
-      const entry = entryById.get(String(row.id || ""));
-      if (!entry) return null;
-      return presentTranscriptResult(
-        entry,
-        Number(row.score || 0) * 0.85,
-        rootOverride,
+  const db = buildTranscriptSearchDb(entries);
+  try {
+    const ftsQuery = buildFtsQuery(rawQuery);
+    const candidates = new Map<string, number>();
+    if (ftsQuery) {
+      const rows = db
+        .prepare(
+          `
+          SELECT id
+          FROM entries_fts
+          WHERE entries_fts MATCH ?
+          LIMIT ?
+        `,
+        )
+        .all(ftsQuery, Math.max(limit * 8, 24)) as Array<{ id: string }>;
+      rows.forEach((row, index) => {
+        candidates.set(row.id, Math.max(0, 80 - index * 4));
+      });
+    }
+    const like = `%${escapeLike(rawQuery)}%`;
+    const likeRows = db
+      .prepare(
+        `
+        SELECT id
+        FROM entries
+        WHERE text LIKE ? ESCAPE '\\'
+           OR role LIKE ? ESCAPE '\\'
+           OR session_id LIKE ? ESCAPE '\\'
+           OR session_file LIKE ? ESCAPE '\\'
+        LIMIT ?
+      `,
+      )
+      .all(like, like, like, like, Math.max(limit * 8, 24)) as Array<{
+      id: string;
+    }>;
+    likeRows.forEach((row, index) => {
+      candidates.set(
+        row.id,
+        Math.max(candidates.get(row.id) || 0, 36 - index * 2),
       );
-    })
-    .filter(Boolean);
+    });
+    if (!candidates.size) return substringMatches;
+    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+    return [...candidates.entries()]
+      .map(([id, score]) => {
+        const entry = entryById.get(id);
+        if (!entry) return null;
+        return presentTranscriptResult(entry, score, rootOverride);
+      })
+      .filter(Boolean)
+      .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0))
+      .slice(0, limit);
+  } finally {
+    db.close();
+  }
 }

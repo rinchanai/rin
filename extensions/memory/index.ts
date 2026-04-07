@@ -23,12 +23,7 @@ import {
   resolveAgentDir,
   loadMemoryService,
 } from "./lib.js";
-import { resolveMemoryDoc } from "./docs.js";
-import {
-  buildMemoryDraftDoc,
-  refineMemoryPromptSlot,
-  writeMemoryDocWithSkillCreator,
-} from "./processing.js";
+import { refineMemoryPromptSlot } from "./processing.js";
 import { appendTranscriptArchiveEntry } from "./transcripts.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
@@ -266,36 +261,25 @@ async function executeSaveMemoryAction(
   currentThinkingLevel: any,
 ) {
   try {
-    const drafted = buildMemoryDraftDoc({
-      rootDir: String(ctx?.agentDir || "").trim(),
-      draft: {
-        name: params.name,
-        description: params.description,
-        content: params.content,
-        exposure: params.exposure,
-        scope: params.scope,
-        kind: params.kind,
-        path: params.path,
-      },
-    });
-    const saved = await writeMemoryDocWithSkillCreator({
-      ctx,
-      currentThinkingLevel,
-      memoryRoot: drafted.root,
-      draftDoc: drafted.draftDoc,
-    });
-    const savedPath = String(saved?.output || "").trim();
-    if (!savedPath) throw new Error("memory_save_missing_path");
-    const doc = await resolveMemoryDoc(drafted.root, savedPath);
-    const response = {
-      status: "ok",
+    const response = await executeMemoryTool({
       action: "save",
-      doc: {
-        id: doc?.id || "",
-        name: doc?.name || drafted.name,
-        path: doc?.path || savedPath,
-      },
-    };
+      name: params.name,
+      description: params.description,
+      content: params.content,
+      exposure: params.exposure,
+      scope: params.scope,
+      kind: params.kind,
+      path: params.path,
+      tags: params.tags,
+      aliases: params.aliases,
+      source: params.source,
+      id: params.id,
+      fidelity: params.fidelity,
+      status: params.status,
+      observationCount: params.observationCount,
+      supersedes: params.supersedes,
+      sensitivity: params.sensitivity,
+    });
     const prepared = await prepareToolTextOutput({
       agentText: formatMemoryAgentResult("save", response),
       userText: formatMemoryResult("save", response),
@@ -304,7 +288,7 @@ async function executeSaveMemoryAction(
     });
     return {
       content: [{ type: "text" as const, text: prepared.agentText }],
-      details: { ...response, ...prepared, drafted },
+      details: { ...response, ...prepared },
     };
   } catch (error: any) {
     const message = String(error?.message || error || "memory_action_failed");

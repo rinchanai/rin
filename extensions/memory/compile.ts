@@ -56,17 +56,19 @@ export function compileFromDocsAndEvents(
         .filter(Boolean),
     ),
   );
-  const memoryDocs = !queries.length
-    ? []
-    : Array.from(
-        new Map(
-          queries.flatMap((needle) =>
-            searchMemoryDocs(memoryDocPool, needle, {
-              limit: memoryDocLimit,
-            }).map((row) => [row.doc.id, row.doc] as const),
-          ),
-        ).values(),
-      ).slice(0, memoryDocLimit);
+  const memoryDocs = Array.isArray(params.memoryDocs)
+    ? params.memoryDocs
+    : !queries.length
+      ? []
+      : Array.from(
+          new Map(
+            queries.flatMap((needle) =>
+              searchMemoryDocs(memoryDocPool, needle, {
+                limit: memoryDocLimit,
+              }).map((row) => [row.doc.id, row.doc] as const),
+            ),
+          ).values(),
+        ).slice(0, memoryDocLimit);
 
   return {
     root,
