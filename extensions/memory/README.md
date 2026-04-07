@@ -16,19 +16,17 @@ Implementation note:
 
 - registers `search_memory` and `save_memory`
 - stores memory under `~/.rin/memory/` (or the active agent dir)
-- keeps three explicit layers:
-  - `resident`: short always-on global baselines
-  - `progressive`: important guidance exposed gradually
-  - `recall`: project/topic/history memory searched only when needed
+- keeps two practical layers:
+  - `resident`: short always-on global baselines and routing hints
+  - `recall`: project/topic/history memory searched proactively when relevant
+- accepts legacy `progressive` exposure for compatibility, but treats it as `recall`
 - keeps the public tool surface small:
   - `search`
   - `save`
   - `list`
 - queues a low-frequency LLM memory maintainer when a session is being shut down or when switching sessions with `/new`, then processes that queue asynchronously in a detached worker
 - includes a low-frequency `memory-consolidate` command that runs the same maintainer in cleanup mode for deduplication, rewrite, and invalidation of stale memory
-- compiles prompt memory conservatively with:
-  - resident memory
-  - progressive memory index
+- compiles prompt memory conservatively with resident memory only
 - keeps retrieval local and lightweight with markdown frontmatter plus lexical search over title, tags, aliases, triggers, summary, and body
 
 ## Tools
@@ -53,7 +51,7 @@ The public memory tools are:
   - `core_methodology`
   - `core_values`
 - automatic memory maintenance is low-frequency rather than per-message: it is queued on `session_shutdown` and on `session_switch` with `reason === "new"`, then processed asynchronously outside the main session flow
-- progressive prompt exposure is intentionally skill-like: short index entry first
+- long detailed guidance belongs in recall memory rather than resident memory
 - includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
 - `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript
 - onboarding order is intentionally structured, but the agent should handle that order conversationally rather than through a rigid extension-side phase machine:

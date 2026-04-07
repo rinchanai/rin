@@ -17,12 +17,9 @@ export function ensureExposure(
   fallback: MemoryExposure = "recall",
 ): MemoryExposure {
   const normalized = safeString(value).trim();
-  if (
-    normalized === "resident" ||
-    normalized === "progressive" ||
-    normalized === "recall"
-  )
-    return normalized;
+  if (normalized === "resident") return "resident";
+  if (normalized === "progressive") return "recall";
+  if (normalized === "recall") return "recall";
   return fallback;
 }
 
