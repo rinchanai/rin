@@ -56,7 +56,21 @@ test("koishi transport restorePromptParts rebuilds image payloads from disk", as
   });
 });
 
-test("koishi transport compacts mixed telegram text and multiple images into fewer batches", () => {
+test("koishi transport keeps prefixed text plus uniform image album together for telegram captions", () => {
+  const batches = transport.planTelegramDeliveries([
+    { type: "text", text: "intro" },
+    { type: "image", path: "/tmp/1.png" },
+    { type: "image", path: "/tmp/2.png" },
+    { type: "image", path: "/tmp/3.png" },
+  ]);
+  assert.equal(batches.length, 1);
+  assert.deepEqual(
+    batches[0].map((part) => part.type),
+    ["text", "image", "image", "image"],
+  );
+});
+
+test("koishi transport compacts interleaved telegram text and multiple images into fewer batches", () => {
   const batches = transport.planTelegramDeliveries([
     { type: "text", text: "intro" },
     { type: "text", text: "first" },
