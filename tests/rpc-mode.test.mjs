@@ -117,6 +117,135 @@ test("rpc mode routes interrupt_prompt through session.prompt with steer behavio
   }
 });
 
+test("rpc mode rebinds to runtime.session after session replacement", async () => {
+  const stdinOn = process.stdin.on;
+  const stdoutWrite = process.stdout.write;
+  const handlers = new Map();
+  const lines = [];
+  const prompts = [];
+  const bindCalls = [];
+  let currentSession;
+  let unsubscribeCount = 0;
+
+  process.stdin.on = function (event, handler) {
+    handlers.set(event, handler);
+    return this;
+  };
+  process.stdout.write = function (chunk) {
+    lines.push(String(chunk));
+    return true;
+  };
+
+  try {
+    const createSession = (name) => ({
+      name,
+      isStreaming: false,
+      isCompacting: false,
+      sessionFile: `/tmp/${name}.jsonl`,
+      sessionId: `${name}-id`,
+      agent: { waitForIdle: async () => {} },
+      bindExtensions: async () => {
+        bindCalls.push(name);
+      },
+      subscribe: () => () => {
+        unsubscribeCount += 1;
+      },
+      prompt: async (message, options) => {
+        prompts.push([name, message, options]);
+      },
+      sendCustomMessage: async () => {},
+      steer: async () => {},
+      followUp: async () => {},
+      abort: async () => {},
+      modelRegistry: { getAvailable: async () => [] },
+      sessionManager: {
+        getEntries: () => [],
+        getTree: () => [],
+        getLeafId: () => null,
+        getCwd: () => process.cwd(),
+        getSessionDir: () => process.cwd(),
+      },
+      messages: [],
+      getSessionStats: () => ({}),
+      getUserMessagesForForking: () => [],
+      getLastAssistantText: () => "",
+      setThinkingLevel: () => {},
+      cycleThinkingLevel: () => undefined,
+      setSteeringMode: () => {},
+      setFollowUpMode: () => {},
+      compact: async () => {},
+      setAutoCompactionEnabled: () => {},
+      setAutoRetryEnabled: () => {},
+      abortRetry: () => {},
+      executeBash: async () => {},
+      abortBash: async () => {},
+      fork: async () => ({ cancelled: false, selectedText: "" }),
+      navigateTree: async () => ({ cancelled: false }),
+      exportToHtml: async () => "",
+      exportToJsonl: () => "",
+      importFromJsonl: async () => ({ cancelled: false }),
+      setModel: async () => {},
+      reload: async () => {},
+      setSessionName: () => {},
+    });
+
+    currentSession = createSession("first");
+    const runtime = {
+      get session() {
+        return currentSession;
+      },
+      async newSession() {
+        currentSession = createSession("second");
+        return { cancelled: false };
+      },
+      async switchSession() {
+        throw new Error("unexpected");
+      },
+      async fork() {
+        throw new Error("unexpected");
+      },
+      async importFromJsonl() {
+        throw new Error("unexpected");
+      },
+    };
+
+    void runCustomRpcMode(runtime, {
+      SessionManager: {
+        listAll: async () => [],
+        list: async () => [],
+        open: () => ({ appendSessionInfo() {} }),
+      },
+      builtinSlashCommands: [],
+    });
+    await wait(0);
+
+    const onData = handlers.get("data");
+    assert.equal(typeof onData, "function");
+    onData(Buffer.from(`${JSON.stringify({ id: "3", type: "new_session" })}\n`));
+    await wait(20);
+    onData(
+      Buffer.from(
+        `${JSON.stringify({ id: "4", type: "prompt", message: "after swap", requestTag: "tag-4" })}\n`,
+      ),
+    );
+    await wait(20);
+
+    assert.deepEqual(bindCalls, ["first", "second"]);
+    assert.equal(unsubscribeCount, 1);
+    assert.deepEqual(prompts, [
+      [
+        "second",
+        "after swap",
+        { images: undefined, streamingBehavior: undefined, source: "rpc" },
+      ],
+    ]);
+    assert.ok(lines.join("").includes('"id":"3"'));
+  } finally {
+    process.stdin.on = stdinOn;
+    process.stdout.write = stdoutWrite;
+  }
+});
+
 test("rpc mode routes resume_interrupted_turn through hidden custom message", async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
