@@ -263,12 +263,12 @@ export async function startKoishi(
 
   app.on("bot-status-updated", (bot: any) => {
     if (bot?.status !== 1) return;
-    void syncTelegramCommands(app, logger);
+    void syncTelegramCommands(app, logger, commandRows);
   });
 
   let cronOutboxTimer: NodeJS.Timeout | null = null;
   await app.start();
-  await syncTelegramCommands(app, logger);
+  await syncTelegramCommands(app, logger, commandRows);
   cronOutboxTimer = setInterval(() => {
     void drainKoishiOutbox(app, runtime.agentDir, h, logger).catch(() => {});
   }, 1000);
