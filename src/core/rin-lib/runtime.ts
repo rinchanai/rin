@@ -39,13 +39,19 @@ function buildRinDocsBlock(agentDir: string) {
   const rinDocsRoot = path.join(rinRoot, "docs");
   const piRoot = path.join(agentDir, "docs", "pi");
   return [
-    "Rin and Pi documentation (read only when the user asks about Rin, Pi, or their SDKs, extensions, themes, skills, TUI, or daemons; if Rin and Pi docs conflict, Rin docs take precedence):",
+    "Rin and Pi documentation (if Rin docs and Pi docs conflict, Rin docs take precedence):",
     `- Main Rin documentation: ${path.join(rinRoot, "README.md")}`,
     `- Additional Rin docs: ${rinDocsRoot}`,
     `- Main Pi documentation: ${path.join(piRoot, "README.md")}`,
     `- Additional Pi docs: ${path.join(piRoot, "docs")}`,
     `- Pi examples: ${path.join(piRoot, "examples")} (extensions, custom tools, SDK)`,
-    "- When asked about: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)",
+    "- Read Rin docs proactively whenever the task involves Rin itself, including installation, update, repair, launcher behavior, runtime layout, daemon behavior, builtin capabilities, extensions, prompts, skills, TUI, chat bridge behavior, or stable documentation paths.",
+    "- Do not wait for the user to explicitly ask for documentation before reading relevant Rin docs.",
+    "- Start with Rin docs before relying on Pi docs for Rin-operated behavior.",
+    "- Recommended Rin reading order: README.md -> docs/pi-overrides.md -> relevant topic docs in docs/.",
+    "- For update / install / repair / launcher / runtime-path tasks, read docs/capabilities.md and docs/runtime-layout.md before acting.",
+    "- Use Pi docs mainly as the base reference for topics Rin docs do not cover.",
+    "- Topic map: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)",
   ].join("\n");
 }
 
