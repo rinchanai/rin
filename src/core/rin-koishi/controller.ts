@@ -17,6 +17,7 @@ import {
 import { appendKoishiChatLog } from "./chat-log.js";
 import {
   buildPromptText,
+  recordDeliveredAssistantMessages,
   restorePromptParts,
   sendGenericFile,
   sendImageFile,
@@ -234,7 +235,24 @@ export class KoishiChatController {
       `${INTERIM_PREFIX}${text}`,
       this.h,
       replyToMessageId,
-    ).catch(() => {});
+    )
+      .then((deliveryResult) => {
+        recordDeliveredAssistantMessages(this.agentDir, {
+          chatKey: this.chatKey,
+          deliveryResult,
+          text: `${INTERIM_PREFIX}${text}`,
+          rawContent: `${INTERIM_PREFIX}${text}`,
+          replyToMessageId: replyToMessageId || undefined,
+          sessionId: this.currentSessionId() || undefined,
+          sessionFile:
+            safeString(
+              this.session?.sessionManager?.getSessionFile?.() ||
+                this.state.piSessionFile ||
+                "",
+            ).trim() || undefined,
+        });
+      })
+      .catch(() => {});
   }
   private nextRequestTag() {
     this.turnSeq += 1;
@@ -362,8 +380,28 @@ export class KoishiChatController {
     this.markProcessedMessage(incomingMessageId);
     const text = safeString(data?.text || "").trim();
     if (text) {
-      await sendText(this.app, this.chatKey, text, this.h, replyToMessageId);
+      const deliveryResult = await sendText(
+        this.app,
+        this.chatKey,
+        text,
+        this.h,
+        replyToMessageId,
+      );
       this.logAssistantText(text, replyToMessageId);
+      recordDeliveredAssistantMessages(this.agentDir, {
+        chatKey: this.chatKey,
+        deliveryResult,
+        text,
+        rawContent: text,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile:
+          safeString(
+            this.session?.sessionManager?.getSessionFile?.() ||
+              this.state.piSessionFile ||
+              "",
+          ).trim() || undefined,
+      });
     }
     this.scheduleIdleDetach();
     return data;
@@ -429,7 +467,7 @@ export class KoishiChatController {
     await Promise.all(this.pendingOutboundTasks.splice(0));
     const finalText = safeString(this.latestAssistantText || "").trim();
     if (finalText) {
-      await sendText(
+      const deliveryResult = await sendText(
         this.app,
         this.chatKey,
         finalText,
@@ -437,6 +475,20 @@ export class KoishiChatController {
         replyToMessageId,
       );
       this.logAssistantText(finalText, replyToMessageId);
+      recordDeliveredAssistantMessages(this.agentDir, {
+        chatKey: this.chatKey,
+        deliveryResult,
+        text: finalText,
+        rawContent: finalText,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile:
+          safeString(
+            this.session?.sessionManager?.getSessionFile?.() ||
+              this.state.piSessionFile ||
+              "",
+          ).trim() || undefined,
+      });
     }
     for (const image of this.pendingOutboundImages.splice(0))
       await sendImageFile(
@@ -446,7 +498,24 @@ export class KoishiChatController {
         this.h,
         image.mimeType || "image/png",
         replyToMessageId,
-      ).catch(() => {});
+      )
+        .then((deliveryResult) => {
+          recordDeliveredAssistantMessages(this.agentDir, {
+            chatKey: this.chatKey,
+            deliveryResult,
+            text: `[image] ${image.name}`,
+            rawContent: `[image] ${image.path}`,
+            replyToMessageId: replyToMessageId || undefined,
+            sessionId: this.currentSessionId() || undefined,
+            sessionFile:
+              safeString(
+                this.session?.sessionManager?.getSessionFile?.() ||
+                  this.state.piSessionFile ||
+                  "",
+              ).trim() || undefined,
+          });
+        })
+        .catch(() => {});
     for (const file of this.pendingOutboundFiles.splice(0))
       await sendGenericFile(
         this.app,
@@ -455,7 +524,24 @@ export class KoishiChatController {
         this.h,
         file.name,
         replyToMessageId,
-      ).catch(() => {});
+      )
+        .then((deliveryResult) => {
+          recordDeliveredAssistantMessages(this.agentDir, {
+            chatKey: this.chatKey,
+            deliveryResult,
+            text: `[file] ${file.name}`,
+            rawContent: `[file] ${file.path}`,
+            replyToMessageId: replyToMessageId || undefined,
+            sessionId: this.currentSessionId() || undefined,
+            sessionFile:
+              safeString(
+                this.session?.sessionManager?.getSessionFile?.() ||
+                  this.state.piSessionFile ||
+                  "",
+              ).trim() || undefined,
+          });
+        })
+        .catch(() => {});
     this.scheduleIdleDetach();
   }
   async recoverIfNeeded() {
@@ -497,7 +583,7 @@ export class KoishiChatController {
         const replyToMessageId = safeString(
           pending.replyToMessageId || "",
         ).trim();
-        await sendText(
+        const deliveryResult = await sendText(
           this.app,
           this.chatKey,
           finalText,
@@ -505,9 +591,41 @@ export class KoishiChatController {
           replyToMessageId,
         );
         this.logAssistantText(finalText, replyToMessageId);
+        recordDeliveredAssistantMessages(this.agentDir, {
+          chatKey: this.chatKey,
+          deliveryResult,
+          text: finalText,
+          rawContent: finalText,
+          replyToMessageId: replyToMessageId || undefined,
+          sessionId: this.currentSessionId() || undefined,
+          sessionFile:
+            safeString(
+              this.session?.sessionManager?.getSessionFile?.() ||
+                this.state.piSessionFile ||
+                "",
+            ).trim() || undefined,
+        });
       }
       for (const image of this.pendingOutboundImages.splice(0))
-        await sendImageFile(this.app, this.chatKey, image.path, this.h);
+        await sendImageFile(this.app, this.chatKey, image.path, this.h).then(
+          (deliveryResult) => {
+            recordDeliveredAssistantMessages(this.agentDir, {
+              chatKey: this.chatKey,
+              deliveryResult,
+              text: `[image] ${image.name}`,
+              rawContent: `[image] ${image.path}`,
+              replyToMessageId:
+                safeString(pending.replyToMessageId || "").trim() || undefined,
+              sessionId: this.currentSessionId() || undefined,
+              sessionFile:
+                safeString(
+                  this.session?.sessionManager?.getSessionFile?.() ||
+                    this.state.piSessionFile ||
+                    "",
+                ).trim() || undefined,
+            });
+          },
+        );
       this.scheduleIdleDetach();
       return;
     }

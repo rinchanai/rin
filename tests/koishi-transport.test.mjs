@@ -14,6 +14,11 @@ const transport = await import(
     path.join(rootDir, "dist", "core", "rin-koishi", "transport.js"),
   ).href
 );
+const messageStore = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-koishi", "message-store.js"),
+  ).href
+);
 
 async function withTempDir(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-transport-test-"));
@@ -60,6 +65,18 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
     await fs.writeFile(imagePath, Buffer.from("abc"));
+    messageStore.saveKoishiMessage(dir, {
+      messageId: "42",
+      chatKey: "telegram/1:2",
+      platform: "telegram",
+      botId: "1",
+      chatId: "2",
+      chatType: "private",
+      receivedAt: "2026-04-07T00:00:00.000Z",
+      sessionId: "sess-42",
+      sessionFile: "/tmp/sess-42.jsonl",
+      text: "incoming",
+    });
     const sends = [];
     await transport.sendOutboxPayload(
       {
@@ -100,6 +117,12 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
     assert.equal(sends[0].content[1].type, "text");
     assert.equal(sends[0].content[2].type, "image");
     assert.equal(sends[0].content[3].type, "image");
+
+    const stored = messageStore.getKoishiMessage(dir, "telegram/1:2", "m1");
+    assert.equal(stored?.text, "intro");
+    assert.equal(stored?.replyToMessageId, "42");
+    assert.equal(stored?.sessionId, "sess-42");
+    assert.equal(stored?.sessionFile, "/tmp/sess-42.jsonl");
   });
 });
 
