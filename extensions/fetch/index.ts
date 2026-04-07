@@ -13,6 +13,8 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { prepareToolTextOutput } from "../shared/tool-text.js";
+
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "Rin fetch/1.0";
 
@@ -212,6 +214,20 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
   return lines.join("\n");
 }
 
+function formatUserSummary(details: FetchDetails) {
+  if (!details.finalUrl) {
+    return "fetch complete";
+  }
+
+  const lines = [`${details.status} ${details.mimeType}`];
+  if (details.title) lines.push(details.title);
+  lines.push(details.finalUrl);
+  if (details.truncated && details.fullOutputPath) {
+    lines.push(`full output → ${details.fullOutputPath}`);
+  }
+  return lines.join("\n");
+}
+
 export default function fetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "fetch",
@@ -303,25 +319,30 @@ export default function fetchExtension(pi: ExtensionAPI) {
       }
 
       const fullText = formatTextResponse(details, bodyText);
-      const truncation = truncateHead(fullText, {
-        maxLines: DEFAULT_MAX_LINES,
-        maxBytes: DEFAULT_MAX_BYTES,
-      });
-      let resultText = truncation.content;
-      if (truncation.truncated) {
-        const fullOutputPath = await writeTempText(
+      if (
+        truncateHead(fullText, {
+          maxLines: DEFAULT_MAX_LINES,
+          maxBytes: DEFAULT_MAX_BYTES,
+        }).truncated
+      ) {
+        details.truncated = true;
+        details.fullOutputPath = await writeTempText(
           "rin-fetch-",
           "response.md",
           fullText,
         );
-        details.truncated = true;
-        details.fullOutputPath = fullOutputPath;
-        resultText += `\n\n[Output truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)}). Full output saved to: ${fullOutputPath}]`;
       }
 
+      const prepared = await prepareToolTextOutput({
+        agentText: fullText,
+        userText: formatUserSummary(details),
+        tempPrefix: "rin-fetch-",
+        filename: "response.txt",
+      });
+
       return {
-        content: [{ type: "text", text: resultText }],
-        details,
+        content: [{ type: "text", text: prepared.agentText }],
+        details: { ...details, ...prepared },
       };
     },
     renderCall(args, theme) {
@@ -333,18 +354,11 @@ export default function fetchExtension(pi: ExtensionAPI) {
     },
     renderResult(result, { isPartial }, theme) {
       if (isPartial) return new Text(theme.fg("warning", "Fetching..."), 0, 0);
-      const details = (result.details || {}) as FetchDetails;
-      if (!details.finalUrl) {
-        return new Text(theme.fg("muted", "fetch complete"), 0, 0);
-      }
-
-      let text = theme.fg("success", `${details.status} ${details.mimeType}`);
-      if (details.title) text += `\n${theme.fg("accent", details.title)}`;
-      text += `\n${theme.fg("dim", details.finalUrl)}`;
-      if (details.truncated && details.fullOutputPath) {
-        text += `\n${theme.fg("warning", `full output → ${details.fullOutputPath}`)}`;
-      }
-      return new Text(text, 0, 0);
+      const details = (result.details || {}) as FetchDetails & {
+        userText?: string;
+      };
+      const fallback = formatUserSummary(details);
+      return new Text(String(details.userText || fallback), 0, 0);
     },
   });
 }
