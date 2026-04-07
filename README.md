@@ -76,8 +76,22 @@ rin doctor     # inspect health and configuration
 rin start      # start the daemon
 rin stop       # stop the daemon
 rin restart    # restart the daemon
-rin update     # update Rin
+rin update     # update the installed Rin core runtime
 ```
+
+## Updating Rin
+
+For a normal installed Rin update, use:
+
+```bash
+rin update
+```
+
+This is the canonical update path for the installed runtime.
+It refreshes the core runtime and installed docs.
+It does not replace the user-scoped CLI launcher or installer.
+
+Avoid treating repo-local workflows like `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the default way to update an already installed Rin.
 
 ## Key built-in capabilities
 
@@ -100,9 +114,9 @@ Normally, use `rin`.
 If you want more detail, start here:
 
 - [`docs/rin/README.md`](docs/rin/README.md)
-- [`docs/rin/capabilities.md`](docs/rin/capabilities.md)
-- [`docs/rin/runtime-layout.md`](docs/rin/runtime-layout.md)
-- [`docs/rin/builtin-extensions.md`](docs/rin/builtin-extensions.md)
+- [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](docs/rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
 
 ## Short version
 

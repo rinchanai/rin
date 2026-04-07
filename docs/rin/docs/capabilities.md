@@ -27,6 +27,9 @@ Important implications:
 - the current local account may be only the execution account; the launcher may belong to a different interactive account, and that is a normal setup
 - reason in terms of installed runtime path, target user, launcher ownership, and permissions
 - prefer the stable `app/current/` path over release-specific timestamps when invoking an installed runtime directly
+- do not improvise alternate upgrade flows such as manually rebuilding inside the installed runtime tree, copying release directories by hand, or using arbitrary repo-local commands as a substitute for `rin update`
+- when the task is “update installed Rin”, `rin update` is the canonical workflow; `install.sh` is for installation/bootstrap, not the normal update path
+- updating a repo checkout is not the same thing as updating the installed Rin runtime under `~/.rin/...`
 
 ## Memory
 
