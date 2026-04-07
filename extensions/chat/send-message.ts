@@ -32,19 +32,19 @@ type KoishiMessagePart =
       mimeType?: string;
     };
 
-async function loadOutboxModule() {
+async function loadKoishiRpcModule() {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-lib", "chat-outbox.js"),
-    path.join(root, "dist", "core", "rin-lib", "chat-outbox.js"),
+    path.join(root, "core", "rin-koishi", "rpc.js"),
+    path.join(root, "dist", "core", "rin-koishi", "rpc.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
-    throw new Error(`rin_chat_outbox_not_found:${candidates.join(" | ")}`);
+    throw new Error(`rin_koishi_rpc_not_found:${candidates.join(" | ")}`);
   }
   return await import(pathToFileURL(distPath).href);
 }
@@ -233,8 +233,8 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       const agentDir = getAgentDir();
       const requestId =
         safeString(toolCallId).trim() || `koishi_${Date.now().toString(36)}`;
-      const { enqueueChatOutboxPayload } = await loadOutboxModule();
-      const filePath = enqueueChatOutboxPayload(agentDir, {
+      const { deliverKoishiRpcPayload } = await loadKoishiRpcModule();
+      await deliverKoishiRpcPayload(agentDir, {
         type: "parts_delivery",
         createdAt: new Date().toISOString(),
         requestId,
@@ -245,10 +245,9 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       });
 
       const agentText = [
-        "send_chat_msg queued",
+        "send_chat_msg sent",
         `chatKey=${chatKey}`,
         `requestId=${requestId}`,
-        `outbox=${filePath}`,
         ...parts.map(
           (part, index) => `${index + 1}. ${formatPartForAgent(part)}`,
         ),
@@ -257,10 +256,10 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       const prepared = await prepareToolTextOutput({
         agentText,
         userText: [
-          `已加入发送队列，目标聊天：${chatKey}`,
+          `已发送到聊天：${chatKey}`,
           `消息片段共 ${parts.length} 个：`,
           ...parts.map((part) => formatPartForUser(part)),
-          `出站文件：${filePath}`,
+          `请求 ID：${requestId}`,
         ].join("\n"),
         tempPrefix: "rin-koishi-send-",
         filename: "koishi-send.txt",
@@ -272,7 +271,6 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
           chatKey,
           requestId,
           parts,
-          outboxPath: filePath,
           ...prepared,
         },
       };

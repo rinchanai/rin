@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { enqueueChatOutboxPayload } from "../rin-lib/chat-outbox.js";
+import { deliverKoishiRpcPayload } from "../rin-koishi/rpc.js";
 import { runSessionPrompt } from "../session/runner.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
@@ -9,7 +9,7 @@ export async function sendKoishiText(
   agentDir: string,
   payload: { chatKey: string; taskId: string; runId: string; text: string },
 ) {
-  enqueueChatOutboxPayload(agentDir, {
+  await deliverKoishiRpcPayload(agentDir, {
     type: "text_delivery",
     createdAt: nowIso(),
     ...payload,
