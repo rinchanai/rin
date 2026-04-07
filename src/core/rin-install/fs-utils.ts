@@ -1,7 +1,7 @@
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
 
@@ -232,6 +232,102 @@ export function syncTree(sourcePath: string, destPath: string) {
   execFileSync("cp", ["-a", sourcePath, destPath], { stdio: "inherit" });
 }
 
+function copyTreeMatching(
+  sourceDir: string,
+  destDir: string,
+  predicate: (filePath: string) => boolean = () => true,
+) {
+  if (!fs.existsSync(sourceDir)) return;
+  for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+    const sourcePath = path.join(sourceDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+    if (entry.isDirectory()) {
+      copyTreeMatching(sourcePath, destPath, predicate);
+      continue;
+    }
+    if (!predicate(sourcePath)) continue;
+    ensureDir(path.dirname(destPath));
+    fs.copyFileSync(sourcePath, destPath);
+  }
+}
+
+const REQUIRED_CODING_AGENT_DIST_FILES = [
+  "index.js",
+  path.join("core", "session-manager.js"),
+  path.join("modes", "interactive", "interactive-mode.js"),
+  path.join("modes", "interactive", "components", "footer.js"),
+  path.join("modes", "interactive", "theme", "theme.js"),
+];
+
+function hasRequiredCodingAgentDist(distRoot: string) {
+  return REQUIRED_CODING_AGENT_DIST_FILES.every((relativePath) =>
+    fs.existsSync(path.join(distRoot, relativePath)),
+  );
+}
+
+function copyCodingAgentAssets(projectRoot: string, distRoot: string) {
+  copyTreeMatching(
+    path.join(projectRoot, "src", "modes", "interactive", "theme"),
+    path.join(distRoot, "modes", "interactive", "theme"),
+    (filePath) => filePath.endsWith(".json"),
+  );
+  copyTreeMatching(
+    path.join(projectRoot, "src", "core", "export-html"),
+    path.join(distRoot, "core", "export-html"),
+    (filePath) => /template\.(html|css|js)$/.test(path.basename(filePath)),
+  );
+  copyTreeMatching(
+    path.join(projectRoot, "src", "core", "export-html", "vendor"),
+    path.join(distRoot, "core", "export-html", "vendor"),
+  );
+}
+
+export function ensureVendoredCodingAgentDist(sourceRoot: string) {
+  const projectRoot = path.join(sourceRoot, "third_party", "pi-coding-agent");
+  const distRoot = path.join(projectRoot, "dist");
+  if (hasRequiredCodingAgentDist(distRoot)) return distRoot;
+
+  const tscPath = path.join(
+    sourceRoot,
+    "node_modules",
+    "typescript",
+    "bin",
+    "tsc",
+  );
+  const tsconfigPath = path.join(projectRoot, "tsconfig.build.json");
+  if (!fs.existsSync(tscPath) || !fs.existsSync(tsconfigPath)) {
+    throw new Error("rin_missing_vendor_dist_build_prereqs:pi-coding-agent");
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      tscPath,
+      "-p",
+      "tsconfig.build.json",
+      "--pretty",
+      "false",
+      "--noEmitOnError",
+      "false",
+    ],
+    {
+      cwd: projectRoot,
+      stdio: "inherit",
+      env: { ...process.env },
+    },
+  );
+
+  copyCodingAgentAssets(projectRoot, distRoot);
+
+  if (!hasRequiredCodingAgentDist(distRoot)) {
+    throw new Error(
+      `rin_missing_vendor_dist_build_failed:pi-coding-agent:${result.status ?? 1}`,
+    );
+  }
+
+  return distRoot;
+}
+
 export function syncInstalledDocTree(
   sourceDir: string,
   destDir: string,
@@ -306,6 +402,7 @@ export function publishInstalledRuntime(
   elevated = false,
   deps: { findSystemUser: (user: string) => any },
 ) {
+  ensureVendoredCodingAgentDist(sourceRoot);
   const releaseRoot = path.join(installDir, "app", "releases", releaseIdNow());
   const currentLink = path.join(installDir, "app", "current");
   const currentTmpLink = `${currentLink}.tmp`;
