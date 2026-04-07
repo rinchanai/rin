@@ -40,7 +40,7 @@ export const memoryToolParameters = Type.Object({
   exposure: Type.Optional(
     Type.Union([Type.Literal("progressive"), Type.Literal("recall")], {
       description:
-        "Optional memory layer. Allowed values: `progressive` or `recall`.",
+        "Optional memory layer. Use `recall` for normal searchable memory. `progressive` is a deprecated compatibility alias treated like `recall`.",
     }),
   ),
   fidelity: Type.Optional(
@@ -184,9 +184,7 @@ export async function compilePromptMemory(query = "") {
   const compiled = await service.compileMemory(
     {
       query,
-      progressiveLimit: 12,
-      expandedProgressiveLimit: 2,
-      recallLimit: 3,
+      recallLimit: 6,
       historyLimit: 3,
     },
     resolveAgentDir(),

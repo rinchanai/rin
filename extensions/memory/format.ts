@@ -1,12 +1,3 @@
-function escapeXml(text: string): string {
-  return String(text || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
 function toTitleCase(text: string): string {
   return String(text || "")
     .split(/[_\s-]+/)
@@ -39,44 +30,9 @@ function buildResidentMemoryPrompt(result: any): string {
   return lines.join("\n").trim();
 }
 
-function buildProgressiveMemoryDescription(doc: any): string {
-  return String(doc?.description || "").trim();
-}
-
-function buildProgressiveMemoryPrompt(result: any): string {
-  const docs = Array.isArray(result?.progressive_docs)
-    ? result.progressive_docs
-    : [];
-  if (!docs.length) return "";
-  const lines = ["## Progressive Memory", "", "<available_memory>"];
-  for (const doc of docs) {
-    lines.push("  <memory>");
-    lines.push(
-      `    <name>${escapeXml(String(doc?.name || doc?.id || "Untitled"))}</name>`,
-    );
-    const description = buildProgressiveMemoryDescription(doc);
-    if (description) {
-      lines.push(`    <description>${escapeXml(description)}</description>`);
-    }
-    lines.push(
-      `    <location>${escapeXml(String(doc?.path || ""))}</location>`,
-    );
-    lines.push("  </memory>");
-  }
-  lines.push("</available_memory>");
-  return lines.join("\n").trim();
-}
-
 export function buildCompiledMemoryPrompt(result: any): string {
   const sections = [
     buildResidentMemoryPrompt(result),
-    buildProgressiveMemoryPrompt(result),
-    [
-      "## Expanded Progressive Memory",
-      String(result?.progressive_expanded || "").trim(),
-    ]
-      .filter(Boolean)
-      .join("\n"),
     ["## Relevant Recall", String(result?.recall_context || "").trim()]
       .filter(Boolean)
       .join("\n"),
@@ -86,10 +42,9 @@ export function buildCompiledMemoryPrompt(result: any): string {
 }
 
 export function buildSystemPromptMemory(result: any): string {
-  const sections = [
-    buildResidentMemoryPrompt(result),
-    buildProgressiveMemoryPrompt(result),
-  ].filter((body) => String(body || "").trim());
+  const sections = [buildResidentMemoryPrompt(result)].filter((body) =>
+    String(body || "").trim(),
+  );
   if (!sections.length) return "";
   return ["# Memory", ...sections].join("\n\n").trim();
 }
@@ -245,8 +200,6 @@ export function formatMemoryAgentResult(action: string, response: any): string {
   if (action === "compile") {
     const sections = [
       ["resident_docs", response?.resident_docs],
-      ["progressive_docs", response?.progressive_docs],
-      ["expanded_progressives", response?.expanded_progressives],
       ["recall_docs", response?.recall_docs],
     ].filter(([, value]) => Array.isArray(value) && value.length > 0) as Array<
       [string, any[]]

@@ -21,7 +21,7 @@ type MaintenanceOperation = {
   type?: "create" | "rewrite" | "supersede" | "invalidate";
   targetId?: string;
   title?: string;
-  exposure?: "resident" | "progressive" | "recall";
+  exposure?: "resident" | "recall";
   residentSlot?: string;
   summary?: string;
   content?: string;
@@ -48,7 +48,7 @@ Schema:
       "type": "create" | "rewrite" | "supersede" | "invalidate",
       "targetId": string,
       "title": string,
-      "exposure": "resident" | "progressive" | "recall",
+      "exposure": "resident" | "recall",
       "residentSlot": "agent_identity" | "owner_identity" | "core_voice_style" | "core_methodology" | "core_values",
       "summary": string,
       "content": string,
@@ -64,9 +64,8 @@ Schema:
 }
 
 Memory architecture:
-- resident: short always-on core baselines only.
-- progressive: important long-lived guidance that should be disclosed gradually.
-- recall: useful searchable memory that should not be prompt-resident by default.
+- resident: short always-on routing hints and core baselines only.
+- recall: searchable detailed guidance, domain knowledge, and durable long-form memory.
 
 Resident slots are restricted to:
 - agent_identity
@@ -87,8 +86,8 @@ Rules:
 - If a doc is stale, duplicate, or low-value, use invalidate.
 - Use create only when genuinely new durable memory is warranted.
 - Resident docs must stay short and stable.
-- Progressive docs should capture durable guidance, not ephemeral task state.
 - Recall docs should stay useful and searchable.
+- Do not create new progressive docs; treat legacy progressive content as recall.
 - Do not invent facts not supported by the provided conversation or docs.
 - Favor updating or superseding existing docs over creating more docs.
 - Output valid JSON only.`;
@@ -283,12 +282,8 @@ async function applyOperation(
       exposure: operation.exposure || "recall",
       residentSlot:
         operation.exposure === "resident" ? operation.residentSlot : "",
-      scope:
-        operation.scope ||
-        (operation.exposure === "progressive" ? "domain" : "project"),
-      kind:
-        operation.kind ||
-        (operation.exposure === "progressive" ? "instruction" : "fact"),
+      scope: operation.scope || "project",
+      kind: operation.kind || "fact",
       tags: operation.tags || [],
       aliases: operation.aliases || [],
       triggers: operation.triggers || [],
@@ -472,8 +467,8 @@ export async function maintainMemory(
     "Current resident memory:",
     safeString(compiled?.resident || "").trim() || "(none)",
     "",
-    "Current progressive index:",
-    safeString(compiled?.progressive_index || "").trim() || "(none)",
+    "Current recall context:",
+    safeString(compiled?.recall_context || "").trim() || "(none)",
     "",
     "Current active memory docs:",
     docsPrompt(batch),
