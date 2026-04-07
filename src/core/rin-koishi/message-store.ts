@@ -8,6 +8,7 @@ export type StoredKoishiMessage = {
   version: 1;
   recordKey: string;
   messageId: string;
+  role?: "user" | "assistant";
   replyToMessageId?: string;
   sessionId?: string;
   sessionFile?: string;
@@ -85,6 +86,13 @@ function recordPath(agentDir: string, recordKey: string) {
   );
 }
 
+function normalizeStoredRole(value: unknown) {
+  const text = safeString(value).trim();
+  return text === "user" || text === "assistant"
+    ? (text as "user" | "assistant")
+    : undefined;
+}
+
 export function buildKoishiMessageRecordKey(
   chatKey: string,
   messageId: string,
@@ -104,6 +112,7 @@ export function buildStoredKoishiMessage(
     version: 1 as const,
     recordKey: buildKoishiMessageRecordKey(chatKey, messageId),
     messageId,
+    role: normalizeStoredRole(input.role),
     chatKey,
   };
 }
@@ -179,6 +188,7 @@ export function updateKoishiMessage(
     recordKey: current.recordKey,
     chatKey: current.chatKey,
     messageId: current.messageId,
+    role: normalizeStoredRole(patch.role) || current.role,
     platform: current.platform,
     chatId: current.chatId,
   };
@@ -198,6 +208,62 @@ export function findKoishiMessageByChatAndId(
       (item) => item.chatKey === chatKey,
     ) || null
   );
+}
+
+export function listKoishiMessages(agentDir: string) {
+  const root = recordsDir(agentDir);
+  const out: StoredKoishiMessage[] = [];
+  const visit = (dir: string) => {
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const filePath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(filePath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+      const item = readJsonFile<StoredKoishiMessage | null>(filePath, null);
+      if (item && safeString(item.messageId).trim()) out.push(item);
+    }
+  };
+  visit(root);
+  return out;
+}
+
+function isoDateOnly(value: string) {
+  const match = safeString(value)
+    .trim()
+    .match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+}
+
+export function listKoishiMessagesByChatAndDate(
+  agentDir: string,
+  chatKey: string,
+  date: string,
+) {
+  const nextChatKey = safeString(chatKey).trim();
+  const nextDate = isoDateOnly(date);
+  return listKoishiMessages(agentDir)
+    .filter(
+      (item) =>
+        item.chatKey === nextChatKey &&
+        isoDateOnly(item.receivedAt || item.processedAt || "") === nextDate,
+    )
+    .sort((a, b) => {
+      const left = Date.parse(a.receivedAt || a.processedAt || "") || 0;
+      const right = Date.parse(b.receivedAt || b.processedAt || "") || 0;
+      if (left !== right) return left - right;
+      return a.recordKey.localeCompare(b.recordKey);
+    });
 }
 
 export function normalizeKoishiMessageLookup(
@@ -227,6 +293,7 @@ export function describeKoishiMessageRecord(record: StoredKoishiMessage) {
   return [
     `messageId=${record.messageId}`,
     `chatKey=${record.chatKey}`,
+    record.role ? `role=${record.role}` : "",
     record.replyToMessageId
       ? `replyToMessageId=${record.replyToMessageId}`
       : "",
@@ -247,6 +314,7 @@ export function summarizeKoishiMessageRecord(record: StoredKoishiMessage) {
   return [
     `- message id: ${record.messageId}`,
     `- chatKey: ${record.chatKey}`,
+    record.role ? `- role: ${record.role}` : "",
     record.replyToMessageId ? `- reply to: ${record.replyToMessageId}` : "",
     record.sessionId ? `- session id: ${record.sessionId}` : "",
     record.sessionFile ? `- session file: ${record.sessionFile}` : "",

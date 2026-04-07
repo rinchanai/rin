@@ -39,7 +39,11 @@ import {
   trustOf,
 } from "./support.js";
 import { koishiRpcSocketPath } from "./rpc.js";
-import { sendOutboxPayload, sendText } from "./transport.js";
+import {
+  recordDeliveredAssistantMessages,
+  sendOutboxPayload,
+  sendText,
+} from "./transport.js";
 
 const require = createRequire(import.meta.url);
 const { Loader, Logger, h } = require("koishi") as {
@@ -154,16 +158,24 @@ export async function startKoishi(
             (entry) =>
               `/${entry.name}${entry.description ? ` — ${entry.description}` : ""}`,
           );
-          await sendText(app, chatKey, lines.join("\n"), h, messageId).catch(
-            () => {},
-          );
-          appendKoishiChatLog(runtime.agentDir, {
-            timestamp: new Date().toISOString(),
-            chatKey,
-            role: "assistant",
-            text: lines.join("\n"),
-            replyToMessageId: messageId || undefined,
-          });
+          await sendText(app, chatKey, lines.join("\n"), h, messageId)
+            .then((deliveryResult) => {
+              appendKoishiChatLog(runtime.agentDir, {
+                timestamp: new Date().toISOString(),
+                chatKey,
+                role: "assistant",
+                text: lines.join("\n"),
+                replyToMessageId: messageId || undefined,
+              });
+              recordDeliveredAssistantMessages(runtime.agentDir, {
+                chatKey,
+                deliveryResult,
+                text: lines.join("\n"),
+                rawContent: lines.join("\n"),
+                replyToMessageId: messageId || undefined,
+              });
+            })
+            .catch(() => {});
           return "";
         }
 
@@ -259,9 +271,17 @@ export async function startKoishi(
           text: errorText,
           replyToMessageId: messageId || undefined,
         });
-        void sendText(app, decision.chatKey, errorText, h, messageId).catch(
-          () => {},
-        );
+        void sendText(app, decision.chatKey, errorText, h, messageId)
+          .then((deliveryResult) => {
+            recordDeliveredAssistantMessages(runtime.agentDir, {
+              chatKey: decision.chatKey,
+              deliveryResult,
+              text: errorText,
+              rawContent: errorText,
+              replyToMessageId: messageId || undefined,
+            });
+          })
+          .catch(() => {});
       });
     return "";
   }, true);

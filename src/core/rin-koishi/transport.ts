@@ -10,6 +10,10 @@ import type {
 } from "../rin-lib/chat-outbox.js";
 import { findBot, parseChatKey } from "./support.js";
 import { appendKoishiChatLog } from "./chat-log.js";
+import {
+  findKoishiMessageByChatAndId,
+  saveKoishiMessage,
+} from "./message-store.js";
 import type { KoishiChatState, SavedAttachment } from "./chat-helpers.js";
 import {
   ensureDir,
@@ -38,8 +42,136 @@ async function sendBotMessage(bot: any, chatId: string, content: any) {
   return result;
 }
 
+function inferChatType(parsed: { platform: string; chatId: string }) {
+  if (parsed.platform === "telegram")
+    return parsed.chatId.startsWith("-") ? "group" : "private";
+  if (parsed.chatId.startsWith("private:")) return "private";
+  return "group";
+}
+
+function pickDeliveredMessageId(value: any) {
+  const candidates = [
+    value?.messageId,
+    value?.id,
+    value?.message_id,
+    value?.message?.messageId,
+    value?.message?.id,
+    value?.message?.message_id,
+    value?.event?.messageId,
+    value?.event?.id,
+    value?.event?.message_id,
+  ];
+  for (const candidate of candidates) {
+    const text = safeString(candidate).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function resolveSessionContext(
+  agentDir: string,
+  chatKey: string,
+  replyToMessageId = "",
+  explicit: { sessionId?: string; sessionFile?: string } = {},
+) {
+  const sessionId = safeString(explicit.sessionId).trim();
+  const sessionFile = safeString(explicit.sessionFile).trim();
+  if (sessionId || sessionFile) {
+    return {
+      sessionId: sessionId || undefined,
+      sessionFile: sessionFile || undefined,
+    };
+  }
+  const nextReplyToMessageId = safeString(replyToMessageId).trim();
+  if (!nextReplyToMessageId) return {};
+  const linked = findKoishiMessageByChatAndId(
+    agentDir,
+    chatKey,
+    nextReplyToMessageId,
+  );
+  return {
+    sessionId: safeString(linked?.sessionId).trim() || undefined,
+    sessionFile: safeString(linked?.sessionFile).trim() || undefined,
+  };
+}
+
+export function recordDeliveredAssistantMessages(
+  agentDir: string,
+  input: {
+    chatKey: string;
+    deliveryResult: any[];
+    text?: string;
+    rawContent?: string;
+    replyToMessageId?: string;
+    sessionId?: string;
+    sessionFile?: string;
+  },
+) {
+  const chatKey = safeString(input.chatKey).trim();
+  if (!chatKey) return [] as string[];
+  const parsed = parseChatKey(chatKey);
+  if (!parsed) return [] as string[];
+  const messageIds = (
+    Array.isArray(input.deliveryResult) ? input.deliveryResult : []
+  )
+    .map((item) => pickDeliveredMessageId(item))
+    .filter(Boolean);
+  if (!messageIds.length) return [] as string[];
+
+  const bodyText = safeString(input.text).trim();
+  const rawContent =
+    safeString(input.rawContent).trim() || bodyText || undefined;
+  const session = resolveSessionContext(
+    agentDir,
+    chatKey,
+    safeString(input.replyToMessageId).trim(),
+    {
+      sessionId: input.sessionId,
+      sessionFile: input.sessionFile,
+    },
+  );
+  const now = new Date().toISOString();
+
+  for (const messageId of messageIds) {
+    saveKoishiMessage(agentDir, {
+      messageId,
+      role: "assistant",
+      replyToMessageId: safeString(input.replyToMessageId).trim() || undefined,
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
+      processedAt: now,
+      chatKey,
+      platform: parsed.platform,
+      botId: parsed.botId || undefined,
+      chatId: parsed.chatId,
+      chatType: inferChatType(parsed),
+      receivedAt: now,
+      text: bodyText || undefined,
+      rawContent,
+      strippedContent: bodyText || undefined,
+    });
+  }
+
+  return messageIds;
+}
+
 function localAssetUrl(filePath: string) {
   return toFileUrl(path.resolve(filePath)).href;
+}
+
+function summarizeOutgoingParts(parts: ChatMessagePart[]) {
+  return parts
+    .map((part) => {
+      if (part.type === "text") return safeString(part.text).trim();
+      if (part.type === "at")
+        return `[@] ${safeString(part.name).trim() || safeString(part.id).trim()}`;
+      if (part.type === "image")
+        return `[#image] ${safeString(part.path).trim() || safeString(part.url).trim()}`;
+      return `[#file] ${safeString(part.name).trim() || safeString(part.path).trim() || safeString(part.url).trim()}`;
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
 }
 
 export async function sendText(
@@ -60,7 +192,7 @@ export async function sendText(
   const content = replyToMessageId
     ? [h.quote(replyToMessageId), textNode]
     : [textNode];
-  await sendBotMessage(bot, parsed.chatId, content);
+  return await sendBotMessage(bot, parsed.chatId, content);
 }
 
 export async function sendImageFile(
@@ -85,7 +217,7 @@ export async function sendImageFile(
   const content = replyToMessageId
     ? [h.quote(replyToMessageId), imageNode]
     : [imageNode];
-  await sendBotMessage(bot, parsed.chatId, content);
+  return await sendBotMessage(bot, parsed.chatId, content);
 }
 
 export async function sendGenericFile(
@@ -110,7 +242,7 @@ export async function sendGenericFile(
   const content = replyToMessageId
     ? [h.quote(replyToMessageId), fileNode]
     : [fileNode];
-  await sendBotMessage(bot, parsed.chatId, content);
+  return await sendBotMessage(bot, parsed.chatId, content);
 }
 
 export async function messagePartToNode(part: ChatMessagePart, h: any) {
@@ -163,13 +295,26 @@ export async function sendOutboxPayload(
     const chatKey = safeString(payload.chatKey).trim();
     const text = safeString(payload.text).trim();
     const replyToMessageId = safeString(payload.replyToMessageId).trim();
-    await sendText(app, chatKey, text, h, replyToMessageId);
+    const deliveryResult = await sendText(
+      app,
+      chatKey,
+      text,
+      h,
+      replyToMessageId,
+    );
     if (chatKey && text) {
       appendKoishiChatLog(agentDir, {
         timestamp: new Date().toISOString(),
         chatKey,
         role: "assistant",
         text,
+        replyToMessageId: replyToMessageId || undefined,
+      });
+      recordDeliveredAssistantMessages(agentDir, {
+        chatKey,
+        deliveryResult,
+        text,
+        rawContent: text,
         replyToMessageId: replyToMessageId || undefined,
       });
     }
@@ -199,7 +344,7 @@ export async function sendOutboxPayload(
   const content = replyToMessageId
     ? [h.quote(replyToMessageId), ...nodes]
     : nodes;
-  await sendBotMessage(bot, parsed.chatId, content);
+  const deliveryResult = await sendBotMessage(bot, parsed.chatId, content);
 
   const finalLoggedText = rawParts
     .filter((part) => part.type === "text")
@@ -217,6 +362,14 @@ export async function sendOutboxPayload(
         safeString(payload.replyToMessageId).trim() || undefined,
     });
   }
+  const storedSummary = summarizeOutgoingParts(rawParts);
+  recordDeliveredAssistantMessages(agentDir, {
+    chatKey,
+    deliveryResult,
+    text: finalLoggedText || storedSummary || undefined,
+    rawContent: storedSummary || finalLoggedText || undefined,
+    replyToMessageId: safeString(payload.replyToMessageId).trim() || undefined,
+  });
 }
 
 export function buildPromptText(text: string, attachments: SavedAttachment[]) {

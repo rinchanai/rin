@@ -263,6 +263,7 @@ export function persistInboundMessage(
   const userId = pickUserId(session);
   return saveKoishiMessage(agentDir, {
     messageId,
+    role: "user",
     replyToMessageId: pickReplyToMessageId(session) || undefined,
     chatKey,
     platform,
