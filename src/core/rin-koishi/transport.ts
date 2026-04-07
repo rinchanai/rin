@@ -163,6 +163,21 @@ export function planTelegramDeliveries(parts: ChatMessagePart[]) {
   ).length;
   if (assetCount <= 1 || !textLikeCount) return [normalized];
 
+  const firstAssetIndex = normalized.findIndex(
+    (part) => part.type === "image" || part.type === "file",
+  );
+  const tailAssets =
+    firstAssetIndex >= 0 ? normalized.slice(firstAssetIndex) : normalized;
+  const prefixTextWithUniformAssets =
+    firstAssetIndex > 0 &&
+    normalized
+      .slice(0, firstAssetIndex)
+      .every((part) => part.type === "text" || part.type === "at") &&
+    tailAssets.every((part) => part.type === tailAssets[0]?.type);
+  if (prefixTextWithUniformAssets) {
+    return [normalized];
+  }
+
   const leadTextParts = normalized.filter(
     (part) => part.type === "text" || part.type === "at",
   );
