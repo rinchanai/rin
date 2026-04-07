@@ -56,53 +56,51 @@ test("koishi transport restorePromptParts rebuilds image payloads from disk", as
   });
 });
 
-test("koishi transport keeps prefixed text plus uniform image album together for telegram captions", () => {
-  const batches = transport.planTelegramDeliveries([
-    { type: "text", text: "intro" },
-    { type: "image", path: "/tmp/1.png" },
-    { type: "image", path: "/tmp/2.png" },
-    { type: "image", path: "/tmp/3.png" },
-  ]);
-  assert.equal(batches.length, 1);
-  assert.deepEqual(
-    batches[0].map((part) => part.type),
-    ["text", "image", "image", "image"],
-  );
-});
-
-test("koishi transport compacts interleaved telegram text and multiple images into fewer batches", () => {
-  const batches = transport.planTelegramDeliveries([
-    { type: "text", text: "intro" },
-    { type: "text", text: "first" },
-    { type: "image", path: "/tmp/1.png" },
-    { type: "text", text: "second" },
-    { type: "image", path: "/tmp/2.png" },
-  ]);
-  assert.equal(batches.length, 2);
-  assert.deepEqual(
-    batches[0].map((part) => part.type),
-    ["text", "text", "text"],
-  );
-  assert.deepEqual(
-    batches[1].map((part) => part.type),
-    ["image", "image"],
-  );
-});
-
-test("koishi transport telegram compaction preserves asset-type order after stripping text labels", () => {
-  const batches = transport.planTelegramDeliveries([
-    { type: "text", text: "images" },
-    { type: "image", path: "/tmp/1.png" },
-    { type: "text", text: "files" },
-    { type: "file", path: "/tmp/a.txt", name: "a.txt" },
-    { type: "text", text: "more images" },
-    { type: "image", path: "/tmp/2.png" },
-  ]);
-  assert.equal(batches.length, 4);
-  assert.deepEqual(
-    batches.map((batch) => batch[0].type),
-    ["text", "image", "file", "image"],
-  );
+test("koishi transport forwards mixed parts as a single native koishi send", async () => {
+  await withTempDir(async (dir) => {
+    const imagePath = path.join(dir, "demo.png");
+    await fs.writeFile(imagePath, Buffer.from("abc"));
+    const sends = [];
+    await transport.sendOutboxPayload(
+      {
+        bots: [
+          {
+            platform: "telegram",
+            selfId: "1",
+            async sendMessage(chatId, content) {
+              sends.push({ chatId, content });
+              return [{ messageId: "m1" }];
+            },
+          },
+        ],
+      },
+      dir,
+      {
+        type: "parts_delivery",
+        chatKey: "telegram/1:2",
+        replyToMessageId: "42",
+        parts: [
+          { type: "text", text: "intro" },
+          { type: "image", path: imagePath, mimeType: "image/png" },
+          { type: "image", path: imagePath, mimeType: "image/png" },
+        ],
+      },
+      Object.assign((type, attrs) => ({ type, attrs }), {
+        text(content) {
+          return { type: "text", attrs: { content } };
+        },
+        quote(id) {
+          return { type: "quote", attrs: { id } };
+        },
+      }),
+    );
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0].chatId, "2");
+    assert.equal(sends[0].content[0].type, "quote");
+    assert.equal(sends[0].content[1].type, "text");
+    assert.equal(sends[0].content[2].type, "image");
+    assert.equal(sends[0].content[3].type, "image");
+  });
 });
 
 test("koishi transport keeps local image parts as file urls instead of inlining data urls", async () => {
