@@ -90,3 +90,69 @@ test("koishi transport telegram compaction preserves asset-type order after stri
     ["text", "image", "file", "image"],
   );
 });
+
+test("koishi transport keeps local image parts as file urls instead of inlining data urls", async () => {
+  await withTempDir(async (dir) => {
+    const imagePath = path.join(dir, "demo.png");
+    await fs.writeFile(imagePath, Buffer.from("abc"));
+    const h = Object.assign(
+      (type, attrs) => ({ type, attrs }),
+      {
+        image(src) {
+          return { type: "img", attrs: { src } };
+        },
+        text(content) {
+          return { type: "text", attrs: { content } };
+        },
+        at(id, options) {
+          return { type: "at", attrs: { id, ...options } };
+        },
+        file(src, mimeType, options) {
+          return { type: "file", attrs: { src, mimeType, ...options } };
+        },
+      },
+    );
+    const node = await transport.messagePartToNode(
+      { type: "image", path: imagePath, mimeType: "image/png" },
+      h,
+    );
+    assert.equal(node.type, "image");
+    assert.match(node.attrs.src, /^file:\/\//);
+    assert.equal(node.attrs.mimeType, "image/png");
+  });
+});
+
+test("koishi transport treats empty bot send results as delivery failures", async () => {
+  await withTempDir(async (dir) => {
+    await assert.rejects(
+      transport.sendOutboxPayload(
+        {
+          bots: [
+            {
+              platform: "telegram",
+              selfId: "1",
+              async sendMessage() {
+                return [];
+              },
+            },
+          ],
+        },
+        dir,
+        {
+          type: "parts_delivery",
+          chatKey: "telegram/1:2",
+          parts: [{ type: "text", text: "hello" }],
+        },
+        {
+          text(content) {
+            return { type: "text", attrs: { content } };
+          },
+          quote(id) {
+            return { type: "quote", attrs: { id } };
+          },
+        },
+      ),
+      /koishi_send_message_empty_result/,
+    );
+  });
+});
