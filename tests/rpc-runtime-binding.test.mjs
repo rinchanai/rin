@@ -36,15 +36,24 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
     },
   });
 
-  const { setSteeringMode, setFollowUpMode, setAutoCompactionEnabled } =
-    session;
+  session.detachedBlankSession = true;
+  const model = { provider: "test", id: "demo-model" };
+  const {
+    setModel,
+    setSteeringMode,
+    setFollowUpMode,
+    setAutoCompactionEnabled,
+  } = session;
 
+  await setModel(model);
   setSteeringMode("one-at-a-time");
   setFollowUpMode("all");
   setAutoCompactionEnabled(true);
 
   await new Promise((resolve) => setImmediate(resolve));
 
+  assert.deepEqual(session.model, model);
+  assert.deepEqual(session.state.model, model);
   assert.equal(session.steeringMode, "one-at-a-time");
   assert.equal(session.followUpMode, "all");
   assert.equal(session.settingsManager.getSteeringMode(), "one-at-a-time");

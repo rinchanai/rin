@@ -154,55 +154,12 @@ export class RpcInteractiveSession {
     additionalExtensionPaths: string[] = [],
   ) {
     this.additionalExtensionPaths = [...additionalExtensionPaths];
-    for (const method of [
-      "prompt",
-      "interruptPrompt",
-      "resumeInterruptedTurn",
-      "steer",
-      "followUp",
-      "clearQueue",
-      "getSteeringMessages",
-      "getFollowUpMessages",
-      "abort",
-      "newSession",
-      "switchSession",
-      "renameSession",
-      "listSessions",
-      "setModel",
-      "setScopedModels",
-      "cycleModel",
-      "setThinkingLevel",
-      "cycleThinkingLevel",
-      "getAvailableThinkingLevels",
-      "setSteeringMode",
-      "setFollowUpMode",
-      "compact",
-      "abortCompaction",
-      "setAutoCompactionEnabled",
-      "executeBash",
-      "ensureSessionReady",
-      "runCommand",
-      "detachSession",
-      "recordBashResult",
-      "abortBash",
-      "abortRetry",
-      "setAutoRetryEnabled",
-      "setSessionName",
-      "setEntryLabel",
-      "fork",
-      "navigateTree",
-      "getUserMessagesForForking",
-      "getSessionStats",
-      "getContextUsage",
-      "exportToHtml",
-      "exportToJsonl",
-      "importFromJsonl",
-      "getLastAssistantText",
-      "getToolDefinition",
-      "reload",
-      "bindExtensions",
-    ] as const) {
-      (this as any)[method] = (this as any)[method].bind(this);
+    const proto = Object.getPrototypeOf(this);
+    for (const name of Object.getOwnPropertyNames(proto)) {
+      if (name === "constructor") continue;
+      const descriptor = Object.getOwnPropertyDescriptor(proto, name);
+      if (!descriptor || typeof descriptor.value !== "function") continue;
+      (this as any)[name] = descriptor.value.bind(this);
     }
     this.agent = new RemoteAgent(client);
     this.settingsManager = createSettingsManager();
