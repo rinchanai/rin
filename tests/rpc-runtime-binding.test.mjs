@@ -60,6 +60,6 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
   assert.equal(session.settingsManager.getFollowUpMode(), "all");
   assert.deepEqual(
     sent.map((entry) => entry.type),
-    ["set_steering_mode", "set_follow_up_mode", "set_auto_compaction"],
+    [],
   );
 });

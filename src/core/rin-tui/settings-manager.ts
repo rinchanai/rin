@@ -24,6 +24,7 @@ export function createSettingsManager() {
     defaultModel: undefined as string | undefined,
     steeringMode: "all" as "all" | "one-at-a-time",
     followUpMode: "one-at-a-time" as "all" | "one-at-a-time",
+    compactionEnabled: true,
   };
   const globalSettings = {
     packages: [] as any[],
@@ -60,6 +61,7 @@ export function createSettingsManager() {
     getEnabledModels: () => values.enabledModels,
     getSteeringMode: () => values.steeringMode,
     getFollowUpMode: () => values.followUpMode,
+    getCompactionEnabled: () => values.compactionEnabled,
     getCodeBlockIndent: () => values.codeBlockIndent,
     getBranchSummarySkipPrompt: () => values.branchSummarySkipPrompt,
     getGlobalSettings: () => ({ ...globalSettings }),
@@ -123,6 +125,9 @@ export function createSettingsManager() {
     },
     setFollowUpMode: (v: "all" | "one-at-a-time") => {
       values.followUpMode = v;
+    },
+    setCompactionEnabled: (v: boolean) => {
+      values.compactionEnabled = v;
     },
     setDefaultModelAndProvider: (provider: string, modelId: string) => {
       values.defaultProvider = provider;

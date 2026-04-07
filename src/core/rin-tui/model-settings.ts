@@ -1,6 +1,36 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
+import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { computeAvailableThinkingLevels } from "./session-helpers.js";
+
+const RUNTIME_PROFILE = resolveRuntimeProfile();
+let persistentSettingsPromise: Promise<any | null> | null = null;
+
+async function getPersistentSettingsManager() {
+  if (!persistentSettingsPromise) {
+    persistentSettingsPromise = loadRinCodingAgent()
+      .then((codingAgentModule: any) => {
+        const SettingsManager = codingAgentModule?.SettingsManager;
+        if (!SettingsManager?.create) return null;
+        return SettingsManager.create(
+          RUNTIME_PROFILE.cwd,
+          RUNTIME_PROFILE.agentDir,
+        );
+      })
+      .catch(() => null);
+  }
+  return await persistentSettingsPromise;
+}
+
+function persistSettingsMutation(mutate: (settings: any) => void) {
+  void getPersistentSettingsManager()
+    .then((settings) => {
+      if (!settings) return;
+      mutate(settings);
+    })
+    .catch(() => {});
+}
 
 export async function setRpcModel(
   target: any,
@@ -11,8 +41,14 @@ export async function setRpcModel(
     target.model = model;
     target.state.model = model;
     target.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
+    persistSettingsMutation((settings) => {
+      settings.setDefaultModelAndProvider?.(model.provider, model.id);
+    });
     return;
   }
+  persistSettingsMutation((settings) => {
+    settings.setDefaultModelAndProvider?.(model.provider, model.id);
+  });
   await target.call("set_model", {
     provider: model.provider,
     modelId: model.id,
@@ -47,10 +83,19 @@ export async function cycleRpcModel(
     target.model = next;
     target.state.model = next;
     target.settingsManager.setDefaultModelAndProvider(next.provider, next.id);
+    persistSettingsMutation((settings) => {
+      settings.setDefaultModelAndProvider?.(next.provider, next.id);
+    });
     return { model: next, thinkingLevel: target.thinkingLevel };
   }
   const data = await target.call("cycle_model");
   await refreshModels();
+  const nextModel = data?.model;
+  if (nextModel?.provider && nextModel?.id) {
+    persistSettingsMutation((settings) => {
+      settings.setDefaultModelAndProvider?.(nextModel.provider, nextModel.id);
+    });
+  }
   return data ?? undefined;
 }
 
@@ -61,6 +106,10 @@ export function setRpcThinkingLevel(target: any, level: ThinkingLevel) {
     : available[available.length - 1];
   target.thinkingLevel = next;
   target.state.thinkingLevel = next;
+  persistSettingsMutation((settings) => {
+    settings.setDefaultThinkingLevel?.(next);
+  });
+  if (target.detachedBlankSession) return;
   void target.client
     .send({ type: "set_thinking_level", level: next })
     .catch(() => {});
@@ -80,17 +129,29 @@ export function cycleRpcThinkingLevel(target: any): ThinkingLevel | undefined {
 export function setRpcSteeringMode(target: any, mode: "all" | "one-at-a-time") {
   target.steeringMode = mode;
   target.settingsManager.setSteeringMode(mode);
+  persistSettingsMutation((settings) => {
+    settings.setSteeringMode?.(mode);
+  });
+  if (target.detachedBlankSession) return;
   void target.client.send({ type: "set_steering_mode", mode }).catch(() => {});
 }
 
 export function setRpcFollowUpMode(target: any, mode: "all" | "one-at-a-time") {
   target.followUpMode = mode;
   target.settingsManager.setFollowUpMode(mode);
+  persistSettingsMutation((settings) => {
+    settings.setFollowUpMode?.(mode);
+  });
+  if (target.detachedBlankSession) return;
   void target.client.send({ type: "set_follow_up_mode", mode }).catch(() => {});
 }
 
 export function setRpcAutoCompaction(target: any, enabled: boolean) {
   target.autoCompactionEnabled = enabled;
+  persistSettingsMutation((settings) => {
+    settings.setCompactionEnabled?.(enabled);
+  });
+  if (target.detachedBlankSession) return;
   void target.client
     .send({ type: "set_auto_compaction", enabled })
     .catch(() => {});
