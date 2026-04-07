@@ -234,7 +234,7 @@ export async function doctorMemory(rootOverride = "") {
   await ensureMemoryLayout(root);
   const docs = await loadMemoryDocs(root);
   const activeDocs = activeDocsOnly(docs);
-  const counts = { resident: 0, recall: 0 };
+  const counts = { resident: 0, progressive: 0, recall: 0 };
   for (const doc of activeDocs) counts[doc.exposure] += 1;
   return {
     root,

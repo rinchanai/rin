@@ -15,6 +15,22 @@ function residentPromptLine(slot: string, body: string): string {
   return `[${slot}] ${text}`;
 }
 
+function progressiveIndexLine(doc: MemoryDoc): string {
+  const desc = trimText(
+    doc.description ||
+      excerptForRecall(doc, "", 160) ||
+      "Read this when relevant.",
+    180,
+  );
+  return `- ${doc.name}: ${desc}`;
+}
+
+function renderExpandedDoc(doc: MemoryDoc): string {
+  return [`### ${doc.name}`, safeString(doc.content).trim()]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function renderRecallContext(doc: MemoryDoc, query: string): string {
   const excerpt = excerptForRecall(doc, query, 260);
   const meta = [doc.scope, doc.kind].filter(Boolean).join(" • ");
@@ -43,32 +59,41 @@ export function compileFromDocsAndEvents(
         RESIDENT_SLOTS.indexOf(a.resident_slot as any) -
         RESIDENT_SLOTS.indexOf(b.resident_slot as any),
     );
+  const progressiveDocs = docs
+    .filter((doc) => doc.exposure === "progressive")
+    .sort((a, b) =>
+      safeString(b.updated_at).localeCompare(safeString(a.updated_at)),
+    );
+  const progressiveIndexLimit = Math.max(
+    0,
+    Number(params.progressiveLimit == null ? 12 : params.progressiveLimit) ||
+      12,
+  );
+  const expandedProgressiveLimit = Math.max(
+    0,
+    Number(
+      params.expandedProgressiveLimit == null
+        ? 2
+        : params.expandedProgressiveLimit,
+    ) || 2,
+  );
   const recallLimit = Math.max(
     0,
-    Number(params.recallLimit == null ? 6 : params.recallLimit) || 6,
+    Number(params.recallLimit == null ? 3 : params.recallLimit) || 3,
   );
-
-  const recallPool = docs.filter((doc) => doc.exposure === "recall");
-  const recallQueries = Array.from(
-    new Set(
-      [query, safeString(params.domainQuery || "").trim()]
-        .map((value) => safeString(value).trim())
-        .filter(Boolean),
-    ),
-  );
-  const recallDocs = !recallQueries.length
+  const expandedProgressives = !query
     ? []
-    : Array.from(
-        new Map(
-          recallQueries
-            .flatMap((needle) =>
-              searchMemoryDocs(recallPool, needle, {
-                limit: recallLimit,
-              }).map((row) => [row.doc.id, row.doc] as const),
-            )
-            .slice(0, recallLimit),
-        ).values(),
-      ).slice(0, recallLimit);
+    : searchMemoryDocs(progressiveDocs, query, {
+        limit: expandedProgressiveLimit,
+      }).map((row) => row.doc);
+
+  const recallDocs = !query
+    ? []
+    : searchMemoryDocs(
+        docs.filter((doc) => doc.exposure === "recall"),
+        query,
+        { limit: recallLimit },
+      ).map((row) => row.doc);
 
   return {
     root,
@@ -78,8 +103,15 @@ export function compileFromDocsAndEvents(
       .map((doc) => residentPromptLine(doc.resident_slot, doc.content))
       .filter(Boolean)
       .join("\n"),
+    progressive_index: progressiveDocs
+      .slice(0, progressiveIndexLimit)
+      .map(progressiveIndexLine)
+      .join("\n"),
+    progressive_expanded: expandedProgressives
+      .map(renderExpandedDoc)
+      .join("\n\n"),
     recall_context: recallDocs
-      .map((doc) => renderRecallContext(doc, query || recallQueries[0] || ""))
+      .map((doc) => renderRecallContext(doc, query))
       .join("\n\n"),
     resident_prompt_docs: resident.map((doc) => ({
       name: doc.name,
@@ -88,6 +120,10 @@ export function compileFromDocsAndEvents(
       content: safeString(doc.content).trim(),
     })),
     resident_docs: resident.map(previewMemoryDoc),
+    progressive_docs: progressiveDocs
+      .slice(0, progressiveIndexLimit)
+      .map(previewMemoryDoc),
+    expanded_progressives: expandedProgressives.map(previewMemoryDoc),
     episode_docs: [],
     recall_docs: recallDocs.map(previewMemoryDoc),
     related_docs: [],

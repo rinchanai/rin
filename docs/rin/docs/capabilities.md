@@ -32,7 +32,7 @@ Important implications:
 
 Rin provides its own memory system. As an agent, you should know that:
 
-- it has resident memory for short always-on baselines and recall memory for searchable detailed guidance
+- it has multiple layers such as resident, progressive, and recall memory
 - not all memory is injected into the prompt automatically
 - when you need historical memory, prefer using the memory tool instead of assuming the content is already in context
 - before saving a new memory, search first and avoid creating duplicates when possible

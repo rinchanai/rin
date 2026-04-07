@@ -158,7 +158,7 @@ const saveMemoryParams = Type.Object({
   exposure: Type.Optional(
     Type.Union([Type.Literal("progressive"), Type.Literal("recall")], {
       description:
-        "Optional memory layer. Use `recall` for normal searchable memory. `progressive` is a deprecated compatibility alias treated like `recall`.",
+        "Optional memory layer. Allowed values: `progressive` or `recall`.",
     }),
   ),
   tags: Type.Optional(Type.Array(Type.String())),
@@ -383,8 +383,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
       "Search long-term memory. Returns matching paths and metadata first.",
     promptSnippet: "Search long-term memory.",
     promptGuidelines: [
-      "Use search_memory proactively before substantial work.",
-      "Search both the immediate task and the broader domain.",
+      "Use search_memory to search memory files and read them.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params) =>
