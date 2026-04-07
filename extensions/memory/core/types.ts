@@ -1,4 +1,4 @@
-export type MemoryExposure = "resident" | "progressive" | "recall";
+export type MemoryExposure = "memory_prompts" | "memory_docs";
 export type MemoryFidelity = "exact" | "fuzzy";
 export type MemoryScope = "global" | "domain" | "project" | "session";
 export type MemoryKind = "skill" | "instruction" | "rule" | "fact" | "index";
@@ -10,7 +10,7 @@ export type MemoryDoc = {
   name: string;
   exposure: MemoryExposure;
   fidelity: MemoryFidelity;
-  resident_slot: string;
+  memory_prompt_slot: string;
   description: string;
   tags: string[];
   aliases: string[];
@@ -56,7 +56,7 @@ export type MemoryRelationGraph = {
   edges: MemoryRelationEdge[];
 };
 
-export const RESIDENT_SLOTS = [
+export const MEMORY_PROMPT_SLOTS = [
   "agent_identity",
   "owner_identity",
   "core_voice_style",
@@ -64,7 +64,7 @@ export const RESIDENT_SLOTS = [
   "core_values",
 ] as const;
 
-export const RESIDENT_LIMITS: Record<
+export const MEMORY_PROMPT_LIMITS: Record<
   string,
   { maxChars: number; fidelity: Array<MemoryFidelity> }
 > = {

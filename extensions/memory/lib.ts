@@ -1,5 +1,5 @@
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 
 import { Type } from "@sinclair/typebox";
 
@@ -10,46 +10,52 @@ import {
   formatMemoryResult,
 } from "./format.js";
 import {
-  buildOnboardingPrompt as buildOnboardingPromptBase,
-  getOnboardingState as getOnboardingStateBase,
-  getOnboardingStatus as getOnboardingStatusBase,
-  isOnboardingActive as isOnboardingActiveBase,
-  markOnboardingPrompted as markOnboardingPromptedBase,
-  refreshOnboardingCompletion as refreshOnboardingCompletionBase,
+  buildOnboardingPrompt,
+  getOnboardingState,
+  isOnboardingActive,
+  markOnboardingPrompted,
+  refreshOnboardingCompletion,
 } from "./onboarding.js";
+import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 
-export const memoryToolParameters = Type.Object({
+export function resolveAgentDir() {
+  return resolveRuntimeProfile().agentDir;
+}
+
+export const memoryActionParams = Type.Object({
   action: Type.Union(
     [
       Type.Literal("list"),
       Type.Literal("search"),
       Type.Literal("save"),
-      Type.Literal("save_resident"),
+      Type.Literal("save_memory_prompt"),
+      Type.Literal("compile"),
+      Type.Literal("doctor"),
     ],
     {
       description:
-        "Memory tool action. Allowed values: `list`, `search`, `save`, or `save_resident`.",
+        "Memory tool action. Allowed values: `list`, `search`, `save`, `save_memory_prompt`, `compile`, or `doctor`.",
     },
   ),
   query: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Number({ minimum: 1 })),
+  fidelity: Type.Optional(
+    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")]),
+  ),
   id: Type.Optional(Type.String()),
   path: Type.Optional(Type.String()),
   name: Type.Optional(Type.String()),
   content: Type.Optional(Type.String()),
   description: Type.Optional(Type.String()),
   exposure: Type.Optional(
-    Type.Union([Type.Literal("progressive"), Type.Literal("recall")], {
+    Type.Literal("memory_docs", {
       description:
-        "Optional memory layer. Allowed values: `progressive` or `recall`.",
+        "Optional memory layer. Normal searchable memory uses `memory_docs`.",
     }),
   ),
-  fidelity: Type.Optional(
-    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")], {
-      description:
-        "Optional match fidelity. Allowed values: `exact` or `fuzzy` only.",
-    }),
-  ),
-  residentSlot: Type.Optional(
+  tags: Type.Optional(Type.Array(Type.String())),
+  aliases: Type.Optional(Type.Array(Type.String())),
+  memoryPromptSlot: Type.Optional(
     Type.Union(
       [
         Type.Literal("agent_identity"),
@@ -60,12 +66,10 @@ export const memoryToolParameters = Type.Object({
       ],
       {
         description:
-          "Resident slot name. Use only with `exposure: resident`. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
+          "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
       },
     ),
   ),
-  tags: Type.Optional(Type.Array(Type.String())),
-  aliases: Type.Optional(Type.Array(Type.String())),
   scope: Type.Optional(
     Type.Union(
       [
@@ -95,77 +99,7 @@ export const memoryToolParameters = Type.Object({
       },
     ),
   ),
-  status: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("active"),
-        Type.Literal("superseded"),
-        Type.Literal("invalidated"),
-      ],
-      {
-        description:
-          "Optional memory status. Allowed values: `active`, `superseded`, or `invalidated`.",
-      },
-    ),
-  ),
-  observationCount: Type.Optional(Type.Number({ minimum: 1 })),
-  supersedes: Type.Optional(Type.Array(Type.String())),
-  sensitivity: Type.Optional(Type.String()),
-  source: Type.Optional(Type.String()),
-  limit: Type.Optional(
-    Type.Number({
-      minimum: 1,
-      description: "Maximum number of matches to return.",
-    }),
-  ),
 });
-
-export function resolveAgentDir(): string {
-  const fromEnv = String(
-    process.env.PI_CODING_AGENT_DIR || process.env.RIN_DIR || "",
-  ).trim();
-  return fromEnv
-    ? path.resolve(fromEnv)
-    : path.join(process.env.HOME || "", ".rin");
-}
-
-export {
-  buildCompiledMemoryPrompt,
-  buildSystemPromptMemory,
-  formatMemoryResult,
-  formatMemoryAgentResult,
-};
-
-export function buildOnboardingPrompt(
-  mode: "auto" | "manual" = "manual",
-): string {
-  return buildOnboardingPromptBase(mode);
-}
-
-export function getOnboardingState() {
-  return getOnboardingStateBase(resolveAgentDir);
-}
-
-export function isOnboardingActive(
-  state = getOnboardingStateBase(resolveAgentDir),
-) {
-  return isOnboardingActiveBase(resolveAgentDir, state);
-}
-
-export async function getOnboardingStatus() {
-  return await getOnboardingStatusBase(resolveAgentDir, loadMemoryService);
-}
-
-export async function markOnboardingPrompted(trigger: string) {
-  return await markOnboardingPromptedBase(resolveAgentDir, trigger);
-}
-
-export async function refreshOnboardingCompletion() {
-  return await refreshOnboardingCompletionBase(
-    resolveAgentDir,
-    loadMemoryService,
-  );
-}
 
 export async function loadMemoryService() {
   const moduleUrl = pathToFileURL(
@@ -179,14 +113,39 @@ export async function executeMemoryTool(params: any) {
   return await service.executeMemoryAction(params, resolveAgentDir());
 }
 
-export async function compilePromptMemory(query = "") {
+export function buildDomainQuery(prompt = "", cwd = "") {
+  const lower = `${String(prompt || "")} ${String(cwd || "")}`.toLowerCase();
+  const tags = new Set<string>();
+  if (
+    /\b(code|coding|program|programming|debug|bug|fix|refactor|test|build|compile|repo|commit|typescript|javascript|python|rust|go|java|c\+\+|c#)\b/.test(
+      lower,
+    ) ||
+    /\/(src|tests?|extensions|third_party)(\/|$)/.test(lower)
+  ) {
+    tags.add("programming coding software");
+  }
+  const base = path.basename(String(cwd || "").trim());
+  if (base) tags.add(base);
+  return [...tags].join(" ").trim();
+}
+
+export {
+  buildOnboardingPrompt,
+  formatMemoryAgentResult,
+  formatMemoryResult,
+  getOnboardingState,
+  isOnboardingActive,
+  markOnboardingPrompted,
+  refreshOnboardingCompletion,
+};
+
+export async function compilePromptMemory(query = "", cwd = "") {
   const service = await loadMemoryService();
   const compiled = await service.compileMemory(
     {
       query,
-      progressiveLimit: 12,
-      expandedProgressiveLimit: 2,
-      recallLimit: 3,
+      domainQuery: buildDomainQuery(query, cwd),
+      memoryDocLimit: 6,
       historyLimit: 3,
     },
     resolveAgentDir(),

@@ -27,9 +27,9 @@ test("memory search delegates ranking to MiniSearch and returns the best match f
     {
       id: "reconnect-flicker",
       title: "Reconnect flicker fix",
-      exposure: "recall",
+      exposure: "memory_docs",
       fidelity: "fuzzy",
-      resident_slot: "",
+      memory_prompt_slot: "",
       summary: "TUI reconnect flicker fix history",
       tags: ["tui", "reconnect"],
       aliases: [],
@@ -50,9 +50,9 @@ test("memory search delegates ranking to MiniSearch and returns the best match f
     {
       id: "generic-process-note",
       title: "Generic process note",
-      exposure: "recall",
+      exposure: "memory_docs",
       fidelity: "fuzzy",
-      resident_slot: "",
+      memory_prompt_slot: "",
       summary: "Current implementation process notes",
       tags: ["process"],
       aliases: [],

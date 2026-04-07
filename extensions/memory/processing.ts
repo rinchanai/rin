@@ -6,8 +6,8 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { resolveAgentDir } from "./lib.js";
 import { safeString, sha, slugify } from "./core/utils.js";
-import { RESIDENT_LIMITS, RESIDENT_SLOTS } from "./core/types.js";
-import { genericDocPath, loadMemoryDocs, residentPath } from "./docs.js";
+import { MEMORY_PROMPT_LIMITS, MEMORY_PROMPT_SLOTS } from "./core/types.js";
+import { genericDocPath, loadMemoryDocs, memoryPromptPath } from "./docs.js";
 import { resolveMemoryRoot } from "./store.js";
 
 type MemoryProcessingSettings = {
@@ -19,33 +19,11 @@ export type GeneralMemoryDraft = {
   name?: string;
   description?: string;
   content: string;
-  exposure?: "progressive" | "recall";
+  exposure?: "memory_docs";
   scope?: "global" | "domain" | "project" | "session";
   kind?: "skill" | "instruction" | "rule" | "fact" | "index";
   path?: string;
 };
-
-function extractJson(text: string): any {
-  const raw = safeString(text).trim();
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {}
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-  if (fenced) {
-    try {
-      return JSON.parse(fenced[1]);
-    } catch {}
-  }
-  const start = raw.indexOf("{");
-  const end = raw.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    try {
-      return JSON.parse(raw.slice(start, end + 1));
-    } catch {}
-  }
-  return {};
-}
 
 function extractPlainText(text: string): string {
   const raw = safeString(text).trim();
@@ -122,8 +100,7 @@ export function buildMemoryDraftDoc(options: {
   draft: GeneralMemoryDraft;
 }) {
   const root = resolveMemoryRoot(options.rootDir);
-  const exposure =
-    options.draft.exposure === "progressive" ? "progressive" : "recall";
+  const exposure = "memory_docs";
   const name =
     safeString(options.draft.name || "").trim() ||
     safeString(options.draft.content || "")
@@ -136,9 +113,7 @@ export function buildMemoryDraftDoc(options: {
     ? safeString(options.draft.path).trim()
     : genericDocPath(root, exposure, id);
   const kind = safeString(options.draft.kind || "fact").trim() || "fact";
-  const scope =
-    safeString(options.draft.scope || "").trim() ||
-    (exposure === "progressive" ? "domain" : "project");
+  const scope = safeString(options.draft.scope || "").trim() || "project";
   const description = safeString(options.draft.description || "").trim();
   const content = safeString(options.draft.content || "").trim();
   const draftDoc = [
@@ -183,21 +158,24 @@ export async function writeMemoryDocWithSkillCreator(options: {
   };
 }
 
-export async function refineResidentSlot(options: {
+export async function refineMemoryPromptSlot(options: {
   ctx: any;
   currentThinkingLevel: ThinkingLevel;
-  residentSlot: string;
+  memoryPromptSlot: string;
   incomingContent: string;
   rootDir: string;
 }) {
-  const slot = safeString(options.residentSlot).trim();
-  if (!RESIDENT_SLOTS.includes(slot as any)) {
-    throw new Error(`resident_slot_required:${RESIDENT_SLOTS.join(",")}`);
+  const slot = safeString(options.memoryPromptSlot).trim();
+  if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) {
+    throw new Error(
+      `memory_prompt_slot_required:${MEMORY_PROMPT_SLOTS.join(",")}`,
+    );
   }
   const root = resolveMemoryRoot(options.rootDir);
   const docs = await loadMemoryDocs(root);
   const existing = docs.find(
-    (doc) => doc.exposure === "resident" && doc.resident_slot === slot,
+    (doc) =>
+      doc.exposure === "memory_prompts" && doc.memory_prompt_slot === slot,
   );
   const appended = [
     safeString(existing?.content).trim(),
@@ -205,7 +183,7 @@ export async function refineResidentSlot(options: {
   ]
     .filter(Boolean)
     .join("\n");
-  const limits = RESIDENT_LIMITS[slot];
+  const limits = MEMORY_PROMPT_LIMITS[slot];
   const settings = await resolveMemoryProcessingSettings(options.ctx);
   const { output } = await runMemoryProcessor({
     ctx: options.ctx,
@@ -217,11 +195,16 @@ export async function refineResidentSlot(options: {
     ].join("\n\n"),
   });
   const content = extractPlainText(output);
-  if (!content) throw new Error("resident_processing_invalid_content");
+  if (!content) throw new Error("memory_prompt_processing_invalid_content");
+  if (content.length > limits.maxChars) {
+    throw new Error(
+      `memory_prompt_content_too_long:${slot}:${limits.maxChars}`,
+    );
+  }
   return {
     name: slot.replace(/_/g, " "),
     content,
-    path: residentPath(root, slot),
+    path: memoryPromptPath(root, slot),
     previousContent: safeString(existing?.content).trim(),
     language: "english",
   };

@@ -14,15 +14,16 @@ import { nowIso, normalizeList, safeString, slugify } from "./utils.js";
 
 export function ensureExposure(
   value: string,
-  fallback: MemoryExposure = "recall",
+  fallback: MemoryExposure = "memory_docs",
 ): MemoryExposure {
   const normalized = safeString(value).trim();
-  if (
-    normalized === "resident" ||
-    normalized === "progressive" ||
-    normalized === "recall"
-  )
-    return normalized;
+  if (normalized === "memory_prompts" || normalized === "memory_prompt")
+    return "memory_prompts";
+  if (normalized === "memory_docs" || normalized === "memory_doc")
+    return "memory_docs";
+  if (normalized === "resident") return "memory_prompts";
+  if (normalized === "progressive" || normalized === "recall" || !normalized)
+    return "memory_docs";
   return fallback;
 }
 
@@ -103,15 +104,17 @@ export function normalizeFrontmatter(
   content: string,
 ): MemoryDoc {
   const exposure = ensureExposure(
-    safeString(frontmatterValue(raw, "exposure") || "recall"),
+    safeString(frontmatterValue(raw, "exposure") || "memory_docs"),
   );
-  const residentSlot = safeString(
-    frontmatterValue(raw, "resident_slot") || "",
+  const memoryPromptSlot = safeString(
+    frontmatterValue(raw, "memory_prompt_slot") ||
+      frontmatterValue(raw, "resident_slot") ||
+      "",
   ).trim();
   const name =
     safeString(raw.name || raw.title || "").trim() ||
-    (residentSlot
-      ? residentSlot.replace(/_/g, " ")
+    (memoryPromptSlot
+      ? memoryPromptSlot.replace(/_/g, " ")
       : path.basename(filePath, ".md"));
   const id =
     safeString(frontmatterValue(raw, "id") || "").trim() ||
@@ -123,20 +126,20 @@ export function normalizeFrontmatter(
     fidelity: ensureFidelity(
       safeString(frontmatterValue(raw, "fidelity") || "fuzzy"),
     ),
-    resident_slot: residentSlot,
+    memory_prompt_slot: memoryPromptSlot,
     description: safeString(raw.description || raw.summary || "").trim(),
     tags: normalizeList(frontmatterValue(raw, "tags") || ""),
     aliases: normalizeList(frontmatterValue(raw, "aliases") || ""),
     scope: ensureScope(
       safeString(
         frontmatterValue(raw, "scope") ||
-          (exposure === "resident" ? "global" : "project"),
+          (exposure === "memory_prompts" ? "global" : "project"),
       ),
     ),
     kind: ensureKind(
       safeString(
         frontmatterValue(raw, "kind") ||
-          (exposure === "resident" ? "instruction" : "fact"),
+          (exposure === "memory_prompts" ? "instruction" : "fact"),
       ),
     ),
     sensitivity:
@@ -161,7 +164,7 @@ export function normalizeFrontmatter(
     supersedes: normalizeList(frontmatterValue(raw, "supersedes") || ""),
     canonical:
       frontmatterValue(raw, "canonical") == null
-        ? exposure === "resident"
+        ? exposure === "memory_prompts"
         : Boolean(frontmatterValue(raw, "canonical")),
     path: filePath,
     content,
@@ -192,7 +195,9 @@ export function renderMarkdownDoc(doc: MemoryDoc): string {
     id: doc.id,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
-    ...(doc.resident_slot ? { resident_slot: doc.resident_slot } : {}),
+    ...(doc.memory_prompt_slot
+      ? { memory_prompt_slot: doc.memory_prompt_slot }
+      : {}),
     ...(doc.tags.length ? { tags: doc.tags } : {}),
     ...(doc.aliases.length ? { aliases: doc.aliases } : {}),
     ...(doc.scope ? { scope: doc.scope } : {}),
@@ -216,7 +221,7 @@ export function previewMemoryDoc(doc: MemoryDoc): Record<string, any> {
     name: doc.name,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
-    resident_slot: doc.resident_slot || undefined,
+    memory_prompt_slot: doc.memory_prompt_slot || undefined,
     description: doc.description || undefined,
     tags: doc.tags,
     aliases: doc.aliases,

@@ -2,7 +2,7 @@
 
 Rin's builtin long-term memory extension.
 
-The memory tools are `search_memory` and `save_memory`.
+The memory tools are `search_memory`, `save_memory`, and `save_memory_prompt`.
 
 Implementation note:
 
@@ -10,26 +10,24 @@ Implementation note:
 - markdown is the source of truth
 - `store.ts` is the storage/index backend
 - `service.ts` is only a compatibility shim
-- the design stays intentionally simple: write good memory docs, search them well, and let a low-frequency LLM memory maintainer improve the library directly
+- the design stays intentionally simple: keep short always-on memory prompts small, keep detailed memory docs searchable, and let a low-frequency LLM memory maintainer improve the library directly
 
 ## What it now does
 
-- registers `search_memory` and `save_memory`
+- registers `search_memory`, `save_memory`, and `save_memory_prompt`
 - stores memory under `~/.rin/memory/` (or the active agent dir)
-- keeps three explicit layers:
-  - `resident`: short always-on global baselines
-  - `progressive`: important guidance exposed gradually
-  - `recall`: project/topic/history memory searched only when needed
+- keeps two explicit layers:
+  - `memory_prompts`: short always-on global baselines and routing hints
+  - `memory_docs`: searchable project/topic/history memory
 - keeps the public tool surface small:
   - `search`
   - `save`
+  - `save_memory_prompt`
   - `list`
 - queues a low-frequency LLM memory maintainer when a session is being shut down or when switching sessions with `/new`, then processes that queue asynchronously in a detached worker
 - includes a low-frequency `memory-consolidate` command that runs the same maintainer in cleanup mode for deduplication, rewrite, and invalidation of stale memory
-- compiles prompt memory conservatively with:
-  - resident memory
-  - progressive memory index
-- keeps retrieval local and lightweight with markdown frontmatter plus lexical search over title, tags, aliases, triggers, summary, and body
+- compiles prompt memory conservatively with memory prompts only
+- keeps retrieval local and lightweight with markdown frontmatter plus lexical search over title, tags, aliases, summary, and body
 
 ## Tools
 
@@ -37,6 +35,7 @@ The public memory tools are:
 
 - `search_memory`
 - `save_memory`
+- `save_memory_prompt`
 
 `search_memory` is the discovery entrypoint:
 
@@ -46,14 +45,14 @@ The public memory tools are:
 
 ## Notes
 
-- resident slots remain restricted to:
+- memory prompt slots remain restricted to:
   - `agent_identity`
   - `owner_identity`
   - `core_voice_style`
   - `core_methodology`
   - `core_values`
 - automatic memory maintenance is low-frequency rather than per-message: it is queued on `session_shutdown` and on `session_switch` with `reason === "new"`, then processed asynchronously outside the main session flow
-- progressive prompt exposure is intentionally skill-like: short index entry first
+- long detailed guidance belongs in memory docs rather than memory prompts
 - includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
 - `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript
 - onboarding order is intentionally structured, but the agent should handle that order conversationally rather than through a rigid extension-side phase machine:

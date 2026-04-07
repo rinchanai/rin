@@ -80,7 +80,10 @@ test("service shim re-exports store implementation", async () => {
       { action: "doctor" },
       root,
     );
-    assert.deepEqual(viaService.resident_slots, viaStore.resident_slots);
+    assert.deepEqual(
+      viaService.memory_prompt_slots,
+      viaStore.memory_prompt_slots,
+    );
     assert.equal(viaService.root, viaStore.root);
   });
 });
@@ -92,7 +95,7 @@ test("memory search returns paths and get is unsupported", async () => {
         title: "flicker fix history",
         content: "We previously fixed a reconnect flicker in the TUI.",
         summary: "reconnect flicker fix history",
-        exposure: "recall",
+        exposure: "memory_docs",
         scope: "project",
         kind: "fact",
       },
@@ -214,44 +217,44 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
   });
 });
 
-test("doctorMemory reports missing resident slots without event machinery", async () => {
+test("doctorMemory reports missing memory prompt slots without event machinery", async () => {
   await withTempRoot(async (root) => {
     await store.ensureMemoryLayout(store.resolveMemoryRoot(root));
 
     const doctor = await store.doctorMemory(root);
     assert.equal(
-      doctor.resident_missing_slots.includes("owner_identity"),
+      doctor.missing_memory_prompt_slots.includes("owner_identity"),
       true,
     );
-    assert.equal(doctor.counts.recall, 0);
+    assert.equal(doctor.counts.memory_docs, 0);
   });
 });
 
-test("saveMemory rejects resident exposure", async () => {
+test("saveMemory rejects memory prompt exposure", async () => {
   await withTempRoot(async (root) => {
     await assert.rejects(
       () =>
         store.saveMemory(
           {
             content: "owner identity",
-            exposure: "resident",
-            residentSlot: "owner_identity",
+            exposure: "memory_prompts",
+            memoryPromptSlot: "owner_identity",
           },
           root,
         ),
-      /resident_memory_uses_save_resident_memory/,
+      /memory_prompts_use_save_memory_prompt/,
     );
   });
 });
 
-test("compileMemory includes saved resident memory from markdown source", async () => {
+test("compileMemory includes saved memory prompts from markdown source", async () => {
   await withTempRoot(async (root) => {
-    await store.saveResidentMemoryDoc(
+    await store.saveMemoryPromptDoc(
       {
         name: "owner identity",
         content: "Call the user Master by default.",
         description: "Default address for the user.",
-        residentSlot: "owner_identity",
+        memoryPromptSlot: "owner_identity",
         scope: "global",
         kind: "instruction",
       },
@@ -263,7 +266,7 @@ test("compileMemory includes saved resident memory from markdown source", async 
       root,
     );
     assert.ok(
-      String(compiled.resident).includes(
+      String(compiled.memory_prompt_context).includes(
         "[owner_identity] Call the user Master by default.",
       ),
     );
