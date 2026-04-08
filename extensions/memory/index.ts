@@ -432,10 +432,6 @@ export default function memoryExtension(pi: ExtensionAPI) {
     });
   });
 
-  pi.on("session_compact", async () => {
-    pi.sendUserMessage("/reload", { deliverAs: "followUp" });
-  });
-
   pi.on("session_shutdown", async (_event, ctx) => {
     await processSessionMemory(
       ctx,
