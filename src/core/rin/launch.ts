@@ -39,15 +39,7 @@ async function runCommandCapture(
 }
 
 export function buildTmuxListArgs(socketName: string) {
-  return [
-    "tmux",
-    "-L",
-    socketName,
-    "list-windows",
-    "-a",
-    "-F",
-    "#{session_name}:#{window_index}: #{window_name}",
-  ];
+  return ["tmux", "-L", socketName, "list-sessions", "-F", "#S"];
 }
 
 export async function launchDefaultRin(parsed: ParsedArgs) {
