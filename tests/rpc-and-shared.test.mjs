@@ -59,3 +59,27 @@ test("tmux list targets hidden Rin sessions", () => {
     "#S",
   ]);
 });
+
+test("stale tmux session detection only flags old rin-tui release paths", () => {
+  assert.equal(
+    launch.isStaleTmuxSessionProcess(
+      "/usr/bin/node /home/rin/.rin/app/releases/old/dist/app/rin-tui/main.js --rpc",
+      "/home/rin/.rin/app/releases/new/dist/app/rin-tui/main.js",
+    ),
+    true,
+  );
+  assert.equal(
+    launch.isStaleTmuxSessionProcess(
+      "/usr/bin/node /home/rin/.rin/app/releases/new/dist/app/rin-tui/main.js --rpc",
+      "/home/rin/.rin/app/releases/new/dist/app/rin-tui/main.js",
+    ),
+    false,
+  );
+  assert.equal(
+    launch.isStaleTmuxSessionProcess(
+      "/usr/bin/node /home/rin/.rin/app/releases/old/dist/app/rin-daemon/daemon.js",
+      "/home/rin/.rin/app/releases/new/dist/app/rin-tui/main.js",
+    ),
+    false,
+  );
+});
