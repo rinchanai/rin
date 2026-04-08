@@ -1,13 +1,36 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
+import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { computeAvailableThinkingLevels } from "./session-helpers.js";
 
+const RUNTIME_PROFILE = resolveRuntimeProfile();
+let persistentSettingsPromise: Promise<any | null> | null = null;
+
+async function getPersistentSettingsManager() {
+  if (!persistentSettingsPromise) {
+    persistentSettingsPromise = loadRinCodingAgent()
+      .then((codingAgentModule: any) => {
+        const SettingsManager = codingAgentModule?.SettingsManager;
+        if (!SettingsManager?.create) return null;
+        return SettingsManager.create(
+          RUNTIME_PROFILE.cwd,
+          RUNTIME_PROFILE.agentDir,
+        );
+      })
+      .catch(() => null);
+  }
+  return await persistentSettingsPromise;
+}
+
 export async function persistRpcSettingsMutation(
-  client: { send: (payload: any) => Promise<any> },
-  patch: Record<string, unknown>,
+  mutate: (settings: any) => void | Promise<void>,
 ) {
   try {
-    await client.send({ type: "update_settings", patch });
+    const settings = await getPersistentSettingsManager();
+    if (!settings) return;
+    await mutate(settings);
+    await settings.flush?.();
   } catch {}
 }
 

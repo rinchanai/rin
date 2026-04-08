@@ -3,8 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import { isTmuxNoServerError, socketPathForUser } from "../rin-lib/system.js";
-import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
+import {
+  buildUserShell,
+  isTmuxNoServerError,
+  socketPathForUser,
+  targetUserRuntimeEnv,
+} from "../rin-lib/system.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 
 import {
@@ -48,6 +52,49 @@ export function buildTmuxListArgs(socketArgs: string[]) {
   return ["tmux", ...socketArgs, "list-sessions", "-F", "#S"];
 }
 
+export function buildTuiRuntimeEnv(
+  targetUser: string,
+  currentUser: string,
+  installDir?: string,
+) {
+  return targetUserRuntimeEnv(targetUser, {
+    ...(installDir
+      ? {
+          [RIN_DIR_ENV]: installDir,
+          [PI_AGENT_DIR_ENV]: installDir,
+        }
+      : {}),
+    RIN_DAEMON_SOCKET_PATH: socketPathForUser(targetUser),
+    RIN_INVOKING_SYSTEM_USER: currentUser,
+  });
+}
+
+async function runTargetCommandCapture(
+  targetUser: string,
+  argv: string[],
+  env: Record<string, string>,
+  cwd: string,
+) {
+  const launch = buildUserShell(targetUser, argv, env);
+  return await runCommandCapture(launch.command, launch.args, {
+    env: launch.env,
+    cwd,
+  });
+}
+
+async function runTargetCommand(
+  targetUser: string,
+  argv: string[],
+  env: Record<string, string>,
+  cwd: string,
+) {
+  const launch = buildUserShell(targetUser, argv, env);
+  return await runCommand(launch.command, launch.args, {
+    env: launch.env,
+    cwd,
+  });
+}
+
 export function isStaleTmuxSessionProcess(
   cmdline: string,
   expectedEntryRealpath: string,
@@ -57,6 +104,7 @@ export function isStaleTmuxSessionProcess(
 }
 
 async function restartTmuxSessionIfStale(
+  targetUser: string,
   socketArgs: string[],
   sessionName: string,
   expectedEntry: string,
@@ -64,10 +112,11 @@ async function restartTmuxSessionIfStale(
   cwd: string,
 ) {
   const expectedEntryRealpath = fs.realpathSync.native(expectedEntry);
-  const panes = await runCommandCapture(
-    "tmux",
-    [...socketArgs, "list-panes", "-t", sessionName, "-F", "#{pane_pid}"],
-    { env, cwd },
+  const panes = await runTargetCommandCapture(
+    targetUser,
+    ["tmux", ...socketArgs, "list-panes", "-t", sessionName, "-F", "#{pane_pid}"],
+    env,
+    cwd,
   ).catch(() => null);
   if (!panes || panes.code !== 0) return;
 
@@ -86,10 +135,12 @@ async function restartTmuxSessionIfStale(
       continue;
     }
     if (!isStaleTmuxSessionProcess(cmdline, expectedEntryRealpath)) continue;
-    await runCommandCapture("tmux", [...socketArgs, "kill-session", "-t", sessionName], {
+    await runTargetCommandCapture(
+      targetUser,
+      ["tmux", ...socketArgs, "kill-session", "-t", sessionName],
       env,
       cwd,
-    }).catch(() => {});
+    ).catch(() => {});
     return;
   }
 }
@@ -122,30 +173,19 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
     }
   }
 
-  const daemonSocketPath =
-    currentUser === targetUser || !parsed.installDir
-      ? socketPathForUser(targetUser)
-      : bridgeDaemonSocketPath(parsed.installDir);
-
-  const runtimeEnv = {
-    ...(parsed.installDir
-      ? {
-          [RIN_DIR_ENV]: parsed.installDir,
-          [PI_AGENT_DIR_ENV]: parsed.installDir,
-        }
-      : {}),
-    RIN_DAEMON_SOCKET_PATH: daemonSocketPath,
-    RIN_INVOKING_SYSTEM_USER: currentUser,
-  };
+  const runtimeEnv = buildTuiRuntimeEnv(
+    targetUser,
+    currentUser,
+    parsed.installDir,
+  );
 
   if (parsed.tmuxList) {
-    const result = await runCommandCapture(
-      "tmux",
-      buildTmuxListArgs(tmuxSocketArgs).slice(1),
-      {
-        env: { ...process.env, ...runtimeEnv },
-        cwd: repoRoot,
-      },
+    const commandEnv = { ...process.env, ...runtimeEnv };
+    const result = await runTargetCommandCapture(
+      targetUser,
+      buildTmuxListArgs(tmuxSocketArgs),
+      commandEnv as Record<string, string>,
+      repoRoot,
     );
     if (result.stdout) process.stdout.write(result.stdout);
     if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr) {
@@ -160,49 +200,43 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
     const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
     const commandEnv = { ...process.env, ...runtimeEnv };
     await restartTmuxSessionIfStale(
+      targetUser,
       tmuxSocketArgs,
       parsed.tmuxSession,
       tuiEntry,
       commandEnv as Record<string, string>,
       repoRoot,
     );
-    const tmuxCommand = [
-      "env",
-      ...Object.entries(runtimeEnv).map(([key, value]) => `${key}=${value}`),
-      process.execPath,
-      tuiEntry,
-      parsed.std ? "--std" : "--rpc",
-      ...parsed.passthrough,
-    ];
-    const code = await runCommand(
-      "tmux",
+    const code = await runTargetCommand(
+      targetUser,
       [
+        "tmux",
         ...tmuxSocketArgs,
         "new-session",
         "-A",
         "-s",
         parsed.tmuxSession,
-        ...tmuxCommand,
+        process.execPath,
+        tuiEntry,
+        parsed.std ? "--std" : "--rpc",
+        ...parsed.passthrough,
       ],
-      {
-        env: commandEnv,
-        cwd: repoRoot,
-      },
+      commandEnv as Record<string, string>,
+      repoRoot,
     );
     process.exit(code);
   }
 
-  const code = await runCommand(
-    process.execPath,
+  const code = await runTargetCommand(
+    targetUser,
     [
+      process.execPath,
       path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
       parsed.std ? "--std" : "--rpc",
       ...parsed.passthrough,
     ],
-    {
-      env: { ...process.env, ...runtimeEnv },
-      cwd: repoRoot,
-    },
+    { ...process.env, ...runtimeEnv },
+    repoRoot,
   );
   process.exit(code);
 }

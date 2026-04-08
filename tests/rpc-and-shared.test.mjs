@@ -49,6 +49,15 @@ test("tmux socket args target the caller-owned hidden socket", () => {
   assert.deepEqual(launch.buildTmuxSocketArgs("demo"), ["-L", "rin-demo"]);
 });
 
+test("tui runtime env targets the target user's direct daemon socket", () => {
+  const env = launch.buildTuiRuntimeEnv("rin", "THE_cattail", "/home/rin/.rin");
+  assert.equal(env.RIN_DIR, "/home/rin/.rin");
+  assert.equal(env.PI_CODING_AGENT_DIR, "/home/rin/.rin");
+  assert.equal(env.RIN_INVOKING_SYSTEM_USER, "THE_cattail");
+  assert.ok(String(env.RIN_DAEMON_SOCKET_PATH || "").includes("rin-daemon"));
+  assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));
+});
+
 test("tmux list targets hidden Rin sessions", () => {
   assert.deepEqual(launch.buildTmuxListArgs(["-L", "rin-demo"]), [
     "tmux",
