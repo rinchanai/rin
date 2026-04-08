@@ -331,8 +331,8 @@ export default function fetchExtension(pi: ExtensionAPI) {
       });
 
       return {
-        content: [{ type: "text", text: prepared.agentText }],
-        details: { ...details, ...prepared },
+        content: [{ type: "text", text: prepared.userText }],
+        details: { ...details, ...prepared, agentText: prepared.agentText },
       };
     },
     renderCall(args, theme) {
