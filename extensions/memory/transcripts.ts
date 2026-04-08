@@ -10,7 +10,7 @@ import {
   sha,
   trimText,
   uniqueStrings,
-} from "./core/utils.js";
+} from "./utils.js";
 
 export type TranscriptArchiveEntry = {
   id: string;

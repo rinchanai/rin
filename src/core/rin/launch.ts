@@ -114,7 +114,15 @@ async function restartTmuxSessionIfStale(
   const expectedEntryRealpath = fs.realpathSync.native(expectedEntry);
   const panes = await runTargetCommandCapture(
     targetUser,
-    ["tmux", ...socketArgs, "list-panes", "-t", sessionName, "-F", "#{pane_pid}"],
+    [
+      "tmux",
+      ...socketArgs,
+      "list-panes",
+      "-t",
+      sessionName,
+      "-F",
+      "#{pane_pid}",
+    ],
     env,
     cwd,
   ).catch(() => null);
@@ -130,7 +138,8 @@ async function restartTmuxSessionIfStale(
       cmdline = fs
         .readFileSync(`/proc/${pid}/cmdline`)
         .toString("utf8")
-        .replace(/\u0000/g, " ");
+        .split("\u0000")
+        .join(" ");
     } catch {
       continue;
     }

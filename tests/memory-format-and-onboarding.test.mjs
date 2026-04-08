@@ -8,30 +8,29 @@ const rootDir = path.resolve(
   "..",
 );
 const format = await import(
-  pathToFileURL(path.join(rootDir, "dist", "extensions", "memory", "format.js"))
-    .href
+  pathToFileURL(
+    path.join(rootDir, "dist", "extensions", "self-improve", "format.js"),
+  ).href
 );
 const onboarding = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "memory", "onboarding.js"),
+    path.join(rootDir, "dist", "extensions", "self-improve", "onboarding.js"),
   ).href
 );
 
-test("memory format builds compact compiled prompt", () => {
-  const text = format.buildCompiledMemoryPrompt({
-    memory_prompt_prompt_docs: [
+test("self-improve format builds compact compiled prompt", () => {
+  const text = format.buildCompiledSelfImprovePrompt({
+    self_improve_prompt_prompt_docs: [
       {
-        name: "Core Voice Style",
-        memory_prompt_slot: "core_voice_style",
-        path: "/tmp/core_voice_style.md",
+        name: "Agent Profile",
+        self_improve_prompt_slot: "agent_profile",
+        path: "/tmp/agent_profile.md",
         content: "简洁",
       },
     ],
-    memory_doc_context: "- search note",
   });
-  assert.ok(text.includes("# Memory"));
-  assert.ok(text.includes("## Memory Prompts"));
-  assert.ok(text.includes("## Relevant Memory Docs"));
+  assert.ok(text.includes("# Self Improve"));
+  assert.ok(text.includes("## Self-Improve Prompts"));
 });
 
 test("memory onboarding helper keeps hidden instructions and pending state", () => {

@@ -43,7 +43,6 @@ test("daemon catalog lists builtin and extension commands without session worker
   assert.equal(names.has("settings"), true);
   assert.equal(names.has("model"), true);
   assert.equal(names.has("init"), true);
-  assert.equal(names.has("memory-consolidate"), true);
 });
 
 test("daemon catalog lists available models directly", async () => {

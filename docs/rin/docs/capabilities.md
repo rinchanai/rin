@@ -31,16 +31,16 @@ Important implications:
 - treat `install.sh` as installation/bootstrap rather than the normal update path
 - keep repo-checkout maintenance and installed-runtime maintenance as separate workflows; updating a repo checkout is not the same thing as updating the installed Rin runtime under `~/.rin/...`
 
-## Memory
+## Memory and self-improve
 
-Rin provides its own memory system. As an agent, you should know that:
+Rin separates session history memory from self-improvement state. As an agent, you should know that:
 
-- it has `memory_prompts` for short always-on baselines
-- `memory_docs` is reserved as an agent-managed skills repository rather than a general searchable notes bucket
-- not all memory is injected into the prompt automatically
-- when you need historical memory, prefer using the memory tool instead of assuming the content is already in context
-- before saving a new memory, search first and avoid creating duplicates when possible
-- reusable procedures, checklists, and operating playbooks belong in skills rather than memory docs
+- `search_memory` is for archived session history recall
+- always-on baselines live under `~/.rin/self_improve/prompts`
+- agent-managed skills live under `~/.rin/self_improve/skills`
+- not all self-improve content is injected into the prompt automatically
+- before saving a new self-improve prompt, search first and avoid creating duplicates when possible
+- reusable procedures, checklists, and operating playbooks belong in skills rather than prompts
 
 ## Scheduled tasks
 

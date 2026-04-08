@@ -1,72 +1,16 @@
 # memory
 
-Rin's builtin long-term memory extension.
+Rin's builtin session-history memory extension.
 
-The memory tools are `search_memory` and `save_memory_prompt`.
-
-`save_memory_prompt` now follows Hermes-style memory-tool guidance more closely:
-
-- it manages one always-on slot at a time
-- it supports `add`, `replace`, and `remove`
-- it writes the selected slot directly instead of running an extra refinement layer
-- it includes a dedicated `core_facts` slot for a very small set of always-on facts
-
-Implementation note:
-
-- the extension is extension-first
-- markdown is the source of truth
-- `store.ts` is the storage/index backend
-- `service.ts` is only a compatibility shim
-- the design stays intentionally simple: keep short always-on memory prompts small, treat `memory_docs` as the agent-managed memory skill path, and let a low-frequency LLM memory maintainer improve the library directly
-
-## What it now does
-
-- registers `search_memory` and `save_memory_prompt`
-- stores memory under `~/.rin/memory/` (or the active agent dir)
-- keeps two explicit layers:
-  - `memory_prompts`: short always-on global baselines, routing hints, and a tiny `core_facts` slot
-  - `memory_docs`: the formal path reserved for agent-managed skill packages rather than a general searchable notes bucket
-- keeps the public tool surface small:
-  - `search`
-  - `save_memory_prompt`
-  - `list`
-- queues a low-frequency LLM memory maintainer when a session is being shut down or when switching sessions with `/new`, then processes that queue asynchronously in a detached worker
-- includes a low-frequency `memory-consolidate` command that runs the same maintainer in cleanup mode for deduplication, rewrite, and invalidation of stale memory
-- compiles prompt memory conservatively with memory prompts only
-- keeps retrieval local and lightweight with markdown as the source of truth plus a local SQLite FTS5 shadow index for transcript recall and any remaining plain memory notes outside skill packages
-
-## Tools
-
-The public memory tools are:
+Public tool:
 
 - `search_memory`
-- `save_memory_prompt`
 
-`search_memory` is the discovery entrypoint:
+## Responsibilities
 
-- it returns candidate ids, metadata, scores, and file paths
-- it does not return full document bodies
-- if full contents are needed, use the normal `read` tool on the returned path
+This module owns:
 
-## Notes
+- transcript archiving under `~/.rin/memory/transcripts`
+- cross-session transcript search
 
-- memory prompt slots remain restricted to:
-  - `agent_identity`
-  - `owner_identity`
-  - `core_voice_style`
-  - `core_methodology`
-  - `core_values`
-  - `core_facts`
-- automatic memory maintenance now has two Hermes-style paths:
-  - low-frequency background review via session fork after enough turns, on `session_shutdown`, and on `session_switch` with `reason === "new"`
-  - synchronous pre-compaction review via session fork before context is compacted away
-- long detailed guidance should usually become a skill instead of a memory prompt
-- includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
-- `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript
-- onboarding order is intentionally structured, but the agent should handle that order conversationally rather than through a rigid extension-side phase machine:
-  - first establish the user's preferred language
-  - then ask the user to define the assistant's own name / identity / relationship framing
-  - then ask how to address the user
-  - finally ask for the assistant's default voice/style preferences
-- anything beyond those basics is intentionally open-ended and should be discovered naturally rather than forced by checklist
-- repeated or corrected init content should supersede older memory rather than creating stale duplicates
+It does not own always-on prompts or agent-managed skills. Those belong to the `self-improve` extension.

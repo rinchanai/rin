@@ -25,7 +25,7 @@ function nowIso() {
 }
 
 function stateDir(agentDir: string) {
-  return path.join(path.resolve(agentDir), "memory", "state");
+  return path.join(path.resolve(agentDir), "self_improve", "state");
 }
 
 function queuePath(agentDir: string) {
@@ -212,7 +212,6 @@ async function processJob(job: MemoryMaintenanceJob) {
     {
       sessionFile,
       trigger: job.trigger,
-      mode: "session",
       messages: Array.isArray(job.messages) ? job.messages : undefined,
       additionalExtensionPaths: job.additionalExtensionPaths,
     },

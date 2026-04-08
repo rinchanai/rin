@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -50,9 +51,14 @@ test("tmux socket args target the caller-owned hidden socket", () => {
 });
 
 test("tui runtime env targets the target user's direct daemon socket", () => {
-  const env = launch.buildTuiRuntimeEnv("rin", "THE_cattail", "/home/rin/.rin");
-  assert.equal(env.RIN_DIR, "/home/rin/.rin");
-  assert.equal(env.PI_CODING_AGENT_DIR, "/home/rin/.rin");
+  const currentUser = os.userInfo().username;
+  const env = launch.buildTuiRuntimeEnv(
+    currentUser,
+    "THE_cattail",
+    `/home/${currentUser}/.rin`,
+  );
+  assert.equal(env.RIN_DIR, `/home/${currentUser}/.rin`);
+  assert.equal(env.PI_CODING_AGENT_DIR, `/home/${currentUser}/.rin`);
   assert.equal(env.RIN_INVOKING_SYSTEM_USER, "THE_cattail");
   assert.ok(String(env.RIN_DAEMON_SOCKET_PATH || "").includes("rin-daemon"));
   assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));

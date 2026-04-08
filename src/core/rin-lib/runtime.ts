@@ -58,7 +58,7 @@ function buildRinDocsBlock(agentDir: string) {
 export function getManagedSkillPaths(agentDir: string): string[] {
   const root = String(agentDir || "").trim() || path.join(os.homedir(), ".rin");
   return [
-    path.join(root, "memory", "memory_docs"),
+    path.join(root, "self_improve", "skills"),
     path.join(root, "docs", "rin", "builtin-skills"),
   ];
 }
@@ -104,16 +104,16 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)",
     );
   }
-  let deferredSaveMemoryPromptGuideline = "";
+  let deferredSaveSelfImprovePromptGuideline = "";
   for (const guideline of promptGuidelines) {
-    if (guideline.startsWith("Use save_memory_prompt ")) {
-      deferredSaveMemoryPromptGuideline = guideline;
+    if (guideline.startsWith("Use save_self_improve_prompt ")) {
+      deferredSaveSelfImprovePromptGuideline = guideline;
       continue;
     }
     addGuideline(guideline);
   }
-  if (deferredSaveMemoryPromptGuideline) {
-    addGuideline(deferredSaveMemoryPromptGuideline);
+  if (deferredSaveSelfImprovePromptGuideline) {
+    addGuideline(deferredSaveSelfImprovePromptGuideline);
   }
   addGuideline(
     "Write all memory in English, keeping proper nouns untranslated.",
@@ -122,7 +122,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     "After completing a complex task (5+ tool calls), fixing a tricky error, discovering a non-trivial workflow, or proving out a reusable user-corrected approach, save the approach as a skill so you can reuse it next time.",
   );
   addGuideline(
-    `Agent-generated skills live under ${managedSkillPaths[0]} as ordinary skill packages in <skill-name>/SKILL.md form; treat this as an agent-managed skills repository, not as a general fact dump.`,
+    `Agent-generated skills live under ${managedSkillPaths[0]} as ordinary skill packages in <skill-name>/SKILL.md form.`,
   );
   addGuideline(
     `Builtin skills are installed under ${managedSkillPaths[1]}; when creating or substantially revising an agent-generated skill, use the skill-creator skill if it is available.`,

@@ -14,11 +14,12 @@ import { nowIso, normalizeList, safeString, slugify } from "./utils.js";
 
 export function ensureExposure(
   value: string,
-  fallback: MemoryExposure = "memory_docs",
+  fallback: MemoryExposure = "self_improve_skills",
 ): MemoryExposure {
   const normalized = safeString(value).trim();
-  if (normalized === "memory_prompts") return "memory_prompts";
-  if (normalized === "memory_docs" || !normalized) return "memory_docs";
+  if (normalized === "self_improve_prompts") return "self_improve_prompts";
+  if (normalized === "self_improve_skills" || !normalized)
+    return "self_improve_skills";
   return fallback;
 }
 
@@ -99,15 +100,15 @@ export function normalizeFrontmatter(
   content: string,
 ): MemoryDoc {
   const exposure = ensureExposure(
-    safeString(frontmatterValue(raw, "exposure") || "memory_docs"),
+    safeString(frontmatterValue(raw, "exposure") || "self_improve_skills"),
   );
-  const memoryPromptSlot = safeString(
-    frontmatterValue(raw, "memory_prompt_slot") || "",
+  const selfImprovePromptSlot = safeString(
+    frontmatterValue(raw, "self_improve_prompt_slot") || "",
   ).trim();
   const name =
     safeString(raw.name || raw.title || "").trim() ||
-    (memoryPromptSlot
-      ? memoryPromptSlot.replace(/_/g, " ")
+    (selfImprovePromptSlot
+      ? selfImprovePromptSlot.replace(/_/g, " ")
       : path.basename(filePath, ".md"));
   const id =
     safeString(frontmatterValue(raw, "id") || "").trim() ||
@@ -119,20 +120,20 @@ export function normalizeFrontmatter(
     fidelity: ensureFidelity(
       safeString(frontmatterValue(raw, "fidelity") || "fuzzy"),
     ),
-    memory_prompt_slot: memoryPromptSlot,
+    self_improve_prompt_slot: selfImprovePromptSlot,
     description: safeString(raw.description || raw.summary || "").trim(),
     tags: normalizeList(frontmatterValue(raw, "tags") || ""),
     aliases: normalizeList(frontmatterValue(raw, "aliases") || ""),
     scope: ensureScope(
       safeString(
         frontmatterValue(raw, "scope") ||
-          (exposure === "memory_prompts" ? "global" : "project"),
+          (exposure === "self_improve_prompts" ? "global" : "project"),
       ),
     ),
     kind: ensureKind(
       safeString(
         frontmatterValue(raw, "kind") ||
-          (exposure === "memory_prompts" ? "instruction" : "fact"),
+          (exposure === "self_improve_prompts" ? "instruction" : "fact"),
       ),
     ),
     sensitivity:
@@ -157,7 +158,7 @@ export function normalizeFrontmatter(
     supersedes: normalizeList(frontmatterValue(raw, "supersedes") || ""),
     canonical:
       frontmatterValue(raw, "canonical") == null
-        ? exposure === "memory_prompts"
+        ? exposure === "self_improve_prompts"
         : Boolean(frontmatterValue(raw, "canonical")),
     path: filePath,
     content,
@@ -188,8 +189,8 @@ export function renderMarkdownDoc(doc: MemoryDoc): string {
     id: doc.id,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
-    ...(doc.memory_prompt_slot
-      ? { memory_prompt_slot: doc.memory_prompt_slot }
+    ...(doc.self_improve_prompt_slot
+      ? { self_improve_prompt_slot: doc.self_improve_prompt_slot }
       : {}),
     ...(doc.tags.length ? { tags: doc.tags } : {}),
     ...(doc.aliases.length ? { aliases: doc.aliases } : {}),
@@ -214,7 +215,7 @@ export function previewMemoryDoc(doc: MemoryDoc): Record<string, any> {
     name: doc.name,
     exposure: doc.exposure,
     fidelity: doc.fidelity,
-    memory_prompt_slot: doc.memory_prompt_slot || undefined,
+    self_improve_prompt_slot: doc.self_improve_prompt_slot || undefined,
     description: doc.description || undefined,
     tags: doc.tags,
     aliases: doc.aliases,

@@ -2,15 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 const INIT_STATE_FILE = "init-state.json";
-const REQUIRED_INIT_SLOTS = [
-  "agent_identity",
-  "owner_identity",
-  "core_voice_style",
-];
-const OPTIONAL_INIT_SLOTS = ["core_methodology", "core_values"];
+const REQUIRED_INIT_SLOTS = ["agent_profile", "user_profile"];
+const OPTIONAL_INIT_SLOTS = ["core_doctrine", "core_facts"];
 
 function initStatePath(resolveAgentDir: () => string) {
-  return path.join(resolveAgentDir(), "memory", "state", INIT_STATE_FILE);
+  return path.join(resolveAgentDir(), "self_improve", "state", INIT_STATE_FILE);
 }
 
 function readInitState(resolveAgentDir: () => string) {
@@ -66,16 +62,16 @@ export function buildOnboardingPrompt(
     "- then ask how to address the user",
     "- finally ask for the assistant's default voice/style preferences",
     "If the user already provided information from later steps early, remember it and use it; do not force redundant questions.",
-    "When a stable fact becomes clear, proactively call memory to save or update it.",
-    "For onboarding or preference updates, first use the memory tool to inspect or resolve the target slot/doc instead of acting from assumptions about the underlying files.",
-    "Use memory prompt slots:",
-    "- agent_identity = assistant name/identity/relationship framing",
-    "- owner_identity = user name/addressing/stable identity cues",
-    "- core_voice_style = default language, tone, brevity, and chat style",
-    "- core_facts = a very small set of stable facts that should stay present every turn",
+    "When a stable fact becomes clear, proactively call save_self_improve_prompt to save or update it.",
+    "For onboarding or preference updates, prefer updating the existing target slot instead of assuming blank state or creating duplicates.",
+    "Use self-improve prompt slots:",
+    "- agent_profile = assistant identity, relationship framing, default language, and voice/style",
+    "- user_profile = user name, addressing, household context, and stable identity cues",
+    "- core_doctrine = methodology, values, worldview, and stable working doctrine",
+    "- core_facts = curated durable facts that should stay present every turn; this slot can hold more than the profile slots",
     "Prefer updating existing memory over creating duplicates.",
-    "Stable global work-method preferences, methodology, values, and a few always-relevant facts belong in always-on memory prompts, not only in detailed memory docs.",
-    "Once those three memory prompt slots are established clearly enough, stop onboarding and continue normally.",
+    "Stable global work-method preferences, methodology, values, worldview, and a few always-relevant facts belong in always-on self-improve prompts.",
+    "Once the main self-improve prompt slots are established clearly enough, stop onboarding and continue normally.",
   ].join("\n");
 }
 
@@ -92,17 +88,17 @@ export function isOnboardingActive(
 
 export async function getOnboardingStatus(
   resolveAgentDir: () => string,
-  loadMemoryService: () => Promise<any>,
+  loadSelfImproveStore: () => Promise<any>,
 ) {
-  const service = await loadMemoryService();
-  const docs = await service.loadActiveMemoryDocs(resolveAgentDir());
+  const service = await loadSelfImproveStore();
+  const docs = await service.loadActiveSelfImproveDocs(resolveAgentDir());
   const missing = REQUIRED_INIT_SLOTS.concat(OPTIONAL_INIT_SLOTS).filter(
     (slot, index, all) =>
       all.indexOf(slot) === index &&
       !docs.some(
         (doc: any) =>
-          doc?.exposure === "memory_prompts" &&
-          doc?.memory_prompt_slot === slot,
+          doc?.exposure === "self_improve_prompts" &&
+          doc?.self_improve_prompt_slot === slot,
       ),
   );
   const requiredMissing = REQUIRED_INIT_SLOTS.filter((slot) =>
@@ -135,9 +131,12 @@ export async function markOnboardingPrompted(
 
 export async function refreshOnboardingCompletion(
   resolveAgentDir: () => string,
-  loadMemoryService: () => Promise<any>,
+  loadSelfImproveStore: () => Promise<any>,
 ) {
-  const status = await getOnboardingStatus(resolveAgentDir, loadMemoryService);
+  const status = await getOnboardingStatus(
+    resolveAgentDir,
+    loadSelfImproveStore,
+  );
   if (status.complete) {
     const next = {
       ...status.state,

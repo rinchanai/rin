@@ -20,26 +20,22 @@ export async function walkMarkdownFiles(dirPath: string): Promise<string[]> {
   const out: string[] = [];
   const visit = async (current: string) => {
     const entries = await fs.readdir(current, { withFileTypes: true });
-    const entryNames = new Set(entries.map((entry) => entry.name));
-    const isSkillRoot = entryNames.has("SKILL.md");
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) {
-        if (isSkillRoot) continue;
-        await visit(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        if (entry.name === "SKILL.md") continue;
-        if (isSkillRoot) continue;
-        out.push(fullPath);
-      }
+      if (entry.isDirectory()) await visit(fullPath);
+      else if (entry.isFile() && entry.name.endsWith(".md")) out.push(fullPath);
     }
   };
   await visit(dirPath);
   return out.sort();
 }
 
+function selfImprovePromptsDir(rootDir: string) {
+  return path.join(rootDir, "prompts");
+}
+
 export async function loadMemoryDocs(rootDir: string): Promise<MemoryDoc[]> {
-  const files = await walkMarkdownFiles(rootDir);
+  const files = await walkMarkdownFiles(selfImprovePromptsDir(rootDir));
   const docs: MemoryDoc[] = [];
   for (const filePath of files)
     docs.push(parseMarkdownDoc(filePath, await fs.readFile(filePath, "utf8")));
@@ -51,16 +47,10 @@ export function loadMemoryDocsSync(rootDir: string): MemoryDoc[] {
   const visit = (dirPath: string) => {
     if (!fssync.existsSync(dirPath)) return;
     const entries = fssync.readdirSync(dirPath, { withFileTypes: true });
-    const entryNames = new Set(entries.map((entry) => entry.name));
-    const isSkillRoot = entryNames.has("SKILL.md");
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
-      if (entry.isDirectory()) {
-        if (isSkillRoot) continue;
-        visit(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(".md")) {
-        if (entry.name === "SKILL.md") continue;
-        if (isSkillRoot) continue;
+      if (entry.isDirectory()) visit(fullPath);
+      else if (entry.isFile() && entry.name.endsWith(".md")) {
         try {
           docs.push(
             parseMarkdownDoc(fullPath, fssync.readFileSync(fullPath, "utf8")),
@@ -69,7 +59,7 @@ export function loadMemoryDocsSync(rootDir: string): MemoryDoc[] {
       }
     }
   };
-  visit(rootDir);
+  visit(selfImprovePromptsDir(rootDir));
   return docs.sort((a, b) =>
     safeString(a.path).localeCompare(safeString(b.path)),
   );
@@ -86,39 +76,31 @@ export async function resolveMemoryDoc(
     return parseMarkdownDoc(abs, await fs.readFile(abs, "utf8"));
   const docs = await loadMemoryDocs(rootDir);
   return (
-    docs.find((doc) => doc.id === raw || doc.memory_prompt_slot === raw) || null
+    docs.find(
+      (doc) => doc.id === raw || doc.self_improve_prompt_slot === raw,
+    ) || null
   );
 }
 
 export function memoryPromptPath(rootDir: string, slot: string): string {
-  return path.join(rootDir, "memory_prompts", `${slot}.md`);
-}
-
-export function genericDocPath(
-  rootDir: string,
-  exposure: MemoryExposure,
-  id: string,
-  subgroup = "",
-): string {
-  const base = exposure === "memory_prompts" ? "memory_prompts" : "memory_docs";
-  return subgroup
-    ? path.join(rootDir, base, subgroup, `${id}.md`)
-    : path.join(rootDir, base, `${id}.md`);
+  return path.join(rootDir, "prompts", `${slot}.md`);
 }
 
 export function assertMemoryPromptDoc(doc: MemoryDoc): void {
-  const slot = safeString(doc.memory_prompt_slot).trim();
+  const slot = safeString(doc.self_improve_prompt_slot).trim();
   if (!MEMORY_PROMPT_SLOTS.includes(slot as any))
     throw new Error(
-      `memory_prompt_slot_required:${MEMORY_PROMPT_SLOTS.join(",")}`,
+      `self_improve_prompt_slot_required:${MEMORY_PROMPT_SLOTS.join(",")}`,
     );
   const limits = MEMORY_PROMPT_LIMITS[slot];
-  if (!limits) throw new Error(`memory_prompt_slot_invalid:${slot}`);
+  if (!limits) throw new Error(`self_improve_prompt_slot_invalid:${slot}`);
   if (!limits.fidelity.includes(doc.fidelity))
-    throw new Error(`memory_prompt_fidelity_invalid:${slot}:${doc.fidelity}`);
+    throw new Error(
+      `self_improve_prompt_fidelity_invalid:${slot}:${doc.fidelity}`,
+    );
   if (safeString(doc.content).trim().length > limits.maxChars)
     throw new Error(
-      `memory_prompt_content_too_long:${slot}:${limits.maxChars}`,
+      `self_improve_prompt_content_too_long:${slot}:${limits.maxChars}`,
     );
 }
 
