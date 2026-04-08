@@ -33,11 +33,10 @@ const MEMORY_SYSTEM_GUIDANCE = [
   "# Memory guidance",
   "You have persistent memory across sessions.",
   "Use save_memory_prompt for short always-on baselines that should stay present every turn.",
-  "Use save_memory for detailed searchable memory docs that should be discovered through retrieval instead of forced into the system prompt.",
-  "Use search_memory before substantial work and before saving new memory when duplicates are likely.",
+  "Use search_memory before substantial work and before saving new memory prompts when duplicates are likely.",
   "Prioritize durable user preferences, recurring corrections, and stable workflow expectations.",
   "Do not store task progress, transient TODOs, one-off implementation chatter, or noisy session summaries in always-on memory prompts.",
-  "If a memory is procedural and reusable, prefer skills. If it is detailed and searchable, prefer memory docs. If it must stay present every turn, prefer memory prompts.",
+  "If knowledge is procedural and reusable, prefer skills. If it must stay present every turn, prefer memory prompts.",
 ].join("\n");
 
 const MEMORY_REVIEW_INTERVAL = 8;
@@ -174,68 +173,6 @@ const searchMemoryParams = Type.Object({
   ),
 });
 
-const saveMemoryParams = Type.Object({
-  id: Type.Optional(Type.String()),
-  path: Type.Optional(Type.String()),
-  name: Type.Optional(Type.String()),
-  content: Type.String({ description: "Memory content." }),
-  description: Type.Optional(Type.String()),
-  exposure: Type.Optional(
-    Type.Literal("memory_docs", {
-      description:
-        "Optional memory layer. Normal searchable memory uses `memory_docs`.",
-    }),
-  ),
-  tags: Type.Optional(Type.Array(Type.String())),
-  aliases: Type.Optional(Type.Array(Type.String())),
-  scope: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("global"),
-        Type.Literal("domain"),
-        Type.Literal("project"),
-        Type.Literal("session"),
-      ],
-      {
-        description:
-          "Optional memory scope. Allowed values: `global`, `domain`, `project`, or `session`.",
-      },
-    ),
-  ),
-  kind: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("skill"),
-        Type.Literal("instruction"),
-        Type.Literal("rule"),
-        Type.Literal("fact"),
-        Type.Literal("index"),
-      ],
-      {
-        description:
-          "Optional memory kind. Allowed values: `skill`, `instruction`, `rule`, `fact`, or `index`.",
-      },
-    ),
-  ),
-  status: Type.Optional(
-    Type.Union(
-      [
-        Type.Literal("active"),
-        Type.Literal("superseded"),
-        Type.Literal("invalidated"),
-      ],
-      {
-        description:
-          "Optional memory status. Allowed values: `active`, `superseded`, or `invalidated`.",
-      },
-    ),
-  ),
-  observationCount: Type.Optional(Type.Number({ minimum: 1 })),
-  supersedes: Type.Optional(Type.Array(Type.String())),
-  sensitivity: Type.Optional(Type.String()),
-  source: Type.Optional(Type.String()),
-});
-
 const saveMemoryPromptParams = Type.Object({
   action: Type.Union(
     [Type.Literal("add"), Type.Literal("replace"), Type.Literal("remove")],
@@ -282,56 +219,6 @@ async function executeNamedMemoryAction(action: string, params: any) {
       userText: formatMemoryResult(action, response),
       tempPrefix: "rin-memory-",
       filename: `memory-${action}.txt`,
-    });
-    return {
-      content: [{ type: "text" as const, text: prepared.agentText }],
-      details: { ...response, ...prepared },
-    };
-  } catch (error: any) {
-    const message = String(error?.message || error || "memory_action_failed");
-    return {
-      content: [{ type: "text" as const, text: message }],
-      details: {
-        ok: false,
-        error: message,
-        agentText: message,
-        userText: `Memory 操作失败：${message}`,
-      },
-      isError: true,
-    };
-  }
-}
-
-async function executeSaveMemoryAction(
-  params: any,
-  ctx: any,
-  currentThinkingLevel: any,
-) {
-  try {
-    const response = await executeMemoryTool({
-      action: "save",
-      name: params.name,
-      description: params.description,
-      content: params.content,
-      exposure: params.exposure,
-      scope: params.scope,
-      kind: params.kind,
-      path: params.path,
-      tags: params.tags,
-      aliases: params.aliases,
-      source: params.source,
-      id: params.id,
-      fidelity: params.fidelity,
-      status: params.status,
-      observationCount: params.observationCount,
-      supersedes: params.supersedes,
-      sensitivity: params.sensitivity,
-    });
-    const prepared = await prepareToolTextOutput({
-      agentText: formatMemoryAgentResult("save", response),
-      userText: formatMemoryResult("save", response),
-      tempPrefix: "rin-memory-",
-      filename: "memory-save.txt",
     });
     return {
       content: [{ type: "text" as const, text: prepared.agentText }],
@@ -450,20 +337,6 @@ export default function memoryExtension(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "save_memory",
-    label: "Save Memory",
-    description: "Persist memory documents.",
-    promptSnippet: "Persist memory documents.",
-    promptGuidelines: [
-      "Use save_memory for detailed searchable memory documents that should be discovered through retrieval, keeping separate topics in separate documents.",
-    ],
-    parameters: saveMemoryParams,
-    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
-      await executeSaveMemoryAction(params, ctx, pi.getThinkingLevel()),
-    renderResult: renderMemoryResult,
-  });
-
-  pi.registerTool({
     name: "save_memory_prompt",
     label: "Save Memory Prompt",
     description: "Persist short always-on memory prompts.",
@@ -474,7 +347,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
       "Do not store task progress, session outcomes, completed-work logs, temporary TODO state, or long detailed guidance in memory prompts.",
       "Use action=`add` for new durable cues, `replace` when updating a specific existing phrase via oldText, and `remove` when an always-on cue is no longer valid.",
       "Use `core_facts` only for a very small set of stable facts that must stay present every turn.",
-      "When the memory is procedural, prefer skills. When it is detailed and searchable, prefer save_memory instead.",
+      "When the memory is procedural, prefer skills instead of memory tools.",
     ],
     parameters: saveMemoryPromptParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>

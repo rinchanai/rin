@@ -23,6 +23,10 @@ const service = await import(
     path.join(rootDir, "dist", "extensions", "memory", "service.js"),
   ).href
 );
+const memoryDocs = await import(
+  pathToFileURL(path.join(rootDir, "dist", "extensions", "memory", "docs.js"))
+    .href
+);
 const transcripts = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "extensions", "memory", "transcripts.js"),
@@ -84,16 +88,26 @@ test("service shim re-exports store implementation", async () => {
 
 test("memory search returns paths and get is unsupported", async () => {
   await withTempRoot(async (root) => {
-    const saved = await store.saveMemory(
-      {
-        title: "flicker fix history",
-        content: "We previously fixed a reconnect flicker in the TUI.",
-        summary: "reconnect flicker fix history",
-        exposure: "memory_docs",
-        scope: "project",
-        kind: "fact",
-      },
+    const savedPath = path.join(
       root,
+      "memory",
+      "memory_docs",
+      "flicker-fix-history.md",
+    );
+    await fs.mkdir(path.dirname(savedPath), { recursive: true });
+    await fs.writeFile(
+      savedPath,
+      [
+        "---",
+        "name: flicker fix history",
+        "exposure: memory_docs",
+        "scope: project",
+        "kind: fact",
+        "status: active",
+        "---",
+        "We previously fixed a reconnect flicker in the TUI.",
+      ].join("\n"),
+      "utf8",
     );
 
     const result = await store.executeMemoryAction(
@@ -102,15 +116,11 @@ test("memory search returns paths and get is unsupported", async () => {
     );
     assert.ok(Array.isArray(result.results));
     assert.ok(result.results.length >= 1);
-    assert.equal(result.results[0].path, saved.doc.path);
+    assert.equal(result.results[0].path, savedPath);
     assert.equal("content" in result.results[0], false);
 
     await assert.rejects(
-      () =>
-        store.executeMemoryAction(
-          { action: "get", path: saved.doc.path },
-          root,
-        ),
+      () => store.executeMemoryAction({ action: "get", path: savedPath }, root),
       /unsupported_memory_action:get/,
     );
   });
@@ -211,19 +221,18 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
   });
 });
 
-test("saveMemory rejects memory prompt exposure", async () => {
+test("memory save action is unsupported", async () => {
   await withTempRoot(async (root) => {
     await assert.rejects(
       () =>
-        store.saveMemory(
+        store.executeMemoryAction(
           {
+            action: "save",
             content: "owner identity",
-            exposure: "memory_prompts",
-            memoryPromptSlot: "owner_identity",
           },
           root,
         ),
-      /memory_prompts_use_save_memory_prompt/,
+      /unsupported_memory_action:save/,
     );
   });
 });
@@ -251,6 +260,39 @@ test("compileMemory includes saved memory prompts from markdown source", async (
         "[owner_identity] Call the user Master by default.",
       ),
     );
+  });
+});
+
+test("memory doc loading skips skill packages under memory_docs", async () => {
+  await withTempRoot(async (root) => {
+    const memoryRoot = path.join(root, "memory");
+    const skillDir = path.join(memoryRoot, "memory_docs", "demo-skill");
+    await fs.mkdir(path.join(skillDir, "references"), { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, "SKILL.md"),
+      [
+        "---",
+        "name: demo-skill",
+        "description: Demo skill.",
+        "---",
+        "# Demo Skill",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(skillDir, "references", "guide.md"),
+      "# Guide\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(memoryRoot, "memory_docs", "plain-note.md"),
+      ["---", "name: plain-note", "---", "hello"].join("\n"),
+      "utf8",
+    );
+
+    const docs = await memoryDocs.loadMemoryDocs(memoryRoot);
+    assert.equal(docs.length, 1);
+    assert.match(String(docs[0].path || ""), /plain-note\.md$/);
   });
 });
 

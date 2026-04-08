@@ -16,6 +16,14 @@ function waitForTimers() {
   return new Promise((resolve) => setTimeout(resolve, 30));
 }
 
+test("getManagedSkillPaths includes agent memory skills and builtin skills", () => {
+  const paths = runtimeMod.getManagedSkillPaths("/tmp/rin-home");
+  assert.deepEqual(paths, [
+    "/tmp/rin-home/memory/memory_docs",
+    "/tmp/rin-home/docs/rin/builtin-skills",
+  ]);
+});
+
 test("applyAutoReloadAfterCompaction reloads after successful compaction only once per session", async () => {
   const listeners = [];
   let subscribeCount = 0;

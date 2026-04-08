@@ -104,13 +104,8 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)",
     );
   }
-  let deferredSaveMemoryGuideline = "";
   let deferredSaveMemoryPromptGuideline = "";
   for (const guideline of promptGuidelines) {
-    if (guideline.startsWith("Use save_memory ")) {
-      deferredSaveMemoryGuideline = guideline;
-      continue;
-    }
     if (guideline.startsWith("Use save_memory_prompt ")) {
       deferredSaveMemoryPromptGuideline = guideline;
       continue;
@@ -120,20 +115,20 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   if (deferredSaveMemoryPromptGuideline) {
     addGuideline(deferredSaveMemoryPromptGuideline);
   }
-  if (deferredSaveMemoryGuideline) {
-    addGuideline(deferredSaveMemoryGuideline);
-  }
   addGuideline(
     "Write all memory in English, keeping proper nouns untranslated.",
   );
   addGuideline(
-    "After completing a complex task (roughly 5+ tool calls), fixing a tricky error, discovering a non-trivial workflow, or proving out a reusable user-corrected approach, consider saving it as a skill for future reuse.",
+    "After completing a complex task (5+ tool calls), fixing a tricky error, discovering a non-trivial workflow, or proving out a reusable user-corrected approach, save the approach as a skill so you can reuse it next time.",
   );
   addGuideline(
     `Agent-generated skills live under ${managedSkillPaths[0]} as ordinary skill packages in <skill-name>/SKILL.md form; treat this as an agent-managed skills repository, not as a general fact dump.`,
   );
   addGuideline(
     `Builtin skills are installed under ${managedSkillPaths[1]}; when creating or substantially revising an agent-generated skill, use the skill-creator skill if it is available.`,
+  );
+  addGuideline(
+    "If you use a skill and find it outdated, incomplete, or wrong, update it immediately instead of waiting to be asked.",
   );
   addGuideline(
     "Prefer skills over memory for reusable procedures, workflows, checklists, and operating playbooks.",

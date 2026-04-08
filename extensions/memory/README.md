@@ -2,7 +2,7 @@
 
 Rin's builtin long-term memory extension.
 
-The memory tools are `search_memory`, `save_memory`, and `save_memory_prompt`.
+The memory tools are `search_memory` and `save_memory_prompt`.
 
 `save_memory_prompt` now follows Hermes-style memory-tool guidance more closely:
 
@@ -17,31 +17,29 @@ Implementation note:
 - markdown is the source of truth
 - `store.ts` is the storage/index backend
 - `service.ts` is only a compatibility shim
-- the design stays intentionally simple: keep short always-on memory prompts small, keep detailed memory docs searchable, and let a low-frequency LLM memory maintainer improve the library directly
+- the design stays intentionally simple: keep short always-on memory prompts small, treat `memory_docs` as the agent-managed memory skill path, and let a low-frequency LLM memory maintainer improve the library directly
 
 ## What it now does
 
-- registers `search_memory`, `save_memory`, and `save_memory_prompt`
+- registers `search_memory` and `save_memory_prompt`
 - stores memory under `~/.rin/memory/` (or the active agent dir)
 - keeps two explicit layers:
   - `memory_prompts`: short always-on global baselines, routing hints, and a tiny `core_facts` slot
-  - `memory_docs`: searchable project/topic/history memory
+  - `memory_docs`: the formal path reserved for agent-managed skill packages rather than a general searchable notes bucket
 - keeps the public tool surface small:
   - `search`
-  - `save`
   - `save_memory_prompt`
   - `list`
 - queues a low-frequency LLM memory maintainer when a session is being shut down or when switching sessions with `/new`, then processes that queue asynchronously in a detached worker
 - includes a low-frequency `memory-consolidate` command that runs the same maintainer in cleanup mode for deduplication, rewrite, and invalidation of stale memory
 - compiles prompt memory conservatively with memory prompts only
-- keeps retrieval local and lightweight with markdown as the source of truth plus a local SQLite FTS5 shadow index for memory docs
+- keeps retrieval local and lightweight with markdown as the source of truth plus a local SQLite FTS5 shadow index for transcript recall and any remaining plain memory notes outside skill packages
 
 ## Tools
 
 The public memory tools are:
 
 - `search_memory`
-- `save_memory`
 - `save_memory_prompt`
 
 `search_memory` is the discovery entrypoint:
@@ -62,7 +60,7 @@ The public memory tools are:
 - automatic memory maintenance now has two Hermes-style paths:
   - low-frequency background review via session fork after enough turns, on `session_shutdown`, and on `session_switch` with `reason === "new"`
   - synchronous pre-compaction review via session fork before context is compacted away
-- long detailed guidance belongs in memory docs rather than memory prompts
+- long detailed guidance should usually become a skill instead of a memory prompt
 - includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
 - `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript
 - onboarding order is intentionally structured, but the agent should handle that order conversationally rather than through a rigid extension-side phase machine:
