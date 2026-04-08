@@ -23,13 +23,15 @@ async function getPersistentSettingsManager() {
   return await persistentSettingsPromise;
 }
 
-function persistSettingsMutation(mutate: (settings: any) => void) {
-  void getPersistentSettingsManager()
-    .then((settings) => {
-      if (!settings) return;
-      mutate(settings);
-    })
-    .catch(() => {});
+export async function persistRpcSettingsMutation(
+  mutate: (settings: any) => void | Promise<void>,
+) {
+  try {
+    const settings = await getPersistentSettingsManager();
+    if (!settings) return;
+    await mutate(settings);
+    await settings.flush?.();
+  } catch {}
 }
 
 export async function setRpcModel(
@@ -130,33 +132,3 @@ export function setRpcAutoCompaction(target: any, enabled: boolean) {
     .catch(() => {});
 }
 
-export function persistRpcModelSelection(model: any) {
-  if (!model?.provider || !model?.id) return;
-  persistSettingsMutation((settings) => {
-    settings.setDefaultModelAndProvider?.(model.provider, model.id);
-  });
-}
-
-export function persistRpcThinkingLevel(level: ThinkingLevel) {
-  persistSettingsMutation((settings) => {
-    settings.setDefaultThinkingLevel?.(level);
-  });
-}
-
-export function persistRpcSteeringMode(mode: "all" | "one-at-a-time") {
-  persistSettingsMutation((settings) => {
-    settings.setSteeringMode?.(mode);
-  });
-}
-
-export function persistRpcFollowUpMode(mode: "all" | "one-at-a-time") {
-  persistSettingsMutation((settings) => {
-    settings.setFollowUpMode?.(mode);
-  });
-}
-
-export function persistRpcAutoCompaction(enabled: boolean) {
-  persistSettingsMutation((settings) => {
-    settings.setCompactionEnabled?.(enabled);
-  });
-}
