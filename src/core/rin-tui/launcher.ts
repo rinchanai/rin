@@ -12,6 +12,7 @@ import {
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { RpcInteractiveSession } from "./runtime.js";
 import { createRpcRuntimeHost } from "./runtime-host.js";
+import { hydrateRpcSettings } from "./settings-hydration.js";
 import { applyRinTuiOverrides } from "./upstream-overrides.js";
 
 type TuiMode = "rpc" | "std";
@@ -96,6 +97,10 @@ export async function startTui(
   }
 
   profile.mark("rpc-session-created");
+
+  if (rpcSession) {
+    await hydrateRpcSettings(rpcSession.settingsManager, runtime);
+  }
 
   const runtimeHost = createRpcRuntimeHost(rpcSession!);
   try {
