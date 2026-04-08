@@ -45,14 +45,13 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
 });
 
-test("tmux list targets windows across hidden Rin sessions", () => {
+test("tmux list targets hidden Rin sessions", () => {
   assert.deepEqual(launch.buildTmuxListArgs("rin-demo"), [
     "tmux",
     "-L",
     "rin-demo",
-    "list-windows",
-    "-a",
+    "list-sessions",
     "-F",
-    "#{session_name}:#{window_index}: #{window_name}",
+    "#S",
   ]);
 });
