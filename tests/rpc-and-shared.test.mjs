@@ -45,12 +45,16 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
 });
 
-test("tmux socket args prefer install-local socket path", () => {
-  assert.deepEqual(launch.tmuxSocketArgsForInstall("/home/demo/.rin", "demo"), [
-    "-S",
-    "/home/demo/.rin/data/tmux/server.sock",
-  ]);
-  assert.deepEqual(launch.tmuxSocketArgsForInstall("", "demo"), [
+test("tmux socket args use stable socket only for same-user launches", () => {
+  assert.deepEqual(
+    launch.tmuxSocketArgsForInstall("/home/demo/.rin", "demo", "demo"),
+    ["-S", "/home/demo/.rin/data/tmux/server.sock"],
+  );
+  assert.deepEqual(
+    launch.tmuxSocketArgsForInstall("/home/demo/.rin", "demo", "other"),
+    ["-L", "rin-demo"],
+  );
+  assert.deepEqual(launch.tmuxSocketArgsForInstall("", "demo", "demo"), [
     "-L",
     "rin-demo",
   ]);

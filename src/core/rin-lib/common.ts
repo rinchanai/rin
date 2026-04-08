@@ -7,6 +7,11 @@ export function safeString(value: unknown): string {
 }
 
 export function defaultDaemonSocketPath() {
+  const explicitSocketPath = safeString(
+    process.env.RIN_DAEMON_SOCKET_PATH,
+  ).trim();
+  if (explicitSocketPath) return explicitSocketPath;
+
   if (process.platform === "linux") {
     const uid = typeof process.getuid === "function" ? process.getuid() : -1;
     if (uid >= 0) {

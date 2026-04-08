@@ -2,7 +2,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import { buildUserShell, isTmuxNoServerError } from "../rin-lib/system.js";
+import {
+  buildUserShell,
+  isTmuxNoServerError,
+  socketPathForUser,
+} from "../rin-lib/system.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 
 import {
@@ -41,9 +45,11 @@ async function runCommandCapture(
 export function tmuxSocketArgsForInstall(
   installDir: string,
   targetUser: string,
+  currentUser = os.userInfo().username,
 ) {
-  if (installDir)
+  if (installDir && currentUser === targetUser) {
     return ["-S", path.join(installDir, "data", "tmux", "server.sock")];
+  }
   return ["-L", `rin-${targetUser}`];
 }
 
@@ -106,9 +112,11 @@ async function listTmuxSessions(
 export async function launchDefaultRin(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
+  const currentUser = os.userInfo().username;
   const tmuxSocketArgs = tmuxSocketArgsForInstall(
     parsed.installDir,
     targetUser,
+    currentUser,
   );
 
   if (!parsed.explicitUser && !parsed.hasSavedInstall) {
@@ -140,26 +148,37 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
           [PI_AGENT_DIR_ENV]: parsed.installDir,
         }
       : {}),
-    RIN_INVOKING_SYSTEM_USER: os.userInfo().username,
+    RIN_DAEMON_SOCKET_PATH: socketPathForUser(targetUser),
+    RIN_INVOKING_SYSTEM_USER: currentUser,
   };
 
   if (parsed.tmuxList) {
-    await ensureTmuxSocketDir(targetUser, runtimeEnv, tmuxSocketArgs, repoRoot);
+    if (tmuxSocketArgs[0] === "-S") {
+      await ensureTmuxSocketDir(
+        targetUser,
+        runtimeEnv,
+        tmuxSocketArgs,
+        repoRoot,
+      );
+    }
     const names = new Set(
       await listTmuxSessions(
         targetUser,
         runtimeEnv,
         tmuxSocketArgs,
         repoRoot,
-        true,
+        tmuxSocketArgs[0] === "-S",
       ),
     );
-    const legacySocketArgs = ["-L", `rin-${targetUser}`];
-    if (parsed.installDir && os.userInfo().username !== targetUser) {
+    if (
+      parsed.installDir &&
+      currentUser !== targetUser &&
+      tmuxSocketArgs[0] !== "-L"
+    ) {
       for (const name of await listTmuxSessions(
         targetUser,
         runtimeEnv,
-        legacySocketArgs,
+        ["-L", `rin-${targetUser}`],
         repoRoot,
         false,
       )) {
@@ -171,48 +190,46 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   }
 
   if (parsed.tmuxSession) {
-    await ensureTmuxSocketDir(targetUser, runtimeEnv, tmuxSocketArgs, repoRoot);
-    const innerArgs = [
-      process.execPath,
-      path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
-      parsed.std ? "--std" : "--rpc",
-      ...parsed.passthrough,
-    ];
-    const innerLaunch = buildUserShell(targetUser, innerArgs, runtimeEnv);
-    const tmuxLaunch = buildUserShell(
-      targetUser,
+    if (tmuxSocketArgs[0] === "-S") {
+      await ensureTmuxSocketDir(
+        targetUser,
+        runtimeEnv,
+        tmuxSocketArgs,
+        repoRoot,
+      );
+    }
+    const code = await runCommand(
+      "tmux",
       [
-        "tmux",
         ...tmuxSocketArgs,
         "new-session",
         "-A",
         "-s",
         parsed.tmuxSession,
-        innerLaunch.command,
-        ...innerLaunch.args,
+        process.execPath,
+        path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
+        parsed.std ? "--std" : "--rpc",
+        ...parsed.passthrough,
       ],
-      runtimeEnv,
+      {
+        env: { ...process.env, ...runtimeEnv },
+        cwd: repoRoot,
+      },
     );
-    const code = await runCommand(tmuxLaunch.command, tmuxLaunch.args, {
-      env: tmuxLaunch.env,
-      cwd: repoRoot,
-    });
     process.exit(code);
   }
 
-  const launch = buildUserShell(
-    targetUser,
+  const code = await runCommand(
+    process.execPath,
     [
-      process.execPath,
       path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
       parsed.std ? "--std" : "--rpc",
       ...parsed.passthrough,
     ],
-    runtimeEnv,
+    {
+      env: { ...process.env, ...runtimeEnv },
+      cwd: repoRoot,
+    },
   );
-  const code = await runCommand(launch.command, launch.args, {
-    env: launch.env,
-    cwd: repoRoot,
-  });
   process.exit(code);
 }
