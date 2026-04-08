@@ -29,12 +29,12 @@ export const memoryActionParams = Type.Object({
       Type.Literal("search"),
       Type.Literal("save"),
       Type.Literal("save_memory_prompt"),
+      Type.Literal("remove_memory_prompt"),
       Type.Literal("compile"),
-      Type.Literal("doctor"),
     ],
     {
       description:
-        "Memory tool action. Allowed values: `list`, `search`, `save`, `save_memory_prompt`, `compile`, or `doctor`.",
+        "Memory tool action. Allowed values: `list`, `search`, `save`, `save_memory_prompt`, `remove_memory_prompt`, or `compile`.",
     },
   ),
   query: Type.Optional(Type.String()),
@@ -63,10 +63,11 @@ export const memoryActionParams = Type.Object({
         Type.Literal("core_voice_style"),
         Type.Literal("core_methodology"),
         Type.Literal("core_values"),
+        Type.Literal("core_facts"),
       ],
       {
         description:
-          "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
+          "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`, `core_facts`.",
       },
     ),
   ),

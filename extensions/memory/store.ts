@@ -136,7 +136,12 @@ export async function saveMemoryPromptDoc(
     tags: normalizeList(params.tags || []),
     aliases: normalizeList(params.aliases || []),
     scope: ensureScope(safeString(params.scope || "global")),
-    kind: ensureKind(safeString(params.kind || "instruction")),
+    kind: ensureKind(
+      safeString(
+        params.kind ||
+          (memoryPromptSlot === "core_facts" ? "fact" : "instruction"),
+      ),
+    ),
     sensitivity: safeString(params.sensitivity || "normal").trim() || "normal",
     source: safeString(params.source || "").trim(),
     updated_at: nowIso(),
@@ -206,6 +211,30 @@ export async function saveMemory(
   await writeMemoryDoc(doc);
   syncMemoryDocIndex(root);
   return { status: "ok", action: "save", doc: previewMemoryDoc(doc) };
+}
+
+export async function removeMemoryPromptDoc(
+  params: Record<string, any> = {},
+  rootOverride = "",
+) {
+  const root = resolveMemoryRoot(rootOverride);
+  await ensureMemoryLayout(root);
+  const slot = safeString(
+    params.memoryPromptSlot || params.residentSlot || "",
+  ).trim();
+  if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) {
+    throw new Error(
+      `memory_prompt_slot_required:${MEMORY_PROMPT_SLOTS.join(",")}`,
+    );
+  }
+  const targetPath = memoryPromptPath(root, slot);
+  await fs.rm(targetPath, { force: true });
+  return {
+    status: "ok",
+    action: "remove_memory_prompt",
+    memoryPromptSlot: slot,
+    path: targetPath,
+  };
 }
 
 export async function compileMemory(
@@ -293,34 +322,6 @@ export function compileMemorySync(
   );
 }
 
-export async function doctorMemory(rootOverride = "") {
-  const root = resolveMemoryRoot(rootOverride);
-  await ensureMemoryLayout(root);
-  const docs = await loadMemoryDocs(root);
-  const activeDocs = activeDocsOnly(docs);
-  const counts = { memory_prompts: 0, memory_docs: 0 };
-  for (const doc of activeDocs) {
-    if (doc.exposure === "memory_prompts") counts.memory_prompts += 1;
-    if (doc.exposure === "memory_docs") counts.memory_docs += 1;
-  }
-  return {
-    root,
-    memory_prompt_slots: MEMORY_PROMPT_SLOTS,
-    counts,
-    total: docs.length,
-    active_total: activeDocs.length,
-    inactive_total: docs.length - activeDocs.length,
-    missing_memory_prompt_slots: MEMORY_PROMPT_SLOTS.filter(
-      (slot) =>
-        !docs.some(
-          (doc) =>
-            doc.exposure === "memory_prompts" &&
-            doc.memory_prompt_slot === slot,
-        ),
-    ),
-  };
-}
-
 export async function executeMemoryAction(
   params: Record<string, any> = {},
   rootOverride = "",
@@ -336,7 +337,8 @@ export async function executeMemoryAction(
   if (action === "save") return await saveMemory(params, rootOverride);
   if (action === "save_memory_prompt")
     return await saveMemoryPromptDoc(params, rootOverride);
+  if (action === "remove_memory_prompt")
+    return await removeMemoryPromptDoc(params, rootOverride);
   if (action === "compile") return await compileMemory(params, rootOverride);
-  if (action === "doctor") return await doctorMemory(rootOverride);
   throw new Error(`unsupported_memory_action:${action}`);
 }

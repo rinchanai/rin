@@ -72,8 +72,9 @@ export function buildOnboardingPrompt(
     "- agent_identity = assistant name/identity/relationship framing",
     "- owner_identity = user name/addressing/stable identity cues",
     "- core_voice_style = default language, tone, brevity, and chat style",
+    "- core_facts = a very small set of stable facts that should stay present every turn",
     "Prefer updating existing memory over creating duplicates.",
-    "Stable global work-method preferences, methodology, and values belong in always-on memory prompts, not only in detailed memory docs.",
+    "Stable global work-method preferences, methodology, values, and a few always-relevant facts belong in always-on memory prompts, not only in detailed memory docs.",
     "Once those three memory prompt slots are established clearly enough, stop onboarding and continue normally.",
   ].join("\n");
 }
@@ -94,10 +95,16 @@ export async function getOnboardingStatus(
   loadMemoryService: () => Promise<any>,
 ) {
   const service = await loadMemoryService();
-  const doctor = await service.doctorMemory(resolveAgentDir());
-  const missing = Array.isArray(doctor?.missing_memory_prompt_slots)
-    ? doctor.missing_memory_prompt_slots
-    : [];
+  const docs = await service.loadActiveMemoryDocs(resolveAgentDir());
+  const missing = REQUIRED_INIT_SLOTS.concat(OPTIONAL_INIT_SLOTS).filter(
+    (slot, index, all) =>
+      all.indexOf(slot) === index &&
+      !docs.some(
+        (doc: any) =>
+          doc?.exposure === "memory_prompts" &&
+          doc?.memory_prompt_slot === slot,
+      ),
+  );
   const requiredMissing = REQUIRED_INIT_SLOTS.filter((slot) =>
     missing.includes(slot),
   );
@@ -106,7 +113,7 @@ export async function getOnboardingStatus(
   );
   const state = readInitState(resolveAgentDir);
   const complete = requiredMissing.length === 0;
-  return { state, doctor, requiredMissing, optionalMissing, complete };
+  return { state, requiredMissing, optionalMissing, complete };
 }
 
 export async function markOnboardingPrompted(

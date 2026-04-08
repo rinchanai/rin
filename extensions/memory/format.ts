@@ -123,22 +123,6 @@ export function formatMemoryResult(action: string, response: any): string {
       buildCompiledMemoryPrompt(response) || "No compiled memory available."
     );
 
-  if (action === "doctor") {
-    return [
-      "Memory doctor:",
-      `- root: ${String(response?.root || "")}`,
-      `- total docs: ${String(response?.total || 0)}`,
-      `- active docs: ${String(response?.active_total || 0)}`,
-      `- inactive docs: ${String(response?.inactive_total || 0)}`,
-      Array.isArray(response?.missing_memory_prompt_slots) &&
-      response.missing_memory_prompt_slots.length
-        ? `- missing memory prompt slots: ${response.missing_memory_prompt_slots.join(", ")}`
-        : "- missing memory prompt slots: none",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
   return `Memory action completed: ${action || "unknown"}`;
 }
 
@@ -220,19 +204,6 @@ export function formatMemoryAgentResult(action: string, response: any): string {
       ),
     ].join("\n");
   }
-
-  if (action === "doctor")
-    return [
-      "memory doctor",
-      `root=${String(response?.root || "")}`,
-      `total=${String(response?.total || 0)}`,
-      `active=${String(response?.active_total || 0)}`,
-      Array.isArray(response?.missing_memory_prompt_slots)
-        ? `missing_slots=${response.missing_memory_prompt_slots.join(",")}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
 
   return `memory ${action || "result"}`;
 }

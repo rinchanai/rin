@@ -73,18 +73,12 @@ test("service shim re-exports store implementation", async () => {
   assert.equal(typeof service.executeMemoryAction, "function");
   await withTempRoot(async (root) => {
     const viaService = await service.executeMemoryAction(
-      { action: "doctor" },
+      { action: "list" },
       root,
     );
-    const viaStore = await store.executeMemoryAction(
-      { action: "doctor" },
-      root,
-    );
-    assert.deepEqual(
-      viaService.memory_prompt_slots,
-      viaStore.memory_prompt_slots,
-    );
-    assert.equal(viaService.root, viaStore.root);
+    const viaStore = await store.executeMemoryAction({ action: "list" }, root);
+    assert.equal(viaService.count, viaStore.count);
+    assert.equal(Array.isArray(viaService.results), true);
   });
 });
 
@@ -217,19 +211,6 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
   });
 });
 
-test("doctorMemory reports missing memory prompt slots without event machinery", async () => {
-  await withTempRoot(async (root) => {
-    await store.ensureMemoryLayout(store.resolveMemoryRoot(root));
-
-    const doctor = await store.doctorMemory(root);
-    assert.equal(
-      doctor.missing_memory_prompt_slots.includes("owner_identity"),
-      true,
-    );
-    assert.equal(doctor.counts.memory_docs, 0);
-  });
-});
-
 test("saveMemory rejects memory prompt exposure", async () => {
   await withTempRoot(async (root) => {
     await assert.rejects(
@@ -269,6 +250,63 @@ test("compileMemory includes saved memory prompts from markdown source", async (
       String(compiled.memory_prompt_context).includes(
         "[owner_identity] Call the user Master by default.",
       ),
+    );
+  });
+});
+
+test("saveMemoryPromptDoc supports core_facts with fact kind by default", async () => {
+  await withTempRoot(async (root) => {
+    const saved = await store.saveMemoryPromptDoc(
+      {
+        name: "core facts",
+        content:
+          "User prefers concise Chinese replies. Project repo is /srv/app.",
+        memoryPromptSlot: "core_facts",
+        scope: "global",
+      },
+      root,
+    );
+
+    assert.equal(saved.doc.memory_prompt_slot, "core_facts");
+    assert.equal(saved.doc.kind, "fact");
+
+    const compiled = await store.compileMemory(
+      { query: "concise replies" },
+      root,
+    );
+    assert.ok(
+      String(compiled.memory_prompt_context).includes(
+        "[core_facts] User prefers concise Chinese replies. Project repo is /srv/app.",
+      ),
+    );
+  });
+});
+
+test("removeMemoryPromptDoc deletes prompt slot files", async () => {
+  await withTempRoot(async (root) => {
+    await store.saveMemoryPromptDoc(
+      {
+        name: "core facts",
+        content: "User prefers concise Chinese replies.",
+        memoryPromptSlot: "core_facts",
+        scope: "global",
+      },
+      root,
+    );
+
+    const removed = await store.removeMemoryPromptDoc(
+      { memoryPromptSlot: "core_facts" },
+      root,
+    );
+    assert.equal(removed.action, "remove_memory_prompt");
+
+    const compiled = await store.compileMemory(
+      { query: "concise replies" },
+      root,
+    );
+    assert.equal(
+      String(compiled.memory_prompt_context).includes("[core_facts]"),
+      false,
     );
   });
 });

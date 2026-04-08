@@ -62,6 +62,7 @@ export const MEMORY_PROMPT_SLOTS = [
   "core_voice_style",
   "core_methodology",
   "core_values",
+  "core_facts",
 ] as const;
 
 export const MEMORY_PROMPT_LIMITS: Record<
@@ -73,6 +74,7 @@ export const MEMORY_PROMPT_LIMITS: Record<
   core_voice_style: { maxChars: 800, fidelity: ["fuzzy", "exact"] },
   core_methodology: { maxChars: 800, fidelity: ["fuzzy", "exact"] },
   core_values: { maxChars: 700, fidelity: ["fuzzy", "exact"] },
+  core_facts: { maxChars: 900, fidelity: ["exact", "fuzzy"] },
 };
 
 export const CHRONICLE_TAG = "chronicle";

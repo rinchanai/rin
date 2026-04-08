@@ -73,6 +73,7 @@ Memory prompt slots are restricted to:
 - core_voice_style
 - core_methodology
 - core_values
+- core_facts
 
 Rules:
 - Prefer fewer, clearer, higher-quality docs.
@@ -128,37 +129,50 @@ function turnTranscript(messages: any[]): string {
     .join("\n\n");
 }
 
-async function extractSessionMemoryFromMessages(options: {
+async function runForkedSessionMemoryReview(options: {
   cwd: string;
   agentDir: string;
-  messages: any[];
+  sessionFile: string;
+  transcriptMessages?: any[];
   additionalExtensionPaths?: string[];
 }) {
-  const transcript = turnTranscript(options.messages);
-  if (!transcript.trim()) return { skipped: "no-transcript" };
+  const transcript = Array.isArray(options.transcriptMessages)
+    ? turnTranscript(options.transcriptMessages)
+    : "";
 
   const { session } = await openBoundSession({
     cwd: options.cwd,
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
+    sessionFile: options.sessionFile,
   });
   try {
-    await session.sendCustomMessage(
-      {
-        customType: "memory_session_transcript",
-        display: false,
-        content: [
-          {
-            type: "text",
-            text: [
-              "Use the archived transcript below as the authoritative conversation context for memory extraction.",
-              transcript,
-            ].join("\n\n"),
-          },
-        ],
-      },
-      { triggerTurn: false },
-    );
+    const forkTargets = session.getUserMessagesForForking?.() || [];
+    const latest = forkTargets[forkTargets.length - 1];
+    if (latest?.entryId) {
+      const result = await session.fork(latest.entryId);
+      if (result?.cancelled) return { skipped: "fork-cancelled" };
+    }
+
+    if (transcript.trim()) {
+      await session.sendCustomMessage(
+        {
+          customType: "memory_session_transcript",
+          display: false,
+          content: [
+            {
+              type: "text",
+              text: [
+                "Use the archived transcript below as authoritative context for memory extraction before compaction removes it.",
+                transcript,
+              ].join("\n\n"),
+            },
+          ],
+        },
+        { triggerTurn: false },
+      );
+    }
+
     const prompt =
       "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory, keeping separate topics in separate documents.";
     await session.prompt(prompt, {
@@ -169,7 +183,8 @@ async function extractSessionMemoryFromMessages(options: {
     const finalText = safeString(session.getLastAssistantText?.() || "").trim();
     return {
       skipped: "",
-      transcriptUsed: true,
+      transcriptUsed: Boolean(transcript.trim()),
+      forked: Boolean(latest?.entryId),
       saved: true,
       output: finalText,
     };
@@ -401,61 +416,18 @@ export async function maintainMemory(
     ).trim();
     if (!cwd) return { skipped: "no-cwd" };
 
-    if (Array.isArray(opts.messages) && opts.messages.length > 0) {
-      const extracted = await extractSessionMemoryFromMessages({
-        cwd,
-        agentDir: resolveAgentDir(),
-        messages: opts.messages,
-        additionalExtensionPaths: opts.additionalExtensionPaths,
-      });
-      return {
-        ...extracted,
-        mode,
-        sessionFile,
-        forked: false,
-      };
-    }
-
-    const { session } = await openBoundSession({
+    const extracted = await runForkedSessionMemoryReview({
       cwd,
       agentDir: resolveAgentDir(),
-      additionalExtensionPaths: opts.additionalExtensionPaths,
       sessionFile,
+      transcriptMessages: Array.isArray(opts.messages) ? opts.messages : [],
+      additionalExtensionPaths: opts.additionalExtensionPaths,
     });
-    try {
-      const forkTargets = session.getUserMessagesForForking?.() || [];
-      const latest = forkTargets[forkTargets.length - 1];
-      if (latest?.entryId) {
-        const result = await session.fork(latest.entryId);
-        if (result?.cancelled) return { skipped: "fork-cancelled" };
-      }
-      const prompt =
-        "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory, keeping separate topics in separate documents.";
-      await session.prompt(prompt, {
-        expandPromptTemplates: false,
-        source: "extension",
-      });
-      await session.agent.waitForIdle();
-      const finalText = safeString(
-        session.getLastAssistantText?.() || "",
-      ).trim();
-      return {
-        skipped: "",
-        mode,
-        transcriptUsed: false,
-        sessionFile,
-        forked: Boolean(latest?.entryId),
-        saved: true,
-        output: finalText,
-      };
-    } finally {
-      try {
-        await session.abort();
-      } catch {}
-      try {
-        session.dispose?.();
-      } catch {}
-    }
+    return {
+      ...extracted,
+      mode,
+      sessionFile,
+    };
   }
 
   if (!batch.length && !transcript) return { skipped: "no-input" };
