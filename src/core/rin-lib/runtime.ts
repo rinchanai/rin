@@ -226,6 +226,52 @@ function applyRinPromptBuilder(session: any) {
   } catch {}
 }
 
+const AUTO_RELOAD_AFTER_COMPACTION_KEY = Symbol.for(
+  "rin.autoReloadAfterCompaction",
+);
+
+export function applyAutoReloadAfterCompaction(session: any) {
+  if (!session || typeof session !== "object") return;
+  if ((session as any)[AUTO_RELOAD_AFTER_COMPACTION_KEY]) return;
+  if (typeof session.subscribe !== "function") return;
+  if (typeof session.reload !== "function") return;
+
+  let reloadInFlight: Promise<void> | null = null;
+  let reloadQueued = false;
+
+  const runReload = () => {
+    if (reloadInFlight) {
+      reloadQueued = true;
+      return reloadInFlight;
+    }
+
+    reloadInFlight = (async () => {
+      try {
+        await session.reload();
+      } catch {}
+    })().finally(() => {
+      reloadInFlight = null;
+      if (!reloadQueued) return;
+      reloadQueued = false;
+      setTimeout(() => {
+        void runReload();
+      }, 0);
+    });
+
+    return reloadInFlight;
+  };
+
+  const unsubscribe = session.subscribe((event: any) => {
+    if (event?.type !== "compaction_end") return;
+    if (event?.aborted || !event?.result) return;
+    setTimeout(() => {
+      void runReload();
+    }, 0);
+  });
+
+  (session as any)[AUTO_RELOAD_AFTER_COMPACTION_KEY] = { unsubscribe };
+}
+
 export const RIN_DIR_ENV = "RIN_DIR";
 export const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 
@@ -329,6 +375,7 @@ export async function createConfiguredAgentSession(
     });
 
     applyRinPromptBuilder(result.session);
+    applyAutoReloadAfterCompaction(result.session);
     return {
       ...result,
       services,
