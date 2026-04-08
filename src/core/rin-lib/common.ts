@@ -6,6 +6,10 @@ export function safeString(value: unknown): string {
   return String(value);
 }
 
+export function bridgeDaemonSocketPath(agentDir: string) {
+  return path.join(agentDir, "data", "daemon", "bridge.sock");
+}
+
 export function defaultDaemonSocketPath() {
   const explicitSocketPath = safeString(
     process.env.RIN_DAEMON_SOCKET_PATH,

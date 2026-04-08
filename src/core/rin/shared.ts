@@ -5,6 +5,7 @@ import net from "node:net";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 import {
   buildUserShell,
@@ -315,7 +316,10 @@ function daemonControlContext(parsed: ParsedArgs) {
           ? "/bin/systemctl"
           : ""
       : "";
-  const socketPath = socketPathForUser(targetUser);
+  const socketPath =
+    targetUser === os.userInfo().username
+      ? socketPathForUser(targetUser)
+      : bridgeDaemonSocketPath(installDir);
   return {
     repoRoot,
     installDir,

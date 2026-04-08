@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 
 import { isTmuxNoServerError, socketPathForUser } from "../rin-lib/system.js";
+import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 
 import {
@@ -74,6 +75,11 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
     }
   }
 
+  const daemonSocketPath =
+    currentUser === targetUser || !parsed.installDir
+      ? socketPathForUser(targetUser)
+      : bridgeDaemonSocketPath(parsed.installDir);
+
   const runtimeEnv = {
     ...(parsed.installDir
       ? {
@@ -81,7 +87,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
           [PI_AGENT_DIR_ENV]: parsed.installDir,
         }
       : {}),
-    RIN_DAEMON_SOCKET_PATH: socketPathForUser(targetUser),
+    RIN_DAEMON_SOCKET_PATH: daemonSocketPath,
     RIN_INVOKING_SYSTEM_USER: currentUser,
   };
 
