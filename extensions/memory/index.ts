@@ -1,18 +1,24 @@
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
   appendTranscriptArchiveEntry,
+  loadTranscriptSessionEntries,
   searchTranscriptArchive,
 } from "./transcripts.js";
+import { executeSubagentRun } from "../../src/core/subagent/service.js";
+import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 const MEMORY_SYSTEM_GUIDANCE = [
   "# Memory guidance",
   "This memory module is reserved for session history recall.",
-  "Use search_memory when you need to recall archived transcript history across sessions.",
-  "Do not use search_memory for always-on preferences or resident facts; those belong to self-improve prompts and skills.",
+  "Use search_memory when the user references a past conversation, says we did this before, mentions last time, or when you suspect relevant cross-session context exists.",
+  "Better to search and confirm than to guess or ask the user to repeat themselves.",
+  "For broad recall, search with a few distinctive keywords joined by OR instead of one long natural-language sentence.",
+  "Do not use search_memory for self_improve prompts or skills; it is only for archived session history.",
 ].join("\n");
 
 const searchMemoryParams = Type.Object({
@@ -63,6 +69,30 @@ async function archiveMessageTranscript(message: any, ctx: any) {
 }
 
 function formatSearchResult(response: any): string {
+  const summaries = Array.isArray(response?.summaries)
+    ? response.summaries
+    : [];
+  if (summaries.length) {
+    return [
+      `Session recall for: ${String(response?.query || "")}`,
+      ...summaries.map((item: any, index: number) => {
+        const meta = [
+          `score=${Number(item?.score || 0).toFixed(2)}`,
+          String(item?.sessionId || "").trim(),
+        ]
+          .filter(Boolean)
+          .join(" • ");
+        return [
+          `${index + 1}. Session — ${meta}`,
+          String(item?.sessionFile || "").trim(),
+          String(item?.summary || "").trim(),
+        ]
+          .filter(Boolean)
+          .join("\n");
+      }),
+    ].join("\n\n");
+  }
+
   const rows = Array.isArray(response?.results) ? response.results : [];
   if (!rows.length)
     return `No transcript matches for: ${String(response?.query || "")}`;
@@ -88,6 +118,24 @@ function formatSearchResult(response: any): string {
 }
 
 function formatAgentSearchResult(response: any): string {
+  const summaries = Array.isArray(response?.summaries)
+    ? response.summaries
+    : [];
+  if (summaries.length) {
+    return [
+      `memory search ${String(response?.query || "")} (${summaries.length} sessions)`,
+      ...summaries.map((item: any, index: number) =>
+        [
+          `${index + 1}. session`,
+          `score=${Number(item?.score || 0).toFixed(2)}`,
+          `session=${String(item?.sessionFile || "")}`,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ),
+    ].join("\n");
+  }
+
   const rows = Array.isArray(response?.results) ? response.results : [];
   if (!rows.length) return `memory search ${String(response?.query || "")} (0)`;
   return [
@@ -106,12 +154,113 @@ function formatAgentSearchResult(response: any): string {
   ].join("\n");
 }
 
-async function executeSearchMemory(params: any) {
+function buildRecallPrompt(query: string, transcript: string): string {
+  return [
+    "Review the past session transcript below and summarize only what is useful for recall.",
+    `Focus on this search query: ${query}`,
+    "Include concrete decisions, fixes, commands, file paths, and unresolved follow-ups if they matter.",
+    "Be concise and factual. Do not add speculation.",
+    "Return plain text only.",
+    "TRANSCRIPT:",
+    transcript,
+  ].join("\n\n");
+}
+
+async function maybeSummarizeTranscriptMatches(
+  results: any[],
+  params: any,
+  ctx: any,
+  currentThinkingLevel: ThinkingLevel,
+) {
+  const rows = Array.isArray(results) ? results : [];
+  if (!rows.length) return [];
+  const agentDir = String(ctx?.agentDir || "").trim();
+  if (!agentDir) return [];
+  const config = await loadAuxiliaryModelConfig(agentDir);
+  const fallbackModel = ctx?.model
+    ? `${String(ctx.model.provider || "")}/${String(ctx.model.id || "")}`
+    : "";
+  const modelRef = String(config.modelRef || fallbackModel).trim();
+  if (!modelRef) return [];
+
+  const grouped = new Map<string, any>();
+  for (const row of rows) {
+    const key = String(
+      row?.sessionFile || row?.sessionId || row?.path || "",
+    ).trim();
+    if (!key || grouped.has(key)) continue;
+    grouped.set(key, row);
+    if (grouped.size >= Math.min(3, rows.length)) break;
+  }
+
+  const tasks = [] as any[];
+  const taskRows = [] as any[];
+  const sessionRows = [...grouped.values()];
+  for (const row of sessionRows) {
+    const entries = await loadTranscriptSessionEntries(
+      {
+        sessionId: String(row?.sessionId || "").trim(),
+        sessionFile: String(row?.sessionFile || "").trim(),
+      },
+      agentDir,
+    );
+    if (!entries.length) continue;
+    const transcript = entries
+      .map(
+        (entry) =>
+          `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`,
+      )
+      .join("\n\n")
+      .slice(0, 12000);
+    tasks.push({
+      prompt: buildRecallPrompt(String(params?.query || "").trim(), transcript),
+      model: modelRef,
+      thinkingLevel:
+        (config.thinkingLevel as ThinkingLevel | undefined) ||
+        currentThinkingLevel,
+      cwd: String(ctx?.cwd || ctx?.sessionManager?.getCwd?.() || process.cwd()),
+    });
+    taskRows.push(row);
+  }
+
+  if (!tasks.length) return [];
+  const run = await executeSubagentRun({
+    params: { tasks },
+    ctx,
+    currentThinkingLevel,
+  });
+  if (!run.ok || !Array.isArray(run.results)) return [];
+  return run.results.map((result: any, index: number) => ({
+    sessionId: taskRows[index]?.sessionId,
+    sessionFile: taskRows[index]?.sessionFile,
+    score: taskRows[index]?.score,
+    summary: String(result?.output || result?.errorMessage || "").trim(),
+    model: result?.model,
+  }));
+}
+
+async function executeSearchMemory(
+  params: any,
+  ctx: any,
+  currentThinkingLevel: ThinkingLevel,
+) {
   try {
-    const response = await searchTranscriptArchive(
+    const results = await searchTranscriptArchive(
       String(params?.query || ""),
       params,
     );
+    const summaries = await maybeSummarizeTranscriptMatches(
+      results,
+      params,
+      ctx,
+      currentThinkingLevel,
+    );
+    const response = {
+      query: String(params?.query || ""),
+      count: Array.isArray(results) ? results.length : 0,
+      results,
+      summaries,
+    };
     const prepared = await prepareToolTextOutput({
       agentText: formatAgentSearchResult(response),
       userText: formatSearchResult(response),
@@ -151,14 +300,21 @@ export default function memoryExtension(pi: ExtensionAPI) {
     name: "search_memory",
     label: "Search Memory",
     description:
-      "Search archived session history. Returns matching transcript paths and metadata first.",
+      "Search archived session history. Use it proactively when the user references a past conversation or when relevant cross-session context may exist. Prefer a few distinctive keywords joined with OR for broad recall.",
     promptSnippet: "Search archived session history.",
     promptGuidelines: [
-      "Use search_memory when you need cross-session transcript recall.",
+      "Use search_memory when the user references a past conversation or when relevant cross-session context may exist.",
+      "Better to search and confirm than to guess or ask the user to repeat themselves.",
+      "For broad recall, search with a few distinctive keywords joined by OR instead of one long sentence.",
+      "If a broad OR query returns nothing, retry with one or two narrower keyword searches.",
     ],
     parameters: searchMemoryParams,
-    execute: async (_toolCallId, params) =>
-      (await executeSearchMemory(params)) as any,
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
+      (await executeSearchMemory(
+        params,
+        ctx,
+        pi.getThinkingLevel() as ThinkingLevel,
+      )) as any,
     renderResult: renderMemoryResult,
   });
 

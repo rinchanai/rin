@@ -174,6 +174,20 @@ export async function loadTranscriptArchiveEntries(
   return groups.flat();
 }
 
+export async function loadTranscriptSessionEntries(
+  params: { sessionId?: string; sessionFile?: string } = {},
+  rootOverride = "",
+): Promise<TranscriptArchiveEntry[]> {
+  const sessionId = safeString(params.sessionId || "").trim();
+  const sessionFile = safeString(params.sessionFile || "").trim();
+  const entries = await loadTranscriptArchiveEntries(rootOverride);
+  return entries.filter(
+    (entry) =>
+      (sessionId && safeString(entry.sessionId).trim() === sessionId) ||
+      (sessionFile && safeString(entry.sessionFile).trim() === sessionFile),
+  );
+}
+
 function createCjkTrigrams(value: string): string[] {
   const chars = [...safeString(value).replace(/\s+/g, "")].filter((char) =>
     /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(char),
