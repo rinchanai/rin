@@ -55,6 +55,14 @@ function buildRinDocsBlock(agentDir: string) {
   ].join("\n");
 }
 
+export function getManagedSkillPaths(agentDir: string): string[] {
+  const root = String(agentDir || "").trim() || path.join(os.homedir(), ".rin");
+  return [
+    path.join(root, "memory", "memory_docs"),
+    path.join(root, "docs", "rin", "builtin-skills"),
+  ];
+}
+
 function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const validToolNames = toolNames.filter((name) =>
     session._toolRegistry.has(name),
@@ -67,6 +75,12 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     const toolGuidelineSet = session._toolPromptGuidelines.get(name);
     if (toolGuidelineSet) promptGuidelines.push(...toolGuidelineSet);
   }
+
+  const promptAgentDir =
+    session._resourceLoader.agentDir ||
+    process.env.RIN_DIR ||
+    path.join(os.homedir(), ".rin");
+  const managedSkillPaths = getManagedSkillPaths(promptAgentDir);
 
   const uniqueGuidelines: string[] = [];
   const seen = new Set<string>();
@@ -113,6 +127,18 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     "Write all memory in English, keeping proper nouns untranslated.",
   );
   addGuideline(
+    "After completing a complex task (roughly 5+ tool calls), fixing a tricky error, discovering a non-trivial workflow, or proving out a reusable user-corrected approach, consider saving it as a skill for future reuse.",
+  );
+  addGuideline(
+    `Agent-generated skills live under ${managedSkillPaths[0]} as ordinary skill packages in <skill-name>/SKILL.md form; treat this as an agent-managed skills repository, not as a general fact dump.`,
+  );
+  addGuideline(
+    `Builtin skills are installed under ${managedSkillPaths[1]}; when creating or substantially revising an agent-generated skill, use the skill-creator skill if it is available.`,
+  );
+  addGuideline(
+    "Prefer skills over memory for reusable procedures, workflows, checklists, and operating playbooks.",
+  );
+  addGuideline(
     "Each memory document should contain only one topic; when multiple topics are related, prefer designing an index document to build a tree structure and disclose only that index.",
   );
   addGuideline(
@@ -149,11 +175,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const loadedSkills = session._resourceLoader.getSkills().skills;
   const loadedContextFiles =
     session._resourceLoader.getAgentsFiles().agentsFiles;
-  const docsBlock = buildRinDocsBlock(
-    session._resourceLoader.agentDir ||
-      process.env.RIN_DIR ||
-      path.join(os.homedir(), ".rin"),
-  );
+  const docsBlock = buildRinDocsBlock(promptAgentDir);
 
   let prompt = String(loaderSystemPrompt || "").trim();
   if (!prompt) {
@@ -302,6 +324,7 @@ export async function createConfiguredAgentSession(
     cwd?: string;
     agentDir?: string;
     additionalExtensionPaths?: string[];
+    additionalSkillPaths?: string[];
     sessionManager?: any;
     modelRef?: string;
     thinkingLevel?: any;
@@ -319,6 +342,10 @@ export async function createConfiguredAgentSession(
     cwd: options.cwd,
     agentDir: options.agentDir,
   });
+  const managedSkillPaths = getManagedSkillPaths(agentDir);
+  const additionalSkillPaths = Array.from(
+    new Set([...managedSkillPaths, ...(options.additionalSkillPaths || [])]),
+  );
 
   applyRuntimeProfileEnvironment({ agentDir });
 
@@ -347,6 +374,7 @@ export async function createConfiguredAgentSession(
       agentDir: runtimeAgentDir,
       resourceLoaderOptions: {
         additionalExtensionPaths: options.additionalExtensionPaths ?? [],
+        additionalSkillPaths,
       },
     });
 
