@@ -11,7 +11,6 @@ import {
   installConfigPath,
   ParsedArgs,
   repoRootFromHere,
-  resolveInstallDirForTarget,
   runCommand,
 } from "./shared.js";
 
@@ -53,7 +52,6 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   const targetUser = parsed.targetUser;
   const currentUser = os.userInfo().username;
   const tmuxSocketArgs = buildTmuxSocketArgs(targetUser);
-  const installDir = resolveInstallDirForTarget(parsed);
 
   if (!parsed.explicitUser && !parsed.hasSavedInstall) {
     throw new Error(
@@ -78,13 +76,17 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   }
 
   const daemonSocketPath =
-    currentUser === targetUser
+    currentUser === targetUser || !parsed.installDir
       ? socketPathForUser(targetUser)
-      : bridgeDaemonSocketPath(installDir);
+      : bridgeDaemonSocketPath(parsed.installDir);
 
   const runtimeEnv = {
-    [RIN_DIR_ENV]: installDir,
-    [PI_AGENT_DIR_ENV]: installDir,
+    ...(parsed.installDir
+      ? {
+          [RIN_DIR_ENV]: parsed.installDir,
+          [PI_AGENT_DIR_ENV]: parsed.installDir,
+        }
+      : {}),
     RIN_DAEMON_SOCKET_PATH: daemonSocketPath,
     RIN_INVOKING_SYSTEM_USER: currentUser,
   };
