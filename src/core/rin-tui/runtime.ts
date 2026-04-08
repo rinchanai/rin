@@ -570,8 +570,9 @@ export class RpcInteractiveSession {
   getLastAssistantText() {
     return getLastAssistantText(this.messages);
   }
-  getToolDefinition() {
-    return undefined;
+
+  getToolDefinition(toolName: string) {
+    return this.extensionRunner?.getToolDefinition?.(toolName);
   }
 
   async reload() {
