@@ -20,10 +20,18 @@ export async function walkMarkdownFiles(dirPath: string): Promise<string[]> {
   const out: string[] = [];
   const visit = async (current: string) => {
     const entries = await fs.readdir(current, { withFileTypes: true });
+    const entryNames = new Set(entries.map((entry) => entry.name));
+    const isSkillRoot = entryNames.has("SKILL.md");
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name);
-      if (entry.isDirectory()) await visit(fullPath);
-      else if (entry.isFile() && entry.name.endsWith(".md")) out.push(fullPath);
+      if (entry.isDirectory()) {
+        if (isSkillRoot) continue;
+        await visit(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        if (entry.name === "SKILL.md") continue;
+        if (isSkillRoot) continue;
+        out.push(fullPath);
+      }
     }
   };
   await visit(dirPath);
@@ -42,10 +50,17 @@ export function loadMemoryDocsSync(rootDir: string): MemoryDoc[] {
   const docs: MemoryDoc[] = [];
   const visit = (dirPath: string) => {
     if (!fssync.existsSync(dirPath)) return;
-    for (const entry of fssync.readdirSync(dirPath, { withFileTypes: true })) {
+    const entries = fssync.readdirSync(dirPath, { withFileTypes: true });
+    const entryNames = new Set(entries.map((entry) => entry.name));
+    const isSkillRoot = entryNames.has("SKILL.md");
+    for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
-      if (entry.isDirectory()) visit(fullPath);
-      else if (entry.isFile() && entry.name.endsWith(".md")) {
+      if (entry.isDirectory()) {
+        if (isSkillRoot) continue;
+        visit(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        if (entry.name === "SKILL.md") continue;
+        if (isSkillRoot) continue;
         try {
           docs.push(
             parseMarkdownDoc(fullPath, fssync.readFileSync(fullPath, "utf8")),

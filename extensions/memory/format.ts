@@ -112,9 +112,6 @@ export function formatMemoryResult(action: string, response: any): string {
     ].join("\n\n");
   }
 
-  if (action === "save")
-    return `Saved memory: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
-
   if (action === "save_memory_prompt")
     return `Saved memory prompt: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
 
@@ -178,9 +175,6 @@ export function formatMemoryAgentResult(action: string, response: any): string {
       ),
     ].join("\n");
   }
-
-  if (action === "save")
-    return `memory save\npath=${String(response?.doc?.path || "")}`;
 
   if (action === "save_memory_prompt")
     return `memory save_memory_prompt\npath=${String(response?.doc?.path || "")}`;

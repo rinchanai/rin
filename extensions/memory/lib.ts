@@ -27,14 +27,13 @@ export const memoryActionParams = Type.Object({
     [
       Type.Literal("list"),
       Type.Literal("search"),
-      Type.Literal("save"),
       Type.Literal("save_memory_prompt"),
       Type.Literal("remove_memory_prompt"),
       Type.Literal("compile"),
     ],
     {
       description:
-        "Memory tool action. Allowed values: `list`, `search`, `save`, `save_memory_prompt`, `remove_memory_prompt`, or `compile`.",
+        "Memory tool action. Allowed values: `list`, `search`, `save_memory_prompt`, `remove_memory_prompt`, or `compile`.",
     },
   ),
   query: Type.Optional(Type.String()),
@@ -47,12 +46,6 @@ export const memoryActionParams = Type.Object({
   name: Type.Optional(Type.String()),
   content: Type.Optional(Type.String()),
   description: Type.Optional(Type.String()),
-  exposure: Type.Optional(
-    Type.Literal("memory_docs", {
-      description:
-        "Optional memory layer. Normal searchable memory uses `memory_docs`.",
-    }),
-  ),
   tags: Type.Optional(Type.Array(Type.String())),
   aliases: Type.Optional(Type.Array(Type.String())),
   memoryPromptSlot: Type.Optional(

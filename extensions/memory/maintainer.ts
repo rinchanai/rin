@@ -65,7 +65,7 @@ Schema:
 
 Memory architecture:
 - memory_prompts: short always-on routing hints and core baselines only.
-- memory_docs: searchable detailed guidance, domain knowledge, and durable long-form memory.
+- memory_docs: reserved for agent-managed skill packages loaded through the normal skills system; do not create, rewrite, or supersede memory_docs entries from this maintainer.
 
 Memory prompt slots are restricted to:
 - agent_identity
@@ -87,9 +87,10 @@ Rules:
 - If a doc is stale, duplicate, or low-value, use invalidate.
 - Use create only when genuinely new durable memory is warranted.
 - Memory prompt docs must stay short and stable.
-- Memory docs should stay useful and searchable.
+- Procedural knowledge belongs in skills, not in memory_docs entries created by this maintainer.
+- This maintainer should only propose memory_prompts operations; return [] instead of creating memory_docs entries.
 - Do not invent facts not supported by the provided conversation or docs.
-- Favor updating or superseding existing docs over creating more docs.
+- Favor updating existing memory prompts over creating more docs.
 - Output valid JSON only.`;
 
 function safeString(value: unknown): string {
@@ -173,8 +174,14 @@ async function runForkedSessionMemoryReview(options: {
       );
     }
 
-    const prompt =
-      "Capture durable global baselines that should stay present every turn with save_memory_prompt. Capture detailed searchable memory that should be retrieved on demand with save_memory, keeping separate topics in separate documents.";
+    const prompt = [
+      "Capture durable global baselines that should stay present every turn with save_memory_prompt.",
+      "If the transcript shows a complex task, a tricky error fix, a non-trivial workflow, or a reusable user-corrected approach, save that procedure as a skill so it can be reused next time.",
+      "Agent-generated skills live under the managed memory_docs skill path as ordinary <skill-name>/SKILL.md packages.",
+      "When creating or substantially revising such a skill, use the skill-creator skill if it is available.",
+      "If an existing skill was missing steps, outdated, incomplete, or wrong, update it immediately.",
+      "Do not save transcript summaries, task progress, completed-work logs, or temporary TODO state as memory prompts.",
+    ].join(" ");
     await session.prompt(prompt, {
       expandPromptTemplates: false,
       source: "extension",

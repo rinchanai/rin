@@ -14,7 +14,6 @@ import {
 import { compileFromDocsAndEvents } from "./compile.js";
 import {
   assertMemoryPromptDoc,
-  genericDocPath,
   loadMemoryDocs,
   loadMemoryDocsSync,
   memoryPromptPath,
@@ -24,13 +23,11 @@ import {
 import { activeDocsOnly } from "./relevance.js";
 import { searchIndexedMemoryDocsByRoot } from "./search.js";
 import { searchTranscriptArchive } from "./transcripts.js";
-import { syncMemoryDocIndex } from "./memory-doc-index.js";
 import {
   normalizeList,
   nowIso,
   resolveAgentDir,
   safeString,
-  sha,
   slugify,
 } from "./core/utils.js";
 
@@ -162,57 +159,6 @@ export async function saveMemoryPromptDoc(
   };
 }
 
-export async function saveMemory(
-  params: Record<string, any> = {},
-  rootOverride = "",
-) {
-  const root = resolveMemoryRoot(rootOverride);
-  await ensureMemoryLayout(root);
-  const content = safeString(params.content || "").trim();
-  if (!content) throw new Error("memory_content_required");
-  const exposure = ensureExposure(safeString(params.exposure || "memory_docs"));
-  if (exposure === "memory_prompts") {
-    throw new Error("memory_prompts_use_save_memory_prompt");
-  }
-  const name =
-    safeString(params.name || "").trim() ||
-    content.split(/\r?\n/)[0].trim().slice(0, 80) ||
-    "memory";
-  const id =
-    safeString(params.id || "").trim() ||
-    slugify(name, `memory-${sha(content).slice(0, 8)}`);
-  const requestedPath = safeString(params.path || "").trim();
-  const doc: MemoryDoc = {
-    id,
-    name,
-    exposure: "memory_docs",
-    fidelity: ensureFidelity(safeString(params.fidelity || "fuzzy")),
-    memory_prompt_slot: "",
-    description: safeString(params.description || "").trim(),
-    tags: normalizeList(params.tags || []),
-    aliases: normalizeList(params.aliases || []),
-    scope: ensureScope(safeString(params.scope || "project")),
-    kind: ensureKind(safeString(params.kind || "fact")),
-    sensitivity: safeString(params.sensitivity || "normal").trim() || "normal",
-    source: safeString(params.source || "").trim(),
-    updated_at: nowIso(),
-    last_observed_at: nowIso(),
-    observation_count: Math.max(1, Number(params.observationCount || 1) || 1),
-    status: ensureStatus(safeString(params.status || "active")),
-    supersedes: normalizeList(params.supersedes || []),
-    canonical: false,
-    path: requestedPath
-      ? path.isAbsolute(requestedPath)
-        ? requestedPath
-        : path.join(root, requestedPath)
-      : genericDocPath(root, "memory_docs", id),
-    content,
-  };
-  await writeMemoryDoc(doc);
-  syncMemoryDocIndex(root);
-  return { status: "ok", action: "save", doc: previewMemoryDoc(doc) };
-}
-
 export async function removeMemoryPromptDoc(
   params: Record<string, any> = {},
   rootOverride = "",
@@ -334,7 +280,6 @@ export async function executeMemoryAction(
       params,
       rootOverride,
     );
-  if (action === "save") return await saveMemory(params, rootOverride);
   if (action === "save_memory_prompt")
     return await saveMemoryPromptDoc(params, rootOverride);
   if (action === "remove_memory_prompt")
