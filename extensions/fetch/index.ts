@@ -214,18 +214,8 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
   return lines.join("\n");
 }
 
-function formatUserSummary(details: FetchDetails) {
-  if (!details.finalUrl) {
-    return "fetch complete";
-  }
-
-  const lines = [`${details.status} ${details.mimeType}`];
-  if (details.title) lines.push(details.title);
-  lines.push(details.finalUrl);
-  if (details.truncated && details.fullOutputPath) {
-    lines.push(`full output → ${details.fullOutputPath}`);
-  }
-  return lines.join("\n");
+function formatUserSummary(_details: FetchDetails) {
+  return "fetch complete";
 }
 
 export default function fetchExtension(pi: ExtensionAPI) {
