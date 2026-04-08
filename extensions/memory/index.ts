@@ -84,7 +84,7 @@ function formatSearchResult(response: any): string {
           .join(" • ");
         return [
           `${index + 1}. Session — ${meta}`,
-          String(item?.sessionFile || "").trim(),
+          String(item?.path || "").trim(),
           String(item?.summary || "").trim(),
         ]
           .filter(Boolean)
@@ -108,7 +108,7 @@ function formatSearchResult(response: any): string {
         .join(" • ");
       return [
         `${index + 1}. Transcript — ${meta}`,
-        String(item?.sessionFile || "").trim(),
+        String(item?.path || "").trim(),
         String(item?.preview || item?.description || "").trim(),
       ]
         .filter(Boolean)
@@ -128,7 +128,7 @@ function formatAgentSearchResult(response: any): string {
         [
           `${index + 1}. session`,
           `score=${Number(item?.score || 0).toFixed(2)}`,
-          `session=${String(item?.sessionFile || "")}`,
+          `path=${String(item?.path || "")}`,
         ]
           .filter(Boolean)
           .join(" | "),
@@ -146,7 +146,7 @@ function formatAgentSearchResult(response: any): string {
         `score=${Number(item?.score || 0).toFixed(2)}`,
         String(item?.role || "").trim(),
         String(item?.timestamp || "").trim(),
-        `session=${String(item?.sessionFile || "")}`,
+        `path=${String(item?.path || "")}`,
       ]
         .filter(Boolean)
         .join(" | "),
@@ -236,6 +236,7 @@ async function maybeSummarizeTranscriptMatches(
     score: taskRows[index]?.score,
     summary: String(result?.output || result?.errorMessage || "").trim(),
     model: result?.model,
+    path: String(taskRows[index]?.path || "").trim(),
   }));
 }
 
