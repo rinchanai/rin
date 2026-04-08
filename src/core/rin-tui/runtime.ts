@@ -380,8 +380,8 @@ export class RpcInteractiveSession {
     );
   }
 
-  persistSettingsMutation(mutate: (settings: any) => void | Promise<void>) {
-    return persistRpcSettingsMutation(mutate);
+  persistSettingsPatch(patch: Record<string, unknown>) {
+    return persistRpcSettingsMutation(this.client, patch);
   }
 
   setScopedModels(
@@ -733,7 +733,12 @@ export class RpcInteractiveSession {
   }
 
   private async hydrateSettingsManager() {
-    await hydrateRpcSettings(this.settingsManager, RUNTIME_PROFILE);
+    try {
+      const data = await this.call("get_settings_snapshot", {
+        cwd: RUNTIME_PROFILE.cwd,
+      });
+      hydrateRpcSettings(this.settingsManager, data?.settings || {});
+    } catch {}
     this.autoCompactionEnabled = Boolean(
       this.settingsManager.getCompactionEnabled?.(),
     );

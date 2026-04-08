@@ -50,6 +50,23 @@ test("rpc detached bootstrap uses persisted preferences for local ui state", asy
     async send(payload) {
       calls.push(payload.type);
       switch (payload.type) {
+        case "get_settings_snapshot":
+          return {
+            success: true,
+            data: {
+              settings: {
+                defaultProvider: "openai-codex",
+                defaultModel: "gpt-5.4",
+                defaultThinkingLevel: "high",
+                steeringMode: "one-at-a-time",
+                followUpMode: "all",
+                quietStartup: true,
+                compactionEnabled: true,
+                transport: "sse",
+                theme: "dark",
+              },
+            },
+          };
         case "get_state":
           return {
             success: true,
@@ -102,6 +119,7 @@ test("rpc detached bootstrap uses persisted preferences for local ui state", asy
   assert.equal(session.state.thinkingLevel, "high");
   assert.equal(session.state.model?.id, "gpt-5.4");
   assert.deepEqual(calls, [
+    "get_settings_snapshot",
     "get_state",
     "get_messages",
     "get_session_entries",

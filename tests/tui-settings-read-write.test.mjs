@@ -14,7 +14,7 @@ function fileUrl(relativePath) {
   return pathToFileURL(path.join(rootDir, relativePath)).href;
 }
 
-test("rpc settings hydration reads persistent settings without rewriting the file", async () => {
+test("rpc settings hydration applies daemon-provided snapshot without rewriting the file", async () => {
   const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-rpc-read-"));
   const initial = {
     quietStartup: true,
@@ -38,7 +38,7 @@ test("rpc settings hydration reads persistent settings without rewriting the fil
 
   const before = fs.readFileSync(path.join(agentDir, "settings.json"), "utf8");
   const settingsManager = createSettingsManager();
-  await hydrateRpcSettings(settingsManager, { cwd: rootDir, agentDir });
+  hydrateRpcSettings(settingsManager, initial);
   const after = fs.readFileSync(path.join(agentDir, "settings.json"), "utf8");
 
   assert.equal(settingsManager.getQuietStartup(), true);
@@ -47,32 +47,26 @@ test("rpc settings hydration reads persistent settings without rewriting the fil
   assert.equal(after, before);
 });
 
-test("explicit rpc ui persistence writes settings without needing a session", async () => {
-  const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-rpc-write-"));
-  fs.writeFileSync(
-    path.join(agentDir, "settings.json"),
-    `${JSON.stringify({ quietStartup: false }, null, 2)}\n`,
-    "utf8",
-  );
-
-  const oldRinDir = process.env.RIN_DIR;
-  process.env.RIN_DIR = agentDir;
-  const stamp = Date.now();
+test("explicit rpc ui persistence sends settings patch through daemon", async () => {
+  const sent = [];
   const { persistRpcSettingsMutation } = await import(
-    `${fileUrl("dist/core/rin-tui/model-settings.js")}?t=${stamp}`
+    `${fileUrl("dist/core/rin-tui/model-settings.js")}?t=${Date.now()}`
   );
 
-  await persistRpcSettingsMutation((settings) => {
-    settings.setQuietStartup?.(true);
-    settings.setSteeringMode?.("all");
-  });
-
-  if (oldRinDir === undefined) delete process.env.RIN_DIR;
-  else process.env.RIN_DIR = oldRinDir;
-
-  const saved = JSON.parse(
-    fs.readFileSync(path.join(agentDir, "settings.json"), "utf8"),
+  await persistRpcSettingsMutation(
+    {
+      send(payload) {
+        sent.push(payload);
+        return Promise.resolve({ success: true, data: {} });
+      },
+    },
+    { quietStartup: true, steeringMode: "all" },
   );
-  assert.equal(saved.quietStartup, true);
-  assert.equal(saved.steeringMode, "all");
+
+  assert.deepEqual(sent, [
+    {
+      type: "update_settings",
+      patch: { quietStartup: true, steeringMode: "all" },
+    },
+  ]);
 });

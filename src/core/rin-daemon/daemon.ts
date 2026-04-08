@@ -10,10 +10,17 @@ import {
   safeString,
 } from "../rin-lib/common.js";
 import type { RinRpcCommandType } from "../rin-lib/rpc-types.js";
-import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
+import {
+  loadRinCodingAgent,
+  loadRinSessionManagerModule,
+} from "../rin-lib/loader.js";
 import { getKoishiSidecarStatus } from "../rin-koishi/service.js";
 import { emptySessionState, response } from "../rin-lib/rpc.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
+import {
+  applySettingsPatch,
+  buildSettingsSnapshot,
+} from "../rin-lib/settings-rpc.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import {
@@ -49,6 +56,7 @@ export async function startDaemon(
     path.join(path.dirname(new URL(import.meta.url).pathname), "worker.js");
   const runtime = resolveRuntimeProfile();
   const sessionManagerModulePromise = loadRinSessionManagerModule();
+  const codingAgentModulePromise = loadRinCodingAgent();
   const workerPool = new WorkerPool({
     workerPath,
     cwd: runtime.cwd,
@@ -222,6 +230,39 @@ export async function startDaemon(
       const manager = SessionManager.open(command.sessionPath);
       manager.appendSessionInfo(name);
       writeLine(connection.socket, response(id, type, true));
+      return true;
+    }
+    if (type === "get_settings_snapshot") {
+      const codingAgentModule: any = await codingAgentModulePromise;
+      const SettingsManager = codingAgentModule?.SettingsManager;
+      if (!SettingsManager?.create) {
+        writeLine(connection.socket, response(id, type, false, "rin_settings_unavailable"));
+        return true;
+      }
+      const cwd =
+        typeof command.cwd === "string" && command.cwd.trim()
+          ? command.cwd.trim()
+          : runtime.cwd;
+      const settings = SettingsManager.create(cwd, runtime.agentDir);
+      writeLine(
+        connection.socket,
+        response(id, type, true, { settings: buildSettingsSnapshot(settings) }),
+      );
+      return true;
+    }
+    if (type === "update_settings") {
+      const codingAgentModule: any = await codingAgentModulePromise;
+      const SettingsManager = codingAgentModule?.SettingsManager;
+      if (!SettingsManager?.create) {
+        writeLine(connection.socket, response(id, type, false, "rin_settings_unavailable"));
+        return true;
+      }
+      const settings = SettingsManager.create(runtime.cwd, runtime.agentDir);
+      applySettingsPatch(settings, command.patch || {});
+      writeLine(
+        connection.socket,
+        response(id, type, true, { settings: buildSettingsSnapshot(settings) }),
+      );
       return true;
     }
     if (type === "daemon_status") {
