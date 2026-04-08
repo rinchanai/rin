@@ -16,6 +16,8 @@ export type RinRpcCommandType =
   | "attach_session"
   | "detach_session"
   | "rename_session"
+  | "get_settings_snapshot"
+  | "update_settings"
   | "daemon_status"
   | "cron_list_tasks"
   | "cron_get_task"

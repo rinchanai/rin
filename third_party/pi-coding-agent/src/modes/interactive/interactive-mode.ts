@@ -2943,9 +2943,7 @@ export class InteractiveMode {
 		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
-			void (this.session as any).persistSettingsMutation?.((settings: any) => {
-				settings.setDefaultThinkingLevel?.(newLevel);
-			});
+			void (this.session as any).persistSettingsPatch?.({ defaultThinkingLevel: newLevel });
 			this.footer.invalidate();
 			this.updateEditorBorderColor();
 			this.showStatus(`Thinking level: ${newLevel}`);
@@ -2959,8 +2957,9 @@ export class InteractiveMode {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
-				void (this.session as any).persistSettingsMutation?.((settings: any) => {
-					settings.setDefaultModelAndProvider?.(result.model.provider, result.model.id);
+				void (this.session as any).persistSettingsPatch?.({
+					defaultProvider: result.model.provider,
+					defaultModel: result.model.id,
 				});
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
@@ -3345,16 +3344,12 @@ export class InteractiveMode {
 				{
 					onAutoCompactChange: (enabled) => {
 						this.session.setAutoCompactionEnabled(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setCompactionEnabled?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ compactionEnabled: enabled });
 						this.footer.setAutoCompactEnabled(enabled);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setShowImages?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ showImages: enabled });
 						for (const child of this.chatContainer.children) {
 							if (child instanceof ToolExecutionComponent) {
 								child.setShowImages(enabled);
@@ -3363,56 +3358,40 @@ export class InteractiveMode {
 					},
 					onAutoResizeImagesChange: (enabled) => {
 						this.settingsManager.setImageAutoResize(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setImageAutoResize?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ imageAutoResize: enabled });
 					},
 					onBlockImagesChange: (blocked) => {
 						this.settingsManager.setBlockImages(blocked);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setBlockImages?.(blocked);
-						});
+						void (this.session as any).persistSettingsPatch?.({ blockImages: blocked });
 					},
 					onEnableSkillCommandsChange: (enabled) => {
 						this.settingsManager.setEnableSkillCommands(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setEnableSkillCommands?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ enableSkillCommands: enabled });
 						this.setupAutocomplete(this.fdPath);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setSteeringMode?.(mode);
-						});
+						void (this.session as any).persistSettingsPatch?.({ steeringMode: mode });
 					},
 					onFollowUpModeChange: (mode) => {
 						this.session.setFollowUpMode(mode);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setFollowUpMode?.(mode);
-						});
+						void (this.session as any).persistSettingsPatch?.({ followUpMode: mode });
 					},
 					onTransportChange: (transport) => {
 						this.settingsManager.setTransport(transport);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setTransport?.(transport);
-						});
+						void (this.session as any).persistSettingsPatch?.({ transport });
 						this.session.agent.transport = transport;
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setDefaultThinkingLevel?.(level);
-						});
+						void (this.session as any).persistSettingsPatch?.({ defaultThinkingLevel: level });
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 					},
 					onThemeChange: (themeName) => {
 						const result = setTheme(themeName, true);
 						this.settingsManager.setTheme(themeName);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setTheme?.(themeName);
-						});
+						void (this.session as any).persistSettingsPatch?.({ theme: themeName });
 						this.ui.invalidate();
 						if (!result.success) {
 							this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
@@ -3428,9 +3407,7 @@ export class InteractiveMode {
 					onHideThinkingBlockChange: (hidden) => {
 						this.hideThinkingBlock = hidden;
 						this.settingsManager.setHideThinkingBlock(hidden);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setHideThinkingBlock?.(hidden);
-						});
+						void (this.session as any).persistSettingsPatch?.({ hideThinkingBlock: hidden });
 						for (const child of this.chatContainer.children) {
 							if (child instanceof AssistantMessageComponent) {
 								child.setHideThinkingBlock(hidden);
@@ -3441,40 +3418,28 @@ export class InteractiveMode {
 					},
 					onCollapseChangelogChange: (collapsed) => {
 						this.settingsManager.setCollapseChangelog(collapsed);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setCollapseChangelog?.(collapsed);
-						});
+						void (this.session as any).persistSettingsPatch?.({ collapseChangelog: collapsed });
 					},
 					onQuietStartupChange: (enabled) => {
 						this.settingsManager.setQuietStartup(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setQuietStartup?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ quietStartup: enabled });
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setDoubleEscapeAction?.(action);
-						});
+						void (this.session as any).persistSettingsPatch?.({ doubleEscapeAction: action });
 					},
 					onTreeFilterModeChange: (mode) => {
 						this.settingsManager.setTreeFilterMode(mode);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setTreeFilterMode?.(mode);
-						});
+						void (this.session as any).persistSettingsPatch?.({ treeFilterMode: mode });
 					},
 					onShowHardwareCursorChange: (enabled) => {
 						this.settingsManager.setShowHardwareCursor(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setShowHardwareCursor?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ showHardwareCursor: enabled });
 						this.ui.setShowHardwareCursor(enabled);
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setEditorPaddingX?.(padding);
-						});
+						void (this.session as any).persistSettingsPatch?.({ editorPaddingX: padding });
 						this.defaultEditor.setPaddingX(padding);
 						if (this.editor !== this.defaultEditor && this.editor.setPaddingX !== undefined) {
 							this.editor.setPaddingX(padding);
@@ -3482,9 +3447,7 @@ export class InteractiveMode {
 					},
 					onAutocompleteMaxVisibleChange: (maxVisible) => {
 						this.settingsManager.setAutocompleteMaxVisible(maxVisible);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setAutocompleteMaxVisible?.(maxVisible);
-						});
+						void (this.session as any).persistSettingsPatch?.({ autocompleteMaxVisible: maxVisible });
 						this.defaultEditor.setAutocompleteMaxVisible(maxVisible);
 						if (this.editor !== this.defaultEditor && this.editor.setAutocompleteMaxVisible !== undefined) {
 							this.editor.setAutocompleteMaxVisible(maxVisible);
@@ -3492,9 +3455,7 @@ export class InteractiveMode {
 					},
 					onClearOnShrinkChange: (enabled) => {
 						this.settingsManager.setClearOnShrink(enabled);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setClearOnShrink?.(enabled);
-						});
+						void (this.session as any).persistSettingsPatch?.({ clearOnShrink: enabled });
 						this.ui.setClearOnShrink(enabled);
 					},
 					onCancel: () => {
@@ -3517,8 +3478,9 @@ export class InteractiveMode {
 		if (model) {
 			try {
 				await this.session.setModel(model);
-				void (this.session as any).persistSettingsMutation?.((settings: any) => {
-					settings.setDefaultModelAndProvider?.(model.provider, model.id);
+				void (this.session as any).persistSettingsPatch?.({
+					defaultProvider: model.provider,
+					defaultModel: model.id,
 				});
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
@@ -3569,8 +3531,9 @@ export class InteractiveMode {
 				async (model) => {
 					try {
 						await this.session.setModel(model);
-						void (this.session as any).persistSettingsMutation?.((settings: any) => {
-							settings.setDefaultModelAndProvider?.(model.provider, model.id);
+						void (this.session as any).persistSettingsPatch?.({
+							defaultProvider: model.provider,
+							defaultModel: model.id,
 						});
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
