@@ -309,9 +309,8 @@ export function applyRuntimeProfileEnvironment(profile: { agentDir: string }) {
   }
 }
 
-export function getRuntimeSessionDir(cwd: string, agentDir: string) {
-  const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-  return path.join(agentDir, "sessions", safePath);
+export function getRuntimeSessionDir(_cwd: string, agentDir: string) {
+  return path.join(agentDir, "sessions");
 }
 
 export async function createConfiguredAgentSession(
