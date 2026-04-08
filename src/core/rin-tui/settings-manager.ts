@@ -22,6 +22,7 @@ export function createSettingsManager() {
     enabledModels: undefined as string[] | undefined,
     defaultProvider: undefined as string | undefined,
     defaultModel: undefined as string | undefined,
+    defaultThinkingLevel: undefined as string | undefined,
     steeringMode: "all" as "all" | "one-at-a-time",
     followUpMode: "one-at-a-time" as "all" | "one-at-a-time",
     compactionEnabled: true,
@@ -59,6 +60,9 @@ export function createSettingsManager() {
     getVersionCheck: () => values.versionCheck,
     getLastChangelogVersion: () => values.lastChangelogVersion,
     getEnabledModels: () => values.enabledModels,
+    getDefaultProvider: () => values.defaultProvider,
+    getDefaultModel: () => values.defaultModel,
+    getDefaultThinkingLevel: () => values.defaultThinkingLevel,
     getSteeringMode: () => values.steeringMode,
     getFollowUpMode: () => values.followUpMode,
     getCompactionEnabled: () => values.compactionEnabled,
@@ -119,6 +123,9 @@ export function createSettingsManager() {
     },
     setEnabledModels: (v?: string[]) => {
       values.enabledModels = v && v.length ? [...v] : undefined;
+    },
+    setDefaultThinkingLevel: (v?: string) => {
+      values.defaultThinkingLevel = v;
     },
     setSteeringMode: (v: "all" | "one-at-a-time") => {
       values.steeringMode = v;
