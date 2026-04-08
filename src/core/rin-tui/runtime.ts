@@ -224,7 +224,8 @@ export class RpcInteractiveSession {
     });
     await this.hydrateSettingsManager();
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
-    void this.modelRegistry.sync().catch(() => {});
+    await this.modelRegistry.sync().catch(() => {});
+    this.syncDetachedPreferencesFromSettings();
   }
 
   async disconnect() {
@@ -736,6 +737,36 @@ export class RpcInteractiveSession {
     this.autoCompactionEnabled = Boolean(
       this.settingsManager.getCompactionEnabled?.(),
     );
+    this.syncDetachedPreferencesFromSettings();
+  }
+
+  private syncDetachedPreferencesFromSettings() {
+    if (!this.detachedBlankSession && (this.sessionFile || this.sessionId)) return;
+
+    this.steeringMode =
+      this.settingsManager.getSteeringMode?.() || this.steeringMode;
+    this.followUpMode =
+      this.settingsManager.getFollowUpMode?.() || this.followUpMode;
+    this.autoCompactionEnabled = Boolean(
+      this.settingsManager.getCompactionEnabled?.(),
+    );
+
+    const defaultThinkingLevel =
+      this.settingsManager.getDefaultThinkingLevel?.();
+    if (defaultThinkingLevel) {
+      this.thinkingLevel = defaultThinkingLevel;
+      this.state.thinkingLevel = defaultThinkingLevel;
+    }
+
+    const provider = this.settingsManager.getDefaultProvider?.();
+    const modelId = this.settingsManager.getDefaultModel?.();
+    if (provider && modelId) {
+      const resolved = this.modelRegistry.find?.(provider, modelId);
+      if (resolved) {
+        this.model = resolved;
+        this.state.model = resolved;
+      }
+    }
   }
 
   private resetLocalSessionState() {

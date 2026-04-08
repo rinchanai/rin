@@ -46,7 +46,12 @@ export async function hydrateRpcSettings(
       settings.getLastChangelogVersion?.(),
     );
     settingsManager.setEnabledModels(settings.getEnabledModels?.());
-    settingsManager.setSteeringMode(settings.getSteeringMode?.() || "all");
+    settingsManager.setDefaultThinkingLevel(
+      settings.getDefaultThinkingLevel?.(),
+    );
+    settingsManager.setSteeringMode(
+      settings.getSteeringMode?.() || "one-at-a-time",
+    );
     settingsManager.setFollowUpMode(
       settings.getFollowUpMode?.() || "one-at-a-time",
     );
