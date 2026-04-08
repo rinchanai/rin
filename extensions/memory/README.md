@@ -4,6 +4,13 @@ Rin's builtin long-term memory extension.
 
 The memory tools are `search_memory`, `save_memory`, and `save_memory_prompt`.
 
+`save_memory_prompt` now follows Hermes-style memory-tool guidance more closely:
+
+- it manages one always-on slot at a time
+- it supports `add`, `replace`, and `remove`
+- it writes the selected slot directly instead of running an extra refinement layer
+- it includes a dedicated `core_facts` slot for a very small set of always-on facts
+
 Implementation note:
 
 - the extension is extension-first
@@ -17,7 +24,7 @@ Implementation note:
 - registers `search_memory`, `save_memory`, and `save_memory_prompt`
 - stores memory under `~/.rin/memory/` (or the active agent dir)
 - keeps two explicit layers:
-  - `memory_prompts`: short always-on global baselines and routing hints
+  - `memory_prompts`: short always-on global baselines, routing hints, and a tiny `core_facts` slot
   - `memory_docs`: searchable project/topic/history memory
 - keeps the public tool surface small:
   - `search`
@@ -51,7 +58,10 @@ The public memory tools are:
   - `core_voice_style`
   - `core_methodology`
   - `core_values`
-- automatic memory maintenance is low-frequency rather than per-message: it is queued on `session_shutdown` and on `session_switch` with `reason === "new"`, then processed asynchronously outside the main session flow
+  - `core_facts`
+- automatic memory maintenance now has two Hermes-style paths:
+  - low-frequency background review via session fork after enough turns, on `session_shutdown`, and on `session_switch` with `reason === "new"`
+  - synchronous pre-compaction review via session fork before context is compacted away
 - long detailed guidance belongs in memory docs rather than memory prompts
 - includes an onboarding `/init` flow that can be used from any TUI or Koishi chat like a normal command
 - `/init` keeps its internal onboarding instructions hidden from the user-facing chat transcript

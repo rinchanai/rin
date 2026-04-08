@@ -29,11 +29,39 @@ import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
 
+const MEMORY_SYSTEM_GUIDANCE = [
+  "# Memory guidance",
+  "You have persistent memory across sessions.",
+  "Use save_memory_prompt for short always-on baselines that should stay present every turn.",
+  "Use save_memory for detailed searchable memory docs that should be discovered through retrieval instead of forced into the system prompt.",
+  "Use search_memory before substantial work and before saving new memory when duplicates are likely.",
+  "Prioritize durable user preferences, recurring corrections, and stable workflow expectations.",
+  "Do not store task progress, transient TODOs, one-off implementation chatter, or noisy session summaries in always-on memory prompts.",
+  "If a memory is procedural and reusable, prefer skills. If it is detailed and searchable, prefer memory docs. If it must stay present every turn, prefer memory prompts.",
+].join("\n");
+
+const MEMORY_REVIEW_INTERVAL = 8;
+const reviewStateBySession = new Map<
+  string,
+  { userTurns: number; lastQueuedTurn: number }
+>();
+
 function sessionMeta(ctx: any) {
   return {
     sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
     sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
   };
+}
+
+function getSessionReviewState(sessionId: string) {
+  const key = String(sessionId || "").trim();
+  if (!key) return null;
+  const current = reviewStateBySession.get(key) || {
+    userTurns: 0,
+    lastQueuedTurn: 0,
+  };
+  reviewStateBySession.set(key, current);
+  return current;
 }
 
 function extractTranscriptText(content: any): string {
@@ -209,6 +237,13 @@ const saveMemoryParams = Type.Object({
 });
 
 const saveMemoryPromptParams = Type.Object({
+  action: Type.Union(
+    [Type.Literal("add"), Type.Literal("replace"), Type.Literal("remove")],
+    {
+      description:
+        "Memory prompt action. Allowed values: `add`, `replace`, or `remove`.",
+    },
+  ),
   memoryPromptSlot: Type.Union(
     [
       Type.Literal("agent_identity"),
@@ -216,13 +251,25 @@ const saveMemoryPromptParams = Type.Object({
       Type.Literal("core_voice_style"),
       Type.Literal("core_methodology"),
       Type.Literal("core_values"),
+      Type.Literal("core_facts"),
     ],
     {
       description:
-        "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`.",
+        "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`, `core_facts`.",
     },
   ),
-  content: Type.String({ description: "New memory prompt entry." }),
+  content: Type.Optional(
+    Type.String({
+      description:
+        "New memory prompt content. Required for `add` and `replace`.",
+    }),
+  ),
+  oldText: Type.Optional(
+    Type.String({
+      description:
+        "Short unique substring identifying the text to replace or remove inside the current slot.",
+    }),
+  ),
   source: Type.Optional(Type.String()),
 });
 
@@ -311,29 +358,54 @@ async function executeSaveMemoryPromptAction(
   currentThinkingLevel: any,
 ) {
   try {
+    const action = String(params?.action || "add").trim();
+    const existing = await executeMemoryTool({ action: "compile" });
+    const currentDoc = Array.isArray(existing?.memory_prompt_prompt_docs)
+      ? existing.memory_prompt_prompt_docs.find(
+          (doc: any) =>
+            String(doc?.memory_prompt_slot || "").trim() ===
+            String(params.memoryPromptSlot || "").trim(),
+        )
+      : null;
     const refined = await refineMemoryPromptSlot({
-      ctx,
-      currentThinkingLevel,
       memoryPromptSlot: params.memoryPromptSlot,
       incomingContent: params.content,
-      rootDir: String(ctx?.agentDir || "").trim(),
+      oldText: params.oldText,
+      action: action as any,
+      existingContent: String(currentDoc?.content || ""),
     });
-    const response = await executeMemoryTool({
-      action: "save_memory_prompt",
-      memoryPromptSlot: params.memoryPromptSlot,
-      name: refined.name,
-      content: refined.content,
-      source: params.source,
-    });
+    const response = refined.removed
+      ? await executeMemoryTool({
+          action: "remove_memory_prompt",
+          memoryPromptSlot: params.memoryPromptSlot,
+        })
+      : await executeMemoryTool({
+          action: "save_memory_prompt",
+          memoryPromptSlot: params.memoryPromptSlot,
+          name: refined.name,
+          content: refined.content,
+          source: params.source,
+        });
+    const targetPath = String(response?.doc?.path || response?.path || "");
+    const userVerb =
+      action === "remove"
+        ? "Removed memory prompt"
+        : action === "replace"
+          ? "Updated memory prompt"
+          : "Saved memory prompt";
+    const agentVerb =
+      action === "remove"
+        ? "memory remove_memory_prompt"
+        : "memory save_memory_prompt";
     const prepared = await prepareToolTextOutput({
-      agentText: `memory save_memory_prompt\npath=${String(response?.doc?.path || refined.path || "")}`,
-      userText: `Saved memory prompt: ${String(response?.doc?.name || refined.name || params.memoryPromptSlot)}\n${String(response?.doc?.path || refined.path || "")}`,
+      agentText: `${agentVerb}\npath=${targetPath}`,
+      userText: `${userVerb}: ${String(response?.doc?.name || refined.name || params.memoryPromptSlot)}\n${targetPath}`,
       tempPrefix: "rin-memory-",
       filename: "memory-save-memory-prompt.txt",
     });
     return {
       content: [{ type: "text" as const, text: prepared.agentText }],
-      details: { ...response, ...prepared, refined },
+      details: { ...response, ...prepared, refined, action },
     };
   } catch (error: any) {
     const message = String(
@@ -397,7 +469,12 @@ export default function memoryExtension(pi: ExtensionAPI) {
     description: "Persist short always-on memory prompts.",
     promptSnippet: "Persist short always-on memory prompts.",
     promptGuidelines: [
-      "Use save_memory_prompt for short always-on routing cues or stable global baselines.",
+      "Use save_memory_prompt for short always-on baselines that should stay present every turn.",
+      "Save proactively when the user corrects you, reveals a durable preference, shares a stable identity cue, or establishes an expectation about how you should behave.",
+      "Do not store task progress, session outcomes, completed-work logs, temporary TODO state, or long detailed guidance in memory prompts.",
+      "Use action=`add` for new durable cues, `replace` when updating a specific existing phrase via oldText, and `remove` when an always-on cue is no longer valid.",
+      "Use `core_facts` only for a very small set of stable facts that must stay present every turn.",
+      "When the memory is procedural, prefer skills. When it is detailed and searchable, prefer save_memory instead.",
     ],
     parameters: saveMemoryPromptParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
@@ -407,6 +484,29 @@ export default function memoryExtension(pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     await archiveMessageTranscript(event?.message, ctx);
+
+    const role = String(event?.message?.role || "").trim();
+    const meta = sessionMeta(ctx);
+    const state = getSessionReviewState(meta.sessionId);
+    if (!state || !meta.sessionFile) return;
+
+    if (role === "user") {
+      state.userTurns += 1;
+      return;
+    }
+
+    if (
+      role === "assistant" &&
+      state.userTurns > 0 &&
+      state.userTurns - state.lastQueuedTurn >= MEMORY_REVIEW_INTERVAL
+    ) {
+      await processSessionMemory(ctx, [], {
+        sessionFile: meta.sessionFile,
+        trigger: "extension:periodic_memory_review",
+        snapshotKey: `review:${state.userTurns}`,
+      });
+      state.lastQueuedTurn = state.userTurns;
+    }
   });
 
   pi.on("session_before_compact", async (event, ctx) => {
@@ -419,28 +519,27 @@ export default function memoryExtension(pi: ExtensionAPI) {
         ? preparation.turnPrefixMessages
         : []),
     ];
-    await processSessionMemory(ctx, messages, {
-      sessionFile: sessionMeta(ctx).sessionFile,
-      trigger: "extension:session_compaction_maintainer",
-      snapshotKey: [
-        "compaction",
-        String(preparation?.firstKeptEntryId || "").trim(),
-        String(preparation?.tokensBefore || "").trim(),
-      ]
-        .filter(Boolean)
-        .join(":"),
+    const sessionFile = sessionMeta(ctx).sessionFile;
+    if (!sessionFile || messages.length === 0) return;
+    await maintainMemory(ctx as any, {
+      sessionFile,
+      trigger: "extension:session_compaction_memory_review",
+      mode: "session",
+      messages,
     });
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    const meta = sessionMeta(ctx);
     await processSessionMemory(
       ctx,
       branchToMessages(ctx?.sessionManager?.getBranch?.() || []),
       {
-        sessionFile: sessionMeta(ctx).sessionFile,
+        sessionFile: meta.sessionFile,
         trigger: "extension:session_shutdown_maintainer",
       },
     );
+    if (meta.sessionId) reviewStateBySession.delete(meta.sessionId);
   });
 
   pi.on("session_start", async (event, ctx) => {
@@ -504,6 +603,9 @@ export default function memoryExtension(pi: ExtensionAPI) {
     await refreshOnboardingCompletion(resolveAgentDir, loadMemoryService);
     const { systemPrompt } = await compilePromptMemory();
     const blocks: string[] = [];
+    if (!String(event.systemPrompt || "").includes(MEMORY_SYSTEM_GUIDANCE)) {
+      blocks.push(MEMORY_SYSTEM_GUIDANCE);
+    }
     if (
       systemPrompt &&
       !String(event.systemPrompt || "").includes(systemPrompt)

@@ -3,7 +3,7 @@ import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { defaultDaemonSocketPath, safeString } from "../rin-lib/common.js";
+import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "../rin-lib/common.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { getKoishiSidecarStatus } from "../rin-koishi/service.js";
 import { emptySessionState, response } from "../rin-lib/rpc.js";
@@ -21,6 +21,7 @@ function writeLine(socket, payload) {
 }
 export async function startDaemon(options = {}) {
     const socketPath = options.socketPath || process.argv[2] || defaultDaemonSocketPath();
+    const bridgeSocketPath = bridgeDaemonSocketPath(process.env.RIN_DIR || resolveRuntimeProfile().agentDir);
     const workerPath = options.workerPath ||
         process.env.RIN_WORKER_PATH ||
         path.join(path.dirname(new URL(import.meta.url).pathname), "worker.js");
@@ -44,11 +45,13 @@ export async function startDaemon(options = {}) {
         additionalExtensionPaths: options.additionalExtensionPaths,
     });
     cronScheduler.start();
-    try {
-        fs.rmSync(socketPath, { force: true });
+    for (const candidate of [socketPath, bridgeSocketPath]) {
+        try {
+            fs.rmSync(candidate, { force: true });
+        }
+        catch { }
+        ensureDir(path.dirname(candidate));
     }
-    catch { }
-    ensureDir(path.dirname(socketPath));
     const hasSessionSelector = (command) => Boolean((typeof command?.sessionFile === "string" && command.sessionFile) ||
         (typeof command?.sessionId === "string" && command.sessionId));
     const selfHandleCommand = async (connection, command) => {
@@ -185,7 +188,7 @@ export async function startDaemon(options = {}) {
         }
         return false;
     };
-    const server = net.createServer((socket) => {
+    const createSocketServer = () => net.createServer((socket) => {
         const connection = {
             socket,
             clientBuffer: "",
@@ -234,17 +237,35 @@ export async function startDaemon(options = {}) {
         socket.on("close", cleanup);
         socket.on("error", cleanup);
     });
-    server.listen(socketPath, () => {
-        console.log(`rin daemon listening on ${socketPath}`);
-    });
+    const servers = [
+        { server: createSocketServer(), path: socketPath, chmod: null },
+        { server: createSocketServer(), path: bridgeSocketPath, chmod: 0o666 },
+    ];
+    await Promise.all(servers.map(({ server, path: listenPath, chmod }) => new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(listenPath, () => {
+            server.removeListener("error", reject);
+            if (typeof chmod === "number") {
+                try {
+                    fs.chmodSync(listenPath, chmod);
+                }
+                catch { }
+            }
+            resolve();
+        });
+    })));
+    console.log(`rin daemon listening on ${socketPath}`);
+    console.log(`rin daemon bridge listening on ${bridgeSocketPath}`);
     const shutdown = async () => {
         cronScheduler.stop();
         workerPool.destroyAll();
-        await new Promise((resolve) => server.close(() => resolve()));
-        try {
-            fs.rmSync(socketPath, { force: true });
+        await Promise.all(servers.map(({ server }) => new Promise((resolve) => server.close(() => resolve()))));
+        for (const candidate of [socketPath, bridgeSocketPath]) {
+            try {
+                fs.rmSync(candidate, { force: true });
+            }
+            catch { }
         }
-        catch { }
         process.exit(0);
     };
     process.on("SIGINT", shutdown);
