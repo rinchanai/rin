@@ -198,6 +198,14 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
         repoRoot,
       );
     }
+    const tmuxCommand = [
+      "env",
+      ...Object.entries(runtimeEnv).map(([key, value]) => `${key}=${value}`),
+      process.execPath,
+      path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
+      parsed.std ? "--std" : "--rpc",
+      ...parsed.passthrough,
+    ];
     const code = await runCommand(
       "tmux",
       [
@@ -206,10 +214,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
         "-A",
         "-s",
         parsed.tmuxSession,
-        process.execPath,
-        path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
-        parsed.std ? "--std" : "--rpc",
-        ...parsed.passthrough,
+        ...tmuxCommand,
       ],
       {
         env: { ...process.env, ...runtimeEnv },
