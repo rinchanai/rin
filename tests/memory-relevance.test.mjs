@@ -9,12 +9,12 @@ const rootDir = path.resolve(
 );
 const relevance = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "memory", "relevance.js"),
+    path.join(rootDir, "dist", "extensions", "self-improve", "relevance.js"),
   ).href
 );
 const compile = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "memory", "compile.js"),
+    path.join(rootDir, "dist", "extensions", "self-improve", "compile.js"),
   ).href
 );
 
@@ -24,12 +24,12 @@ test("memory relevance scores docs and relations", () => {
     name: "SearXNG search",
     description: "search stack searxng",
     content: "Use SearXNG search adapter",
-    memory_prompt_slot: "",
+    self_improve_prompt_slot: "",
     scope: "project",
-    kind: "knowledge",
+    kind: "fact",
     tags: ["search"],
     aliases: [],
-    exposure: "memory_docs",
+    exposure: "self_improve_prompts",
     status: "active",
     canonical: false,
   };
@@ -45,39 +45,39 @@ test("memory relevance scores docs and relations", () => {
   assert.equal(relevance.shouldInjectRecentHistory("最近发生了什么"), true);
 });
 
-test("memory compile renders memory prompts and memory docs", () => {
+test("self-improve compile renders prompt slots", () => {
   const docs = [
     {
       id: "voice",
-      name: "Voice",
+      name: "Agent Profile",
       description: "",
       content: "简洁自然",
-      memory_prompt_slot: "core_voice_style",
+      self_improve_prompt_slot: "agent_profile",
       scope: "global",
-      kind: "preference",
+      kind: "instruction",
       tags: [],
       aliases: [],
       triggers: [],
-      exposure: "memory_prompts",
+      exposure: "self_improve_prompts",
       fidelity: "exact",
       status: "active",
       canonical: true,
       updated_at: "2026-01-01T00:00:00.000Z",
     },
     {
-      id: "search-note",
-      name: "Search note",
+      id: "core-facts",
+      name: "Core Facts",
       description: "Use SearXNG",
       content: "Keep SearXNG design.",
-      memory_prompt_slot: "",
-      scope: "project",
-      kind: "knowledge",
+      self_improve_prompt_slot: "core_facts",
+      scope: "global",
+      kind: "fact",
       tags: ["search"],
       aliases: [],
-      exposure: "memory_docs",
-      fidelity: "fuzzy",
+      exposure: "self_improve_prompts",
+      fidelity: "exact",
       status: "active",
-      canonical: false,
+      canonical: true,
       updated_at: "2026-01-01T00:00:00.000Z",
     },
   ];
@@ -88,6 +88,12 @@ test("memory compile renders memory prompts and memory docs", () => {
     { query: "searxng" },
     "/tmp/memory",
   );
-  assert.ok(out.memory_prompt_context.includes("[core_voice_style] 简洁自然"));
-  assert.ok(out.memory_doc_context.includes("Search note"));
+  assert.ok(
+    out.self_improve_prompt_context.includes("[agent_profile] 简洁自然"),
+  );
+  assert.ok(
+    out.self_improve_prompt_context.includes(
+      "[core_facts] Keep SearXNG design.",
+    ),
+  );
 });

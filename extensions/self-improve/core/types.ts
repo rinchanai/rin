@@ -1,4 +1,4 @@
-export type MemoryExposure = "memory_prompts" | "memory_docs";
+export type MemoryExposure = "self_improve_prompts" | "self_improve_skills";
 export type MemoryFidelity = "exact" | "fuzzy";
 export type MemoryScope = "global" | "domain" | "project" | "session";
 export type MemoryKind = "skill" | "instruction" | "rule" | "fact" | "index";
@@ -10,7 +10,7 @@ export type MemoryDoc = {
   name: string;
   exposure: MemoryExposure;
   fidelity: MemoryFidelity;
-  memory_prompt_slot: string;
+  self_improve_prompt_slot: string;
   description: string;
   tags: string[];
   aliases: string[];
@@ -57,11 +57,9 @@ export type MemoryRelationGraph = {
 };
 
 export const MEMORY_PROMPT_SLOTS = [
-  "agent_identity",
-  "owner_identity",
-  "core_voice_style",
-  "core_methodology",
-  "core_values",
+  "agent_profile",
+  "user_profile",
+  "core_doctrine",
   "core_facts",
 ] as const;
 
@@ -69,12 +67,10 @@ export const MEMORY_PROMPT_LIMITS: Record<
   string,
   { maxChars: number; fidelity: Array<MemoryFidelity> }
 > = {
-  agent_identity: { maxChars: 500, fidelity: ["exact", "fuzzy"] },
-  owner_identity: { maxChars: 500, fidelity: ["exact", "fuzzy"] },
-  core_voice_style: { maxChars: 800, fidelity: ["fuzzy", "exact"] },
-  core_methodology: { maxChars: 800, fidelity: ["fuzzy", "exact"] },
-  core_values: { maxChars: 700, fidelity: ["fuzzy", "exact"] },
-  core_facts: { maxChars: 900, fidelity: ["exact", "fuzzy"] },
+  agent_profile: { maxChars: 1200, fidelity: ["exact", "fuzzy"] },
+  user_profile: { maxChars: 1200, fidelity: ["exact", "fuzzy"] },
+  core_doctrine: { maxChars: 1800, fidelity: ["fuzzy", "exact"] },
+  core_facts: { maxChars: 2600, fidelity: ["exact", "fuzzy"] },
 };
 
 export const CHRONICLE_TAG = "chronicle";

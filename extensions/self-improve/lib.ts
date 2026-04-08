@@ -4,10 +4,10 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { Type } from "@sinclair/typebox";
 
 import {
-  buildCompiledMemoryPrompt,
-  buildSystemPromptMemory,
-  formatMemoryAgentResult,
-  formatMemoryResult,
+  buildCompiledSelfImprovePrompt,
+  buildSystemPromptSelfImprove,
+  formatSelfImproveAgentResult,
+  formatSelfImproveResult,
 } from "./format.js";
 import {
   buildOnboardingPrompt,
@@ -22,24 +22,17 @@ export function resolveAgentDir() {
   return resolveRuntimeProfile().agentDir;
 }
 
-export const memoryActionParams = Type.Object({
+export const selfImproveActionParams = Type.Object({
   action: Type.Union(
     [
-      Type.Literal("list"),
-      Type.Literal("search"),
-      Type.Literal("save_memory_prompt"),
-      Type.Literal("remove_memory_prompt"),
+      Type.Literal("save_self_improve_prompt"),
+      Type.Literal("remove_self_improve_prompt"),
       Type.Literal("compile"),
     ],
     {
       description:
-        "Memory tool action. Allowed values: `list`, `search`, `save_memory_prompt`, `remove_memory_prompt`, or `compile`.",
+        "Self-improve action. Allowed values: `save_self_improve_prompt`, `remove_self_improve_prompt`, or `compile`.",
     },
-  ),
-  query: Type.Optional(Type.String()),
-  limit: Type.Optional(Type.Number({ minimum: 1 })),
-  fidelity: Type.Optional(
-    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")]),
   ),
   id: Type.Optional(Type.String()),
   path: Type.Optional(Type.String()),
@@ -48,19 +41,17 @@ export const memoryActionParams = Type.Object({
   description: Type.Optional(Type.String()),
   tags: Type.Optional(Type.Array(Type.String())),
   aliases: Type.Optional(Type.Array(Type.String())),
-  memoryPromptSlot: Type.Optional(
+  selfImprovePromptSlot: Type.Optional(
     Type.Union(
       [
-        Type.Literal("agent_identity"),
-        Type.Literal("owner_identity"),
-        Type.Literal("core_voice_style"),
-        Type.Literal("core_methodology"),
-        Type.Literal("core_values"),
+        Type.Literal("agent_profile"),
+        Type.Literal("user_profile"),
+        Type.Literal("core_doctrine"),
         Type.Literal("core_facts"),
       ],
       {
         description:
-          "Memory prompt slot name. Allowed values: `agent_identity`, `owner_identity`, `core_voice_style`, `core_methodology`, `core_values`, `core_facts`.",
+          "Self-improve prompt slot name. Allowed values: `agent_profile`, `user_profile`, `core_doctrine`, `core_facts`.",
       },
     ),
   ),
@@ -74,7 +65,7 @@ export const memoryActionParams = Type.Object({
       ],
       {
         description:
-          "Optional memory scope. Allowed values: `global`, `domain`, `project`, or `session`.",
+          "Optional self-improve scope. Allowed values: `global`, `domain`, `project`, or `session`.",
       },
     ),
   ),
@@ -89,40 +80,40 @@ export const memoryActionParams = Type.Object({
       ],
       {
         description:
-          "Optional memory kind. Allowed values: `skill`, `instruction`, `rule`, `fact`, or `index`.",
+          "Optional self-improve kind. Allowed values: `skill`, `instruction`, `rule`, `fact`, or `index`.",
       },
     ),
   ),
 });
 
-export async function loadMemoryService() {
+export async function loadSelfImproveStore() {
   const moduleUrl = pathToFileURL(
     path.join(path.dirname(fileURLToPath(import.meta.url)), "store.js"),
   ).href;
   return await import(moduleUrl);
 }
 
-export async function executeMemoryTool(params: any) {
-  const service = await loadMemoryService();
-  return await service.executeMemoryAction(params, resolveAgentDir());
+export async function executeSelfImproveTool(params: any) {
+  const service = await loadSelfImproveStore();
+  return await service.executeSelfImproveAction(params, resolveAgentDir());
 }
 
 export {
   buildOnboardingPrompt,
-  formatMemoryAgentResult,
-  formatMemoryResult,
+  formatSelfImproveAgentResult,
+  formatSelfImproveResult,
   getOnboardingState,
   isOnboardingActive,
   markOnboardingPrompted,
   refreshOnboardingCompletion,
 };
 
-export async function compilePromptMemory() {
-  const service = await loadMemoryService();
-  const compiled = await service.compileMemory({}, resolveAgentDir());
+export async function compileSelfImprovePrompt() {
+  const service = await loadSelfImproveStore();
+  const compiled = await service.compileSelfImprove({}, resolveAgentDir());
   return {
     compiled,
-    prompt: buildCompiledMemoryPrompt(compiled),
-    systemPrompt: buildSystemPromptMemory(compiled),
+    prompt: buildCompiledSelfImprovePrompt(compiled),
+    systemPrompt: buildSystemPromptSelfImprove(compiled),
   };
 }
