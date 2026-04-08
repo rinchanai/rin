@@ -189,7 +189,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   );
 
   if (parsed.tmuxList) {
-    const commandEnv = { ...process.env, ...runtimeEnv };
+    const commandEnv = runtimeEnv;
     const result = await runTargetCommandCapture(
       targetUser,
       buildTmuxListArgs(tmuxSocketArgs),
@@ -207,7 +207,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
 
   if (parsed.tmuxSession) {
     const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
-    const commandEnv = { ...process.env, ...runtimeEnv };
+    const commandEnv = runtimeEnv;
     await restartTmuxSessionIfStale(
       targetUser,
       tmuxSocketArgs,
@@ -244,7 +244,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
       parsed.std ? "--std" : "--rpc",
       ...parsed.passthrough,
     ],
-    { ...process.env, ...runtimeEnv },
+    runtimeEnv,
     repoRoot,
   );
   process.exit(code);
