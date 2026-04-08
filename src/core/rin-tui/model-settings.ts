@@ -41,9 +41,6 @@ export async function setRpcModel(
     target.model = model;
     target.state.model = model;
     target.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
-    persistSettingsMutation((settings) => {
-      settings.setDefaultModelAndProvider?.(model.provider, model.id);
-    });
     return;
   }
   await target.call("set_model", {
@@ -80,9 +77,6 @@ export async function cycleRpcModel(
     target.model = next;
     target.state.model = next;
     target.settingsManager.setDefaultModelAndProvider(next.provider, next.id);
-    persistSettingsMutation((settings) => {
-      settings.setDefaultModelAndProvider?.(next.provider, next.id);
-    });
     return { model: next, thinkingLevel: target.thinkingLevel };
   }
   const data = await target.call("cycle_model");
@@ -97,12 +91,7 @@ export function setRpcThinkingLevel(target: any, level: ThinkingLevel) {
     : available[available.length - 1];
   target.thinkingLevel = next;
   target.state.thinkingLevel = next;
-  if (target.detachedBlankSession) {
-    persistSettingsMutation((settings) => {
-      settings.setDefaultThinkingLevel?.(next);
-    });
-    return;
-  }
+  if (target.detachedBlankSession) return;
   void target.client
     .send({ type: "set_thinking_level", level: next })
     .catch(() => {});
@@ -122,36 +111,52 @@ export function cycleRpcThinkingLevel(target: any): ThinkingLevel | undefined {
 export function setRpcSteeringMode(target: any, mode: "all" | "one-at-a-time") {
   target.steeringMode = mode;
   target.settingsManager.setSteeringMode(mode);
-  if (target.detachedBlankSession) {
-    persistSettingsMutation((settings) => {
-      settings.setSteeringMode?.(mode);
-    });
-    return;
-  }
+  if (target.detachedBlankSession) return;
   void target.client.send({ type: "set_steering_mode", mode }).catch(() => {});
 }
 
 export function setRpcFollowUpMode(target: any, mode: "all" | "one-at-a-time") {
   target.followUpMode = mode;
   target.settingsManager.setFollowUpMode(mode);
-  if (target.detachedBlankSession) {
-    persistSettingsMutation((settings) => {
-      settings.setFollowUpMode?.(mode);
-    });
-    return;
-  }
+  if (target.detachedBlankSession) return;
   void target.client.send({ type: "set_follow_up_mode", mode }).catch(() => {});
 }
 
 export function setRpcAutoCompaction(target: any, enabled: boolean) {
   target.autoCompactionEnabled = enabled;
-  if (target.detachedBlankSession) {
-    persistSettingsMutation((settings) => {
-      settings.setCompactionEnabled?.(enabled);
-    });
-    return;
-  }
+  if (target.detachedBlankSession) return;
   void target.client
     .send({ type: "set_auto_compaction", enabled })
     .catch(() => {});
+}
+
+export function persistRpcModelSelection(model: any) {
+  if (!model?.provider || !model?.id) return;
+  persistSettingsMutation((settings) => {
+    settings.setDefaultModelAndProvider?.(model.provider, model.id);
+  });
+}
+
+export function persistRpcThinkingLevel(level: ThinkingLevel) {
+  persistSettingsMutation((settings) => {
+    settings.setDefaultThinkingLevel?.(level);
+  });
+}
+
+export function persistRpcSteeringMode(mode: "all" | "one-at-a-time") {
+  persistSettingsMutation((settings) => {
+    settings.setSteeringMode?.(mode);
+  });
+}
+
+export function persistRpcFollowUpMode(mode: "all" | "one-at-a-time") {
+  persistSettingsMutation((settings) => {
+    settings.setFollowUpMode?.(mode);
+  });
+}
+
+export function persistRpcAutoCompaction(enabled: boolean) {
+  persistSettingsMutation((settings) => {
+    settings.setCompactionEnabled?.(enabled);
+  });
 }

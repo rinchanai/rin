@@ -17,6 +17,11 @@ import {
   setRpcAutoCompaction,
   cycleRpcModel,
   cycleRpcThinkingLevel,
+  persistRpcAutoCompaction,
+  persistRpcFollowUpMode,
+  persistRpcModelSelection,
+  persistRpcSteeringMode,
+  persistRpcThinkingLevel,
   setRpcFollowUpMode,
   setRpcModel,
   setRpcSteeringMode,
@@ -378,6 +383,10 @@ export class RpcInteractiveSession {
     );
   }
 
+  persistModelSelection(model: any) {
+    persistRpcModelSelection(model);
+  }
+
   setScopedModels(
     scopedModels: Array<{ model: any; thinkingLevel?: ThinkingLevel }>,
   ) {
@@ -397,6 +406,10 @@ export class RpcInteractiveSession {
     setRpcThinkingLevel(this as any, level);
   }
 
+  persistThinkingLevelPreference(level: ThinkingLevel) {
+    persistRpcThinkingLevel(level);
+  }
+
   cycleThinkingLevel(): ThinkingLevel | undefined {
     return cycleRpcThinkingLevel(this as any);
   }
@@ -409,8 +422,16 @@ export class RpcInteractiveSession {
     setRpcSteeringMode(this as any, mode);
   }
 
+  persistSteeringModePreference(mode: "all" | "one-at-a-time") {
+    persistRpcSteeringMode(mode);
+  }
+
   setFollowUpMode(mode: "all" | "one-at-a-time") {
     setRpcFollowUpMode(this as any, mode);
+  }
+
+  persistFollowUpModePreference(mode: "all" | "one-at-a-time") {
+    persistRpcFollowUpMode(mode);
   }
 
   async compact(customInstructions?: string) {
@@ -426,6 +447,10 @@ export class RpcInteractiveSession {
 
   setAutoCompactionEnabled(enabled: boolean) {
     setRpcAutoCompaction(this as any, enabled);
+  }
+
+  persistAutoCompactionPreference(enabled: boolean) {
+    persistRpcAutoCompaction(enabled);
   }
 
   async executeBash(command: string) {
