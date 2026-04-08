@@ -38,14 +38,78 @@ async function runCommandCapture(
   );
 }
 
-export function buildTmuxListArgs(socketName: string) {
-  return ["tmux", "-L", socketName, "list-sessions", "-F", "#S"];
+export function tmuxSocketArgsForInstall(
+  installDir: string,
+  targetUser: string,
+) {
+  if (installDir)
+    return ["-S", path.join(installDir, "data", "tmux", "server.sock")];
+  return ["-L", `rin-${targetUser}`];
+}
+
+export function buildTmuxListArgs(socketArgs: string[]) {
+  return ["tmux", ...socketArgs, "list-sessions", "-F", "#S"];
+}
+
+async function ensureTmuxSocketDir(
+  targetUser: string,
+  runtimeEnv: Record<string, string>,
+  socketArgs: string[],
+  cwd: string,
+) {
+  if (socketArgs[0] !== "-S" || !socketArgs[1]) return;
+  const launch = buildUserShell(
+    targetUser,
+    ["mkdir", "-p", path.dirname(socketArgs[1])],
+    runtimeEnv,
+  );
+  const result = await runCommandCapture(launch.command, launch.args, {
+    env: launch.env,
+    cwd,
+  });
+  if (result.code !== 0) {
+    throw new Error(
+      result.stderr.trim() ||
+        result.stdout.trim() ||
+        "rin_tmux_socket_dir_create_failed",
+    );
+  }
+}
+
+async function listTmuxSessions(
+  targetUser: string,
+  runtimeEnv: Record<string, string>,
+  socketArgs: string[],
+  cwd: string,
+  asTargetUser: boolean,
+) {
+  const launch = asTargetUser
+    ? buildUserShell(targetUser, buildTmuxListArgs(socketArgs), runtimeEnv)
+    : {
+        command: "tmux",
+        args: [...socketArgs, "list-sessions", "-F", "#S"],
+        env: { ...process.env, ...runtimeEnv },
+      };
+  const result = await runCommandCapture(launch.command, launch.args, {
+    env: launch.env,
+    cwd,
+  });
+  if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr) {
+    process.stderr.write(result.stderr);
+  }
+  return result.stdout
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 export async function launchDefaultRin(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
-  const tmuxSocketName = `rin-${targetUser}`;
+  const tmuxSocketArgs = tmuxSocketArgsForInstall(
+    parsed.installDir,
+    targetUser,
+  );
 
   if (!parsed.explicitUser && !parsed.hasSavedInstall) {
     throw new Error(
@@ -80,24 +144,34 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   };
 
   if (parsed.tmuxList) {
-    const launch = buildUserShell(
-      targetUser,
-      buildTmuxListArgs(tmuxSocketName),
-      runtimeEnv,
+    await ensureTmuxSocketDir(targetUser, runtimeEnv, tmuxSocketArgs, repoRoot);
+    const names = new Set(
+      await listTmuxSessions(
+        targetUser,
+        runtimeEnv,
+        tmuxSocketArgs,
+        repoRoot,
+        true,
+      ),
     );
-    const result = await runCommandCapture(launch.command, launch.args, {
-      env: launch.env,
-      cwd: repoRoot,
-    });
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr)
-      process.stderr.write(result.stderr);
-    process.exit(
-      isTmuxNoServerError(result.code, result.stderr) ? 0 : result.code,
-    );
+    const legacySocketArgs = ["-L", `rin-${targetUser}`];
+    if (parsed.installDir && os.userInfo().username !== targetUser) {
+      for (const name of await listTmuxSessions(
+        targetUser,
+        runtimeEnv,
+        legacySocketArgs,
+        repoRoot,
+        false,
+      )) {
+        names.add(name);
+      }
+    }
+    if (names.size) process.stdout.write(`${[...names].join("\n")}\n`);
+    process.exit(0);
   }
 
   if (parsed.tmuxSession) {
+    await ensureTmuxSocketDir(targetUser, runtimeEnv, tmuxSocketArgs, repoRoot);
     const innerArgs = [
       process.execPath,
       path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
@@ -105,11 +179,11 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
       ...parsed.passthrough,
     ];
     const innerLaunch = buildUserShell(targetUser, innerArgs, runtimeEnv);
-    const code = await runCommand(
-      "tmux",
+    const tmuxLaunch = buildUserShell(
+      targetUser,
       [
-        "-L",
-        tmuxSocketName,
+        "tmux",
+        ...tmuxSocketArgs,
         "new-session",
         "-A",
         "-s",
@@ -117,11 +191,12 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
         innerLaunch.command,
         ...innerLaunch.args,
       ],
-      {
-        env: innerLaunch.env,
-        cwd: repoRoot,
-      },
+      runtimeEnv,
     );
+    const code = await runCommand(tmuxLaunch.command, tmuxLaunch.args, {
+      env: tmuxLaunch.env,
+      cwd: repoRoot,
+    });
     process.exit(code);
   }
 

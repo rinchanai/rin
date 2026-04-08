@@ -45,13 +45,27 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
 });
 
-test("tmux list targets hidden Rin sessions", () => {
-  assert.deepEqual(launch.buildTmuxListArgs("rin-demo"), [
-    "tmux",
+test("tmux socket args prefer install-local socket path", () => {
+  assert.deepEqual(launch.tmuxSocketArgsForInstall("/home/demo/.rin", "demo"), [
+    "-S",
+    "/home/demo/.rin/data/tmux/server.sock",
+  ]);
+  assert.deepEqual(launch.tmuxSocketArgsForInstall("", "demo"), [
     "-L",
     "rin-demo",
-    "list-sessions",
-    "-F",
-    "#S",
   ]);
+});
+
+test("tmux list targets hidden Rin sessions", () => {
+  assert.deepEqual(
+    launch.buildTmuxListArgs(["-S", "/home/demo/.rin/data/tmux/server.sock"]),
+    [
+      "tmux",
+      "-S",
+      "/home/demo/.rin/data/tmux/server.sock",
+      "list-sessions",
+      "-F",
+      "#S",
+    ],
+  );
 });
