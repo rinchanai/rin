@@ -4,6 +4,8 @@ import {
   loadRinInteractiveFooterModule,
   loadRinInteractiveModeModule,
   loadRinInteractiveThemeModule,
+  loadRinSessionManagerModule,
+  loadRinSessionSelectorModule,
 } from "../rin-lib/loader.js";
 
 const SESSION_STARTING_MESSAGE = "Creating session...";
@@ -29,12 +31,19 @@ export async function applyRinTuiOverrides() {
   if (applied) return;
   applied = true;
 
-  const [{ FooterComponent }, { InteractiveMode }, { theme }] =
-    (await Promise.all([
-      loadRinInteractiveFooterModule(),
-      loadRinInteractiveModeModule(),
-      loadRinInteractiveThemeModule(),
-    ])) as any;
+  const [
+    { FooterComponent },
+    { InteractiveMode },
+    { theme },
+    { SessionManager },
+    { SessionSelectorComponent },
+  ] = (await Promise.all([
+    loadRinInteractiveFooterModule(),
+    loadRinInteractiveModeModule(),
+    loadRinInteractiveThemeModule(),
+    loadRinSessionManagerModule(),
+    loadRinSessionSelectorModule(),
+  ])) as any;
 
   const originalRender = FooterComponent?.prototype?.render;
   if (typeof originalRender === "function") {
@@ -77,6 +86,53 @@ export async function applyRinTuiOverrides() {
       };
   }
 
+  const originalShowSessionSelector =
+    InteractiveMode?.prototype?.showSessionSelector;
+  if (typeof originalShowSessionSelector === "function") {
+    InteractiveMode.prototype.showSessionSelector =
+      function showSessionSelectorFromRootSessionDir() {
+        this.showSelector((done: any) => {
+          const loadSessions = (onProgress?: any) =>
+            SessionManager.list(
+              this.sessionManager.getCwd(),
+              this.sessionManager.getSessionDir(),
+              onProgress,
+            );
+          const selector = new SessionSelectorComponent(
+            loadSessions,
+            loadSessions,
+            async (sessionPath: string) => {
+              done();
+              await this.handleResumeSession(sessionPath);
+            },
+            () => {
+              done();
+              this.ui.requestRender();
+            },
+            () => {
+              void this.shutdown();
+            },
+            () => this.ui.requestRender(),
+            {
+              renameSession: async (
+                sessionFilePath: string,
+                nextName: string | undefined,
+              ) => {
+                const next = (nextName ?? "").trim();
+                if (!next) return;
+                const mgr = SessionManager.open(sessionFilePath);
+                mgr.appendSessionInfo(next);
+              },
+              showRenameHint: true,
+              keybindings: this.keybindings,
+            },
+            this.sessionManager.getSessionFile(),
+          );
+          return { component: selector, focus: selector };
+        });
+      };
+  }
+
   const originalStartWorkingAnimation =
     InteractiveMode?.prototype?.startWorkingAnimation;
   if (typeof originalStartWorkingAnimation === "function") {
@@ -115,8 +171,11 @@ export async function applyRinTuiOverrides() {
             message === SESSION_STARTING_MESSAGE ||
             message === SESSION_RESUMING_MESSAGE;
           const shouldShowWaiting =
-            event.phase !== "end" && hasActiveWork && message === DAEMON_WAITING_MESSAGE;
-          const shouldShowSessionStatus = event.phase !== "end" && isSessionStatus;
+            event.phase !== "end" &&
+            hasActiveWork &&
+            message === DAEMON_WAITING_MESSAGE;
+          const shouldShowSessionStatus =
+            event.phase !== "end" && isSessionStatus;
 
           if (shouldShowWaiting || shouldShowSessionStatus) {
             this.startWorkingAnimation?.(message);

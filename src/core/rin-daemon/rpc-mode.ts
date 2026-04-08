@@ -403,14 +403,10 @@ export async function runCustomRpcMode(
           (value) => ({ text: value.selectedText, cancelled: value.cancelled }),
         );
       case "list_sessions": {
-        const scope = command.scope === "all" ? "all" : "cwd";
-        const sessions =
-          scope === "all"
-            ? await SessionManager.listAll()
-            : await SessionManager.list(
-                session.sessionManager.getCwd(),
-                session.sessionManager.getSessionDir(),
-              );
+        const sessions = await SessionManager.list(
+          session.sessionManager.getCwd(),
+          session.sessionManager.getSessionDir(),
+        );
         return done(id, type, { sessions });
       }
       case "set_model": {

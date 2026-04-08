@@ -118,10 +118,7 @@ export async function startDaemon(options = {}) {
         }
         if (type === "list_sessions") {
             const { SessionManager } = await sessionManagerModulePromise;
-            const scope = command.scope === "all" ? "all" : "cwd";
-            const sessions = scope === "all"
-                ? await SessionManager.listAll()
-                : await SessionManager.list(runtime.cwd, path.join(runtime.agentDir, "sessions", `--${runtime.cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`));
+            const sessions = await SessionManager.list(runtime.cwd, path.join(runtime.agentDir, "sessions"));
             writeLine(connection.socket, response(id, type, true, { sessions }));
             return true;
         }

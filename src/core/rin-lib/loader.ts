@@ -59,6 +59,12 @@ export async function loadRinInteractiveThemeModule() {
   );
 }
 
+export async function loadRinSessionSelectorModule() {
+  return await importDistModule(
+    path.join("modes", "interactive", "components", "session-selector.js"),
+  );
+}
+
 export function resolveRinCodingAgentDistDir() {
   return codingAgentDistRoot;
 }
