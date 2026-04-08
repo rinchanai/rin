@@ -3339,6 +3339,7 @@ export class InteractiveMode {
 				{
 					onAutoCompactChange: (enabled) => {
 						this.session.setAutoCompactionEnabled(enabled);
+						(this.session as any).persistAutoCompactionPreference?.(enabled);
 						this.footer.setAutoCompactEnabled(enabled);
 					},
 					onShowImagesChange: (enabled) => {
@@ -3361,9 +3362,11 @@ export class InteractiveMode {
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);
+						(this.session as any).persistSteeringModePreference?.(mode);
 					},
 					onFollowUpModeChange: (mode) => {
 						this.session.setFollowUpMode(mode);
+						(this.session as any).persistFollowUpModePreference?.(mode);
 					},
 					onTransportChange: (transport) => {
 						this.settingsManager.setTransport(transport);
@@ -3371,6 +3374,7 @@ export class InteractiveMode {
 					},
 					onThinkingLevelChange: (level) => {
 						this.session.setThinkingLevel(level);
+						(this.session as any).persistThinkingLevelPreference?.(level);
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 					},
@@ -3503,6 +3507,7 @@ export class InteractiveMode {
 				async (model) => {
 					try {
 						await this.session.setModel(model);
+						(this.session as any).persistModelSelection?.(model);
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
