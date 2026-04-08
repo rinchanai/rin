@@ -4,7 +4,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { defaultDaemonSocketPath, safeString } from "../rin-lib/common.js";
+import {
+  bridgeDaemonSocketPath,
+  defaultDaemonSocketPath,
+  safeString,
+} from "../rin-lib/common.js";
 import type { RinRpcCommandType } from "../rin-lib/rpc-types.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { getKoishiSidecarStatus } from "../rin-koishi/service.js";
@@ -36,6 +40,9 @@ export async function startDaemon(
 ) {
   const socketPath =
     options.socketPath || process.argv[2] || defaultDaemonSocketPath();
+  const bridgeSocketPath = bridgeDaemonSocketPath(
+    process.env.RIN_DIR || resolveRuntimeProfile().agentDir,
+  );
   const workerPath =
     options.workerPath ||
     process.env.RIN_WORKER_PATH ||
@@ -62,10 +69,12 @@ export async function startDaemon(
   });
   cronScheduler.start();
 
-  try {
-    fs.rmSync(socketPath, { force: true });
-  } catch {}
-  ensureDir(path.dirname(socketPath));
+  for (const candidate of [socketPath, bridgeSocketPath]) {
+    try {
+      fs.rmSync(candidate, { force: true });
+    } catch {}
+    ensureDir(path.dirname(candidate));
+  }
 
   const hasSessionSelector = (command: any) =>
     Boolean(
@@ -282,83 +291,113 @@ export async function startDaemon(
     return false;
   };
 
-  const server = net.createServer((socket) => {
-    const connection: ConnectionState = {
-      socket,
-      clientBuffer: "",
-    };
+  const createSocketServer = () =>
+    net.createServer((socket) => {
+      const connection: ConnectionState = {
+        socket,
+        clientBuffer: "",
+      };
 
-    socket.on("data", (chunk) => {
-      connection.clientBuffer += String(chunk);
-      while (true) {
-        const idx = connection.clientBuffer.indexOf("\n");
-        if (idx < 0) break;
-        let line = connection.clientBuffer.slice(0, idx);
-        connection.clientBuffer = connection.clientBuffer.slice(idx + 1);
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (!line.trim()) continue;
-        (async () => {
-          let command: any;
-          try {
-            command = JSON.parse(line);
-          } catch {
-            writeLine(
-              socket,
-              response(undefined, "unknown", false, "invalid_json"),
+      socket.on("data", (chunk) => {
+        connection.clientBuffer += String(chunk);
+        while (true) {
+          const idx = connection.clientBuffer.indexOf("\n");
+          if (idx < 0) break;
+          let line = connection.clientBuffer.slice(0, idx);
+          connection.clientBuffer = connection.clientBuffer.slice(idx + 1);
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (!line.trim()) continue;
+          (async () => {
+            let command: any;
+            try {
+              command = JSON.parse(line);
+            } catch {
+              writeLine(
+                socket,
+                response(undefined, "unknown", false, "invalid_json"),
+              );
+              return;
+            }
+
+            if (await selfHandleCommand(connection, command)) {
+              workerPool.evictDetachedWorkers();
+              return;
+            }
+
+            const worker = workerPool.resolveWorkerForCommand(
+              connection,
+              command,
             );
-            return;
-          }
+            if (!worker) {
+              writeLine(
+                socket,
+                response(
+                  command?.id,
+                  String(command?.type || "unknown"),
+                  false,
+                  "rin_no_attached_session",
+                ),
+              );
+              return;
+            }
 
-          if (await selfHandleCommand(connection, command)) {
+            workerPool.forwardToWorker(connection, worker, command);
             workerPool.evictDetachedWorkers();
-            return;
-          }
+          })().catch((error) => {
+            writeLine(socket, response(undefined, "unknown", false, error));
+          });
+        }
+      });
 
-          const worker = workerPool.resolveWorkerForCommand(
-            connection,
-            command,
-          );
-          if (!worker) {
-            writeLine(
-              socket,
-              response(
-                command?.id,
-                String(command?.type || "unknown"),
-                false,
-                "rin_no_attached_session",
-              ),
-            );
-            return;
-          }
+      const cleanup = () => {
+        workerPool.detachWorker(connection);
+        workerPool.evictDetachedWorkers();
+      };
 
-          workerPool.forwardToWorker(connection, worker, command);
-          workerPool.evictDetachedWorkers();
-        })().catch((error) => {
-          writeLine(socket, response(undefined, "unknown", false, error));
-        });
-      }
+      socket.on("close", cleanup);
+      socket.on("error", cleanup);
     });
 
-    const cleanup = () => {
-      workerPool.detachWorker(connection);
-      workerPool.evictDetachedWorkers();
-    };
+  const servers = [
+    { server: createSocketServer(), path: socketPath, chmod: null },
+    { server: createSocketServer(), path: bridgeSocketPath, chmod: 0o666 },
+  ];
 
-    socket.on("close", cleanup);
-    socket.on("error", cleanup);
-  });
+  await Promise.all(
+    servers.map(
+      ({ server, path: listenPath, chmod }) =>
+        new Promise<void>((resolve, reject) => {
+          server.once("error", reject);
+          server.listen(listenPath, () => {
+            server.removeListener("error", reject);
+            if (typeof chmod === "number") {
+              try {
+                fs.chmodSync(listenPath, chmod);
+              } catch {}
+            }
+            resolve();
+          });
+        }),
+    ),
+  );
 
-  server.listen(socketPath, () => {
-    console.log(`rin daemon listening on ${socketPath}`);
-  });
+  console.log(`rin daemon listening on ${socketPath}`);
+  console.log(`rin daemon bridge listening on ${bridgeSocketPath}`);
 
   const shutdown = async () => {
     cronScheduler.stop();
     workerPool.destroyAll();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    try {
-      fs.rmSync(socketPath, { force: true });
-    } catch {}
+    await Promise.all(
+      servers.map(
+        ({ server }) =>
+          new Promise<void>((resolve) => server.close(() => resolve())),
+      ),
+    );
+    for (const candidate of [socketPath, bridgeSocketPath]) {
+      try {
+        fs.rmSync(candidate, { force: true });
+      } catch {}
+    }
     process.exit(0);
   };
 
