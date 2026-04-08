@@ -1,4 +1,5 @@
 import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -45,6 +46,52 @@ export function buildTmuxSocketArgs(targetUser: string) {
 
 export function buildTmuxListArgs(socketArgs: string[]) {
   return ["tmux", ...socketArgs, "list-sessions", "-F", "#S"];
+}
+
+export function isStaleTmuxSessionProcess(
+  cmdline: string,
+  expectedEntryRealpath: string,
+) {
+  if (!cmdline.includes("rin-tui/main.js")) return false;
+  return !cmdline.includes(expectedEntryRealpath);
+}
+
+async function restartTmuxSessionIfStale(
+  socketArgs: string[],
+  sessionName: string,
+  expectedEntry: string,
+  env: Record<string, string>,
+  cwd: string,
+) {
+  const expectedEntryRealpath = fs.realpathSync.native(expectedEntry);
+  const panes = await runCommandCapture(
+    "tmux",
+    [...socketArgs, "list-panes", "-t", sessionName, "-F", "#{pane_pid}"],
+    { env, cwd },
+  ).catch(() => null);
+  if (!panes || panes.code !== 0) return;
+
+  const panePids = panes.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (const pid of panePids) {
+    let cmdline = "";
+    try {
+      cmdline = fs
+        .readFileSync(`/proc/${pid}/cmdline`)
+        .toString("utf8")
+        .replace(/\u0000/g, " ");
+    } catch {
+      continue;
+    }
+    if (!isStaleTmuxSessionProcess(cmdline, expectedEntryRealpath)) continue;
+    await runCommandCapture("tmux", [...socketArgs, "kill-session", "-t", sessionName], {
+      env,
+      cwd,
+    }).catch(() => {});
+    return;
+  }
 }
 
 export async function launchDefaultRin(parsed: ParsedArgs) {
@@ -110,11 +157,20 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   }
 
   if (parsed.tmuxSession) {
+    const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
+    const commandEnv = { ...process.env, ...runtimeEnv };
+    await restartTmuxSessionIfStale(
+      tmuxSocketArgs,
+      parsed.tmuxSession,
+      tuiEntry,
+      commandEnv as Record<string, string>,
+      repoRoot,
+    );
     const tmuxCommand = [
       "env",
       ...Object.entries(runtimeEnv).map(([key, value]) => `${key}=${value}`),
       process.execPath,
-      path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
+      tuiEntry,
       parsed.std ? "--std" : "--rpc",
       ...parsed.passthrough,
     ];
@@ -129,7 +185,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
         ...tmuxCommand,
       ],
       {
-        env: { ...process.env, ...runtimeEnv },
+        env: commandEnv,
         cwd: repoRoot,
       },
     );
