@@ -2,11 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import {
-  buildUserShell,
-  isTmuxNoServerError,
-  socketPathForUser,
-} from "../rin-lib/system.js";
+import { isTmuxNoServerError, socketPathForUser } from "../rin-lib/system.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 
 import {
@@ -42,14 +38,7 @@ async function runCommandCapture(
   );
 }
 
-export function tmuxSocketArgsForInstall(
-  installDir: string,
-  targetUser: string,
-  currentUser = os.userInfo().username,
-) {
-  if (installDir && currentUser === targetUser) {
-    return ["-S", path.join(installDir, "data", "tmux", "server.sock")];
-  }
+export function buildTmuxSocketArgs(targetUser: string) {
   return ["-L", `rin-${targetUser}`];
 }
 
@@ -57,67 +46,11 @@ export function buildTmuxListArgs(socketArgs: string[]) {
   return ["tmux", ...socketArgs, "list-sessions", "-F", "#S"];
 }
 
-async function ensureTmuxSocketDir(
-  targetUser: string,
-  runtimeEnv: Record<string, string>,
-  socketArgs: string[],
-  cwd: string,
-) {
-  if (socketArgs[0] !== "-S" || !socketArgs[1]) return;
-  const launch = buildUserShell(
-    targetUser,
-    ["mkdir", "-p", path.dirname(socketArgs[1])],
-    runtimeEnv,
-  );
-  const result = await runCommandCapture(launch.command, launch.args, {
-    env: launch.env,
-    cwd,
-  });
-  if (result.code !== 0) {
-    throw new Error(
-      result.stderr.trim() ||
-        result.stdout.trim() ||
-        "rin_tmux_socket_dir_create_failed",
-    );
-  }
-}
-
-async function listTmuxSessions(
-  targetUser: string,
-  runtimeEnv: Record<string, string>,
-  socketArgs: string[],
-  cwd: string,
-  asTargetUser: boolean,
-) {
-  const launch = asTargetUser
-    ? buildUserShell(targetUser, buildTmuxListArgs(socketArgs), runtimeEnv)
-    : {
-        command: "tmux",
-        args: [...socketArgs, "list-sessions", "-F", "#S"],
-        env: { ...process.env, ...runtimeEnv },
-      };
-  const result = await runCommandCapture(launch.command, launch.args, {
-    env: launch.env,
-    cwd,
-  });
-  if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr) {
-    process.stderr.write(result.stderr);
-  }
-  return result.stdout
-    .split(/\r?\n/g)
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
 export async function launchDefaultRin(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
   const currentUser = os.userInfo().username;
-  const tmuxSocketArgs = tmuxSocketArgsForInstall(
-    parsed.installDir,
-    targetUser,
-    currentUser,
-  );
+  const tmuxSocketArgs = buildTmuxSocketArgs(targetUser);
 
   if (!parsed.explicitUser && !parsed.hasSavedInstall) {
     throw new Error(
@@ -153,51 +86,24 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   };
 
   if (parsed.tmuxList) {
-    if (tmuxSocketArgs[0] === "-S") {
-      await ensureTmuxSocketDir(
-        targetUser,
-        runtimeEnv,
-        tmuxSocketArgs,
-        repoRoot,
-      );
-    }
-    const names = new Set(
-      await listTmuxSessions(
-        targetUser,
-        runtimeEnv,
-        tmuxSocketArgs,
-        repoRoot,
-        tmuxSocketArgs[0] === "-S",
-      ),
+    const result = await runCommandCapture(
+      "tmux",
+      buildTmuxListArgs(tmuxSocketArgs).slice(1),
+      {
+        env: { ...process.env, ...runtimeEnv },
+        cwd: repoRoot,
+      },
     );
-    if (
-      parsed.installDir &&
-      currentUser !== targetUser &&
-      tmuxSocketArgs[0] !== "-L"
-    ) {
-      for (const name of await listTmuxSessions(
-        targetUser,
-        runtimeEnv,
-        ["-L", `rin-${targetUser}`],
-        repoRoot,
-        false,
-      )) {
-        names.add(name);
-      }
+    if (result.stdout) process.stdout.write(result.stdout);
+    if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr) {
+      process.stderr.write(result.stderr);
     }
-    if (names.size) process.stdout.write(`${[...names].join("\n")}\n`);
-    process.exit(0);
+    process.exit(
+      isTmuxNoServerError(result.code, result.stderr) ? 0 : result.code,
+    );
   }
 
   if (parsed.tmuxSession) {
-    if (tmuxSocketArgs[0] === "-S") {
-      await ensureTmuxSocketDir(
-        targetUser,
-        runtimeEnv,
-        tmuxSocketArgs,
-        repoRoot,
-      );
-    }
     const tmuxCommand = [
       "env",
       ...Object.entries(runtimeEnv).map(([key, value]) => `${key}=${value}`),
