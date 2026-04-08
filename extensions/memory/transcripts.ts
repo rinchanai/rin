@@ -252,7 +252,6 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
       id UNINDEXED,
       timestamp,
       session_id,
-      session_file,
       role,
       text,
       tokenize='trigram'
@@ -263,8 +262,8 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
   const insertFts = db.prepare(`
-    INSERT INTO entries_fts (id, timestamp, session_id, session_file, role, text)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO entries_fts (id, timestamp, session_id, role, text)
+    VALUES (?, ?, ?, ?, ?)
   `);
   db.exec("BEGIN;");
   try {
@@ -281,7 +280,6 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
         entry.id,
         entry.timestamp,
         entry.sessionId,
-        entry.sessionFile,
         entry.role,
         entry.text,
       );
@@ -310,7 +308,7 @@ export async function searchTranscriptArchive(
   const substringMatches = entries
     .filter((entry) => {
       const haystack = normalizeNeedle(
-        [entry.text, entry.role, entry.sessionId, entry.sessionFile].join(" "),
+        [entry.text, entry.role, entry.sessionId].join(" "),
       );
       return haystack.includes(normalizedQuery);
     })
@@ -349,11 +347,10 @@ export async function searchTranscriptArchive(
         WHERE text LIKE ? ESCAPE '\\'
            OR role LIKE ? ESCAPE '\\'
            OR session_id LIKE ? ESCAPE '\\'
-           OR session_file LIKE ? ESCAPE '\\'
         LIMIT ?
       `,
       )
-      .all(like, like, like, like, Math.max(limit * 8, 24)) as Array<{
+      .all(like, like, like, Math.max(limit * 8, 24)) as Array<{
       id: string;
     }>;
     likeRows.forEach((row, index) => {

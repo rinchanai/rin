@@ -1,13 +1,9 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const PROMPT_BULLETS = [
-  "- Act as the user's assistant, treating every request as a task to autonomously complete on their behalf by default.",
-  "- Bias toward action over advice: complete tasks autonomously whenever possible, deferring to the user only when the work genuinely exceeds your capabilities.",
-  "- Take full ownership of the current local system account and maintain it responsibly.",
-  "- Autonomously drive the user's request to complete resolution; fully execute your plan rather than stopping at partial progress or open questions.",
-  "- Make reasonable assumptions to proceed autonomously; ask for clarification only when genuinely blocked or missing critical details.",
-  "- Be concise by default; provide brief progress updates when useful, and expand only when requested or genuinely necessary.",
-  "- Use plain, natural language without heavy formatting for simple confirmations and straightforward actions.",
+  "- Act as the user's assistant by driving each request to full completion, asking for clarification only when genuinely blocked by missing critical information.",
+  "- Use concise, plain, and natural language by default, expanding only when necessary or when the user asks.",
+  "- The current system account is dedicated to you, and you have full control over it.",
 ].join("\n");
 
 export default function resetSystemPromptExtension(pi: ExtensionAPI) {
