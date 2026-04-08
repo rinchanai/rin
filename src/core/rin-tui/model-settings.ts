@@ -46,9 +46,6 @@ export async function setRpcModel(
     });
     return;
   }
-  persistSettingsMutation((settings) => {
-    settings.setDefaultModelAndProvider?.(model.provider, model.id);
-  });
   await target.call("set_model", {
     provider: model.provider,
     modelId: model.id,
@@ -90,12 +87,6 @@ export async function cycleRpcModel(
   }
   const data = await target.call("cycle_model");
   await refreshModels();
-  const nextModel = data?.model;
-  if (nextModel?.provider && nextModel?.id) {
-    persistSettingsMutation((settings) => {
-      settings.setDefaultModelAndProvider?.(nextModel.provider, nextModel.id);
-    });
-  }
   return data ?? undefined;
 }
 
@@ -106,10 +97,12 @@ export function setRpcThinkingLevel(target: any, level: ThinkingLevel) {
     : available[available.length - 1];
   target.thinkingLevel = next;
   target.state.thinkingLevel = next;
-  persistSettingsMutation((settings) => {
-    settings.setDefaultThinkingLevel?.(next);
-  });
-  if (target.detachedBlankSession) return;
+  if (target.detachedBlankSession) {
+    persistSettingsMutation((settings) => {
+      settings.setDefaultThinkingLevel?.(next);
+    });
+    return;
+  }
   void target.client
     .send({ type: "set_thinking_level", level: next })
     .catch(() => {});
@@ -129,29 +122,35 @@ export function cycleRpcThinkingLevel(target: any): ThinkingLevel | undefined {
 export function setRpcSteeringMode(target: any, mode: "all" | "one-at-a-time") {
   target.steeringMode = mode;
   target.settingsManager.setSteeringMode(mode);
-  persistSettingsMutation((settings) => {
-    settings.setSteeringMode?.(mode);
-  });
-  if (target.detachedBlankSession) return;
+  if (target.detachedBlankSession) {
+    persistSettingsMutation((settings) => {
+      settings.setSteeringMode?.(mode);
+    });
+    return;
+  }
   void target.client.send({ type: "set_steering_mode", mode }).catch(() => {});
 }
 
 export function setRpcFollowUpMode(target: any, mode: "all" | "one-at-a-time") {
   target.followUpMode = mode;
   target.settingsManager.setFollowUpMode(mode);
-  persistSettingsMutation((settings) => {
-    settings.setFollowUpMode?.(mode);
-  });
-  if (target.detachedBlankSession) return;
+  if (target.detachedBlankSession) {
+    persistSettingsMutation((settings) => {
+      settings.setFollowUpMode?.(mode);
+    });
+    return;
+  }
   void target.client.send({ type: "set_follow_up_mode", mode }).catch(() => {});
 }
 
 export function setRpcAutoCompaction(target: any, enabled: boolean) {
   target.autoCompactionEnabled = enabled;
-  persistSettingsMutation((settings) => {
-    settings.setCompactionEnabled?.(enabled);
-  });
-  if (target.detachedBlankSession) return;
+  if (target.detachedBlankSession) {
+    persistSettingsMutation((settings) => {
+      settings.setCompactionEnabled?.(enabled);
+    });
+    return;
+  }
   void target.client
     .send({ type: "set_auto_compaction", enabled })
     .catch(() => {});
