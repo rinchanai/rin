@@ -1,6 +1,7 @@
 import { parseJsonl } from "../rin-lib/common.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { RESUME_INTERRUPTED_TURN_TEXT } from "../rin-lib/resume.js";
+import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
   getOAuthState,
   getSessionState,
@@ -58,6 +59,7 @@ export async function runCustomRpcMode(
         emitTurnEvent("complete", requestTag, {
           sessionFile: session.sessionFile,
           sessionId: session.sessionId,
+          result: buildTurnResultFromMessages(session.messages || []),
         });
       } catch (error: any) {
         emitTurnEvent("error", requestTag, {
