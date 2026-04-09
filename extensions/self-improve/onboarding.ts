@@ -62,7 +62,7 @@ export function buildOnboardingPrompt(
     "- then ask how to address the user",
     "- finally ask for the assistant's default voice/style preferences",
     "If the user already provided information from later steps early, remember it and use it; do not force redundant questions.",
-    "When a stable fact becomes clear, proactively call save_self_improve_prompt to save or update it.",
+    "When a stable fact becomes clear, proactively call save_prompts to save or update it.",
     "For onboarding or preference updates, prefer updating the existing target slot instead of assuming blank state or creating duplicates.",
     "Use self-improve prompt slots:",
     "- agent_profile = assistant identity, relationship framing, default language, and voice/style",

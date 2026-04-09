@@ -4,7 +4,7 @@ Rin's builtin self-improvement extension.
 
 Public tool:
 
-- `save_self_improve_prompt`
+- `save_prompts`
 
 ## Responsibilities
 

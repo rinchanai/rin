@@ -83,7 +83,7 @@ async function runForkedSessionSelfImproveReview(options: {
     }
 
     const prompt = [
-      "Capture durable global baselines that should stay present every turn with save_self_improve_prompt.",
+      "Capture durable global baselines that should stay present every turn with save_prompts.",
       "If the transcript shows a complex task, a tricky error fix, a non-trivial workflow, or a reusable user-corrected approach, save that procedure as a skill so it can be reused next time.",
       "Agent-generated skills live under the managed self_improve/skills path as ordinary <skill-name>/SKILL.md packages.",
       "When creating or substantially revising such a skill, use the skill-creator skill if it is available.",
