@@ -12,13 +12,6 @@ import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
-const MEMORY_SYSTEM_GUIDANCE = [
-  "# Memory guidance",
-  "This memory module is for archived session recall only.",
-  "Use search_memory proactively when the user references earlier conversations or relevant cross-session context may matter; better to search and confirm than to guess or ask them to repeat themselves.",
-  "For broad recall, start with a few distinctive keywords joined by OR, retry with narrower queries if needed, and keep self_improve prompts and skills out of this search path.",
-].join("\n");
-
 const searchMemoryParams = Type.Object({
   query: Type.String({
     description:
@@ -322,15 +315,5 @@ export default function memoryExtension(pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     await archiveMessageTranscript(event?.message, ctx);
-  });
-
-  pi.on("before_agent_start", async (event) => {
-    if (String(event.systemPrompt || "").includes(MEMORY_SYSTEM_GUIDANCE)) {
-      return;
-    }
-    return {
-      systemPrompt:
-        `${String(event.systemPrompt || "").trimEnd()}\n\n${MEMORY_SYSTEM_GUIDANCE}`.trimEnd(),
-    };
   });
 }
