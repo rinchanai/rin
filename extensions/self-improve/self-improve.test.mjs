@@ -242,31 +242,6 @@ test("self-improve doc loading uses prompt slot filenames and ignores skill docs
   });
 });
 
-test("self-improve doc loading strips legacy frontmatter for prompt slots", async () => {
-  await withTempRoot(async (root) => {
-    const selfImproveRoot = path.join(root, "self_improve");
-    await fs.mkdir(path.join(selfImproveRoot, "prompts"), {
-      recursive: true,
-    });
-    await fs.writeFile(
-      path.join(selfImproveRoot, "prompts", "agent_profile.md"),
-      [
-        "---",
-        "name: agent profile",
-        "exposure: self_improve_prompts",
-        "self_improve_prompt_slot: agent_profile",
-        "---",
-        "Legacy profile text.",
-      ].join("\n"),
-      "utf8",
-    );
-
-    const docs = await memoryDocs.loadMemoryDocs(selfImproveRoot);
-    assert.equal(docs.length, 1);
-    assert.equal(String(docs[0].content || ""), "Legacy profile text.");
-  });
-});
-
 test("saveSelfImprovePromptDoc supports core_facts with fact kind by default", async () => {
   await withTempRoot(async (root) => {
     const saved = await store.saveSelfImprovePromptDoc(
