@@ -10,10 +10,10 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
   const { baseSystemPrompt, finalSystemPrompt } =
     await buildFinalAppSystemPrompt();
 
-  assert.ok(baseSystemPrompt.includes("## Available tools"));
+  assert.ok(baseSystemPrompt.includes("Available tools:"));
   assert.ok(baseSystemPrompt.includes("- search_memory:"));
   assert.ok(baseSystemPrompt.includes("- save_prompts:"));
-  assert.ok(baseSystemPrompt.includes("## Tool guidance"));
+  assert.ok(baseSystemPrompt.includes("Guidelines:"));
 
   assert.ok(
     finalSystemPrompt.includes(
