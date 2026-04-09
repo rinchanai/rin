@@ -30,7 +30,7 @@ test("self-improve format builds compact compiled prompt", () => {
     ],
   });
   assert.ok(text.includes("# Self-Improve Prompts"));
-  assert.ok(text.includes("## Agent Profile"));
+  assert.ok(text.includes("## /tmp/agent_profile.md"));
 });
 
 test("memory onboarding helper keeps hidden instructions and pending state", () => {

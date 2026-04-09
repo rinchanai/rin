@@ -1,11 +1,3 @@
-function toTitleCase(text: string): string {
-  return String(text || "")
-    .split(/[_\s-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function buildPromptBlock(result: any): string {
   const docs = Array.isArray(result?.self_improve_prompt_prompt_docs)
     ? result.self_improve_prompt_prompt_docs
@@ -15,16 +7,15 @@ function buildPromptBlock(result: any): string {
   if (!docs.length) return "";
   const lines = ["# Self-Improve Prompts", ""];
   for (const doc of docs) {
-    const title = toTitleCase(
-      String(
-        doc?.name || doc?.self_improve_prompt_slot || doc?.id || "Untitled",
-      ).trim(),
-    );
     const body = String(doc?.content || doc?.preview || "").trim();
     const filePath = String(doc?.path || "").trim();
-    if (!body) continue;
-    lines.push(`## ${title}`);
-    if (filePath) lines.push(filePath);
+    const label =
+      filePath ||
+      String(
+        doc?.self_improve_prompt_slot || doc?.id || doc?.name || "",
+      ).trim();
+    if (!body || !label) continue;
+    lines.push(`## ${label}`);
     lines.push("");
     lines.push(body);
     lines.push("");

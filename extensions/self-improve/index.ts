@@ -31,9 +31,8 @@ let installerAutoInitConsumed = false;
 const SELF_IMPROVE_SYSTEM_GUIDANCE = [
   "# Self-improve guidance",
   "",
-  "- You have persistent self-improvement state across sessions.",
-  "- Use save_prompts proactively for durable baselines that should stay present every turn, especially preferences, recurring corrections, environment conventions, and other stable facts that reduce future user steering; keep them compact, write them in English, and do not store task progress, session outcomes, or temporary TODO state there.",
-  "- Save reusable procedures, workflows, checklists, and playbooks as skills instead; after a complex task, tricky fix, non-trivial workflow, or reusable user-corrected approach, capture it as a skill under /home/rin/.rin/self_improve/skills, use skill-creator for major creation or revision when available, and update outdated or incomplete skills immediately.",
+  "- Use save_prompts for durable baselines that should remain active every turn. Keep them compact, write them in English, and do not store task progress, session outcomes, or temporary state there.",
+  "- Save reusable procedures, workflows, checklists, and playbooks as skills under /home/rin/.rin/self_improve/skills. Use skill-creator for major creation or revision when available, and update outdated or incomplete skills promptly.",
 ].join("\n");
 
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
