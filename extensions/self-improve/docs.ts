@@ -29,16 +29,10 @@ function selfImprovePromptsDir(rootDir: string) {
   return path.join(rootDir, "prompts");
 }
 
-function stripOptionalFrontmatter(text: string): string {
-  const raw = String(text || "");
-  const match = raw.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
-  return (match ? match[1] : raw).trim();
-}
-
 function promptDocFromFile(filePath: string, text: string): MemoryDoc | null {
   const slot = path.basename(filePath, ".md").trim();
   if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) return null;
-  const content = stripOptionalFrontmatter(text);
+  const content = String(text || "").trim();
   if (!content) return null;
   const now = nowIso();
   return {
