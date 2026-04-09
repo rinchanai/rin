@@ -92,37 +92,6 @@ export type CronTaskInput = {
   target?: CronTaskTarget;
 };
 
-function createBuiltInCronTasks(options: { cwd: string }): CronTaskRecord[] {
-  const now = nowIso();
-  return [
-    {
-      id: "builtin_memory_nightly_consolidation",
-      builtIn: true,
-      createdAt: now,
-      updatedAt: now,
-      name: "memory-nightly-consolidation",
-      enabled: true,
-      cwd: options.cwd,
-      trigger: {
-        kind: "cron",
-        expression: "0 4 * * *",
-        timezone: "local",
-      },
-      session: {
-        mode: "dedicated",
-      },
-      target: {
-        kind: "agent_prompt",
-        prompt:
-          "Review last 24h original session transcripts to adjust memory by creating, deleting, promoting, or demoting entries. Deduplicate low-value memory to prevent users from needing to repeat themselves.",
-      },
-      nextRunAt: undefined,
-      runCount: 0,
-      running: false,
-    },
-  ];
-}
-
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>();
   private timer: NodeJS.Timeout | null = null;
@@ -406,14 +375,6 @@ export class CronScheduler {
         ? undefined
         : row.nextRunAt || computeNextRunAt(row, Date.now());
       this.tasks.set(String(row.id), row);
-    }
-    for (const task of createBuiltInCronTasks({ cwd: this.options.cwd })) {
-      task.running = false;
-      task.lastError = task.lastError ? safeString(task.lastError) : undefined;
-      task.nextRunAt = task.completedAt
-        ? undefined
-        : task.nextRunAt || computeNextRunAt(task, Date.now());
-      this.tasks.set(task.id, task);
     }
     this.save();
   }

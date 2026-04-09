@@ -28,13 +28,6 @@ import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
 
-const SELF_IMPROVE_SYSTEM_GUIDANCE = [
-  "# Self-improve guidance",
-  "",
-  "- Use save_prompts for durable baselines that should remain active every turn. Keep them compact, write them in English, and do not store task progress, session outcomes, or temporary state there.",
-  "- Save reusable procedures, workflows, checklists, and playbooks as skills under /home/rin/.rin/self_improve/skills. Use skill-creator for major creation or revision when available, and update outdated or incomplete skills promptly.",
-].join("\n");
-
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
 const reviewStateBySession = new Map<
   string,
@@ -241,8 +234,10 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       "Save durable prompt baselines that persist across sessions and stay available every turn. Keep them compact and focused on what will still matter later.",
     promptSnippet: "Save durable prompt baselines.",
     promptGuidelines: [
-      "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, and stable facts that reduce future user steering.",
-      "Keep prompts compact and focused, do not save task progress or temporary state here, and save reusable procedures as skills instead.",
+      "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
+      "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
+      "Use save_prompts without markdown list markers in tool input; save_prompts stores prompt entries as markdown list items in the underlying files.",
+      "Save reusable procedures, workflows, checklists, and playbooks as skills under /home/rin/.rin/self_improve/skills instead of save_prompts content; use skill-creator for major creation or revision when available, and update outdated or incomplete skills promptly.",
     ],
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>
@@ -348,11 +343,6 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     const { systemPrompt } = await compileSelfImprovePrompt();
     const blocks: string[] = [];
     if (
-      !String(event.systemPrompt || "").includes(SELF_IMPROVE_SYSTEM_GUIDANCE)
-    ) {
-      blocks.push(SELF_IMPROVE_SYSTEM_GUIDANCE);
-    }
-    if (
       systemPrompt &&
       !String(event.systemPrompt || "").includes(systemPrompt)
     ) {
@@ -370,12 +360,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     }
     if (!blocks.length) return;
     const current = String(event.systemPrompt || "").trimEnd();
-    const guidanceBlock = blocks.includes(SELF_IMPROVE_SYSTEM_GUIDANCE)
-      ? SELF_IMPROVE_SYSTEM_GUIDANCE
-      : "";
-    const promptsBlock = blocks.find(
-      (item) => item && item !== SELF_IMPROVE_SYSTEM_GUIDANCE,
-    );
+    const promptsBlock = blocks[0] || "";
 
     const insertBeforeMarker = (
       source: string,
@@ -391,7 +376,6 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
 
     const skillsMarker =
       "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n";
-    const projectContextMarker = "\n\n# Project Context\n\n";
 
     let next = current;
     if (promptsBlock) {
@@ -399,21 +383,6 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
         next = insertBeforeMarker(next, skillsMarker, promptsBlock);
       } else {
         next = `${next}\n\n${promptsBlock}`.trimEnd();
-      }
-    }
-    if (guidanceBlock) {
-      if (next.includes(projectContextMarker)) {
-        next = insertBeforeMarker(next, projectContextMarker, guidanceBlock);
-      } else if (promptsBlock && next.includes(`\n\n${promptsBlock}\n\n`)) {
-        next = insertBeforeMarker(
-          next,
-          `\n\n${promptsBlock}\n\n`,
-          guidanceBlock,
-        );
-      } else if (next.includes(skillsMarker)) {
-        next = insertBeforeMarker(next, skillsMarker, guidanceBlock);
-      } else {
-        next = `${next}\n\n${guidanceBlock}`.trimEnd();
       }
     }
     return {

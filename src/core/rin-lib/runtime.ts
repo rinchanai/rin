@@ -124,16 +124,8 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)",
     );
   }
-  let deferredSavePromptsGuideline = "";
   for (const guideline of promptGuidelines) {
-    if (guideline.startsWith("Use save_prompts ")) {
-      deferredSavePromptsGuideline = guideline;
-      continue;
-    }
     addGuideline(guideline);
-  }
-  if (deferredSavePromptsGuideline) {
-    addGuideline(deferredSavePromptsGuideline);
   }
   addGuideline(
     "Search the web proactively for latest, time-sensitive, version-sensitive, or potentially changed information.",

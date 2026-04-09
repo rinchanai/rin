@@ -47,13 +47,23 @@ export async function loadActiveSelfImproveDocs(rootOverride = "") {
   return activeDocsOnly(await loadMemoryDocs(root));
 }
 
+function normalizePromptListContent(text: string) {
+  return safeString(text)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*-\s*/, "").trim())
+    .filter(Boolean)
+    .map((line) => `- ${line}`)
+    .join("\n")
+    .trim();
+}
+
 export async function saveSelfImprovePromptDoc(
   params: Record<string, any> = {},
   rootOverride = "",
 ) {
   const root = resolveSelfImproveRoot(rootOverride);
   await ensureSelfImproveLayout(root);
-  const content = safeString(params.content || "").trim();
+  const content = normalizePromptListContent(safeString(params.content || ""));
   if (!content) throw new Error("self_improve_content_required");
   const selfImprovePromptSlot = safeString(
     params.selfImprovePromptSlot || params.residentSlot || "",
