@@ -116,30 +116,6 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     addGuideline(deferredSavePromptsGuideline);
   }
   addGuideline(
-    "Write all memory in English, keeping proper nouns untranslated.",
-  );
-  addGuideline(
-    "After completing a complex task (5+ tool calls), fixing a tricky error, discovering a non-trivial workflow, or proving out a reusable user-corrected approach, save the approach as a skill so you can reuse it next time.",
-  );
-  addGuideline(
-    `Agent-generated skills live under ${managedSkillPaths[0]} as ordinary skill packages in <skill-name>/SKILL.md form.`,
-  );
-  addGuideline(
-    `Builtin skills are installed under ${managedSkillPaths[1]}; when creating or substantially revising an agent-generated skill, use the skill-creator skill if it is available.`,
-  );
-  addGuideline(
-    "If you use a skill and find it outdated, incomplete, or wrong, update it immediately instead of waiting to be asked.",
-  );
-  addGuideline(
-    "Prefer skills over memory for reusable procedures, workflows, checklists, and operating playbooks.",
-  );
-  addGuideline(
-    "Each memory document should contain only one topic; when multiple topics are related, prefer designing an index document to build a tree structure and disclose only that index.",
-  );
-  addGuideline(
-    "Always search memory proactively before beginning substantial work, scanning across all relevant scales from precise task details to broader domain context.",
-  );
-  addGuideline(
     "Search the web proactively for latest, time-sensitive, version-sensitive, or potentially changed information.",
   );
   addGuideline(
