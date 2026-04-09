@@ -304,7 +304,8 @@ export default function memoryExtension(pi: ExtensionAPI) {
     label: "Search Memory",
     description:
       "Search archived session history for long-term recall of past conversations. Use it proactively when earlier work may matter; matched sessions are summarized for quick recall, and broad queries work best with a few distinctive keywords joined by OR.",
-    promptSnippet: "Search archived session history.",
+    promptSnippet:
+      "Search archived history for long-term recall of past sessions.",
     promptGuidelines: [
       "Use search_memory proactively for past-conversation recall when the user references earlier work or relevant cross-session context may matter; better to search and confirm than to guess or ask them to repeat themselves.",
       "For broad recall, start with a few distinctive keywords joined by OR, retry with narrower queries if needed, and do not use this tool for self_improve prompts or skills.",
