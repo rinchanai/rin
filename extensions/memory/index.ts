@@ -14,25 +14,27 @@ import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 const MEMORY_SYSTEM_GUIDANCE = [
   "# Memory guidance",
-  "This memory module is reserved for session history recall.",
-  "Use search_memory when the user references a past conversation, says we did this before, mentions last time, or when you suspect relevant cross-session context exists.",
-  "Better to search and confirm than to guess or ask the user to repeat themselves.",
-  "For broad recall, search with a few distinctive keywords joined by OR instead of one long natural-language sentence.",
-  "Do not use search_memory for self_improve prompts or skills; it is only for archived session history.",
+  "This memory module is for archived session recall only.",
+  "Use search_memory proactively when the user references earlier conversations or relevant cross-session context may matter; better to search and confirm than to guess or ask them to repeat themselves.",
+  "For broad recall, start with a few distinctive keywords joined by OR, retry with narrower queries if needed, and keep self_improve prompts and skills out of this search path.",
 ].join("\n");
 
 const searchMemoryParams = Type.Object({
-  query: Type.String({ description: "Search query." }),
+  query: Type.String({
+    description:
+      "Search query for past sessions. For broad recall, prefer a few distinctive keywords joined by OR; use quoted phrases for exact wording when needed.",
+  }),
   limit: Type.Optional(
     Type.Number({
       minimum: 1,
-      description: "Maximum number of matches to return.",
+      description:
+        "Maximum number of transcript matches or session summaries to return.",
     }),
   ),
   fidelity: Type.Optional(
     Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")], {
       description:
-        "Optional match mode. Allowed values: `exact` or `fuzzy` only. Omit this field if you are unsure.",
+        "Optional match mode: `exact` for strict substring matching, `fuzzy` for broader recall. Omit it if you are unsure.",
     }),
   ),
 });
@@ -301,13 +303,11 @@ export default function memoryExtension(pi: ExtensionAPI) {
     name: "search_memory",
     label: "Search Memory",
     description:
-      "Search archived session history. Use it proactively when the user references a past conversation or when relevant cross-session context may exist. Prefer a few distinctive keywords joined with OR for broad recall.",
+      "Search archived session history for long-term recall of past conversations. Use it proactively when earlier work may matter; matched sessions are summarized for quick recall, and broad queries work best with a few distinctive keywords joined by OR.",
     promptSnippet: "Search archived session history.",
     promptGuidelines: [
-      "Use search_memory when the user references a past conversation or when relevant cross-session context may exist.",
-      "Better to search and confirm than to guess or ask the user to repeat themselves.",
-      "For broad recall, search with a few distinctive keywords joined by OR instead of one long sentence.",
-      "If a broad OR query returns nothing, retry with one or two narrower keyword searches.",
+      "Use search_memory proactively for past-conversation recall when the user references earlier work or relevant cross-session context may matter; better to search and confirm than to guess or ask them to repeat themselves.",
+      "For broad recall, start with a few distinctive keywords joined by OR, retry with narrower queries if needed, and do not use this tool for self_improve prompts or skills.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
