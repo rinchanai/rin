@@ -30,6 +30,11 @@ const asyncJobs = await import(
     path.join(rootDir, "dist", "extensions", "self-improve", "async-jobs.js"),
   ).href
 );
+const processing = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "extensions", "self-improve", "processing.js"),
+  ).href
+);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-memory-test-"));
@@ -63,6 +68,43 @@ test("buildOnboardingPrompt keeps init instructions hidden and language-first", 
       agentIndex > languageIndex &&
       ownerIndex > agentIndex &&
       styleIndex > ownerIndex,
+  );
+});
+
+test("processing describes prompt slots with content and limits", async () => {
+  const state = processing.describeSelfImprovePromptSlot({
+    slot: "agent_profile",
+    existingContent: "Speak concise Chinese by default.",
+  });
+  assert.equal(state.slot, "agent_profile");
+  assert.equal(state.maxChars, 1200);
+  assert.equal(state.currentChars, 35);
+  assert.equal(
+    state.content,
+    "- Speak concise Chinese by default.",
+  );
+});
+
+test("processing normalizes revised full-slot content and enforces limits", async () => {
+  const refined = processing.refineSelfImprovePromptSlot({
+    slot: "user_profile",
+    incomingContent: "Call the user Master by default.\nAvoid markdown in Koishi bridge chats.",
+  });
+  assert.equal(
+    refined.content,
+    [
+      "- Call the user Master by default.",
+      "- Avoid markdown in Koishi bridge chats.",
+    ].join("\n"),
+  );
+  assert.equal(refined.nextChars, refined.content.length);
+  assert.throws(
+    () =>
+      processing.refineSelfImprovePromptSlot({
+        slot: "agent_profile",
+        incomingContent: "x".repeat(1201),
+      }),
+    /self_improve_prompt_content_too_long:agent_profile:1200/,
   );
 });
 
