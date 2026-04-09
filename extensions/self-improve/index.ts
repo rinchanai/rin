@@ -23,7 +23,10 @@ import {
   resolveAgentDir,
   loadSelfImproveStore,
 } from "./lib.js";
-import { refineSelfImprovePromptSlot } from "./processing.js";
+import {
+  describeSelfImprovePromptSlot,
+  refineSelfImprovePromptSlot,
+} from "./processing.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
@@ -115,14 +118,7 @@ async function processSelfImproveReview(
 }
 
 const saveSelfImprovePromptParams = Type.Object({
-  action: Type.Union(
-    [Type.Literal("add"), Type.Literal("replace"), Type.Literal("remove")],
-    {
-      description:
-        "Write action: `add` creates a new entry, `replace` updates an existing one, and `remove` deletes one identified by `oldText`.",
-    },
-  ),
-  selfImprovePromptSlot: Type.Union(
+  slot: Type.Union(
     [
       Type.Literal("agent_profile"),
       Type.Literal("user_profile"),
@@ -131,86 +127,206 @@ const saveSelfImprovePromptParams = Type.Object({
     ],
     {
       description:
-        "Which always-on prompt slot to update: `agent_profile`, `user_profile`, `core_doctrine`, or `core_facts`.",
+        "Which always-on prompt slot to inspect or update: `agent_profile`, `user_profile`, `core_doctrine`, or `core_facts`.",
     },
   ),
   content: Type.Optional(
     Type.String({
       description:
-        "New prompt content for `add` or `replace`. Keep it durable, compact, and worth injecting in future turns.",
+        "Full revised canonical content for the slot. Omit this on the first call to read the current slot state.",
     }),
   ),
-  oldText: Type.Optional(
+  baseContent: Type.Optional(
     Type.String({
       description:
-        "Short unique substring that identifies the existing text to replace or remove. Required for `replace` and `remove`.",
+        "Current canonical content returned by the read step. Required to update a populated slot safely.",
     }),
   ),
-  source: Type.Optional(Type.String()),
 });
 
 async function executeSaveSelfImprovePromptAction(params: any) {
   try {
-    const action = String(params?.action || "add").trim();
+    const slot = String(params?.slot || "").trim();
     const existing = await executeSelfImproveTool({ action: "compile" });
     const currentDoc = Array.isArray(existing?.self_improve_prompt_prompt_docs)
       ? existing.self_improve_prompt_prompt_docs.find(
           (doc: any) =>
-            String(doc?.self_improve_prompt_slot || "").trim() ===
-            String(params.selfImprovePromptSlot || "").trim(),
+            String(doc?.self_improve_prompt_slot || "").trim() === slot,
         )
       : null;
-    const refined = await refineSelfImprovePromptSlot({
-      selfImprovePromptSlot: params.selfImprovePromptSlot,
-      incomingContent: params.content,
-      oldText: params.oldText,
-      action: action as any,
+    const currentState = describeSelfImprovePromptSlot({
+      slot,
       existingContent: String(currentDoc?.content || ""),
     });
-    const response = refined.removed
-      ? await executeSelfImproveTool({
-          action: "remove_self_improve_prompt",
-          selfImprovePromptSlot: params.selfImprovePromptSlot,
-        })
-      : await executeSelfImproveTool({
-          action: "save_self_improve_prompt",
-          selfImprovePromptSlot: params.selfImprovePromptSlot,
-          name: refined.name,
-          content: refined.content,
-          source: params.source,
-        });
-    const targetPath = String(response?.doc?.path || response?.path || "");
-    const userVerb =
-      action === "remove"
-        ? "Removed self-improve prompt"
-        : action === "replace"
-          ? "Updated self-improve prompt"
-          : "Saved self-improve prompt";
-    const agentVerb =
-      action === "remove"
-        ? "self_improve remove_self_improve_prompt"
-        : "self_improve save_prompts";
+
+    const usageLine = `usage=${currentState.currentChars}/${currentState.maxChars}`;
+    const limitLine = `limit=${currentState.maxChars}`;
+    const baseContent = String(params?.baseContent || "").trim();
+    const incomingContent = String(params?.content || "").trim();
+
+    if (!incomingContent) {
+      const prepared = await prepareToolTextOutput({
+        agentText: [
+          "self_improve save_prompts",
+          "status=review_required",
+          `slot=${currentState.slot}`,
+          usageLine,
+          limitLine,
+          `path=${String(currentDoc?.path || "")}`,
+          "current_content:",
+          currentState.content || "(empty)",
+        ].join("\n"),
+        userText: [
+          `Loaded self-improve prompt: ${currentState.name}`,
+          usageLine,
+          limitLine,
+          String(currentDoc?.path || ""),
+          currentState.content || "(empty)",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        tempPrefix: "rin-self-improve-",
+        filename: "self-improve-save-prompt.txt",
+      });
+      return {
+        content: [{ type: "text" as const, text: prepared.agentText }],
+        details: {
+          ok: true,
+          status: "review_required",
+          slot: currentState.slot,
+          usage: `${currentState.currentChars}/${currentState.maxChars}`,
+          limit: currentState.maxChars,
+          currentContent: currentState.content,
+          path: String(currentDoc?.path || ""),
+          ...prepared,
+        },
+      };
+    }
+
+    if (currentState.content && !baseContent) {
+      throw new Error("self_improve_base_content_required");
+    }
+
+    if (baseContent !== currentState.content) {
+      const prepared = await prepareToolTextOutput({
+        agentText: [
+          "self_improve save_prompts",
+          "status=stale_base_content",
+          `slot=${currentState.slot}`,
+          usageLine,
+          limitLine,
+          `path=${String(currentDoc?.path || "")}`,
+          "current_content:",
+          currentState.content || "(empty)",
+        ].join("\n"),
+        userText: [
+          `Stale self-improve prompt base content: ${currentState.name}`,
+          usageLine,
+          limitLine,
+          String(currentDoc?.path || ""),
+          currentState.content || "(empty)",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        tempPrefix: "rin-self-improve-",
+        filename: "self-improve-save-prompt.txt",
+      });
+      return {
+        content: [{ type: "text" as const, text: prepared.agentText }],
+        details: {
+          ok: false,
+          status: "stale_base_content",
+          slot: currentState.slot,
+          usage: `${currentState.currentChars}/${currentState.maxChars}`,
+          limit: currentState.maxChars,
+          currentContent: currentState.content,
+          path: String(currentDoc?.path || ""),
+          ...prepared,
+        },
+        isError: true,
+      };
+    }
+
+    const refined = refineSelfImprovePromptSlot({
+      slot: currentState.slot,
+      incomingContent,
+    });
+    const response = await executeSelfImproveTool({
+      action: "save_self_improve_prompt",
+      selfImprovePromptSlot: currentState.slot,
+      name: refined.name,
+      content: refined.content,
+    });
     const prepared = await prepareToolTextOutput({
-      agentText: `${agentVerb}\npath=${targetPath}`,
-      userText: `${userVerb}: ${String(response?.doc?.name || refined.name || params.selfImprovePromptSlot)}\n${targetPath}`,
+      agentText: [
+        "self_improve save_prompts",
+        "status=updated",
+        `slot=${currentState.slot}`,
+        `usage=${refined.nextChars}/${refined.maxChars}`,
+        `limit=${refined.maxChars}`,
+        `path=${String(response?.doc?.path || "")}`,
+      ].join("\n"),
+      userText: [
+        `Updated self-improve prompt: ${refined.name}`,
+        `usage=${refined.nextChars}/${refined.maxChars}`,
+        `limit=${refined.maxChars}`,
+        String(response?.doc?.path || ""),
+      ]
+        .filter(Boolean)
+        .join("\n"),
       tempPrefix: "rin-self-improve-",
       filename: "self-improve-save-prompt.txt",
     });
     return {
       content: [{ type: "text" as const, text: prepared.agentText }],
-      details: { ...response, ...prepared, refined, action },
+      details: {
+        ...response,
+        ...prepared,
+        ok: true,
+        status: "updated",
+        slot: currentState.slot,
+        usage: `${refined.nextChars}/${refined.maxChars}`,
+        limit: refined.maxChars,
+        path: String(response?.doc?.path || ""),
+      },
     };
   } catch (error: any) {
     const message = String(
       error?.message || error || "self_improve_prompt_action_failed",
     );
+    const slot = String(params?.slot || "").trim();
+    let usage = "0/0";
+    let limit = 0;
+    try {
+      if (slot) {
+        const existing = await executeSelfImproveTool({ action: "compile" });
+        const currentDoc = Array.isArray(existing?.self_improve_prompt_prompt_docs)
+          ? existing.self_improve_prompt_prompt_docs.find(
+              (doc: any) =>
+                String(doc?.self_improve_prompt_slot || "").trim() === slot,
+            )
+          : null;
+        const currentState = describeSelfImprovePromptSlot({
+          slot,
+          existingContent: String(currentDoc?.content || ""),
+        });
+        usage = `${currentState.currentChars}/${currentState.maxChars}`;
+        limit = currentState.maxChars;
+      }
+    } catch {}
     return {
       content: [{ type: "text" as const, text: message }],
       details: {
         ok: false,
         error: message,
-        agentText: message,
-        userText: `Self-improve prompt 操作失败：${message}`,
+        usage,
+        limit,
+        agentText: slot
+          ? `${message}\nslot=${slot}\nusage=${usage}\nlimit=${limit}`
+          : message,
+        userText: slot
+          ? `Self-improve prompt 操作失败：${message}\nusage=${usage}\nlimit=${limit}`
+          : `Self-improve prompt 操作失败：${message}`,
       },
       isError: true,
     };
@@ -236,8 +352,10 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
       "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
+      "Before updating a slot, first call save_prompts with only `slot` to read the current canonical content, then submit the full revised content with `baseContent` from that read.",
       "Use save_prompts without markdown list markers in tool input; save_prompts stores prompt entries as markdown list items in the underlying files.",
       "Save reusable procedures, workflows, checklists, and playbooks as skills under /home/rin/.rin/self_improve/skills instead of save_prompts content; use skill-creator for major creation or revision when available, and update outdated or incomplete skills promptly.",
+      "If a slot accumulates extensive details on a single topic, extract them into a builtin skill and leave only a compact reference in `save_prompts`.",
     ],
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>

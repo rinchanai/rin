@@ -19,6 +19,7 @@ import {
   writeMemoryDoc,
 } from "./docs.js";
 import { activeDocsOnly } from "./relevance.js";
+import { normalizePromptListContent } from "./processing.js";
 import {
   normalizeList,
   nowIso,
@@ -45,16 +46,6 @@ export async function loadActiveSelfImproveDocs(rootOverride = "") {
   const root = resolveSelfImproveRoot(rootOverride);
   await ensureSelfImproveLayout(root);
   return activeDocsOnly(await loadMemoryDocs(root));
-}
-
-function normalizePromptListContent(text: string) {
-  return safeString(text)
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*-\s*/, "").trim())
-    .filter(Boolean)
-    .map((line) => `- ${line}`)
-    .join("\n")
-    .trim();
 }
 
 export async function saveSelfImprovePromptDoc(

@@ -1,113 +1,59 @@
 import { safeString } from "./core/utils.js";
 import { MEMORY_PROMPT_LIMITS, MEMORY_PROMPT_SLOTS } from "./core/types.js";
 
-export type SelfImprovePromptAction = "add" | "replace" | "remove";
-
-function countSubstringMatches(text: string, needle: string): number {
-  if (!needle) return 0;
-  let count = 0;
-  let from = 0;
-  while (from <= text.length) {
-    const idx = text.indexOf(needle, from);
-    if (idx < 0) break;
-    count += 1;
-    from = idx + Math.max(needle.length, 1);
-  }
-  return count;
-}
-
-function stripPromptBullets(text: string) {
+export function normalizePromptListContent(text: string) {
   return safeString(text)
     .split(/\r?\n/)
     .map((line) => line.replace(/^\s*-\s*/, "").trim())
     .filter(Boolean)
-    .join("\n");
-}
-
-function addPromptBullets(text: string) {
-  return safeString(text)
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => `- ${line.replace(/^\s*-\s*/, "").trim()}`)
+    .map((line) => `- ${line}`)
     .join("\n")
     .trim();
 }
 
-function applySlotAction(options: {
-  action: SelfImprovePromptAction;
-  existingContent: string;
-  incomingContent: string;
-  oldText: string;
-}) {
-  const action = options.action;
-  const existingContent = stripPromptBullets(options.existingContent);
-  const incomingContent = stripPromptBullets(options.incomingContent);
-  const oldText = stripPromptBullets(options.oldText);
-
-  if (action === "add") {
-    if (!incomingContent)
-      throw new Error("self_improve_prompt_content_required:add");
-    return addPromptBullets(
-      [existingContent, incomingContent].filter(Boolean).join("\n"),
-    );
-  }
-
-  if (!oldText)
-    throw new Error(`self_improve_prompt_old_text_required:${action}`);
-  if (!existingContent)
-    throw new Error(`self_improve_prompt_slot_empty:${action}`);
-
-  const matchCount = countSubstringMatches(existingContent, oldText);
-  if (matchCount === 0)
-    throw new Error(`self_improve_prompt_old_text_not_found:${action}`);
-  if (matchCount > 1)
-    throw new Error(`self_improve_prompt_old_text_ambiguous:${action}`);
-
-  if (action === "replace") {
-    if (!incomingContent)
-      throw new Error("self_improve_prompt_content_required:replace");
-    return addPromptBullets(
-      existingContent.replace(oldText, incomingContent).trim(),
-    );
-  }
-
-  return addPromptBullets(
-    existingContent.replace(oldText, " ").replace(/\s+/g, " ").trim(),
-  );
-}
-
-export async function refineSelfImprovePromptSlot(options: {
-  selfImprovePromptSlot: string;
-  incomingContent?: string;
-  existingContent?: string;
-  action?: SelfImprovePromptAction;
-  oldText?: string;
-}) {
-  const slot = safeString(options.selfImprovePromptSlot).trim();
+export function assertSelfImprovePromptSlot(slotInput: string) {
+  const slot = safeString(slotInput).trim();
   if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) {
     throw new Error(
       `self_improve_prompt_slot_required:${MEMORY_PROMPT_SLOTS.join(",")}`,
     );
   }
+  return slot;
+}
 
-  const content = applySlotAction({
-    action: (options.action || "add") as SelfImprovePromptAction,
-    existingContent: safeString(options.existingContent).trim(),
-    incomingContent: safeString(options.incomingContent).trim(),
-    oldText: safeString(options.oldText).trim(),
-  });
-
+export function describeSelfImprovePromptSlot(options: {
+  slot: string;
+  existingContent?: string;
+}) {
+  const slot = assertSelfImprovePromptSlot(options.slot);
+  const content = normalizePromptListContent(options.existingContent || "");
   const limits = MEMORY_PROMPT_LIMITS[slot];
-  if (content.length > limits.maxChars) {
-    throw new Error(
-      `self_improve_prompt_content_too_long:${slot}:${limits.maxChars}`,
-    );
-  }
-
   return {
+    slot,
     name: slot.replace(/_/g, " "),
     content,
-    removed: !content,
+    currentChars: content.length,
+    maxChars: limits.maxChars,
+  };
+}
+
+export function refineSelfImprovePromptSlot(options: {
+  slot: string;
+  incomingContent?: string;
+}) {
+  const state = describeSelfImprovePromptSlot({
+    slot: options.slot,
+  });
+  const content = normalizePromptListContent(options.incomingContent || "");
+  if (!content) throw new Error("self_improve_content_required");
+  if (content.length > state.maxChars) {
+    throw new Error(
+      `self_improve_prompt_content_too_long:${state.slot}:${state.maxChars}`,
+    );
+  }
+  return {
+    ...state,
+    content,
+    nextChars: content.length,
   };
 }
