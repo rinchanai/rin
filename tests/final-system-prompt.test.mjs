@@ -23,7 +23,7 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
   assert.ok(finalSystemPrompt.includes("# Self-improve guidance"));
   assert.ok(
     finalSystemPrompt.includes(
-      "- Use save_prompts proactively for durable baselines",
+      "- Use save_prompts for durable baselines that should remain active every turn.",
     ),
   );
 });
@@ -80,5 +80,9 @@ test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async
   assert.ok(selfImproveGuidanceIdx < projectContextIdx);
   assert.ok(projectContextIdx < promptsIdx);
   assert.ok(promptsIdx < skillsIdx);
-  assert.ok(finalSystemPrompt.includes("## User Profile"));
+  assert.ok(
+    finalSystemPrompt.includes(
+      `## ${path.join(agentDir, "self_improve", "prompts", "user_profile.md")}`,
+    ),
+  );
 });
