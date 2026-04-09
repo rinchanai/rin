@@ -17,13 +17,13 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
 
   assert.ok(
     finalSystemPrompt.includes(
-      "As the user's assistant, you have full control over the current dedicated system account to fulfill their requests.",
+      "As the user's assistant, you may freely use the current dedicated system account, but only to fulfill the user's requests.",
     ),
   );
-  assert.ok(finalSystemPrompt.includes("# Self-improve guidance"));
+  assert.ok(!finalSystemPrompt.includes("# Self-improve guidance"));
   assert.ok(
     finalSystemPrompt.includes(
-      "- Use save_prompts for durable baselines that should remain active every turn.",
+      "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
     ),
   );
 });
@@ -66,23 +66,14 @@ test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async
     agentDir,
   });
 
-  const selfImproveGuidanceIdx = finalSystemPrompt.indexOf(
-    "# Self-improve guidance",
-  );
   const projectContextIdx = finalSystemPrompt.indexOf("# Project Context");
-  const promptsIdx = finalSystemPrompt.indexOf("# Self-Improve Prompts");
+  const promptsIdx = finalSystemPrompt.indexOf("User Profile:");
   const skillsIdx = finalSystemPrompt.indexOf("<available_skills>");
 
-  assert.notEqual(selfImproveGuidanceIdx, -1);
   assert.notEqual(projectContextIdx, -1);
   assert.notEqual(promptsIdx, -1);
   assert.notEqual(skillsIdx, -1);
-  assert.ok(selfImproveGuidanceIdx < projectContextIdx);
   assert.ok(projectContextIdx < promptsIdx);
   assert.ok(promptsIdx < skillsIdx);
-  assert.ok(
-    finalSystemPrompt.includes(
-      `## ${path.join(agentDir, "self_improve", "prompts", "user_profile.md")}`,
-    ),
-  );
+  assert.ok(!finalSystemPrompt.includes("# Self-Improve Prompts"));
 });

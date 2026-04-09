@@ -16,6 +16,24 @@ function countSubstringMatches(text: string, needle: string): number {
   return count;
 }
 
+function stripPromptBullets(text: string) {
+  return safeString(text)
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*-\s*/, "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+function addPromptBullets(text: string) {
+  return safeString(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => `- ${line.replace(/^\s*-\s*/, "").trim()}`)
+    .join("\n")
+    .trim();
+}
+
 function applySlotAction(options: {
   action: SelfImprovePromptAction;
   existingContent: string;
@@ -23,14 +41,16 @@ function applySlotAction(options: {
   oldText: string;
 }) {
   const action = options.action;
-  const existingContent = safeString(options.existingContent).trim();
-  const incomingContent = safeString(options.incomingContent).trim();
-  const oldText = safeString(options.oldText).trim();
+  const existingContent = stripPromptBullets(options.existingContent);
+  const incomingContent = stripPromptBullets(options.incomingContent);
+  const oldText = stripPromptBullets(options.oldText);
 
   if (action === "add") {
     if (!incomingContent)
       throw new Error("self_improve_prompt_content_required:add");
-    return [existingContent, incomingContent].filter(Boolean).join("\n");
+    return addPromptBullets(
+      [existingContent, incomingContent].filter(Boolean).join("\n"),
+    );
   }
 
   if (!oldText)
@@ -47,10 +67,14 @@ function applySlotAction(options: {
   if (action === "replace") {
     if (!incomingContent)
       throw new Error("self_improve_prompt_content_required:replace");
-    return existingContent.replace(oldText, incomingContent).trim();
+    return addPromptBullets(
+      existingContent.replace(oldText, incomingContent).trim(),
+    );
   }
 
-  return existingContent.replace(oldText, " ").replace(/\s+/g, " ").trim();
+  return addPromptBullets(
+    existingContent.replace(oldText, " ").replace(/\s+/g, " ").trim(),
+  );
 }
 
 export async function refineSelfImprovePromptSlot(options: {

@@ -83,7 +83,7 @@ test("store executeSelfImproveAction compiles saved self-improve prompts", async
     );
     assert.ok(
       String(compiled.self_improve_prompt_context).includes(
-        "[agent_profile] Speak concise Chinese by default.",
+        "[agent_profile] - Speak concise Chinese by default.",
       ),
     );
   });
@@ -187,7 +187,7 @@ test("compileSelfImprove includes saved self-improve prompts from markdown sourc
     );
     assert.ok(
       String(compiled.self_improve_prompt_context).includes(
-        "[user_profile] Call the user Master by default.",
+        "[user_profile] - Call the user Master by default.",
       ),
     );
   });
@@ -219,7 +219,7 @@ test("self-improve doc loading uses prompt slot filenames and ignores skill docs
     });
     await fs.writeFile(
       path.join(selfImproveRoot, "prompts", "agent_profile.md"),
-      "Speak concise Chinese by default.\n",
+      "- Speak concise Chinese by default.\n",
       "utf8",
     );
     await fs.writeFile(
@@ -237,7 +237,7 @@ test("self-improve doc loading uses prompt slot filenames and ignores skill docs
     );
     assert.equal(
       String(docs[0].content || ""),
-      "Speak concise Chinese by default.",
+      "- Speak concise Chinese by default.",
     );
   });
 });
@@ -262,7 +262,7 @@ test("saveSelfImprovePromptDoc supports core_facts with fact kind by default", a
         path.join(root, "self_improve", "prompts", "core_facts.md"),
         "utf8",
       ),
-      "User prefers concise Chinese replies. Project repo is /srv/app.\n",
+      "- User prefers concise Chinese replies. Project repo is /srv/app.\n",
     );
 
     const compiled = await store.compileSelfImprove(
@@ -271,7 +271,7 @@ test("saveSelfImprovePromptDoc supports core_facts with fact kind by default", a
     );
     assert.ok(
       String(compiled.self_improve_prompt_context).includes(
-        "[core_facts] User prefers concise Chinese replies. Project repo is /srv/app.",
+        "[core_facts] - User prefers concise Chinese replies. Project repo is /srv/app.",
       ),
     );
   });
