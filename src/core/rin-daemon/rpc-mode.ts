@@ -1,6 +1,5 @@
 import { parseJsonl } from "../rin-lib/common.js";
 import { fail, ok } from "../rin-lib/rpc.js";
-import { RESUME_INTERRUPTED_TURN_TEXT } from "../rin-lib/resume.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
   getOAuthState,
@@ -9,6 +8,57 @@ import {
   runBuiltinCommand,
   writeJsonLine,
 } from "./worker-helpers.js";
+
+function interruptedToolResultMessage(toolCall: any) {
+  return {
+    role: "toolResult",
+    toolCallId: String(toolCall?.id || ""),
+    toolName: String(toolCall?.name || ""),
+    content: [
+      {
+        type: "text",
+        text: "The tool was interrupted by a daemon restart or disconnect.",
+      },
+    ],
+    details: {
+      interrupted: true,
+      reason: "daemon_restart_or_disconnect",
+    },
+    isError: true,
+    timestamp: Date.now(),
+  } as any;
+}
+
+function appendInterruptedToolResults(session: any) {
+  const messages = Array.isArray(session?.agent?.state?.messages)
+    ? session.agent.state.messages
+    : [];
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage || lastMessage.role !== "assistant") return false;
+  const toolCalls = Array.isArray(lastMessage.content)
+    ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
+    : [];
+  if (!toolCalls.length) return false;
+
+  for (const toolCall of toolCalls) {
+    const message = interruptedToolResultMessage(toolCall);
+    session.agent.state.messages.push(message);
+    session.sessionManager.appendMessage(message);
+  }
+  return true;
+}
+
+async function resumeInterruptedTurn(session: any) {
+  const lastMessage = Array.isArray(session?.agent?.state?.messages)
+    ? session.agent.state.messages[session.agent.state.messages.length - 1]
+    : null;
+  if (!lastMessage) return false;
+  if (lastMessage.role === "assistant" && !appendInterruptedToolResults(session)) {
+    return false;
+  }
+  await session.agent.continue();
+  return true;
+}
 
 export async function runCustomRpcMode(
   runtimeOrSession: any,
@@ -219,20 +269,7 @@ export async function runCustomRpcMode(
         return done(id, "interrupt_prompt");
       case "resume_interrupted_turn":
         startInterruptTurnTask(String(command.requestTag || ""), async () => {
-          await session.sendCustomMessage(
-            {
-              customType: "rin_resume_interrupted_turn",
-              content: [{ type: "text", text: RESUME_INTERRUPTED_TURN_TEXT }],
-              display: false,
-              details: {
-                source:
-                  typeof command.source === "string" && command.source
-                    ? command.source
-                    : "rpc",
-              },
-            },
-            { triggerTurn: true },
-          );
+          await resumeInterruptedTurn(session);
         });
         return done(id, "resume_interrupted_turn");
       case "steer":

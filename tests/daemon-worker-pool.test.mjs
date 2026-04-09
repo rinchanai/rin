@@ -20,6 +20,30 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+test("getInterruptedSessionSelectors keeps live session workers even when not streaming", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-worker-pool-"));
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  const worker = pool.resolveWorkerForCommand(
+    { socket: { destroyed: false, write() {} }, clientBuffer: "" },
+    { type: "new_session" },
+  );
+  worker.sessionFile = "/tmp/test-session.jsonl";
+  worker.isStreaming = false;
+
+  assert.deepEqual(pool.getInterruptedSessionSelectors(), [
+    { sessionFile: "/tmp/test-session.jsonl" },
+  ]);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
 test("detached worker survives eviction while response is pending", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-worker-pool-"));
   const workerPath = path.join(dir, "worker.mjs");
