@@ -33,19 +33,11 @@ function buildPromptBlock(result: any): string {
 }
 
 export function buildCompiledSelfImprovePrompt(result: any): string {
-  const sections = [buildPromptBlock(result)].filter((body) =>
-    String(body || "").trim(),
-  );
-  if (!sections.length) return "";
-  return ["# Self Improve", ...sections].join("\n\n").trim();
+  return buildPromptBlock(result);
 }
 
 export function buildSystemPromptSelfImprove(result: any): string {
-  const sections = [buildPromptBlock(result)].filter((body) =>
-    String(body || "").trim(),
-  );
-  if (!sections.length) return "";
-  return ["# Self Improve", ...sections].join("\n\n").trim();
+  return buildPromptBlock(result);
 }
 
 export function formatSelfImproveResult(action: string, response: any): string {

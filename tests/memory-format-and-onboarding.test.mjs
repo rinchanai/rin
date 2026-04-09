@@ -29,8 +29,8 @@ test("self-improve format builds compact compiled prompt", () => {
       },
     ],
   });
-  assert.ok(text.includes("# Self Improve"));
   assert.ok(text.includes("## Self-Improve Prompts"));
+  assert.ok(!text.includes("# Self Improve"));
 });
 
 test("memory onboarding helper keeps hidden instructions and pending state", () => {

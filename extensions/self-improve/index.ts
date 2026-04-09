@@ -29,10 +29,11 @@ import { prepareToolTextOutput } from "../shared/tool-text.js";
 let installerAutoInitConsumed = false;
 
 const SELF_IMPROVE_SYSTEM_GUIDANCE = [
-  "# Self-improve guidance",
-  "You have persistent self-improvement state across sessions.",
-  "Use save_prompts proactively for durable baselines that should stay present every turn, especially preferences, recurring corrections, environment conventions, and other stable facts that reduce future user steering; keep them compact, write them in English, and do not store task progress, session outcomes, or temporary TODO state there.",
-  "Save reusable procedures, workflows, checklists, and playbooks as skills instead; after a complex task, tricky fix, non-trivial workflow, or reusable user-corrected approach, capture it as a skill under /home/rin/.rin/self_improve/skills, use skill-creator for major creation or revision when available, and update outdated or incomplete skills immediately.",
+  "## Self-improve guidance",
+  "",
+  "- You have persistent self-improvement state across sessions.",
+  "- Use save_prompts proactively for durable baselines that should stay present every turn, especially preferences, recurring corrections, environment conventions, and other stable facts that reduce future user steering; keep them compact, write them in English, and do not store task progress, session outcomes, or temporary TODO state there.",
+  "- Save reusable procedures, workflows, checklists, and playbooks as skills instead; after a complex task, tricky fix, non-trivial workflow, or reusable user-corrected approach, capture it as a skill under /home/rin/.rin/self_improve/skills, use skill-creator for major creation or revision when available, and update outdated or incomplete skills immediately.",
 ].join("\n");
 
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
@@ -370,17 +371,52 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     }
     if (!blocks.length) return;
     const current = String(event.systemPrompt || "").trimEnd();
-    const block = blocks.join("\n\n").trim();
-    const projectContextMarker = "\n\n# Project Context\n\n";
-    const idx = current.indexOf(projectContextMarker);
-    if (idx >= 0) {
-      return {
-        systemPrompt:
-          `${current.slice(0, idx).trimEnd()}\n\n${block}${current.slice(idx)}`.trimEnd(),
-      };
+    const guidanceBlock = blocks.includes(SELF_IMPROVE_SYSTEM_GUIDANCE)
+      ? SELF_IMPROVE_SYSTEM_GUIDANCE
+      : "";
+    const promptsBlock = blocks.find(
+      (item) => item && item !== SELF_IMPROVE_SYSTEM_GUIDANCE,
+    );
+
+    const insertBeforeSection = (
+      source: string,
+      marker: string,
+      blockText: string,
+    ) => {
+      const text = String(blockText || "").trim();
+      if (!text) return source;
+      const idx = source.indexOf(marker);
+      if (idx < 0) return `${source}\n\n${text}`.trimEnd();
+      return `${source.slice(0, idx).trimEnd()}\n\n${text}\n\n${source.slice(idx)}`.trimEnd();
+    };
+
+    let next = current;
+    if (guidanceBlock) {
+      if (next.includes("\n\n## AGENTS.md\n\n")) {
+        next = insertBeforeSection(next, "\n\n## AGENTS.md\n\n", guidanceBlock);
+      } else if (next.includes("\n\n## Available skills\n\n")) {
+        next = insertBeforeSection(
+          next,
+          "\n\n## Available skills\n\n",
+          guidanceBlock,
+        );
+      } else {
+        next = `${next}\n\n${guidanceBlock}`.trimEnd();
+      }
+    }
+    if (promptsBlock) {
+      if (next.includes("\n\n## Available skills\n\n")) {
+        next = insertBeforeSection(
+          next,
+          "\n\n## Available skills\n\n",
+          promptsBlock,
+        );
+      } else {
+        next = `${next}\n\n${promptsBlock}`.trimEnd();
+      }
     }
     return {
-      systemPrompt: `${current}\n\n${block}`.trimEnd(),
+      systemPrompt: next.trimEnd(),
     };
   });
 }
