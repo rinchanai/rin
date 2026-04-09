@@ -1,0 +1,60 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const rootDir = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+  "..",
+);
+
+const runtimeMod = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
+    .href
+);
+const loaderMod = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "loader.js")).href
+);
+const builtinExtMod = await import(
+  pathToFileURL(path.join(rootDir, "dist", "app", "builtin-extensions.js")).href
+);
+
+export async function buildFinalAppSystemPrompt(options = {}) {
+  const cwd = options.cwd || rootDir;
+  const agentDir =
+    options.agentDir ||
+    fs.mkdtempSync(path.join(os.tmpdir(), "rin-final-prompt-agent-"));
+  const prompt = options.prompt || "";
+  const images = options.images;
+
+  const codingAgentModule = await loaderMod.loadRinCodingAgent();
+  const { SessionManager } = codingAgentModule;
+  const sessionManager = SessionManager.inMemory(cwd);
+
+  const { session } = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+    additionalExtensionPaths: builtinExtMod.getBuiltinExtensionPaths(),
+    sessionManager,
+  });
+
+  const baseSystemPrompt = String(
+    session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
+  );
+  const beforeStart = await session._extensionRunner?.emitBeforeAgentStart(
+    prompt,
+    images,
+    baseSystemPrompt,
+  );
+  const finalSystemPrompt = String(
+    beforeStart?.systemPrompt || baseSystemPrompt,
+  );
+
+  return {
+    session,
+    baseSystemPrompt,
+    finalSystemPrompt,
+    beforeStart,
+  };
+}
