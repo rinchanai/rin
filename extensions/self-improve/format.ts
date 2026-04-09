@@ -13,7 +13,7 @@ function buildPromptBlock(result: any): string {
       ? result.self_improve_prompt_docs
       : [];
   if (!docs.length) return "";
-  const lines = ["## Self-Improve Prompts", ""];
+  const lines = ["# Self-Improve Prompts", ""];
   for (const doc of docs) {
     const title = toTitleCase(
       String(
@@ -23,7 +23,7 @@ function buildPromptBlock(result: any): string {
     const body = String(doc?.content || doc?.preview || "").trim();
     const filePath = String(doc?.path || "").trim();
     if (!body) continue;
-    lines.push(`### ${title}`);
+    lines.push(`## ${title}`);
     if (filePath) lines.push(filePath);
     lines.push("");
     lines.push(body);

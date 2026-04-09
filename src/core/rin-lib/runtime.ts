@@ -18,8 +18,6 @@ function formatSkillsForPrompt(skills: any[]) {
   );
   if (!visibleSkills.length) return "";
   const lines = [
-    "## Available skills",
-    "",
     "Available skills provide specialized instructions for specific tasks.",
     "",
     "<available_skills>",
@@ -65,9 +63,14 @@ function formatAgentsFilesForPrompt(
 ) {
   const rows = Array.isArray(agentsFiles) ? agentsFiles : [];
   if (!rows.length) return "";
-  const lines = ["## AGENTS.md", ""];
+  const lines = [
+    "# Project Context",
+    "",
+    "Project-specific instructions and guidelines:",
+    "",
+  ];
   for (const { path: filePath, content } of rows) {
-    lines.push(`### ${filePath}`);
+    lines.push(`## ${filePath}`);
     lines.push("");
     lines.push(String(content || "").trim());
     lines.push("");
@@ -189,12 +192,12 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
 
   if (appendSystemPrompt) prompt += `\n\n${appendSystemPrompt}`;
 
+  if (hasRead && loadedSkills.length > 0) {
+    prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
+  }
   const agentsBlock = formatAgentsFilesForPrompt(loadedContextFiles);
   if (agentsBlock) {
     prompt += `\n\n${agentsBlock}`;
-  }
-  if (hasRead && loadedSkills.length > 0) {
-    prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
   }
   return prompt.trimEnd();
 }

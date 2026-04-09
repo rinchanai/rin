@@ -29,7 +29,7 @@ import { prepareToolTextOutput } from "../shared/tool-text.js";
 let installerAutoInitConsumed = false;
 
 const SELF_IMPROVE_SYSTEM_GUIDANCE = [
-  "## Self-improve guidance",
+  "# Self-improve guidance",
   "",
   "- You have persistent self-improvement state across sessions.",
   "- Use save_prompts proactively for durable baselines that should stay present every turn, especially preferences, recurring corrections, environment conventions, and other stable facts that reduce future user steering; keep them compact, write them in English, and do not store task progress, session outcomes, or temporary TODO state there.",
@@ -371,52 +371,9 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     }
     if (!blocks.length) return;
     const current = String(event.systemPrompt || "").trimEnd();
-    const guidanceBlock = blocks.includes(SELF_IMPROVE_SYSTEM_GUIDANCE)
-      ? SELF_IMPROVE_SYSTEM_GUIDANCE
-      : "";
-    const promptsBlock = blocks.find(
-      (item) => item && item !== SELF_IMPROVE_SYSTEM_GUIDANCE,
-    );
-
-    const insertBeforeSection = (
-      source: string,
-      marker: string,
-      blockText: string,
-    ) => {
-      const text = String(blockText || "").trim();
-      if (!text) return source;
-      const idx = source.indexOf(marker);
-      if (idx < 0) return `${source}\n\n${text}`.trimEnd();
-      return `${source.slice(0, idx).trimEnd()}\n\n${text}\n\n${source.slice(idx)}`.trimEnd();
-    };
-
-    let next = current;
-    if (guidanceBlock) {
-      if (next.includes("\n\n## AGENTS.md\n\n")) {
-        next = insertBeforeSection(next, "\n\n## AGENTS.md\n\n", guidanceBlock);
-      } else if (next.includes("\n\n## Available skills\n\n")) {
-        next = insertBeforeSection(
-          next,
-          "\n\n## Available skills\n\n",
-          guidanceBlock,
-        );
-      } else {
-        next = `${next}\n\n${guidanceBlock}`.trimEnd();
-      }
-    }
-    if (promptsBlock) {
-      if (next.includes("\n\n## Available skills\n\n")) {
-        next = insertBeforeSection(
-          next,
-          "\n\n## Available skills\n\n",
-          promptsBlock,
-        );
-      } else {
-        next = `${next}\n\n${promptsBlock}`.trimEnd();
-      }
-    }
+    const block = blocks.join("\n\n").trim();
     return {
-      systemPrompt: next.trimEnd(),
+      systemPrompt: `${current}\n\n${block}`.trimEnd(),
     };
   });
 }
