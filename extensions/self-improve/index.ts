@@ -390,41 +390,31 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       return `${source.slice(0, idx).trimEnd()}\n\n${text}\n\n${source.slice(idx)}`.trimEnd();
     };
 
+    const skillsMarker =
+      "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n";
+    const projectContextMarker = "\n\n# Project Context\n\n";
+
     let next = current;
-    if (guidanceBlock) {
-      if (next.includes("\n\n# Project Context\n\n")) {
-        next = insertBeforeMarker(
-          next,
-          "\n\n# Project Context\n\n",
-          guidanceBlock,
-        );
-      } else if (
-        next.includes(
-          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
-        )
-      ) {
-        next = insertBeforeMarker(
-          next,
-          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
-          guidanceBlock,
-        );
-      } else {
-        next = `${next}\n\n${guidanceBlock}`.trimEnd();
-      }
-    }
     if (promptsBlock) {
-      if (
-        next.includes(
-          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
-        )
-      ) {
-        next = insertBeforeMarker(
-          next,
-          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
-          promptsBlock,
-        );
+      if (next.includes(skillsMarker)) {
+        next = insertBeforeMarker(next, skillsMarker, promptsBlock);
       } else {
         next = `${next}\n\n${promptsBlock}`.trimEnd();
+      }
+    }
+    if (guidanceBlock) {
+      if (next.includes(projectContextMarker)) {
+        next = insertBeforeMarker(next, projectContextMarker, guidanceBlock);
+      } else if (promptsBlock && next.includes(`\n\n${promptsBlock}\n\n`)) {
+        next = insertBeforeMarker(
+          next,
+          `\n\n${promptsBlock}\n\n`,
+          guidanceBlock,
+        );
+      } else if (next.includes(skillsMarker)) {
+        next = insertBeforeMarker(next, skillsMarker, guidanceBlock);
+      } else {
+        next = `${next}\n\n${guidanceBlock}`.trimEnd();
       }
     }
     return {

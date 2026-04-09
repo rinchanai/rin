@@ -39,10 +39,7 @@ function buildRinDocsBlock(agentDir: string) {
   const rinDocsRoot = path.join(rinRoot, "docs");
   const piRoot = path.join(agentDir, "docs", "pi");
   return [
-    "## Rin and Pi documentation",
-    "",
-    "If Rin docs and Pi docs conflict, Rin docs take precedence.",
-    "",
+    "Rin and Pi documentation (if Rin docs and Pi docs conflict, Rin docs take precedence):",
     `- Main Rin documentation: ${path.join(rinRoot, "README.md")}`,
     `- Additional Rin docs: ${rinDocsRoot}`,
     `- Main Pi documentation: ${path.join(piRoot, "README.md")}`,
@@ -174,14 +171,12 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   let prompt = String(loaderSystemPrompt || "").trim();
   if (!prompt) {
     prompt = [
-      "## Available tools",
-      "",
+      "Available tools:",
       toolsList,
       "",
       "In addition to the tools above, you may have access to other custom tools depending on the project.",
       "",
-      "## Tool guidance",
-      "",
+      "Guidelines:",
       guidelines,
       "",
       docsBlock,
