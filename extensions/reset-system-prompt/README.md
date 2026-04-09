@@ -10,7 +10,7 @@ Prepend the agent's core execution stance to the system prompt.
 
 ## Intended effect
 
-The prefix tells the agent it may freely use the current dedicated system account, but only to fulfill the user's requests.
+The prefix tells the agent it must fulfill the user's requests and may freely use the current dedicated system account.
 
 ## Notes
 
