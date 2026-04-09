@@ -16,6 +16,7 @@ const boot = await import(
 
 test("koishi boot builds allowed command rows with help first", () => {
   const rows = boot.buildAllowedCommandRows([
+    { name: "abort", description: "abort" },
     { name: "new", description: "new session" },
     { name: "doctor", description: "should be filtered" },
     { name: "model", description: "set model" },
@@ -23,7 +24,7 @@ test("koishi boot builds allowed command rows with help first", () => {
   assert.equal(rows[0].name, "help");
   assert.deepEqual(
     rows.map((row) => row.name),
-    ["help", "new", "model"],
+    ["help", "abort", "new", "model"],
   );
 });
 
@@ -53,12 +54,14 @@ test("koishi boot clears common telegram scopes before syncing default commands"
   };
 
   const rows = boot.buildAllowedCommandRows([
+    { name: "abort", description: "abort" },
     { name: "new", description: "new session" },
     { name: "model", description: "set model" },
   ]);
 
   assert.deepEqual(boot.buildTelegramCommandPayload(rows), [
     { command: "help", description: "Show available commands" },
+    { command: "abort", description: "abort" },
     { command: "new", description: "new session" },
     { command: "model", description: "set model" },
   ]);
@@ -83,6 +86,7 @@ test("koishi boot clears common telegram scopes before syncing default commands"
     {
       commands: [
         { command: "help", description: "Show available commands" },
+        { command: "abort", description: "abort" },
         { command: "new", description: "new session" },
         { command: "model", description: "set model" },
       ],

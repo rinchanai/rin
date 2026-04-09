@@ -456,10 +456,50 @@ export class RpcInteractiveSession {
   }
 
   async runCommand(commandLine: string) {
+    const trimmed = String(commandLine || "").trim();
+    if (trimmed === "/abort") {
+      await this.abort();
+      return { handled: true, text: "Aborted current operation." };
+    }
+    if (trimmed === "/new") {
+      const completed = await this.newSession();
+      return {
+        handled: true,
+        text: completed ? "Started a new session." : "Session switch cancelled.",
+      };
+    }
+    if (trimmed.startsWith("/resume ")) {
+      const wanted = trimmed.slice("/resume ".length).trim();
+      if (wanted) {
+        const sessions = await this.listSessions("cwd");
+        const match = sessions.find(
+          (item: any) => String(item?.id || "") === wanted,
+        );
+        if (!match)
+          return { handled: true, text: `Session not found: ${wanted}` };
+        const completed = await this.switchSession(String(match.path || ""));
+        return {
+          handled: true,
+          text: completed
+            ? `Resumed session: ${String(match.id || "")}`
+            : "Session switch cancelled.",
+        };
+      }
+    }
     await this.ensureRemoteSession();
     const data = await this.call("run_command", { commandLine });
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     return data;
+  }
+
+  async terminateSession() {
+    if (!this.sessionFile && !this.sessionId) return;
+    await this.call("terminate_session");
+  }
+
+  async detachSession() {
+    await this.call("detach_session");
+    await this.refreshState(REFRESH_ALL).catch(() => {});
   }
 
   recordBashResult(
@@ -698,10 +738,6 @@ export class RpcInteractiveSession {
           await this.ensureRemoteSession();
         }
         await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
-        if (this.activeTurn && !this.restoreResumeSent) {
-          this.restoreResumeSent = true;
-          await this.resumeInterruptedTurn({ source: "rpc-reconnect" });
-        }
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {

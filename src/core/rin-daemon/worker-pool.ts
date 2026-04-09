@@ -23,6 +23,7 @@ export type WorkerHandle = {
   isCompacting: boolean;
   lastUsedAt: number;
   releaseRequested: boolean;
+  gracefulShutdownRequested: boolean;
 };
 
 type SessionSelector = {
@@ -39,6 +40,7 @@ export class WorkerPool {
   private workersBySessionFile = new Map<string, WorkerHandle>();
   private workersBySessionId = new Map<string, WorkerHandle>();
   private workerSeq = 0;
+  private shuttingDown = false;
 
   constructor(
     private options: {
@@ -48,6 +50,7 @@ export class WorkerPool {
         requester: ConnectionState | undefined,
         worker: WorkerHandle,
       ) => void;
+      gcIdleMs?: number;
     },
   ) {}
 
@@ -58,6 +61,16 @@ export class WorkerPool {
     connection.attachedWorker = undefined;
     worker.lastUsedAt = Date.now();
     this.maybeReleaseWorker(worker);
+  }
+
+  terminateWorkerGracefully(worker: WorkerHandle) {
+    if (!this.workers.has(worker) || worker.gracefulShutdownRequested) return;
+    worker.gracefulShutdownRequested = true;
+    try {
+      worker.child.stdin.write(`${JSON.stringify({ type: "shutdown_session" })}\n`);
+    } catch {
+      this.destroyWorker(worker);
+    }
   }
 
   destroyWorker(worker: WorkerHandle) {
@@ -168,30 +181,78 @@ export class WorkerPool {
     }
   }
 
+  beginShutdown() {
+    this.shuttingDown = true;
+    for (const worker of Array.from(this.workers)) {
+      for (const connection of Array.from(worker.connections)) {
+        if (connection.attachedWorker === worker)
+          connection.attachedWorker = undefined;
+        worker.connections.delete(connection);
+      }
+      this.maybeReleaseWorker(worker);
+    }
+  }
+
+  getInterruptedSessionSelectors() {
+    return Array.from(this.workers)
+      .filter((worker) => worker.isStreaming && worker.sessionFile)
+      .map((worker) => ({
+        sessionFile: worker.sessionFile,
+      }));
+  }
+
+  resumeInterruptedSession(sessionFile: string) {
+    const worker = this.createWorker();
+    this.setWorkerSessionRefs(worker, { sessionFile, sessionId: undefined });
+    worker.child.stdin.write(
+      `${JSON.stringify({ type: "switch_session", sessionPath: sessionFile })}\n`,
+    );
+    worker.child.stdin.write(
+      `${JSON.stringify({ type: "resume_interrupted_turn", source: "daemon-restart" })}\n`,
+    );
+  }
+
+  async shutdown(graceMs: number) {
+    this.beginShutdown();
+    const deadline = Date.now() + Math.max(0, graceMs);
+    while (this.workers.size > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      for (const worker of Array.from(this.workers)) {
+        this.maybeReleaseWorker(worker);
+      }
+    }
+    const interrupted = this.getInterruptedSessionSelectors();
+    this.destroyAll();
+    return interrupted;
+  }
+
   private updateWorkerMetadata(worker: WorkerHandle, payload: any) {
     if (!payload || typeof payload !== "object") return;
     worker.lastUsedAt = Date.now();
 
-    if (
-      payload.type === "response" &&
-      payload.command === "get_state" &&
-      payload.success === true
-    ) {
+    if (payload.type === "response" && payload.success === true) {
       const data = payload.data || {};
-      this.setWorkerSessionRefs(worker, {
-        sessionFile:
-          typeof data.sessionFile === "string" && data.sessionFile
-            ? data.sessionFile
-            : undefined,
-        sessionId:
-          typeof data.sessionId === "string" && data.sessionId
-            ? data.sessionId
-            : undefined,
-      });
-      worker.isStreaming = Boolean(data.isStreaming);
-      worker.isCompacting = Boolean(data.isCompacting);
-      this.maybeReleaseWorker(worker);
-      return;
+      if (
+        typeof data.sessionFile === "string" ||
+        typeof data.sessionId === "string"
+      ) {
+        this.setWorkerSessionRefs(worker, {
+          sessionFile:
+            typeof data.sessionFile === "string" && data.sessionFile
+              ? data.sessionFile
+              : undefined,
+          sessionId:
+            typeof data.sessionId === "string" && data.sessionId
+              ? data.sessionId
+              : undefined,
+        });
+      }
+      if (payload.command === "get_state") {
+        worker.isStreaming = Boolean(data.isStreaming);
+        worker.isCompacting = Boolean(data.isCompacting);
+        this.maybeReleaseWorker(worker);
+        return;
+      }
     }
 
     if (payload.type === "agent_start") {
@@ -223,6 +284,10 @@ export class WorkerPool {
   }
 
   private createWorker(requester?: ConnectionState) {
+    if (this.shuttingDown) {
+      throw new Error("rin_daemon_shutting_down");
+    }
+
     const child = spawn(process.execPath, [this.options.workerPath], {
       cwd: this.options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
@@ -240,6 +305,7 @@ export class WorkerPool {
       isCompacting: false,
       lastUsedAt: Date.now(),
       releaseRequested: false,
+      gracefulShutdownRequested: false,
     };
     this.workers.add(worker);
 
@@ -325,19 +391,25 @@ export class WorkerPool {
 
   private maybeReleaseWorker(worker: WorkerHandle) {
     if (!this.workers.has(worker)) return;
-    if (worker.connections.size > 0) {
+    if (worker.gracefulShutdownRequested) return;
+    if (!this.shuttingDown && worker.connections.size > 0) {
       worker.releaseRequested = false;
       return;
     }
     if (worker.pendingResponses.size > 0) {
-      worker.releaseRequested = true;
       return;
     }
     if (worker.isStreaming || worker.isCompacting) {
-      worker.releaseRequested = true;
       return;
     }
-    this.destroyWorker(worker);
+    if (this.shuttingDown || worker.releaseRequested) {
+      this.destroyWorker(worker);
+      return;
+    }
+    const gcIdleMs = Math.max(0, Number(this.options.gcIdleMs ?? 15 * 60_000));
+    if (Date.now() - worker.lastUsedAt >= gcIdleMs) {
+      this.destroyWorker(worker);
+    }
   }
 
   private getSessionSelector(command: any): SessionSelector {

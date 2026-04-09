@@ -12,7 +12,7 @@ const { RpcInteractiveSession } = await import(
     .href
 );
 
-test("rpc restore resumes once and avoids full model refresh churn", async () => {
+test("rpc restore reattaches once and avoids duplicate restore work", async () => {
   const events = [];
   const calls = [];
   const refreshes = [];
@@ -33,14 +33,10 @@ test("rpc restore resumes once and avoids full model refresh churn", async () =>
       calls.push({ type, payload });
       return {};
     },
-    resumeInterruptedTurn: async (options) => {
-      calls.push({ type: "resume_interrupted_turn", payload: options });
-    },
     refreshState: async (flags) => {
       refreshes.push(flags);
       await refreshGate;
     },
-    activeTurn: { mode: "prompt", message: "hi" },
     restoreResumeSent: false,
     queuedOfflineOps: [],
     sendOrQueue: async () => {
@@ -63,8 +59,49 @@ test("rpc restore resumes once and avoids full model refresh churn", async () =>
   );
   assert.equal(
     calls.filter((item) => item.type === "resume_interrupted_turn").length,
-    1,
+    0,
   );
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
   assert.ok(events.some((event) => event?.type === "rin_status"));
+});
+
+test("rpc restore flushes queued offline ops after reattach", async () => {
+  const calls = [];
+  const sent = [];
+  const target = {
+    disposed: false,
+    restorePromise: null,
+    reconnecting: true,
+    reconnectTimer: null,
+    emitEvent: () => {},
+    sessionFile: "/tmp/demo.jsonl",
+    sessionId: "",
+    call: async (type, payload) => {
+      calls.push({ type, payload });
+      return {};
+    },
+    refreshState: async () => {},
+    restoreResumeSent: false,
+    queuedOfflineOps: [
+      { mode: "prompt", message: "queued-1" },
+      { mode: "follow_up", message: "queued-2" },
+    ],
+    sendOrQueue: async (operation) => {
+      sent.push(operation);
+    },
+    isStreaming: false,
+    isCompacting: false,
+  };
+
+  await RpcInteractiveSession.prototype.handleConnectionRestored.call(target);
+
+  assert.equal(
+    calls.filter((item) => item.type === "switch_session").length,
+    1,
+  );
+  assert.deepEqual(sent, [
+    { mode: "prompt", message: "queued-1" },
+    { mode: "follow_up", message: "queued-2" },
+  ]);
+  assert.deepEqual(target.queuedOfflineOps, []);
 });

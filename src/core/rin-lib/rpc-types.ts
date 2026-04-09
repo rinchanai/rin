@@ -28,7 +28,8 @@ export type RinRpcCommandType =
   | "switch_session"
   | "run_command"
   | "set_model"
-  | "set_session_name";
+  | "set_session_name"
+  | "terminate_session";
 
 export type RinRpcResponseEnvelope = {
   id?: string;

@@ -19,6 +19,39 @@ function writeLine(socket, payload) {
     if (!socket.destroyed)
         socket.write(`${JSON.stringify(payload)}\n`);
 }
+function restartStatePath(agentDir) {
+    return path.join(agentDir, "data", "restart.json");
+}
+function loadRestartState(agentDir) {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(restartStatePath(agentDir), "utf8"));
+        const pendingResume = Array.isArray(parsed?.pendingResume)
+            ? parsed.pendingResume
+                .map((item) => ({
+                sessionFile: typeof item?.sessionFile === "string" && item.sessionFile
+                    ? item.sessionFile
+                    : undefined,
+            }))
+                .filter((item) => item.sessionFile)
+            : [];
+        return { pendingResume };
+    }
+    catch {
+        return { pendingResume: [] };
+    }
+}
+function saveRestartState(agentDir, state) {
+    const filePath = restartStatePath(agentDir);
+    try {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        if (!state.pendingResume.length) {
+            fs.rmSync(filePath, { force: true });
+            return;
+        }
+        fs.writeFileSync(filePath, JSON.stringify({ version: 1, pendingResume: state.pendingResume }));
+    }
+    catch { }
+}
 export async function startDaemon(options = {}) {
     const socketPath = options.socketPath || process.argv[2] || defaultDaemonSocketPath();
     const bridgeSocketPath = bridgeDaemonSocketPath(process.env.RIN_DIR || resolveRuntimeProfile().agentDir);
@@ -27,9 +60,11 @@ export async function startDaemon(options = {}) {
         path.join(path.dirname(new URL(import.meta.url).pathname), "worker.js");
     const runtime = resolveRuntimeProfile();
     const sessionManagerModulePromise = loadRinSessionManagerModule();
+    const restartState = loadRestartState(runtime.agentDir);
     const workerPool = new WorkerPool({
         workerPath,
         cwd: runtime.cwd,
+        gcIdleMs: Number(process.env.RIN_WORKER_GC_IDLE_MS || 15 * 60_000),
         onWorkerSpawn: (requester, worker) => {
             if (requester)
                 writeLine(requester.socket, {
@@ -116,6 +151,31 @@ export async function startDaemon(options = {}) {
             })));
             return true;
         }
+        if (type === "new_session" || type === "switch_session") {
+            const previousWorker = connection.attachedWorker;
+            const worker = workerPool.resolveWorkerForCommand(connection, command);
+            if (!worker) {
+                writeLine(connection.socket, response(id, type, false, "rin_no_attached_session"));
+                return true;
+            }
+            workerPool.forwardToWorker(connection, worker, command);
+            if (previousWorker && previousWorker !== worker) {
+                workerPool.terminateWorkerGracefully(previousWorker);
+            }
+            workerPool.evictDetachedWorkers();
+            return true;
+        }
+        if (type === "terminate_session") {
+            const target = workerPool.resolveWorkerForCommand(connection, command) ||
+                connection.attachedWorker;
+            if (!target) {
+                writeLine(connection.socket, response(id, type, false, "rin_no_attached_session"));
+                return true;
+            }
+            workerPool.terminateWorkerGracefully(target);
+            writeLine(connection.socket, response(id, type, true, { terminated: true }));
+            return true;
+        }
         if (type === "list_sessions") {
             const { SessionManager } = await sessionManagerModulePromise;
             const sessions = await SessionManager.list(runtime.cwd, path.join(runtime.agentDir, "sessions"));
@@ -185,7 +245,12 @@ export async function startDaemon(options = {}) {
         }
         return false;
     };
+    const activeSockets = new Set();
     const createSocketServer = () => net.createServer((socket) => {
+        activeSockets.add(socket);
+        const dropSocket = () => activeSockets.delete(socket);
+        socket.once("close", dropSocket);
+        socket.once("error", dropSocket);
         const connection = {
             socket,
             clientBuffer: "",
@@ -253,9 +318,33 @@ export async function startDaemon(options = {}) {
     })));
     console.log(`rin daemon listening on ${socketPath}`);
     console.log(`rin daemon bridge listening on ${bridgeSocketPath}`);
+    const pendingResume = [...restartState.pendingResume];
+    restartState.pendingResume = [];
+    saveRestartState(runtime.agentDir, restartState);
+    for (const item of pendingResume) {
+        try {
+            if (item.sessionFile)
+                workerPool.resumeInterruptedSession(item.sessionFile);
+        }
+        catch {
+            restartState.pendingResume.push(item);
+        }
+    }
+    saveRestartState(runtime.agentDir, restartState);
+    let shuttingDown = false;
+    const shutdownGraceMs = Math.max(0, Number(process.env.RIN_DAEMON_SHUTDOWN_GRACE_MS || 85_000));
     const shutdown = async () => {
+        if (shuttingDown)
+            return;
+        shuttingDown = true;
         cronScheduler.stop();
-        workerPool.destroyAll();
+        workerPool.beginShutdown();
+        for (const socket of Array.from(activeSockets)) {
+            try {
+                socket.destroy();
+            }
+            catch { }
+        }
         await Promise.all(servers.map(({ server }) => new Promise((resolve) => server.close(() => resolve()))));
         for (const candidate of [socketPath, bridgeSocketPath]) {
             try {
@@ -263,6 +352,8 @@ export async function startDaemon(options = {}) {
             }
             catch { }
         }
+        restartState.pendingResume = await workerPool.shutdown(shutdownGraceMs);
+        saveRestartState(runtime.agentDir, restartState);
         process.exit(0);
     };
     process.on("SIGINT", shutdown);
