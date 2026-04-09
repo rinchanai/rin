@@ -104,16 +104,16 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)",
     );
   }
-  let deferredSaveSelfImprovePromptGuideline = "";
+  let deferredSavePromptsGuideline = "";
   for (const guideline of promptGuidelines) {
-    if (guideline.startsWith("Use save_self_improve_prompt ")) {
-      deferredSaveSelfImprovePromptGuideline = guideline;
+    if (guideline.startsWith("Use save_prompts ")) {
+      deferredSavePromptsGuideline = guideline;
       continue;
     }
     addGuideline(guideline);
   }
-  if (deferredSaveSelfImprovePromptGuideline) {
-    addGuideline(deferredSaveSelfImprovePromptGuideline);
+  if (deferredSavePromptsGuideline) {
+    addGuideline(deferredSavePromptsGuideline);
   }
   addGuideline(
     "Write all memory in English, keeping proper nouns untranslated.",

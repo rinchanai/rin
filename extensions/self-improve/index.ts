@@ -31,7 +31,7 @@ let installerAutoInitConsumed = false;
 const SELF_IMPROVE_SYSTEM_GUIDANCE = [
   "# Self-improve guidance",
   "You have persistent self-improvement state across sessions.",
-  "Use save_self_improve_prompt for short always-on baselines that should stay present every turn.",
+  "Use save_prompts for short always-on baselines that should stay present every turn.",
   "Prioritize durable user preferences, recurring corrections, and stable workflow expectations.",
   "Do not store task progress, transient TODOs, one-off implementation chatter, or noisy session summaries in always-on self-improve prompts.",
   "If knowledge is procedural and reusable, prefer skills. If it must stay present every turn, prefer self-improve prompts.",
@@ -198,7 +198,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
     const agentVerb =
       action === "remove"
         ? "self_improve remove_self_improve_prompt"
-        : "self_improve save_self_improve_prompt";
+        : "self_improve save_prompts";
     const prepared = await prepareToolTextOutput({
       agentText: `${agentVerb}\npath=${targetPath}`,
       userText: `${userVerb}: ${String(response?.doc?.name || refined.name || params.selfImprovePromptSlot)}\n${targetPath}`,
@@ -237,12 +237,12 @@ function renderSelfImproveResult(result: any) {
 
 export default function selfImproveExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "save_self_improve_prompt",
-    label: "Save Self-Improve Prompt",
+    name: "save_prompts",
+    label: "Save Prompts",
     description: "Persist short always-on self-improve prompts.",
     promptSnippet: "Persist short always-on self-improve prompts.",
     promptGuidelines: [
-      "Use save_self_improve_prompt for short always-on baselines that should stay present every turn.",
+      "Use save_prompts for short always-on baselines that should stay present every turn.",
       "Save proactively when the user corrects you, reveals a durable preference, shares a stable identity cue, or establishes an expectation about how you should behave.",
       "Do not store task progress, session outcomes, completed-work logs, temporary TODO state, or long detailed guidance in self-improve prompts.",
       "Use action=`add` for new durable cues, `replace` when updating a specific existing phrase via oldText, and `remove` when an always-on cue is no longer valid.",
