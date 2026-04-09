@@ -4,23 +4,16 @@ import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { computeAvailableThinkingLevels } from "./session-helpers.js";
 
-const RUNTIME_PROFILE = resolveRuntimeProfile();
-let persistentSettingsPromise: Promise<any | null> | null = null;
-
 async function getPersistentSettingsManager() {
-  if (!persistentSettingsPromise) {
-    persistentSettingsPromise = loadRinCodingAgent()
-      .then((codingAgentModule: any) => {
-        const SettingsManager = codingAgentModule?.SettingsManager;
-        if (!SettingsManager?.create) return null;
-        return SettingsManager.create(
-          RUNTIME_PROFILE.cwd,
-          RUNTIME_PROFILE.agentDir,
-        );
-      })
-      .catch(() => null);
+  try {
+    const codingAgentModule: any = await loadRinCodingAgent();
+    const SettingsManager = codingAgentModule?.SettingsManager;
+    if (!SettingsManager?.create) return null;
+    const profile = resolveRuntimeProfile();
+    return SettingsManager.create(profile.cwd, profile.agentDir);
+  } catch {
+    return null;
   }
-  return await persistentSettingsPromise;
 }
 
 export async function persistRpcSettingsMutation(
@@ -131,4 +124,3 @@ export function setRpcAutoCompaction(target: any, enabled: boolean) {
     .send({ type: "set_auto_compaction", enabled })
     .catch(() => {});
 }
-

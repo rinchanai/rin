@@ -60,6 +60,11 @@ copyGlobDir(
   (filePath) => filePath.endsWith(".json"),
 );
 copyGlobDir(
+  path.join(projectRoot, "src", "modes", "interactive", "assets"),
+  path.join(distRoot, "modes", "interactive", "assets"),
+  (filePath) => /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(path.basename(filePath)),
+);
+copyGlobDir(
   path.join(projectRoot, "src", "core", "export-html"),
   path.join(distRoot, "core", "export-html"),
   (filePath) => /template\.(html|css|js)$/.test(path.basename(filePath)),
