@@ -17,7 +17,7 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
 
   assert.ok(
     finalSystemPrompt.includes(
-      "As the user's assistant, you may freely use the current dedicated system account, but only to fulfill the user's requests.",
+      "As the user's assistant, you must fulfill the user's requests and may freely use the current dedicated system account.",
     ),
   );
   assert.ok(!finalSystemPrompt.includes("# Self-improve guidance"));
