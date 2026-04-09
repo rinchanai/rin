@@ -32,29 +32,41 @@ export async function buildFinalAppSystemPrompt(options = {}) {
   const { SessionManager } = codingAgentModule;
   const sessionManager = SessionManager.inMemory(cwd);
 
-  const { session } = await runtimeMod.createConfiguredAgentSession({
-    cwd,
-    agentDir,
-    additionalExtensionPaths: builtinExtMod.getBuiltinExtensionPaths(),
-    sessionManager,
-  });
+  const previousRinDir = process.env.RIN_DIR;
+  const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
+  process.env.RIN_DIR = agentDir;
+  process.env.PI_CODING_AGENT_DIR = agentDir;
 
-  const baseSystemPrompt = String(
-    session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
-  );
-  const beforeStart = await session._extensionRunner?.emitBeforeAgentStart(
-    prompt,
-    images,
-    baseSystemPrompt,
-  );
-  const finalSystemPrompt = String(
-    beforeStart?.systemPrompt || baseSystemPrompt,
-  );
+  try {
+    const { session } = await runtimeMod.createConfiguredAgentSession({
+      cwd,
+      agentDir,
+      additionalExtensionPaths: builtinExtMod.getBuiltinExtensionPaths(),
+      sessionManager,
+    });
 
-  return {
-    session,
-    baseSystemPrompt,
-    finalSystemPrompt,
-    beforeStart,
-  };
+    const baseSystemPrompt = String(
+      session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
+    );
+    const beforeStart = await session._extensionRunner?.emitBeforeAgentStart(
+      prompt,
+      images,
+      baseSystemPrompt,
+    );
+    const finalSystemPrompt = String(
+      beforeStart?.systemPrompt || baseSystemPrompt,
+    );
+
+    return {
+      session,
+      baseSystemPrompt,
+      finalSystemPrompt,
+      beforeStart,
+    };
+  } finally {
+    if (previousRinDir == null) delete process.env.RIN_DIR;
+    else process.env.RIN_DIR = previousRinDir;
+    if (previousPiAgentDir == null) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
+  }
 }

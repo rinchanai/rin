@@ -18,6 +18,8 @@ function formatSkillsForPrompt(skills: any[]) {
   );
   if (!visibleSkills.length) return "";
   const lines = [
+    "## Available skills",
+    "",
     "Available skills provide specialized instructions for specific tasks.",
     "",
     "<available_skills>",
@@ -39,7 +41,10 @@ function buildRinDocsBlock(agentDir: string) {
   const rinDocsRoot = path.join(rinRoot, "docs");
   const piRoot = path.join(agentDir, "docs", "pi");
   return [
-    "Rin and Pi documentation (if Rin docs and Pi docs conflict, Rin docs take precedence):",
+    "## Rin and Pi documentation",
+    "",
+    "If Rin docs and Pi docs conflict, Rin docs take precedence.",
+    "",
     `- Main Rin documentation: ${path.join(rinRoot, "README.md")}`,
     `- Additional Rin docs: ${rinDocsRoot}`,
     `- Main Pi documentation: ${path.join(piRoot, "README.md")}`,
@@ -53,6 +58,21 @@ function buildRinDocsBlock(agentDir: string) {
     "- Use Pi docs as the base reference for the remaining topics that Rin docs leave uncovered.",
     "- Topic map: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)",
   ].join("\n");
+}
+
+function formatAgentsFilesForPrompt(
+  agentsFiles: Array<{ path: string; content: string }>,
+) {
+  const rows = Array.isArray(agentsFiles) ? agentsFiles : [];
+  if (!rows.length) return "";
+  const lines = ["## AGENTS.md", ""];
+  for (const { path: filePath, content } of rows) {
+    lines.push(`### ${filePath}`);
+    lines.push("");
+    lines.push(String(content || "").trim());
+    lines.push("");
+  }
+  return lines.join("\n").trim();
 }
 
 export function getManagedSkillPaths(agentDir: string): string[] {
@@ -151,12 +171,14 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   let prompt = String(loaderSystemPrompt || "").trim();
   if (!prompt) {
     prompt = [
-      "Available tools:",
+      "## Available tools",
+      "",
       toolsList,
       "",
       "In addition to the tools above, you may have access to other custom tools depending on the project.",
       "",
-      "Guidelines:",
+      "## Tool guidance",
+      "",
       guidelines,
       "",
       docsBlock,
@@ -166,15 +188,13 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   }
 
   if (appendSystemPrompt) prompt += `\n\n${appendSystemPrompt}`;
-  if (loadedContextFiles.length > 0) {
-    prompt +=
-      "\n\n# Project Context\n\nProject-specific instructions and guidelines:\n\n";
-    for (const { path: filePath, content } of loadedContextFiles) {
-      prompt += `## ${filePath}\n\n${content}\n\n`;
-    }
+
+  const agentsBlock = formatAgentsFilesForPrompt(loadedContextFiles);
+  if (agentsBlock) {
+    prompt += `\n\n${agentsBlock}`;
   }
   if (hasRead && loadedSkills.length > 0) {
-    prompt += formatSkillsForPrompt(loadedSkills);
+    prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
   }
   return prompt.trimEnd();
 }
