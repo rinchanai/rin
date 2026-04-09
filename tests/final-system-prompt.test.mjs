@@ -67,7 +67,7 @@ test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async
   });
 
   const projectContextIdx = finalSystemPrompt.indexOf("# Project Context");
-  const promptsIdx = finalSystemPrompt.indexOf("User Profile:");
+  const promptsIdx = finalSystemPrompt.indexOf("User profile:");
   const skillsIdx = finalSystemPrompt.indexOf("<available_skills>");
 
   assert.notEqual(projectContextIdx, -1);

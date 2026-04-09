@@ -29,7 +29,7 @@ test("self-improve format builds compact compiled prompt", () => {
       },
     ],
   });
-  assert.ok(text.includes("Agent Profile:"));
+  assert.ok(text.includes("Agent profile:"));
   assert.ok(!text.includes("# Self-Improve Prompts"));
 });
 

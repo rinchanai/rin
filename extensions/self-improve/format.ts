@@ -1,9 +1,11 @@
-function toTitleCase(text: string) {
-  return String(text || "")
+function toSentenceCaseLabel(text: string) {
+  const parts = String(text || "")
     .split(/[_\s-]+/)
     .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+    .map((part) => part.toLowerCase());
+  if (!parts.length) return "";
+  parts[0] = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+  return parts.join(" ");
 }
 
 function buildPromptBlock(result: any): string {
@@ -16,7 +18,7 @@ function buildPromptBlock(result: any): string {
   const lines: string[] = [];
   for (const doc of docs) {
     const body = String(doc?.content || doc?.preview || "").trim();
-    const label = toTitleCase(
+    const label = toSentenceCaseLabel(
       String(
         doc?.self_improve_prompt_slot || doc?.id || doc?.name || "",
       ).trim(),
