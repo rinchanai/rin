@@ -4,16 +4,11 @@ import path from "node:path";
 
 import {
   MemoryDoc,
-  MemoryExposure,
   MEMORY_PROMPT_LIMITS,
   MEMORY_PROMPT_SLOTS,
 } from "./core/types.js";
-import {
-  parseMarkdownDoc,
-  previewMemoryDoc,
-  renderMarkdownDoc,
-} from "./core/schema.js";
-import { safeString } from "./core/utils.js";
+import { previewMemoryDoc } from "./core/schema.js";
+import { nowIso, safeString } from "./core/utils.js";
 
 export async function walkMarkdownFiles(dirPath: string): Promise<string[]> {
   if (!fssync.existsSync(dirPath)) return [];
@@ -34,11 +29,52 @@ function selfImprovePromptsDir(rootDir: string) {
   return path.join(rootDir, "prompts");
 }
 
+function stripOptionalFrontmatter(text: string): string {
+  const raw = String(text || "");
+  const match = raw.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/);
+  return (match ? match[1] : raw).trim();
+}
+
+function promptDocFromFile(filePath: string, text: string): MemoryDoc | null {
+  const slot = path.basename(filePath, ".md").trim();
+  if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) return null;
+  const content = stripOptionalFrontmatter(text);
+  if (!content) return null;
+  const now = nowIso();
+  return {
+    id: slot.replace(/_/g, "-"),
+    name: slot.replace(/_/g, " "),
+    exposure: "self_improve_prompts",
+    fidelity: "exact",
+    self_improve_prompt_slot: slot,
+    description: "",
+    tags: [],
+    aliases: [],
+    scope: "global",
+    kind: slot === "core_facts" ? "fact" : "instruction",
+    sensitivity: "normal",
+    source: "",
+    updated_at: now,
+    last_observed_at: now,
+    observation_count: 1,
+    status: "active",
+    supersedes: [],
+    canonical: true,
+    path: filePath,
+    content,
+  };
+}
+
 export async function loadMemoryDocs(rootDir: string): Promise<MemoryDoc[]> {
   const files = await walkMarkdownFiles(selfImprovePromptsDir(rootDir));
   const docs: MemoryDoc[] = [];
-  for (const filePath of files)
-    docs.push(parseMarkdownDoc(filePath, await fs.readFile(filePath, "utf8")));
+  for (const filePath of files) {
+    const doc = promptDocFromFile(
+      filePath,
+      await fs.readFile(filePath, "utf8"),
+    );
+    if (doc) docs.push(doc);
+  }
   return docs;
 }
 
@@ -52,9 +88,11 @@ export function loadMemoryDocsSync(rootDir: string): MemoryDoc[] {
       if (entry.isDirectory()) visit(fullPath);
       else if (entry.isFile() && entry.name.endsWith(".md")) {
         try {
-          docs.push(
-            parseMarkdownDoc(fullPath, fssync.readFileSync(fullPath, "utf8")),
+          const doc = promptDocFromFile(
+            fullPath,
+            fssync.readFileSync(fullPath, "utf8"),
           );
+          if (doc) docs.push(doc);
         } catch {}
       }
     }
@@ -73,7 +111,7 @@ export async function resolveMemoryDoc(
   if (!raw) return null;
   const abs = path.isAbsolute(raw) ? raw : path.join(rootDir, raw);
   if (fssync.existsSync(abs) && abs.endsWith(".md"))
-    return parseMarkdownDoc(abs, await fs.readFile(abs, "utf8"));
+    return promptDocFromFile(abs, await fs.readFile(abs, "utf8"));
   const docs = await loadMemoryDocs(rootDir);
   return (
     docs.find(
@@ -106,7 +144,7 @@ export function assertMemoryPromptDoc(doc: MemoryDoc): void {
 
 export async function writeMemoryDoc(doc: MemoryDoc) {
   await fs.mkdir(path.dirname(doc.path), { recursive: true });
-  await fs.writeFile(doc.path, renderMarkdownDoc(doc), "utf8");
+  await fs.writeFile(doc.path, `${safeString(doc.content).trim()}\n`, "utf8");
 }
 
 export function previewDocs(docs: MemoryDoc[]) {

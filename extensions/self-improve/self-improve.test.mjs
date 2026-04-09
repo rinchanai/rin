@@ -193,7 +193,7 @@ test("compileSelfImprove includes saved self-improve prompts from markdown sourc
   });
 });
 
-test("self-improve doc loading reads only prompt files", async () => {
+test("self-improve doc loading uses prompt slot filenames and ignores skill docs", async () => {
   await withTempRoot(async (root) => {
     const selfImproveRoot = path.join(root, "self_improve");
     const skillDir = path.join(selfImproveRoot, "skills", "demo-skill");
@@ -218,21 +218,52 @@ test("self-improve doc loading reads only prompt files", async () => {
       recursive: true,
     });
     await fs.writeFile(
-      path.join(selfImproveRoot, "prompts", "plain-note.md"),
+      path.join(selfImproveRoot, "prompts", "agent_profile.md"),
+      "Speak concise Chinese by default.\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(selfImproveRoot, "prompts", "notes.md"),
+      "This should be ignored.\n",
+      "utf8",
+    );
+
+    const docs = await memoryDocs.loadMemoryDocs(selfImproveRoot);
+    assert.equal(docs.length, 1);
+    assert.match(String(docs[0].path || ""), /agent_profile\.md$/);
+    assert.equal(
+      String(docs[0].self_improve_prompt_slot || ""),
+      "agent_profile",
+    );
+    assert.equal(
+      String(docs[0].content || ""),
+      "Speak concise Chinese by default.",
+    );
+  });
+});
+
+test("self-improve doc loading strips legacy frontmatter for prompt slots", async () => {
+  await withTempRoot(async (root) => {
+    const selfImproveRoot = path.join(root, "self_improve");
+    await fs.mkdir(path.join(selfImproveRoot, "prompts"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(selfImproveRoot, "prompts", "agent_profile.md"),
       [
         "---",
-        "name: plain-note",
+        "name: agent profile",
         "exposure: self_improve_prompts",
-        "self_improve_prompt_slot: core_facts",
+        "self_improve_prompt_slot: agent_profile",
         "---",
-        "hello",
+        "Legacy profile text.",
       ].join("\n"),
       "utf8",
     );
 
     const docs = await memoryDocs.loadMemoryDocs(selfImproveRoot);
     assert.equal(docs.length, 1);
-    assert.match(String(docs[0].path || ""), /plain-note\.md$/);
+    assert.equal(String(docs[0].content || ""), "Legacy profile text.");
   });
 });
 
@@ -251,6 +282,13 @@ test("saveSelfImprovePromptDoc supports core_facts with fact kind by default", a
 
     assert.equal(saved.doc.self_improve_prompt_slot, "core_facts");
     assert.equal(saved.doc.kind, "fact");
+    assert.equal(
+      await fs.readFile(
+        path.join(root, "self_improve", "prompts", "core_facts.md"),
+        "utf8",
+      ),
+      "User prefers concise Chinese replies. Project repo is /srv/app.\n",
+    );
 
     const compiled = await store.compileSelfImprove(
       { query: "concise replies" },
