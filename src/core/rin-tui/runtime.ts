@@ -90,11 +90,16 @@ class RemoteAgent {
 
 type RefreshFlags = { messages?: boolean; models?: boolean; session?: boolean };
 
-const RUNTIME_PROFILE = resolveRuntimeProfile();
-const RUNTIME_SESSION_DIR = getRuntimeSessionDir(
-  RUNTIME_PROFILE.cwd,
-  RUNTIME_PROFILE.agentDir,
-);
+function getRuntimeProfile() {
+  return resolveRuntimeProfile();
+}
+
+function getRuntimeSessionDirForProfile(profile: {
+  cwd: string;
+  agentDir: string;
+}) {
+  return getRuntimeSessionDir(profile.cwd, profile.agentDir);
+}
 
 export class RpcInteractiveSession {
   public agent: RemoteAgent;
@@ -193,8 +198,8 @@ export class RpcInteractiveSession {
       getLeafId: () => this.leafId,
       appendLabelChange: (entryId: string, label: string | undefined) =>
         void this.setEntryLabel(entryId, label).catch(() => {}),
-      getCwd: () => RUNTIME_PROFILE.cwd,
-      getSessionDir: () => RUNTIME_SESSION_DIR,
+      getCwd: () => getRuntimeProfile().cwd,
+      getSessionDir: () => getRuntimeSessionDirForProfile(getRuntimeProfile()),
       appendSessionInfo: (name: string) =>
         void this.setSessionName(name).catch(() => {}),
     };
@@ -403,7 +408,6 @@ export class RpcInteractiveSession {
     setRpcThinkingLevel(this as any, level);
   }
 
-
   cycleThinkingLevel(): ThinkingLevel | undefined {
     return cycleRpcThinkingLevel(this as any);
   }
@@ -601,7 +605,7 @@ export class RpcInteractiveSession {
   }
 
   private async loadLocalExtensions(forceReload: boolean) {
-    await loadRpcLocalExtensions(this as any, forceReload, RUNTIME_PROFILE);
+    await loadRpcLocalExtensions(this as any, forceReload, getRuntimeProfile());
   }
 
   private handleRpcEvent(payload: any) {
@@ -733,7 +737,7 @@ export class RpcInteractiveSession {
   }
 
   private async hydrateSettingsManager() {
-    await hydrateRpcSettings(this.settingsManager, RUNTIME_PROFILE);
+    await hydrateRpcSettings(this.settingsManager, getRuntimeProfile());
     this.autoCompactionEnabled = Boolean(
       this.settingsManager.getCompactionEnabled?.(),
     );
@@ -741,7 +745,8 @@ export class RpcInteractiveSession {
   }
 
   private syncDetachedPreferencesFromSettings() {
-    if (!this.detachedBlankSession && (this.sessionFile || this.sessionId)) return;
+    if (!this.detachedBlankSession && (this.sessionFile || this.sessionId))
+      return;
 
     this.steeringMode =
       this.settingsManager.getSteeringMode?.() || this.steeringMode;
