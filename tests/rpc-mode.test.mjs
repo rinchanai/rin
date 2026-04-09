@@ -246,7 +246,7 @@ test("rpc mode rebinds to runtime.session after session replacement", async () =
   }
 });
 
-test("rpc mode routes resume_interrupted_turn through hidden custom message", async () => {
+test("rpc mode resumes interrupted tool turns by appending interrupted tool results and continuing", async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -263,22 +263,41 @@ test("rpc mode routes resume_interrupted_turn through hidden custom message", as
   };
 
   try {
+    const stateMessages = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "tool-1",
+            name: "bash",
+            arguments: { command: "sleep 1" },
+          },
+        ],
+      },
+    ];
     const session = {
       isStreaming: false,
       isCompacting: false,
       sessionFile: "/tmp/test-session.jsonl",
-      agent: { waitForIdle: async () => {} },
+      agent: {
+        waitForIdle: async () => {},
+        state: { messages: stateMessages },
+        continue: async () => {
+          calls.push(["continue"]);
+        },
+      },
       bindExtensions: async () => {},
       subscribe: () => {},
       prompt: async () => {},
-      sendCustomMessage: async (message, options) => {
-        calls.push(["sendCustomMessage", message, options]);
-      },
       steer: async () => {},
       followUp: async () => {},
       abort: async () => {},
       modelRegistry: { getAvailable: async () => [] },
       sessionManager: {
+        appendMessage: (message) => {
+          calls.push(["appendMessage", message]);
+        },
         getEntries: () => [],
         getTree: () => [],
         getLeafId: () => null,
@@ -330,23 +349,23 @@ test("rpc mode routes resume_interrupted_turn through hidden custom message", as
     );
     await wait(10);
 
-    assert.deepEqual(calls, [
-      [
-        "sendCustomMessage",
-        {
-          customType: "rin_resume_interrupted_turn",
-          content: [
-            {
-              type: "text",
-              text: "Please continue answering the previous user message. Your previous response was interrupted by a daemon restart or disconnect. Continue directly without restarting from the beginning unless necessary.",
-            },
-          ],
-          display: false,
-          details: { source: "rpc-reconnect" },
-        },
-        { triggerTurn: true },
-      ],
-    ]);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0][0], "appendMessage");
+    assert.equal(calls[0][1].role, "toolResult");
+    assert.equal(calls[0][1].toolCallId, "tool-1");
+    assert.equal(calls[0][1].toolName, "bash");
+    assert.equal(calls[0][1].isError, true);
+    assert.equal(
+      calls[0][1].content[0].text,
+      "The tool was interrupted by a daemon restart or disconnect.",
+    );
+    assert.deepEqual(calls[0][1].details, {
+      interrupted: true,
+      reason: "daemon_restart_or_disconnect",
+    });
+    assert.deepEqual(calls[1], ["continue"]);
+    assert.equal(stateMessages.length, 2);
+    assert.equal(stateMessages[1].role, "toolResult");
     assert.ok(lines.join("").includes('"command":"resume_interrupted_turn"'));
   } finally {
     process.stdin.on = stdinOn;

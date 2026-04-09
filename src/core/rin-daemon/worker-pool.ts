@@ -194,11 +194,20 @@ export class WorkerPool {
   }
 
   getInterruptedSessionSelectors() {
+    const seen = new Set<string>();
     return Array.from(this.workers)
-      .filter((worker) => worker.isStreaming && worker.sessionFile)
-      .map((worker) => ({
-        sessionFile: worker.sessionFile,
-      }));
+      .filter(
+        (worker) =>
+          worker.sessionFile &&
+          !worker.gracefulShutdownRequested &&
+          !seen.has(worker.sessionFile),
+      )
+      .map((worker) => {
+        seen.add(String(worker.sessionFile));
+        return {
+          sessionFile: worker.sessionFile,
+        };
+      });
   }
 
   resumeInterruptedSession(sessionFile: string) {
