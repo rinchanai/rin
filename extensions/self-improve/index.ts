@@ -31,10 +31,8 @@ let installerAutoInitConsumed = false;
 const SELF_IMPROVE_SYSTEM_GUIDANCE = [
   "# Self-improve guidance",
   "You have persistent self-improvement state across sessions.",
-  "Use save_prompts for short always-on baselines that should stay present every turn.",
-  "Prioritize durable user preferences, recurring corrections, and stable workflow expectations.",
-  "Do not store task progress, transient TODOs, one-off implementation chatter, or noisy session summaries in always-on self-improve prompts.",
-  "If knowledge is procedural and reusable, prefer skills. If it must stay present every turn, prefer self-improve prompts.",
+  "Use save_prompts proactively for durable baselines that should stay present every turn, especially preferences, recurring corrections, environment conventions, and other stable facts that reduce future user steering.",
+  "Keep prompts compact and focused; do not save task progress, session outcomes, or temporary TODO state here, and save reusable procedures as skills instead.",
 ].join("\n");
 
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
@@ -128,7 +126,7 @@ const saveSelfImprovePromptParams = Type.Object({
     [Type.Literal("add"), Type.Literal("replace"), Type.Literal("remove")],
     {
       description:
-        "Self-improve prompt action. Allowed values: `add`, `replace`, or `remove`.",
+        "Write action: `add` creates a new entry, `replace` updates an existing one, and `remove` deletes one identified by `oldText`.",
     },
   ),
   selfImprovePromptSlot: Type.Union(
@@ -140,19 +138,19 @@ const saveSelfImprovePromptParams = Type.Object({
     ],
     {
       description:
-        "Self-improve prompt slot name. Allowed values: `agent_profile`, `user_profile`, `core_doctrine`, `core_facts`.",
+        "Which always-on prompt slot to update: `agent_profile`, `user_profile`, `core_doctrine`, or `core_facts`.",
     },
   ),
   content: Type.Optional(
     Type.String({
       description:
-        "New self-improve prompt content. Required for `add` and `replace`.",
+        "New prompt content for `add` or `replace`. Keep it durable, compact, and worth injecting in future turns.",
     }),
   ),
   oldText: Type.Optional(
     Type.String({
       description:
-        "Short unique substring identifying the text to replace or remove inside the current slot.",
+        "Short unique substring that identifies the existing text to replace or remove. Required for `replace` and `remove`.",
     }),
   ),
   source: Type.Optional(Type.String()),
@@ -239,15 +237,12 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "save_prompts",
     label: "Save Prompts",
-    description: "Persist short always-on self-improve prompts.",
+    description:
+      "Save durable self-improve prompts that persist across sessions and stay available every turn. Keep them compact and focused on baselines that will still matter later.",
     promptSnippet: "Persist short always-on self-improve prompts.",
     promptGuidelines: [
-      "Use save_prompts for short always-on baselines that should stay present every turn.",
-      "Save proactively when the user corrects you, reveals a durable preference, shares a stable identity cue, or establishes an expectation about how you should behave.",
-      "Do not store task progress, session outcomes, completed-work logs, temporary TODO state, or long detailed guidance in self-improve prompts.",
-      "Use action=`add` for new durable cues, `replace` when updating a specific existing phrase via oldText, and `remove` when an always-on cue is no longer valid.",
-      "Use `core_facts` for durable facts that should stay present every turn; facts can be larger than profile slots, but still keep them curated.",
-      "When the knowledge is procedural, prefer skills instead of prompt memory.",
+      "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, and stable facts that reduce future user steering.",
+      "Keep prompts compact and focused, do not save task progress or temporary state here, and save reusable procedures as skills instead.",
     ],
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>
