@@ -4,7 +4,6 @@ import type {
   ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 
-import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import {
   getRuntimeSessionDir,
   resolveRuntimeProfile,
@@ -17,6 +16,7 @@ import {
   setRpcAutoCompaction,
   cycleRpcModel,
   cycleRpcThinkingLevel,
+  getPersistentSettingsManager,
   persistRpcSettingsMutation,
   setRpcFollowUpMode,
   setRpcModel,
@@ -29,13 +29,11 @@ import {
   type PendingRpcOperation,
 } from "./reconnect.js";
 import { createModelRegistry } from "./rpc-model-registry.js";
-import { createSettingsManager } from "./settings-manager.js";
 import {
   computeAvailableThinkingLevels,
   extractText,
   getLastAssistantText,
 } from "./session-helpers.js";
-import { hydrateRpcSettings } from "./settings-hydration.js";
 import {
   computeSessionStats,
   getContextUsage,
@@ -46,7 +44,6 @@ import {
   applyRpcSessionState,
   applyRpcSessionTree,
   getSessionBranch,
-  resetRpcLocalSessionState,
 } from "./state-utils.js";
 
 type RpcExtensionBindings = {
@@ -140,7 +137,6 @@ export class RpcInteractiveSession {
   private lastSessionStats: any = undefined;
   private steeringMessages: string[] = [];
   private followUpMessages: string[] = [];
-  private detachedBlankSession = false;
   private listeners = new Set<(event: AgentEvent) => void>();
   private unsubscribeClient?: () => void;
   private extensionBindings: RpcExtensionBindings = {};
@@ -168,7 +164,7 @@ export class RpcInteractiveSession {
       (this as any)[name] = descriptor.value.bind(this);
     }
     this.agent = new RemoteAgent(client);
-    this.settingsManager = createSettingsManager();
+    this.settingsManager = undefined;
     this.modelRegistry = createModelRegistry(client);
     this.resourceLoader = {
       getThemes: () => ({ themes: [], diagnostics: [] }),
@@ -207,6 +203,10 @@ export class RpcInteractiveSession {
 
   async connect() {
     this.disposed = false;
+    this.settingsManager = await getPersistentSettingsManager();
+    this.autoCompactionEnabled = Boolean(
+      this.settingsManager.getCompactionEnabled?.(),
+    );
     await this.client.connect();
     this.unsubscribeClient?.();
     this.unsubscribeClient = this.client.subscribe((event) => {
@@ -227,10 +227,9 @@ export class RpcInteractiveSession {
       }
       this.handleRpcEvent(payload);
     });
-    await this.hydrateSettingsManager();
+    await this.ensureRemoteSession();
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     await this.modelRegistry.sync().catch(() => {});
-    this.syncDetachedPreferencesFromSettings();
   }
 
   async disconnect() {
@@ -353,14 +352,12 @@ export class RpcInteractiveSession {
 
   async newSession(_options?: { parentSession?: string }) {
     const data = await this.call("new_session");
-    this.detachedBlankSession = false;
     await this.refreshState(REFRESH_ALL);
     return !Boolean(data?.cancelled);
   }
 
   async switchSession(sessionPath: string, _cwdOverride?: string) {
     const data = await this.call("switch_session", { sessionPath });
-    this.detachedBlankSession = false;
     await this.refreshState(REFRESH_ALL);
     return !Boolean(data?.cancelled);
   }
@@ -399,7 +396,6 @@ export class RpcInteractiveSession {
     return await cycleRpcModel(
       this as any,
       direction,
-      () => this.modelRegistry.getAvailable(),
       () => this.refreshState(REFRESH_MODELS),
     );
   }
@@ -464,12 +460,6 @@ export class RpcInteractiveSession {
     const data = await this.call("run_command", { commandLine });
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     return data;
-  }
-
-  async detachSession() {
-    await this.call("detach_session");
-    resetRpcLocalSessionState(this as any);
-    this.detachedBlankSession = true;
   }
 
   recordBashResult(
@@ -588,9 +578,7 @@ export class RpcInteractiveSession {
 
   async reload() {
     await this.modelRegistry.sync();
-    if (!this.detachedBlankSession) {
-      await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
-    }
+    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     if (this.extensionRunner) {
       await this.loadLocalExtensions(true);
     }
@@ -706,6 +694,8 @@ export class RpcInteractiveSession {
           await this.call("switch_session", { sessionPath: this.sessionFile });
         } else if (this.sessionId) {
           await this.call("attach_session", { sessionId: this.sessionId });
+        } else {
+          await this.ensureRemoteSession();
         }
         await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
         if (this.activeTurn && !this.restoreResumeSent) {
@@ -736,55 +726,10 @@ export class RpcInteractiveSession {
     this.syncPendingCount();
   }
 
-  private async hydrateSettingsManager() {
-    await hydrateRpcSettings(this.settingsManager, getRuntimeProfile());
-    this.autoCompactionEnabled = Boolean(
-      this.settingsManager.getCompactionEnabled?.(),
-    );
-    this.syncDetachedPreferencesFromSettings();
-  }
-
-  private syncDetachedPreferencesFromSettings() {
-    if (!this.detachedBlankSession && (this.sessionFile || this.sessionId))
-      return;
-
-    this.steeringMode =
-      this.settingsManager.getSteeringMode?.() || this.steeringMode;
-    this.followUpMode =
-      this.settingsManager.getFollowUpMode?.() || this.followUpMode;
-    this.autoCompactionEnabled = Boolean(
-      this.settingsManager.getCompactionEnabled?.(),
-    );
-
-    const defaultThinkingLevel =
-      this.settingsManager.getDefaultThinkingLevel?.();
-    if (defaultThinkingLevel) {
-      this.thinkingLevel = defaultThinkingLevel;
-      this.state.thinkingLevel = defaultThinkingLevel;
-    }
-
-    const provider = this.settingsManager.getDefaultProvider?.();
-    const modelId = this.settingsManager.getDefaultModel?.();
-    if (provider && modelId) {
-      const resolved = this.modelRegistry.find?.(provider, modelId);
-      if (resolved) {
-        this.model = resolved;
-        this.state.model = resolved;
-      }
-    }
-  }
-
-  private resetLocalSessionState() {
-    resetRpcLocalSessionState(this as any);
-  }
-
   private async ensureRemoteSession() {
-    if (!this.detachedBlankSession && (this.sessionFile || this.sessionId))
-      return;
+    if (this.sessionFile || this.sessionId) return;
     const data = await this.call("new_session");
     if (data && data.cancelled) throw new Error("rin_new_session_cancelled");
-
-    this.detachedBlankSession = false;
     await this.refreshState(REFRESH_ALL);
   }
 

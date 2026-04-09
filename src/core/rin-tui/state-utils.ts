@@ -13,39 +13,26 @@ export function applyRpcSessionState(
     sessionId: string;
     sessionFile?: string;
     sessionName?: string;
-    detachedBlankSession: boolean;
     state: any;
-    settingsManager: any;
   },
   state: any,
 ) {
   const sessionId = String(state?.sessionId || "");
   const sessionFile =
     typeof state?.sessionFile === "string" ? state.sessionFile : undefined;
-  const hasRemoteSession = Boolean(sessionFile || sessionId);
 
-  if (hasRemoteSession) {
-    target.model = state?.model ?? null;
-    target.thinkingLevel = state?.thinkingLevel ?? target.thinkingLevel;
-    target.steeringMode = state?.steeringMode ?? target.steeringMode;
-    target.followUpMode = state?.followUpMode ?? target.followUpMode;
-    target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
-    target.settingsManager.setSteeringMode(target.steeringMode);
-    target.settingsManager.setFollowUpMode(target.followUpMode);
-  }
-
+  target.model = state?.model ?? null;
+  target.thinkingLevel = state?.thinkingLevel ?? target.thinkingLevel;
+  target.steeringMode = state?.steeringMode ?? target.steeringMode;
+  target.followUpMode = state?.followUpMode ?? target.followUpMode;
+  target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
   target.isStreaming = Boolean(state?.isStreaming);
   target.isCompacting = Boolean(state?.isCompacting);
   target.pendingMessageCount = Number(state?.pendingMessageCount || 0);
   target.sessionId = sessionId;
   target.sessionFile = sessionFile;
   target.sessionName =
-    typeof state?.sessionName === "string"
-      ? state.sessionName
-      : hasRemoteSession
-        ? undefined
-        : target.sessionName;
-  target.detachedBlankSession = !hasRemoteSession;
+    typeof state?.sessionName === "string" ? state.sessionName : undefined;
   target.state.model = target.model;
   target.state.thinkingLevel = target.thinkingLevel;
 }
@@ -105,45 +92,3 @@ export function getSessionBranch(
   return branch.reverse();
 }
 
-export function resetRpcLocalSessionState(target: {
-  isStreaming: boolean;
-  isCompacting: boolean;
-  isBashRunning: boolean;
-  retryAttempt: number;
-  messages: any[];
-  entries: any[];
-  tree: any[];
-  leafId: string | null;
-  entryById: Map<string, any>;
-  labelsById: Map<string, string | undefined>;
-  sessionFile?: string;
-  sessionId: string;
-  sessionName?: string;
-  lastSessionStats: any;
-  state: any;
-  model: any;
-  thinkingLevel: ThinkingLevel;
-  clearQueue: () => any;
-}) {
-  target.isStreaming = false;
-  target.isCompacting = false;
-  target.isBashRunning = false;
-  target.retryAttempt = 0;
-  target.messages = [];
-  target.entries = [];
-  target.tree = [];
-  target.leafId = null;
-  target.entryById = new Map();
-  target.labelsById = new Map();
-  target.sessionFile = undefined;
-  target.sessionId = "";
-  target.sessionName = undefined;
-  target.lastSessionStats = undefined;
-  target.clearQueue();
-  target.state = {
-    ...target.state,
-    messages: target.messages,
-    model: target.model,
-    thinkingLevel: target.thinkingLevel,
-  };
-}

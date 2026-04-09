@@ -1,3 +1,4 @@
+import { loadRinChangelogModule } from "../rin-lib/loader.js";
 import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 
 export function writeJsonLine(value: unknown) {
@@ -146,6 +147,27 @@ export async function runBuiltinCommand(
         handled: true,
         text: formatSessionStats(session.getSessionStats()),
       };
+    case "changelog": {
+      const { getChangelogPath, parseChangelog }: any =
+        await loadRinChangelogModule();
+      const changelogPath = getChangelogPath();
+      const entries = parseChangelog(changelogPath);
+      if (entries.length === 0) {
+        return {
+          handled: true,
+          text: "No changelog entries found.",
+        };
+      }
+      return {
+        handled: true,
+        text: entries
+          .slice()
+          .reverse()
+          .map((entry: any) => String(entry?.content || "").trim())
+          .filter(Boolean)
+          .join("\n\n"),
+      };
+    }
     case "resume": {
       const sessions = await deps.SessionManager.list(
         session.sessionManager.getCwd(),

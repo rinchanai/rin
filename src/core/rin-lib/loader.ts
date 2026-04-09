@@ -65,6 +65,10 @@ export async function loadRinSessionSelectorModule() {
   );
 }
 
+export async function loadRinChangelogModule() {
+  return await importDistModule(path.join("utils", "changelog.js"));
+}
+
 export function resolveRinCodingAgentDistDir() {
   return codingAgentDistRoot;
 }
