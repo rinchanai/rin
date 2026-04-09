@@ -4,6 +4,7 @@ export type BuiltinSlashCommand = {
 };
 
 export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
+  { name: "abort", description: "Abort the current operation" },
   { name: "settings", description: "Open settings menu" },
   { name: "model", description: "Select model (opens selector UI)" },
   {
@@ -73,6 +74,7 @@ const SESSION_SCOPED_COMMANDS = new Set([
   "run_command",
   "attach_session",
   "fork",
+  "terminate_session",
   "set_model",
   "set_session_name",
   "oauth_login_start",

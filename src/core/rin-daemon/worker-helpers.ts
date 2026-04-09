@@ -130,6 +130,9 @@ export async function runBuiltinCommand(
   if (!command) return { handled: false };
 
   switch (command) {
+    case "abort":
+      await session.abort();
+      return { handled: true, text: "Aborted current operation." };
     case "new":
       await runtime.newSession();
       return { handled: true, text: "Started a new session." };

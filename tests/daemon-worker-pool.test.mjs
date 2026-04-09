@@ -62,7 +62,7 @@ setInterval(() => {}, 1000);
     clientBuffer: "",
   };
 
-  const pool = new WorkerPool({ workerPath, cwd: dir });
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
   const worker = pool.resolveWorkerForCommand(connection, {
     type: "new_session",
   });
@@ -81,6 +81,7 @@ setInterval(() => {}, 1000);
   assert.equal(payload.id, "req_1");
   assert.equal(payload.success, true);
 
-  await sleep(50);
+  await sleep(80);
+  pool.evictDetachedWorkers();
   assert.equal(pool.getStatusSnapshot().workerCount, 0);
 });

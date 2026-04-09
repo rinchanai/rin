@@ -37,6 +37,9 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
   const calls = [];
   const runtime = {
     session: {
+      abort: async () => {
+        calls.push(["abort"]);
+      },
       compact: async () => {
         calls.push(["compact"]);
       },
@@ -62,6 +65,11 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
     },
   };
 
+  const resultAbort = await workerHelpers.runBuiltinCommand(runtime, "/abort", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(resultAbort.handled, true);
+
   const resultNew = await workerHelpers.runBuiltinCommand(runtime, "/new", {
     SessionManager: { list: async () => [] },
   });
@@ -80,6 +88,7 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
   assert.match(resultResume.text, /Resumed session: abc/);
 
   assert.deepEqual(calls, [
+    ["abort"],
     ["newSession"],
     ["switchSession", "/tmp/sessions/abc.jsonl"],
   ]);

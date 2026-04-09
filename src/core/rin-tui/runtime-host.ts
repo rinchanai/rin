@@ -27,6 +27,7 @@ export function createRpcRuntimeHost(session: RpcInteractiveSession) {
       return { cancelled: !completed };
     },
     async dispose() {
+      await session.terminateSession().catch(() => {});
       await session.disconnect();
     },
   };

@@ -245,6 +245,10 @@ export async function runCustomRpcMode(
         );
       case "abort":
         return run(id, type, () => session.abort());
+      case "shutdown_session":
+        await runtime.dispose();
+        output(done(id, type, { shutdown: true }));
+        process.exit(0);
       case "attach_session":
         return done(id, type, getSessionState(session));
       case "get_state":

@@ -10,6 +10,7 @@ export function buildAllowedCommandRows(
   rpcCommands: Array<{ name: string; description?: string }>,
 ) {
   const allowedCommandNames = new Set([
+    "abort",
     "new",
     "compact",
     "reload",
