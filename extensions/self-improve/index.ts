@@ -371,9 +371,64 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     }
     if (!blocks.length) return;
     const current = String(event.systemPrompt || "").trimEnd();
-    const block = blocks.join("\n\n").trim();
+    const guidanceBlock = blocks.includes(SELF_IMPROVE_SYSTEM_GUIDANCE)
+      ? SELF_IMPROVE_SYSTEM_GUIDANCE
+      : "";
+    const promptsBlock = blocks.find(
+      (item) => item && item !== SELF_IMPROVE_SYSTEM_GUIDANCE,
+    );
+
+    const insertBeforeMarker = (
+      source: string,
+      marker: string,
+      blockText: string,
+    ) => {
+      const text = String(blockText || "").trim();
+      if (!text) return source;
+      const idx = source.indexOf(marker);
+      if (idx < 0) return source;
+      return `${source.slice(0, idx).trimEnd()}\n\n${text}\n\n${source.slice(idx)}`.trimEnd();
+    };
+
+    let next = current;
+    if (guidanceBlock) {
+      if (next.includes("\n\n# Project Context\n\n")) {
+        next = insertBeforeMarker(
+          next,
+          "\n\n# Project Context\n\n",
+          guidanceBlock,
+        );
+      } else if (
+        next.includes(
+          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
+        )
+      ) {
+        next = insertBeforeMarker(
+          next,
+          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
+          guidanceBlock,
+        );
+      } else {
+        next = `${next}\n\n${guidanceBlock}`.trimEnd();
+      }
+    }
+    if (promptsBlock) {
+      if (
+        next.includes(
+          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
+        )
+      ) {
+        next = insertBeforeMarker(
+          next,
+          "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n",
+          promptsBlock,
+        );
+      } else {
+        next = `${next}\n\n${promptsBlock}`.trimEnd();
+      }
+    }
     return {
-      systemPrompt: `${current}\n\n${block}`.trimEnd(),
+      systemPrompt: next.trimEnd(),
     };
   });
 }

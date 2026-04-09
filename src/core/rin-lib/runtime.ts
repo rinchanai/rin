@@ -192,12 +192,12 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
 
   if (appendSystemPrompt) prompt += `\n\n${appendSystemPrompt}`;
 
-  if (hasRead && loadedSkills.length > 0) {
-    prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
-  }
   const agentsBlock = formatAgentsFilesForPrompt(loadedContextFiles);
   if (agentsBlock) {
     prompt += `\n\n${agentsBlock}`;
+  }
+  if (hasRead && loadedSkills.length > 0) {
+    prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
   }
   return prompt.trimEnd();
 }

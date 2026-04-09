@@ -33,7 +33,7 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
   );
 });
 
-test("buildFinalAppSystemPrompt appends self-improve blocks after skills in Pi-style order", async () => {
+test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "rin-final-prompt-cwd-"));
   const agentDir = fs.mkdtempSync(
     path.join(os.tmpdir(), "rin-final-prompt-agent-"),
@@ -50,18 +50,7 @@ test("buildFinalAppSystemPrompt appends self-improve blocks after skills in Pi-s
   });
   fs.writeFileSync(
     path.join(agentDir, "self_improve", "prompts", "user_profile.md"),
-    [
-      "---",
-      "name: User Profile",
-      "exposure: self_improve_prompts",
-      "self_improve_prompt_slot: user_profile",
-      "scope: global",
-      "kind: instruction",
-      "canonical: true",
-      "---",
-      "Test user preference.",
-      "",
-    ].join("\n"),
+    "Test user preference.\n",
   );
   fs.writeFileSync(
     path.join(agentDir, "self_improve", "skills", "test-skill", "SKILL.md"),
@@ -82,19 +71,19 @@ test("buildFinalAppSystemPrompt appends self-improve blocks after skills in Pi-s
     agentDir,
   });
 
-  const skillsIdx = finalSystemPrompt.indexOf("<available_skills>");
-  const projectContextIdx = finalSystemPrompt.indexOf("# Project Context");
   const selfImproveGuidanceIdx = finalSystemPrompt.indexOf(
     "# Self-improve guidance",
   );
+  const projectContextIdx = finalSystemPrompt.indexOf("# Project Context");
   const promptsIdx = finalSystemPrompt.indexOf("# Self-Improve Prompts");
+  const skillsIdx = finalSystemPrompt.indexOf("<available_skills>");
 
-  assert.notEqual(skillsIdx, -1);
-  assert.notEqual(projectContextIdx, -1);
   assert.notEqual(selfImproveGuidanceIdx, -1);
+  assert.notEqual(projectContextIdx, -1);
   assert.notEqual(promptsIdx, -1);
-  assert.ok(skillsIdx < projectContextIdx);
-  assert.ok(projectContextIdx < selfImproveGuidanceIdx);
-  assert.ok(selfImproveGuidanceIdx < promptsIdx);
+  assert.notEqual(skillsIdx, -1);
+  assert.ok(selfImproveGuidanceIdx < projectContextIdx);
+  assert.ok(projectContextIdx < promptsIdx);
+  assert.ok(promptsIdx < skillsIdx);
   assert.ok(finalSystemPrompt.includes("## User Profile"));
 });
