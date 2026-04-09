@@ -238,9 +238,8 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     name: "save_prompts",
     label: "Save Prompts",
     description:
-      "Save durable self-improve prompts that persist across sessions and stay available every turn. Keep them compact and focused on baselines that will still matter later.",
-    promptSnippet:
-      "Persist durable instructions and facts across all future sessions.",
+      "Save durable prompt baselines that persist across sessions and stay available every turn. Keep them compact and focused on what will still matter later.",
+    promptSnippet: "Save durable prompt baselines.",
     promptGuidelines: [
       "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, and stable facts that reduce future user steering.",
       "Keep prompts compact and focused, do not save task progress or temporary state here, and save reusable procedures as skills instead.",
