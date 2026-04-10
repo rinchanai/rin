@@ -1,5 +1,4 @@
 import os from "node:os";
-import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -95,65 +94,6 @@ async function runTargetCommand(
   });
 }
 
-export function isStaleTmuxSessionProcess(
-  cmdline: string,
-  expectedEntryRealpath: string,
-) {
-  if (!cmdline.includes("rin-tui/main.js")) return false;
-  return !cmdline.includes(expectedEntryRealpath);
-}
-
-async function restartTmuxSessionIfStale(
-  targetUser: string,
-  socketArgs: string[],
-  sessionName: string,
-  expectedEntry: string,
-  env: Record<string, string>,
-  cwd: string,
-) {
-  const expectedEntryRealpath = fs.realpathSync.native(expectedEntry);
-  const panes = await runTargetCommandCapture(
-    targetUser,
-    [
-      "tmux",
-      ...socketArgs,
-      "list-panes",
-      "-t",
-      sessionName,
-      "-F",
-      "#{pane_pid}",
-    ],
-    env,
-    cwd,
-  ).catch(() => null);
-  if (!panes || panes.code !== 0) return;
-
-  const panePids = panes.stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  for (const pid of panePids) {
-    let cmdline = "";
-    try {
-      cmdline = fs
-        .readFileSync(`/proc/${pid}/cmdline`)
-        .toString("utf8")
-        .split("\u0000")
-        .join(" ");
-    } catch {
-      continue;
-    }
-    if (!isStaleTmuxSessionProcess(cmdline, expectedEntryRealpath)) continue;
-    await runTargetCommandCapture(
-      targetUser,
-      ["tmux", ...socketArgs, "kill-session", "-t", sessionName],
-      env,
-      cwd,
-    ).catch(() => {});
-    return;
-  }
-}
-
 export async function launchDefaultRin(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
@@ -208,14 +148,6 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   if (parsed.tmuxSession) {
     const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
     const commandEnv = runtimeEnv;
-    await restartTmuxSessionIfStale(
-      targetUser,
-      tmuxSocketArgs,
-      parsed.tmuxSession,
-      tuiEntry,
-      commandEnv as Record<string, string>,
-      repoRoot,
-    );
     const code = await runTargetCommand(
       targetUser,
       [
