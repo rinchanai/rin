@@ -160,7 +160,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
     });
 
     const usageLine = `usage=${currentState.currentChars}/${currentState.maxChars}`;
-    const limitLine = `limit=${currentState.maxChars}`;
     const baseContent = String(params?.baseContent || "").trim();
     const incomingContent = String(params?.content || "").trim();
 
@@ -171,7 +170,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           "status=review_required",
           `slot=${currentState.slot}`,
           usageLine,
-          limitLine,
           `path=${String(currentDoc?.path || "")}`,
           "current_content:",
           currentState.content || "(empty)",
@@ -179,7 +177,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         userText: [
           `Loaded self-improve prompt: ${currentState.name}`,
           usageLine,
-          limitLine,
           String(currentDoc?.path || ""),
           currentState.content || "(empty)",
         ]
@@ -195,7 +192,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           status: "review_required",
           slot: currentState.slot,
           usage: `${currentState.currentChars}/${currentState.maxChars}`,
-          limit: currentState.maxChars,
           currentContent: currentState.content,
           path: String(currentDoc?.path || ""),
           ...prepared,
@@ -214,7 +210,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           "status=stale_base_content",
           `slot=${currentState.slot}`,
           usageLine,
-          limitLine,
           `path=${String(currentDoc?.path || "")}`,
           "current_content:",
           currentState.content || "(empty)",
@@ -222,7 +217,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         userText: [
           `Stale self-improve prompt base content: ${currentState.name}`,
           usageLine,
-          limitLine,
           String(currentDoc?.path || ""),
           currentState.content || "(empty)",
         ]
@@ -238,7 +232,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           status: "stale_base_content",
           slot: currentState.slot,
           usage: `${currentState.currentChars}/${currentState.maxChars}`,
-          limit: currentState.maxChars,
           currentContent: currentState.content,
           path: String(currentDoc?.path || ""),
           ...prepared,
@@ -263,13 +256,11 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         "status=updated",
         `slot=${currentState.slot}`,
         `usage=${refined.nextChars}/${refined.maxChars}`,
-        `limit=${refined.maxChars}`,
         `path=${String(response?.doc?.path || "")}`,
       ].join("\n"),
       userText: [
         `Updated self-improve prompt: ${refined.name}`,
         `usage=${refined.nextChars}/${refined.maxChars}`,
-        `limit=${refined.maxChars}`,
         String(response?.doc?.path || ""),
       ]
         .filter(Boolean)
@@ -286,7 +277,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         status: "updated",
         slot: currentState.slot,
         usage: `${refined.nextChars}/${refined.maxChars}`,
-        limit: refined.maxChars,
         path: String(response?.doc?.path || ""),
       },
     };
@@ -296,7 +286,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
     );
     const slot = String(params?.slot || "").trim();
     let usage = "0/0";
-    let limit = 0;
     try {
       if (slot) {
         const existing = await executeSelfImproveTool({ action: "compile" });
@@ -311,7 +300,6 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           existingContent: String(currentDoc?.content || ""),
         });
         usage = `${currentState.currentChars}/${currentState.maxChars}`;
-        limit = currentState.maxChars;
       }
     } catch {}
     return {
@@ -320,12 +308,9 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         ok: false,
         error: message,
         usage,
-        limit,
-        agentText: slot
-          ? `${message}\nslot=${slot}\nusage=${usage}\nlimit=${limit}`
-          : message,
+        agentText: slot ? `${message}\nslot=${slot}\nusage=${usage}` : message,
         userText: slot
-          ? `Self-improve prompt 操作失败：${message}\nusage=${usage}\nlimit=${limit}`
+          ? `Self-improve prompt 操作失败：${message}\nusage=${usage}`
           : `Self-improve prompt 操作失败：${message}`,
       },
       isError: true,
