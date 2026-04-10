@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 
 import { deliverKoishiRpcPayload, requestKoishiRpc } from "../rin-koishi/rpc.js";
-import { runSessionPrompt } from "../session/runner.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
 
@@ -80,44 +79,26 @@ export async function executeCronAgentTask(
   if (task.target.kind !== "agent_prompt")
     throw new Error("cron_invalid_agent_task");
   const sessionFile = await resolveCronSessionFile(task);
-
-  if (task.chatKey) {
-    const result = await requestKoishiRpc(options.agentDir, {
-      type: "run_chat_turn",
-      payload: {
-        chatKey: task.chatKey,
-        text: task.target.prompt,
-        sessionFile,
-      },
-    });
-    const finalText = summarizeText(result?.finalText, 4000);
-    if (!finalText) throw new Error("cron_final_assistant_text_missing");
-    const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
-    if (task.session.mode === "dedicated" && nextSessionFile) {
-      task.dedicatedSessionFile = nextSessionFile;
-    }
-    return {
-      text: finalText,
-      sessionId: String(result?.sessionId || "").trim() || undefined,
-      sessionFile: nextSessionFile,
-    };
-  }
-
-  const result = await runSessionPrompt({
-    cwd: task.cwd || options.cwd,
-    agentDir: options.agentDir,
-    additionalExtensionPaths: options.additionalExtensionPaths ?? [],
-    sessionFile,
-    prompt: task.target.prompt,
+  const result = await requestKoishiRpc(options.agentDir, {
+    type: "run_chat_turn",
+    payload: {
+      chatKey: task.chatKey,
+      controllerKey: task.id,
+      text: task.target.prompt,
+      sessionFile,
+    },
   });
-  if (task.session.mode === "dedicated" && result.sessionFile)
-    task.dedicatedSessionFile = result.sessionFile;
-  const finalText = summarizeText(result.finalText, 4000);
+  const finalText = summarizeText(result?.finalText, 4000);
   if (!finalText) throw new Error("cron_final_assistant_text_missing");
+  const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
+  if (task.session.mode === "dedicated" && nextSessionFile) {
+    task.dedicatedSessionFile = nextSessionFile;
+  }
   return {
     text: finalText,
-    sessionId: result.sessionId,
-    sessionFile: result.sessionFile,
+    sessionId: String(result?.sessionId || "").trim() || undefined,
+    sessionFile: nextSessionFile,
+    deliveredByChatPipeline: Boolean(task.chatKey),
   };
 }
 

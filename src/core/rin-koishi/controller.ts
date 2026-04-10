@@ -47,18 +47,25 @@ export class KoishiChatController {
   latestAssistantText = "";
   logger: any;
   h: any;
+  deliveryEnabled: boolean;
 
   constructor(
     app: any,
     dataDir: string,
     chatKey: string,
-    deps: { logger: any; h: any },
+    deps: {
+      logger: any;
+      h: any;
+      deliveryEnabled?: boolean;
+      statePath?: string;
+    },
   ) {
     this.app = app;
     this.chatKey = chatKey;
     this.dataDir = dataDir;
     this.agentDir = path.resolve(dataDir, "..");
-    this.statePath = chatStatePath(dataDir, chatKey);
+    this.deliveryEnabled = deps.deliveryEnabled !== false;
+    this.statePath = deps.statePath || chatStatePath(dataDir, chatKey);
     this.state = readJsonFile<KoishiChatState>(this.statePath, { chatKey });
     this.logger = deps.logger;
     this.h = deps.h;
@@ -130,7 +137,7 @@ export class KoishiChatController {
     const wantedSessionFile = safeString(this.state.piSessionFile || "").trim();
     if (wantedSessionFile)
       await session.switchSession(wantedSessionFile).catch(() => {});
-    if (!session.sessionManager.getSessionName?.())
+    if (this.deliveryEnabled && !session.sessionManager.getSessionName?.())
       await session.setSessionName(this.chatKey);
   }
 
@@ -148,6 +155,7 @@ export class KoishiChatController {
     writeJsonFile(this.statePath, this.state);
   }
   private startTyping() {
+    if (!this.deliveryEnabled) return;
     this.stopTyping();
     void sendTyping(this.app, this.chatKey, this.h);
     this.typingTimer = setInterval(() => {
@@ -168,6 +176,7 @@ export class KoishiChatController {
     this.pendingCompletedAssistantText = "";
     this.interimSentText = text;
     this.interimSentAt = now;
+    if (!this.deliveryEnabled) return;
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || "",
     ).trim();
@@ -206,6 +215,7 @@ export class KoishiChatController {
     ).trim();
   }
   private logAssistantText(text: string, replyToMessageId = "") {
+    if (!this.deliveryEnabled) return;
     const nextText = safeString(text).trim();
     if (!nextText) return;
     appendKoishiChatLog(this.agentDir, {
@@ -235,6 +245,7 @@ export class KoishiChatController {
   private async deliverFinalAssistantText(replyToMessageId = "") {
     const text = safeString(this.latestAssistantText || "").trim();
     if (!text) throw new Error("koishi_final_assistant_text_missing");
+    if (!this.deliveryEnabled) return;
     const deliveryResult = await sendText(
       this.app,
       this.chatKey,
@@ -281,7 +292,7 @@ export class KoishiChatController {
     ).trim();
     if (before !== wanted)
       await this.session.switchSession(wanted).catch(() => {});
-    if (!this.session.sessionManager.getSessionName?.())
+    if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     this.state.piSessionFile =
       safeString(
@@ -322,7 +333,7 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    if (!this.session.sessionManager.getSessionName?.())
+    if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     this.saveState();
     return result;
@@ -343,7 +354,7 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    if (!this.session.sessionManager.getSessionName?.())
+    if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     delete this.state.processing;
     this.saveState();

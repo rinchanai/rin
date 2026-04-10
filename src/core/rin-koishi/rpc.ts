@@ -9,7 +9,8 @@ export type KoishiRpcCommand =
   | {
       type: "run_chat_turn";
       payload: {
-        chatKey: string;
+        chatKey?: string;
+        controllerKey?: string;
         text: string;
         sessionFile?: string;
       };
