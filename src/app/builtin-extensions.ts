@@ -34,6 +34,7 @@ export function getBuiltinExtensionPaths() {
     path.join(root, "dist", "extensions", "reset-system-prompt", "index.js"),
     path.join(root, "dist", "extensions", "message-header", "index.js"),
     path.join(root, "dist", "extensions", "freeze-session-runtime", "index.js"),
+    path.join(root, "dist", "extensions", "auto-compact-continue", "index.js"),
     path.join(root, "dist", "extensions", "tui-input-compat", "index.js"),
     path.join(root, "dist", "extensions", "subagent", "index.js"),
     path.join(root, "dist", "extensions", "task", "index.js"),
