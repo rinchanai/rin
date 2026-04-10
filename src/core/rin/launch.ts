@@ -108,20 +108,6 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   if (parsed.tmuxSession && parsed.tmuxList)
     throw new Error("rin_tmux_mode_conflict");
 
-  if (!parsed.std) {
-    const context = createTargetExecutionContext(parsed);
-    if (!(await context.canConnectSocket())) {
-      const userSuffix = parsed.explicitUser ? ` -u ${targetUser}` : "";
-      throw new Error(
-        [
-          `rin_rpc_unavailable: daemon socket is not reachable for ${targetUser}`,
-          `try: rin doctor${userSuffix}`,
-          `if RPC mode is still broken, try: rin --std${userSuffix}`,
-        ].join("\n"),
-      );
-    }
-  }
-
   const runtimeEnv = buildTuiRuntimeEnv(
     targetUser,
     currentUser,

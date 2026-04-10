@@ -1,6 +1,7 @@
 import net from "node:net";
 
 import { defaultDaemonSocketPath, parseJsonl } from "../rin-lib/common.js";
+import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import type {
   FrontendAutocompleteItem,
   FrontendCommandItem,
@@ -127,6 +128,13 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   }
 
   async getCommands(): Promise<FrontendCommandItem[]> {
+    if (!this.isConnected()) {
+      return BUILTIN_SLASH_COMMANDS.map((command) => ({
+        id: command.name,
+        name: command.name,
+        description: command.description,
+      }));
+    }
     const data = this.getData(await this.send({ type: "get_commands" }));
     const commands = Array.isArray(data?.commands) ? data.commands : [];
     return commands.map((command: any) => ({
@@ -142,6 +150,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   }
 
   async listSessions(): Promise<FrontendSessionItem[]> {
+    if (!this.isConnected()) return [];
     const [sessionsResponse, stateResponse]: any = await Promise.all([
       this.send({ type: "list_sessions", scope: "cwd" }),
       this.send({ type: "get_state" }).catch(() => ({ success: false })),
@@ -173,6 +182,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   }
 
   async listModels(): Promise<FrontendModelItem[]> {
+    if (!this.isConnected()) return [];
     const data = this.getData(
       await this.send({ type: "get_available_models" }),
     );
