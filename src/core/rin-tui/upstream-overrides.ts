@@ -8,23 +8,6 @@ import {
   loadRinSessionSelectorModule,
 } from "../rin-lib/loader.js";
 
-const SESSION_STARTING_MESSAGE = "Creating session...";
-const SESSION_RESUMING_MESSAGE = "Resuming session...";
-const DAEMON_WAITING_MESSAGE = "Waiting daemon...";
-
-function stopPendingToolTimers(target: any) {
-  const pendingTools = target?.pendingTools;
-  if (!pendingTools || typeof pendingTools.values !== "function") return;
-  for (const component of pendingTools.values()) {
-    const state = component?.rendererState;
-    if (!state?.interval) continue;
-    clearInterval(state.interval);
-    state.interval = undefined;
-    state.endedAt ??= Date.now();
-    component.invalidate?.();
-  }
-}
-
 let applied = false;
 
 export async function applyRinTuiOverrides() {
@@ -133,74 +116,4 @@ export async function applyRinTuiOverrides() {
       };
   }
 
-  const originalStartWorkingAnimation =
-    InteractiveMode?.prototype?.startWorkingAnimation;
-  if (typeof originalStartWorkingAnimation === "function") {
-    InteractiveMode.prototype.startWorkingAnimation =
-      function startWorkingAnimationWithSessionBootHint(message?: string) {
-        const isDefaultWorkingMessage =
-          message == null || message === this?.defaultWorkingMessage;
-        const hasAttachedSession = Boolean(
-          this?.session?.sessionManager?.getSessionFile?.(),
-        );
-        const isHandlingRealAgentStart = Boolean(this?.__rinHandlingAgentStart);
-        const nextMessage =
-          isDefaultWorkingMessage &&
-          !hasAttachedSession &&
-          !isHandlingRealAgentStart
-            ? SESSION_STARTING_MESSAGE
-            : message;
-        return originalStartWorkingAnimation.call(this, nextMessage);
-      };
-  }
-
-  const originalHandleEvent = InteractiveMode?.prototype?.handleEvent;
-  if (typeof originalHandleEvent === "function") {
-    InteractiveMode.prototype.handleEvent =
-      async function handleEventWithSessionBootState(event: any) {
-        if (event?.type === "rin_status") {
-          stopPendingToolTimers(this);
-          const message =
-            typeof event.message === "string" && event.message.trim()
-              ? event.message.trim()
-              : "";
-          const hasActiveWork = Boolean(
-            this?.session?.isStreaming || this?.session?.isCompacting,
-          );
-          const reconnecting = Boolean(this?.session?.reconnecting);
-          const isSessionStatus =
-            message === SESSION_STARTING_MESSAGE ||
-            message === SESSION_RESUMING_MESSAGE;
-          const shouldShowWaiting =
-            event.phase !== "end" &&
-            (reconnecting || hasActiveWork) &&
-            message === DAEMON_WAITING_MESSAGE;
-          const shouldShowSessionStatus =
-            event.phase !== "end" && isSessionStatus;
-
-          if (shouldShowWaiting || shouldShowSessionStatus) {
-            this.startWorkingAnimation?.(message);
-          } else if (event.phase === "end") {
-            if (reconnecting) {
-              this.startWorkingAnimation?.(DAEMON_WAITING_MESSAGE);
-            } else if (hasActiveWork) {
-              this.startWorkingAnimation?.(this?.defaultWorkingMessage);
-            } else {
-              this.stopWorkingAnimation?.();
-            }
-          }
-
-          this.ui?.requestRender?.();
-          return;
-        }
-
-        const isAgentStart = event?.type === "agent_start";
-        this.__rinHandlingAgentStart = isAgentStart;
-        try {
-          return await originalHandleEvent.call(this, event);
-        } finally {
-          this.__rinHandlingAgentStart = false;
-        }
-      };
-  }
 }

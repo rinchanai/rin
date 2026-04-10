@@ -17,7 +17,6 @@ export async function handleRpcSessionEvent(
   if (payload.type === "agent_end") {
     target.isStreaming = false;
     target.activeTurn = null;
-    target.emitEvent({ type: "rin_status", phase: "end" } as any);
     void refreshMessagesAndSession();
   }
   if (
