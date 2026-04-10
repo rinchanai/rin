@@ -31,16 +31,24 @@ async function main() {
   const runtime = resolveRuntimeProfile();
   const webSearchInstanceId = `daemon-${process.pid}`;
   const koishiInstanceId = `daemon-${process.pid}`;
-  await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {});
-  await cleanupOrphanKoishiSidecars(runtime.agentDir).catch(() => {});
-  await ensureSearxngSidecar(runtime.agentDir, {
-    instanceId: webSearchInstanceId,
-  }).catch(() => {});
-  await ensureKoishiSidecar(runtime.agentDir, {
-    instanceId: koishiInstanceId,
-    entryPath: koishiEntryPath,
-  }).catch(() => {});
+  const ensureSidecars = async () => {
+    await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {});
+    await cleanupOrphanKoishiSidecars(runtime.agentDir).catch(() => {});
+    await ensureSearxngSidecar(runtime.agentDir, {
+      instanceId: webSearchInstanceId,
+    }).catch(() => {});
+    await ensureKoishiSidecar(runtime.agentDir, {
+      instanceId: koishiInstanceId,
+      entryPath: koishiEntryPath,
+    }).catch(() => {});
+  };
+
+  await ensureSidecars();
+  const sidecarHealthTimer = setInterval(() => {
+    void ensureSidecars();
+  }, 10_000);
   const stop = () => {
+    clearInterval(sidecarHealthTimer);
     void stopSearxngSidecar(runtime.agentDir, {
       instanceId: webSearchInstanceId,
     }).catch(() => {});
