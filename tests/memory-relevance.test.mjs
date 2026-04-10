@@ -42,7 +42,7 @@ test("memory relevance scores docs and relations", () => {
   };
   assert.ok(relevance.lexicalScore("searxng", docA) > 0);
   assert.ok(relevance.relationScore(docA, docB).score > 0);
-  assert.equal(relevance.shouldInjectRecentHistory("最近发生了什么"), true);
+  assert.equal(relevance.shouldInjectRecentHistory("what happened recently"), true);
 });
 
 test("self-improve compile renders prompt slots", () => {
@@ -51,7 +51,7 @@ test("self-improve compile renders prompt slots", () => {
       id: "voice",
       name: "Agent Profile",
       description: "",
-      content: "简洁自然",
+      content: "Concise and natural",
       self_improve_prompt_slot: "agent_profile",
       scope: "global",
       kind: "instruction",
@@ -89,7 +89,7 @@ test("self-improve compile renders prompt slots", () => {
     "/tmp/memory",
   );
   assert.ok(
-    out.self_improve_prompt_context.includes("[agent_profile] 简洁自然"),
+    out.self_improve_prompt_context.includes("[agent_profile] Concise and natural"),
   );
   assert.ok(
     out.self_improve_prompt_context.includes(

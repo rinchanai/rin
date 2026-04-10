@@ -42,7 +42,7 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
   if (doc.status !== "active") score -= 8;
   if (
     doc.tags.includes(CHRONICLE_TAG) &&
-    !/(history|timeline|recent|之前|最近|刚才|发生)/i.test(query)
+    !/(history|timeline|recent|just now|what happened)/i.test(query)
   )
     score -= 1.4;
   return score;
@@ -155,7 +155,7 @@ export function relationScore(
 }
 
 export function shouldInjectRecentHistory(query: string): boolean {
-  return /(history|timeline|recent|what happened|why did we|之前|最近|刚才|发生了什么|历史|时间线)/i.test(
+  return /(history|timeline|recent|what happened|why did we|just now)/i.test(
     query,
   );
 }

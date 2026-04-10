@@ -5,7 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "rin local ci: docker 未安装，无法运行本地容器化提交检查。" >&2
+  echo "rin local ci: docker is not installed, so local containerized commit checks cannot run." >&2
   exit 1
 fi
 

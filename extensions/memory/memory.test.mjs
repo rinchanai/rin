@@ -33,7 +33,7 @@ test("memory transcripts archive entries under memory/transcripts", async () => 
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "user",
-        content: [{ type: "text", text: "铃酱会保存对话原文吗" }],
+        content: [{ type: "text", text: "Does Rin keep raw conversation transcripts?" }],
       },
       root,
     );
@@ -60,20 +60,20 @@ test("memory search returns archived transcript matches", async () => {
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "user",
-        content: [{ type: "text", text: "铃酱会保存对话原文吗" }],
+        content: [{ type: "text", text: "Does Rin keep raw conversation transcripts?" }],
       },
       root,
     );
 
     const results = await transcripts.searchTranscriptArchive(
-      "对话原文",
+      "raw conversation transcripts",
       { limit: 8 },
       root,
     );
     assert.ok(Array.isArray(results));
     assert.equal(results[0].sourceType, "transcript");
     assert.match(results[0].path, /2026[\\/]04[\\/]session-1\.jsonl$/);
-    assert.match(results[0].preview, /对话原文/);
+    assert.match(results[0].preview, /raw conversation transcripts/);
   });
 });
 

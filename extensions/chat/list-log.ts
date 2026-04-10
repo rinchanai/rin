@@ -80,13 +80,13 @@ export default function koishiListChatLogExtension(pi: ExtensionAPI) {
           ].join("\n");
       const userText = entries.length
         ? [
-            `聊天记录：${chatKey}`,
-            `日期：${date}`,
-            `路径：${filePath}`,
+            `Chat log: ${chatKey}`,
+            `Date: ${date}`,
+            `Path: ${filePath}`,
             "",
             body,
           ].join("\n")
-        : `没有找到聊天记录\nchatKey=${chatKey}\ndate=${date}\npath=${filePath}`;
+        : `No chat log found\nchatKey=${chatKey}\ndate=${date}\npath=${filePath}`;
       const prepared = await prepareToolTextOutput({
         agentText,
         userText,

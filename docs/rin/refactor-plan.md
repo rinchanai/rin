@@ -1,88 +1,88 @@
-# Rin 整理 / 重构总方案
+# Rin Refactor Plan
 
-> 目标：在不改变 Rin 核心功效的前提下，以第一性原理与 KISS 为准，系统性降低代码复杂度、架构耦合和设计重量。
+> Goal: reduce code complexity, architectural coupling, and design weight without changing Rin's core value, guided by first principles and KISS.
 
-## 1. 总体目标
+## 1. Core goal
 
-Rin 的第一性定义应明确为：
+Rin should be defined from first principles as:
 
-**Rin = 一个有长期记忆和后台执行能力的本地会话助手。**
+**Rin = a local session-based assistant with long-term memory and background execution.**
 
-围绕这个定义，Rin 真正的一等公民只有三类：
+Under that definition, Rin has only three true first-class concepts:
 
 - `session`
 - `memory`
 - `tasks`
 
-其余能力都应围绕这三者服务，而不是与之并列成为系统主轴。
+Everything else should serve those three concepts rather than compete with them as an equal system axis.
 
 ---
 
-## 2. 保留不动的关键设计决策
+## 2. Design decisions to keep
 
-以下方向已经正确，应保留并强化，而不是推倒重来：
+The following directions are already correct and should be reinforced rather than replaced.
 
-### 2.1 `src/app` / `src/core` 分层
+### 2.1 `src/app` and `src/core` layering
 
-当前的产品装配层与核心运行层分离思路正确：
+The current separation between product assembly and reusable core runtime is good:
 
-- `src/app/` 负责产品装配与可执行入口
-- `src/core/` 负责可复用、可独立运行的核心实现
+- `src/app/` handles product assembly and executable entrypoints
+- `src/core/` holds reusable, independently runnable core logic
 
-后续应继续强化这条边界。
+That boundary should be made even clearer over time.
 
-### 2.2 memory 以 markdown 为 source of truth
+### 2.2 Markdown-backed memory as the source of truth
 
-当前 memory 系统选择：
+The current memory design uses:
 
 - markdown + frontmatter
-- event ledger
+- an event ledger
 - lexical retrieval
-- relation graph
+- a relation graph
 
-这是符合 Rin 产品定位的轻量、可读、可维护方案，应继续保留。
+This stays aligned with Rin's product goals: lightweight, readable, and maintainable.
 
-### 2.3 daemon + worker pool + session 复用
+### 2.3 Daemon + worker pool + session reuse
 
-Rin 的长期运行能力依赖：
+Rin's long-running assistant behavior depends on:
 
-- daemon
-- worker pool
-- session 复用
+- a daemon
+- a worker pool
+- session reuse
 
-这一套是 Rin 区别于单次对话型 agent 的关键，不应轻易动摇。
+This is a core differentiator from one-shot agents and should remain stable.
 
-### 2.4 保留 SearXNG 搜索方案
+### 2.4 Keep the SearXNG search approach
 
-搜索能力目前由本地 SearXNG sidecar 支撑。虽然实现重量较高，但：
+Search is currently backed by a local SearXNG sidecar. Even if the implementation is somewhat heavy, it still has the right shape:
 
-- 职责边界单纯
-- 第三方替代不成熟
-- 自行重造轮子不符合 KISS
+- responsibilities are narrow
+- third-party alternatives are not mature enough
+- rebuilding it from scratch would violate KISS
 
-因此不替换搜索方案本体，只整理其外围架构。
+So the search solution itself stays; only its surrounding architecture should be simplified.
 
-### 2.5 scheduled tasks 作为内建能力
+### 2.5 Keep scheduled tasks as a builtin capability
 
-定时任务能力是 Rin 作为“长期助手”而不只是“聊天 agent”的关键特征，应继续保留并强化。
+Scheduled tasks are a key part of Rin being a long-running assistant rather than only a chat agent. This capability should stay builtin and become stronger.
 
 ---
 
-## 3. 设计层目标架构
+## 3. Target architecture
 
-建议将 Rin 重新收束为四层：
+Rin should be converged into four layers.
 
-## 3.1 Core Domain
+### 3.1 Core Domain
 
-真正核心层，只保留：
+The true core should contain only:
 
 - session runtime
 - memory store / retrieval
 - scheduled tasks
 
-## 3.2 Product Shell
+### 3.2 Product Shell
 
-产品壳层：
+The shell layer contains product-facing surfaces:
 
 - CLI
 - TUI
@@ -90,108 +90,108 @@ Rin 的长期运行能力依赖：
 - updater
 - doctor
 
-## 3.3 Capability Extensions
+### 3.3 Capability Extensions
 
-扩展能力层：
+The extension layer contains capabilities built around the core:
 
-- memory derivation（extractor / episode / onboarding）
+- memory derivation (extractor / episode / onboarding)
 - web-search tool
-- koishi tools
+- Koishi tools
 - subagent
-- attention resources 等
+- attention resources
 
-## 3.4 Infrastructure / Sidecars
+### 3.4 Infrastructure / Sidecars
 
-基础设施层：
+The infrastructure layer contains support systems:
 
 - daemon
 - worker pool
-- koishi bridge runtime
-- searxng sidecar
-- lock / state / process 管理
+- Koishi bridge runtime
+- SearXNG sidecar
+- lock / state / process management
 
-这四层的目标是：
+The intent of this four-layer split is simple:
 
-- 主轴只保留 session / memory / tasks
-- 其余能力从中枢地位回落为壳层、扩展层或基础设施层
+- keep `session / memory / tasks` as the main axis
+- move everything else into shell, extension, or infrastructure layers
 
 ---
 
-## 4. 需要减重和收边界的设计项
+## 4. Design areas that need simplification
 
-## 4.1 session 必须成为唯一核心对象
+### 4.1 Session must become the single core object
 
-### 现状问题
+#### Current problem
 
-当前多个模块都在直接管理 session 生命周期：
+Multiple modules currently manage session lifecycle directly:
 
 - daemon worker
 - cron
-- koishi
-- tui runtime
+- Koishi
+- TUI runtime
 - subagent
 
-这导致：
+That causes:
 
-- session 创建逻辑分散
-- 恢复/切换策略分散
-- 输出收集方式分散
-- 不同入口下行为容易出现微差异
+- scattered session creation logic
+- scattered restore/switch policy
+- scattered output collection
+- small behavior differences across entrypoints
 
-### 目标
+#### Target
 
-所有“跑一次 agent turn”的行为，都经过统一 session façade。
+Every flow that runs one agent turn should go through a unified session façade.
 
-### 建议结构
+#### Suggested structure
 
-新增统一层：
+Introduce a shared layer:
 
 - `src/core/session/factory.ts`
 - `src/core/session/runner.ts`
 - `src/core/session/binding.ts`
 
-统一负责：
+That layer should own:
 
-- 创建 session
-- 恢复 session
-- 绑定 session 文件/名称
-- prompt + wait for idle
-- 读取最终输出
-- 扩展绑定
+- creating sessions
+- restoring sessions
+- binding session files and names
+- prompt + wait-for-idle flow
+- reading final output
+- extension binding
 
-### 预期收益
+#### Expected benefit
 
-- session 成为真正主轴
-- cron / koishi / worker / tui 行为一致
-- 降低横向耦合
+- session becomes the real system axis
+- cron / Koishi / worker / TUI behave consistently
+- cross-module coupling is reduced
 
 ---
 
-## 4.2 memory 拆为 core 与 derivation 两层
+### 4.2 Split memory into core and derivation
 
-### 现状问题
+#### Current problem
 
-当前 memory 系统除存储与检索外，还承担：
+The memory system currently handles not only storage and retrieval, but also:
 
-- extractor
+- extractor logic
 - episode synthesis
 - onboarding / init
-- compile 逻辑
+- compile logic
 - event processing
-- relation graph
+- relation graph management
 
-问题不在 markdown，而在于 memory 逐渐膨胀成一个超级中枢。
+Markdown is not the problem. The problem is that memory is gradually becoming a super-center.
 
-### 目标
+#### Target
 
-将 memory 分成两层：
+Split memory into two layers.
 
 #### Memory Core
 
-负责：
+Responsible for:
 
-- markdown doc
-- frontmatter normalize
+- markdown docs
+- frontmatter normalization
 - event ledger
 - relation graph
 - retrieval
@@ -199,194 +199,194 @@ Rin 的长期运行能力依赖：
 
 #### Memory Derivation
 
-负责：
+Responsible for:
 
 - extractor
 - episode synthesis
 - onboarding / init
-- 未来其他总结/派生流程
+- future summarization / derivation flows
 
-### 建议目录
+#### Suggested directories
 
 - `extensions/memory/core/*`
 - `extensions/memory/derivation/*`
 
-### 预期收益
+#### Expected benefit
 
-- memory 本体保持稳定
-- 智能派生流程可独立演进
-- 避免所有“会理解历史的流程”都塞进同一后端文件
+- the memory core remains stable
+- intelligent derivation flows can evolve independently
+- history-aware processing stops accumulating inside one oversized backend file
 
 ---
 
-## 4.3 Koishi 从“重桥接子系统”降为 chat bridge adapter
+### 4.3 Reduce Koishi from a heavy subsystem to a chat bridge adapter
 
-### 现状问题
+#### Current problem
 
-当前 Koishi 相关代码同时承担：
+The current Koishi code handles too many concerns at once:
 
 - transport adapter
 - inbound persistence
-- reply / quote 关系
+- reply / quote relationships
 - trust / identity policy
 - session binding
 - outbox delivery
-- typing 状态
-- attachment 处理
+- typing state
+- attachment handling
 
-这使 Koishi 不再只是 bridge，而像一个大而全的聊天接入子系统。
+That makes Koishi look like a full messaging subsystem instead of a bridge.
 
-### 目标
+#### Target
 
-系统概念应从 `Koishi` 上升为 `Chat Bridge`。
+Promote the system concept from `Koishi` to `Chat Bridge`.
 
-Koishi 只是其中一种 adapter/runtime，而非系统主概念。
+Koishi should be treated as one adapter/runtime, not as the top-level concept.
 
-### 目标拆分
+#### Concept split
 
-拆为三个概念层：
+Split the design into three conceptual layers:
 
 - `chat-transport`
 - `chat-session-binding`
 - `chat-policy`
 
-Koishi 负责：
+Koishi should then focus on:
 
 - transport glue
-- 平台接入
-- 少量 adapter-specific 逻辑
+- platform integration
+- a small amount of adapter-specific logic
 
-### 预期收益
+#### Expected benefit
 
-- 降低 Koishi 对全局架构的占位
-- 权限策略、会话绑定、平台接入不再糊成一团
-- 后续 bridge 替换或扩展更自然
+- Koishi occupies less architectural space
+- policy, session binding, and platform integration stop being tangled together
+- future bridge replacement or expansion becomes much easier
 
 ---
 
-## 4.4 installer / updater 从“全能入口”拆为三段
+### 4.4 Split installer / updater from one all-in-one entry into three stages
 
-### 现状问题
+#### Current problem
 
-当前安装体系同时承担：
+The install system currently handles too many jobs together:
 
 - install
 - update
 - runtime publish
-- daemon service config
+- daemon service configuration
 - docs install
 - provider auth init
-- koishi config
+- Koishi config
 - target discovery
 - manifest maintenance
 
-问题不是功能多，而是边界过宽。
+The issue is not feature count, but excessively wide boundaries.
 
-### 目标
+#### Target
 
-将安装体系分为三段：
+Split installation concerns into three stages.
 
 #### bootstrap
 
-负责：
+Responsible for:
 
-- 安装 runtime
-- 写入 launcher
-- 准备运行目录
+- installing the runtime
+- writing launchers
+- preparing the runtime directory
 
 #### configure
 
-负责：
+Responsible for:
 
 - provider auth
-- 初始 settings
-- koishi config
+- initial settings
+- Koishi configuration
 
 #### operate
 
-负责：
+Responsible for:
 
 - update
 - doctor
 - repair
 - migrate
 
-### 预期收益
+#### Expected benefit
 
-- install / update / repair 不再混成一个动作
-- 结构更像产品而非大型脚本
-
----
-
-## 4.5 search 保留方案，只收边界
-
-### 结论
-
-搜索不替换，不重做，不试图自行发明轻量替代。
-
-### 只做这些调整
-
-- 视其为基础设施组件，而不是产品核心逻辑
-- sidecar 生命周期纳入统一管理模型
-- 将其复杂度约束在自身模块内部，不向全局扩散
-
-### 原则
-
-search 的问题不是“太重”，而是“实现重但职责单纯”。
-
-这类组件应：
-
-- 保留选型
-- 整理外围基础设施
-- 不进行概念级重写
+- install / update / repair are no longer mixed into one action
+- the system behaves more like a product and less like a large script
 
 ---
 
-## 5. 代码层核心改造项
+### 4.5 Keep search, narrow the boundaries
 
-## 5.1 彻底移除 jiti
+#### Conclusion
 
-### 目标
+Search should not be replaced, rebuilt, or reimagined as a custom lightweight alternative.
 
-统一运行模型：
+#### Only make these adjustments
 
-- 开发态也尽量通过构建产物运行
-- 安装态只运行 dist
-- 不再允许 source fallback 成为正式运行路径
+- treat search as infrastructure rather than product core logic
+- bring sidecar lifecycle under the shared management model
+- keep its complexity contained inside the search module instead of letting it leak globally
 
-### 需要完成的事情
+#### Principle
 
-- 将 `extensions/*` 纳入构建输出
-- `src/app/builtin-extensions.ts` 指向构建产物路径
-- `extensions/memory/lib.ts` 不再动态加载 `.ts`
-- `extensions/koishi-get-message/index.ts` 不再在 `src` / `dist` 间双找
-- `src/core/rin-lib/loader.ts` 去掉 jiti 相关逻辑
+The issue with search is not that it is too heavy. The issue is that implementation weight exists even though its responsibility is narrow.
 
-### 预期收益
+For components like this:
 
-- 运行边界统一
-- 安装包更稳定
-- 调试路径更清晰
-- 明显降低环境差异问题
+- keep the chosen solution
+- simplify surrounding infrastructure
+- avoid conceptual rewrites
 
 ---
 
-## 5.2 消灭 source / dist 混跑
+## 5. Core code-level refactors
 
-### 原则
+### 5.1 Remove jiti completely
 
-正式运行环境应只存在两种状态：
+#### Target
+
+Unify runtime behavior so that:
+
+- development also prefers built outputs where practical
+- installed runtimes execute only `dist`
+- source fallback is no longer an accepted production path
+
+#### Required work
+
+- include `extensions/*` in build output
+- point `src/app/builtin-extensions.ts` at built output paths
+- stop dynamic `.ts` loading in `extensions/memory/lib.ts`
+- stop dual `src` / `dist` lookup in `extensions/koishi-get-message/index.ts`
+- remove jiti-related logic from `src/core/rin-lib/loader.ts`
+
+#### Expected benefit
+
+- one runtime boundary
+- more stable installed packages
+- clearer debugging paths
+- fewer environment-specific problems
+
+---
+
+### 5.2 Eliminate source / dist mixed execution
+
+#### Principle
+
+The real runtime should exist in only two states:
 
 - dev build
 - installed dist runtime
 
-不应再出现“部分模块从 dist 运行，部分模块回退到 src 动态加载”的混合状态。
+There should no longer be a hybrid state where some modules run from `dist` while others fall back to dynamically loaded source files.
 
 ---
 
-## 5.3 抽公共 platform primitives
+### 5.3 Extract shared platform primitives
 
-### 建议新增目录
+#### Suggested directory
 
 - `src/core/platform/fs.ts`
 - `src/core/platform/process.ts`
@@ -394,7 +394,7 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 - `src/core/platform/lock.ts`
 - `src/core/platform/user-env.ts`
 
-### 统一收口的内容
+#### Shared utilities to converge
 
 - `safeString`
 - `ensureDir`
@@ -404,76 +404,76 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 - `sleep`
 - `shellQuote`
 - `runPrivileged`
-- 用户切换与目标用户 runtime env 构造
+- user switching and target-user runtime env construction
 
-### 预期收益
+#### Expected benefit
 
-- 消除重复基础设施实现
-- 不同模块行为更一致
-- 以后侧重“抽象复用”，而非继续复制粘贴
+- duplicated infrastructure disappears
+- behavior becomes more consistent across modules
+- future work shifts toward reusable abstractions instead of copy-paste
 
 ---
 
-## 5.4 抽 sidecar 公共层
+### 5.4 Extract a shared sidecar layer
 
-### 建议新增目录
+#### Suggested directory
 
 - `src/core/sidecar/registry.ts`
 - `src/core/sidecar/instance.ts`
 - `src/core/sidecar/lock.ts`
 - `src/core/sidecar/status.ts`
 
-### 适用对象
+#### Applies to
 
 - `src/core/rin-koishi/service.ts`
 - `src/core/rin-web-search/service.ts`
 
-### 统一内容
+#### Shared concerns
 
-- instance state 管理
-- lock 文件获取/释放
+- instance state management
+- lock acquisition / release
 - orphan cleanup
-- start / stop / status 模型
+- start / stop / status model
 
-### 预期收益
+#### Expected benefit
 
-- sidecar 生命周期管理一致化
-- 降低 Koishi / web-search 模块内部重复
-- 避免未来新增 sidecar 时继续复制相同模式
+- consistent sidecar lifecycle management
+- less duplicated logic inside Koishi and web-search modules
+- new sidecars stop inheriting the same repeated patterns
 
 ---
 
-## 5.5 给系统边界建立 schema
+### 5.5 Add schemas at system boundaries
 
-### 需要 schema 化的边界
+#### Boundaries that need schemas
 
 - RPC command / response
 - cron task record
-- koishi message record
+- Koishi message record
 - sidecar state
 - memory doc metadata
 
-### 原则
+#### Principle
 
-不追求厚重框架，只追求：
+Do not introduce a heavy framework. Aim only for:
 
-- 边界清晰
-- 输入可验证
-- 状态结构可演进
+- clear boundaries
+- validatable inputs
+- state shapes that can evolve safely
 
-### 预期收益
+#### Expected benefit
 
-- 降低“静默容错”导致的脏状态风险
-- 重构时更容易识别破坏面
-- 有利于 doctor / migrate / repair 能力演进
+- reduced dirty-state risk from silent tolerance
+- easier identification of breakage during refactors
+- stronger foundations for doctor / migrate / repair capabilities
 
 ---
 
-## 6. 超级文件拆分方案
+## 6. Big-file split plan
 
-## 6.1 `src/core/rin/main.ts`
+### 6.1 `src/core/rin/main.ts`
 
-建议拆分为：
+Split into:
 
 - `src/core/rin/cli.ts`
 - `src/core/rin/daemon-control.ts`
@@ -481,13 +481,11 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 - `src/core/rin/doctor.ts`
 - `src/core/rin/tmux.ts`
 
-并在拆分过程中清理当前遗留的未使用逻辑。
+Clean up currently unused leftover logic during the split.
 
----
+### 6.2 `src/core/rin-install/main.ts`
 
-## 6.2 `src/core/rin-install/main.ts`
-
-建议拆分为：
+Split into:
 
 - `install/interactive.ts`
 - `install/publish.ts`
@@ -499,11 +497,9 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 - `install/update-targets.ts`
 - `install/manifest.ts`
 
----
+### 6.3 `extensions/memory/store.ts`
 
-## 6.3 `extensions/memory/store.ts`
-
-建议拆分为：
+Split into:
 
 - `memory/core/schema.ts`
 - `memory/core/markdown.ts`
@@ -514,11 +510,9 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 - `memory/core/compile.ts`
 - `memory/core/actions.ts`
 
----
+### 6.4 `src/core/rin-koishi/main.ts`
 
-## 6.4 `src/core/rin-koishi/main.ts`
-
-建议拆分为：
+Split into:
 
 - `rin-koishi/controller.ts`
 - `rin-koishi/inbound.ts`
@@ -527,11 +521,9 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 - `rin-koishi/prompt-meta.ts`
 - `rin-koishi/policy.ts`
 
----
+### 6.5 `src/core/rin-tui/runtime.ts`
 
-## 6.5 `src/core/rin-tui/runtime.ts`
-
-建议拆分为：
+Split into:
 
 - `rin-tui/session-state.ts`
 - `rin-tui/remote-agent.ts`
@@ -541,154 +533,152 @@ search 的问题不是“太重”，而是“实现重但职责单纯”。
 
 ---
 
-## 7. 组件处理策略总表
+## 7. Component strategy table
 
-| 组件                   | 策略   | 说明                                            |
-| ---------------------- | ------ | ----------------------------------------------- |
-| session                | 强化   | 成为唯一核心对象                                |
-| memory store           | 强化   | 保留 markdown 本体，只拆职责                    |
-| memory derivation      | 减重   | extractor / episode / onboarding 从 core 中拆出 |
-| koishi bridge          | 减重   | 从重子系统收束为 chat bridge adapter            |
-| installer / updater    | 减重   | 从全能入口拆为多阶段模型                        |
-| search / SearXNG       | 收边界 | 保留选型，只治理生命周期与重复基础设施          |
-| jiti / source fallback | 删除   | 纯运行边界负债，直接砍掉                        |
-
----
-
-## 8. 推荐实施顺序
-
-## 阶段 1：先打基础，不改产品行为
-
-### 目标
-
-降低后续重构风险。
-
-### 任务
-
-1. 给关键边界补 characterization tests
-2. schema 化 RPC / cron / sidecar state
-3. 抽 platform primitives
-4. 抽 sidecar primitives
-
-### 结果
-
-后续拆文件和改结构时更稳。
+| Component                | Strategy  | Notes |
+| ------------------------ | --------- | ----- |
+| session                  | reinforce | make it the single core object |
+| memory store             | reinforce | keep markdown as the base, only split responsibilities |
+| memory derivation        | simplify  | move extractor / episode / onboarding out of core |
+| Koishi bridge            | simplify  | converge from a heavy subsystem into a chat bridge adapter |
+| installer / updater      | simplify  | split the all-in-one entry into staged flows |
+| search / SearXNG         | bound     | keep the solution, only manage lifecycle and repeated infrastructure |
+| jiti / source fallback   | remove    | pure runtime-boundary debt |
 
 ---
 
-## 阶段 2：清运行边界
+## 8. Recommended implementation order
 
-### 目标
+### Phase 1: Build foundations without changing product behavior
 
-移除 jiti，消灭 source / dist 混跑。
+#### Goal
 
-### 任务
+Reduce risk for later refactors.
 
-1. 扩展进入 build
-2. 所有 runtime 只跑 dist
-3. 移除 source fallback
-4. 删除 jiti 依赖链
+#### Tasks
 
-### 结果
+1. Add characterization tests to key boundaries
+2. Add schemas for RPC / cron / sidecar state
+3. Extract platform primitives
+4. Extract sidecar primitives
 
-系统运行模型统一。
+#### Result
 
----
-
-## 阶段 3：拆大文件，收硬边界
-
-### 目标
-
-显著降低维护复杂度。
-
-### 任务
-
-1. 拆 `src/core/rin/main.ts`
-2. 拆 `src/core/rin-install/main.ts`
-3. 拆 `extensions/memory/store.ts`
-4. 拆 `src/core/rin-koishi/main.ts`
-5. 拆 `src/core/rin-tui/runtime.ts`
-
-### 结果
-
-代码结构开始真实反映设计结构。
+Later file splits and structural changes become safer.
 
 ---
 
-## 阶段 4：做概念级重构
+### Phase 2: Clean runtime boundaries
 
-### 目标
+#### Goal
 
-让系统真正符合第一性定义。
+Remove jiti and eliminate source / dist mixed execution.
 
-### 任务
+#### Tasks
 
-1. 落地 session façade
-2. 落地 memory core / derivation 分层
-3. 落地 chat bridge 模型
-4. 落地 installer 三段模型
+1. Build extensions into artifacts
+2. Run all runtime paths from `dist`
+3. Remove source fallbacks
+4. Delete the jiti dependency chain
 
-### 结果
+#### Result
 
-Rin 从“整理后的代码库”进化为“设计清楚的长期产品”。
-
----
-
-## 9. 可立即开始的执行项
-
-建议优先开工顺序如下：
-
-### 第一批
-
-1. 移除 jiti 的完整路线图
-2. 扩展构建产物化
-3. 抽 `platform/fs` 与 `platform/process`
-4. 清理并拆分 `src/core/rin/main.ts`
-
-### 第二批
-
-5. 抽 sidecar 基础层
-6. 拆 `src/core/rin-install/main.ts`
-7. 拆 `extensions/memory/store.ts`
-
-### 第三批
-
-8. 落地统一 session façade
-9. 重构 koishi 为 chat bridge 结构
-10. 整理 memory derivation
+The runtime model becomes uniform.
 
 ---
 
-## 10. 最终目标状态
+### Phase 3: Split large files and establish harder boundaries
 
-整理完成后的 Rin，应满足以下标准：
+#### Goal
 
-### 运行上
+Reduce maintenance complexity in a visible way.
 
-- 安装态只运行 dist
-- 无 source fallback
-- 无 jiti
-- sidecar 生命周期统一
+#### Tasks
 
-### 代码上
+1. Split `src/core/rin/main.ts`
+2. Split `src/core/rin-install/main.ts`
+3. Split `extensions/memory/store.ts`
+4. Split `src/core/rin-koishi/main.ts`
+5. Split `src/core/rin-tui/runtime.ts`
 
-- 无超级文件
-- 公共基础设施不重复
-- 核心边界具备 schema
-- session 相关逻辑集中
+#### Result
 
-### 设计上
-
-- session 是唯一主对象
-- memory store 与智能派生分离
-- koishi 是 bridge，不是中枢
-- installer / updater 职责分明
-- search 保持稳定，不瞎折腾
+The code structure starts to match the design structure.
 
 ---
 
-## 11. 一句话总结
+### Phase 4: Do concept-level refactors
 
-本次整理的核心不是“重写 Rin”，而是：
+#### Goal
 
-**把已经正确的产品方向保留下来，把历史累积的运行边界混乱、重复基础设施、超级文件和组件过重问题系统性清掉。**
+Make the system actually match its first-principles definition.
+
+#### Tasks
+
+1. Land the session façade
+2. Land the memory core / derivation split
+3. Land the chat bridge model
+4. Land the three-stage installer model
+
+#### Result
+
+Rin evolves from a cleaned-up codebase into a clearly designed long-term product.
+
+---
+
+## 9. Work that can start immediately
+
+### First batch
+
+1. Full jiti removal roadmap
+2. Build extensions into artifacts
+3. Extract `platform/fs` and `platform/process`
+4. Clean up and split `src/core/rin/main.ts`
+
+### Second batch
+
+5. Extract the sidecar base layer
+6. Split `src/core/rin-install/main.ts`
+7. Split `extensions/memory/store.ts`
+
+### Third batch
+
+8. Land the unified session façade
+9. Refactor Koishi into a chat bridge structure
+10. Clean up memory derivation
+
+---
+
+## 10. Final target state
+
+After the cleanup, Rin should meet these standards.
+
+### Runtime
+
+- installed runtimes execute only `dist`
+- no source fallback
+- no jiti
+- unified sidecar lifecycle management
+
+### Code
+
+- no superfiles
+- no duplicated shared infrastructure
+- schema-backed core boundaries
+- concentrated session logic
+
+### Design
+
+- session is the only main object
+- memory store and intelligent derivation are separated
+- Koishi is a bridge, not a center
+- installer / updater responsibilities are clear
+- search remains stable and is not over-reworked
+
+---
+
+## 11. One-sentence summary
+
+The point of this cleanup is not to rewrite Rin.
+
+**It is to preserve the product direction that is already correct while systematically removing accumulated runtime-boundary confusion, duplicated infrastructure, superfiles, and overweight components.**

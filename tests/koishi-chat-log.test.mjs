@@ -42,15 +42,15 @@ test("koishi chat log appends into unified message store and reads one day chat 
       nickname: "Alice",
       trust: "OWNER",
       chatName: "Demo Chat",
-      text: "早上好",
-      rawContent: "早上好",
-      strippedContent: "早上好",
+      text: "Good morning",
+      rawContent: "Good morning",
+      strippedContent: "Good morning",
     });
     chatLog.appendKoishiChatLog(root, {
       timestamp: "2026-04-04T12:00:00.000Z",
       chatKey: "telegram/123:456",
       role: "user",
-      text: "早上好",
+      text: "Good morning",
       messageId: "m1",
       nickname: "Alice",
     });
@@ -64,9 +64,9 @@ test("koishi chat log appends into unified message store and reads one day chat 
       chatId: "456",
       chatType: "private",
       receivedAt: "2026-04-04T12:00:05.000Z",
-      text: "早上好呀",
-      rawContent: "早上好呀",
-      strippedContent: "早上好呀",
+      text: "Good morning!",
+      rawContent: "Good morning!",
+      strippedContent: "Good morning!",
     });
 
     const stored = messageStore.getKoishiMessage(
@@ -86,6 +86,6 @@ test("koishi chat log appends into unified message store and reads one day chat 
     );
     assert.match(filePath, /koishi-message-store[\\/]chat-log-view[\\/]/);
     assert.equal(entries.length, 2);
-    assert.match(chatLog.formatKoishiChatLog(entries), /assistant: 早上好呀/);
+    assert.match(chatLog.formatKoishiChatLog(entries), /assistant: Good morning!/);
   });
 });

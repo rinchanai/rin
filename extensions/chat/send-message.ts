@@ -165,10 +165,10 @@ function formatPartForAgent(part: KoishiMessagePart) {
 }
 
 function formatPartForUser(part: KoishiMessagePart) {
-  if (part.type === "text") return `- 文本（${part.text.length} 字符）`;
+  if (part.type === "text") return `- Text (${part.text.length} chars)`;
   if (part.type === "at") return `- @ ${part.name || part.id}`;
-  if (part.type === "image") return `- 图片：${part.path || part.url || ""}`;
-  return `- 文件：${part.path || part.url || ""}${part.name ? `（${part.name}）` : ""}`;
+  if (part.type === "image") return `- Image: ${part.path || part.url || ""}`;
+  return `- File: ${part.path || part.url || ""}${part.name ? ` (${part.name})` : ""}`;
 }
 
 export default function koishiSendMessageExtension(pi: ExtensionAPI) {
@@ -262,10 +262,10 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       const prepared = await prepareToolTextOutput({
         agentText,
         userText: [
-          `已发送到聊天：${chatKey}`,
-          `消息片段共 ${parts.length} 个：`,
+          `Sent to chat: ${chatKey}`,
+          `${parts.length} message part(s):`,
           ...parts.map((part) => formatPartForUser(part)),
-          `请求 ID：${requestId}`,
+          `Request ID: ${requestId}`,
         ].join("\n"),
         tempPrefix: "rin-koishi-send-",
         filename: "koishi-send.txt",
