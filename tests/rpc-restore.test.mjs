@@ -37,7 +37,9 @@ test("rpc restore reattaches once and avoids duplicate restore work", async () =
       refreshes.push(flags);
       await refreshGate;
     },
+    restoreInterruptedTurnIfNeeded: async () => {},
     restoreResumeSent: false,
+    rpcStatusMessage: "",
     queuedOfflineOps: [],
     sendOrQueue: async () => {
       throw new Error("should_not_send_queued_ops");
@@ -81,7 +83,9 @@ test("rpc restore flushes queued offline ops after reattach", async () => {
       return {};
     },
     refreshState: async () => {},
+    restoreInterruptedTurnIfNeeded: async () => {},
     restoreResumeSent: false,
+    rpcStatusMessage: "",
     queuedOfflineOps: [
       { mode: "prompt", message: "queued-1" },
       { mode: "follow_up", message: "queued-2" },
@@ -131,7 +135,10 @@ test("rpc restore retries an interrupted tool turn when the daemon came back idl
       calls.push({ type: "resume_interrupted_turn", payload: options });
     },
     shouldRetryInterruptedTurn: () => true,
+    restoreInterruptedTurnIfNeeded:
+      RpcInteractiveSession.prototype.restoreInterruptedTurnIfNeeded,
     restoreResumeSent: false,
+    rpcStatusMessage: "",
     queuedOfflineOps: [],
     sendOrQueue: async () => {},
     isStreaming: false,
