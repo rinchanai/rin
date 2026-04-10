@@ -120,6 +120,49 @@ test("rin_status end keeps active work in working state", async () => {
   assert.equal(renders, 1);
 });
 
+test("rin_status end keeps waiting-daemon state while reconnect is still unresolved", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let stopped = 0;
+  let startedWith;
+  const interactiveModeModule = await import(
+    pathToFileURL(
+      path.join(
+        rootDir,
+        "third_party",
+        "pi-coding-agent",
+        "dist",
+        "modes",
+        "interactive",
+        "interactive-mode.js",
+      ),
+    ).href
+  );
+
+  const instance = {
+    defaultWorkingMessage: "Working...",
+    session: { isStreaming: true, isCompacting: false, daemonUnavailable: true },
+    ui: { requestRender() {} },
+    startWorkingAnimation(message) {
+      startedWith = message;
+    },
+    stopWorkingAnimation() {
+      stopped += 1;
+    },
+  };
+
+  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    {
+      type: "rin_status",
+      phase: "end",
+    },
+  );
+
+  assert.equal(stopped, 0);
+  assert.equal(startedWith, "Waiting daemon...");
+});
+
 test("rin_status restores working after reconnect when work remains active", async () => {
   await overrides.applyRinTuiOverrides();
 
