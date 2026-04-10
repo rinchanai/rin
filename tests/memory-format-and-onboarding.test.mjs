@@ -25,7 +25,7 @@ test("self-improve format builds compact compiled prompt", () => {
         name: "Agent Profile",
         self_improve_prompt_slot: "agent_profile",
         path: "/tmp/agent_profile.md",
-        content: "简洁",
+        content: "Concise",
       },
     ],
   });

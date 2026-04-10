@@ -81,13 +81,13 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
         agentText,
         userText: matches.length
           ? [
-              "找到这些消息：",
+              "Found these messages:",
               ...matches.map(
                 (item: any, index: number) =>
                   `${index + 1}.\n${summarizeKoishiMessageRecord(item)}`,
               ),
             ].join("\n\n")
-          : `未找到消息：${messageId}${chatKey ? `（chatKey=${chatKey}）` : ""}`,
+          : `Message not found: ${messageId}${chatKey ? ` (chatKey=${chatKey})` : ""}`,
         tempPrefix: "rin-koishi-message-",
         filename: "koishi-message.txt",
       });

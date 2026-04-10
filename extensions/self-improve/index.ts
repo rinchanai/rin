@@ -310,8 +310,8 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         usage,
         agentText: slot ? `${message}\nslot=${slot}\nusage=${usage}` : message,
         userText: slot
-          ? `Self-improve prompt 操作失败：${message}\nusage=${usage}`
-          : `Self-improve prompt 操作失败：${message}`,
+          ? `Self-improve prompt operation failed: ${message}\nusage=${usage}`
+          : `Self-improve prompt operation failed: ${message}`,
       },
       isError: true,
     };

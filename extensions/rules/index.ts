@@ -131,13 +131,13 @@ function formatUserText(details: {
   skillCount: number;
   error?: string;
 }) {
-  if (details.error) return `无法读取目录规则：${details.error}`;
-  if (!details.prompt) return `在 ${details.targetDir} 下没有找到目录规则。`;
+  if (details.error) return `Failed to read directory rules: ${details.error}`;
+  if (!details.prompt) return `No directory rules found under ${details.targetDir}.`;
   return [
-    `已整理 ${details.targetDir} 的目录级规则：`,
-    `- 上级 AGENTS/CLAUDE：${details.contextPaths.length} 个`,
-    `- skills 目录：${details.skillDirs.length} 个`,
-    `- skills 条目：${details.skillCount} 个`,
+    `Directory rules collected for ${details.targetDir}:`,
+    `- Parent AGENTS/CLAUDE files: ${details.contextPaths.length}`,
+    `- Skill directories: ${details.skillDirs.length}`,
+    `- Skill entries: ${details.skillCount}`,
   ].join("\n");
 }
 
