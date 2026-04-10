@@ -76,3 +76,39 @@ test("memory search returns archived transcript matches", async () => {
     assert.match(results[0].preview, /对话原文/);
   });
 });
+
+test("memory can browse recent sessions without a query", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-04T11:11:11.000Z",
+        sessionId: "session-1",
+        sessionFile: "/tmp/session-1.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "这是较早的一次会话" }],
+      },
+      root,
+    );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-05T12:22:22.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "user",
+        content: [{ type: "text", text: "这是最近的一次会话" }],
+      },
+      root,
+    );
+
+    const results = await transcripts.loadRecentTranscriptSessions(
+      { limit: 2 },
+      root,
+    );
+    assert.ok(Array.isArray(results));
+    assert.equal(results.length, 2);
+    assert.equal(results[0].sourceType, "session");
+    assert.equal(results[0].sessionId, "session-2");
+    assert.match(results[0].preview, /最近/);
+    assert.equal(results[1].sessionId, "session-1");
+  });
+});
