@@ -730,6 +730,8 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
+    this.isStreaming = false;
+    this.activeTurn = null;
     emitConnectionLost(this as any);
   }
 

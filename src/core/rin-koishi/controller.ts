@@ -22,8 +22,9 @@ import {
 
 const INTERIM_PREFIX = "··· ";
 const INTERIM_MIN_INTERVAL_MS = 1500;
-const DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS = 10_000;
-const DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS = 30_000;
+const DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS = 60_000;
+const DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS = 60_000;
+const KOISHI_WORKING_PROGRESS_TEXT = "Working";
 const DEFAULT_TOOL_INPUT_PREVIEW_CHARS = 160;
 
 export type KoishiIdleToolProgressConfig = {
@@ -181,7 +182,6 @@ export class KoishiChatController {
   interimText = "";
   interimSentText = "";
   interimSentAt = 0;
-  pendingCompletedAssistantText = "";
   latestAssistantText = "";
   logger: any;
   h: any;
@@ -250,11 +250,10 @@ export class KoishiChatController {
         case "agent_start":
           this.interimText = "";
           this.interimSentText = "";
-          this.pendingCompletedAssistantText = "";
           this.latestAssistantText = "";
           this.lastVisibleProgressAt = Date.now();
           this.lastIdleToolProgressAt = 0;
-          this.lastToolCallSummary = "";
+          this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
           this.scheduleIdleToolProgress();
           break;
         case "message_update":
@@ -269,24 +268,16 @@ export class KoishiChatController {
           const finalText = extractTextFromContent(event.message.content);
           if (finalText) {
             this.latestAssistantText = finalText;
-            this.pendingCompletedAssistantText = finalText;
           }
           break;
         }
         case "tool_execution_start":
-          this.lastToolCallSummary = summarizeKoishiToolCall(
-            safeString(event?.toolName).trim(),
-            event?.args,
-          );
+          this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
           this.scheduleIdleToolProgress();
-          if (this.pendingCompletedAssistantText)
-            void this.flushInterim().catch(() => {});
           break;
         case "tool_execution_end":
         case "compaction_start":
         case "compaction_end":
-          if (this.pendingCompletedAssistantText)
-            void this.flushInterim().catch(() => {});
           break;
         case "agent_end":
           this.clearIdleToolProgressTimer();
@@ -394,22 +385,13 @@ export class KoishiChatController {
       .catch(() => {});
     return true;
   }
-  async flushInterim(force = false) {
-    const text = safeString(this.pendingCompletedAssistantText || "").trim();
-    if (!text) return;
-    this.pendingCompletedAssistantText = "";
-    await this.emitProgressText(text, {
-      force,
-      minIntervalMs: INTERIM_MIN_INTERVAL_MS,
-    });
-  }
   async handleIdleToolProgressTick(now = Date.now()) {
     this.idleToolProgressTimer = null;
     if (!this.deliveryEnabled) return;
-    const summary = safeString(this.lastToolCallSummary).trim();
+    const summary = safeString(this.lastToolCallSummary).trim() || KOISHI_WORKING_PROGRESS_TEXT;
     const intervalMs = this.idleToolProgressIntervalMs();
-    if (!summary) {
-      this.scheduleIdleToolProgress();
+    if (!this.session?.isStreaming) {
+      this.clearIdleToolProgressTimer();
       return;
     }
     const lastActivityAt = Math.max(this.lastVisibleProgressAt, this.lastIdleToolProgressAt);
@@ -684,7 +666,19 @@ export class KoishiChatController {
     if (!this.state.processing) return;
     await this.connect();
     if (!this.session) return;
-    const currentLastUser = [...(this.session.messages || [])]
+    const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
+    const lastUserIndex = [...messages]
+      .map((message: any, index: number) => ({ message, index }))
+      .reverse()
+      .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
+    const lastAssistantAfterUser = messages
+      .slice(lastUserIndex + 1)
+      .reverse()
+      .find((message: any) => message?.role === "assistant");
+    const deliveredCompletedText = extractTextFromContent(
+      lastAssistantAfterUser?.content,
+    );
+    const currentLastUser = [...messages]
       .reverse()
       .find((message: any) => message?.role === "user");
     const lastUserText = extractTextFromContent(currentLastUser?.content);
@@ -693,6 +687,15 @@ export class KoishiChatController {
       safeString(lastUserText).trim() ===
       safeString(buildPromptText(pending.text, pending.attachments)).trim();
     this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
+    if (deliveredCompletedText && !this.session.isStreaming) {
+      this.latestAssistantText = deliveredCompletedText;
+      delete this.state.processing;
+      this.saveState();
+      await this.deliverFinalAssistantText(
+        safeString(pending.replyToMessageId || "").trim(),
+      );
+      return;
+    }
     if (shouldResumeInternally) {
       const tag = this.nextRequestTag();
       this.activeTag = tag;
