@@ -12,11 +12,16 @@ const execMod = await import(
     path.join(rootDir, "dist", "core", "rin-daemon", "cron-execution.js"),
   ).href
 );
+const cronMod = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-daemon", "cron.js"),
+  ).href
+);
 
 test("cron execution resolves session file preference", async () => {
   assert.equal(
     await execMod.resolveCronSessionFile({
-      session: { mode: "specific", sessionFile: "/tmp/a" },
+      session: { mode: "current", sessionFile: "/tmp/a" },
     }),
     "/tmp/a",
   );
@@ -26,6 +31,22 @@ test("cron execution resolves session file preference", async () => {
       dedicatedSessionFile: "/tmp/b",
     }),
     "/tmp/b",
+  );
+});
+
+test("cron scheduler rejects removed specific session mode", () => {
+  const scheduler = new cronMod.CronScheduler({
+    agentDir: "/tmp/rin-agent",
+    cwd: process.cwd(),
+  });
+  assert.throws(
+    () =>
+      scheduler.upsertTask({
+        trigger: { kind: "once", runAt: "2026-04-10T00:00:00.000Z" },
+        session: { mode: "specific", sessionFile: "/tmp/a" },
+        target: { kind: "agent_prompt", prompt: "hello" },
+      }),
+    /cron_invalid_session_mode:specific/,
   );
 });
 

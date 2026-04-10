@@ -87,11 +87,7 @@ function buildTaskForSave(
 ) {
   const taskId = String(input?.id || "").trim() || createTaskId();
   const taskName = String(input?.name || "").trim() || undefined;
-  const session =
-    input?.session ||
-    (defaults.currentSessionFile
-      ? { mode: "current", sessionFile: defaults.currentSessionFile }
-      : { mode: "dedicated" });
+  const session = input?.session || { mode: "dedicated" };
   const chatKey =
     input?.chatKey !== undefined ? input.chatKey : defaults.currentChatKey;
   const target =
@@ -255,14 +251,14 @@ const taskSchema = Type.Object({
   ),
   session: Type.Optional(
     Type.Object({
-      mode: StringEnum(["current", "dedicated", "specific"] as const, {
+      mode: StringEnum(["current", "dedicated"] as const, {
         description:
-          "Session binding mode. Allowed values: `current`, `dedicated`, or `specific`.",
+          "Session binding mode. Allowed values: `current` or `dedicated`.",
       }),
       sessionFile: Type.Optional(
         Type.String({
           description:
-            "Required for mode=specific. Optional override for mode=current.",
+            "Optional override when mode=current. Ignored for mode=dedicated.",
         }),
       ),
     }),

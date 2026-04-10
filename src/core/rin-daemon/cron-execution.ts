@@ -7,7 +7,14 @@ import type { CronTaskRecord } from "./cron.js";
 
 export async function sendKoishiText(
   agentDir: string,
-  payload: { chatKey: string; taskId: string; runId: string; text: string },
+  payload: {
+    chatKey: string;
+    taskId: string;
+    runId: string;
+    text: string;
+    sessionId?: string;
+    sessionFile?: string;
+  },
 ) {
   await deliverKoishiRpcPayload(agentDir, {
     type: "text_delivery",
@@ -17,10 +24,11 @@ export async function sendKoishiText(
 }
 
 export async function resolveCronSessionFile(task: CronTaskRecord) {
-  if (task.session.mode === "specific" || task.session.mode === "current")
-    return task.session.sessionFile;
-  if (task.dedicatedSessionFile) return task.dedicatedSessionFile;
-  return undefined;
+  if (task.session.mode === "current") return task.session.sessionFile;
+  if (task.session.mode === "dedicated") return task.dedicatedSessionFile;
+  throw new Error(
+    `cron_invalid_session_mode:${String((task.session as any)?.mode || "unknown")}`,
+  );
 }
 
 export async function executeCronShellTask(
@@ -81,10 +89,13 @@ export async function executeCronAgentTask(
   if (task.session.mode === "dedicated" && result.sessionFile)
     task.dedicatedSessionFile = result.sessionFile;
   const finalText = summarizeText(result.finalText, 4000);
-  return (
-    finalText ||
-    `Scheduled agent turn finished in session ${result.sessionFile || "(ephemeral)"}`
-  );
+  return {
+    text:
+      finalText ||
+      `Scheduled agent turn finished in session ${result.sessionFile || "(ephemeral)"}`,
+    sessionId: result.sessionId,
+    sessionFile: result.sessionFile,
+  };
 }
 
 export async function executeCronTask(
@@ -97,17 +108,23 @@ export async function executeCronTask(
 ) {
   const runId = cronTaskRunId(task);
   try {
-    const result =
+    const result: {
+      text: string;
+      sessionId?: string;
+      sessionFile?: string;
+    } =
       task.target.kind === "shell_command"
-        ? await executeCronShellTask(task, options.cwd)
+        ? { text: await executeCronShellTask(task, options.cwd) }
         : await executeCronAgentTask(task, options);
-    task.lastResultText = result;
-    if (task.chatKey && result) {
+    task.lastResultText = result.text;
+    if (task.chatKey && result.text) {
       await sendKoishiText(options.agentDir, {
         chatKey: task.chatKey,
         taskId: task.id,
         runId,
-        text: result,
+        text: result.text,
+        sessionId: result.sessionId,
+        sessionFile: result.sessionFile,
       }).catch(() => {});
     }
   } catch (error: any) {

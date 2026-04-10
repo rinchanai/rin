@@ -20,8 +20,11 @@ export async function runSessionPrompt(options: {
       safeString(
         session.sessionFile || session.sessionManager?.getSessionFile?.() || "",
       ).trim() || undefined;
+    const sessionId =
+      safeString(session.sessionId || session.sessionManager?.getSessionId?.() || "").trim() ||
+      undefined;
     const finalText = safeString(session.getLastAssistantText?.() || "").trim();
-    return { session, sessionFile, finalText };
+    return { session, sessionFile, sessionId, finalText };
   } finally {
     try {
       await session.abort();
