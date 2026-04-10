@@ -361,7 +361,7 @@ export class RpcInteractiveSession {
   }
 
   async listSessions(
-    scope: "cwd" | "all" = "cwd",
+    scope: "all" = "all",
     _onProgress?: (loaded: number, total: number) => void,
   ) {
     if (!this.client.isConnected()) {
@@ -466,7 +466,7 @@ export class RpcInteractiveSession {
     if (trimmed.startsWith("/resume ")) {
       const wanted = trimmed.slice("/resume ".length).trim();
       if (wanted) {
-        const sessions = await this.listSessions("cwd");
+        const sessions = await this.listSessions("all");
         const match = sessions.find(
           (item: any) => String(item?.id || "") === wanted,
         );

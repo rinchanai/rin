@@ -157,10 +157,10 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
         description: "Target directory path, relative or absolute",
       }),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const targetPath = normalizeInputPath(
         String((params as any).path || ""),
-        ctx.cwd,
+        "",
       );
       let stats;
       try {

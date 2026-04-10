@@ -444,10 +444,7 @@ export async function runCustomRpcMode(
           (value) => ({ text: value.selectedText, cancelled: value.cancelled }),
         );
       case "list_sessions": {
-        const sessions = await SessionManager.list(
-          session.sessionManager.getCwd(),
-          session.sessionManager.getSessionDir(),
-        );
+        const sessions = await SessionManager.listAll();
         return done(id, type, { sessions });
       }
       case "set_model": {
