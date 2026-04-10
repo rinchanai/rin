@@ -9,7 +9,11 @@ const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
 );
-const { KoishiChatController } = await import(
+const {
+  KoishiChatController,
+  normalizeKoishiIdleToolProgressConfig,
+  summarizeKoishiToolCall,
+} = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-koishi", "controller.js"),
   ).href
@@ -136,4 +140,78 @@ test("koishi controller reattaches saved session file before bootstrapping a det
     "ensureSessionReady",
   ]);
   assert.equal(controller.state.piSessionFile, "/tmp/saved-chat.jsonl");
+});
+
+test("koishi controller summarizes idle tool progress with compact tool input", () => {
+  assert.equal(
+    summarizeKoishiToolCall("bash", { command: "npm test -- --watch=false" }),
+    "bash npm test -- --watch=false",
+  );
+  assert.equal(
+    summarizeKoishiToolCall("read", {
+      path: "/tmp/demo.txt",
+      offset: 5,
+      limit: 10,
+    }),
+    "read /tmp/demo.txt:5-14",
+  );
+  assert.equal(
+    summarizeKoishiToolCall("edit", {
+      path: "/tmp/demo.txt",
+      edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }],
+    }),
+    "edit /tmp/demo.txt (2 edits)",
+  );
+});
+
+test("koishi controller idle tool progress intervals default to private 10s and group 30s and stay configurable", () => {
+  assert.deepEqual(normalizeKoishiIdleToolProgressConfig({}), {
+    privateIntervalMs: 10000,
+    groupIntervalMs: 30000,
+  });
+  assert.deepEqual(
+    normalizeKoishiIdleToolProgressConfig({
+      koishi: {
+        idleToolProgress: {
+          privateIntervalMs: 15000,
+          groupIntervalMs: 45000,
+        },
+      },
+    }),
+    {
+      privateIntervalMs: 15000,
+      groupIntervalMs: 45000,
+    },
+  );
+});
+
+test("koishi controller emits idle tool progress only after a quiet interval", async () => {
+  const controller = await createController("telegram/1:2");
+  controller.idleToolProgressConfig = {
+    privateIntervalMs: 10000,
+    groupIntervalMs: 30000,
+  };
+  controller.lastToolCallSummary = "bash echo hello";
+  controller.lastVisibleProgressAt = 1000;
+  controller.lastIdleToolProgressAt = 0;
+
+  const sent = [];
+  controller.emitProgressText = async (text) => {
+    sent.push(text);
+    controller.lastVisibleProgressAt = 12000;
+    return true;
+  };
+  controller.scheduleIdleToolProgress = () => {};
+
+  await controller.handleIdleToolProgressTick(9000);
+  assert.deepEqual(sent, []);
+
+  await controller.handleIdleToolProgressTick(11000);
+  assert.deepEqual(sent, ["bash echo hello"]);
+
+  await controller.handleIdleToolProgressTick(19000);
+  assert.deepEqual(sent, ["bash echo hello"]);
+
+  await controller.handleIdleToolProgressTick(22050);
+  assert.deepEqual(sent, ["bash echo hello", "bash echo hello"]);
 });

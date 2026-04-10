@@ -3,7 +3,7 @@ import path from "node:path";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { readJsonFile, writeJsonFile } from "./support.js";
+import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
   SavedAttachment,
@@ -23,6 +23,135 @@ import {
 const INTERIM_PREFIX = "··· ";
 const TYPING_INTERVAL_MS = 4000;
 const INTERIM_MIN_INTERVAL_MS = 1500;
+const DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS = 10_000;
+const DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS = 30_000;
+const DEFAULT_TOOL_INPUT_PREVIEW_CHARS = 160;
+
+export type KoishiIdleToolProgressConfig = {
+  privateIntervalMs: number;
+  groupIntervalMs: number;
+};
+
+function normalizeIntervalMs(value: unknown, fallback: number) {
+  const next = Number(value);
+  if (!Number.isFinite(next) || next <= 0) return fallback;
+  return Math.max(1000, Math.floor(next));
+}
+
+function shortenPreview(value: unknown, maxChars = DEFAULT_TOOL_INPUT_PREVIEW_CHARS) {
+  const text = safeString(value).replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
+}
+
+function summarizeGenericArgs(args: any) {
+  if (args == null) return "";
+  if (typeof args === "string") return shortenPreview(args);
+  if (Array.isArray(args)) return `${args.length} item${args.length === 1 ? "" : "s"}`;
+  if (typeof args !== "object") return shortenPreview(String(args));
+  const preferredKeys = [
+    "path",
+    "file_path",
+    "command",
+    "url",
+    "q",
+    "query",
+    "text",
+    "messageId",
+    "chatKey",
+    "date",
+    "slot",
+    "name",
+    "expression",
+    "runAt",
+  ];
+  const ignoredKeys = new Set([
+    "content",
+    "oldText",
+    "newText",
+    "edits",
+    "parts",
+    "data",
+    "images",
+    "attachments",
+    "baseContent",
+    "prompt",
+    "command",
+    "text",
+  ]);
+  const parts: string[] = [];
+  for (const key of preferredKeys) {
+    const value = (args as any)?.[key];
+    if (value == null) continue;
+    const preview = shortenPreview(value, key === "command" || key === "text" ? 120 : 80);
+    if (!preview) continue;
+    parts.push(key === "path" || key === "file_path" || key === "command" || key === "url" || key === "q" || key === "query" || key === "text" ? preview : `${key}=${preview}`);
+  }
+  if (parts.length) return parts.join(", ");
+  for (const [key, value] of Object.entries(args)) {
+    if (ignoredKeys.has(key)) continue;
+    if (value == null) continue;
+    const preview = shortenPreview(
+      typeof value === "object"
+        ? Array.isArray(value)
+          ? `${value.length} item${value.length === 1 ? "" : "s"}`
+          : JSON.stringify(value)
+        : value,
+      60,
+    );
+    if (!preview) continue;
+    parts.push(`${key}=${preview}`);
+    if (parts.length >= 3) break;
+  }
+  return parts.join(", ");
+}
+
+export function summarizeKoishiToolCall(toolName: string, args: any) {
+  const name = safeString(toolName).trim() || "tool";
+  if (name === "bash") {
+    const command = shortenPreview(args?.command, 120);
+    return command ? `bash ${command}` : "bash";
+  }
+  if (name === "read") {
+    const target = shortenPreview(args?.path ?? args?.file_path, 100);
+    const offset = Number.isFinite(Number(args?.offset)) ? Number(args.offset) : undefined;
+    const limit = Number.isFinite(Number(args?.limit)) ? Number(args.limit) : undefined;
+    const range =
+      offset !== undefined || limit !== undefined
+        ? `:${offset ?? 1}${limit !== undefined ? `-${(offset ?? 1) + limit - 1}` : ""}`
+        : "";
+    return target ? `read ${target}${range}` : "read";
+  }
+  if (name === "edit") {
+    const target = shortenPreview(args?.path ?? args?.file_path, 100);
+    const editCount = Array.isArray(args?.edits) ? args.edits.length : 0;
+    const suffix = editCount > 0 ? ` (${editCount} edit${editCount === 1 ? "" : "s"})` : "";
+    return target ? `edit ${target}${suffix}` : `edit${suffix}`;
+  }
+  if (name === "write") {
+    const target = shortenPreview(args?.path ?? args?.file_path, 100);
+    return target ? `write ${target}` : "write";
+  }
+  const summary = summarizeGenericArgs(args);
+  return summary ? `${name} ${summary}` : name;
+}
+
+export function normalizeKoishiIdleToolProgressConfig(settings: any): KoishiIdleToolProgressConfig {
+  const koishi = settings && typeof settings.koishi === "object" ? settings.koishi : {};
+  const idleToolProgress =
+    koishi && typeof koishi.idleToolProgress === "object" ? koishi.idleToolProgress : {};
+  return {
+    privateIntervalMs: normalizeIntervalMs(
+      idleToolProgress?.privateIntervalMs,
+      DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS,
+    ),
+    groupIntervalMs: normalizeIntervalMs(
+      idleToolProgress?.groupIntervalMs,
+      DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS,
+    ),
+  };
+}
 
 export class KoishiChatController {
   app: any;
@@ -48,6 +177,11 @@ export class KoishiChatController {
   logger: any;
   h: any;
   deliveryEnabled: boolean;
+  idleToolProgressConfig: KoishiIdleToolProgressConfig;
+  idleToolProgressTimer: NodeJS.Timeout | null = null;
+  lastVisibleProgressAt = 0;
+  lastIdleToolProgressAt = 0;
+  lastToolCallSummary = "";
 
   constructor(
     app: any,
@@ -58,6 +192,7 @@ export class KoishiChatController {
       h: any;
       deliveryEnabled?: boolean;
       statePath?: string;
+      idleToolProgressConfig?: KoishiIdleToolProgressConfig;
     },
   ) {
     this.app = app;
@@ -68,6 +203,9 @@ export class KoishiChatController {
     this.statePath = deps.statePath || chatStatePath(dataDir, chatKey);
     this.state = readJsonFile<KoishiChatState>(this.statePath, { chatKey });
     this.logger = deps.logger;
+    this.idleToolProgressConfig =
+      deps.idleToolProgressConfig ||
+      normalizeKoishiIdleToolProgressConfig(undefined);
     this.h = deps.h;
     if (!this.state.chatKey) this.state.chatKey = chatKey;
   }
@@ -103,7 +241,11 @@ export class KoishiChatController {
           this.interimSentText = "";
           this.pendingCompletedAssistantText = "";
           this.latestAssistantText = "";
+          this.lastVisibleProgressAt = Date.now();
+          this.lastIdleToolProgressAt = 0;
+          this.lastToolCallSummary = "";
           this.startTyping();
+          this.scheduleIdleToolProgress();
           break;
         case "message_update":
           if (event?.message?.role !== "assistant") break;
@@ -122,6 +264,14 @@ export class KoishiChatController {
           break;
         }
         case "tool_execution_start":
+          this.lastToolCallSummary = summarizeKoishiToolCall(
+            safeString(event?.toolName).trim(),
+            event?.args,
+          );
+          this.scheduleIdleToolProgress();
+          if (this.pendingCompletedAssistantText)
+            void this.flushInterim().catch(() => {});
+          break;
         case "tool_execution_end":
         case "compaction_start":
         case "compaction_end":
@@ -130,6 +280,7 @@ export class KoishiChatController {
           break;
         case "agent_end":
           this.stopTyping();
+          this.clearIdleToolProgressTimer();
           break;
       }
     });
@@ -143,6 +294,7 @@ export class KoishiChatController {
 
   dispose() {
     this.stopTyping();
+    this.clearIdleToolProgressTimer();
     for (const waiter of this.turnWaiters.values())
       waiter.reject(new Error("koishi_controller_disposed"));
     this.turnWaiters.clear();
@@ -167,23 +319,58 @@ export class KoishiChatController {
     clearInterval(this.typingTimer);
     this.typingTimer = null;
   }
-  private async flushInterim(force = false) {
-    const text = safeString(this.pendingCompletedAssistantText || "").trim();
-    if (!text) return;
-    const now = Date.now();
-    if (!force && text === this.interimSentText) return;
-    if (!force && now - this.interimSentAt < INTERIM_MIN_INTERVAL_MS) return;
-    this.pendingCompletedAssistantText = "";
-    this.interimSentText = text;
-    this.interimSentAt = now;
+  private idleToolProgressIntervalMs() {
+    const parsed = parseChatKey(this.chatKey);
+    const chatType =
+      parsed?.platform === "telegram"
+        ? parsed.chatId.startsWith("-")
+          ? "group"
+          : "private"
+        : parsed?.chatId.startsWith("private:")
+          ? "private"
+          : "group";
+    return chatType === "private"
+      ? this.idleToolProgressConfig.privateIntervalMs
+      : this.idleToolProgressConfig.groupIntervalMs;
+  }
+  clearIdleToolProgressTimer() {
+    if (!this.idleToolProgressTimer) return;
+    clearTimeout(this.idleToolProgressTimer);
+    this.idleToolProgressTimer = null;
+  }
+  scheduleIdleToolProgress() {
+    this.clearIdleToolProgressTimer();
     if (!this.deliveryEnabled) return;
+    const intervalMs = this.idleToolProgressIntervalMs();
+    this.idleToolProgressTimer = setTimeout(() => {
+      void this.handleIdleToolProgressTick().catch(() => {});
+    }, intervalMs);
+  }
+  async emitProgressText(
+    text: string,
+    options: { force?: boolean; minIntervalMs?: number } = {},
+  ) {
+    const nextText = safeString(text).trim();
+    if (!nextText) return false;
+    const now = Date.now();
+    if (!options.force && nextText === this.interimSentText) return false;
+    if (
+      !options.force &&
+      now - this.interimSentAt < (options.minIntervalMs ?? INTERIM_MIN_INTERVAL_MS)
+    ) {
+      return false;
+    }
+    this.interimSentText = nextText;
+    this.interimSentAt = now;
+    this.lastVisibleProgressAt = now;
+    if (!this.deliveryEnabled) return true;
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || "",
     ).trim();
     await sendText(
       this.app,
       this.chatKey,
-      `${INTERIM_PREFIX}${text}`,
+      `${INTERIM_PREFIX}${nextText}`,
       this.h,
       replyToMessageId,
     )
@@ -191,8 +378,8 @@ export class KoishiChatController {
         recordDeliveredAssistantMessages(this.agentDir, {
           chatKey: this.chatKey,
           deliveryResult,
-          text: `${INTERIM_PREFIX}${text}`,
-          rawContent: `${INTERIM_PREFIX}${text}`,
+          text: `${INTERIM_PREFIX}${nextText}`,
+          rawContent: `${INTERIM_PREFIX}${nextText}`,
           replyToMessageId: replyToMessageId || undefined,
           sessionId: this.currentSessionId() || undefined,
           sessionFile:
@@ -204,6 +391,35 @@ export class KoishiChatController {
         });
       })
       .catch(() => {});
+    return true;
+  }
+  async flushInterim(force = false) {
+    const text = safeString(this.pendingCompletedAssistantText || "").trim();
+    if (!text) return;
+    this.pendingCompletedAssistantText = "";
+    await this.emitProgressText(text, {
+      force,
+      minIntervalMs: INTERIM_MIN_INTERVAL_MS,
+    });
+  }
+  async handleIdleToolProgressTick(now = Date.now()) {
+    this.idleToolProgressTimer = null;
+    if (!this.deliveryEnabled) return;
+    const summary = safeString(this.lastToolCallSummary).trim();
+    const intervalMs = this.idleToolProgressIntervalMs();
+    if (!summary) {
+      this.scheduleIdleToolProgress();
+      return;
+    }
+    const lastActivityAt = Math.max(this.lastVisibleProgressAt, this.lastIdleToolProgressAt);
+    if (now - lastActivityAt >= intervalMs) {
+      const sent = await this.emitProgressText(summary, {
+        force: true,
+        minIntervalMs: 0,
+      });
+      if (sent) this.lastIdleToolProgressAt = now;
+    }
+    this.scheduleIdleToolProgress();
   }
   private nextRequestTag() {
     this.turnSeq += 1;
