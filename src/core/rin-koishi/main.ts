@@ -58,6 +58,7 @@ const { Loader, Logger, h } = require("koishi") as {
 
 const logger = new Logger("rin-koishi");
 const RIN_KOISHI_SETTINGS_PATH_ENV = "RIN_KOISHI_SETTINGS_PATH";
+const TYPING_POLL_INTERVAL_MS = 4000;
 
 export async function startKoishi(
   options: { additionalExtensionPaths?: string[] } = {},
@@ -92,6 +93,11 @@ export async function startKoishi(
   const app = await loader.createApp();
   const controllers = new Map<string, KoishiChatController>();
   const detachedControllers = new Map<string, KoishiChatController>();
+  const typingPollTimer = setInterval(() => {
+    for (const controller of controllers.values()) {
+      void controller.pollTyping().catch(() => {});
+    }
+  }, TYPING_POLL_INTERVAL_MS);
   const registeredCommandNames = new Set<string>();
   const commandRows = buildAllowedCommandRows(await discoverRpcCommands());
   const getIdentity = () => loadIdentity(dataDir);
@@ -415,6 +421,7 @@ export async function startKoishi(
   }
 
   const shutdown = async () => {
+    clearInterval(typingPollTimer);
     for (const controller of controllers.values()) controller.dispose();
     try {
       await new Promise<void>((resolve) => rpcServer.close(() => resolve()));

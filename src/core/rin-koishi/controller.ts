@@ -21,7 +21,6 @@ import {
 } from "./transport.js";
 
 const INTERIM_PREFIX = "··· ";
-const TYPING_INTERVAL_MS = 4000;
 const INTERIM_MIN_INTERVAL_MS = 1500;
 const DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS = 10_000;
 const DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS = 30_000;
@@ -107,6 +106,17 @@ function summarizeGenericArgs(args: any) {
   return parts.join(", ");
 }
 
+function extractFinalTextFromTurnResult(result: any) {
+  const messages = Array.isArray(result?.messages) ? result.messages : [];
+  for (const message of messages) {
+    if (!message || typeof message !== "object") continue;
+    if (safeString((message as any).type).trim() !== "text") continue;
+    const text = safeString((message as any).text).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 export function summarizeKoishiToolCall(toolName: string, args: any) {
   const name = safeString(toolName).trim() || "tool";
   if (name === "bash") {
@@ -171,7 +181,6 @@ export class KoishiChatController {
   interimText = "";
   interimSentText = "";
   interimSentAt = 0;
-  typingTimer: NodeJS.Timeout | null = null;
   pendingCompletedAssistantText = "";
   latestAssistantText = "";
   logger: any;
@@ -226,6 +235,8 @@ export class KoishiChatController {
       const waiter = this.turnWaiters.get(requestTag);
       if (!waiter) return;
       if (payload.event === "complete") {
+        const finalText = extractFinalTextFromTurnResult(payload?.result);
+        if (finalText) this.latestAssistantText = finalText;
         this.turnWaiters.delete(requestTag);
         waiter.resolve(payload);
       } else if (payload.event === "error") {
@@ -244,7 +255,6 @@ export class KoishiChatController {
           this.lastVisibleProgressAt = Date.now();
           this.lastIdleToolProgressAt = 0;
           this.lastToolCallSummary = "";
-          this.startTyping();
           this.scheduleIdleToolProgress();
           break;
         case "message_update":
@@ -279,7 +289,6 @@ export class KoishiChatController {
             void this.flushInterim().catch(() => {});
           break;
         case "agent_end":
-          this.stopTyping();
           this.clearIdleToolProgressTimer();
           break;
       }
@@ -293,7 +302,6 @@ export class KoishiChatController {
   }
 
   dispose() {
-    this.stopTyping();
     this.clearIdleToolProgressTimer();
     for (const waiter of this.turnWaiters.values())
       waiter.reject(new Error("koishi_controller_disposed"));
@@ -306,18 +314,11 @@ export class KoishiChatController {
   private saveState() {
     writeJsonFile(this.statePath, this.state);
   }
-  private startTyping() {
-    if (!this.deliveryEnabled) return;
-    this.stopTyping();
-    void sendTyping(this.app, this.chatKey, this.h);
-    this.typingTimer = setInterval(() => {
-      void sendTyping(this.app, this.chatKey, this.h);
-    }, TYPING_INTERVAL_MS);
-  }
-  private stopTyping() {
-    if (!this.typingTimer) return;
-    clearInterval(this.typingTimer);
-    this.typingTimer = null;
+  async pollTyping() {
+    if (!this.deliveryEnabled) return false;
+    if (!this.session?.isStreaming) return false;
+    await sendTyping(this.app, this.chatKey, this.h);
+    return true;
   }
   private idleToolProgressIntervalMs() {
     const parsed = parseChatKey(this.chatKey);
@@ -646,7 +647,6 @@ export class KoishiChatController {
     ).trim();
     this.latestAssistantText = "";
     const completion = this.waitForTurn(tag);
-    this.startTyping();
     await this.session.prompt(text, {
       images,
       requestTag: tag,
@@ -654,6 +654,11 @@ export class KoishiChatController {
       streamingBehavior: mode === "steer" ? "steer" : undefined,
     });
     completionPayload = await completion;
+    if (!safeString(this.latestAssistantText || "").trim()) {
+      this.latestAssistantText = extractFinalTextFromTurnResult(
+        completionPayload?.result,
+      );
+    }
     if (!safeString(this.latestAssistantText || "").trim()) {
       throw new Error("final_assistant_text_missing");
     }
@@ -694,12 +699,16 @@ export class KoishiChatController {
       let completionPayload: any;
       this.latestAssistantText = "";
       const completion = this.waitForTurn(tag);
-      this.startTyping();
       await this.session.resumeInterruptedTurn({
         source: "koishi-bridge",
         requestTag: tag,
       });
       completionPayload = await completion;
+      if (!safeString(this.latestAssistantText || "").trim()) {
+        this.latestAssistantText = extractFinalTextFromTurnResult(
+          completionPayload?.result,
+        );
+      }
       if (!safeString(this.latestAssistantText || "").trim()) {
         throw new Error("final_assistant_text_missing");
       }
