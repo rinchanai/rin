@@ -149,6 +149,8 @@ export class RpcInteractiveSession {
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
   private restorePromise: Promise<void> | null = null;
+  private waitForDaemonPromise: Promise<void> | null = null;
+  private waitForDaemonHintTimer: NodeJS.Timeout | null = null;
 
   constructor(
     public client: RinDaemonFrontendClient,
@@ -206,7 +208,6 @@ export class RpcInteractiveSession {
     this.autoCompactionEnabled = Boolean(
       this.settingsManager.getCompactionEnabled?.(),
     );
-    await this.client.connect();
     this.unsubscribeClient?.();
     this.unsubscribeClient = this.client.subscribe((event) => {
       if (event.type === "ui" && event.name === "connection_lost") {
@@ -214,6 +215,7 @@ export class RpcInteractiveSession {
         return;
       }
       if (event.type === "ui" && event.name === "connection_restored") {
+        this.clearWaitingDaemonState();
         void this.handleConnectionRestored().catch(() => {});
         return;
       }
@@ -226,15 +228,20 @@ export class RpcInteractiveSession {
       }
       this.handleRpcEvent(payload);
     });
-    await this.ensureRemoteSession();
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
-    await this.modelRegistry.sync().catch(() => {});
+    try {
+      await this.client.connect();
+      await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
+      await this.modelRegistry.sync().catch(() => {});
+    } catch {
+      this.handleConnectionLost();
+    }
   }
 
   async disconnect() {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    this.clearWaitingDaemonState();
     this.unsubscribeClient?.();
     this.unsubscribeClient = undefined;
     await this.client.disconnect();
@@ -357,6 +364,9 @@ export class RpcInteractiveSession {
     scope: "cwd" | "all" = "cwd",
     _onProgress?: (loaded: number, total: number) => void,
   ) {
+    if (!this.client.isConnected()) {
+      await this.waitForDaemonAvailable();
+    }
     const data = await this.call("list_sessions", { scope });
     return Array.isArray(data?.sessions) ? data.sessions : [];
   }
@@ -639,6 +649,46 @@ export class RpcInteractiveSession {
     }
   }
 
+  private clearWaitingDaemonState() {
+    if (this.waitForDaemonHintTimer) clearTimeout(this.waitForDaemonHintTimer);
+    this.waitForDaemonHintTimer = null;
+    this.waitForDaemonPromise = null;
+  }
+
+  private async waitForDaemonAvailable() {
+    if (this.client.isConnected()) return;
+    if (this.waitForDaemonPromise) return await this.waitForDaemonPromise;
+    this.emitEvent({
+      type: "status",
+      level: "warning",
+      text: "Waiting daemon...",
+    } as any);
+    this.waitForDaemonHintTimer = setTimeout(() => {
+      this.waitForDaemonHintTimer = null;
+      this.emitEvent({
+        type: "status",
+        level: "warning",
+        text: "Daemon is still unavailable after 30s. Try `rin doctor` and `rin --std` to troubleshoot.",
+      } as any);
+    }, 30000);
+    this.ensureReconnectLoop();
+    this.waitForDaemonPromise = (async () => {
+      while (!this.disposed) {
+        if (this.client.isConnected()) return;
+        try {
+          await this.client.connect();
+          return;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+      throw new Error("rin_tui_disposed");
+    })().finally(() => {
+      this.clearWaitingDaemonState();
+    });
+    return await this.waitForDaemonPromise;
+  }
+
   private queueOfflineOperation(operation: PendingRpcOperation) {
     queueOfflineOperation(this as any, operation);
   }
@@ -710,10 +760,8 @@ export class RpcInteractiveSession {
           await this.call("switch_session", { sessionPath: this.sessionFile });
         } else if (this.sessionId) {
           await this.call("attach_session", { sessionId: this.sessionId });
-        } else {
-          await this.ensureRemoteSession();
         }
-        await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+        await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {
@@ -757,10 +805,30 @@ export class RpcInteractiveSession {
   }
 
   private async call(type: string, payload: Record<string, unknown> = {}) {
-    const response: any = await this.client.send({
-      type,
-      ...this.buildSessionCommandPayload(type, payload),
-    });
+    const sessionScoped = isSessionScopedCommand(type);
+    const send = async () =>
+      await this.client.send({
+        type,
+        ...this.buildSessionCommandPayload(type, payload),
+      });
+    if (sessionScoped && !this.client.isConnected()) {
+      await this.waitForDaemonAvailable();
+    }
+    let response: any;
+    try {
+      response = await send();
+    } catch (error: any) {
+      const message = String(error?.message || error || "");
+      if (
+        sessionScoped &&
+        /rin_tui_not_connected|rin_disconnected/.test(message)
+      ) {
+        await this.waitForDaemonAvailable();
+        response = await send();
+      } else {
+        throw error;
+      }
+    }
     if (!response || response.success !== true) {
       throw new Error(String(response?.error || "rin_request_failed"));
     }
