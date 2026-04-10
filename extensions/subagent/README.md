@@ -6,7 +6,6 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
 
 - `run_subagent`: run one subagent or multiple subagents in parallel
 - `list_models`: list currently available models, plus the latest three per provider
-- `list_subagent_sessions`: list saved subagent sessions so later runs can resume or fork them
 - default subagent runs use isolated in-memory `AgentSession` context
 - subagent runs can also use saved sessions:
   - `session.mode: "persist"` creates a new saved session
@@ -28,16 +27,6 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
 
 ```json
 {}
-```
-
-### List saved sessions
-
-```json
-{
-  "all": true,
-  "query": "auth",
-  "limit": 10
-}
 ```
 
 ### Single task (default in-memory)
@@ -115,6 +104,6 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
 
 - single-task mode defaults to the current session model when `model` is omitted
 - single-task mode defaults to the current session thinking level when `thinkingLevel` is omitted
-- use `list_subagent_sessions` before `resume` or `fork` if you need to discover the saved session id or path
-- by default `list_subagent_sessions` filters to the current cwd; set `all: true` to search across all saved sessions
+- if you need to discover a saved session before `resume` or `fork`, inspect `~/.rin/sessions/` with `bash`, `find`, or `rg`
+- `session.ref` accepts a session file path, exact session id, or unique session id prefix
 - in parallel mode, it is recommended to call `list_models` first and then choose models
