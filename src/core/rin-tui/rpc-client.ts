@@ -152,7 +152,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   async listSessions(): Promise<FrontendSessionItem[]> {
     if (!this.isConnected()) return [];
     const [sessionsResponse, stateResponse]: any = await Promise.all([
-      this.send({ type: "list_sessions", scope: "cwd" }),
+      this.send({ type: "list_sessions", scope: "all" }),
       this.send({ type: "get_state" }).catch(() => ({ success: false })),
     ]);
     const data = this.getData(sessionsResponse);

@@ -172,10 +172,7 @@ export async function runBuiltinCommand(
       };
     }
     case "resume": {
-      const sessions = await deps.SessionManager.list(
-        session.sessionManager.getCwd(),
-        session.sessionManager.getSessionDir(),
-      );
+      const sessions = await deps.SessionManager.listAll();
       if (!argsText) {
         const lines = sessions.slice(0, 20).map((item: any) => {
           const label =

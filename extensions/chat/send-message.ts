@@ -101,7 +101,7 @@ function resolveMaybeLocalPath(input: string, _cwd: string) {
   return path.isAbsolute(value) ? value : path.resolve(HOME_DIR, value);
 }
 
-function normalizeParts(parts: any[], cwd: string): KoishiMessagePart[] {
+function normalizeParts(parts: any[]): KoishiMessagePart[] {
   const normalized: KoishiMessagePart[] = [];
   for (const raw of parts) {
     const type = safeString(raw?.type).trim();
@@ -122,7 +122,7 @@ function normalizeParts(parts: any[], cwd: string): KoishiMessagePart[] {
     }
     if (type === "image" || type === "file") {
       const localPath = safeString(raw?.path).trim()
-        ? resolveMaybeLocalPath(safeString(raw?.path), cwd)
+        ? resolveMaybeLocalPath(safeString(raw?.path), "")
         : "";
       const url = safeString(raw?.url).trim();
       if (!localPath && !url)
@@ -218,17 +218,14 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
           `koishi_send_message_invalid_chatKey:${chatKey || "missing"}`,
         );
 
-      const parts = normalizeParts(
-        [
-          ...(safeString((params as any)?.text)
-            ? [{ type: "text", text: safeString((params as any).text) }]
-            : []),
-          ...(Array.isArray((params as any)?.parts)
-            ? (params as any).parts
-            : []),
-        ],
-        ctx.cwd,
-      );
+      const parts = normalizeParts([
+        ...(safeString((params as any)?.text)
+          ? [{ type: "text", text: safeString((params as any).text) }]
+          : []),
+        ...(Array.isArray((params as any)?.parts)
+          ? (params as any).parts
+          : []),
+      ]);
 
       if (!parts.length) throw new Error("koishi_send_message_empty");
 
