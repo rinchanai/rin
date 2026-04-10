@@ -281,7 +281,7 @@ export const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 export function resolveRuntimeProfile(
   options: { cwd?: string; agentDir?: string } = {},
 ) {
-  const cwd = options.cwd || os.homedir();
+  const cwd = os.homedir();
   const agentDir =
     options.agentDir ||
     process.env[RIN_DIR_ENV]?.trim() ||

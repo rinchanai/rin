@@ -1,4 +1,8 @@
+import os from "node:os";
+
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+
+const HOME_DIR = os.homedir();
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
@@ -235,7 +239,7 @@ async function maybeSummarizeTranscriptMatches(
       thinkingLevel:
         (config.thinkingLevel as ThinkingLevel | undefined) ||
         currentThinkingLevel,
-      cwd: String(ctx?.cwd || ctx?.sessionManager?.getCwd?.() || process.cwd()),
+      cwd: HOME_DIR,
     });
     taskRows.push(row);
   }

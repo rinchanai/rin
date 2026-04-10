@@ -1,4 +1,8 @@
+import os from "node:os";
+
 import type { Model } from "@mariozechner/pi-ai";
+
+const HOME_DIR = os.homedir();
 
 import { openBoundSession } from "../../src/core/session/factory.js";
 import { resolveAgentDir } from "./lib.js";
@@ -124,10 +128,7 @@ export async function maintainMemory(
 ) {
   const sessionFile = safeString(opts.sessionFile || "").trim();
   if (!sessionFile) return { skipped: "no-session-file" };
-  const cwd = safeString(
-    ctx.cwd || ctx.sessionManager?.getCwd?.() || "",
-  ).trim();
-  if (!cwd) return { skipped: "no-cwd" };
+  const cwd = HOME_DIR;
 
   const extracted = await runForkedSessionSelfImproveReview({
     cwd,

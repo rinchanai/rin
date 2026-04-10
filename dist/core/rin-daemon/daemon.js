@@ -31,6 +31,7 @@ function loadRestartState(agentDir) {
                 sessionFile: typeof item?.sessionFile === "string" && item.sessionFile
                     ? item.sessionFile
                     : undefined,
+                resumeTurn: Boolean(item?.resumeTurn),
             }))
                 .filter((item) => item.sessionFile)
             : [];
@@ -324,7 +325,7 @@ export async function startDaemon(options = {}) {
     for (const item of pendingResume) {
         try {
             if (item.sessionFile)
-                workerPool.resumeInterruptedSession(item.sessionFile);
+                workerPool.restoreSessionWorker(item);
         }
         catch {
             restartState.pendingResume.push(item);

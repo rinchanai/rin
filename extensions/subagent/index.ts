@@ -72,7 +72,7 @@ const TaskSchema = Type.Object({
   cwd: Type.Optional(
     Type.String({
       description:
-        "Working directory for this task. Defaults to the current project cwd.",
+        "Compatibility field. Rin resolves all subagent paths against the current user's home directory.",
     }),
   ),
   session: SessionSchema,
@@ -92,7 +92,7 @@ const RunParamsSchema = Type.Object({
   cwd: Type.Optional(
     Type.String({
       description:
-        "Working directory for single-task mode. Defaults to the current project cwd.",
+        "Compatibility field. Rin resolves all subagent paths against the current user's home directory.",
     }),
   ),
   session: SessionSchema,
@@ -427,7 +427,7 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
           ),
         );
         container.addChild(
-          new Text(theme.fg("muted", `cwd: ${task.cwd}`), 0, 0),
+          new Text(theme.fg("muted", `base: ${task.cwd}`), 0, 0),
         );
         container.addChild(
           new Text(theme.fg("muted", `session mode: ${task.sessionMode}`), 0, 0),

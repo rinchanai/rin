@@ -204,7 +204,7 @@ const taskSchema = Type.Object({
   cwd: Type.Optional(
     Type.String({
       description:
-        "Working directory for command execution or the task session.",
+        "Compatibility field. Rin runs scheduled tasks relative to the current user's home directory.",
     }),
   ),
   trigger: Type.Object({

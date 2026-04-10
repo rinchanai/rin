@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type {
   ExtensionAPI,
@@ -19,7 +19,7 @@ const RELOAD_MARKER_DIR = join(tmpdir(), "rin-frozen-runtime");
 function getSessionKey(ctx: ExtensionContext): string {
   const sessionFile = ctx.sessionManager.getSessionFile?.();
   const sessionId = ctx.sessionManager.getSessionId?.();
-  return String(sessionFile || sessionId || ctx.cwd || "unknown-session");
+  return String(sessionFile || sessionId || homedir() || "unknown-session");
 }
 
 function getReloadMarkerPath(ctx: ExtensionContext): string {

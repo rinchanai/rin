@@ -1,5 +1,8 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+
+const HOME_DIR = os.homedir();
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
 import { executeCronTask } from "./cron-execution.js";
@@ -157,9 +160,7 @@ export class CronScheduler {
           ? safeString(input.chatKey).trim() || undefined
           : existing?.chatKey;
 
-    const cwd = input.cwd
-      ? path.resolve(String(input.cwd))
-      : existing?.cwd || this.options.cwd;
+    const cwd = HOME_DIR;
 
     const trigger = input.trigger ?? existing?.trigger;
     if (!trigger) throw new Error("cron_trigger_required");
@@ -195,6 +196,7 @@ export class CronScheduler {
       sessionFile:
         session.mode === "current"
           ? path.resolve(
+              HOME_DIR,
               safeString(
                 session.sessionFile || defaults.sessionFile,
               ).trim() ||

@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
+
+const HOME_DIR = homedir();
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
@@ -11,11 +13,11 @@ import {
 } from "../../third_party/pi-coding-agent/src/core/skills.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
-function normalizeInputPath(input: string, cwd: string): string {
+function normalizeInputPath(input: string, _cwd: string): string {
   const value = input.trim();
-  if (value === "~") return homedir();
-  if (value.startsWith("~/")) return join(homedir(), value.slice(2));
-  return isAbsolute(value) ? value : resolve(cwd, value);
+  if (value === "~") return HOME_DIR;
+  if (value.startsWith("~/")) return join(HOME_DIR, value.slice(2));
+  return isAbsolute(value) ? value : resolve(HOME_DIR, value);
 }
 
 function listAncestorContextFiles(targetDir: string): string[] {
@@ -78,7 +80,7 @@ function buildRulesPrompt(targetDir: string) {
   const contextFiles = loadContextFiles(contextPaths);
   const skills = loadSkills({
     cwd: targetDir,
-    agentDir: join(homedir(), ".rin"),
+    agentDir: join(HOME_DIR, ".rin"),
     skillPaths: skillDirs,
     includeDefaults: false,
   }).skills;
