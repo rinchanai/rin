@@ -353,7 +353,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
       "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
       "Before updating a slot, first call save_prompts with only `slot` to read the current canonical content, then submit the full revised content with `baseContent` from that read.",
-      "Use save_prompts without markdown list markers in tool input; save_prompts stores prompt entries as markdown list items in the underlying files.",
+      "Treat the content returned by the read step as canonical. When updating, pass `baseContent` exactly as read, and provide `content` in the same normalized shape unless you intentionally want the tool to re-normalize it.",
       "Save reusable procedures, workflows, checklists, and playbooks as skills under /home/rin/.rin/self_improve/skills instead of save_prompts content; use skill-creator for major creation or revision when available, and update outdated or incomplete skills promptly.",
       "If a slot accumulates extensive details on a single topic, extract them into a builtin skill and leave only a compact reference in `save_prompts`.",
     ],
