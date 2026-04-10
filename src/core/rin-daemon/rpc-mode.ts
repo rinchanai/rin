@@ -245,6 +245,8 @@ export async function runCustomRpcMode(
     unsubscribeSessionEvents = session.subscribe((event: unknown) =>
       output(event),
     );
+
+    await resumeInterruptedTurnIfNeeded(session);
   };
 
   await bindCurrentSession();
@@ -292,15 +294,7 @@ export async function runCustomRpcMode(
         output(done(id, type, { shutdown: true }));
         process.exit(0);
       case "attach_session":
-        return run(
-          id,
-          type,
-          async () => {
-            await resumeInterruptedTurnIfNeeded(session);
-            return getSessionState(session);
-          },
-          (value) => value,
-        );
+        return done(id, type, getSessionState(session));
       case "get_state":
         return done(id, type, getSessionState(session));
       case "cycle_model":
@@ -443,7 +437,6 @@ export async function runCustomRpcMode(
               .switchSession(command.sessionPath)
               .then(async (value: any) => {
                 await bindCurrentSession();
-                await resumeInterruptedTurnIfNeeded(getSession());
                 return value;
               }),
           (value) => ({ cancelled: Boolean(value?.cancelled) }),
