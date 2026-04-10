@@ -280,7 +280,7 @@ export async function startKoishi(
           replyToMessageId: messageId,
           incomingMessageId: messageId,
         },
-        "interrupt_prompt",
+        "steer",
       )
       .catch((error) => {
         const errorMessage = safeString((error as any)?.message || error);

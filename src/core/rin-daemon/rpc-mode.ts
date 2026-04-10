@@ -265,15 +265,6 @@ export async function runCustomRpcMode(
           });
         });
         return done(id, "prompt");
-      case "interrupt_prompt":
-        startInterruptTurnTask(String(command.requestTag || ""), async () => {
-          await session.prompt(command.message, {
-            images: command.images,
-            streamingBehavior: "steer",
-            source: "rpc" as any,
-          });
-        });
-        return done(id, "interrupt_prompt");
       case "resume_interrupted_turn":
         startInterruptTurnTask(String(command.requestTag || ""), async () => {
           await resumeInterruptedTurn(session);

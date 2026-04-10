@@ -610,7 +610,7 @@ export class KoishiChatController {
       incomingMessageId?: string;
       sessionFile?: string;
     },
-    mode: "prompt" | "interrupt_prompt" = "prompt",
+    mode: "prompt" | "steer" = "prompt",
   ) {
     await this.connect();
     if (!this.session) throw new Error("koishi_session_not_connected");
@@ -651,7 +651,7 @@ export class KoishiChatController {
       images,
       requestTag: tag,
       source: "koishi-bridge",
-      streamingBehavior: mode === "interrupt_prompt" ? "steer" : undefined,
+      streamingBehavior: mode === "steer" ? "steer" : undefined,
     });
     completionPayload = await completion;
     if (!safeString(this.latestAssistantText || "").trim()) {
@@ -724,7 +724,7 @@ export class KoishiChatController {
         attachments: pending.attachments,
         replyToMessageId: pending.replyToMessageId,
       },
-      "interrupt_prompt",
+      "steer",
     );
   }
 }

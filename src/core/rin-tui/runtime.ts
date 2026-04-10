@@ -255,7 +255,7 @@ export class RpcInteractiveSession {
     },
   ) {
     if (options?.streamingBehavior === "steer")
-      return await this.interruptPrompt(message, options.images, {
+      return await this.steer(message, options.images, {
         source: options?.source,
         requestTag: options?.requestTag,
       });
@@ -268,20 +268,6 @@ export class RpcInteractiveSession {
       mode: "prompt",
       message,
       images: options?.images,
-      source: options?.source,
-      requestTag: options?.requestTag,
-    });
-  }
-
-  async interruptPrompt(
-    message: string,
-    images?: any[],
-    options?: { source?: string; requestTag?: string },
-  ) {
-    await this.sendOrQueue({
-      mode: "interrupt_prompt",
-      message,
-      images,
       source: options?.source,
       requestTag: options?.requestTag,
     });

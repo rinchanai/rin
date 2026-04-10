@@ -16,7 +16,7 @@ function wait(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("rpc mode routes interrupt_prompt through session.prompt with steer behavior", async () => {
+test("rpc mode routes steer through session.steer", async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -40,10 +40,10 @@ test("rpc mode routes interrupt_prompt through session.prompt with steer behavio
       agent: { waitForIdle: async () => {} },
       bindExtensions: async () => {},
       subscribe: () => {},
-      prompt: async (message, options) => {
-        calls.push(["prompt", message, options]);
+      prompt: async () => {},
+      steer: async (message, images) => {
+        calls.push(["steer", message, images]);
       },
-      steer: async () => {},
       followUp: async () => {},
       abort: async () => {},
       modelRegistry: { getAvailable: async () => [] },
@@ -94,23 +94,13 @@ test("rpc mode routes interrupt_prompt through session.prompt with steer behavio
     assert.equal(typeof onData, "function");
     onData(
       Buffer.from(
-        `${JSON.stringify({ id: "1", type: "interrupt_prompt", message: "hello", images: ["img"], requestTag: "tag-1" })}\n`,
+        `${JSON.stringify({ id: "1", type: "steer", message: "hello", images: ["img"], requestTag: "tag-1" })}\n`,
       ),
     );
     await wait(10);
 
-    assert.deepEqual(calls, [
-      [
-        "prompt",
-        "hello",
-        {
-          images: ["img"],
-          streamingBehavior: "steer",
-          source: "rpc",
-        },
-      ],
-    ]);
-    assert.ok(lines.join("").includes('"command":"interrupt_prompt"'));
+    assert.deepEqual(calls, [["steer", "hello", ["img"]]]);
+    assert.ok(lines.join("").includes('"command":"steer"'));
   } finally {
     process.stdin.on = stdinOn;
     process.stdout.write = stdoutWrite;

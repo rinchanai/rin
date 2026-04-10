@@ -1,5 +1,5 @@
 export type PendingRpcOperation = {
-  mode: "prompt" | "interrupt_prompt" | "steer" | "follow_up";
+  mode: "prompt" | "steer" | "follow_up";
   message: string;
   images?: any[];
   source?: string;

@@ -41,7 +41,6 @@ export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
 
 const SESSION_SCOPED_COMMANDS = new Set([
   "prompt",
-  "interrupt_prompt",
   "resume_interrupted_turn",
   "steer",
   "follow_up",
