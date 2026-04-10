@@ -84,6 +84,7 @@ export async function startKoishi(
 
   const app = await loader.createApp();
   const controllers = new Map<string, KoishiChatController>();
+  const detachedControllers = new Map<string, KoishiChatController>();
   const registeredCommandNames = new Set<string>();
   const commandRows = buildAllowedCommandRows(await discoverRpcCommands());
   const getIdentity = () => loadIdentity(dataDir);
@@ -95,6 +96,25 @@ export async function startKoishi(
         h,
       });
       controllers.set(chatKey, controller);
+    }
+    return controller;
+  };
+  const getDetachedController = (controllerKey: string) => {
+    let controller = detachedControllers.get(controllerKey);
+    if (!controller) {
+      const statePath = path.join(
+        dataDir,
+        "cron-turns",
+        safeString(controllerKey).trim().replace(/[^A-Za-z0-9._:-]+/g, "_"),
+        "state.json",
+      );
+      controller = new KoishiChatController(app, dataDir, `cron:${controllerKey}`, {
+        logger,
+        h,
+        deliveryEnabled: false,
+        statePath,
+      });
+      detachedControllers.set(controllerKey, controller);
     }
     return controller;
   };
@@ -331,9 +351,12 @@ export async function startKoishi(
               const chatKey = safeString(payload.chatKey).trim();
               const text = safeString(payload.text).trim();
               const sessionFile = safeString(payload.sessionFile).trim() || undefined;
-              if (!chatKey) throw new Error("koishi_rpc_chatKey_required");
+              const controllerKey = safeString(payload.controllerKey).trim() || "default";
               if (!text) throw new Error("koishi_rpc_text_required");
-              const result = await getController(chatKey).runTurn(
+              const controller = chatKey
+                ? getController(chatKey)
+                : getDetachedController(controllerKey);
+              const result = await controller.runTurn(
                 {
                   text,
                   attachments: [],
