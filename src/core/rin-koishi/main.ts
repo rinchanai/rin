@@ -320,15 +320,35 @@ export async function startKoishi(
             return;
           }
           try {
-            if (safeString(command?.type).trim() !== "send_chat") {
-              writeLine({
-                success: false,
-                error: "unsupported_server_request",
-              });
+            const type = safeString(command?.type).trim();
+            if (type === "send_chat") {
+              await sendOutboxPayload(app, runtime.agentDir, command?.payload, h);
+              writeLine({ success: true, data: { delivered: true } });
               return;
             }
-            await sendOutboxPayload(app, runtime.agentDir, command?.payload, h);
-            writeLine({ success: true, data: { delivered: true } });
+            if (type === "run_chat_turn") {
+              const payload = command?.payload || {};
+              const chatKey = safeString(payload.chatKey).trim();
+              const text = safeString(payload.text).trim();
+              const sessionFile = safeString(payload.sessionFile).trim() || undefined;
+              if (!chatKey) throw new Error("koishi_rpc_chatKey_required");
+              if (!text) throw new Error("koishi_rpc_text_required");
+              const result = await getController(chatKey).runTurn(
+                {
+                  text,
+                  attachments: [],
+                  sessionFile,
+                },
+                "prompt",
+              );
+              writeLine({ success: true, data: result || { delivered: true } });
+              return;
+            }
+            writeLine({
+              success: false,
+              error: "unsupported_server_request",
+            });
+            return;
           } catch (error: any) {
             writeLine({
               success: false,

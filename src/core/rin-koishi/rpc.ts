@@ -4,6 +4,17 @@ import path from "node:path";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { safeString } from "./chat-helpers.js";
 
+export type KoishiRpcCommand =
+  | { type: "send_chat"; payload: ChatOutboxPayload }
+  | {
+      type: "run_chat_turn";
+      payload: {
+        chatKey: string;
+        text: string;
+        sessionFile?: string;
+      };
+    };
+
 function parseJsonLine(buffer: string) {
   const idx = buffer.indexOf("\n");
   if (idx < 0) return null;

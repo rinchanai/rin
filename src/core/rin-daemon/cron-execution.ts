@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 
-import { deliverKoishiRpcPayload } from "../rin-koishi/rpc.js";
+import { deliverKoishiRpcPayload, requestKoishiRpc } from "../rin-koishi/rpc.js";
 import { runSessionPrompt } from "../session/runner.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
@@ -79,11 +79,36 @@ export async function executeCronAgentTask(
 ) {
   if (task.target.kind !== "agent_prompt")
     throw new Error("cron_invalid_agent_task");
+  const sessionFile = await resolveCronSessionFile(task);
+  if (task.chatKey) {
+    const result = await requestKoishiRpc(options.agentDir, {
+      type: "run_chat_turn",
+      payload: {
+        chatKey: task.chatKey,
+        text: task.target.prompt,
+        sessionFile,
+      },
+    });
+    const finalText = summarizeText(result?.finalText, 4000);
+    if (!finalText) {
+      throw new Error("cron_final_assistant_text_missing");
+    }
+    const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
+    if (task.session.mode === "dedicated" && nextSessionFile) {
+      task.dedicatedSessionFile = nextSessionFile;
+    }
+    return {
+      text: finalText,
+      sessionId: String(result?.sessionId || "").trim() || undefined,
+      sessionFile: nextSessionFile,
+      deliveredByChatPipeline: true,
+    };
+  }
   const result = await runSessionPrompt({
     cwd: task.cwd || options.cwd,
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths ?? [],
-    sessionFile: await resolveCronSessionFile(task),
+    sessionFile,
     prompt: task.target.prompt,
   });
   if (task.session.mode === "dedicated" && result.sessionFile)
@@ -96,6 +121,7 @@ export async function executeCronAgentTask(
     text: finalText,
     sessionId: result.sessionId,
     sessionFile: result.sessionFile,
+    deliveredByChatPipeline: false,
   };
 }
 
@@ -109,23 +135,28 @@ export async function executeCronTask(
 ) {
   const runId = cronTaskRunId(task);
   try {
-    const result: {
-      text: string;
-      sessionId?: string;
-      sessionFile?: string;
-    } =
+    const result:
+      | {
+          text: string;
+          sessionId?: string;
+          sessionFile?: string;
+          deliveredByChatPipeline?: boolean;
+        }
+      | {
+          text: string;
+        } =
       task.target.kind === "shell_command"
         ? { text: await executeCronShellTask(task, options.cwd) }
         : await executeCronAgentTask(task, options);
     task.lastResultText = result.text;
-    if (task.chatKey && result.text) {
+    if (task.chatKey && result.text && !("deliveredByChatPipeline" in result && result.deliveredByChatPipeline)) {
       await sendKoishiText(options.agentDir, {
         chatKey: task.chatKey,
         taskId: task.id,
         runId,
         text: result.text,
-        sessionId: result.sessionId,
-        sessionFile: result.sessionFile,
+        sessionId: "sessionId" in result ? result.sessionId : undefined,
+        sessionFile: "sessionFile" in result ? result.sessionFile : undefined,
       }).catch(() => {});
     }
   } catch (error: any) {
