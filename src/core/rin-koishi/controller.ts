@@ -233,14 +233,11 @@ export class KoishiChatController {
     );
   }
   private finalAssistantText() {
-    return (
-      safeString(this.latestAssistantText || "").trim() ||
-      safeString(this.session?.getLastAssistantText?.() || "").trim()
-    );
+    return safeString(this.latestAssistantText || "").trim();
   }
   private async deliverFinalAssistantText(replyToMessageId = "") {
     const text = this.finalAssistantText();
-    if (!text) return;
+    if (!text) throw new Error("koishi_final_assistant_text_missing");
     const deliveryResult = await sendText(
       this.app,
       this.chatKey,

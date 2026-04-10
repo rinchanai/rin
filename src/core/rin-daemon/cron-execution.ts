@@ -89,10 +89,11 @@ export async function executeCronAgentTask(
   if (task.session.mode === "dedicated" && result.sessionFile)
     task.dedicatedSessionFile = result.sessionFile;
   const finalText = summarizeText(result.finalText, 4000);
+  if (!finalText) {
+    throw new Error("cron_final_assistant_text_missing");
+  }
   return {
-    text:
-      finalText ||
-      `Scheduled agent turn finished in session ${result.sessionFile || "(ephemeral)"}`,
+    text: finalText,
     sessionId: result.sessionId,
     sessionFile: result.sessionFile,
   };
