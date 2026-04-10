@@ -67,8 +67,8 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
 test("koishi controller uses RpcInteractiveSession prompt path for chat turns", async () => {
   const controller = await createController("telegram/9:9");
   const calls = [];
-  controller.deliverTurnResult = async (result) => {
-    calls.push(`deliver:${result.messages.length}`);
+  controller.deliverFinalAssistantText = async () => {
+    calls.push("deliver:final-text");
   };
 
   controller.session = {
@@ -86,11 +86,11 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
       calls.push(
         `prompt:${options?.requestTag ? "tagged" : "untagged"}:${options?.streamingBehavior || "none"}`,
       );
+      controller.latestAssistantText = "hello";
       queueMicrotask(() => {
         const waiter = controller.turnWaiters.get(options.requestTag);
         waiter?.resolve({
           sessionFile: "/tmp/turn-chat.jsonl",
-          result: { messages: [{ type: "text", text: "hello" }] },
         });
       });
     },
@@ -103,7 +103,7 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
   assert.deepEqual(calls, [
     "ensureSessionReady",
     "prompt:tagged:none",
-    "deliver:1",
+    "deliver:final-text",
   ]);
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });
