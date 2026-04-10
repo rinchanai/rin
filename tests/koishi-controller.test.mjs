@@ -30,8 +30,6 @@ async function createController(chatKey = "telegram/1:2") {
     h: {},
   });
   controller.connect = async () => {};
-  controller.startTyping = () => {};
-  controller.stopTyping = () => {};
   controller.scheduleIdleDetach = () => {};
   controller.clearIdleDetachTimer = () => {};
   return controller;
@@ -66,6 +64,32 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
   assert.deepEqual(calls, ["ensureSessionReady", "runCommand:/session"]);
   assert.deepEqual(namedSessions, ["telegram/1:2", "telegram/1:2"]);
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
+});
+
+test("koishi controller polls telegram typing only while the session is streaming", async () => {
+  const controller = await createController("telegram/1:2");
+  const actions = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        internal: {
+          async sendChatAction(payload) {
+            actions.push(payload);
+          },
+        },
+      },
+    ],
+  };
+
+  controller.session = { isStreaming: false };
+  assert.equal(await controller.pollTyping(), false);
+  assert.deepEqual(actions, []);
+
+  controller.session = { isStreaming: true };
+  assert.equal(await controller.pollTyping(), true);
+  assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
 });
 
 test("koishi controller uses RpcInteractiveSession prompt path for chat turns", async () => {
@@ -110,6 +134,45 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
     "deliver:final-text",
   ]);
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
+});
+
+test("koishi controller falls back to rpc turn result text when message_end is missing", async () => {
+  const controller = await createController("telegram/9:10");
+  const calls = [];
+  controller.deliverFinalAssistantText = async () => {
+    calls.push(`deliver:${controller.latestAssistantText}`);
+  };
+
+  controller.session = {
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => undefined,
+      getSessionId: () => "",
+      getSessionName: () => "telegram/9:10",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/fallback-chat.jsonl",
+      sessionId: "session-fallback",
+    }),
+    prompt: async (_message, options) => {
+      queueMicrotask(() => {
+        const waiter = controller.turnWaiters.get(options.requestTag);
+        waiter?.resolve({
+          sessionFile: "/tmp/fallback-chat.jsonl",
+          result: {
+            messages: [{ type: "text", text: "fallback final text" }],
+          },
+        });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
+
+  assert.equal(controller.latestAssistantText, "fallback final text");
+  assert.deepEqual(calls, ["deliver:fallback final text"]);
 });
 
 test("koishi controller reattaches saved session file before bootstrapping a detached session", async () => {
