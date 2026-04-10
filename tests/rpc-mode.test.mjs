@@ -372,3 +372,116 @@ test("rpc mode resumes interrupted tool turns by appending interrupted tool resu
     process.stdout.write = stdoutWrite;
   }
 });
+
+test("rpc mode auto-resumes an interrupted turn when switching back to the session", async () => {
+  const stdinOn = process.stdin.on;
+  const stdoutWrite = process.stdout.write;
+  const handlers = new Map();
+  const calls = [];
+  const lines = [];
+
+  process.stdin.on = function (event, handler) {
+    handlers.set(event, handler);
+    return this;
+  };
+  process.stdout.write = function (chunk) {
+    lines.push(String(chunk));
+    return true;
+  };
+
+  try {
+    const stateMessages = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "toolCall",
+            id: "tool-1",
+            name: "bash",
+            arguments: { command: "sleep 1" },
+          },
+        ],
+      },
+    ];
+    const session = {
+      isStreaming: false,
+      isCompacting: false,
+      sessionFile: "/tmp/test-session.jsonl",
+      agent: {
+        waitForIdle: async () => {},
+        state: { messages: stateMessages },
+        continue: async () => {
+          calls.push(["continue"]);
+        },
+      },
+      bindExtensions: async () => {},
+      subscribe: () => {},
+      prompt: async () => {},
+      steer: async () => {},
+      followUp: async () => {},
+      abort: async () => {},
+      modelRegistry: { getAvailable: async () => [] },
+      sessionManager: {
+        appendMessage: (message) => {
+          calls.push(["appendMessage", message]);
+        },
+        getEntries: () => [],
+        getTree: () => [],
+        getLeafId: () => null,
+        getCwd: () => process.cwd(),
+        getSessionDir: () => process.cwd(),
+      },
+      messages: [],
+      getSessionStats: () => ({}),
+      getUserMessagesForForking: () => [],
+      getLastAssistantText: () => "",
+      setThinkingLevel: () => {},
+      cycleThinkingLevel: () => undefined,
+      setSteeringMode: () => {},
+      setFollowUpMode: () => {},
+      compact: async () => {},
+      setAutoCompactionEnabled: () => {},
+      setAutoRetryEnabled: () => {},
+      abortRetry: () => {},
+      executeBash: async () => {},
+      abortBash: async () => {},
+      fork: async () => ({ cancelled: false, selectedText: "" }),
+      navigateTree: async () => ({ cancelled: false }),
+      exportToHtml: async () => "",
+      exportToJsonl: () => "",
+      importFromJsonl: async () => true,
+      newSession: async () => true,
+      switchSession: async () => true,
+      setModel: async () => {},
+      reload: async () => {},
+      setSessionName: () => {},
+    };
+
+    void runCustomRpcMode(session, {
+      SessionManager: {
+        listAll: async () => [],
+        list: async () => [],
+        open: () => ({ appendSessionInfo() {} }),
+      },
+      builtinSlashCommands: [],
+    });
+    await wait(0);
+
+    const onData = handlers.get("data");
+    assert.equal(typeof onData, "function");
+    onData(
+      Buffer.from(
+        `${JSON.stringify({ id: "3", type: "switch_session", sessionPath: "/tmp/test-session.jsonl" })}\n`,
+      ),
+    );
+    await wait(10);
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0][0], "appendMessage");
+    assert.deepEqual(calls[1], ["continue"]);
+    assert.ok(lines.join("").includes('"command":"switch_session"'));
+  } finally {
+    process.stdin.on = stdinOn;
+    process.stdout.write = stdoutWrite;
+  }
+});
