@@ -20,6 +20,11 @@ test("rpc session events do not refresh whole state on every stream update", asy
     isCompacting: false,
     retryAttempt: 0,
     activeTurn: { mode: "prompt" },
+    remoteTurnRunning: false,
+    setRemoteTurnRunning(value) {
+      this.remoteTurnRunning = value;
+      this.isStreaming = value;
+    },
     emitEvent: (event) => seen.push(event),
   };
 
@@ -60,6 +65,7 @@ test("rpc session events do not refresh whole state on every stream update", asy
     },
   );
   assert.equal(target.isStreaming, false);
+  assert.equal(target.remoteTurnRunning, false);
   assert.equal(target.activeTurn, null);
   assert.equal(refreshMessagesAndSession, 1);
   assert.deepEqual(seen, [

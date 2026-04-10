@@ -145,6 +145,8 @@ export class RpcInteractiveSession {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private queuedOfflineOps: PendingRpcOperation[] = [];
   private activeTurn: PendingRpcOperation | null = null;
+  private rpcConnected = false;
+  private remoteTurnRunning = false;
   private disposed = false;
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
@@ -230,6 +232,7 @@ export class RpcInteractiveSession {
     });
     try {
       await this.client.connect();
+      this.setRpcConnected(true);
       await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
       await this.modelRegistry.sync().catch(() => {});
     } catch {
@@ -244,6 +247,7 @@ export class RpcInteractiveSession {
     this.clearWaitingDaemonState();
     this.unsubscribeClient?.();
     this.unsubscribeClient = undefined;
+    this.setRpcConnected(false);
     await this.client.disconnect();
   }
 
@@ -649,6 +653,27 @@ export class RpcInteractiveSession {
     }
   }
 
+  private setRpcConnected(connected: boolean) {
+    this.rpcConnected = connected;
+    if (!connected) {
+      this.remoteTurnRunning = false;
+      this.activeTurn = null;
+    }
+    this.syncStreamingState();
+  }
+
+  private setRemoteTurnRunning(running: boolean) {
+    this.remoteTurnRunning = running;
+    this.syncStreamingState();
+  }
+
+  private syncStreamingState() {
+    this.isStreaming = Boolean(
+      this.rpcConnected && (this.remoteTurnRunning || this.activeTurn),
+    );
+    if (!this.isStreaming && !this.rpcConnected) this.activeTurn = null;
+  }
+
   private clearWaitingDaemonState() {
     if (this.waitForDaemonHintTimer) clearTimeout(this.waitForDaemonHintTimer);
     this.waitForDaemonHintTimer = null;
@@ -701,8 +726,8 @@ export class RpcInteractiveSession {
 
     const sendOperation = async () => {
       await this.ensureRemoteSession();
-      this.isStreaming = true;
       this.activeTurn = operation;
+      this.syncStreamingState();
       await this.call(operation.mode, {
         message: operation.message,
         images: operation.images,
@@ -730,8 +755,7 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
-    this.isStreaming = false;
-    this.activeTurn = null;
+    this.setRpcConnected(false);
     emitConnectionLost(this as any);
   }
 
@@ -757,13 +781,15 @@ export class RpcInteractiveSession {
     this.restorePromise = (async () => {
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+      this.setRpcConnected(true);
       try {
         if (this.sessionFile) {
           await this.call("switch_session", { sessionPath: this.sessionFile });
         } else if (this.sessionId) {
           await this.call("attach_session", { sessionId: this.sessionId });
         }
-        await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
+        await this.refreshState(REFRESH_SESSION).catch(() => {});
+        void this.queueRefreshState(REFRESH_MESSAGES_AND_SESSION);
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {
@@ -875,6 +901,7 @@ export class RpcInteractiveSession {
 
   private applyState(state: any) {
     applyRpcSessionState(this as any, state);
+    this.syncStreamingState();
   }
 
   private async refreshMessages() {
