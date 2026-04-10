@@ -719,12 +719,6 @@ export class RpcInteractiveSession {
     this.restorePromise = (async () => {
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
-      this.emitEvent({
-        type: "rin_status",
-        phase: "update",
-        message: "Resuming session...",
-        statusText: "Daemon connection restored.",
-      } as any);
       try {
         if (this.sessionFile) {
           await this.call("switch_session", { sessionPath: this.sessionFile });
@@ -741,7 +735,6 @@ export class RpcInteractiveSession {
         }
       } finally {
         this.reconnecting = false;
-        this.emitEvent({ type: "rin_status", phase: "end" } as any);
       }
     })().finally(() => {
       this.restorePromise = null;

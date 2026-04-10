@@ -61,7 +61,7 @@ test("rpc restore reattaches once and avoids duplicate restore work", async () =
     0,
   );
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
-  assert.ok(events.some((event) => event?.type === "rin_status"));
+  assert.deepEqual(events, []);
 });
 
 test("rpc restore flushes queued offline ops after reattach", async () => {

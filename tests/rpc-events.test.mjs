@@ -62,5 +62,9 @@ test("rpc session events do not refresh whole state on every stream update", asy
   assert.equal(target.isStreaming, false);
   assert.equal(target.activeTurn, null);
   assert.equal(refreshMessagesAndSession, 1);
-  assert.ok(seen.some((item) => item?.type === "rin_status"));
+  assert.deepEqual(seen, [
+    { type: "message_update", message: { role: "assistant" } },
+    { type: "message_end", message: { role: "assistant" } },
+    { type: "agent_end" },
+  ]);
 });
