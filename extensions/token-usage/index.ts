@@ -18,6 +18,7 @@ type SessionState = {
 };
 
 const sessionStateById = new Map<string, SessionState>();
+const extensionInstanceId = `${process.pid}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 
 function safeString(value: unknown): string {
   if (value == null) return "";
@@ -82,6 +83,7 @@ function nextEventId(prefix: string, ctx: any) {
   state.seq += 1;
   return [
     meta.sessionId || meta.sessionFile || "session",
+    extensionInstanceId,
     prefix,
     String(state.seq),
   ].join(":");

@@ -66,7 +66,7 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
 
-test("koishi controller polls telegram typing only while the session is streaming", async () => {
+test("koishi controller polls telegram typing only while the controller still owns a live turn", async () => {
   const controller = await createController("telegram/1:2");
   const actions = [];
   controller.app = {
@@ -88,6 +88,13 @@ test("koishi controller polls telegram typing only while the session is streamin
   assert.deepEqual(actions, []);
 
   controller.session = { isStreaming: true };
+  controller.state.processing = undefined;
+  controller.turnWaiters.clear();
+  assert.equal(await controller.pollTyping(), false);
+  assert.deepEqual(actions, []);
+
+  controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
+  controller.turnWaiters.set("tag-1", { resolve() {}, reject() {} });
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
 });
@@ -256,6 +263,8 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   };
   controller.lastToolCallSummary = "Working";
   controller.session = { isStreaming: true };
+  controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
+  controller.turnWaiters.set("tag-1", { resolve() {}, reject() {} });
   controller.lastVisibleProgressAt = 1000;
   controller.lastIdleToolProgressAt = 0;
 
