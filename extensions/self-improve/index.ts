@@ -1,5 +1,3 @@
-import os from "node:os";
-
 import {
   SessionManager,
   type ExtensionAPI,
@@ -91,8 +89,6 @@ function loadMessagesFromSessionFile(sessionFile: string): any[] {
   }
 }
 
-const HOME_DIR = os.homedir();
-
 async function processSelfImproveReview(
   ctx: any,
   messages: any[],
@@ -100,19 +96,16 @@ async function processSelfImproveReview(
 ) {
   const sessionFile = String(opts.sessionFile || "").trim();
   const agentDir = String(ctx?.agentDir || "").trim();
-  const cwd = HOME_DIR;
   if (
     !Array.isArray(messages) ||
     messages.length === 0 ||
     !sessionFile ||
-    !agentDir ||
-    !cwd
+    !agentDir
   ) {
     return;
   }
   await enqueueMemoryMaintenanceJob({
     agentDir,
-    cwd,
     sessionFile,
     trigger: opts.trigger,
     snapshotKey: opts.snapshotKey,

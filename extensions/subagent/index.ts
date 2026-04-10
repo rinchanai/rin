@@ -69,12 +69,6 @@ const TaskSchema = Type.Object({
     }),
   ),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
-  cwd: Type.Optional(
-    Type.String({
-      description:
-        "Compatibility field. Rin resolves all subagent paths against the current user's home directory.",
-    }),
-  ),
   session: SessionSchema,
 });
 
@@ -89,12 +83,6 @@ const RunParamsSchema = Type.Object({
     }),
   ),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
-  cwd: Type.Optional(
-    Type.String({
-      description:
-        "Compatibility field. Rin resolves all subagent paths against the current user's home directory.",
-    }),
-  ),
   session: SessionSchema,
   tasks: Type.Optional(
     Type.Array(TaskSchema, {
@@ -425,9 +413,6 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
             0,
             0,
           ),
-        );
-        container.addChild(
-          new Text(theme.fg("muted", `base: ${task.cwd}`), 0, 0),
         );
         container.addChild(
           new Text(theme.fg("muted", `session mode: ${task.sessionMode}`), 0, 0),

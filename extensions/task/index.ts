@@ -201,12 +201,6 @@ const taskSchema = Type.Object({
       Type.Null(),
     ]),
   ),
-  cwd: Type.Optional(
-    Type.String({
-      description:
-        "Compatibility field. Rin runs scheduled tasks relative to the current user's home directory.",
-    }),
-  ),
   trigger: Type.Object({
     kind: StringEnum(["interval", "cron", "once"] as const, {
       description:

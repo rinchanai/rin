@@ -33,10 +33,7 @@ export async function resolveCronSessionFile(task: CronTaskRecord) {
   );
 }
 
-export async function executeCronShellTask(
-  task: CronTaskRecord,
-  defaultCwd: string,
-) {
+export async function executeCronShellTask(task: CronTaskRecord) {
   if (task.target.kind !== "shell_command")
     throw new Error("cron_invalid_shell_task");
   const { command } = task.target;
@@ -74,7 +71,6 @@ export async function executeCronShellTask(
 export async function executeCronAgentTask(
   task: CronTaskRecord,
   options: {
-    cwd: string;
     agentDir: string;
     additionalExtensionPaths?: string[];
   },
@@ -108,7 +104,6 @@ export async function executeCronAgentTask(
 export async function executeCronTask(
   task: CronTaskRecord,
   options: {
-    cwd: string;
     agentDir: string;
     additionalExtensionPaths?: string[];
   },
@@ -116,7 +111,7 @@ export async function executeCronTask(
   const runId = cronTaskRunId(task);
   try {
     if (task.target.kind === "shell_command") {
-      const text = await executeCronShellTask(task, options.cwd);
+      const text = await executeCronShellTask(task);
       task.lastResultText = text;
       if (task.chatKey && text) {
         await sendKoishiText(options.agentDir, {

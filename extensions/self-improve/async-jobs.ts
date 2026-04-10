@@ -1,10 +1,7 @@
 import fs from "node:fs/promises";
 import fssync from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-
-const HOME_DIR = os.homedir();
 import { fileURLToPath } from "node:url";
 
 import { maintainMemory } from "./maintainer.js";
@@ -15,7 +12,6 @@ export type MemoryMaintenanceJob = {
   createdAt: string;
   updatedAt: string;
   agentDir: string;
-  cwd: string;
   sessionFile: string;
   trigger: string;
   snapshotKey?: string;
@@ -72,7 +68,6 @@ function sameJob(
 ) {
   const sameBase =
     safeString(a.agentDir).trim() === safeString(b.agentDir).trim() &&
-    safeString(a.cwd).trim() === safeString(b.cwd).trim() &&
     safeString(a.sessionFile).trim() === safeString(b.sessionFile).trim();
   if (!sameBase) return false;
   const aSnapshotKey = safeString(a.snapshotKey).trim();
@@ -87,17 +82,16 @@ export async function enqueueMemoryMaintenanceJob(
   input: Omit<MemoryMaintenanceJob, "id" | "createdAt" | "updatedAt">,
 ) {
   const agentDir = path.resolve(safeString(input.agentDir).trim());
-  const cwd = HOME_DIR;
   const sessionFile = path.resolve(safeString(input.sessionFile).trim());
   const trigger =
     safeString(input.trigger).trim() || "extension:memory_maintainer";
   const snapshotKey = safeString(input.snapshotKey).trim();
-  if (!agentDir || !cwd || !sessionFile)
+  if (!agentDir || !sessionFile)
     throw new Error("memory_job_invalid_input");
 
   const jobs = await loadQueue(agentDir);
   const existing = jobs.find((job) =>
-    sameJob(job, { agentDir, cwd, sessionFile, snapshotKey }),
+    sameJob(job, { agentDir, sessionFile, snapshotKey }),
   );
   const updatedAt = nowIso();
   if (existing) {
@@ -120,7 +114,6 @@ export async function enqueueMemoryMaintenanceJob(
       createdAt: updatedAt,
       updatedAt,
       agentDir,
-      cwd,
       sessionFile,
       trigger,
       snapshotKey: snapshotKey || undefined,
@@ -199,19 +192,13 @@ async function removeMatchingJobs(
 }
 
 async function processJob(job: MemoryMaintenanceJob) {
-  const cwd = HOME_DIR;
   const agentDir = path.resolve(safeString(job.agentDir).trim());
   const sessionFile = path.resolve(safeString(job.sessionFile).trim());
-  if (!cwd || !agentDir || !sessionFile) {
+  if (!agentDir || !sessionFile) {
     throw new Error("memory_job_invalid_payload");
   }
   await maintainMemory(
-    {
-      cwd,
-      sessionManager: {
-        getCwd: () => cwd,
-      },
-    } as any,
+    {} as any,
     {
       sessionFile,
       trigger: job.trigger,

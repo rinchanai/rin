@@ -34,7 +34,6 @@ export type MemoryEvent = {
   kind: "user_input" | "assistant_message" | "tool_result" | "system_note";
   session_id: string;
   session_file: string;
-  cwd: string;
   chat_key: string;
   source: string;
   tool_name: string;

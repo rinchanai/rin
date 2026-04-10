@@ -57,7 +57,6 @@ export function eventScore(query: string, event: MemoryEvent): number {
       event.summary,
       event.text,
       event.tool_name,
-      event.cwd,
       ...event.tags,
     ].join(" \n "),
   );
