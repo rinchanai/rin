@@ -105,3 +105,53 @@ test("rpc restore flushes queued offline ops after reattach", async () => {
   ]);
   assert.deepEqual(target.queuedOfflineOps, []);
 });
+
+test("rpc restore retries an interrupted tool turn when the daemon came back idle", async () => {
+  const calls = [];
+  const target = {
+    disposed: false,
+    restorePromise: null,
+    reconnecting: true,
+    reconnectTimer: null,
+    emitEvent: () => {},
+    sessionFile: "/tmp/demo.jsonl",
+    sessionId: "",
+    activeTurn: {
+      mode: "prompt",
+      message: "demo",
+      source: "user",
+      requestTag: "req-1",
+    },
+    call: async (type, payload) => {
+      calls.push({ type, payload });
+      return {};
+    },
+    refreshState: async () => {},
+    resumeInterruptedTurn: async (options) => {
+      calls.push({ type: "resume_interrupted_turn", payload: options });
+    },
+    shouldRetryInterruptedTurn: () => true,
+    restoreResumeSent: false,
+    queuedOfflineOps: [],
+    sendOrQueue: async () => {},
+    isStreaming: false,
+    isCompacting: false,
+  };
+
+  await RpcInteractiveSession.prototype.handleConnectionRestored.call(target);
+
+  assert.equal(
+    calls.filter((item) => item.type === "switch_session").length,
+    1,
+  );
+  assert.deepEqual(
+    calls.filter((item) => item.type === "resume_interrupted_turn"),
+    [
+      {
+        type: "resume_interrupted_turn",
+        payload: { source: "user", requestTag: "req-1" },
+      },
+    ],
+  );
+  assert.equal(target.restoreResumeSent, true);
+});

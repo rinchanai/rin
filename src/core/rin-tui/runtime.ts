@@ -145,6 +145,7 @@ export class RpcInteractiveSession {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private queuedOfflineOps: PendingRpcOperation[] = [];
   private activeTurn: PendingRpcOperation | null = null;
+  private daemonUnavailable = false;
   private disposed = false;
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
@@ -697,6 +698,7 @@ export class RpcInteractiveSession {
 
   private handleConnectionLost() {
     this.restoreResumeSent = false;
+    this.daemonUnavailable = true;
     emitConnectionLost(this as any);
   }
 
@@ -738,12 +740,33 @@ export class RpcInteractiveSession {
           await this.ensureRemoteSession();
         }
         await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+
+        if (
+          this.activeTurn &&
+          !this.isStreaming &&
+          !this.isCompacting &&
+          !this.restoreResumeSent &&
+          this.shouldRetryInterruptedTurn()
+        ) {
+          this.restoreResumeSent = true;
+          await this.resumeInterruptedTurn({
+            source: this.activeTurn.source || "daemon-reconnect",
+            requestTag: this.activeTurn.requestTag,
+          });
+          await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+        }
+
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {
           await this.sendOrQueue(operation);
         }
+
+        if (!this.isStreaming && !this.isCompacting) {
+          this.activeTurn = null;
+        }
       } finally {
+        this.daemonUnavailable = false;
         if (!this.isStreaming && !this.isCompacting) {
           this.emitEvent({ type: "rin_status", phase: "end" } as any);
         }
@@ -848,6 +871,17 @@ export class RpcInteractiveSession {
 
   private getBranch(fromId?: string) {
     return getSessionBranch(this.entryById, this.leafId, fromId);
+  }
+
+  private shouldRetryInterruptedTurn() {
+    const lastMessage = Array.isArray(this.messages)
+      ? this.messages[this.messages.length - 1]
+      : null;
+    if (!lastMessage || lastMessage.role !== "assistant") return false;
+    const toolCalls = Array.isArray(lastMessage.content)
+      ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
+      : [];
+    return toolCalls.length > 0;
   }
 
   private computeSessionStats() {
