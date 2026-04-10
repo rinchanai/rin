@@ -145,12 +145,10 @@ export class RpcInteractiveSession {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private queuedOfflineOps: PendingRpcOperation[] = [];
   private activeTurn: PendingRpcOperation | null = null;
-  private rpcStatusMessage = "";
   private disposed = false;
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
   private restorePromise: Promise<void> | null = null;
-  private restoreResumeSent = false;
 
   constructor(
     public client: RinDaemonFrontendClient,
@@ -669,7 +667,6 @@ export class RpcInteractiveSession {
       await this.ensureRemoteSession();
       this.isStreaming = true;
       this.activeTurn = operation;
-      this.restoreResumeSent = false;
       await this.call(operation.mode, {
         message: operation.message,
         images: operation.images,
@@ -697,8 +694,6 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
-    this.restoreResumeSent = false;
-    this.rpcStatusMessage = "Waiting daemon...";
     emitConnectionLost(this as any);
   }
 
@@ -722,14 +717,12 @@ export class RpcInteractiveSession {
     if (this.disposed) return;
     if (this.restorePromise) return await this.restorePromise;
     this.restorePromise = (async () => {
-      this.reconnecting = false;
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
-      this.rpcStatusMessage = "Resuming session...";
       this.emitEvent({
         type: "rin_status",
         phase: "update",
-        message: this.rpcStatusMessage,
+        message: "Resuming session...",
         statusText: "Daemon connection restored.",
       } as any);
       try {
@@ -741,23 +734,14 @@ export class RpcInteractiveSession {
           await this.ensureRemoteSession();
         }
         await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
-        await this.restoreInterruptedTurnIfNeeded();
-
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {
           await this.sendOrQueue(operation);
         }
-
-        if (!this.isStreaming && !this.isCompacting) {
-          this.activeTurn = null;
-          this.rpcStatusMessage = "";
-        }
       } finally {
-        if (!this.isStreaming && !this.isCompacting) {
-          this.rpcStatusMessage = "";
-          this.emitEvent({ type: "rin_status", phase: "end" } as any);
-        }
+        this.reconnecting = false;
+        this.emitEvent({ type: "rin_status", phase: "end" } as any);
       }
     })().finally(() => {
       this.restorePromise = null;
@@ -859,35 +843,6 @@ export class RpcInteractiveSession {
 
   private getBranch(fromId?: string) {
     return getSessionBranch(this.entryById, this.leafId, fromId);
-  }
-
-  private shouldRetryInterruptedTurn() {
-    const lastMessage = Array.isArray(this.messages)
-      ? this.messages[this.messages.length - 1]
-      : null;
-    if (!lastMessage || lastMessage.role !== "assistant") return false;
-    const toolCalls = Array.isArray(lastMessage.content)
-      ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
-      : [];
-    return toolCalls.length > 0;
-  }
-
-  private async restoreInterruptedTurnIfNeeded() {
-    if (
-      !this.activeTurn ||
-      this.isStreaming ||
-      this.isCompacting ||
-      this.restoreResumeSent ||
-      !this.shouldRetryInterruptedTurn()
-    ) {
-      return;
-    }
-    this.restoreResumeSent = true;
-    await this.resumeInterruptedTurn({
-      source: this.activeTurn.source || "daemon-reconnect",
-      requestTag: this.activeTurn.requestTag,
-    });
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
   }
 
   private computeSessionStats() {

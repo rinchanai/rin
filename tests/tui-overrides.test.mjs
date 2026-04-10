@@ -141,7 +141,7 @@ test("rin_status end keeps waiting-daemon state while reconnect is still unresol
 
   const instance = {
     defaultWorkingMessage: "Working...",
-    session: { isStreaming: true, isCompacting: false, rpcStatusMessage: "Waiting daemon..." },
+    session: { isStreaming: true, isCompacting: false, reconnecting: true },
     ui: { requestRender() {} },
     startWorkingAnimation(message) {
       startedWith = message;

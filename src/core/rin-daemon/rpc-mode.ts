@@ -60,6 +60,11 @@ async function resumeInterruptedTurn(session: any) {
   return true;
 }
 
+async function resumeInterruptedTurnIfNeeded(session: any) {
+  if (!session || session.isStreaming || session.isCompacting) return false;
+  return await resumeInterruptedTurn(session);
+}
+
 export async function runCustomRpcMode(
   runtimeOrSession: any,
   deps: { SessionManager: any; builtinSlashCommands: any[] },
@@ -287,7 +292,15 @@ export async function runCustomRpcMode(
         output(done(id, type, { shutdown: true }));
         process.exit(0);
       case "attach_session":
-        return done(id, type, getSessionState(session));
+        return run(
+          id,
+          type,
+          async () => {
+            await resumeInterruptedTurnIfNeeded(session);
+            return getSessionState(session);
+          },
+          (value) => value,
+        );
       case "get_state":
         return done(id, type, getSessionState(session));
       case "cycle_model":
@@ -430,6 +443,7 @@ export async function runCustomRpcMode(
               .switchSession(command.sessionPath)
               .then(async (value: any) => {
                 await bindCurrentSession();
+                await resumeInterruptedTurnIfNeeded(getSession());
                 return value;
               }),
           (value) => ({ cancelled: Boolean(value?.cancelled) }),
