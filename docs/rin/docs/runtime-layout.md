@@ -32,6 +32,8 @@ Typical metadata paths:
 - macOS: `~/Library/Application Support/rin/install.json`
 
 This metadata records the current user's default `targetUser` and `installDir`.
+It is useful only when you are operating as the same user who owns the launcher.
+If the current account already has no `rin` command, prefer jumping to the target install manifest workflow instead of inspecting the current account's launcher metadata.
 
 Important implications for the agent:
 
@@ -58,7 +60,7 @@ Useful locations:
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 
 These files are the main way to recover `installDir` and `targetUser` when the current account does not have a working `rin` command.
-Service files expose the runtime directory through `RIN_DIR`.
+Service files expose the runtime directory through `RIN_DIR`, and once `installDir` is known the next stop should be `<installDir>/installer.json`.
 
 ## `app/current/`
 

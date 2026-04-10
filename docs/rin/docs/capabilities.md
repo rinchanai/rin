@@ -21,24 +21,23 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
 4. if `installDir` or `targetUser` is unknown, discover them first from Rin install metadata or managed service files
 
-When `rin` is missing, use this discovery order before falling back to ad-hoc guesses:
+When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
 
-1. check the current account's launcher locations:
-   - `command -v rin`
-   - `test -x ~/.local/bin/rin && ~/.local/bin/rin update`
-2. check the current account's launcher metadata:
-   - Linux: `~/.config/rin/install.json`
-   - macOS: `~/Library/Application Support/rin/install.json`
-   - this file records `defaultTargetUser` and `defaultInstallDir`
-3. check the target install manifest:
-   - `<installDir>/installer.json`
-   - common default: `~/.rin/installer.json`
-   - this file records `targetUser` and `installDir`
-4. if the install dir is still unknown, inspect managed service files for `RIN_DIR`:
+In that case, do not keep reasoning about the current account's launcher metadata.
+Instead, jump straight to the target install manifest workflow:
+
+1. find `installDir` for the real target install:
+   - inspect managed service files for `RIN_DIR`
    - Linux: `~/.config/systemd/user/rin-daemon*.service`
    - macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
-5. once `installDir` is known, prefer the stable runtime entry:
+   - if you already know the target home, also probe the common default `<targetHome>/.rin/`
+2. open the target install manifest:
+   - `<installDir>/installer.json`
+   - this file records `targetUser` and `installDir`
+3. invoke the stable runtime entry directly:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
+
+In short: no `rin` on the current account usually means “wrong user for the launcher”, so the recovery path is service file → target install dir → `installer.json` → `app/current/.../main.js update`.
 
 Important implications:
 

@@ -87,21 +87,22 @@ For a normal installed Rin update, use:
 rin update
 ```
 
-If `rin` is missing on the current account, check these in order:
+If `rin` is confirmed missing on the current account, treat that as “this is not the launcher-owning user”.
+In that case, jump straight to the target install manifest flow:
 
 ```bash
-command -v rin
-~/.local/bin/rin update
+# 1) find installDir from a managed service file or known target home
+# 2) read <installDir>/installer.json to get targetUser
+# 3) run the stable runtime entry directly
 node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
 ```
 
-Find `<installDir>` and `<targetUser>` from the install metadata or managed service files:
+Typical places to recover `<installDir>`:
 
-- Linux: `~/.config/rin/install.json`
-- macOS: `~/Library/Application Support/rin/install.json`
 - target manifest: `<installDir>/installer.json`
 - Linux service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS service: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+- common target-home default: `<targetHome>/.rin/`
 
 This is the canonical update path for the installed runtime.
 It refreshes the core runtime and installed docs.
