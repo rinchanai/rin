@@ -227,10 +227,10 @@ test("koishi controller summarizes idle tool progress with compact tool input", 
   );
 });
 
-test("koishi controller idle tool progress intervals default to private 10s and group 30s and stay configurable", () => {
+test("koishi controller idle tool progress intervals default to 60s and stay configurable", () => {
   assert.deepEqual(normalizeKoishiIdleToolProgressConfig({}), {
-    privateIntervalMs: 10000,
-    groupIntervalMs: 30000,
+    privateIntervalMs: 60000,
+    groupIntervalMs: 60000,
   });
   assert.deepEqual(
     normalizeKoishiIdleToolProgressConfig({
@@ -252,9 +252,10 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   const controller = await createController("telegram/1:2");
   controller.idleToolProgressConfig = {
     privateIntervalMs: 10000,
-    groupIntervalMs: 30000,
+    groupIntervalMs: 10000,
   };
-  controller.lastToolCallSummary = "bash echo hello";
+  controller.lastToolCallSummary = "Working";
+  controller.session = { isStreaming: true };
   controller.lastVisibleProgressAt = 1000;
   controller.lastIdleToolProgressAt = 0;
 
@@ -270,11 +271,42 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   assert.deepEqual(sent, []);
 
   await controller.handleIdleToolProgressTick(11000);
-  assert.deepEqual(sent, ["bash echo hello"]);
+  assert.deepEqual(sent, ["Working"]);
 
   await controller.handleIdleToolProgressTick(19000);
-  assert.deepEqual(sent, ["bash echo hello"]);
+  assert.deepEqual(sent, ["Working"]);
 
   await controller.handleIdleToolProgressTick(22050);
-  assert.deepEqual(sent, ["bash echo hello", "bash echo hello"]);
+  assert.deepEqual(sent, ["Working", "Working"]);
+});
+
+test("koishi controller delivers completed assistant text during recovery when processing state is stale", async () => {
+  const controller = await createController("telegram/1:2");
+  const delivered = [];
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "42",
+  };
+  controller.deliverFinalAssistantText = async (replyToMessageId) => {
+    delivered.push({ text: controller.latestAssistantText, replyToMessageId });
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "final from recovery" }],
+      },
+    ],
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.equal(controller.state.processing, undefined);
+  assert.deepEqual(delivered, [
+    { text: "final from recovery", replyToMessageId: "42" },
+  ]);
 });
