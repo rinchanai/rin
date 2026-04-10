@@ -13,11 +13,20 @@ export type UsageStats = {
   turns: number;
 };
 
+export type SubagentSessionMode = "memory" | "persist" | "resume" | "fork";
+
+export type SubagentSessionConfig = {
+  mode?: SubagentSessionMode;
+  ref?: string;
+  name?: string;
+};
+
 export type SubagentTask = {
   prompt: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
   cwd?: string;
+  session?: SubagentSessionConfig;
 };
 
 export type RunSubagentParams = {
@@ -25,6 +34,7 @@ export type RunSubagentParams = {
   model?: string;
   thinkingLevel?: ThinkingLevel;
   cwd?: string;
+  session?: SubagentSessionConfig;
   tasks?: SubagentTask[];
 };
 
@@ -42,6 +52,11 @@ export type TaskResult = {
   model?: string;
   usage: UsageStats;
   messages: Message[];
+  sessionMode: SubagentSessionMode;
+  sessionPersisted: boolean;
+  sessionId?: string;
+  sessionFile?: string;
+  sessionName?: string;
 };
 
 export type ProviderModelSummary = {
@@ -49,6 +64,24 @@ export type ProviderModelSummary = {
   count: number;
   top3: string[];
   all: string[];
+};
+
+export type SubagentSessionSummary = {
+  path: string;
+  id: string;
+  cwd: string;
+  name?: string;
+  createdAt: string;
+  modifiedAt: string;
+  messageCount: number;
+  preview: string;
+};
+
+export type ListSubagentSessionsParams = {
+  cwd?: string;
+  all?: boolean;
+  query?: string;
+  limit?: number;
 };
 
 export type SubagentBackendInfo = {
