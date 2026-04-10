@@ -80,6 +80,7 @@ export async function executeCronAgentTask(
   if (task.target.kind !== "agent_prompt")
     throw new Error("cron_invalid_agent_task");
   const sessionFile = await resolveCronSessionFile(task);
+
   if (task.chatKey) {
     const result = await requestKoishiRpc(options.agentDir, {
       type: "run_chat_turn",
@@ -90,9 +91,7 @@ export async function executeCronAgentTask(
       },
     });
     const finalText = summarizeText(result?.finalText, 4000);
-    if (!finalText) {
-      throw new Error("cron_final_assistant_text_missing");
-    }
+    if (!finalText) throw new Error("cron_final_assistant_text_missing");
     const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
     if (task.session.mode === "dedicated" && nextSessionFile) {
       task.dedicatedSessionFile = nextSessionFile;
@@ -101,9 +100,9 @@ export async function executeCronAgentTask(
       text: finalText,
       sessionId: String(result?.sessionId || "").trim() || undefined,
       sessionFile: nextSessionFile,
-      deliveredByChatPipeline: true,
     };
   }
+
   const result = await runSessionPrompt({
     cwd: task.cwd || options.cwd,
     agentDir: options.agentDir,
@@ -114,14 +113,11 @@ export async function executeCronAgentTask(
   if (task.session.mode === "dedicated" && result.sessionFile)
     task.dedicatedSessionFile = result.sessionFile;
   const finalText = summarizeText(result.finalText, 4000);
-  if (!finalText) {
-    throw new Error("cron_final_assistant_text_missing");
-  }
+  if (!finalText) throw new Error("cron_final_assistant_text_missing");
   return {
     text: finalText,
     sessionId: result.sessionId,
     sessionFile: result.sessionFile,
-    deliveredByChatPipeline: false,
   };
 }
 
@@ -135,29 +131,20 @@ export async function executeCronTask(
 ) {
   const runId = cronTaskRunId(task);
   try {
-    const result:
-      | {
-          text: string;
-          sessionId?: string;
-          sessionFile?: string;
-          deliveredByChatPipeline?: boolean;
-        }
-      | {
-          text: string;
-        } =
-      task.target.kind === "shell_command"
-        ? { text: await executeCronShellTask(task, options.cwd) }
-        : await executeCronAgentTask(task, options);
-    task.lastResultText = result.text;
-    if (task.chatKey && result.text && !("deliveredByChatPipeline" in result && result.deliveredByChatPipeline)) {
-      await sendKoishiText(options.agentDir, {
-        chatKey: task.chatKey,
-        taskId: task.id,
-        runId,
-        text: result.text,
-        sessionId: "sessionId" in result ? result.sessionId : undefined,
-        sessionFile: "sessionFile" in result ? result.sessionFile : undefined,
-      }).catch(() => {});
+    if (task.target.kind === "shell_command") {
+      const text = await executeCronShellTask(task, options.cwd);
+      task.lastResultText = text;
+      if (task.chatKey && text) {
+        await sendKoishiText(options.agentDir, {
+          chatKey: task.chatKey,
+          taskId: task.id,
+          runId,
+          text,
+        }).catch(() => {});
+      }
+    } else {
+      const result = await executeCronAgentTask(task, options);
+      task.lastResultText = result.text;
     }
   } catch (error: any) {
     task.lastError = String(
