@@ -47,6 +47,7 @@ function loadRestartState(agentDir: string) {
               typeof item?.sessionFile === "string" && item.sessionFile
                 ? item.sessionFile
                 : undefined,
+            resumeTurn: Boolean(item?.resumeTurn),
           }))
           .filter((item: any) => item.sessionFile)
       : [];
@@ -58,7 +59,9 @@ function loadRestartState(agentDir: string) {
 
 function saveRestartState(
   agentDir: string,
-  state: { pendingResume: Array<{ sessionFile?: string }> },
+  state: {
+    pendingResume: Array<{ sessionFile?: string; resumeTurn?: boolean }>;
+  },
 ) {
   const filePath = restartStatePath(agentDir);
   try {
@@ -465,7 +468,7 @@ export async function startDaemon(
   saveRestartState(runtime.agentDir, restartState);
   for (const item of pendingResume) {
     try {
-      if (item.sessionFile) workerPool.resumeInterruptedSession(item.sessionFile);
+      if (item.sessionFile) workerPool.restoreSessionWorker(item);
     } catch {
       restartState.pendingResume.push(item);
     }

@@ -20,7 +20,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("getInterruptedSessionSelectors keeps live session workers even when not streaming", async () => {
+test("getRestorableSessionSelectors keeps live session workers and remembers turn state", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-worker-pool-"));
   const workerPath = path.join(dir, "worker.mjs");
   await fs.writeFile(
@@ -36,8 +36,13 @@ test("getInterruptedSessionSelectors keeps live session workers even when not st
   worker.sessionFile = "/tmp/test-session.jsonl";
   worker.isStreaming = false;
 
-  assert.deepEqual(pool.getInterruptedSessionSelectors(), [
-    { sessionFile: "/tmp/test-session.jsonl" },
+  assert.deepEqual(pool.getRestorableSessionSelectors(), [
+    { sessionFile: "/tmp/test-session.jsonl", resumeTurn: false },
+  ]);
+
+  worker.isStreaming = true;
+  assert.deepEqual(pool.getRestorableSessionSelectors(), [
+    { sessionFile: "/tmp/test-session.jsonl", resumeTurn: true },
   ]);
 
   pool.destroyAll();
