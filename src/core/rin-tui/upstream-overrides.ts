@@ -167,13 +167,13 @@ export async function applyRinTuiOverrides() {
           const hasActiveWork = Boolean(
             this?.session?.isStreaming || this?.session?.isCompacting,
           );
-          const daemonUnavailable = Boolean(this?.session?.daemonUnavailable);
+          const rpcStatusMessage = String(this?.session?.rpcStatusMessage || "");
           const isSessionStatus =
             message === SESSION_STARTING_MESSAGE ||
             message === SESSION_RESUMING_MESSAGE;
           const shouldShowWaiting =
             event.phase !== "end" &&
-            (daemonUnavailable || hasActiveWork) &&
+            (rpcStatusMessage === DAEMON_WAITING_MESSAGE || hasActiveWork) &&
             message === DAEMON_WAITING_MESSAGE;
           const shouldShowSessionStatus =
             event.phase !== "end" && isSessionStatus;
@@ -181,8 +181,8 @@ export async function applyRinTuiOverrides() {
           if (shouldShowWaiting || shouldShowSessionStatus) {
             this.startWorkingAnimation?.(message);
           } else if (event.phase === "end") {
-            if (daemonUnavailable) {
-              this.startWorkingAnimation?.(DAEMON_WAITING_MESSAGE);
+            if (rpcStatusMessage) {
+              this.startWorkingAnimation?.(rpcStatusMessage);
             } else if (hasActiveWork) {
               this.startWorkingAnimation?.(this?.defaultWorkingMessage);
             } else {
