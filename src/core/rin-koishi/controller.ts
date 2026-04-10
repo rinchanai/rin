@@ -174,12 +174,13 @@ export class KoishiChatController {
   state: KoishiChatState;
   client: RinDaemonFrontendClient | null = null;
   session: RpcInteractiveSession | null = null;
-  turnSeq = 0;
-  activeTag = "";
-  turnWaiters = new Map<
-    string,
-    { resolve: (value: any) => void; reject: (error: Error) => void }
-  >();
+  liveTurn:
+    | {
+        promise: Promise<any>;
+        resolve: (value: any) => void;
+        reject: (error: Error) => void;
+      }
+    | null = null;
   interimText = "";
   interimSentText = "";
   interimSentAt = 0;
@@ -229,63 +230,11 @@ export class KoishiChatController {
     this.session = session;
 
     client.subscribe((event) => {
-      if (event.type !== "ui") return;
-      if (event.name === "connection_lost") {
-        this.clearIdleToolProgressTimer();
-        for (const [requestTag, waiter] of this.turnWaiters.entries()) {
-          this.turnWaiters.delete(requestTag);
-          waiter.reject(new Error("rin_disconnected:rpc_turn"));
-        }
-        return;
-      }
-      const payload: any = event.payload;
-      if (payload?.type !== "rpc_turn_event") return;
-      const requestTag = safeString(payload.requestTag || "").trim();
-      const waiter = this.turnWaiters.get(requestTag);
-      if (!waiter) return;
-      if (payload.event === "complete") {
-        const finalText = extractFinalTextFromTurnResult(payload?.result);
-        if (finalText) this.latestAssistantText = finalText;
-        this.turnWaiters.delete(requestTag);
-        waiter.resolve(payload);
-      } else if (payload.event === "error") {
-        this.turnWaiters.delete(requestTag);
-        waiter.reject(new Error(String(payload.error || "rpc_turn_failed")));
-      }
+      this.handleClientEvent(event);
     });
 
     session.subscribe((event: any) => {
-      switch (event?.type) {
-        case "agent_start":
-          this.interimText = "";
-          this.interimSentText = "";
-          this.latestAssistantText = "";
-          this.lastVisibleProgressAt = Date.now();
-          this.lastIdleToolProgressAt = 0;
-          this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
-          this.scheduleIdleToolProgress();
-          break;
-        case "message_update":
-          if (event?.message?.role !== "assistant") break;
-          {
-            const nextText = extractTextFromContent(event.message.content);
-            if (nextText) this.interimText = nextText;
-          }
-          break;
-        case "message_end":
-          break;
-        case "tool_execution_start":
-          this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
-          this.scheduleIdleToolProgress();
-          break;
-        case "tool_execution_end":
-        case "compaction_start":
-        case "compaction_end":
-          break;
-        case "agent_end":
-          this.clearIdleToolProgressTimer();
-          break;
-      }
+      this.handleSessionEvent(event);
     });
 
     const wantedSessionFile = safeString(this.state.piSessionFile || "").trim();
@@ -297,12 +246,63 @@ export class KoishiChatController {
 
   dispose() {
     this.clearIdleToolProgressTimer();
-    for (const waiter of this.turnWaiters.values())
-      waiter.reject(new Error("koishi_controller_disposed"));
-    this.turnWaiters.clear();
+    this.failLiveTurn(new Error("koishi_controller_disposed"));
     void this.session?.disconnect().catch(() => {});
     this.client = null;
     this.session = null;
+  }
+
+  handleClientEvent(event: any) {
+    if (event?.type !== "ui") return;
+    if (event.name === "connection_lost") {
+      this.clearIdleToolProgressTimer();
+      this.failLiveTurn(new Error("rin_disconnected:rpc_turn"));
+      return;
+    }
+    const payload: any = event.payload;
+    if (payload?.type !== "rpc_turn_event") return;
+    if (payload.event === "complete") {
+      const finalText = extractFinalTextFromTurnResult(payload?.result);
+      if (finalText) this.latestAssistantText = finalText;
+      return;
+    }
+    if (payload.event === "error") {
+      this.failLiveTurn(new Error(String(payload.error || "rpc_turn_failed")));
+    }
+  }
+
+  handleSessionEvent(event: any) {
+    switch (event?.type) {
+      case "agent_start":
+        this.interimText = "";
+        this.interimSentText = "";
+        this.latestAssistantText = "";
+        this.lastVisibleProgressAt = Date.now();
+        this.lastIdleToolProgressAt = 0;
+        this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
+        this.scheduleIdleToolProgress();
+        break;
+      case "message_update":
+        if (event?.message?.role !== "assistant") break;
+        {
+          const nextText = extractTextFromContent(event.message.content);
+          if (nextText) this.interimText = nextText;
+        }
+        break;
+      case "tool_execution_start":
+        this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
+        this.scheduleIdleToolProgress();
+        break;
+      case "agent_end":
+        this.clearIdleToolProgressTimer();
+        this.completeLiveTurn();
+        break;
+      case "message_end":
+      case "tool_execution_end":
+      case "compaction_start":
+      case "compaction_end":
+        break;
+    }
   }
 
   private saveState() {
@@ -310,9 +310,7 @@ export class KoishiChatController {
   }
   private hasLiveTurn() {
     return Boolean(
-      this.state.processing &&
-        this.session?.isStreaming &&
-        this.turnWaiters.size > 0,
+      this.state.processing && this.session?.isStreaming && this.liveTurn,
     );
   }
   async pollTyping() {
@@ -414,9 +412,48 @@ export class KoishiChatController {
     }
     this.scheduleIdleToolProgress();
   }
-  private nextRequestTag() {
-    this.turnSeq += 1;
-    return `${this.chatKey}:${Date.now()}:${this.turnSeq}`;
+  private startLiveTurn() {
+    this.failLiveTurn(new Error("koishi_turn_replaced"));
+    let resolve!: (value: any) => void;
+    let reject!: (error: Error) => void;
+    const liveTurn = {
+      promise: new Promise<any>((nextResolve, nextReject) => {
+        resolve = nextResolve;
+        reject = nextReject;
+      }),
+      resolve: (value: any) => {
+        if (this.liveTurn === liveTurn) this.liveTurn = null;
+        resolve(value);
+      },
+      reject: (error: Error) => {
+        if (this.liveTurn === liveTurn) this.liveTurn = null;
+        reject(error);
+      },
+    };
+    this.liveTurn = liveTurn;
+    return liveTurn;
+  }
+  private failLiveTurn(error: Error) {
+    if (!this.liveTurn) return;
+    const liveTurn = this.liveTurn;
+    this.liveTurn = null;
+    liveTurn.reject(error);
+  }
+  private collectFinalAssistantText() {
+    const messages = Array.isArray(this.session?.messages)
+      ? this.session.messages
+      : [];
+    return extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages));
+  }
+  private completeLiveTurn() {
+    if (!this.liveTurn) return;
+    const finalText = this.collectFinalAssistantText();
+    if (finalText) this.latestAssistantText = finalText;
+    this.liveTurn.resolve({
+      finalText,
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile: this.currentSessionFile(),
+    });
   }
   currentSessionId() {
     return safeString(
@@ -520,11 +557,6 @@ export class KoishiChatController {
         ).trim() || undefined,
     };
   }
-  private waitForTurn(tag: string) {
-    return new Promise<any>((resolve, reject) => {
-      this.turnWaiters.set(tag, { resolve, reject });
-    });
-  }
   private async ensureSessionReady() {
     if (!this.session) throw new Error("koishi_session_not_connected");
     const wanted = safeString(this.state.piSessionFile || "").trim();
@@ -615,8 +647,6 @@ export class KoishiChatController {
       attachments: input.attachments,
       startedAt: Date.now(),
     });
-    const tag = this.nextRequestTag();
-    this.activeTag = tag;
     this.state.chatKey = this.chatKey;
     this.state.piSessionFile =
       safeString(
@@ -633,31 +663,31 @@ export class KoishiChatController {
     };
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
-    let completionPayload: any;
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
     ).trim();
     this.latestAssistantText = "";
-    const completion = this.waitForTurn(tag);
-    await this.session.prompt(text, {
-      images,
-      requestTag: tag,
-      source: "koishi-bridge",
-      streamingBehavior: mode === "steer" ? "steer" : undefined,
-    });
-    completionPayload = await completion;
+    const liveTurn = this.startLiveTurn();
+    try {
+      await this.session.prompt(text, {
+        images,
+        source: "koishi-bridge",
+        streamingBehavior: mode === "steer" ? "steer" : undefined,
+      });
+    } catch (error: any) {
+      this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+      throw error;
+    }
+    const completion = await liveTurn.promise;
     if (!safeString(this.latestAssistantText || "").trim()) {
-      this.latestAssistantText = extractFinalTextFromTurnResult(
-        completionPayload?.result,
-      );
+      this.latestAssistantText = safeString(completion?.finalText || "").trim();
     }
     if (!safeString(this.latestAssistantText || "").trim()) {
       throw new Error("final_assistant_text_missing");
     }
-    if (this.activeTag !== tag) return;
     this.state.piSessionFile =
       safeString(
-        completionPayload?.sessionFile ||
+        completion?.sessionFile ||
           this.session.sessionManager.getSessionFile?.() ||
           this.state.piSessionFile ||
           "",
@@ -707,28 +737,26 @@ export class KoishiChatController {
       return;
     }
     if (shouldResumeInternally) {
-      const tag = this.nextRequestTag();
-      this.activeTag = tag;
-      let completionPayload: any;
       this.latestAssistantText = "";
-      const completion = this.waitForTurn(tag);
-      await this.session.resumeInterruptedTurn({
-        source: "koishi-bridge",
-        requestTag: tag,
-      });
-      completionPayload = await completion;
+      const liveTurn = this.startLiveTurn();
+      try {
+        await this.session.resumeInterruptedTurn({
+          source: "koishi-bridge",
+        });
+      } catch (error: any) {
+        this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+        throw error;
+      }
+      const completion = await liveTurn.promise;
       if (!safeString(this.latestAssistantText || "").trim()) {
-        this.latestAssistantText = extractFinalTextFromTurnResult(
-          completionPayload?.result,
-        );
+        this.latestAssistantText = safeString(completion?.finalText || "").trim();
       }
       if (!safeString(this.latestAssistantText || "").trim()) {
         throw new Error("final_assistant_text_missing");
       }
-      if (this.activeTag !== tag) return;
       this.state.piSessionFile =
         safeString(
-          completionPayload?.sessionFile ||
+          completion?.sessionFile ||
             this.session.sessionManager.getSessionFile?.() ||
             this.state.piSessionFile ||
             "",
