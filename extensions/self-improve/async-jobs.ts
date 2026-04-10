@@ -1,7 +1,10 @@
 import fs from "node:fs/promises";
 import fssync from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+
+const HOME_DIR = os.homedir();
 import { fileURLToPath } from "node:url";
 
 import { maintainMemory } from "./maintainer.js";
@@ -84,7 +87,7 @@ export async function enqueueMemoryMaintenanceJob(
   input: Omit<MemoryMaintenanceJob, "id" | "createdAt" | "updatedAt">,
 ) {
   const agentDir = path.resolve(safeString(input.agentDir).trim());
-  const cwd = path.resolve(safeString(input.cwd).trim());
+  const cwd = HOME_DIR;
   const sessionFile = path.resolve(safeString(input.sessionFile).trim());
   const trigger =
     safeString(input.trigger).trim() || "extension:memory_maintainer";
@@ -196,7 +199,7 @@ async function removeMatchingJobs(
 }
 
 async function processJob(job: MemoryMaintenanceJob) {
-  const cwd = path.resolve(safeString(job.cwd).trim());
+  const cwd = HOME_DIR;
   const agentDir = path.resolve(safeString(job.agentDir).trim());
   const sessionFile = path.resolve(safeString(job.sessionFile).trim());
   if (!cwd || !agentDir || !sessionFile) {

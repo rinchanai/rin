@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import os from "node:os";
+
+const HOME_DIR = os.homedir();
 
 import { deliverKoishiRpcPayload, requestKoishiRpc } from "../rin-koishi/rpc.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
@@ -40,7 +43,7 @@ export async function executeCronShellTask(
   const shell = task.target.shell || process.env.SHELL || "/bin/sh";
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(shell, ["-lc", command], {
-      cwd: task.cwd || defaultCwd,
+      cwd: HOME_DIR,
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
     });

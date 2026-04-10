@@ -1,6 +1,9 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+const HOME_DIR = os.homedir();
 
 import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
@@ -90,13 +93,12 @@ function safeString(value: unknown) {
   return String(value);
 }
 
-function resolveMaybeLocalPath(input: string, cwd: string) {
+function resolveMaybeLocalPath(input: string, _cwd: string) {
   const value = input.trim();
   if (!value) return "";
-  if (value === "~") return `${process.env.HOME || ""}`;
-  if (value.startsWith("~/"))
-    return path.join(process.env.HOME || "", value.slice(2));
-  return path.isAbsolute(value) ? value : path.resolve(cwd, value);
+  if (value === "~") return HOME_DIR;
+  if (value.startsWith("~/")) return path.join(HOME_DIR, value.slice(2));
+  return path.isAbsolute(value) ? value : path.resolve(HOME_DIR, value);
 }
 
 function normalizeParts(parts: any[], cwd: string): KoishiMessagePart[] {

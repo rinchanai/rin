@@ -2,6 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+const HOME_DIR = os.homedir();
+
 import type {
   AgentMessage as Message,
   ThinkingLevel,
@@ -77,14 +79,14 @@ async function loadSessionManagerModule() {
 
 async function resolveSessionReference(
   ref: string,
-  cwd: string,
+  _cwd: string,
 ): Promise<{ path: string }> {
   const wanted = String(ref || "").trim();
   if (!wanted) throw new Error("session_ref_required");
 
   const directCandidates = path.isAbsolute(wanted)
     ? [wanted]
-    : [path.resolve(cwd, wanted), path.resolve(process.cwd(), wanted)];
+    : [path.resolve(HOME_DIR, wanted)];
   const directMatchPath = directCandidates.find((candidate) => {
     try {
       return fs.existsSync(candidate);
@@ -135,9 +137,10 @@ async function resolveSessionReference(
 }
 
 async function createManagedSession(
-  cwd: string,
+  _cwd: string,
   task: SubagentTask,
 ) {
+  const cwd = HOME_DIR;
   const sessionConfig = normalizeSessionConfig(task.session);
   const profile = resolveRuntimeProfile({ cwd });
   const sessionDir = getRuntimeSessionDir(cwd, profile.agentDir);
@@ -153,7 +156,7 @@ async function createManagedSession(
     sessionManager = SessionManager.open(
       source.path,
       sessionDir,
-      task.cwd ? cwd : undefined,
+      undefined,
     );
   } else {
     const source = await resolveSessionReference(sessionConfig.ref || "", cwd);
@@ -234,7 +237,7 @@ function buildTasks(
           prompt: task.prompt,
           model: normalizeModelRef(task.model),
           thinkingLevel: task.thinkingLevel,
-          cwd: task.cwd,
+          cwd: HOME_DIR,
           session: normalizeSessionConfig(task.session),
         }))
       : [
@@ -244,7 +247,7 @@ function buildTasks(
               normalizeModelRef(params.model) ||
               (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
             thinkingLevel: params.thinkingLevel || currentThinkingLevel,
-            cwd: params.cwd,
+            cwd: HOME_DIR,
             session: normalizeSessionConfig(params.session),
           },
         ],
@@ -351,7 +354,7 @@ function makePendingResult(
     prompt: task.prompt,
     requestedModel: task.model,
     requestedThinkingLevel: task.thinkingLevel,
-    cwd: task.cwd || defaultCwd,
+    cwd: HOME_DIR,
     status: "pending",
     exitCode: 0,
     output: "",
@@ -399,7 +402,7 @@ export async function executeSubagentRun(options: {
   }
 
   const progressResults = built.tasks.map((task, index) =>
-    makePendingResult(task, index + 1, options.ctx.cwd),
+    makePendingResult(task, index + 1, HOME_DIR),
   );
   options.onProgress?.(
     progressResults.map((item) => ({ ...item })),
@@ -411,7 +414,7 @@ export async function executeSubagentRun(options: {
       runSubagentTask(
         task,
         index + 1,
-        options.ctx.cwd,
+        HOME_DIR,
         options.signal,
         (partial) => {
           progressResults[index] = partial;
@@ -437,7 +440,7 @@ export async function runSubagentTask(
   signal?: AbortSignal,
   onProgress?: (result: TaskResult) => void,
 ): Promise<TaskResult> {
-  const cwd = task.cwd || defaultCwd;
+  const cwd = HOME_DIR;
   const messages: Message[] = [];
   const sessionConfig = normalizeSessionConfig(task.session);
   const result: TaskResult = {

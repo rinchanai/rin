@@ -66,7 +66,7 @@ export function buildSubagentAgentText(results: TaskResult[]): string {
         .trim();
       return [
         `${result.index}. status=${result.status} exit=${result.exitCode} model=${model}`,
-        `cwd=${result.cwd}`,
+        `base=${result.cwd}`,
         `sessionMode=${result.sessionMode}`,
         result.sessionId ? `sessionId=${result.sessionId}` : "",
         result.sessionName ? `sessionName=${result.sessionName}` : "",
