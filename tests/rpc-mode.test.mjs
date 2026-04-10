@@ -263,19 +263,7 @@ test("rpc mode resumes interrupted tool turns by appending interrupted tool resu
   };
 
   try {
-    const stateMessages = [
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "toolCall",
-            id: "tool-1",
-            name: "bash",
-            arguments: { command: "sleep 1" },
-          },
-        ],
-      },
-    ];
+    const stateMessages = [];
     const session = {
       isStreaming: false,
       isCompacting: false,
@@ -340,6 +328,18 @@ test("rpc mode resumes interrupted tool turns by appending interrupted tool resu
     });
     await wait(0);
 
+    stateMessages.push({
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "tool-1",
+          name: "bash",
+          arguments: { command: "sleep 1" },
+        },
+      ],
+    });
+
     const onData = handlers.get("data");
     assert.equal(typeof onData, "function");
     onData(
@@ -373,7 +373,7 @@ test("rpc mode resumes interrupted tool turns by appending interrupted tool resu
   }
 });
 
-test("rpc mode auto-resumes an interrupted turn when switching back to the session", async () => {
+test("rpc mode auto-resumes an interrupted turn when binding the current session", async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -467,19 +467,11 @@ test("rpc mode auto-resumes an interrupted turn when switching back to the sessi
     });
     await wait(0);
 
-    const onData = handlers.get("data");
-    assert.equal(typeof onData, "function");
-    onData(
-      Buffer.from(
-        `${JSON.stringify({ id: "3", type: "switch_session", sessionPath: "/tmp/test-session.jsonl" })}\n`,
-      ),
-    );
     await wait(10);
 
     assert.equal(calls.length, 2);
     assert.equal(calls[0][0], "appendMessage");
     assert.deepEqual(calls[1], ["continue"]);
-    assert.ok(lines.join("").includes('"command":"switch_session"'));
   } finally {
     process.stdin.on = stdinOn;
     process.stdout.write = stdoutWrite;
