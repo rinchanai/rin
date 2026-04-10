@@ -3,7 +3,6 @@ import path from "node:path";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { runAssistantTurnWithFinalText } from "../session/assistant-turn.js";
 import { readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
@@ -418,24 +417,19 @@ export class KoishiChatController {
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
     ).trim();
-    await runAssistantTurnWithFinalText({
-      session: this.session,
-      reset: () => {
-        this.latestAssistantText = "";
-      },
-      start: async () => {
-        const completion = this.waitForTurn(tag);
-        this.startTyping();
-        await this.session?.prompt(text, {
-          images,
-          requestTag: tag,
-          source: "koishi-bridge",
-          streamingBehavior: mode === "interrupt_prompt" ? "steer" : undefined,
-        });
-        completionPayload = await completion;
-      },
-      waitForCompletion: async () => {},
+    this.latestAssistantText = "";
+    const completion = this.waitForTurn(tag);
+    this.startTyping();
+    await this.session.prompt(text, {
+      images,
+      requestTag: tag,
+      source: "koishi-bridge",
+      streamingBehavior: mode === "interrupt_prompt" ? "steer" : undefined,
     });
+    completionPayload = await completion;
+    if (!safeString(this.latestAssistantText || "").trim()) {
+      throw new Error("final_assistant_text_missing");
+    }
     if (this.activeTag !== tag) return;
     this.state.piSessionFile =
       safeString(
@@ -471,22 +465,17 @@ export class KoishiChatController {
       const tag = this.nextRequestTag();
       this.activeTag = tag;
       let completionPayload: any;
-      await runAssistantTurnWithFinalText({
-        session: this.session,
-        reset: () => {
-          this.latestAssistantText = "";
-        },
-        start: async () => {
-          const completion = this.waitForTurn(tag);
-          this.startTyping();
-          await this.session?.resumeInterruptedTurn({
-            source: "koishi-bridge",
-            requestTag: tag,
-          });
-          completionPayload = await completion;
-        },
-        waitForCompletion: async () => {},
+      this.latestAssistantText = "";
+      const completion = this.waitForTurn(tag);
+      this.startTyping();
+      await this.session.resumeInterruptedTurn({
+        source: "koishi-bridge",
+        requestTag: tag,
       });
+      completionPayload = await completion;
+      if (!safeString(this.latestAssistantText || "").trim()) {
+        throw new Error("final_assistant_text_missing");
+      }
       if (this.activeTag !== tag) return;
       this.state.piSessionFile =
         safeString(
