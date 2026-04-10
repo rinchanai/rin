@@ -2,78 +2,25 @@ import { spawn } from "node:child_process";
 
 import { deliverKoishiRpcPayload } from "../rin-koishi/rpc.js";
 import { runSessionPrompt } from "../session/runner.js";
-import type { TurnResultMessage } from "../session/turn-result.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
 
-export async function sendKoishiPayload(
+export async function sendKoishiText(
   agentDir: string,
-  payload:
-    | {
-        type: "text_delivery";
-        chatKey: string;
-        taskId: string;
-        runId: string;
-        text: string;
-        sessionId?: string;
-        sessionFile?: string;
-      }
-    | {
-        type: "parts_delivery";
-        chatKey: string;
-        taskId: string;
-        runId: string;
-        parts: Array<
-          | { type: "text"; text: string }
-          | { type: "image"; path?: string; url?: string; mimeType?: string }
-          | { type: "file"; path?: string; url?: string; name?: string; mimeType?: string }
-        >;
-        sessionId?: string;
-        sessionFile?: string;
-      },
+  payload: {
+    chatKey: string;
+    taskId: string;
+    runId: string;
+    text: string;
+    sessionId?: string;
+    sessionFile?: string;
+  },
 ) {
   await deliverKoishiRpcPayload(agentDir, {
+    type: "text_delivery",
     createdAt: nowIso(),
     ...payload,
   });
-}
-
-export function turnResultMessagesToChatParts(messages: TurnResultMessage[]) {
-  const parts: Array<
-    | { type: "text"; text: string }
-    | { type: "image"; path?: string; url?: string; mimeType?: string }
-    | { type: "file"; path?: string; url?: string; name?: string; mimeType?: string }
-  > = [];
-  for (const message of Array.isArray(messages) ? messages : []) {
-    if (!message || typeof message !== "object") continue;
-    if (message.type === "text") {
-      const text = String(message.text || "").trim();
-      if (text) parts.push({ type: "text", text });
-      continue;
-    }
-    if (message.type === "image") {
-      const data = String(message.data || "").trim();
-      if (data) {
-        parts.push({
-          type: "image",
-          url: `data:${String(message.mimeType || "image/png")};base64,${data}`,
-          mimeType: String(message.mimeType || "image/png").trim() || "image/png",
-        });
-      }
-      continue;
-    }
-    if (message.type === "file") {
-      const filePath = String(message.path || "").trim();
-      if (filePath) {
-        parts.push({
-          type: "file",
-          path: filePath,
-          name: String(message.name || "").trim() || undefined,
-        });
-      }
-    }
-  }
-  return parts;
 }
 
 export async function resolveCronSessionFile(task: CronTaskRecord) {
@@ -141,21 +88,11 @@ export async function executeCronAgentTask(
   });
   if (task.session.mode === "dedicated" && result.sessionFile)
     task.dedicatedSessionFile = result.sessionFile;
-  const parts = turnResultMessagesToChatParts(result.turnResult?.messages || []);
-  const resultText = summarizeText(
-    result.finalText ||
-      parts
-        .filter((item) => item.type === "text")
-        .map((item) => String((item as any).text || "").trim())
-        .filter(Boolean)
-        .join("\n\n"),
-    4000,
-  );
+  const finalText = summarizeText(result.finalText, 4000);
   return {
     text:
-      resultText ||
+      finalText ||
       `Scheduled agent turn finished in session ${result.sessionFile || "(ephemeral)"}`,
-    parts,
     sessionId: result.sessionId,
     sessionFile: result.sessionFile,
   };
@@ -171,48 +108,24 @@ export async function executeCronTask(
 ) {
   const runId = cronTaskRunId(task);
   try {
-    const result:
-      | {
-          text: string;
-          sessionId?: string;
-          sessionFile?: string;
-        }
-      | {
-          text: string;
-          parts: Array<
-            | { type: "text"; text: string }
-            | { type: "image"; path?: string; url?: string; mimeType?: string }
-            | { type: "file"; path?: string; url?: string; name?: string; mimeType?: string }
-          >;
-          sessionId?: string;
-          sessionFile?: string;
-        } =
+    const result: {
+      text: string;
+      sessionId?: string;
+      sessionFile?: string;
+    } =
       task.target.kind === "shell_command"
         ? { text: await executeCronShellTask(task, options.cwd) }
         : await executeCronAgentTask(task, options);
     task.lastResultText = result.text;
-    if (task.chatKey) {
-      if ("parts" in result && result.parts.length > 0) {
-        await sendKoishiPayload(options.agentDir, {
-          type: "parts_delivery",
-          chatKey: task.chatKey,
-          taskId: task.id,
-          runId,
-          parts: result.parts,
-          sessionId: result.sessionId,
-          sessionFile: result.sessionFile,
-        }).catch(() => {});
-      } else if (result.text) {
-        await sendKoishiPayload(options.agentDir, {
-          type: "text_delivery",
-          chatKey: task.chatKey,
-          taskId: task.id,
-          runId,
-          text: result.text,
-          sessionId: result.sessionId,
-          sessionFile: result.sessionFile,
-        }).catch(() => {});
-      }
+    if (task.chatKey && result.text) {
+      await sendKoishiText(options.agentDir, {
+        chatKey: task.chatKey,
+        taskId: task.id,
+        runId,
+        text: result.text,
+        sessionId: result.sessionId,
+        sessionFile: result.sessionFile,
+      }).catch(() => {});
     }
   } catch (error: any) {
     task.lastError = String(

@@ -62,14 +62,4 @@ test("cron execution shell task returns summarized success body", async () => {
   assert.ok(text.includes("stdout:"));
 });
 
-test("cron execution converts structured turn results into chat parts", () => {
-  const parts = execMod.turnResultMessagesToChatParts([
-    { type: "text", text: "hello" },
-    { type: "image", data: Buffer.from("abc").toString("base64"), mimeType: "image/png" },
-    { type: "file", path: "/tmp/demo.txt", name: "demo.txt" },
-  ]);
-  assert.deepEqual(parts[0], { type: "text", text: "hello" });
-  assert.equal(parts[1].type, "image");
-  assert.match(parts[1].url, /^data:image\/png;base64,/);
-  assert.deepEqual(parts[2], { type: "file", path: "/tmp/demo.txt", name: "demo.txt" });
-});
+

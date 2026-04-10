@@ -1,16 +1,14 @@
 import path from "node:path";
 
-import type { TurnResult, TurnResultMessage } from "../session/turn-result.js";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
-import { chatStateDir, chatStatePath } from "../chat-bridge/session-binding.js";
+import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
   SavedAttachment,
   extractTextFromContent,
   markProcessedKoishiMessage,
-  persistImageParts,
   safeString,
 } from "./chat-helpers.js";
 import { appendKoishiChatLog } from "./chat-log.js";
@@ -18,8 +16,6 @@ import {
   buildPromptText,
   recordDeliveredAssistantMessages,
   restorePromptParts,
-  sendGenericFile,
-  sendImageFile,
   sendText,
   sendTyping,
 } from "./transport.js";
@@ -48,6 +44,7 @@ export class KoishiChatController {
   interimSentAt = 0;
   typingTimer: NodeJS.Timeout | null = null;
   pendingCompletedAssistantText = "";
+  latestAssistantText = "";
   logger: any;
   h: any;
 
@@ -98,6 +95,7 @@ export class KoishiChatController {
           this.interimText = "";
           this.interimSentText = "";
           this.pendingCompletedAssistantText = "";
+          this.latestAssistantText = "";
           this.startTyping();
           break;
         case "message_update":
@@ -110,7 +108,10 @@ export class KoishiChatController {
         case "message_end": {
           if (event?.message?.role !== "assistant") break;
           const finalText = extractTextFromContent(event.message.content);
-          if (finalText) this.pendingCompletedAssistantText = finalText;
+          if (finalText) {
+            this.latestAssistantText = finalText;
+            this.pendingCompletedAssistantText = finalText;
+          }
           break;
         }
         case "tool_execution_start":
@@ -121,7 +122,6 @@ export class KoishiChatController {
             void this.flushInterim().catch(() => {});
           break;
         case "agent_end":
-          this.pendingCompletedAssistantText = "";
           this.stopTyping();
           break;
       }
@@ -223,106 +223,41 @@ export class KoishiChatController {
         ).trim() || undefined,
     });
   }
-  private normalizeTurnResult(payload: any): TurnResult {
-    const result = payload?.result;
-    if (!result || !Array.isArray(result.messages)) {
-      throw new Error("koishi_turn_result_missing");
-    }
-    return result as TurnResult;
-  }
-  private async deliverTurnResult(result: TurnResult, replyToMessageId = "") {
-    const sessionId = this.currentSessionId() || undefined;
-    const sessionFile =
+  private currentSessionFile() {
+    return (
       safeString(
         this.session?.sessionManager?.getSessionFile?.() ||
           this.state.piSessionFile ||
           "",
-      ).trim() || undefined;
-
-    for (const message of result.messages) {
-      const item = (message || {}) as TurnResultMessage;
-      if (item.type === "text") {
-        const text = safeString(item.text).trim();
-        if (!text) continue;
-        const deliveryResult = await sendText(
-          this.app,
-          this.chatKey,
-          text,
-          this.h,
-          replyToMessageId,
-        );
-        this.logAssistantText(text, replyToMessageId);
-        recordDeliveredAssistantMessages(this.agentDir, {
-          chatKey: this.chatKey,
-          deliveryResult,
-          text,
-          rawContent: text,
-          replyToMessageId: replyToMessageId || undefined,
-          sessionId,
-          sessionFile,
-        });
-        continue;
-      }
-
-      if (item.type === "image") {
-        const images = await persistImageParts(
-          chatStateDir(this.dataDir, this.chatKey),
-          [
-            {
-              data: safeString((item as any).data || ""),
-              mimeType:
-                safeString((item as any).mimeType || "").trim() || "image/png",
-            },
-          ],
-          `${Date.now()}-assistant`,
-        );
-        for (const image of images) {
-          const deliveryResult = await sendImageFile(
-            this.app,
-            this.chatKey,
-            image.path,
-            this.h,
-            image.mimeType || "image/png",
-            replyToMessageId,
-          );
-          recordDeliveredAssistantMessages(this.agentDir, {
-            chatKey: this.chatKey,
-            deliveryResult,
-            text: `[image] ${image.name}`,
-            rawContent: `[image] ${image.path}`,
-            replyToMessageId: replyToMessageId || undefined,
-            sessionId,
-            sessionFile,
-          });
-        }
-        continue;
-      }
-
-      if (item.type === "file") {
-        const filePath = safeString((item as any).path || "").trim();
-        if (!filePath) continue;
-        const fileName =
-          safeString((item as any).name || "").trim() ||
-          path.basename(filePath);
-        const deliveryResult = await sendGenericFile(
-          this.app,
-          this.chatKey,
-          filePath,
-          this.h,
-          fileName,
-          replyToMessageId,
-        );
-        recordDeliveredAssistantMessages(this.agentDir, {
-          chatKey: this.chatKey,
-          deliveryResult,
-          text: `[file] ${fileName}`,
-          rawContent: `[file] ${filePath}`,
-          replyToMessageId: replyToMessageId || undefined,
-          sessionId,
-          sessionFile,
-        });
-      }
-    }
+      ).trim() || undefined
+    );
+  }
+  private finalAssistantText() {
+    return (
+      safeString(this.latestAssistantText || "").trim() ||
+      safeString(this.session?.getLastAssistantText?.() || "").trim()
+    );
+  }
+  private async deliverFinalAssistantText(replyToMessageId = "") {
+    const text = this.finalAssistantText();
+    if (!text) return;
+    const deliveryResult = await sendText(
+      this.app,
+      this.chatKey,
+      text,
+      this.h,
+      replyToMessageId,
+    );
+    this.logAssistantText(text, replyToMessageId);
+    recordDeliveredAssistantMessages(this.agentDir, {
+      chatKey: this.chatKey,
+      deliveryResult,
+      text,
+      rawContent: text,
+      replyToMessageId: replyToMessageId || undefined,
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile: this.currentSessionFile(),
+    });
   }
   private markProcessedMessage(messageId?: string) {
     const nextMessageId = safeString(messageId || "").trim();
@@ -491,7 +426,6 @@ export class KoishiChatController {
     });
     const payload = await completion;
     if (this.activeTag !== tag) return;
-    const result = this.normalizeTurnResult(payload);
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
     ).trim();
@@ -505,7 +439,7 @@ export class KoishiChatController {
     delete this.state.processing;
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
-    await this.deliverTurnResult(result, replyToMessageId);
+    await this.deliverFinalAssistantText(replyToMessageId);
   }
   async recoverIfNeeded() {
     if (!this.state.processing) return;
@@ -531,7 +465,6 @@ export class KoishiChatController {
       });
       const payload = await completion;
       if (this.activeTag !== tag) return;
-      const result = this.normalizeTurnResult(payload);
       this.state.piSessionFile =
         safeString(
           payload?.sessionFile ||
@@ -541,8 +474,7 @@ export class KoishiChatController {
         ).trim() || undefined;
       delete this.state.processing;
       this.saveState();
-      await this.deliverTurnResult(
-        result,
+      await this.deliverFinalAssistantText(
         safeString(pending.replyToMessageId || "").trim(),
       );
       return;
