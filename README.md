@@ -87,6 +87,22 @@ For a normal installed Rin update, use:
 rin update
 ```
 
+If `rin` is missing on the current account, check these in order:
+
+```bash
+command -v rin
+~/.local/bin/rin update
+node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
+```
+
+Find `<installDir>` and `<targetUser>` from the install metadata or managed service files:
+
+- Linux: `~/.config/rin/install.json`
+- macOS: `~/Library/Application Support/rin/install.json`
+- target manifest: `<installDir>/installer.json`
+- Linux service: `~/.config/systemd/user/rin-daemon*.service`
+- macOS service: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+
 This is the canonical update path for the installed runtime.
 It refreshes the core runtime and installed docs.
 It does not replace the user-scoped CLI launcher or installer.

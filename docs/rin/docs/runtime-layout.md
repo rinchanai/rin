@@ -24,6 +24,15 @@ Typical launcher paths:
 - `~/.local/bin/rin`
 - `~/.local/bin/rin-install`
 
+Launcher metadata is also user-scoped.
+
+Typical metadata paths:
+
+- Linux: `~/.config/rin/install.json`
+- macOS: `~/Library/Application Support/rin/install.json`
+
+This metadata records the current user's default `targetUser` and `installDir`.
+
 Important implications for the agent:
 
 - do not assume the current local account always has a `rin` command in PATH
@@ -37,6 +46,19 @@ In other words, keep these roles separate:
 - launcher-owning interactive user
 - daemon target user
 - current local account running the agent
+
+## Install manifests and service files
+
+Besides launchers, Rin exposes install ownership through stable metadata and managed service files.
+
+Useful locations:
+
+- `<installDir>/installer.json`: install manifest written into the target runtime directory
+- Linux user service: `~/.config/systemd/user/rin-daemon*.service`
+- macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+
+These files are the main way to recover `installDir` and `targetUser` when the current account does not have a working `rin` command.
+Service files expose the runtime directory through `RIN_DIR`.
 
 ## `app/current/`
 

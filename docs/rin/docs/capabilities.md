@@ -21,6 +21,25 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
 4. if `installDir` or `targetUser` is unknown, discover them first from Rin install metadata or managed service files
 
+When `rin` is missing, use this discovery order before falling back to ad-hoc guesses:
+
+1. check the current account's launcher locations:
+   - `command -v rin`
+   - `test -x ~/.local/bin/rin && ~/.local/bin/rin update`
+2. check the current account's launcher metadata:
+   - Linux: `~/.config/rin/install.json`
+   - macOS: `~/Library/Application Support/rin/install.json`
+   - this file records `defaultTargetUser` and `defaultInstallDir`
+3. check the target install manifest:
+   - `<installDir>/installer.json`
+   - common default: `~/.rin/installer.json`
+   - this file records `targetUser` and `installDir`
+4. if the install dir is still unknown, inspect managed service files for `RIN_DIR`:
+   - Linux: `~/.config/systemd/user/rin-daemon*.service`
+   - macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+5. once `installDir` is known, prefer the stable runtime entry:
+   - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
+
 Important implications:
 
 - interpret “current account has no `rin` command” as a launcher-placement clue rather than as evidence that Rin cannot self-update
