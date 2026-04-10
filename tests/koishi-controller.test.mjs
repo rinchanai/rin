@@ -89,12 +89,16 @@ test("koishi controller polls telegram typing only while the controller still ow
 
   controller.session = { isStreaming: true };
   controller.state.processing = undefined;
-  controller.turnWaiters.clear();
+  controller.liveTurn = null;
   assert.equal(await controller.pollTyping(), false);
   assert.deepEqual(actions, []);
 
   controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
-  controller.turnWaiters.set("tag-1", { resolve() {}, reject() {} });
+  controller.liveTurn = {
+    promise: Promise.resolve(),
+    resolve() {},
+    reject() {},
+  };
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
 });
@@ -107,10 +111,14 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
   };
 
   controller.session = {
-    messages: [],
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", content: [{ type: "text", text: "hello" }] },
+    ],
     sessionManager: {
-      getSessionFile: () => undefined,
-      getSessionId: () => "",
+      getSessionFile: () => "/tmp/turn-chat.jsonl",
+      getSessionId: () => "session-turn",
       getSessionName: () => "telegram/9:9",
     },
     ensureSessionReady: async () => {
@@ -118,15 +126,12 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
       return { sessionFile: "/tmp/turn-chat.jsonl", sessionId: "session-turn" };
     },
     prompt: async (_message, options) => {
-      calls.push(
-        `prompt:${options?.requestTag ? "tagged" : "untagged"}:${options?.streamingBehavior || "none"}`,
-      );
-      controller.latestAssistantText = "hello";
+      calls.push(`prompt:${options?.streamingBehavior || "none"}`);
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
-        const waiter = controller.turnWaiters.get(options.requestTag);
-        waiter?.resolve({
-          sessionFile: "/tmp/turn-chat.jsonl",
-        });
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
       });
     },
     setSessionName: async () => {},
@@ -137,24 +142,25 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
 
   assert.deepEqual(calls, [
     "ensureSessionReady",
-    "prompt:tagged:none",
+    "prompt:none",
     "deliver:final-text",
   ]);
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });
 
-test("koishi controller uses rpc turn result text as the final output source", async () => {
+test("koishi controller resolves final output from session lifecycle for prompt and steer", async () => {
   const controller = await createController("telegram/9:10");
-  const calls = [];
+  const delivered = [];
   controller.deliverFinalAssistantText = async () => {
-    calls.push(`deliver:${controller.latestAssistantText}`);
+    delivered.push(controller.latestAssistantText);
   };
 
   controller.session = {
+    isStreaming: false,
     messages: [],
     sessionManager: {
-      getSessionFile: () => undefined,
-      getSessionId: () => "",
+      getSessionFile: () => "/tmp/fallback-chat.jsonl",
+      getSessionId: () => "session-fallback",
       getSessionName: () => "telegram/9:10",
     },
     ensureSessionReady: async () => ({
@@ -162,14 +168,18 @@ test("koishi controller uses rpc turn result text as the final output source", a
       sessionId: "session-fallback",
     }),
     prompt: async (_message, options) => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
-        const waiter = controller.turnWaiters.get(options.requestTag);
-        waiter?.resolve({
-          sessionFile: "/tmp/fallback-chat.jsonl",
-          result: {
-            messages: [{ type: "text", text: "fallback final text" }],
+        controller.session.messages = [
+          { role: "user", content: [{ type: "text", text: "hello" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: options?.streamingBehavior === "steer" ? "steer final text" : "prompt final text" }],
           },
-        });
+        ];
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
       });
     },
     setSessionName: async () => {},
@@ -177,9 +187,9 @@ test("koishi controller uses rpc turn result text as the final output source", a
   };
 
   await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
+  await controller.runTurn({ text: "hello again", attachments: [] }, "steer");
 
-  assert.equal(controller.latestAssistantText, "fallback final text");
-  assert.deepEqual(calls, ["deliver:fallback final text"]);
+  assert.deepEqual(delivered, ["prompt final text", "steer final text"]);
 });
 
 test("koishi controller reattaches saved session file before bootstrapping a detached session", async () => {
@@ -264,7 +274,11 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   controller.lastToolCallSummary = "Working";
   controller.session = { isStreaming: true };
   controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
-  controller.turnWaiters.set("tag-1", { resolve() {}, reject() {} });
+  controller.liveTurn = {
+    promise: Promise.resolve(),
+    resolve() {},
+    reject() {},
+  };
   controller.lastVisibleProgressAt = 1000;
   controller.lastIdleToolProgressAt = 0;
 
@@ -287,6 +301,15 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
 
   await controller.handleIdleToolProgressTick(22050);
   assert.deepEqual(sent, ["Working", "Working"]);
+});
+
+test("koishi controller rejects the owned turn on connection loss", async () => {
+  const controller = await createController("telegram/1:2");
+  controller.session = { isStreaming: true };
+  const liveTurn = controller.startLiveTurn();
+  controller.handleClientEvent({ type: "ui", name: "connection_lost" });
+  await assert.rejects(liveTurn.promise, /rin_disconnected:rpc_turn/);
+  assert.equal(controller.liveTurn, null);
 });
 
 test("koishi controller delivers completed assistant text during recovery when processing state is stale", async () => {
