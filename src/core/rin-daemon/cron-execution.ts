@@ -89,9 +89,18 @@ export async function executeCronAgentTask(
   if (task.session.mode === "dedicated" && result.sessionFile)
     task.dedicatedSessionFile = result.sessionFile;
   const finalText = summarizeText(result.finalText, 4000);
+  const resultText = finalText || summarizeText(
+    result.turnResult?.messages
+      ?.filter((item: any) => item?.type === "text")
+      .map((item: any) => String(item?.text || "").trim())
+      .filter(Boolean)
+      .join("\n\n") ||
+      "",
+    4000,
+  );
   return {
     text:
-      finalText ||
+      resultText ||
       `Scheduled agent turn finished in session ${result.sessionFile || "(ephemeral)"}`,
     sessionId: result.sessionId,
     sessionFile: result.sessionFile,
