@@ -5,6 +5,7 @@ import { Type } from "@sinclair/typebox";
 
 import {
   appendTranscriptArchiveEntry,
+  loadRecentTranscriptSessions,
   loadTranscriptSessionEntries,
   searchTranscriptArchive,
 } from "./transcripts.js";
@@ -13,10 +14,12 @@ import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 const searchMemoryParams = Type.Object({
-  query: Type.String({
-    description:
-      "Search query for past sessions. For broad recall, prefer a few distinctive keywords joined by OR; use quoted phrases for exact wording when needed.",
-  }),
+  query: Type.Optional(
+    Type.String({
+      description:
+        "Optional search query for past sessions. Leave it empty to browse recent sessions directly. For broad recall, prefer a few distinctive keywords joined by OR; use quoted phrases for exact wording when needed.",
+    }),
+  ),
   limit: Type.Optional(
     Type.Number({
       minimum: 1,
@@ -64,16 +67,21 @@ async function archiveMessageTranscript(message: any, ctx: any) {
 }
 
 function formatSearchResult(response: any): string {
+  const query = String(response?.query || "").trim();
+  const mode = String(response?.mode || "search").trim();
   const summaries = Array.isArray(response?.summaries)
     ? response.summaries
     : [];
   if (summaries.length) {
     return [
-      `Session recall for: ${String(response?.query || "")}`,
+      mode === "recent"
+        ? "Recent session recall"
+        : `Session recall for: ${query}`,
       ...summaries.map((item: any, index: number) => {
         const meta = [
           `score=${Number(item?.score || 0).toFixed(2)}`,
           String(item?.sessionId || "").trim(),
+          String(item?.timestamp || "").trim(),
         ]
           .filter(Boolean)
           .join(" • ");
@@ -89,11 +97,15 @@ function formatSearchResult(response: any): string {
   }
 
   const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length)
-    return `No transcript matches for: ${String(response?.query || "")}`;
+  if (!rows.length) {
+    return mode === "recent"
+      ? "No recent sessions found"
+      : `No transcript matches for: ${query}`;
+  }
   return [
-    `Transcript matches for: ${String(response?.query || "")}`,
+    mode === "recent" ? "Recent sessions" : `Transcript matches for: ${query}`,
     ...rows.map((item: any, index: number) => {
+      const kind = item?.sourceType === "session" ? "Session" : "Transcript";
       const meta = [
         `score=${Number(item?.score || 0).toFixed(2)}`,
         String(item?.role || "").trim(),
@@ -102,7 +114,7 @@ function formatSearchResult(response: any): string {
         .filter(Boolean)
         .join(" • ");
       return [
-        `${index + 1}. Transcript — ${meta}`,
+        `${index + 1}. ${kind} — ${meta}`,
         String(item?.path || "").trim(),
         String(item?.preview || item?.description || "").trim(),
       ]
@@ -113,16 +125,23 @@ function formatSearchResult(response: any): string {
 }
 
 function formatAgentSearchResult(response: any): string {
+  const query = String(response?.query || "").trim();
+  const mode = String(response?.mode || "search").trim();
+  const head =
+    mode === "recent"
+      ? `memory recent (${Number(response?.count || 0)})`
+      : `memory search ${query} (${Number(response?.count || 0)})`;
   const summaries = Array.isArray(response?.summaries)
     ? response.summaries
     : [];
   if (summaries.length) {
     return [
-      `memory search ${String(response?.query || "")} (${summaries.length} sessions)`,
+      head,
       ...summaries.map((item: any, index: number) =>
         [
           `${index + 1}. session`,
           `score=${Number(item?.score || 0).toFixed(2)}`,
+          String(item?.timestamp || "").trim(),
           `path=${String(item?.path || "")}`,
         ]
           .filter(Boolean)
@@ -132,12 +151,12 @@ function formatAgentSearchResult(response: any): string {
   }
 
   const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length) return `memory search ${String(response?.query || "")} (0)`;
+  if (!rows.length) return head;
   return [
-    `memory search ${String(response?.query || "")} (${rows.length})`,
+    head,
     ...rows.map((item: any, index: number) =>
       [
-        `${index + 1}. transcript`,
+        `${index + 1}. ${item?.sourceType === "session" ? "session" : "transcript"}`,
         `score=${Number(item?.score || 0).toFixed(2)}`,
         String(item?.role || "").trim(),
         String(item?.timestamp || "").trim(),
@@ -150,9 +169,12 @@ function formatAgentSearchResult(response: any): string {
 }
 
 function buildRecallPrompt(query: string, transcript: string): string {
+  const focus = query
+    ? `Focus on this search query: ${query}`
+    : "No search query was provided. Summarize this recent session for quick browsing recall.";
   return [
     "Review the past session transcript below and summarize only what is useful for recall.",
-    `Focus on this search query: ${query}`,
+    focus,
     "Include concrete decisions, fixes, commands, file paths, and unresolved follow-ups if they matter.",
     "Be concise and factual. Do not add speculation.",
     "Return plain text only.",
@@ -241,10 +263,11 @@ async function executeSearchMemory(
   currentThinkingLevel: ThinkingLevel,
 ) {
   try {
-    const results = await searchTranscriptArchive(
-      String(params?.query || ""),
-      params,
-    );
+    const query = String(params?.query || "").trim();
+    const mode = query ? "search" : "recent";
+    const results = query
+      ? await searchTranscriptArchive(query, params)
+      : await loadRecentTranscriptSessions(params);
     const summaries = await maybeSummarizeTranscriptMatches(
       results,
       params,
@@ -252,7 +275,8 @@ async function executeSearchMemory(
       currentThinkingLevel,
     );
     const response = {
-      query: String(params?.query || ""),
+      mode,
+      query,
       count: Array.isArray(results) ? results.length : 0,
       results,
       summaries,
@@ -296,10 +320,11 @@ export default function memoryExtension(pi: ExtensionAPI) {
     name: "search_memory",
     label: "Search Memory",
     description:
-      "Search past sessions for long-term recall. Use proactively when earlier work matters; matched sessions are summarized for quick recall, and broad queries work best with a few distinctive keywords joined by OR.",
+      "Search past sessions for long-term recall, or browse recent sessions directly when no query is provided. Matched sessions are summarized for quick recall, and broad queries work best with a few distinctive keywords joined by OR.",
     promptSnippet: "Search archived session history.",
     promptGuidelines: [
       "Use search_memory proactively for past-conversation recall when the user references earlier work or relevant cross-session context may matter; better to search and confirm than to guess or ask them to repeat themselves.",
+      "If you do not have a good search phrase yet, call search_memory without a query to browse recent sessions first.",
       "For broad recall, start with a few distinctive keywords joined by OR, retry with narrower queries if needed, and do not use this tool for self_improve prompts or skills.",
     ],
     parameters: searchMemoryParams,

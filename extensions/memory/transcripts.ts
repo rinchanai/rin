@@ -21,6 +21,20 @@ export type TranscriptArchiveEntry = {
   text: string;
 };
 
+export type TranscriptSessionResult = {
+  sourceType: "session";
+  id: string;
+  name: string;
+  score: number;
+  path: string;
+  sessionId: string;
+  sessionFile: string;
+  timestamp: string;
+  description: string;
+  preview: string;
+  role: "user" | "assistant";
+};
+
 export function resolveTranscriptRoot(rootOverride = ""): string {
   const base = safeString(rootOverride).trim()
     ? path.join(path.resolve(rootOverride), "memory")
@@ -215,6 +229,11 @@ function escapeLike(value: string): string {
   return safeString(value).replace(/([%_\\])/g, "\\$1");
 }
 
+function timestampValue(value: string): number {
+  const parsed = Date.parse(safeString(value).trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function presentTranscriptResult(
   entry: TranscriptArchiveEntry,
   score: number,
@@ -224,6 +243,27 @@ function presentTranscriptResult(
     sourceType: "transcript",
     id: entry.id,
     name: `${entry.role} transcript`,
+    role: entry.role,
+    score,
+    path: getTranscriptArchivePath(entry, rootOverride),
+    sessionId: entry.sessionId,
+    sessionFile: entry.sessionFile,
+    timestamp: entry.timestamp,
+    description: trimText(entry.text, 160),
+    preview: trimText(entry.text, 240),
+  };
+}
+
+function presentSessionResult(
+  entry: TranscriptArchiveEntry,
+  score: number,
+  rootOverride = "",
+): TranscriptSessionResult {
+  return {
+    sourceType: "session",
+    id: safeString(entry.sessionId || entry.sessionFile || entry.id).trim() ||
+      entry.id,
+    name: "recent session",
     role: entry.role,
     score,
     path: getTranscriptArchivePath(entry, rootOverride),
@@ -290,6 +330,39 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
     throw error;
   }
   return db;
+}
+
+export async function loadRecentTranscriptSessions(
+  params: Record<string, any> = {},
+  rootOverride = "",
+): Promise<TranscriptSessionResult[]> {
+  const limit = Math.max(1, Number(params.limit || 8) || 8);
+  const entries = await loadTranscriptArchiveEntries(rootOverride);
+  if (!entries.length) return [];
+
+  const grouped = new Map<string, TranscriptArchiveEntry>();
+  for (const entry of entries) {
+    const key =
+      safeString(entry.sessionFile || "").trim() ||
+      safeString(entry.sessionId || "").trim() ||
+      safeString(entry.id || "").trim();
+    if (!key) continue;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, entry);
+      continue;
+    }
+    if (timestampValue(entry.timestamp) >= timestampValue(existing.timestamp)) {
+      grouped.set(key, entry);
+    }
+  }
+
+  return [...grouped.values()]
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .slice(0, limit)
+    .map((entry, index) =>
+      presentSessionResult(entry, Math.max(1, limit - index), rootOverride),
+    );
 }
 
 export async function searchTranscriptArchive(
