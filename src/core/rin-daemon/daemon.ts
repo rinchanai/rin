@@ -112,7 +112,6 @@ export async function startDaemon(
 
   const cronScheduler = new CronScheduler({
     agentDir: runtime.agentDir,
-    cwd: runtime.cwd,
     additionalExtensionPaths: options.additionalExtensionPaths,
   });
   cronScheduler.start();

@@ -43,7 +43,6 @@ function turnTranscript(messages: any[]): string {
 }
 
 async function runForkedSessionSelfImproveReview(options: {
-  cwd: string;
   agentDir: string;
   sessionFile: string;
   transcriptMessages?: any[];
@@ -54,7 +53,7 @@ async function runForkedSessionSelfImproveReview(options: {
     : "";
 
   const { session } = await openBoundSession({
-    cwd: options.cwd,
+    cwd: HOME_DIR,
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
     sessionFile: options.sessionFile,
@@ -118,7 +117,7 @@ async function runForkedSessionSelfImproveReview(options: {
 }
 
 export async function maintainMemory(
-  ctx: ExtensionCtxLike & { cwd?: string; sessionManager?: any },
+  _ctx: ExtensionCtxLike & { sessionManager?: any },
   opts: {
     sessionFile?: string;
     trigger?: string;
@@ -128,10 +127,7 @@ export async function maintainMemory(
 ) {
   const sessionFile = safeString(opts.sessionFile || "").trim();
   if (!sessionFile) return { skipped: "no-session-file" };
-  const cwd = HOME_DIR;
-
   const extracted = await runForkedSessionSelfImproveReview({
-    cwd,
     agentDir: resolveAgentDir(),
     sessionFile,
     transcriptMessages: Array.isArray(opts.messages) ? opts.messages : [],

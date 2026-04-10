@@ -68,7 +68,6 @@ export type CronTaskRecord = {
   completionReason?: string;
   pausedAt?: string;
   chatKey?: string;
-  cwd: string;
   trigger: CronTaskTrigger;
   termination?: CronTaskTermination;
   session: CronTaskSessionBinding;
@@ -88,7 +87,6 @@ export type CronTaskInput = {
   name?: string;
   enabled?: boolean;
   chatKey?: string | null;
-  cwd?: string;
   trigger?: CronTaskTrigger;
   termination?: CronTaskTermination | null;
   session?: CronTaskSessionBinding;
@@ -103,7 +101,6 @@ export class CronScheduler {
   constructor(
     private options: {
       agentDir: string;
-      cwd: string;
       additionalExtensionPaths?: string[];
     },
   ) {}
@@ -159,8 +156,6 @@ export class CronScheduler {
         : input.chatKey !== undefined
           ? safeString(input.chatKey).trim() || undefined
           : existing?.chatKey;
-
-    const cwd = HOME_DIR;
 
     const trigger = input.trigger ?? existing?.trigger;
     if (!trigger) throw new Error("cron_trigger_required");
@@ -262,7 +257,6 @@ export class CronScheduler {
         completionReason: existing?.completionReason,
         pausedAt: existing?.pausedAt,
         chatKey,
-        cwd,
         trigger: normalizedTrigger,
         termination,
         session: normalizedSession,
@@ -295,7 +289,6 @@ export class CronScheduler {
       completionReason: existing?.completionReason,
       pausedAt: existing?.pausedAt,
       chatKey,
-      cwd,
       trigger: normalizedTrigger,
       termination,
       session: normalizedSession,

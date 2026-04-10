@@ -22,7 +22,6 @@ export type SubagentTask = {
   prompt: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
-  cwd?: string;
   session?: SubagentSessionConfig;
 };
 
@@ -30,7 +29,6 @@ export type RunSubagentParams = {
   prompt?: string;
   model?: string;
   thinkingLevel?: ThinkingLevel;
-  cwd?: string;
   session?: SubagentSessionConfig;
   tasks?: SubagentTask[];
 };
@@ -40,7 +38,6 @@ export type TaskResult = {
   prompt: string;
   requestedModel?: string;
   requestedThinkingLevel?: ThinkingLevel;
-  cwd: string;
   status: "pending" | "running" | "done" | "error";
   exitCode: number;
   stopReason?: string;
