@@ -308,9 +308,16 @@ export class KoishiChatController {
   private saveState() {
     writeJsonFile(this.statePath, this.state);
   }
+  private hasLiveTurn() {
+    return Boolean(
+      this.state.processing &&
+        this.session?.isStreaming &&
+        this.turnWaiters.size > 0,
+    );
+  }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
-    if (!this.session?.isStreaming) return false;
+    if (!this.hasLiveTurn()) return false;
     await sendTyping(this.app, this.chatKey, this.h);
     return true;
   }
@@ -393,7 +400,7 @@ export class KoishiChatController {
     if (!this.deliveryEnabled) return;
     const summary = safeString(this.lastToolCallSummary).trim() || KOISHI_WORKING_PROGRESS_TEXT;
     const intervalMs = this.idleToolProgressIntervalMs();
-    if (!this.session?.isStreaming) {
+    if (!this.hasLiveTurn()) {
       this.clearIdleToolProgressTimer();
       return;
     }

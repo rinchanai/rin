@@ -205,7 +205,7 @@ export function appendTokenTelemetryEvent(
   };
   normalized.id = safeString(event.id).trim() || stableEventId(normalized);
   const insert = db.prepare(`
-    INSERT INTO telemetry_events (
+    INSERT OR IGNORE INTO telemetry_events (
       id,
       timestamp,
       session_id,

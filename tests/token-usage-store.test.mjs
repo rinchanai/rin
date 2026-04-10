@@ -104,6 +104,33 @@ test("token usage store aggregates by session and capability", async () => {
   });
 });
 
+test("token usage store ignores duplicate event ids", async () => {
+  await withTempRoot(async (root) => {
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-dup",
+        timestamp: "2026-04-10T09:00:00.000Z",
+        sessionId: "s1",
+        eventType: "session_start",
+      },
+      root,
+    );
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-dup",
+        timestamp: "2026-04-10T09:00:01.000Z",
+        sessionId: "s1",
+        eventType: "session_start",
+      },
+      root,
+    );
+
+    const rows = store.queryTokenUsageEvents({ agentDir: root, limit: 10 });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].event_type, "session_start");
+  });
+});
+
 test("token usage store returns recent events in reverse time order", async () => {
   await withTempRoot(async (root) => {
     store.appendTokenTelemetryEvent(
