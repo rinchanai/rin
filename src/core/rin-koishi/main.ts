@@ -29,7 +29,11 @@ import {
   safeString,
   wrapKoishiBridgePrompt,
 } from "./chat-helpers.js";
-import { KoishiChatController, loadKoishiSettings } from "./controller.js";
+import {
+  KoishiChatController,
+  loadKoishiSettings,
+  normalizeKoishiIdleToolProgressConfig,
+} from "./controller.js";
 import { appendKoishiChatLog } from "./chat-log.js";
 import { discoverRpcCommands, shouldProcessText } from "./decision.js";
 import {
@@ -69,7 +73,10 @@ export async function startKoishi(
   if (process.cwd() !== runtime.cwd) process.chdir(runtime.cwd);
   ensureDir(dataDir);
 
-  materializeKoishiConfig(configPath, loadKoishiSettings(settingsPath));
+  const settings = loadKoishiSettings(settingsPath);
+  const idleToolProgressConfig = normalizeKoishiIdleToolProgressConfig(settings);
+
+  materializeKoishiConfig(configPath, settings);
 
   const loader = new Loader();
   const previousCwd = process.cwd();
@@ -94,6 +101,7 @@ export async function startKoishi(
       controller = new KoishiChatController(app, dataDir, chatKey, {
         logger,
         h,
+        idleToolProgressConfig,
       });
       controllers.set(chatKey, controller);
     }
@@ -113,6 +121,7 @@ export async function startKoishi(
         h,
         deliveryEnabled: false,
         statePath,
+        idleToolProgressConfig,
       });
       detachedControllers.set(controllerKey, controller);
     }
