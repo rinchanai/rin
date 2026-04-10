@@ -71,15 +71,8 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
     calls.push("deliver:final-text");
   };
 
-  let sessionListener;
   controller.session = {
     messages: [],
-    subscribe: (listener) => {
-      sessionListener = listener;
-      return () => {
-        sessionListener = undefined;
-      };
-    },
     sessionManager: {
       getSessionFile: () => undefined,
       getSessionId: () => "",
@@ -93,10 +86,7 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
       calls.push(
         `prompt:${options?.requestTag ? "tagged" : "untagged"}:${options?.streamingBehavior || "none"}`,
       );
-      sessionListener?.({
-        type: "message_end",
-        message: { role: "assistant", content: [{ type: "text", text: "hello" }] },
-      });
+      controller.latestAssistantText = "hello";
       queueMicrotask(() => {
         const waiter = controller.turnWaiters.get(options.requestTag);
         waiter?.resolve({
