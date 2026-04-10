@@ -3,7 +3,7 @@ import path from "node:path";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { createFinalAssistantTextCollector } from "../session/final-assistant-text.js";
+import { runAssistantTurnWithFinalText } from "../session/assistant-turn.js";
 import { readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
@@ -45,7 +45,7 @@ export class KoishiChatController {
   interimSentAt = 0;
   typingTimer: NodeJS.Timeout | null = null;
   pendingCompletedAssistantText = "";
-  finalAssistantText = createFinalAssistantTextCollector();
+  latestAssistantText = "";
   logger: any;
   h: any;
 
@@ -96,7 +96,7 @@ export class KoishiChatController {
           this.interimText = "";
           this.interimSentText = "";
           this.pendingCompletedAssistantText = "";
-          this.finalAssistantText.reset();
+          this.latestAssistantText = "";
           this.startTyping();
           break;
         case "message_update":
@@ -107,10 +107,10 @@ export class KoishiChatController {
           }
           break;
         case "message_end": {
-          this.finalAssistantText.observeEvent(event);
           if (event?.message?.role !== "assistant") break;
           const finalText = extractTextFromContent(event.message.content);
           if (finalText) {
+            this.latestAssistantText = finalText;
             this.pendingCompletedAssistantText = finalText;
           }
           break;
@@ -233,11 +233,8 @@ export class KoishiChatController {
       ).trim() || undefined
     );
   }
-  private latestAssistantText() {
-    return safeString(this.finalAssistantText.getText()).trim();
-  }
   private async deliverFinalAssistantText(replyToMessageId = "") {
-    const text = this.latestAssistantText();
+    const text = safeString(this.latestAssistantText || "").trim();
     if (!text) throw new Error("koishi_final_assistant_text_missing");
     const deliveryResult = await sendText(
       this.app,
@@ -414,22 +411,32 @@ export class KoishiChatController {
     };
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
-    const completion = this.waitForTurn(tag);
-    this.startTyping();
-    await this.session.prompt(text, {
-      images,
-      requestTag: tag,
-      source: "koishi-bridge",
-      streamingBehavior: mode === "interrupt_prompt" ? "steer" : undefined,
-    });
-    const payload = await completion;
-    if (this.activeTag !== tag) return;
+    let completionPayload: any;
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
     ).trim();
+    await runAssistantTurnWithFinalText({
+      session: this.session,
+      reset: () => {
+        this.latestAssistantText = "";
+      },
+      start: async () => {
+        const completion = this.waitForTurn(tag);
+        this.startTyping();
+        await this.session?.prompt(text, {
+          images,
+          requestTag: tag,
+          source: "koishi-bridge",
+          streamingBehavior: mode === "interrupt_prompt" ? "steer" : undefined,
+        });
+        completionPayload = await completion;
+      },
+      waitForCompletion: async () => {},
+    });
+    if (this.activeTag !== tag) return;
     this.state.piSessionFile =
       safeString(
-        payload?.sessionFile ||
+        completionPayload?.sessionFile ||
           this.session.sessionManager.getSessionFile?.() ||
           this.state.piSessionFile ||
           "",
@@ -455,17 +462,27 @@ export class KoishiChatController {
     if (shouldResumeInternally) {
       const tag = this.nextRequestTag();
       this.activeTag = tag;
-      const completion = this.waitForTurn(tag);
-      this.startTyping();
-      await this.session.resumeInterruptedTurn({
-        source: "koishi-bridge",
-        requestTag: tag,
+      let completionPayload: any;
+      await runAssistantTurnWithFinalText({
+        session: this.session,
+        reset: () => {
+          this.latestAssistantText = "";
+        },
+        start: async () => {
+          const completion = this.waitForTurn(tag);
+          this.startTyping();
+          await this.session?.resumeInterruptedTurn({
+            source: "koishi-bridge",
+            requestTag: tag,
+          });
+          completionPayload = await completion;
+        },
+        waitForCompletion: async () => {},
       });
-      const payload = await completion;
       if (this.activeTag !== tag) return;
       this.state.piSessionFile =
         safeString(
-          payload?.sessionFile ||
+          completionPayload?.sessionFile ||
             this.session.sessionManager.getSessionFile?.() ||
             this.state.piSessionFile ||
             "",

@@ -1,7 +1,7 @@
 import { safeString } from "../platform/process.js";
 
 import { openBoundSession } from "./factory.js";
-import { createFinalAssistantTextCollector } from "./final-assistant-text.js";
+import { runAssistantTurnWithFinalText } from "./assistant-turn.js";
 
 export async function runSessionPrompt(options: {
   cwd: string;
@@ -11,16 +11,19 @@ export async function runSessionPrompt(options: {
   sessionFile?: string;
 }) {
   const { session, runtime } = await openBoundSession(options);
-  const finalAssistantText = createFinalAssistantTextCollector();
-  const unsubscribe = session.subscribe?.((event: any) => {
-    finalAssistantText.observeEvent(event);
-  });
   try {
-    await session.prompt(options.prompt, {
-      expandPromptTemplates: false,
-      source: "rpc" as any,
+    const { finalText } = await runAssistantTurnWithFinalText({
+      session,
+      start: async () => {
+        await session.prompt(options.prompt, {
+          expandPromptTemplates: false,
+          source: "rpc" as any,
+        });
+      },
+      waitForCompletion: async () => {
+        await session.agent.waitForIdle();
+      },
     });
-    await session.agent.waitForIdle();
     const sessionFile =
       safeString(
         session.sessionFile || session.sessionManager?.getSessionFile?.() || "",
@@ -32,13 +35,9 @@ export async function runSessionPrompt(options: {
       session,
       sessionFile,
       sessionId,
-      finalText: finalAssistantText.getText(),
+      finalText,
     };
-
   } finally {
-    try {
-      unsubscribe?.();
-    } catch {}
     try {
       await session.abort();
     } catch {}
