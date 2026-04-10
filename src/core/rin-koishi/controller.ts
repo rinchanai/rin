@@ -3,6 +3,7 @@ import path from "node:path";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
+import { createFinalAssistantTextCollector } from "../session/final-assistant-text.js";
 import { readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
@@ -44,7 +45,7 @@ export class KoishiChatController {
   interimSentAt = 0;
   typingTimer: NodeJS.Timeout | null = null;
   pendingCompletedAssistantText = "";
-  latestAssistantText = "";
+  finalAssistantText = createFinalAssistantTextCollector();
   logger: any;
   h: any;
 
@@ -95,7 +96,7 @@ export class KoishiChatController {
           this.interimText = "";
           this.interimSentText = "";
           this.pendingCompletedAssistantText = "";
-          this.latestAssistantText = "";
+          this.finalAssistantText.reset();
           this.startTyping();
           break;
         case "message_update":
@@ -106,10 +107,10 @@ export class KoishiChatController {
           }
           break;
         case "message_end": {
+          this.finalAssistantText.observeEvent(event);
           if (event?.message?.role !== "assistant") break;
           const finalText = extractTextFromContent(event.message.content);
           if (finalText) {
-            this.latestAssistantText = finalText;
             this.pendingCompletedAssistantText = finalText;
           }
           break;
@@ -232,11 +233,11 @@ export class KoishiChatController {
       ).trim() || undefined
     );
   }
-  private finalAssistantText() {
-    return safeString(this.latestAssistantText || "").trim();
+  private latestAssistantText() {
+    return safeString(this.finalAssistantText.getText()).trim();
   }
   private async deliverFinalAssistantText(replyToMessageId = "") {
-    const text = this.finalAssistantText();
+    const text = this.latestAssistantText();
     if (!text) throw new Error("koishi_final_assistant_text_missing");
     const deliveryResult = await sendText(
       this.app,

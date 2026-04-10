@@ -1,20 +1,7 @@
 import { safeString } from "../platform/process.js";
 
 import { openBoundSession } from "./factory.js";
-
-function extractTextFromContent(content: any) {
-  if (typeof content === "string") return content.trim();
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      if (part.type === "text") return safeString((part as any).text);
-      return "";
-    })
-    .filter(Boolean)
-    .join("")
-    .trim();
-}
+import { createFinalAssistantTextCollector } from "./final-assistant-text.js";
 
 export async function runSessionPrompt(options: {
   cwd: string;
@@ -24,12 +11,9 @@ export async function runSessionPrompt(options: {
   sessionFile?: string;
 }) {
   const { session, runtime } = await openBoundSession(options);
-  let latestAssistantText = "";
+  const finalAssistantText = createFinalAssistantTextCollector();
   const unsubscribe = session.subscribe?.((event: any) => {
-    if (event?.type !== "message_end") return;
-    if (event?.message?.role !== "assistant") return;
-    const text = extractTextFromContent(event.message.content);
-    if (text) latestAssistantText = text;
+    finalAssistantText.observeEvent(event);
   });
   try {
     await session.prompt(options.prompt, {
@@ -44,7 +28,13 @@ export async function runSessionPrompt(options: {
     const sessionId =
       safeString(session.sessionId || session.sessionManager?.getSessionId?.() || "").trim() ||
       undefined;
-    return { session, sessionFile, sessionId, finalText: latestAssistantText };
+    return {
+      session,
+      sessionFile,
+      sessionId,
+      finalText: finalAssistantText.getText(),
+    };
+
   } finally {
     try {
       unsubscribe?.();
