@@ -44,7 +44,7 @@ export type CronTaskTermination = {
 };
 
 export type CronTaskSessionBinding = {
-  mode: "current" | "dedicated" | "specific";
+  mode: "current" | "dedicated";
   sessionFile?: string;
 };
 
@@ -187,26 +187,22 @@ export class CronScheduler {
 
     const session = input.session ?? existing?.session;
     if (!session) throw new Error("cron_session_required");
+    if (session.mode !== "current" && session.mode !== "dedicated") {
+      throw new Error(`cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`);
+    }
     const normalizedSession: CronTaskSessionBinding = {
       mode: session.mode,
       sessionFile:
-        session.mode === "specific"
+        session.mode === "current"
           ? path.resolve(
-              safeString(session.sessionFile).trim() ||
+              safeString(
+                session.sessionFile || defaults.sessionFile,
+              ).trim() ||
                 (() => {
-                  throw new Error("cron_sessionFile_required");
+                  throw new Error("cron_current_session_required");
                 })(),
             )
-          : session.mode === "current"
-            ? path.resolve(
-                safeString(
-                  session.sessionFile || defaults.sessionFile,
-                ).trim() ||
-                  (() => {
-                    throw new Error("cron_current_session_required");
-                  })(),
-              )
-            : undefined,
+          : undefined,
     };
 
     const target = input.target ?? existing?.target;

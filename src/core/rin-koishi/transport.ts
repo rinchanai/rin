@@ -309,6 +309,8 @@ export async function sendOutboxPayload(
         role: "assistant",
         text,
         replyToMessageId: replyToMessageId || undefined,
+        sessionId: safeString(payload.sessionId).trim() || undefined,
+        sessionFile: safeString(payload.sessionFile).trim() || undefined,
       });
       recordDeliveredAssistantMessages(agentDir, {
         chatKey,
@@ -316,6 +318,8 @@ export async function sendOutboxPayload(
         text,
         rawContent: text,
         replyToMessageId: replyToMessageId || undefined,
+        sessionId: safeString(payload.sessionId).trim() || undefined,
+        sessionFile: safeString(payload.sessionFile).trim() || undefined,
       });
     }
     return;
@@ -360,6 +364,8 @@ export async function sendOutboxPayload(
       text: finalLoggedText,
       replyToMessageId:
         safeString(payload.replyToMessageId).trim() || undefined,
+      sessionId: safeString(payload.sessionId).trim() || undefined,
+      sessionFile: safeString(payload.sessionFile).trim() || undefined,
     });
   }
   const storedSummary = summarizeOutgoingParts(rawParts);
@@ -369,6 +375,8 @@ export async function sendOutboxPayload(
     text: finalLoggedText || storedSummary || undefined,
     rawContent: storedSummary || finalLoggedText || undefined,
     replyToMessageId: safeString(payload.replyToMessageId).trim() || undefined,
+    sessionId: safeString(payload.sessionId).trim() || undefined,
+    sessionFile: safeString(payload.sessionFile).trim() || undefined,
   });
 }
 

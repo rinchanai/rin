@@ -35,6 +35,8 @@ export type ChatOutboxPayload =
       requestId?: string;
       text: string;
       replyToMessageId?: string;
+      sessionId?: string;
+      sessionFile?: string;
     }
   | {
       type: "parts_delivery";
@@ -44,6 +46,8 @@ export type ChatOutboxPayload =
       runId?: string;
       chatKey: string;
       replyToMessageId?: string;
+      sessionId?: string;
+      sessionFile?: string;
       parts: ChatMessagePart[];
     };
 

@@ -126,6 +126,44 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
   });
 });
 
+test("koishi transport stores explicit session binding for outbox text deliveries", async () => {
+  await withTempDir(async (dir) => {
+    await transport.sendOutboxPayload(
+      {
+        bots: [
+          {
+            platform: "telegram",
+            selfId: "1",
+            async sendMessage() {
+              return [{ messageId: "m-text" }];
+            },
+          },
+        ],
+      },
+      dir,
+      {
+        type: "text_delivery",
+        chatKey: "telegram/1:2",
+        text: "scheduled hello",
+        sessionId: "sess-task",
+        sessionFile: "/tmp/task-session.jsonl",
+      },
+      Object.assign((type, attrs) => ({ type, attrs }), {
+        text(content) {
+          return { type: "text", attrs: { content } };
+        },
+        quote(id) {
+          return { type: "quote", attrs: { id } };
+        },
+      }),
+    );
+    const stored = messageStore.getKoishiMessage(dir, "telegram/1:2", "m-text");
+    assert.equal(stored?.text, "scheduled hello");
+    assert.equal(stored?.sessionId, "sess-task");
+    assert.equal(stored?.sessionFile, "/tmp/task-session.jsonl");
+  });
+});
+
 test("koishi transport keeps local image parts as file urls instead of inlining data urls", async () => {
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");

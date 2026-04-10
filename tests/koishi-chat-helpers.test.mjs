@@ -42,6 +42,22 @@ test("koishi chat helpers detect command text and chat metadata", () => {
   assert.equal(helpers.commandNameFromText("/new hello"), "new");
 });
 
+test("koishi chat helpers extract reply ids and quote text from canonical koishi quote", () => {
+  const session = {
+    quote: {
+      messageId: "quoted-42",
+      content: "older context",
+    },
+  };
+  assert.equal(helpers.pickReplyToMessageId(session), "quoted-42");
+  assert.deepEqual(helpers.summarizeQuote(session), {
+    messageId: "quoted-42",
+    userId: undefined,
+    nickname: undefined,
+    content: "older context",
+  });
+});
+
 test("koishi chat helpers persist outbound image parts", async () => {
   await withTempDir(async (dir) => {
     const images = [

@@ -122,23 +122,11 @@ export function pickChatName(session: any) {
 }
 
 export function pickMessageId(session: any) {
-  return safeString(session?.messageId || session?.event?.messageId).trim();
+  return safeString(session?.messageId || "").trim();
 }
 
 export function pickReplyToMessageId(session: any) {
-  const values = [
-    session?.quote?.messageId,
-    session?.quote?.id,
-    session?.event?.reply?.messageId,
-    session?.event?.reply?.id,
-    session?.reply?.messageId,
-    session?.reply?.id,
-  ];
-  for (const value of values) {
-    const text = safeString(value).trim();
-    if (text) return text;
-  }
-  return "";
+  return safeString(session?.quote?.messageId || session?.quote?.id || "").trim();
 }
 
 export function summarizeQuote(session: any) {
@@ -287,7 +275,7 @@ export function persistInboundMessage(
   });
 }
 
-export function lookupReplySession(
+export function lookupReplyMessage(
   agentDir: string,
   chatKey: string,
   replyToMessageId: string,
@@ -295,14 +283,21 @@ export function lookupReplySession(
   const nextChatKey = safeString(chatKey).trim();
   const nextReplyToMessageId = safeString(replyToMessageId).trim();
   if (!nextChatKey || !nextReplyToMessageId) return null;
-  const linked = findKoishiMessageByChatAndId(
-    agentDir,
-    nextChatKey,
-    nextReplyToMessageId,
+  return (
+    findKoishiMessageByChatAndId(agentDir, nextChatKey, nextReplyToMessageId) ||
+    null
   );
+}
+
+export function lookupReplySession(
+  agentDir: string,
+  chatKey: string,
+  replyToMessageId: string,
+) {
+  const linked = lookupReplyMessage(agentDir, chatKey, replyToMessageId);
   const sessionId = safeString(linked?.sessionId || "").trim();
   const sessionFile = safeString(linked?.sessionFile || "").trim();
-  if (!sessionId && !sessionFile) return null;
+  if (!linked) return null;
   return {
     linked,
     sessionId: sessionId || undefined,

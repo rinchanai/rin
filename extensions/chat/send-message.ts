@@ -241,6 +241,12 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         chatKey,
         replyToMessageId:
           safeString((params as any)?.replyToMessageId).trim() || undefined,
+        sessionId:
+          safeString(ctx.sessionManager?.getSessionId?.() || "").trim() ||
+          undefined,
+        sessionFile:
+          safeString(ctx.sessionManager?.getSessionFile?.() || "").trim() ||
+          undefined,
         parts,
       });
 
