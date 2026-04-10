@@ -101,3 +101,125 @@ test("applyAutoReloadAfterCompaction queues one extra reload while a reload is i
   await waitForTimers();
   assert.equal(reloadCount, 2);
 });
+
+test("applyDisableEndTurnThresholdCompaction preserves overflow and skips normal threshold checks", async () => {
+  let originalCalls = 0;
+  const overflowMessage = {
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    stopReason: "error",
+    errorMessage: "prompt is too long",
+    timestamp: new Date().toISOString(),
+  };
+  const normalMessage = {
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    stopReason: "done",
+    usage: { totalTokens: 999 },
+    timestamp: new Date().toISOString(),
+  };
+
+  const session = {
+    model: { provider: "openai", id: "gpt-test", contextWindow: 1000 },
+    async _checkCompaction() {
+      originalCalls += 1;
+    },
+  };
+
+  runtimeMod.applyDisableEndTurnThresholdCompaction(session);
+  await session._checkCompaction(normalMessage);
+  assert.equal(originalCalls, 0);
+  await session._checkCompaction(overflowMessage);
+  assert.equal(originalCalls, 1);
+});
+
+test("applyMidTurnCompaction compacts before a provider call and injects continuation cue", async () => {
+  let compactCalls = 0;
+  let seenContext;
+  const sourceMessages = [
+    {
+      role: "user",
+      content: [{ type: "text", text: "x".repeat(400) }],
+    },
+  ];
+
+  const agent = {
+    state: { messages: [...sourceMessages] },
+    async convertToLlm(messages) {
+      return messages;
+    },
+    async streamFn(_model, context) {
+      seenContext = context;
+      return { fake: true };
+    },
+  };
+
+  const session = {
+    model: { provider: "openai", id: "gpt-test", contextWindow: 100 },
+    agent,
+    async _runAutoCompaction(reason, willRetry) {
+      compactCalls += 1;
+      assert.equal(reason, "threshold");
+      assert.equal(willRetry, false);
+      agent.state.messages = [
+        {
+          role: "user",
+          content: [{ type: "text", text: "compacted" }],
+        },
+      ];
+    },
+  };
+
+  runtimeMod.applyMidTurnCompaction(session, 50);
+  const transformed = await agent.transformContext(sourceMessages, undefined);
+  assert.equal(compactCalls, 1);
+  assert.equal(transformed[0].content[0].text, "compacted");
+  assert.equal(sourceMessages[0].content[0].text, "compacted");
+
+  await agent.streamFn(session.model, {
+    systemPrompt: "base prompt",
+    messages: transformed,
+    tools: [],
+  });
+  assert.ok(
+    seenContext.systemPrompt.includes(
+      "Context compacted; treat this as a routine internal checkpoint.",
+    ),
+  );
+});
+
+test("applyOverflowContinuationPrompt writes marker only for overflow compaction", async () => {
+  const listeners = [];
+  const session = {
+    sessionManager: {
+      getSessionId() {
+        return "session-overflow-marker";
+      },
+    },
+    subscribe(listener) {
+      listeners.push(listener);
+      return () => {};
+    },
+  };
+
+  runtimeMod.clearCompactionContinuationMarker(session);
+  runtimeMod.applyOverflowContinuationPrompt(session);
+  listeners[0]({
+    type: "compaction_end",
+    reason: "threshold",
+    aborted: false,
+    result: { summary: "threshold" },
+  });
+  assert.equal(runtimeMod.consumeCompactionContinuationMarker(session), undefined);
+
+  listeners[0]({
+    type: "compaction_end",
+    reason: "overflow",
+    aborted: false,
+    result: { summary: "overflow" },
+  });
+  const marker = runtimeMod.consumeCompactionContinuationMarker(session);
+  assert.equal(marker.reason, "overflow");
+});

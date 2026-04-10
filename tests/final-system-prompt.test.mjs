@@ -4,7 +4,18 @@ import path from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { pathToFileURL } from "node:url";
+
 import { buildFinalAppSystemPrompt } from "./helpers/final-system-prompt.mjs";
+
+const rootDir = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+);
+const runtimeMod = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
+    .href,
+);
 
 test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt layers", async () => {
   const { baseSystemPrompt, finalSystemPrompt } =
@@ -25,6 +36,55 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
     finalSystemPrompt.includes(
       "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
     ),
+  );
+});
+
+test("buildFinalAppSystemPrompt injects a continuation prompt after automatic compaction", async () => {
+  const { session, baseSystemPrompt } = await buildFinalAppSystemPrompt();
+  runtimeMod.writeCompactionContinuationMarker(session, {
+    reason: "threshold",
+    assistantPreview: "Need to continue editing tests.",
+  });
+
+  const beforeStart = await session._extensionRunner?.emitBeforeAgentStart(
+    "",
+    undefined,
+    baseSystemPrompt,
+  );
+  const finalSystemPrompt = String(
+    beforeStart?.systemPrompt || baseSystemPrompt,
+  );
+
+  assert.ok(
+    finalSystemPrompt.includes(
+      "Context compacted; treat this as a routine internal checkpoint.",
+    ),
+  );
+  assert.ok(
+    finalSystemPrompt.includes(
+      "Execute the next concrete step directly without narration.",
+    ),
+  );
+  assert.equal(
+    finalSystemPrompt.includes(
+      "Reserve status updates for when the user asked for one, the task is actually complete, or you are blocked and need input.",
+    ),
+    false,
+  );
+
+  const afterConsume = await session._extensionRunner?.emitBeforeAgentStart(
+    "",
+    undefined,
+    baseSystemPrompt,
+  );
+  const secondPrompt = String(
+    afterConsume?.systemPrompt || baseSystemPrompt,
+  );
+  assert.equal(
+    secondPrompt.includes(
+      "Context compacted; treat this as a routine internal checkpoint.",
+    ),
+    false,
   );
 });
 
