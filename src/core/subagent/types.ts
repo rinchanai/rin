@@ -1,7 +1,4 @@
-import type {
-  AgentMessage as Message,
-  ThinkingLevel,
-} from "@mariozechner/pi-agent-core";
+import type { AgentMessage as Message, ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 export type UsageStats = {
   input: number;
@@ -64,24 +61,6 @@ export type ProviderModelSummary = {
   count: number;
   top3: string[];
   all: string[];
-};
-
-export type SubagentSessionSummary = {
-  path: string;
-  id: string;
-  cwd: string;
-  name?: string;
-  createdAt: string;
-  modifiedAt: string;
-  messageCount: number;
-  preview: string;
-};
-
-export type ListSubagentSessionsParams = {
-  cwd?: string;
-  all?: boolean;
-  query?: string;
-  limit?: number;
 };
 
 export type SubagentBackendInfo = {

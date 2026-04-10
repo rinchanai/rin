@@ -8,15 +8,12 @@ import {
   applySubagentTaskPreferences,
   executeSubagentRun,
   getSubagentBackendInfo,
-  listSubagentSessions,
 } from "../../src/core/subagent/service.js";
 import type {
-  ListSubagentSessionsParams,
   ProviderModelSummary,
   RunSubagentParams,
   SubagentBackendInfo,
   SubagentSessionMode,
-  SubagentSessionSummary,
   TaskResult,
 } from "../../src/core/subagent/types.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
@@ -28,6 +25,7 @@ import {
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
+const DEFAULT_SESSION_DIR = "~/.rin/sessions";
 
 const ThinkingLevelSchema = StringEnum(
   VALID_THINKING_LEVELS as ThinkingLevel[],
@@ -36,10 +34,13 @@ const ThinkingLevelSchema = StringEnum(
   },
 );
 
-const SessionModeSchema = StringEnum([...VALID_SESSION_MODES] as SubagentSessionMode[], {
-  description:
-    "Session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session.",
-});
+const SessionModeSchema = StringEnum(
+  [...VALID_SESSION_MODES] as SubagentSessionMode[],
+  {
+    description:
+      "Session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session.",
+  },
+);
 
 const SessionSchema = Type.Optional(
   Type.Object({
@@ -47,7 +48,7 @@ const SessionSchema = Type.Optional(
     ref: Type.Optional(
       Type.String({
         description:
-          "Saved session id or session file path. Required for session.mode resume or fork. Use list_subagent_sessions to find one.",
+          "Saved session file path, exact session id, or unique session id prefix. Required for session.mode resume or fork. If you need to discover one, inspect ~/.rin/sessions with bash/find/rg.",
       }),
     ),
     name: Type.Optional(
@@ -103,42 +104,13 @@ const RunParamsSchema = Type.Object({
   ),
 });
 
-const ListSessionsParamsSchema = Type.Object({
-  cwd: Type.Optional(
-    Type.String({
-      description:
-        "Filter to sessions whose stored cwd matches this path. Defaults to the current project cwd.",
-    }),
-  ),
-  all: Type.Optional(
-    Type.Boolean({
-      description:
-        "Search across all saved subagent sessions instead of just the current cwd.",
-    }),
-  ),
-  query: Type.Optional(
-    Type.String({
-      description:
-        "Optional case-insensitive text filter over session id, name, path, cwd, and message text.",
-    }),
-  ),
-  limit: Type.Optional(
-    Type.Integer({
-      minimum: 1,
-      maximum: 100,
-      description: "Maximum number of sessions to return. Default 20.",
-    }),
-  ),
-});
-
 type SubagentDetails = {
-  action: "run" | "list_models" | "list_sessions";
+  action: "run" | "list_models";
   backend: "in-process-session";
   currentModel?: string;
   currentThinkingLevel: ThinkingLevel;
   providers: ProviderModelSummary[];
   results?: TaskResult[];
-  sessions?: SubagentSessionSummary[];
   agentText?: string;
   userText?: string;
   fullOutputPath?: string;
@@ -233,49 +205,6 @@ function buildRunUpdate(
   };
 }
 
-function formatSessionList(sessions: SubagentSessionSummary[], all?: boolean) {
-  if (!sessions.length) {
-    return all
-      ? "No saved subagent sessions found."
-      : "No saved subagent sessions found for the current cwd.";
-  }
-
-  return [
-    `${all ? "Saved subagent sessions" : "Saved subagent sessions for current cwd"}:`,
-    "",
-    ...sessions.flatMap((session, index) => [
-      `${index + 1}. ${session.name ? `${session.name} — ` : ""}${session.id}`,
-      `   cwd: ${session.cwd}`,
-      `   modified: ${session.modifiedAt}`,
-      `   messages: ${session.messageCount}`,
-      `   path: ${session.path}`,
-      `   preview: ${session.preview}`,
-      "",
-    ]),
-  ]
-    .join("\n")
-    .trim();
-}
-
-function buildSessionAgentText(sessions: SubagentSessionSummary[]): string {
-  return [
-    `subagent_sessions count=${sessions.length}`,
-    ...sessions.map((session, index) =>
-      [
-        `${index + 1}. id=${session.id}`,
-        session.name ? `name=${session.name}` : "",
-        `cwd=${session.cwd}`,
-        `modifiedAt=${session.modifiedAt}`,
-        `messageCount=${session.messageCount}`,
-        `path=${session.path}`,
-        `preview=${session.preview}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    ),
-  ].join("\n\n");
-}
-
 async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
   const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
   const prepared = await prepareToolTextOutput({
@@ -295,30 +224,6 @@ async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
     details: {
       ...detailsBase,
       action: "list_models" as const,
-      ...prepared,
-    },
-  };
-}
-
-async function listSessionsResult(
-  params: ListSubagentSessionsParams,
-  ctx: any,
-  currentThinkingLevel: ThinkingLevel,
-) {
-  const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
-  const sessions = await listSubagentSessions(params, ctx);
-  const prepared = await prepareToolTextOutput({
-    agentText: buildSessionAgentText(sessions),
-    userText: formatSessionList(sessions, params.all),
-    tempPrefix: "rin-subagent-sessions-",
-    filename: "subagent-sessions.txt",
-  });
-  return {
-    content: [{ type: "text" as const, text: prepared.agentText }],
-    details: {
-      ...detailsBase,
-      action: "list_sessions" as const,
-      sessions,
       ...prepared,
     },
   };
@@ -350,11 +255,9 @@ async function runSubagentResult(
   };
 
   if (run.ok === false) {
-    const suffix =
-      run.error.startsWith("Unknown or unavailable model:") ||
-      run.error.includes("list_subagent_sessions")
-        ? `\n\n${run.error.startsWith("Unknown or unavailable model:") ? formatModelList(detailsBase) : "Hint: use list_subagent_sessions to find saved session ids and paths before resuming or forking."}`
-        : "";
+    const suffix = run.error.startsWith("Unknown or unavailable model:")
+      ? `\n\n${formatModelList(detailsBase)}`
+      : `\n\nHint: inspect ${DEFAULT_SESSION_DIR} with bash/find/rg, then pass session.ref as a session file path, exact id, or unique id prefix.`;
     return {
       content: [{ type: "text" as const, text: `${run.error}${suffix}` }],
       details: detailsBase,
@@ -394,7 +297,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
       "Use run_subagent to start a subagent session.",
       "Default subagent runs use an isolated in-memory session and do not persist.",
       "If the delegated work will span multiple turns or needs existing context, set session.mode to persist, resume, or fork.",
-      "Use list_subagent_sessions to find saved session ids or paths before calling run_subagent with session.mode resume or fork.",
+      "When you need an existing session, inspect ~/.rin/sessions with bash/find/rg and pass session.ref as a session file path, exact id, or unique id prefix.",
       "Use run_subagent for simple independent tasks that do not depend on the current conversation context.",
       "Use run_subagent when the user asks for a subagent or wants a different model.",
       "Use run_subagent for parallelizable tasks.",
@@ -558,48 +461,6 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
         if (usage) container.addChild(new Text(theme.fg("muted", usage), 0, 0));
       }
       return container;
-    },
-  });
-
-  pi.registerTool({
-    name: "list_subagent_sessions",
-    label: "List Subagent Sessions",
-    description: "List saved subagent sessions.",
-    promptSnippet: "List saved subagent sessions.",
-    promptGuidelines: [
-      "Use list_subagent_sessions to find saved session ids or paths before resuming or forking a subagent session.",
-      "By default it shows sessions for the current cwd. Set all=true to search across all saved sessions.",
-    ],
-    parameters: ListSessionsParamsSchema,
-    async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
-      return await listSessionsResult(
-        rawParams as ListSubagentSessionsParams,
-        ctx,
-        pi.getThinkingLevel(),
-      );
-    },
-    renderCall(_args, theme) {
-      return new Text(
-        theme.fg("toolTitle", theme.bold("list_subagent_sessions")),
-        0,
-        0,
-      );
-    },
-    renderResult(result, _state, theme) {
-      const details = result.details as SubagentDetails | undefined;
-      if (!details) {
-        const first = result.content[0];
-        return new Text(
-          first?.type === "text" ? first.text : "(no output)",
-          0,
-          0,
-        );
-      }
-      return new Text(
-        String(details.userText || formatSessionList(details.sessions || [])),
-        0,
-        0,
-      );
     },
   });
 

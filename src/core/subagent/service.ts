@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import type {
@@ -19,19 +20,15 @@ import {
   normalizeModelRef,
 } from "./models.js";
 import type {
-  ListSubagentSessionsParams,
   RunSubagentParams,
   SubagentBackendInfo,
   SubagentSessionConfig,
   SubagentSessionMode,
-  SubagentSessionSummary,
   SubagentTask,
   TaskResult,
 } from "./types.js";
 
 export const MAX_PARALLEL_SUBAGENT_TASKS = 8;
-const DEFAULT_SESSION_LIST_LIMIT = 20;
-const MAX_SESSION_LIST_LIMIT = 100;
 
 let sessionCreationQueue: Promise<unknown> = Promise.resolve();
 
@@ -78,69 +75,10 @@ async function loadSessionManagerModule() {
   return { SessionManager: (codingAgentModule as any).SessionManager };
 }
 
-function getSessionSummaryPreview(info: any): string {
-  return String(info?.name || info?.firstMessage || "").trim() || "(no title)";
-}
-
-function toSessionSummary(info: any): SubagentSessionSummary {
-  return {
-    path: String(info?.path || ""),
-    id: String(info?.id || ""),
-    cwd: String(info?.cwd || ""),
-    name: String(info?.name || "").trim() || undefined,
-    createdAt:
-      info?.created instanceof Date
-        ? info.created.toISOString()
-        : new Date(info?.created || Date.now()).toISOString(),
-    modifiedAt:
-      info?.modified instanceof Date
-        ? info.modified.toISOString()
-        : new Date(info?.modified || Date.now()).toISOString(),
-    messageCount: Number(info?.messageCount || 0),
-    preview: getSessionSummaryPreview(info),
-  };
-}
-
-function matchesSessionQuery(info: any, query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  const haystack = [
-    info?.id,
-    info?.name,
-    info?.path,
-    info?.cwd,
-    info?.firstMessage,
-    info?.allMessagesText,
-  ]
-    .map((value) => String(value || "").toLowerCase())
-    .join("\n");
-  return haystack.includes(normalized);
-}
-
-async function loadSessionInfos(options: {
-  cwd: string;
-  all?: boolean;
-  query?: string;
-  limit?: number;
-}) {
-  const { SessionManager } = await loadSessionManagerModule();
-  const sessions = await SessionManager.listAll();
-  const filtered = sessions.filter((info: any) => {
-    if (!options.all && String(info?.cwd || "") !== options.cwd) return false;
-    if (options.query && !matchesSessionQuery(info, options.query)) return false;
-    return true;
-  });
-  const limit = Math.min(
-    Math.max(Number(options.limit || DEFAULT_SESSION_LIST_LIMIT), 1),
-    MAX_SESSION_LIST_LIMIT,
-  );
-  return filtered.slice(0, limit);
-}
-
 async function resolveSessionReference(
   ref: string,
   cwd: string,
-): Promise<SubagentSessionSummary> {
+): Promise<{ path: string }> {
   const wanted = String(ref || "").trim();
   if (!wanted) throw new Error("session_ref_required");
 
@@ -167,40 +105,32 @@ async function resolveSessionReference(
       normalizedDirectPath &&
       path.resolve(String(info?.path || "")).toLowerCase() === normalizedDirectPath,
   );
-  if (exactPath) return toSessionSummary(exactPath);
+  if (exactPath) return { path: String(exactPath.path || "") };
 
   const exactId = sessions.find(
     (info: any) => String(info?.id || "").toLowerCase() === normalizedWanted,
   );
-  if (exactId) return toSessionSummary(exactId);
+  if (exactId) return { path: String(exactId.path || "") };
 
   const exactPathText = sessions.find(
     (info: any) => path.resolve(String(info?.path || "")).toLowerCase() === normalizedWanted,
   );
-  if (exactPathText) return toSessionSummary(exactPathText);
+  if (exactPathText) return { path: String(exactPathText.path || "") };
 
   const prefixMatches = sessions.filter((info: any) =>
     String(info?.id || "").toLowerCase().startsWith(normalizedWanted),
   );
-  if (prefixMatches.length === 1) return toSessionSummary(prefixMatches[0]);
+  if (prefixMatches.length === 1) {
+    return { path: String(prefixMatches[0]?.path || "") };
+  }
   if (prefixMatches.length > 1) {
     throw new Error(
-      `Session ref is ambiguous: ${wanted}. Use list_subagent_sessions to get an exact id or path.`,
-    );
-  }
-
-  const nameMatches = sessions.filter(
-    (info: any) => String(info?.name || "").trim().toLowerCase() === normalizedWanted,
-  );
-  if (nameMatches.length === 1) return toSessionSummary(nameMatches[0]);
-  if (nameMatches.length > 1) {
-    throw new Error(
-      `Session name is ambiguous: ${wanted}. Use list_subagent_sessions to choose an exact id or path.`,
+      `Session ref is ambiguous: ${wanted}. Inspect ${path.join(os.homedir(), ".rin", "sessions")} and use an exact path or a less ambiguous id prefix.`,
     );
   }
 
   throw new Error(
-    `Session not found: ${wanted}. Use list_subagent_sessions to inspect available session ids and paths.`,
+    `Session not found: ${wanted}. Inspect ${path.join(os.homedir(), ".rin", "sessions")} and use a session file path, exact id, or unique id prefix.`,
   );
 }
 
@@ -275,20 +205,6 @@ export async function getSubagentBackendInfo(
   };
 }
 
-export async function listSubagentSessions(
-  params: ListSubagentSessionsParams,
-  ctx: any,
-): Promise<SubagentSessionSummary[]> {
-  const cwd = String(params.cwd || ctx?.cwd || process.cwd()).trim() || process.cwd();
-  const infos = await loadSessionInfos({
-    cwd,
-    all: params.all,
-    query: params.query,
-    limit: params.limit,
-  });
-  return infos.map(toSessionSummary);
-}
-
 function buildTasks(
   params: RunSubagentParams,
   ctx: any,
@@ -352,7 +268,7 @@ function validateTasks(
       (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
       !sessionConfig.ref
     ) {
-      return `Session ref is required when session.mode is ${sessionConfig.mode}. Use list_subagent_sessions to find session ids or paths.`;
+      return `Session ref is required when session.mode is ${sessionConfig.mode}. Inspect ${path.join(os.homedir(), ".rin", "sessions")} and use a session file path, exact id, or unique id prefix.`;
     }
     if (
       (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
