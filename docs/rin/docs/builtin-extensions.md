@@ -27,6 +27,9 @@ This document describes the extra capabilities Rin gives the agent.
   - provides task management tools such as `list_tasks`, `save_task`, and `pause_task`
 - `chat`
   - provides `send_chat_msg` and `get_chat_msg`
+- `token-usage`
+  - records detailed token telemetry under `~/.rin/data/token-usage/usage.db`
+  - powers the `rin usage` text dashboard and grouped usage queries
 
 ## Usage note
 
