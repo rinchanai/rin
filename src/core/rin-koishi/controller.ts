@@ -382,11 +382,14 @@ export class KoishiChatController {
       attachments: SavedAttachment[];
       replyToMessageId?: string;
       incomingMessageId?: string;
+      sessionFile?: string;
     },
     mode: "prompt" | "interrupt_prompt" = "prompt",
   ) {
     await this.connect();
     if (!this.session) throw new Error("koishi_session_not_connected");
+    const wantedSessionFile = safeString(input.sessionFile || "").trim();
+    if (wantedSessionFile) await this.resumeSessionFile(wantedSessionFile);
     await this.ensureSessionReady();
     const { text, images, attachments } = await restorePromptParts({
       text: input.text,
@@ -445,6 +448,11 @@ export class KoishiChatController {
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
     await this.deliverFinalAssistantText(replyToMessageId);
+    return {
+      finalText: safeString(this.latestAssistantText || "").trim(),
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile: this.currentSessionFile(),
+    };
   }
   async recoverIfNeeded() {
     if (!this.state.processing) return;
