@@ -101,6 +101,16 @@ Rin provides the `rules` tool. As an agent, you should know that:
 - it can also discover `.agents/skills/*/SKILL.md`
 - when you need project-specific rules, this is often one of the best first entrypoints
 
+## Token usage telemetry
+
+Rin records detailed token telemetry for runtime events and assistant usage.
+
+As an agent, you should know that:
+
+- telemetry is stored under `~/.rin/data/token-usage/usage.db`
+- it tracks session, event, model, source, tool, and capability metadata alongside token counts
+- `rin usage` shows a simple text dashboard and supports grouped queries over the recorded dimensions
+
 ## Stable documentation paths
 
 Rin installs docs into stable locations:

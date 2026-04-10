@@ -38,5 +38,6 @@ export function getBuiltinExtensionPaths() {
     path.join(root, "dist", "extensions", "subagent", "index.js"),
     path.join(root, "dist", "extensions", "task", "index.js"),
     path.join(root, "dist", "extensions", "chat", "index.js"),
+    path.join(root, "dist", "extensions", "token-usage", "index.js"),
   ];
 }

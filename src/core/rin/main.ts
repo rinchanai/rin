@@ -10,6 +10,7 @@ import {
   runUpdate,
   safeString,
 } from "./shared.js";
+import { runUsage, runUsageInternal } from "./usage.js";
 
 function createCli() {
   const cli = cac("rin");
@@ -32,17 +33,30 @@ function createCli() {
   cli.command("stop", "Stop the target user daemon");
   cli.command("restart", "Restart the target user daemon");
   cli.command("doctor", "Show daemon/socket diagnostics for the target user");
+  cli.command("usage", "Show token telemetry dashboard and grouped usage stats");
 
   return cli;
 }
 
 function parseCommandName(name: string): ParsedArgs["command"] {
-  return ["update", "start", "stop", "restart", "doctor"].includes(name)
+  return ["update", "start", "stop", "restart", "doctor", "usage"].includes(name)
     ? (name as ParsedArgs["command"])
     : "";
 }
 
 export async function startRinCli() {
+  if (process.argv[2] === "__usage_internal") {
+    await runUsageInternal(process.argv.slice(3));
+    return;
+  }
+  if (
+    process.argv[2] === "usage" &&
+    process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")
+  ) {
+    await runUsageInternal(["--help"]);
+    return;
+  }
+
   const cli = createCli();
   const parsedArgv = cli.parse(process.argv, { run: false });
   if (parsedArgv.options.help) {
@@ -62,6 +76,7 @@ export async function startRinCli() {
   if (parsed.command === "stop") return await runStop(parsed);
   if (parsed.command === "restart") return await runRestart(parsed);
   if (parsed.command === "doctor") return await runDoctor(parsed);
+  if (parsed.command === "usage") return await runUsage(parsed, process.argv.slice(2));
 
   await launchDefaultRin(parsed);
 }
