@@ -29,18 +29,33 @@ async function main() {
   const workerPath = path.join(here, `worker${ext}`);
   const koishiEntryPath = path.join(here, "..", "rin-koishi", `main${ext}`);
   const runtime = resolveRuntimeProfile();
-  const webSearchInstanceId = `daemon-${process.pid}`;
-  const koishiInstanceId = `daemon-${process.pid}`;
+  const sidecars = [
+    {
+      instanceId: `daemon-${process.pid}`,
+      cleanup: () => cleanupOrphanSearxngSidecars(runtime.agentDir),
+      ensure: (instanceId: string) =>
+        ensureSearxngSidecar(runtime.agentDir, { instanceId }),
+      stop: (instanceId: string) =>
+        stopSearxngSidecar(runtime.agentDir, { instanceId }),
+    },
+    {
+      instanceId: `daemon-${process.pid}`,
+      cleanup: () => cleanupOrphanKoishiSidecars(runtime.agentDir),
+      ensure: (instanceId: string) =>
+        ensureKoishiSidecar(runtime.agentDir, {
+          instanceId,
+          entryPath: koishiEntryPath,
+        }),
+      stop: (instanceId: string) =>
+        stopKoishiSidecar(runtime.agentDir, { instanceId }),
+    },
+  ];
+
   const ensureSidecars = async () => {
-    await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {});
-    await cleanupOrphanKoishiSidecars(runtime.agentDir).catch(() => {});
-    await ensureSearxngSidecar(runtime.agentDir, {
-      instanceId: webSearchInstanceId,
-    }).catch(() => {});
-    await ensureKoishiSidecar(runtime.agentDir, {
-      instanceId: koishiInstanceId,
-      entryPath: koishiEntryPath,
-    }).catch(() => {});
+    for (const sidecar of sidecars) {
+      await sidecar.cleanup().catch(() => {});
+      await sidecar.ensure(sidecar.instanceId).catch(() => {});
+    }
   };
 
   await ensureSidecars();
@@ -49,12 +64,9 @@ async function main() {
   }, 10_000);
   const stop = () => {
     clearInterval(sidecarHealthTimer);
-    void stopSearxngSidecar(runtime.agentDir, {
-      instanceId: webSearchInstanceId,
-    }).catch(() => {});
-    void stopKoishiSidecar(runtime.agentDir, {
-      instanceId: koishiInstanceId,
-    }).catch(() => {});
+    for (const sidecar of sidecars) {
+      void sidecar.stop(sidecar.instanceId).catch(() => {});
+    }
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);

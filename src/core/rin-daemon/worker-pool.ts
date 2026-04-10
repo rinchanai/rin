@@ -193,7 +193,7 @@ export class WorkerPool {
     }
   }
 
-  getInterruptedSessionSelectors() {
+  getRestorableSessionSelectors() {
     const seen = new Set<string>();
     return Array.from(this.workers)
       .filter(
@@ -203,25 +203,32 @@ export class WorkerPool {
           !seen.has(worker.sessionFile),
       )
       .map((worker) => {
-        seen.add(String(worker.sessionFile));
+        const sessionFile = String(worker.sessionFile);
+        seen.add(sessionFile);
         return {
-          sessionFile: worker.sessionFile,
+          sessionFile,
+          resumeTurn: Boolean(worker.isStreaming || worker.isCompacting),
         };
       });
   }
 
-  resumeInterruptedSession(sessionFile: string) {
+  restoreSessionWorker(item: { sessionFile?: string; resumeTurn?: boolean }) {
+    const sessionFile = String(item?.sessionFile || "").trim();
+    if (!sessionFile) return;
     const worker = this.createWorker();
     this.setWorkerSessionRefs(worker, { sessionFile, sessionId: undefined });
     worker.child.stdin.write(
       `${JSON.stringify({ type: "switch_session", sessionPath: sessionFile })}\n`,
     );
-    worker.child.stdin.write(
-      `${JSON.stringify({ type: "resume_interrupted_turn", source: "daemon-restart" })}\n`,
-    );
+    if (item?.resumeTurn) {
+      worker.child.stdin.write(
+        `${JSON.stringify({ type: "resume_interrupted_turn", source: "daemon-restart" })}\n`,
+      );
+    }
   }
 
   async shutdown(graceMs: number) {
+    const restorable = this.getRestorableSessionSelectors();
     this.beginShutdown();
     const deadline = Date.now() + Math.max(0, graceMs);
     while (this.workers.size > 0 && Date.now() < deadline) {
@@ -230,9 +237,8 @@ export class WorkerPool {
         this.maybeReleaseWorker(worker);
       }
     }
-    const interrupted = this.getInterruptedSessionSelectors();
     this.destroyAll();
-    return interrupted;
+    return restorable;
   }
 
   private updateWorkerMetadata(worker: WorkerHandle, payload: any) {
