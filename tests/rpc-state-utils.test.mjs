@@ -42,11 +42,10 @@ test("rpc state utils derive branch and apply state", () => {
     followUpMode: "all",
     isStreaming: false,
   });
-  assert.equal(target.detachedBlankSession, true);
-  assert.equal(target.model.id, "gpt-5");
-  assert.equal(target.thinkingLevel, "high");
-  assert.equal(target.steeringMode, "all");
-  assert.equal(target.followUpMode, "one-at-a-time");
+  assert.equal(target.model, null);
+  assert.equal(target.thinkingLevel, "medium");
+  assert.equal(target.steeringMode, "one-at-a-time");
+  assert.equal(target.followUpMode, "all");
 
   stateUtils.applyRpcSessionState(target, {
     sessionId: "s1",
@@ -58,7 +57,22 @@ test("rpc state utils derive branch and apply state", () => {
   assert.equal(target.sessionFile, "/tmp/x");
   assert.equal(target.thinkingLevel, "low");
   assert.equal(target.isStreaming, true);
-  assert.equal(target.detachedBlankSession, false);
+
+  let remoteStreaming = false;
+  stateUtils.applyRpcSessionState(
+    {
+      ...target,
+      setRemoteTurnRunning(value) {
+        remoteStreaming = value;
+      },
+    },
+    {
+      sessionId: "s2",
+      sessionFile: "/tmp/y",
+      isStreaming: true,
+    },
+  );
+  assert.equal(remoteStreaming, true);
 
   const entryById = new Map([
     ["1", { id: "1" }],
@@ -80,5 +94,6 @@ test("rpc reconnect helper queues and emits status", () => {
   };
   reconnect.queueOfflineOperation(target, { mode: "prompt", message: "hi" });
   assert.equal(target.queuedOfflineOps.length, 1);
-  assert.equal(events.length, 2);
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], { reconnect: true });
 });

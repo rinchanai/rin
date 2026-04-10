@@ -136,7 +136,7 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });
 
-test("koishi controller falls back to rpc turn result text when message_end is missing", async () => {
+test("koishi controller uses rpc turn result text as the final output source", async () => {
   const controller = await createController("telegram/9:10");
   const calls = [];
   controller.deliverFinalAssistantText = async () => {
@@ -310,3 +310,4 @@ test("koishi controller delivers completed assistant text during recovery when p
     { text: "final from recovery", replyToMessageId: "42" },
   ]);
 });
+

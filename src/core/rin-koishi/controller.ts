@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
+import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
@@ -229,6 +230,14 @@ export class KoishiChatController {
 
     client.subscribe((event) => {
       if (event.type !== "ui") return;
+      if (event.name === "connection_lost") {
+        this.clearIdleToolProgressTimer();
+        for (const [requestTag, waiter] of this.turnWaiters.entries()) {
+          this.turnWaiters.delete(requestTag);
+          waiter.reject(new Error("rin_disconnected:rpc_turn"));
+        }
+        return;
+      }
       const payload: any = event.payload;
       if (payload?.type !== "rpc_turn_event") return;
       const requestTag = safeString(payload.requestTag || "").trim();
@@ -263,14 +272,8 @@ export class KoishiChatController {
             if (nextText) this.interimText = nextText;
           }
           break;
-        case "message_end": {
-          if (event?.message?.role !== "assistant") break;
-          const finalText = extractTextFromContent(event.message.content);
-          if (finalText) {
-            this.latestAssistantText = finalText;
-          }
+        case "message_end":
           break;
-        }
         case "tool_execution_start":
           this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
           this.scheduleIdleToolProgress();
@@ -675,9 +678,9 @@ export class KoishiChatController {
       .slice(lastUserIndex + 1)
       .reverse()
       .find((message: any) => message?.role === "assistant");
-    const deliveredCompletedText = extractTextFromContent(
-      lastAssistantAfterUser?.content,
-    );
+    const deliveredCompletedText = lastAssistantAfterUser
+      ? extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages))
+      : "";
     const currentLastUser = [...messages]
       .reverse()
       .find((message: any) => message?.role === "user");

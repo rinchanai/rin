@@ -5,7 +5,14 @@ export async function handleRpcSessionEvent(
   refreshMessagesAndSession: () => Promise<any>,
 ) {
   if (!payload || typeof payload !== "object") return;
-  if (payload.type === "agent_start") target.isStreaming = true;
+  const setRemoteTurnRunning = (running: boolean) => {
+    if (typeof target.setRemoteTurnRunning === "function") {
+      target.setRemoteTurnRunning(running);
+    } else {
+      target.isStreaming = running;
+    }
+  };
+  if (payload.type === "agent_start") setRemoteTurnRunning(true);
   if (payload.type === "compaction_start") target.isCompacting = true;
   if (payload.type === "compaction_end") {
     target.isCompacting = false;
@@ -15,7 +22,7 @@ export async function handleRpcSessionEvent(
     target.retryAttempt = Number(payload.attempt || 1);
   if (payload.type === "auto_retry_end") target.retryAttempt = 0;
   if (payload.type === "agent_end") {
-    target.isStreaming = false;
+    setRemoteTurnRunning(false);
     target.activeTurn = null;
     void refreshMessagesAndSession();
   }
