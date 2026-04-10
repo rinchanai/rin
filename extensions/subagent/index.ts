@@ -8,11 +8,15 @@ import {
   applySubagentTaskPreferences,
   executeSubagentRun,
   getSubagentBackendInfo,
+  listSubagentSessions,
 } from "../../src/core/subagent/service.js";
 import type {
+  ListSubagentSessionsParams,
   ProviderModelSummary,
   RunSubagentParams,
   SubagentBackendInfo,
+  SubagentSessionMode,
+  SubagentSessionSummary,
   TaskResult,
 } from "../../src/core/subagent/types.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
@@ -23,11 +27,36 @@ import {
 } from "./format-utils.js";
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
 
+const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
+
 const ThinkingLevelSchema = StringEnum(
   VALID_THINKING_LEVELS as ThinkingLevel[],
   {
     description: "Thinking level: off, minimal, low, medium, high, xhigh.",
   },
+);
+
+const SessionModeSchema = StringEnum([...VALID_SESSION_MODES] as SubagentSessionMode[], {
+  description:
+    "Session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session.",
+});
+
+const SessionSchema = Type.Optional(
+  Type.Object({
+    mode: Type.Optional(SessionModeSchema),
+    ref: Type.Optional(
+      Type.String({
+        description:
+          "Saved session id or session file path. Required for session.mode resume or fork. Use list_subagent_sessions to find one.",
+      }),
+    ),
+    name: Type.Optional(
+      Type.String({
+        description:
+          "Optional session display name for the saved session. Useful for new persisted sessions and renaming resumed or forked sessions.",
+      }),
+    ),
+  }),
 );
 
 const TaskSchema = Type.Object({
@@ -45,6 +74,7 @@ const TaskSchema = Type.Object({
         "Working directory for this task. Defaults to the current project cwd.",
     }),
   ),
+  session: SessionSchema,
 });
 
 const RunParamsSchema = Type.Object({
@@ -64,6 +94,7 @@ const RunParamsSchema = Type.Object({
         "Working directory for single-task mode. Defaults to the current project cwd.",
     }),
   ),
+  session: SessionSchema,
   tasks: Type.Optional(
     Type.Array(TaskSchema, {
       description:
@@ -72,13 +103,42 @@ const RunParamsSchema = Type.Object({
   ),
 });
 
+const ListSessionsParamsSchema = Type.Object({
+  cwd: Type.Optional(
+    Type.String({
+      description:
+        "Filter to sessions whose stored cwd matches this path. Defaults to the current project cwd.",
+    }),
+  ),
+  all: Type.Optional(
+    Type.Boolean({
+      description:
+        "Search across all saved subagent sessions instead of just the current cwd.",
+    }),
+  ),
+  query: Type.Optional(
+    Type.String({
+      description:
+        "Optional case-insensitive text filter over session id, name, path, cwd, and message text.",
+    }),
+  ),
+  limit: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      maximum: 100,
+      description: "Maximum number of sessions to return. Default 20.",
+    }),
+  ),
+});
+
 type SubagentDetails = {
-  action: "run" | "list_models";
+  action: "run" | "list_models" | "list_sessions";
   backend: "in-process-session";
   currentModel?: string;
   currentThinkingLevel: ThinkingLevel;
   providers: ProviderModelSummary[];
   results?: TaskResult[];
+  sessions?: SubagentSessionSummary[];
   agentText?: string;
   userText?: string;
   fullOutputPath?: string;
@@ -106,24 +166,44 @@ function formatModelList(
   return lines.join("\n");
 }
 
+function buildTaskSessionLabel(result: TaskResult): string | undefined {
+  if (!result.sessionPersisted) return undefined;
+  return result.sessionName || result.sessionId || result.sessionFile;
+}
+
 function buildSubagentUserText(results: TaskResult[]): string {
   const failed = results.filter((result) => result.exitCode !== 0);
-  return results.length === 1
-    ? results[0].output || results[0].errorMessage || "(no output)"
-    : [
-        `Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
-        ...results.map((result) => {
-          const status = result.exitCode === 0 ? "ok" : "failed";
-          const preview = (
-            result.output ||
-            result.errorMessage ||
-            "(no output)"
-          )
-            .replace(/\s+/g, " ")
-            .trim();
-          return `${result.index}. [${status}] ${result.model || result.requestedModel || "(default model)"} — ${preview.slice(0, 220)}${preview.length > 220 ? "…" : ""}`;
-        }),
-      ].join("\n\n");
+  if (results.length === 1) {
+    const single = results[0];
+    const base = single.output || single.errorMessage || "(no output)";
+    const sessionLabel = buildTaskSessionLabel(single);
+    if (!sessionLabel) return base;
+    return [
+      base,
+      "",
+      `Session: ${sessionLabel}`,
+      single.sessionFile ? `Path: ${single.sessionFile}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return [
+    `Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
+    ...results.map((result) => {
+      const status = result.exitCode === 0 ? "ok" : "failed";
+      const preview = (
+        result.output ||
+        result.errorMessage ||
+        "(no output)"
+      )
+        .replace(/\s+/g, " ")
+        .trim();
+      const sessionLabel = buildTaskSessionLabel(result);
+      const suffix = sessionLabel ? ` [session: ${sessionLabel}]` : "";
+      return `${result.index}. [${status}] ${result.model || result.requestedModel || "(default model)"}${suffix} — ${preview.slice(0, 220)}${preview.length > 220 ? "…" : ""}`;
+    }),
+  ].join("\n\n");
 }
 
 function buildRunUpdate(
@@ -153,6 +233,49 @@ function buildRunUpdate(
   };
 }
 
+function formatSessionList(sessions: SubagentSessionSummary[], all?: boolean) {
+  if (!sessions.length) {
+    return all
+      ? "No saved subagent sessions found."
+      : "No saved subagent sessions found for the current cwd.";
+  }
+
+  return [
+    `${all ? "Saved subagent sessions" : "Saved subagent sessions for current cwd"}:`,
+    "",
+    ...sessions.flatMap((session, index) => [
+      `${index + 1}. ${session.name ? `${session.name} — ` : ""}${session.id}`,
+      `   cwd: ${session.cwd}`,
+      `   modified: ${session.modifiedAt}`,
+      `   messages: ${session.messageCount}`,
+      `   path: ${session.path}`,
+      `   preview: ${session.preview}`,
+      "",
+    ]),
+  ]
+    .join("\n")
+    .trim();
+}
+
+function buildSessionAgentText(sessions: SubagentSessionSummary[]): string {
+  return [
+    `subagent_sessions count=${sessions.length}`,
+    ...sessions.map((session, index) =>
+      [
+        `${index + 1}. id=${session.id}`,
+        session.name ? `name=${session.name}` : "",
+        `cwd=${session.cwd}`,
+        `modifiedAt=${session.modifiedAt}`,
+        `messageCount=${session.messageCount}`,
+        `path=${session.path}`,
+        `preview=${session.preview}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ),
+  ].join("\n\n");
+}
+
 async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
   const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
   const prepared = await prepareToolTextOutput({
@@ -172,6 +295,30 @@ async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
     details: {
       ...detailsBase,
       action: "list_models" as const,
+      ...prepared,
+    },
+  };
+}
+
+async function listSessionsResult(
+  params: ListSubagentSessionsParams,
+  ctx: any,
+  currentThinkingLevel: ThinkingLevel,
+) {
+  const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
+  const sessions = await listSubagentSessions(params, ctx);
+  const prepared = await prepareToolTextOutput({
+    agentText: buildSessionAgentText(sessions),
+    userText: formatSessionList(sessions, params.all),
+    tempPrefix: "rin-subagent-sessions-",
+    filename: "subagent-sessions.txt",
+  });
+  return {
+    content: [{ type: "text" as const, text: prepared.agentText }],
+    details: {
+      ...detailsBase,
+      action: "list_sessions" as const,
+      sessions,
       ...prepared,
     },
   };
@@ -203,9 +350,11 @@ async function runSubagentResult(
   };
 
   if (run.ok === false) {
-    const suffix = run.error.startsWith("Unknown or unavailable model:")
-      ? `\n\n${formatModelList(detailsBase)}`
-      : "";
+    const suffix =
+      run.error.startsWith("Unknown or unavailable model:") ||
+      run.error.includes("list_subagent_sessions")
+        ? `\n\n${run.error.startsWith("Unknown or unavailable model:") ? formatModelList(detailsBase) : "Hint: use list_subagent_sessions to find saved session ids and paths before resuming or forking."}`
+        : "";
     return {
       content: [{ type: "text" as const, text: `${run.error}${suffix}` }],
       details: detailsBase,
@@ -243,6 +392,9 @@ export default function subagentExtension(pi: ExtensionAPI) {
     promptSnippet: "Run subagents.",
     promptGuidelines: [
       "Use run_subagent to start a subagent session.",
+      "Default subagent runs use an isolated in-memory session and do not persist.",
+      "If the delegated work will span multiple turns or needs existing context, set session.mode to persist, resume, or fork.",
+      "Use list_subagent_sessions to find saved session ids or paths before calling run_subagent with session.mode resume or fork.",
       "Use run_subagent for simple independent tasks that do not depend on the current conversation context.",
       "Use run_subagent when the user asks for a subagent or wants a different model.",
       "Use run_subagent for parallelizable tasks.",
@@ -264,11 +416,12 @@ export default function subagentExtension(pi: ExtensionAPI) {
           theme.fg("accent", `parallel (${args.tasks.length})`);
         for (const task of args.tasks.slice(0, 3)) {
           const model = task.model ? ` [${task.model}]` : "";
+          const mode = task.session?.mode ? ` {${task.session.mode}}` : "";
           const preview = String(task.prompt || "")
             .replace(/\s+/g, " ")
             .trim();
           text += `
-  ${theme.fg("muted", "•")} ${theme.fg("dim", preview.slice(0, 70))}${preview.length > 70 ? "…" : ""}${theme.fg("muted", model)}`;
+  ${theme.fg("muted", "•")} ${theme.fg("dim", preview.slice(0, 70))}${preview.length > 70 ? "…" : ""}${theme.fg("muted", `${model}${mode}`)}`;
         }
         if (args.tasks.length > 3)
           text += `
@@ -277,6 +430,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
       }
 
       const model = args.model ? ` [${args.model}]` : "";
+      const mode = args.session?.mode ? ` {${args.session.mode}}` : "";
       const preview = String(args.prompt || "")
         .replace(/\s+/g, " ")
         .trim();
@@ -284,7 +438,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
         theme.fg("toolTitle", theme.bold("run_subagent ")) +
           theme.fg("accent", "run") +
           `
-  ${theme.fg("dim", preview.slice(0, 100))}${preview.length > 100 ? "…" : ""}${theme.fg("muted", model)}`,
+  ${theme.fg("dim", preview.slice(0, 100))}${preview.length > 100 ? "…" : ""}${theme.fg("muted", `${model}${mode}`)}`,
         0,
         0,
       );
@@ -321,9 +475,13 @@ export default function subagentExtension(pi: ExtensionAPI) {
           const preview = (task.output || task.errorMessage || "(no output)")
             .replace(/\s+/g, " ")
             .trim();
+          const sessionLabel = buildTaskSessionLabel(task);
           text += `
 
 ${icon} ${theme.fg("accent", task.model || task.requestedModel || "(default model)")}`;
+          if (sessionLabel) {
+            text += ` ${theme.fg("muted", `[${sessionLabel}]`)}`;
+          }
           text += `
 ${theme.fg("dim", preview.slice(0, 220))}${preview.length > 220 ? "…" : ""}`;
           const usage = formatUsage(task.usage, undefined);
@@ -368,6 +526,24 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
         container.addChild(
           new Text(theme.fg("muted", `cwd: ${task.cwd}`), 0, 0),
         );
+        container.addChild(
+          new Text(theme.fg("muted", `session mode: ${task.sessionMode}`), 0, 0),
+        );
+        if (task.sessionId) {
+          container.addChild(
+            new Text(theme.fg("muted", `session id: ${task.sessionId}`), 0, 0),
+          );
+        }
+        if (task.sessionName) {
+          container.addChild(
+            new Text(theme.fg("muted", `session name: ${task.sessionName}`), 0, 0),
+          );
+        }
+        if (task.sessionFile) {
+          container.addChild(
+            new Text(theme.fg("muted", `session file: ${task.sessionFile}`), 0, 0),
+          );
+        }
         container.addChild(new Text(theme.fg("muted", "prompt:"), 0, 0));
         container.addChild(new Text(theme.fg("dim", task.prompt), 0, 0));
         if (task.errorMessage)
@@ -382,6 +558,48 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
         if (usage) container.addChild(new Text(theme.fg("muted", usage), 0, 0));
       }
       return container;
+    },
+  });
+
+  pi.registerTool({
+    name: "list_subagent_sessions",
+    label: "List Subagent Sessions",
+    description: "List saved subagent sessions.",
+    promptSnippet: "List saved subagent sessions.",
+    promptGuidelines: [
+      "Use list_subagent_sessions to find saved session ids or paths before resuming or forking a subagent session.",
+      "By default it shows sessions for the current cwd. Set all=true to search across all saved sessions.",
+    ],
+    parameters: ListSessionsParamsSchema,
+    async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
+      return await listSessionsResult(
+        rawParams as ListSubagentSessionsParams,
+        ctx,
+        pi.getThinkingLevel(),
+      );
+    },
+    renderCall(_args, theme) {
+      return new Text(
+        theme.fg("toolTitle", theme.bold("list_subagent_sessions")),
+        0,
+        0,
+      );
+    },
+    renderResult(result, _state, theme) {
+      const details = result.details as SubagentDetails | undefined;
+      if (!details) {
+        const first = result.content[0];
+        return new Text(
+          first?.type === "text" ? first.text : "(no output)",
+          0,
+          0,
+        );
+      }
+      return new Text(
+        String(details.userText || formatSessionList(details.sessions || [])),
+        0,
+        0,
+      );
     },
   });
 

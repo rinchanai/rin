@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import type {
@@ -7,20 +8,30 @@ import type {
 
 import { getBuiltinExtensionPaths } from "../../app/builtin-extensions.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
-import { createConfiguredAgentSession } from "../rin-lib/runtime.js";
+import {
+  createConfiguredAgentSession,
+  getRuntimeSessionDir,
+  resolveRuntimeProfile,
+} from "../rin-lib/runtime.js";
 import {
   buildModelLookup,
   getProviderSummaries,
   normalizeModelRef,
 } from "./models.js";
 import type {
+  ListSubagentSessionsParams,
   RunSubagentParams,
   SubagentBackendInfo,
+  SubagentSessionConfig,
+  SubagentSessionMode,
+  SubagentSessionSummary,
   SubagentTask,
   TaskResult,
 } from "./types.js";
 
 export const MAX_PARALLEL_SUBAGENT_TASKS = 8;
+const DEFAULT_SESSION_LIST_LIMIT = 20;
+const MAX_SESSION_LIST_LIMIT = 100;
 
 let sessionCreationQueue: Promise<unknown> = Promise.resolve();
 
@@ -47,22 +58,197 @@ function getSubagentExtensionPaths(): string[] {
   });
 }
 
-async function createIsolatedSession(
-  cwd: string,
-  options: { modelRef?: string; thinkingLevel?: ThinkingLevel } = {},
-) {
+function normalizeSessionConfig(
+  session: SubagentSessionConfig | undefined,
+): Required<Pick<SubagentSessionConfig, "mode">> & SubagentSessionConfig {
+  const mode = (session?.mode || "memory") as SubagentSessionMode;
+  return {
+    mode,
+    ref: String(session?.ref || "").trim() || undefined,
+    name: String(session?.name || "").trim() || undefined,
+  };
+}
+
+function isPersistedMode(mode: SubagentSessionMode): boolean {
+  return mode !== "memory";
+}
+
+async function loadSessionManagerModule() {
   const codingAgentModule = await loadRinCodingAgent();
-  const { SessionManager } = codingAgentModule as any;
-  const sessionManager = SessionManager.inMemory(cwd);
-  return await withSessionCreationLock(async () => {
+  return { SessionManager: (codingAgentModule as any).SessionManager };
+}
+
+function getSessionSummaryPreview(info: any): string {
+  return String(info?.name || info?.firstMessage || "").trim() || "(no title)";
+}
+
+function toSessionSummary(info: any): SubagentSessionSummary {
+  return {
+    path: String(info?.path || ""),
+    id: String(info?.id || ""),
+    cwd: String(info?.cwd || ""),
+    name: String(info?.name || "").trim() || undefined,
+    createdAt:
+      info?.created instanceof Date
+        ? info.created.toISOString()
+        : new Date(info?.created || Date.now()).toISOString(),
+    modifiedAt:
+      info?.modified instanceof Date
+        ? info.modified.toISOString()
+        : new Date(info?.modified || Date.now()).toISOString(),
+    messageCount: Number(info?.messageCount || 0),
+    preview: getSessionSummaryPreview(info),
+  };
+}
+
+function matchesSessionQuery(info: any, query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  const haystack = [
+    info?.id,
+    info?.name,
+    info?.path,
+    info?.cwd,
+    info?.firstMessage,
+    info?.allMessagesText,
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join("\n");
+  return haystack.includes(normalized);
+}
+
+async function loadSessionInfos(options: {
+  cwd: string;
+  all?: boolean;
+  query?: string;
+  limit?: number;
+}) {
+  const { SessionManager } = await loadSessionManagerModule();
+  const sessions = await SessionManager.listAll();
+  const filtered = sessions.filter((info: any) => {
+    if (!options.all && String(info?.cwd || "") !== options.cwd) return false;
+    if (options.query && !matchesSessionQuery(info, options.query)) return false;
+    return true;
+  });
+  const limit = Math.min(
+    Math.max(Number(options.limit || DEFAULT_SESSION_LIST_LIMIT), 1),
+    MAX_SESSION_LIST_LIMIT,
+  );
+  return filtered.slice(0, limit);
+}
+
+async function resolveSessionReference(
+  ref: string,
+  cwd: string,
+): Promise<SubagentSessionSummary> {
+  const wanted = String(ref || "").trim();
+  if (!wanted) throw new Error("session_ref_required");
+
+  const directCandidates = path.isAbsolute(wanted)
+    ? [wanted]
+    : [path.resolve(cwd, wanted), path.resolve(process.cwd(), wanted)];
+  const directMatchPath = directCandidates.find((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+
+  const { SessionManager } = await loadSessionManagerModule();
+  const sessions = await SessionManager.listAll();
+  const normalizedWanted = wanted.toLowerCase();
+  const normalizedDirectPath = directMatchPath
+    ? path.resolve(directMatchPath).toLowerCase()
+    : undefined;
+
+  const exactPath = sessions.find(
+    (info: any) =>
+      normalizedDirectPath &&
+      path.resolve(String(info?.path || "")).toLowerCase() === normalizedDirectPath,
+  );
+  if (exactPath) return toSessionSummary(exactPath);
+
+  const exactId = sessions.find(
+    (info: any) => String(info?.id || "").toLowerCase() === normalizedWanted,
+  );
+  if (exactId) return toSessionSummary(exactId);
+
+  const exactPathText = sessions.find(
+    (info: any) => path.resolve(String(info?.path || "")).toLowerCase() === normalizedWanted,
+  );
+  if (exactPathText) return toSessionSummary(exactPathText);
+
+  const prefixMatches = sessions.filter((info: any) =>
+    String(info?.id || "").toLowerCase().startsWith(normalizedWanted),
+  );
+  if (prefixMatches.length === 1) return toSessionSummary(prefixMatches[0]);
+  if (prefixMatches.length > 1) {
+    throw new Error(
+      `Session ref is ambiguous: ${wanted}. Use list_subagent_sessions to get an exact id or path.`,
+    );
+  }
+
+  const nameMatches = sessions.filter(
+    (info: any) => String(info?.name || "").trim().toLowerCase() === normalizedWanted,
+  );
+  if (nameMatches.length === 1) return toSessionSummary(nameMatches[0]);
+  if (nameMatches.length > 1) {
+    throw new Error(
+      `Session name is ambiguous: ${wanted}. Use list_subagent_sessions to choose an exact id or path.`,
+    );
+  }
+
+  throw new Error(
+    `Session not found: ${wanted}. Use list_subagent_sessions to inspect available session ids and paths.`,
+  );
+}
+
+async function createManagedSession(
+  cwd: string,
+  task: SubagentTask,
+) {
+  const sessionConfig = normalizeSessionConfig(task.session);
+  const profile = resolveRuntimeProfile({ cwd });
+  const sessionDir = getRuntimeSessionDir(cwd, profile.agentDir);
+  const { SessionManager } = await loadSessionManagerModule();
+
+  let sessionManager: any;
+  if (sessionConfig.mode === "memory") {
+    sessionManager = SessionManager.inMemory(cwd);
+  } else if (sessionConfig.mode === "persist") {
+    sessionManager = SessionManager.create(cwd, sessionDir);
+  } else if (sessionConfig.mode === "resume") {
+    const source = await resolveSessionReference(sessionConfig.ref || "", cwd);
+    sessionManager = SessionManager.open(
+      source.path,
+      sessionDir,
+      task.cwd ? cwd : undefined,
+    );
+  } else {
+    const source = await resolveSessionReference(sessionConfig.ref || "", cwd);
+    sessionManager = SessionManager.forkFrom(source.path, cwd, sessionDir);
+  }
+
+  const created = await withSessionCreationLock(async () => {
     return await createConfiguredAgentSession({
-      cwd,
+      cwd: sessionManager.getCwd?.() || cwd,
+      agentDir: profile.agentDir,
       additionalExtensionPaths: getSubagentExtensionPaths(),
       sessionManager,
-      modelRef: options.modelRef,
-      thinkingLevel: options.thinkingLevel,
+      modelRef: task.model,
+      thinkingLevel: task.thinkingLevel,
     });
   });
+
+  if (sessionConfig.name) {
+    created.session.setSessionName(sessionConfig.name);
+  }
+
+  return {
+    ...created,
+    sessionConfig,
+  };
 }
 
 export function applySubagentTaskPreferences(task: {
@@ -87,6 +273,20 @@ export async function getSubagentBackendInfo(
     currentThinkingLevel,
     providers: await getProviderSummaries(ctx),
   };
+}
+
+export async function listSubagentSessions(
+  params: ListSubagentSessionsParams,
+  ctx: any,
+): Promise<SubagentSessionSummary[]> {
+  const cwd = String(params.cwd || ctx?.cwd || process.cwd()).trim() || process.cwd();
+  const infos = await loadSessionInfos({
+    cwd,
+    all: params.all,
+    query: params.query,
+    limit: params.limit,
+  });
+  return infos.map(toSessionSummary);
 }
 
 function buildTasks(
@@ -119,6 +319,7 @@ function buildTasks(
           model: normalizeModelRef(task.model),
           thinkingLevel: task.thinkingLevel,
           cwd: task.cwd,
+          session: normalizeSessionConfig(task.session),
         }))
       : [
           {
@@ -128,6 +329,7 @@ function buildTasks(
               (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
             thinkingLevel: params.thinkingLevel || currentThinkingLevel,
             cwd: params.cwd,
+            session: normalizeSessionConfig(params.session),
           },
         ],
   };
@@ -144,6 +346,19 @@ function validateTasks(
     }
     if (task.model && !availableModels.has(task.model)) {
       return `Unknown or unavailable model: ${task.model}`;
+    }
+    const sessionConfig = normalizeSessionConfig(task.session);
+    if (
+      (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
+      !sessionConfig.ref
+    ) {
+      return `Session ref is required when session.mode is ${sessionConfig.mode}. Use list_subagent_sessions to find session ids or paths.`;
+    }
+    if (
+      (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
+      sessionConfig.ref
+    ) {
+      return `Session ref is only valid with session.mode \`resume\` or \`fork\`.`;
     }
   }
   return undefined;
@@ -163,6 +378,18 @@ function getFinalOutput(messages: Message[]): string {
   return "";
 }
 
+function syncSessionMetadata(session: any, result: TaskResult): void {
+  const manager = session?.sessionManager;
+  result.sessionPersisted = Boolean(
+    manager?.isPersisted?.() && manager?.getSessionFile?.(),
+  );
+  result.sessionId = safeString(manager?.getSessionId?.() || "").trim() || undefined;
+  result.sessionFile =
+    safeString(manager?.getSessionFile?.() || "").trim() || undefined;
+  result.sessionName =
+    safeString(manager?.getSessionName?.() || "").trim() || undefined;
+}
+
 function syncResultFromSession(session: any, result: TaskResult): void {
   const sessionMessages = Array.isArray(session?.messages)
     ? (session.messages as Message[])
@@ -173,6 +400,7 @@ function syncResultFromSession(session: any, result: TaskResult): void {
   result.messages.length = 0;
   result.messages.push(...sessionMessages);
   result.output = safeString(session?.getLastAssistantText?.() || "").trim();
+  syncSessionMetadata(session, result);
 
   for (let i = sessionMessages.length - 1; i >= 0; i -= 1) {
     const message = sessionMessages[i] as any;
@@ -201,6 +429,7 @@ function makePendingResult(
   index: number,
   defaultCwd: string,
 ): TaskResult {
+  const sessionConfig = normalizeSessionConfig(task.session);
   return {
     index,
     prompt: task.prompt,
@@ -220,6 +449,8 @@ function makePendingResult(
       turns: 0,
     },
     messages: [] as Message[],
+    sessionMode: sessionConfig.mode,
+    sessionPersisted: isPersistedMode(sessionConfig.mode),
   };
 }
 
@@ -292,6 +523,7 @@ export async function runSubagentTask(
 ): Promise<TaskResult> {
   const cwd = task.cwd || defaultCwd;
   const messages: Message[] = [];
+  const sessionConfig = normalizeSessionConfig(task.session);
   const result: TaskResult = {
     index,
     prompt: task.prompt,
@@ -311,12 +543,25 @@ export async function runSubagentTask(
       turns: 0,
     },
     messages,
+    sessionMode: sessionConfig.mode,
+    sessionPersisted: isPersistedMode(sessionConfig.mode),
   };
 
-  const { session, runtime } = await createIsolatedSession(
-    cwd,
-    applySubagentTaskPreferences(task),
-  );
+  let session: any;
+  let runtime: any;
+  try {
+    const created = await createManagedSession(cwd, task);
+    session = created.session;
+    runtime = created.runtime;
+    syncSessionMetadata(session, result);
+  } catch (error: any) {
+    result.exitCode = 1;
+    result.status = "error";
+    result.errorMessage = String(error?.message || error || "subagent_failed");
+    onProgress?.({ ...result, messages: [...result.messages] });
+    return result;
+  }
+
   result.status = "running";
   onProgress?.({ ...result, messages: [...result.messages] });
   const unsubscribe = session.subscribe((event: any) => {
@@ -327,6 +572,7 @@ export async function runSubagentTask(
     result.output = getFinalOutput(messages);
     result.stopReason = message.stopReason;
     result.errorMessage = message.errorMessage;
+    syncSessionMetadata(session, result);
     if (message.model) result.model = `${message.provider}/${message.model}`;
     const usage = message.usage;
     if (usage) {
@@ -372,16 +618,17 @@ export async function runSubagentTask(
     result.exitCode = 1;
     result.status = "error";
     result.errorMessage = String(error?.message || error || "subagent_failed");
+    syncSessionMetadata(session, result);
     onProgress?.({ ...result, messages: [...result.messages] });
     return result;
   } finally {
     abortListener?.();
     unsubscribe();
     try {
-      await session.abort();
+      await session?.abort?.();
     } catch {}
     try {
-      await runtime.dispose();
+      await runtime?.dispose?.();
     } catch {}
   }
 }

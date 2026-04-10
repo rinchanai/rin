@@ -51,9 +51,16 @@ test("subagent format utils summarize results", () => {
         turns: 1,
       },
       messages: [],
+      sessionMode: "persist",
+      sessionPersisted: true,
+      sessionId: "abc123",
+      sessionName: "auth-review",
+      sessionFile: "/tmp/auth-review.jsonl",
     },
   ]);
   assert.ok(text.includes("subagent results=1 failed=0"));
+  assert.ok(text.includes("sessionMode=persist"));
+  assert.ok(text.includes("sessionId=abc123"));
   assert.ok(
     formatUtils
       .formatUsage({

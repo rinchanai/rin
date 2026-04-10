@@ -41,12 +41,18 @@ export function getFinalOutput(messages: Message[]): string {
   return "";
 }
 
+function formatSessionSummary(result: TaskResult): string {
+  if (!result.sessionPersisted) return "";
+  const label = result.sessionName || result.sessionId || result.sessionFile;
+  return label ? ` session=${label}` : " session=persisted";
+}
+
 export function summarizeTaskResult(result: TaskResult): string {
   const model = result.model || result.requestedModel || "(default model)";
   const preview = (result.output || result.errorMessage || "(no output)")
     .replace(/\s+/g, " ")
     .trim();
-  return `${result.index}. [${result.status}] ${model} — ${preview.slice(0, 180)}${preview.length > 180 ? "…" : ""}`;
+  return `${result.index}. [${result.status}] ${model}${formatSessionSummary(result)} — ${preview.slice(0, 180)}${preview.length > 180 ? "…" : ""}`;
 }
 
 export function buildSubagentAgentText(results: TaskResult[]): string {
@@ -61,6 +67,10 @@ export function buildSubagentAgentText(results: TaskResult[]): string {
       return [
         `${result.index}. status=${result.status} exit=${result.exitCode} model=${model}`,
         `cwd=${result.cwd}`,
+        `sessionMode=${result.sessionMode}`,
+        result.sessionId ? `sessionId=${result.sessionId}` : "",
+        result.sessionName ? `sessionName=${result.sessionName}` : "",
+        result.sessionFile ? `sessionFile=${result.sessionFile}` : "",
         preview
           ? `preview=${preview.slice(0, 220)}${preview.length > 220 ? "…" : ""}`
           : "",
