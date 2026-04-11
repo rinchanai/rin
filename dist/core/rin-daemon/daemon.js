@@ -77,7 +77,6 @@ export async function startDaemon(options = {}) {
     });
     const cronScheduler = new CronScheduler({
         agentDir: runtime.agentDir,
-        cwd: runtime.cwd,
         additionalExtensionPaths: options.additionalExtensionPaths,
     });
     cronScheduler.start();
@@ -179,7 +178,7 @@ export async function startDaemon(options = {}) {
         }
         if (type === "list_sessions") {
             const { SessionManager } = await sessionManagerModulePromise;
-            const sessions = await SessionManager.list(runtime.cwd, path.join(runtime.agentDir, "sessions"));
+            const sessions = await SessionManager.listAll();
             writeLine(connection.socket, response(id, type, true, { sessions }));
             return true;
         }

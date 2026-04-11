@@ -33,10 +33,19 @@ export function koishiRpcSocketPath(agentDir: string) {
   );
 }
 
+export const DEFAULT_KOISHI_RPC_TIMEOUT_MS = 30_000;
+export const KOISHI_RPC_CHAT_TURN_TIMEOUT_MS = 10 * 60_000;
+
+export function koishiRpcTimeoutMsFor(command: Record<string, any>) {
+  return safeString(command?.type).trim() === "run_chat_turn"
+    ? KOISHI_RPC_CHAT_TURN_TIMEOUT_MS
+    : DEFAULT_KOISHI_RPC_TIMEOUT_MS;
+}
+
 export async function requestKoishiRpc(
   agentDir: string,
   command: Record<string, any>,
-  timeoutMs = 30_000,
+  timeoutMs = koishiRpcTimeoutMsFor(command),
 ) {
   const socketPath = koishiRpcSocketPath(agentDir);
   return await new Promise<any>((resolve, reject) => {
@@ -100,7 +109,7 @@ export async function requestKoishiRpc(
 export async function deliverKoishiRpcPayload(
   agentDir: string,
   payload: ChatOutboxPayload,
-  timeoutMs = 30_000,
+  timeoutMs = DEFAULT_KOISHI_RPC_TIMEOUT_MS,
 ) {
   return await requestKoishiRpc(
     agentDir,
