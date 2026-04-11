@@ -820,7 +820,7 @@ export class KoishiChatController {
           attachments: pending.attachments,
           replyToMessageId: pending.replyToMessageId,
         },
-        "steer",
+        "prompt",
       );
     });
   }
