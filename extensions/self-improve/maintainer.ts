@@ -44,36 +44,35 @@ function turnTranscript(messages: any[]): string {
 
 function buildSelfImproveReviewPrompt(trigger: string): string {
   const prompt = [
-    "Capture durable global baselines that should stay present every turn with save_prompts.",
-    "If the transcript shows a complex task, a tricky error fix, a non-trivial workflow, or a reusable user-corrected approach, save that procedure as a skill so it can be reused next time.",
+    "Review the conversation dialectically and derive only durable conclusions that should still matter across sessions.",
+    "Prefer explicit user statements and repeated evidence over one-off impressions; if a pattern is weak, new, or temporary, leave it in the transcript.",
+    "Save compact stable baselines with save_prompts. Save reusable workflows, troubleshooting methods, operating playbooks, and non-trivial procedures as skills.",
+    "If a transcript shows a complex task, tricky fix, or reusable user-corrected approach, capture that procedure as a skill for future reuse.",
+    "Refine existing prompt slots and skills instead of creating duplicate variants. Prefer a few sharp conclusions over a long noisy list.",
+    "Do not save transcript summaries, task progress, completed-work logs, temporary TODO state, or ephemeral session context.",
     "Agent-generated skills live under the managed self_improve/skills path as ordinary <skill-name>/SKILL.md packages.",
-    "When creating or substantially revising such a skill, use the skill-creator skill if it is available.",
-    "If an existing skill was missing steps, outdated, incomplete, or wrong, update it immediately.",
-    "Review the conversation dialectically, not as simple key-value extraction: derive durable conclusions from repeated preferences, corrections, goals, communication style, and stable patterns that remain true across sessions.",
-    "Prefer conclusions supported by explicit user statements or repeated evidence over one-off impressions; when confidence is low or the pattern looks temporary, leave it in the transcript and do not save it.",
-    "Use save_prompts for compact stable user or assistant baselines that should stay active every turn; use skills for reusable workflows, troubleshooting methods, operating playbooks, and non-trivial procedures.",
-    "Do not save transcript summaries, task progress, completed-work logs, temporary TODO state, or ephemeral session context as self_improve prompts or skills.",
-    "When updating baselines, refine existing prompt slots and skills instead of creating duplicate variants; prefer a small number of sharp conclusions over a long noisy list.",
+    "When creating or substantially revising a skill, use the skill-creator skill if it is available.",
+    "If an existing skill is missing steps, outdated, incomplete, or wrong, update it immediately.",
   ];
 
   if (trigger === "extension:periodic_self_improve_review") {
     prompt.push(
-      "This is a periodic review during an active session: be conservative, prefer only high-confidence updates, and skip anything that still looks emergent or insufficiently supported.",
-      "Focus on repeated corrections, reiterated preferences, and stable collaboration patterns that have already become clear without needing the whole session to finish.",
+      "Periodic review: be conservative and save only high-confidence updates that are already clear mid-session.",
+      "Focus on repeated corrections, reiterated preferences, and collaboration patterns that no longer look provisional.",
     );
   }
 
   if (trigger === "extension:session_compaction_self_improve_review") {
     prompt.push(
-      "This review happens immediately before compaction: prioritize rescuing durable preferences, conclusions, and reusable procedures from context that would otherwise be compressed away.",
-      "Treat the archived transcript as authoritative for the soon-to-be-compacted span, but still save only durable conclusions and reusable knowledge rather than summaries.",
+      "Pre-compaction review: rescue durable preferences, conclusions, and reusable procedures from context that is about to be compressed away.",
+      "Treat the archived transcript as authoritative for the soon-to-be-compacted span, but save conclusions and reusable knowledge rather than summaries.",
     );
   }
 
   if (trigger === "extension:session_shutdown_self_improve_review") {
     prompt.push(
-      "This is an end-of-session review: use the full session arc to consolidate stable conclusions, resolve repeated signals into sharper baselines, and capture reusable workflows revealed by the completed work.",
-      "Prefer merging or refining existing baselines over adding parallel variants, especially when the session clarified an earlier partial understanding.",
+      "End-of-session review: use the full session arc to consolidate stable conclusions and capture reusable workflows revealed by the completed work.",
+      "Prefer merging or sharpening existing baselines when the session clarified an earlier partial understanding.",
     );
   }
 
