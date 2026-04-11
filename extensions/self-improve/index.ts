@@ -1,7 +1,4 @@
-import {
-  SessionManager,
-  type ExtensionAPI,
-} from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -77,16 +74,6 @@ function branchToMessages(entries: any[]): any[] {
   return entries
     .filter((entry) => entry?.type === "message" && entry?.message)
     .map((entry) => entry.message);
-}
-
-function loadMessagesFromSessionFile(sessionFile: string): any[] {
-  const file = String(sessionFile || "").trim();
-  if (!file) return [];
-  try {
-    return branchToMessages(SessionManager.open(file).getBranch());
-  } catch {
-    return [];
-  }
 }
 
 async function processSelfImproveReview(
@@ -400,20 +387,6 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       },
     );
     if (meta.sessionId) reviewStateBySession.delete(meta.sessionId);
-  });
-
-  pi.on("session_start", async (event, ctx) => {
-    if (event?.reason !== "new") return;
-    const previousSessionFile = String(event?.previousSessionFile || "").trim();
-    if (!previousSessionFile) return;
-    await processSelfImproveReview(
-      ctx,
-      loadMessagesFromSessionFile(previousSessionFile),
-      {
-        sessionFile: previousSessionFile,
-        trigger: "extension:session_start_new_self_improve_review",
-      },
-    );
   });
 
   pi.registerCommand("init", {

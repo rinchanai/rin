@@ -91,7 +91,11 @@ async function runForkedSessionSelfImproveReview(options: {
       "Agent-generated skills live under the managed self_improve/skills path as ordinary <skill-name>/SKILL.md packages.",
       "When creating or substantially revising such a skill, use the skill-creator skill if it is available.",
       "If an existing skill was missing steps, outdated, incomplete, or wrong, update it immediately.",
-      "Do not save transcript summaries, task progress, completed-work logs, or temporary TODO state as self_improve prompts.",
+      "Review the conversation dialectically, not as simple key-value extraction: derive durable conclusions from repeated preferences, corrections, goals, communication style, and stable patterns that remain true across sessions.",
+      "Prefer conclusions supported by explicit user statements or repeated evidence over one-off impressions; when confidence is low or the pattern looks temporary, leave it in the transcript and do not save it.",
+      "Use save_prompts for compact stable user or assistant baselines that should stay active every turn; use skills for reusable workflows, troubleshooting methods, operating playbooks, and non-trivial procedures.",
+      "Do not save transcript summaries, task progress, completed-work logs, temporary TODO state, or ephemeral session context as self_improve prompts or skills.",
+      "When updating baselines, refine existing prompt slots and skills instead of creating duplicate variants; prefer a small number of sharp conclusions over a long noisy list.",
     ].join(" ");
     await session.prompt(prompt, {
       expandPromptTemplates: false,
