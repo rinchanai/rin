@@ -264,11 +264,6 @@ export class KoishiChatController {
     }
     const payload: any = event.payload;
     if (payload?.type !== "rpc_turn_event") return;
-    if (payload.event === "complete") {
-      const finalText = extractFinalTextFromTurnResult(payload?.result);
-      if (finalText) this.latestAssistantText = finalText;
-      return;
-    }
     if (payload.event === "error") {
       this.failLiveTurn(new Error(String(payload.error || "rpc_turn_failed")));
     }
@@ -749,9 +744,7 @@ export class KoishiChatController {
       throw error;
     }
     const completion = await liveTurn.promise;
-    if (!safeString(this.latestAssistantText || "").trim()) {
-      this.latestAssistantText = safeString(completion?.finalText || "").trim();
-    }
+    this.latestAssistantText = this.collectFinalAssistantText();
     if (!safeString(this.latestAssistantText || "").trim()) {
       throw new Error("final_assistant_text_missing");
     }
@@ -832,9 +825,7 @@ export class KoishiChatController {
           throw error;
         }
         const completion = await liveTurn.promise;
-        if (!safeString(this.latestAssistantText || "").trim()) {
-          this.latestAssistantText = safeString(completion?.finalText || "").trim();
-        }
+        this.latestAssistantText = this.collectFinalAssistantText();
         if (!safeString(this.latestAssistantText || "").trim()) {
           throw new Error("final_assistant_text_missing");
         }
