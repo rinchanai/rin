@@ -760,6 +760,7 @@ export class RpcInteractiveSession {
     );
     this.setRpcConnected(false);
     if (interruptedTurn) {
+      this.emitInterruptedToolExecutionEnds();
       this.emitEvent({
         type: "agent_end",
         messages: this.messages,
@@ -768,6 +769,36 @@ export class RpcInteractiveSession {
       } as any);
     }
     emitConnectionLost(this as any);
+  }
+
+  private emitInterruptedToolExecutionEnds() {
+    const lastMessage = Array.isArray(this.messages)
+      ? this.messages[this.messages.length - 1]
+      : null;
+    if (!lastMessage || lastMessage.role !== "assistant") return;
+    const toolCalls: any[] = Array.isArray(lastMessage.content)
+      ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
+      : [];
+    for (const toolCall of toolCalls) {
+      this.emitEvent({
+        type: "tool_execution_end",
+        toolCallId: String(toolCall?.id || ""),
+        toolName: String(toolCall?.name || ""),
+        result: {
+          content: [
+            {
+              type: "text",
+              text: "The tool was interrupted by a daemon restart or disconnect.",
+            },
+          ],
+          details: {
+            interrupted: true,
+            reason: "daemon_restart_or_disconnect",
+          },
+        },
+        isError: true,
+      } as any);
+    }
   }
 
   private ensureReconnectLoop() {

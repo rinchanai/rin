@@ -48,24 +48,50 @@ test("rpc client ignores stale socket disconnect after reconnect", () => {
   assert.equal(seen[0]?.name, "connection_lost");
 });
 
-test("rpc interactive session clears local working state and emits synthetic agent_end when the daemon connection is lost mid-turn", () => {
+test("rpc interactive session clears local working state and emits synthetic interrupted tool end plus agent_end when the daemon connection is lost mid-turn", () => {
   const client = { isConnected: () => false };
   const session = new RpcInteractiveSession(client);
   const seen = [];
   session.subscribe((event) => seen.push(event));
   session.isStreaming = true;
   session.activeTurn = { mode: "prompt", message: "hi" };
+  session.messages = [
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "tool-1",
+          name: "bash",
+          arguments: { command: "rin update" },
+        },
+      ],
+    },
+  ];
+  session.state.messages = session.messages;
   session.ensureReconnectLoop = () => {};
 
   session.handleConnectionLost();
 
   assert.equal(session.isStreaming, false);
   assert.equal(session.activeTurn, null);
-  assert.equal(seen.length, 1);
-  assert.equal(seen[0]?.type, "agent_end");
-  assert.equal(seen[0]?.interrupted, true);
-  assert.equal(seen[0]?.reason, "daemon_restart_or_disconnect");
-  assert.deepEqual(seen[0]?.messages, []);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0]?.type, "tool_execution_end");
+  assert.equal(seen[0]?.toolCallId, "tool-1");
+  assert.equal(seen[0]?.toolName, "bash");
+  assert.equal(seen[0]?.isError, true);
+  assert.equal(
+    seen[0]?.result?.content?.[0]?.text,
+    "The tool was interrupted by a daemon restart or disconnect.",
+  );
+  assert.deepEqual(seen[0]?.result?.details, {
+    interrupted: true,
+    reason: "daemon_restart_or_disconnect",
+  });
+  assert.equal(seen[1]?.type, "agent_end");
+  assert.equal(seen[1]?.interrupted, true);
+  assert.equal(seen[1]?.reason, "daemon_restart_or_disconnect");
+  assert.equal(seen[1]?.messages, session.messages);
 });
 
 test("rpc interactive session does not emit synthetic agent_end when the daemon connection is lost while idle", () => {
