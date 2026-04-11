@@ -33,7 +33,7 @@ test("chat outbox enqueues payload on disk", async () => {
     const filePath = outbox.enqueueChatOutboxPayload(dir, {
       type: "text_delivery",
       createdAt: new Date().toISOString(),
-      chatKey: "telegram:1",
+      chatKey: "telegram/777:1",
       text: "hello",
     });
     const stat = await fs.stat(filePath);
@@ -42,8 +42,50 @@ test("chat outbox enqueues payload on disk", async () => {
 });
 
 test("chat bridge session binding paths are stable", () => {
-  const statePath = binding.chatStatePath("/tmp/rin-data", "telegram:1");
+  const statePath = binding.chatStatePath("/tmp/rin-data", "telegram/777:1");
   assert.ok(
-    statePath.endsWith(path.join("chats", "telegram", "1", "state.json")),
+    statePath.endsWith(
+      path.join("chats", "telegram", "777", "1", "state.json"),
+    ),
   );
+});
+
+test("chat bridge rejects legacy telegram chat keys without bot id", () => {
+  assert.throws(
+    () => binding.chatStatePath("/tmp/rin-data", "telegram:1"),
+    /invalid_chatKey:telegram:1/,
+  );
+});
+
+test("chat bridge state discovery ignores legacy telegram state dirs", async () => {
+  await withTempDir(async (dir) => {
+    const chatsRoot = path.join(dir, "chats");
+    await fs.mkdir(path.join(chatsRoot, "telegram", "legacy-chat"), {
+      recursive: true,
+    });
+    await fs.mkdir(path.join(chatsRoot, "telegram", "777", "scoped-chat"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(chatsRoot, "telegram", "legacy-chat", "state.json"),
+      "{}\n",
+    );
+    await fs.writeFile(
+      path.join(chatsRoot, "telegram", "777", "scoped-chat", "state.json"),
+      "{}\n",
+    );
+
+    assert.deepEqual(binding.listChatStateFiles(chatsRoot), [
+      {
+        chatKey: "telegram/777:scoped-chat",
+        statePath: path.join(
+          chatsRoot,
+          "telegram",
+          "777",
+          "scoped-chat",
+          "state.json",
+        ),
+      },
+    ]);
+  });
 });

@@ -194,14 +194,18 @@ export function materializeKoishiConfig(configPath: string, settings: any) {
   return { configPath, config };
 }
 
+function platformRequiresBotId(platform: string) {
+  const nextPlatform = safeString(platform).trim().toLowerCase();
+  return nextPlatform === "telegram" || nextPlatform === "onebot";
+}
+
 export function composeChatKey(platform: string, chatId: string, botId = "") {
   const nextPlatform = safeString(platform).trim();
   const nextChatId = safeString(chatId).trim();
   const nextBotId = safeString(botId).trim();
   if (!nextPlatform || !nextChatId) return "";
-  return nextBotId
-    ? `${nextPlatform}/${nextBotId}:${nextChatId}`
-    : `${nextPlatform}:${nextChatId}`;
+  if (platformRequiresBotId(nextPlatform) && !nextBotId) return "";
+  return `${nextPlatform}/${nextBotId}:${nextChatId}`;
 }
 
 export function parseChatKey(chatKey: string) {
@@ -211,6 +215,7 @@ export function parseChatKey(chatKey: string) {
   if (!match) return null;
   const [, platform, botId = "", chatId] = match;
   if (!platform || !chatId) return null;
+  if (platformRequiresBotId(platform) && !safeString(botId).trim()) return null;
   return { platform, botId, chatId };
 }
 
@@ -243,10 +248,12 @@ export function listChatStateFiles(chatsRoot: string) {
         const firstDir = path.join(platformDir, first);
         const directStatePath = path.join(firstDir, "state.json");
         if (fs.existsSync(directStatePath)) {
-          out.push({
-            chatKey: composeChatKey(platform, first),
-            statePath: directStatePath,
-          });
+          if (!platformRequiresBotId(platform)) {
+            out.push({
+              chatKey: composeChatKey(platform, first),
+              statePath: directStatePath,
+            });
+          }
           continue;
         }
         const levelTwo = fs
@@ -345,7 +352,7 @@ export function findBot(app: any, platform: string, botId = "") {
     (bot: any) => bot && bot.platform === nextPlatform,
   );
   if (!matches.length) return null;
-  if (!nextBotId) return matches[0];
+  if (!nextBotId) return platformRequiresBotId(nextPlatform) ? null : matches[0];
   return (
     matches.find((bot: any) => safeString(bot?.selfId).trim() === nextBotId) ||
     null
