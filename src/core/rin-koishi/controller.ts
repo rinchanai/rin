@@ -174,6 +174,7 @@ export class KoishiChatController {
   state: KoishiChatState;
   client: RinDaemonFrontendClient | null = null;
   session: RpcInteractiveSession | null = null;
+  turnQueue: Promise<void> = Promise.resolve();
   liveTurn:
     | {
         promise: Promise<any>;
@@ -412,8 +413,22 @@ export class KoishiChatController {
     }
     this.scheduleIdleToolProgress();
   }
+  private async runExclusiveTurn<T>(run: () => Promise<T>) {
+    const previous = this.turnQueue;
+    let release!: () => void;
+    const slot = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.turnQueue = previous.then(() => slot);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+    }
+  }
   private startLiveTurn() {
-    this.failLiveTurn(new Error("koishi_turn_replaced"));
+    if (this.liveTurn) throw new Error("koishi_turn_already_running");
     let resolve!: (value: any) => void;
     let reject!: (error: Error) => void;
     const liveTurn = {
@@ -627,7 +642,7 @@ export class KoishiChatController {
     }
     return data;
   }
-  async runTurn(
+  private async runTurnNow(
     input: {
       text: string;
       attachments: SavedAttachment[];
@@ -702,80 +717,94 @@ export class KoishiChatController {
       sessionFile: this.currentSessionFile(),
     };
   }
+  async runTurn(
+    input: {
+      text: string;
+      attachments: SavedAttachment[];
+      replyToMessageId?: string;
+      incomingMessageId?: string;
+      sessionFile?: string;
+    },
+    mode: "prompt" | "steer" = "prompt",
+  ) {
+    return await this.runExclusiveTurn(() => this.runTurnNow(input, mode));
+  }
   async recoverIfNeeded() {
-    if (!this.state.processing) return;
-    await this.connect();
-    if (!this.session) return;
-    const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
-    const lastUserIndex = [...messages]
-      .map((message: any, index: number) => ({ message, index }))
-      .reverse()
-      .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
-    const lastAssistantAfterUser = messages
-      .slice(lastUserIndex + 1)
-      .reverse()
-      .find((message: any) => message?.role === "assistant");
-    const deliveredCompletedText = lastAssistantAfterUser
-      ? extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages))
-      : "";
-    const currentLastUser = [...messages]
-      .reverse()
-      .find((message: any) => message?.role === "user");
-    const lastUserText = extractTextFromContent(currentLastUser?.content);
-    const pending = this.state.processing;
-    const shouldResumeInternally =
-      safeString(lastUserText).trim() ===
-      safeString(buildPromptText(pending.text, pending.attachments)).trim();
-    this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
-    if (deliveredCompletedText && !this.session.isStreaming) {
-      this.latestAssistantText = deliveredCompletedText;
-      delete this.state.processing;
-      this.saveState();
-      await this.deliverFinalAssistantText(
-        safeString(pending.replyToMessageId || "").trim(),
+    await this.runExclusiveTurn(async () => {
+      if (!this.state.processing) return;
+      await this.connect();
+      if (!this.session) return;
+      const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
+      const lastUserIndex = [...messages]
+        .map((message: any, index: number) => ({ message, index }))
+        .reverse()
+        .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
+      const lastAssistantAfterUser = messages
+        .slice(lastUserIndex + 1)
+        .reverse()
+        .find((message: any) => message?.role === "assistant");
+      const deliveredCompletedText = lastAssistantAfterUser
+        ? extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages))
+        : "";
+      const currentLastUser = [...messages]
+        .reverse()
+        .find((message: any) => message?.role === "user");
+      const lastUserText = extractTextFromContent(currentLastUser?.content);
+      const pending = this.state.processing;
+      const shouldResumeInternally =
+        safeString(lastUserText).trim() ===
+        safeString(buildPromptText(pending.text, pending.attachments)).trim();
+      this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
+      if (deliveredCompletedText && !this.session.isStreaming) {
+        this.latestAssistantText = deliveredCompletedText;
+        delete this.state.processing;
+        this.saveState();
+        await this.deliverFinalAssistantText(
+          safeString(pending.replyToMessageId || "").trim(),
+        );
+        return;
+      }
+      if (shouldResumeInternally) {
+        this.latestAssistantText = "";
+        const liveTurn = this.startLiveTurn();
+        try {
+          await this.session.resumeInterruptedTurn({
+            source: "koishi-bridge",
+          });
+        } catch (error: any) {
+          this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+          throw error;
+        }
+        const completion = await liveTurn.promise;
+        if (!safeString(this.latestAssistantText || "").trim()) {
+          this.latestAssistantText = safeString(completion?.finalText || "").trim();
+        }
+        if (!safeString(this.latestAssistantText || "").trim()) {
+          throw new Error("final_assistant_text_missing");
+        }
+        this.state.piSessionFile =
+          safeString(
+            completion?.sessionFile ||
+              this.session.sessionManager.getSessionFile?.() ||
+              this.state.piSessionFile ||
+              "",
+          ).trim() || undefined;
+        delete this.state.processing;
+        this.saveState();
+        await this.deliverFinalAssistantText(
+          safeString(pending.replyToMessageId || "").trim(),
+        );
+        return;
+      }
+      await this.runTurnNow(
+        {
+          text: pending.text,
+          attachments: pending.attachments,
+          replyToMessageId: pending.replyToMessageId,
+        },
+        "steer",
       );
-      return;
-    }
-    if (shouldResumeInternally) {
-      this.latestAssistantText = "";
-      const liveTurn = this.startLiveTurn();
-      try {
-        await this.session.resumeInterruptedTurn({
-          source: "koishi-bridge",
-        });
-      } catch (error: any) {
-        this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
-        throw error;
-      }
-      const completion = await liveTurn.promise;
-      if (!safeString(this.latestAssistantText || "").trim()) {
-        this.latestAssistantText = safeString(completion?.finalText || "").trim();
-      }
-      if (!safeString(this.latestAssistantText || "").trim()) {
-        throw new Error("final_assistant_text_missing");
-      }
-      this.state.piSessionFile =
-        safeString(
-          completion?.sessionFile ||
-            this.session.sessionManager.getSessionFile?.() ||
-            this.state.piSessionFile ||
-            "",
-        ).trim() || undefined;
-      delete this.state.processing;
-      this.saveState();
-      await this.deliverFinalAssistantText(
-        safeString(pending.replyToMessageId || "").trim(),
-      );
-      return;
-    }
-    await this.runTurn(
-      {
-        text: pending.text,
-        attachments: pending.attachments,
-        replyToMessageId: pending.replyToMessageId,
-      },
-      "steer",
-    );
+    });
   }
 }
 

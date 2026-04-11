@@ -312,6 +312,72 @@ test("koishi controller rejects the owned turn on connection loss", async () => 
   assert.equal(controller.liveTurn, null);
 });
 
+test("koishi controller serializes chat turns instead of replacing the active one", async () => {
+  const controller = await createController("telegram/1:2");
+  const order = [];
+  let finishFirst;
+  controller.deliverFinalAssistantText = async () => {
+    order.push(`deliver:${controller.latestAssistantText}`);
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/serial-chat.jsonl",
+      getSessionId: () => "session-serial",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/serial-chat.jsonl",
+      sessionId: "session-serial",
+    }),
+    prompt: async (message) => {
+      order.push(`prompt:${message}`);
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      if (message === "first") {
+        await new Promise((resolve) => {
+          finishFirst = () => {
+            controller.session.messages = [
+              { role: "user", content: [{ type: "text", text: "first" }] },
+              { role: "assistant", content: [{ type: "text", text: "first done" }] },
+            ];
+            controller.session.isStreaming = false;
+            controller.handleSessionEvent({ type: "agent_end" });
+            resolve();
+          };
+        });
+        return;
+      }
+      controller.session.messages = [
+        { role: "user", content: [{ type: "text", text: "second" }] },
+        { role: "assistant", content: [{ type: "text", text: "second done" }] },
+      ];
+      controller.session.isStreaming = false;
+      controller.handleSessionEvent({ type: "agent_end" });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  const first = controller.runTurn({ text: "first", attachments: [] }, "prompt");
+  const second = controller.runTurn({ text: "second", attachments: [] }, "prompt");
+  for (let i = 0; i < 20 && typeof finishFirst !== "function"; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.equal(typeof finishFirst, "function");
+  assert.deepEqual(order, ["prompt:first"]);
+  finishFirst();
+  await first;
+  await second;
+  assert.deepEqual(order, [
+    "prompt:first",
+    "deliver:first done",
+    "prompt:second",
+    "deliver:second done",
+  ]);
+});
+
 test("koishi controller delivers completed assistant text during recovery when processing state is stale", async () => {
   const controller = await createController("telegram/1:2");
   const delivered = [];
