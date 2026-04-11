@@ -1,13 +1,11 @@
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
-import { canAccessAgentInput, canRunCommand } from "../chat-bridge/policy.js";
+import { canAccessAgentInput } from "../chat-bridge/policy.js";
 
 import { composeChatKey, trustOf } from "./support.js";
 import {
-  commandNameFromText,
   directLike,
+  elementsToText,
   getChatId,
-  getIncomingText,
-  isCommandText,
   mentionLike,
   pickUserId,
   safeString,
@@ -47,17 +45,16 @@ export async function isPrivateLikeGroupSession(session: any, trust: string) {
 
 export async function shouldProcessText(
   session: any,
+  elements: any[],
   identity: any,
-  registeredCommands: Set<string>,
 ) {
-  const text = getIncomingText(session);
+  const text = elementsToText(elements);
   if (!text)
     return {
       allow: false,
       text: "",
       chatKey: "",
       trust: "OTHER",
-      commandName: "",
     };
   const platform = safeString(session?.platform || "").trim();
   const botId = safeString(
@@ -66,36 +63,16 @@ export async function shouldProcessText(
   const chatId = getChatId(session);
   const chatKey = composeChatKey(platform, chatId, botId);
   const trust = trustOf(identity, platform, pickUserId(session));
-  const commandName = commandNameFromText(text);
-  const commandLike = isCommandText(text);
   const privateLike =
     directLike(session) || (await isPrivateLikeGroupSession(session, trust));
-  const allow = commandLike
-    ? commandName
-      ? canRunCommand(trust, commandName)
-      : false
-    : canAccessAgentInput({
-        chatType: privateLike ? "private" : "group",
-        trust,
-        mentionLike: mentionLike(session),
-        commandLike: false,
-      });
+  const allow = canAccessAgentInput({
+    chatType: privateLike ? "private" : "group",
+    trust,
+    mentionLike: mentionLike(session),
+    commandLike: false,
+  });
 
-  if (
-    commandLike &&
-    (registeredCommands.has(commandName) || commandName === "help")
-  ) {
-    return {
-      allow: false,
-      text,
-      chatKey,
-      trust,
-      commandName,
-      registered: true,
-    };
-  }
-
-  return { allow, text, chatKey, trust, commandName, registered: false };
+  return { allow, text, chatKey, trust };
 }
 
 export async function discoverRpcCommands() {

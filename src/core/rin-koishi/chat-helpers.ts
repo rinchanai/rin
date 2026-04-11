@@ -82,10 +82,50 @@ export function mentionLike(session: any) {
   return Boolean(session?.stripped?.appel);
 }
 
-export function getIncomingText(session: any) {
-  return safeString(
-    session?.stripped?.content || session?.content || "",
-  ).trim();
+export function ensureSessionElements(session: any) {
+  if (Array.isArray(session?.elements) && session.elements.length) {
+    return session.elements;
+  }
+  const stripped = safeString(session?.stripped?.content || "").trim();
+  if (stripped) return [{ type: "text", attrs: { content: stripped } }];
+  const raw = safeString(session?.content || "").trim();
+  if (raw) return [{ type: "text", attrs: { content: raw } }];
+  return [] as any[];
+}
+
+function collectIncomingElementText(element: any): string {
+  if (!element) return "";
+  if (typeof element === "string") return element;
+  if (Array.isArray(element))
+    return element.map((item) => collectIncomingElementText(item)).join("");
+  if (typeof element !== "object") return "";
+  const type = safeString(element?.type || "").toLowerCase();
+  const attrs =
+    element?.attrs && typeof element.attrs === "object" ? element.attrs : {};
+  if (type === "text") return safeString(attrs.content || element.text || "");
+  if (type === "br") return "\n";
+  const children = Array.isArray(element?.children) ? element.children : [];
+  const childText = children.map((item) => collectIncomingElementText(item)).join("");
+  if (type === "p" || type === "paragraph") return childText ? `${childText}\n` : "";
+  return childText;
+}
+
+function normalizeIncomingText(text: string) {
+  return safeString(text)
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\t ]+\n/g, "\n")
+    .replace(/\n[\t ]+/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function elementsToText(elements: any) {
+  return normalizeIncomingText(
+    (Array.isArray(elements) ? elements : [])
+      .map((element) => collectIncomingElementText(element))
+      .join(""),
+  );
 }
 
 export function pickSenderNickname(session: any) {
@@ -173,15 +213,6 @@ export function getChatType(session: any): "private" | "group" {
   return directLike(session) ? "private" : "group";
 }
 
-export function isCommandText(text: string) {
-  return /^\/[A-Za-z0-9_:-]+(?:\s|$)/.test(text);
-}
-
-export function commandNameFromText(text: string) {
-  const match = text.trim().match(/^\/([^\s]+)/);
-  return match ? match[1] : "";
-}
-
 export function extractTextFromContent(
   content: any,
   { includeThinking = false }: { includeThinking?: boolean } = {},
@@ -237,6 +268,7 @@ export function extractExistingFilePaths(text: string) {
 export function persistInboundMessage(
   agentDir: string,
   session: any,
+  elements: any[],
   identity: any,
   trustOf: (identity: any, platform: string, userId: string) => string,
 ) {
@@ -266,11 +298,11 @@ export function persistInboundMessage(
     nickname: pickSenderNickname(session) || undefined,
     chatName: pickChatName(session) || undefined,
     trust: trustOf(identity, platform, userId),
-    text: getIncomingText(session) || undefined,
+    text: elementsToText(elements) || undefined,
     rawContent: safeString(session?.content || "").trim() || undefined,
     strippedContent:
       safeString(session?.stripped?.content || "").trim() || undefined,
-    elements: normalizeElementSummary(session?.elements),
+    elements: normalizeElementSummary(elements),
     quote: summarizeQuote(session),
   });
 }
@@ -338,11 +370,10 @@ export async function persistImageParts(
   return out;
 }
 
-export async function extractInboundAttachments(session: any, chatDir: string) {
+export async function extractInboundAttachments(elements: any[], chatDir: string) {
   const dir = path.join(chatDir, "inbound");
   ensureDir(dir);
   const attachments: SavedAttachment[] = [];
-  const elements = Array.isArray(session?.elements) ? session.elements : [];
   let index = 0;
 
   for (const element of elements) {

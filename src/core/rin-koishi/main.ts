@@ -16,7 +16,9 @@ import {
 } from "../chat-bridge/session-binding.js";
 import { buildAllowedCommandRows, syncTelegramCommands } from "./boot.js";
 import {
+  elementsToText,
   ensureDir,
+  ensureSessionElements,
   extractInboundAttachments,
   getChatId,
   lookupReplySession,
@@ -98,7 +100,6 @@ export async function startKoishi(
       void controller.pollTyping().catch(() => {});
     }
   }, TYPING_POLL_INTERVAL_MS);
-  const registeredCommandNames = new Set<string>();
   const commandRows = buildAllowedCommandRows(await discoverRpcCommands());
   const getIdentity = () => loadIdentity(dataDir);
   const getController = (chatKey: string) => {
@@ -136,15 +137,20 @@ export async function startKoishi(
 
   app.middleware(async (session: any, next: () => Promise<any>) => {
     try {
-      persistInboundMessage(runtime.agentDir, session, getIdentity(), trustOf);
+      const elements = ensureSessionElements(session);
+      persistInboundMessage(
+        runtime.agentDir,
+        session,
+        elements,
+        getIdentity(),
+        trustOf,
+      );
       const platform = safeString(session?.platform || "").trim();
       const botId = safeString(
         session?.selfId || session?.bot?.selfId || "",
       ).trim();
       const chatKey = composeChatKey(platform, getChatId(session), botId);
-      const text = safeString(
-        session?.stripped?.content || session?.content || "",
-      ).trim();
+      const text = elementsToText(elements);
       if (chatKey && text) {
         appendKoishiChatLog(runtime.agentDir, {
           timestamp: new Date().toISOString(),
@@ -165,86 +171,12 @@ export async function startKoishi(
     return await next();
   }, true);
 
-  for (const item of commandRows) {
-    registeredCommandNames.add(item.name);
-    app
-      .command(`${item.name} [args:text]`, item.description || "", {
-        slash: true,
-      })
-      .action(async ({ session }: any, argsText: any) => {
-        const identity = getIdentity();
-        const platform = safeString(session?.platform || "").trim();
-        const trust = trustOf(identity, platform, pickUserId(session));
-        if (item.name !== "help" && !canRunCommand(trust, item.name)) return "";
-        try {
-          session.__rinKoishiCommandHandled = true;
-        } catch {}
-        const chatKey = composeChatKey(
-          platform,
-          getChatId(session),
-          safeString(session?.selfId || session?.bot?.selfId || "").trim(),
-        );
-        const messageId = pickMessageId(session);
-        const replyToMessageId = pickReplyToMessageId(session);
-        if (!chatKey) return "";
-
-        if (item.name === "help") {
-          const lines = commandRows.map(
-            (entry) =>
-              `/${entry.name}${entry.description ? ` — ${entry.description}` : ""}`,
-          );
-          await sendText(app, chatKey, lines.join("\n"), h, messageId)
-            .then((deliveryResult) => {
-              appendKoishiChatLog(runtime.agentDir, {
-                timestamp: new Date().toISOString(),
-                chatKey,
-                role: "assistant",
-                text: lines.join("\n"),
-                replyToMessageId: messageId || undefined,
-              });
-              recordDeliveredAssistantMessages(runtime.agentDir, {
-                chatKey,
-                deliveryResult,
-                text: lines.join("\n"),
-                rawContent: lines.join("\n"),
-                replyToMessageId: messageId || undefined,
-              });
-            })
-            .catch(() => {});
-          return "";
-        }
-
-        const controller = getController(chatKey);
-        const replySession = lookupReplySession(
-          runtime.agentDir,
-          chatKey,
-          replyToMessageId,
-        );
-        if (replySession?.sessionFile)
-          await controller
-            .resumeSessionFile(replySession.sessionFile)
-            .catch(() => {});
-
-        const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ""}`;
-        void controller
-          .runCommand(text, messageId, messageId)
-          .catch((error) => {
-            logger.warn(
-              `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
-            );
-          });
-        return "";
-      });
-  }
-
   app.middleware(async (session: any, next: () => Promise<any>) => {
-    if (session?.__rinKoishiCommandHandled) return "";
+    // Let Koishi's native command middleware short-circuit command messages.
+    // This middleware only handles ordinary chat turns that continue past it.
     const identity = getIdentity();
-    const decision = await shouldProcessText(
-      session,
-      identity,
-      registeredCommandNames,
-    );
+    const elements = ensureSessionElements(session);
+    const decision = await shouldProcessText(session, elements, identity);
     if (!decision.allow) return await next();
     const messageId = pickMessageId(session);
     const replyToMessageId = pickReplyToMessageId(session);
@@ -259,7 +191,7 @@ export async function startKoishi(
         .resumeSessionFile(replySession.sessionFile)
         .catch(() => {});
     const attachments = await extractInboundAttachments(
-      session,
+      elements,
       chatStateDir(dataDir, decision.chatKey),
     );
     const text = wrapKoishiBridgePrompt(decision.text, {
@@ -320,7 +252,75 @@ export async function startKoishi(
           .catch(() => {});
       });
     return "";
-  }, true);
+  });
+
+  for (const item of commandRows) {
+    app
+      .command(`${item.name} [args:text]`, item.description || "", {
+        slash: true,
+      })
+      .action(async ({ session }: any, argsText: any) => {
+        const identity = getIdentity();
+        const platform = safeString(session?.platform || "").trim();
+        const trust = trustOf(identity, platform, pickUserId(session));
+        if (item.name !== "help" && !canRunCommand(trust, item.name)) return "";
+        const chatKey = composeChatKey(
+          platform,
+          getChatId(session),
+          safeString(session?.selfId || session?.bot?.selfId || "").trim(),
+        );
+        const messageId = pickMessageId(session);
+        const replyToMessageId = pickReplyToMessageId(session);
+        if (!chatKey) return "";
+
+        if (item.name === "help") {
+          const lines = commandRows.map(
+            (entry) =>
+              `/${entry.name}${entry.description ? ` — ${entry.description}` : ""}`,
+          );
+          await sendText(app, chatKey, lines.join("\n"), h, messageId)
+            .then((deliveryResult) => {
+              appendKoishiChatLog(runtime.agentDir, {
+                timestamp: new Date().toISOString(),
+                chatKey,
+                role: "assistant",
+                text: lines.join("\n"),
+                replyToMessageId: messageId || undefined,
+              });
+              recordDeliveredAssistantMessages(runtime.agentDir, {
+                chatKey,
+                deliveryResult,
+                text: lines.join("\n"),
+                rawContent: lines.join("\n"),
+                replyToMessageId: messageId || undefined,
+              });
+            })
+            .catch(() => {});
+          return "";
+        }
+
+        const controller = getController(chatKey);
+        const replySession = lookupReplySession(
+          runtime.agentDir,
+          chatKey,
+          replyToMessageId,
+        );
+        if (replySession?.sessionFile)
+          await controller
+            .resumeSessionFile(replySession.sessionFile)
+            .catch(() => {});
+
+        const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ""}`;
+        void controller
+          .runCommand(text, messageId, messageId)
+          .catch((error) => {
+            logger.warn(
+              `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
+            );
+          });
+        return "";
+      });
+  }
 
   app.on("bot-status-updated", (bot: any) => {
     if (bot?.status !== 1) return;
