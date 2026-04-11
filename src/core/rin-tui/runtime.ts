@@ -35,6 +35,10 @@ import {
   getLastAssistantText,
 } from "./session-helpers.js";
 import {
+  createInterruptedToolResultPayload,
+  DAEMON_RESTART_OR_DISCONNECT_REASON,
+} from "../rin-lib/interruption.js";
+import {
   computeSessionStats,
   getContextUsage,
   reconcilePendingQueues,
@@ -765,7 +769,7 @@ export class RpcInteractiveSession {
         type: "agent_end",
         messages: this.messages,
         interrupted: true,
-        reason: "daemon_restart_or_disconnect",
+        reason: DAEMON_RESTART_OR_DISCONNECT_REASON,
       } as any);
     }
     emitConnectionLost(this as any);
@@ -784,18 +788,7 @@ export class RpcInteractiveSession {
         type: "tool_execution_end",
         toolCallId: String(toolCall?.id || ""),
         toolName: String(toolCall?.name || ""),
-        result: {
-          content: [
-            {
-              type: "text",
-              text: "The tool was interrupted by a daemon restart or disconnect.",
-            },
-          ],
-          details: {
-            interrupted: true,
-            reason: "daemon_restart_or_disconnect",
-          },
-        },
+        result: createInterruptedToolResultPayload(),
         isError: true,
       } as any);
     }

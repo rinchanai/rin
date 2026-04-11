@@ -1,4 +1,7 @@
 import { parseJsonl } from "../rin-lib/common.js";
+import {
+  createInterruptedToolResultPayload,
+} from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
@@ -10,20 +13,13 @@ import {
 } from "./worker-helpers.js";
 
 function interruptedToolResultMessage(toolCall: any) {
+  const result = createInterruptedToolResultPayload();
   return {
     role: "toolResult",
     toolCallId: String(toolCall?.id || ""),
     toolName: String(toolCall?.name || ""),
-    content: [
-      {
-        type: "text",
-        text: "The tool was interrupted by a daemon restart or disconnect.",
-      },
-    ],
-    details: {
-      interrupted: true,
-      reason: "daemon_restart_or_disconnect",
-    },
+    content: result.content,
+    details: result.details,
     isError: true,
     timestamp: Date.now(),
   } as any;
