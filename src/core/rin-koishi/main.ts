@@ -20,6 +20,7 @@ import {
   ensureDir,
   ensureSessionElements,
   extractInboundAttachments,
+  buildInboundAttachmentNotice,
   getChatId,
   lookupReplySession,
   persistInboundMessage,
@@ -190,11 +191,20 @@ export async function startKoishi(
       await controller
         .resumeSessionFile(replySession.sessionFile)
         .catch(() => {});
-    const attachments = await extractInboundAttachments(
+    const { attachments, failures } = await extractInboundAttachments(
       elements,
       chatStateDir(dataDir, decision.chatKey),
     );
-    const text = wrapKoishiBridgePrompt(decision.text, {
+    if (failures.length) {
+      logger.warn(
+        `koishi inbound media unresolved chatKey=${decision.chatKey} messageId=${messageId || "unknown"} failures=${JSON.stringify(failures)}`,
+      );
+    }
+    const inboundAttachmentNotice = buildInboundAttachmentNotice(failures);
+    const promptBody = inboundAttachmentNotice
+      ? `${decision.text}\n\n${inboundAttachmentNotice}`
+      : decision.text;
+    const text = wrapKoishiBridgePrompt(promptBody, {
       source: "koishi-bridge",
       sentAt: Number.isFinite(Number(session?.timestamp))
         ? Number(session.timestamp)
