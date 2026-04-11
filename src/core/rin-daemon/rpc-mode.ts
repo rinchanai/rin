@@ -29,7 +29,10 @@ function interruptedToolResultMessage(toolCall: any) {
   } as any;
 }
 
-function appendInterruptedToolResults(session: any) {
+function appendInterruptedToolResults(
+  session: any,
+  options: { persistToSession?: boolean } = {},
+) {
   const messages = Array.isArray(session?.agent?.state?.messages)
     ? session.agent.state.messages
     : [];
@@ -43,17 +46,27 @@ function appendInterruptedToolResults(session: any) {
   for (const toolCall of toolCalls) {
     const message = interruptedToolResultMessage(toolCall);
     session.agent.state.messages.push(message);
-    session.sessionManager.appendMessage(message);
+    if (options.persistToSession !== false) {
+      session.sessionManager.appendMessage(message);
+    }
   }
   return true;
 }
 
-async function resumeInterruptedTurn(session: any) {
+async function resumeInterruptedTurn(
+  session: any,
+  options: { persistInterruptionMessage?: boolean } = {},
+) {
   const lastMessage = Array.isArray(session?.agent?.state?.messages)
     ? session.agent.state.messages[session.agent.state.messages.length - 1]
     : null;
   if (!lastMessage) return false;
-  if (lastMessage.role === "assistant" && !appendInterruptedToolResults(session)) {
+  if (
+    lastMessage.role === "assistant" &&
+    !appendInterruptedToolResults(session, {
+      persistToSession: options.persistInterruptionMessage,
+    })
+  ) {
     return false;
   }
   await session.agent.continue();
@@ -62,7 +75,9 @@ async function resumeInterruptedTurn(session: any) {
 
 async function resumeInterruptedTurnIfNeeded(session: any) {
   if (!session || session.isStreaming || session.isCompacting) return false;
-  return await resumeInterruptedTurn(session);
+  return await resumeInterruptedTurn(session, {
+    persistInterruptionMessage: false,
+  });
 }
 
 export async function runCustomRpcMode(

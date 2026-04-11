@@ -16,7 +16,7 @@ function wait(ms = 0) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("rpc mode routes steer through session.steer", async () => {
+test("rpc mode routes steer through session.steer", { concurrency: false }, async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -107,7 +107,7 @@ test("rpc mode routes steer through session.steer", async () => {
   }
 });
 
-test("rpc mode rebinds to runtime.session after session replacement", async () => {
+test("rpc mode rebinds to runtime.session after session replacement", { concurrency: false }, async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -236,7 +236,7 @@ test("rpc mode rebinds to runtime.session after session replacement", async () =
   }
 });
 
-test("rpc mode resumes interrupted tool turns by appending interrupted tool results and continuing", async () => {
+test("rpc mode explicit interrupted-turn resume still persists interruption context before continuing", { concurrency: false }, async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -363,7 +363,7 @@ test("rpc mode resumes interrupted tool turns by appending interrupted tool resu
   }
 });
 
-test("rpc mode auto-resumes an interrupted turn when binding the current session", async () => {
+test("rpc mode auto-resumes an interrupted turn without appending reconnect noise to the session transcript", { concurrency: false }, async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;
   const handlers = new Map();
@@ -459,9 +459,9 @@ test("rpc mode auto-resumes an interrupted turn when binding the current session
 
     await wait(10);
 
-    assert.equal(calls.length, 2);
-    assert.equal(calls[0][0], "appendMessage");
-    assert.deepEqual(calls[1], ["continue"]);
+    assert.deepEqual(calls, [["continue"]]);
+    assert.equal(stateMessages.length, 2);
+    assert.equal(stateMessages[1].role, "toolResult");
   } finally {
     process.stdin.on = stdinOn;
     process.stdout.write = stdoutWrite;
