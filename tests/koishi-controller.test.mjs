@@ -353,6 +353,47 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   assert.deepEqual(sent, ["Working", "Working"]);
 });
 
+test("koishi controller refreshes session messages before resolving a final chat reply", async () => {
+  const controller = await createController("telegram/1:4");
+  const delivered = [];
+  controller.deliverFinalAssistantText = async () => {
+    delivered.push(controller.latestAssistantText);
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/session-refresh.jsonl",
+      getSessionId: () => "session-refresh",
+      getSessionName: () => "telegram/1:4",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/session-refresh.jsonl",
+      sessionId: "session-refresh",
+    }),
+    refreshState: async () => {
+      controller.session.messages = [
+        { role: "user", content: [{ type: "text", text: "hello" }] },
+        { role: "assistant", content: [{ type: "text", text: "refreshed final text" }] },
+      ];
+    },
+    prompt: async () => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
+
+  assert.deepEqual(delivered, ["refreshed final text"]);
+});
+
 test("koishi controller takes final chat text from session lifecycle instead of rpc completion payload", async () => {
   const controller = await createController("telegram/1:3");
   const delivered = [];

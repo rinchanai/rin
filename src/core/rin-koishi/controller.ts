@@ -293,7 +293,11 @@ export class KoishiChatController {
         break;
       case "agent_end":
         this.clearIdleToolProgressTimer();
-        this.completeLiveTurn();
+        void this.completeLiveTurn().catch((error) => {
+          this.failLiveTurn(
+            error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")),
+          );
+        });
         break;
       case "message_end":
       case "tool_execution_end":
@@ -462,14 +466,26 @@ export class KoishiChatController {
     this.liveTurn = null;
     liveTurn.reject(error);
   }
+  private async refreshSessionMessages() {
+    const session: any = this.session;
+    if (!session) return;
+    if (typeof session.refreshState === "function") {
+      await session.refreshState({ messages: true, session: true });
+      return;
+    }
+    if (typeof session.refreshMessages === "function") {
+      await session.refreshMessages();
+    }
+  }
   private collectFinalAssistantText() {
     const messages = Array.isArray(this.session?.messages)
       ? this.session.messages
       : [];
     return extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages));
   }
-  private completeLiveTurn() {
+  private async completeLiveTurn() {
     if (!this.liveTurn) return;
+    await this.refreshSessionMessages().catch(() => {});
     const finalText = this.collectFinalAssistantText();
     if (finalText) this.latestAssistantText = finalText;
     this.liveTurn.resolve({
@@ -783,6 +799,7 @@ export class KoishiChatController {
       if (!this.state.processing) return;
       await this.connect();
       if (!this.session) return;
+      await this.refreshSessionMessages().catch(() => {});
       const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
       const lastUserIndex = [...messages]
         .map((message: any, index: number) => ({ message, index }))
