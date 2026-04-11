@@ -319,6 +319,9 @@ export class KoishiChatController {
     this.saveState();
     return "";
   }
+  hasActiveTurn() {
+    return Boolean(this.liveTurn);
+  }
   private hasLiveTurn() {
     return Boolean(
       this.state.processing && this.session?.isStreaming && this.liveTurn,
@@ -660,6 +663,40 @@ export class KoishiChatController {
     }
     return data;
   }
+  private async runSteerNow(input: {
+    text: string;
+    attachments: SavedAttachment[];
+    replyToMessageId?: string;
+    incomingMessageId?: string;
+  }) {
+    await this.connect();
+    if (!this.session) throw new Error("koishi_session_not_connected");
+    if (!this.liveTurn) {
+      return await this.runExclusiveTurn(() => this.runTurnNow(input, "prompt"));
+    }
+    const { text, images } = await restorePromptParts({
+      text: input.text,
+      attachments: input.attachments,
+      startedAt: Date.now(),
+    });
+    if (this.state.processing) {
+      this.state.processing.replyToMessageId =
+        safeString(input.replyToMessageId || "").trim() ||
+        this.state.processing.replyToMessageId;
+      this.saveState();
+    }
+    this.markProcessedMessage(input.incomingMessageId);
+    await this.session.prompt(text, {
+      images,
+      source: "koishi-bridge",
+      streamingBehavior: "steer",
+    });
+    return {
+      steered: true,
+      sessionId: this.currentSessionId() || undefined,
+      sessionFile: this.currentSessionFile(),
+    };
+  }
   private async runTurnNow(
     input: {
       text: string;
@@ -745,6 +782,7 @@ export class KoishiChatController {
     },
     mode: "prompt" | "steer" = "prompt",
   ) {
+    if (mode === "steer") return await this.runSteerNow(input);
     return await this.runExclusiveTurn(() => this.runTurnNow(input, mode));
   }
   async recoverIfNeeded() {

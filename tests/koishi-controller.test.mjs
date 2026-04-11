@@ -148,7 +148,7 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });
 
-test("koishi controller resolves final output from session lifecycle for prompt and steer", async () => {
+test("koishi controller resolves final output from session lifecycle for prompt turns", async () => {
   const controller = await createController("telegram/9:10");
   const delivered = [];
   controller.deliverFinalAssistantText = async () => {
@@ -167,7 +167,7 @@ test("koishi controller resolves final output from session lifecycle for prompt 
       sessionFile: "/tmp/fallback-chat.jsonl",
       sessionId: "session-fallback",
     }),
-    prompt: async (_message, options) => {
+    prompt: async () => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
@@ -175,7 +175,7 @@ test("koishi controller resolves final output from session lifecycle for prompt 
           { role: "user", content: [{ type: "text", text: "hello" }] },
           {
             role: "assistant",
-            content: [{ type: "text", text: options?.streamingBehavior === "steer" ? "steer final text" : "prompt final text" }],
+            content: [{ type: "text", text: "prompt final text" }],
           },
         ];
         controller.session.isStreaming = false;
@@ -187,9 +187,8 @@ test("koishi controller resolves final output from session lifecycle for prompt 
   };
 
   await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
-  await controller.runTurn({ text: "hello again", attachments: [] }, "steer");
 
-  assert.deepEqual(delivered, ["prompt final text", "steer final text"]);
+  assert.deepEqual(delivered, ["prompt final text"]);
 });
 
 test("koishi controller reattaches saved session file before bootstrapping a detached session", async () => {
@@ -361,6 +360,50 @@ test("koishi controller rejects the owned turn on connection loss", async () => 
   controller.handleClientEvent({ type: "ui", name: "connection_lost" });
   await assert.rejects(liveTurn.promise, /rin_disconnected:rpc_turn/);
   assert.equal(controller.liveTurn, null);
+});
+
+test("koishi controller steers an active chat turn instead of queueing a replacement", async () => {
+  const controller = await createController("telegram/1:2");
+  const calls = [];
+  controller.session = {
+    isStreaming: true,
+    sessionManager: {
+      getSessionFile: () => "/tmp/steer-chat.jsonl",
+      getSessionId: () => "session-steer",
+      getSessionName: () => "telegram/1:2",
+    },
+    prompt: async (message, options) => {
+      calls.push(`prompt:${message}:${options?.streamingBehavior || "none"}`);
+    },
+  };
+  controller.state.processing = {
+    text: "first",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "old",
+  };
+  controller.liveTurn = {
+    promise: new Promise(() => {}),
+    resolve() {},
+    reject() {},
+  };
+  controller.deliverFinalAssistantText = async () => {
+    calls.push("deliver");
+  };
+
+  const result = await controller.runTurn(
+    {
+      text: "interrupt",
+      attachments: [],
+      replyToMessageId: "new",
+      incomingMessageId: "m2",
+    },
+    "steer",
+  );
+
+  assert.deepEqual(calls, ["prompt:interrupt:steer"]);
+  assert.equal(controller.state.processing.replyToMessageId, "new");
+  assert.equal(result?.steered, true);
 });
 
 test("koishi controller serializes chat turns instead of replacing the active one", async () => {
