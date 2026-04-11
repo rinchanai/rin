@@ -278,6 +278,7 @@ export async function startKoishi(
       ),
       replyToMessageId: replyToMessageId || undefined,
     });
+    const mode = controller.hasActiveTurn() ? "steer" : "prompt";
     void controller
       .runTurn(
         {
@@ -286,7 +287,7 @@ export async function startKoishi(
           replyToMessageId: messageId,
           incomingMessageId: messageId,
         },
-        "prompt",
+        mode,
       )
       .catch((error) => {
         const errorMessage = safeString((error as any)?.message || error);
