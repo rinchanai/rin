@@ -196,7 +196,7 @@ const taskSchema = Type.Object({
     Type.Union([
       Type.String({
         description:
-          "Explicit bound chat key like telegram/123456:987654321 or onebot:private:12345.",
+          "Explicit bound chat key like telegram/123456:987654321 or onebot/123456:private:12345.",
       }),
       Type.Null(),
     ]),

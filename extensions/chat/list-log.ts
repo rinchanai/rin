@@ -43,7 +43,7 @@ export default function koishiListChatLogExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       chatKey: Type.String({
         description:
-          "Target chat key like telegram/123456:987654321 or onebot:private:12345.",
+          "Target chat key like telegram/123456:987654321 or onebot/123456:private:12345.",
       }),
       date: Type.String({
         description: "Date to inspect in YYYY-MM-DD format.",

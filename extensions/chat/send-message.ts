@@ -155,7 +155,7 @@ function normalizeParts(parts: any[]): KoishiMessagePart[] {
 }
 
 function isChatKey(value: string) {
-  return /^[^/:]+(?:\/[^:]+)?:.+$/.test(value.trim());
+  return /^[^/:]+\/[^:]+:.+$/.test(value.trim());
 }
 
 function formatPartForAgent(part: KoishiMessagePart) {
@@ -186,7 +186,7 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       chatKey: Type.String({
         description:
-          "Target chat key like telegram/123456:987654321 or onebot:private:12345.",
+          "Target chat key like telegram/123456:987654321 or onebot/123456:private:12345.",
       }),
       text: Type.Optional(
         Type.String({
