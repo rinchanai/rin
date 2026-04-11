@@ -102,6 +102,41 @@ test("koishi chat helpers persist outbound image parts", async () => {
   });
 });
 
+test("koishi chat helpers report media elements without downloadable resources", async () => {
+  await withTempDir(async (dir) => {
+    const result = await helpers.extractInboundAttachments(
+      [{ type: "img" }],
+      dir,
+    );
+    assert.deepEqual(result.attachments, []);
+    assert.deepEqual(result.failures, [
+      {
+        type: "img",
+        kind: "image",
+        reason: "missing_resource",
+      },
+    ]);
+    assert.match(
+      helpers.buildInboundAttachmentNotice(result.failures),
+      /included media that could not be attached/i,
+    );
+  });
+});
+
+test("koishi chat helpers save inbound media when a standard resource is present", async () => {
+  await withTempDir(async (dir) => {
+    const src = `data:text/plain;base64,${Buffer.from("demo").toString("base64")}`;
+    const result = await helpers.extractInboundAttachments(
+      [{ type: "file", attrs: { src, file: "demo.txt" } }],
+      dir,
+    );
+    assert.equal(result.failures.length, 0);
+    assert.equal(result.attachments.length, 1);
+    const stat = await fs.stat(result.attachments[0].path);
+    assert.ok(stat.isFile());
+  });
+});
+
 test("koishi chat helpers only auto-attach explicit file URLs, not plain paths", async () => {
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, "demo.txt");

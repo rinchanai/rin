@@ -21,6 +21,14 @@ export type SavedAttachment = {
   mimeType?: string;
 };
 
+export type InboundAttachmentFailure = {
+  type: string;
+  kind: "image" | "file";
+  reason: "missing_resource" | "fetch_failed";
+  resource?: string;
+  detail?: string;
+};
+
 export type KoishiChatState = {
   chatKey: string;
   piSessionFile?: string;
@@ -370,30 +378,79 @@ export async function persistImageParts(
   return out;
 }
 
+function mediaKindFromElementType(type: string) {
+  return type === "img" || type === "image"
+    ? "image"
+    : type === "file"
+      ? "file"
+      : "";
+}
+
+export function buildInboundAttachmentNotice(
+  failures: InboundAttachmentFailure[],
+) {
+  if (!Array.isArray(failures) || !failures.length) return "";
+  const missing = failures.filter((item) => item.reason === "missing_resource").length;
+  const fetchFailed = failures.filter((item) => item.reason === "fetch_failed").length;
+  const parts: string[] = [];
+  if (missing)
+    parts.push(
+      `${missing} media element${missing === 1 ? "" : "s"} arrived without a downloadable resource`,
+    );
+  if (fetchFailed)
+    parts.push(
+      `${fetchFailed} media resource${fetchFailed === 1 ? "" : "s"} could not be fetched`,
+    );
+  return `Note: the incoming message included media that could not be attached for the agent because ${parts.join(" and ")}.`;
+}
+
 export async function extractInboundAttachments(elements: any[], chatDir: string) {
   const dir = path.join(chatDir, "inbound");
   ensureDir(dir);
   const attachments: SavedAttachment[] = [];
+  const failures: InboundAttachmentFailure[] = [];
   let index = 0;
 
   for (const element of elements) {
     const type = safeString(element?.type || "").toLowerCase();
     const attrs =
       element?.attrs && typeof element.attrs === "object" ? element.attrs : {};
-    const src = safeString(attrs.src || attrs.url || attrs.file || "").trim();
-    if (!src) continue;
-
-    const kind =
-      type === "img" || type === "image"
-        ? "image"
-        : type === "file"
-          ? "file"
-          : "";
+    const kind = mediaKindFromElementType(type);
     if (!kind) continue;
+    const src = safeString(attrs.src || attrs.url || attrs.file || "").trim();
+    if (!src) {
+      failures.push({
+        type: type || "unknown",
+        kind: kind as "image" | "file",
+        reason: "missing_resource",
+      });
+      continue;
+    }
 
     index += 1;
-    const response = await fetch(src);
-    if (!response.ok) continue;
+    let response: Response;
+    try {
+      response = await fetch(src);
+    } catch (error: any) {
+      failures.push({
+        type: type || "unknown",
+        kind: kind as "image" | "file",
+        reason: "fetch_failed",
+        resource: src,
+        detail: safeString(error?.message || error).trim() || undefined,
+      });
+      continue;
+    }
+    if (!response.ok) {
+      failures.push({
+        type: type || "unknown",
+        kind: kind as "image" | "file",
+        reason: "fetch_failed",
+        resource: src,
+        detail: `http_${response.status}`,
+      });
+      continue;
+    }
     const arrayBuffer = await response.arrayBuffer();
     const mimeType = safeString(
       response.headers.get("content-type") || attrs.mime || "",
@@ -421,5 +478,5 @@ export async function extractInboundAttachments(elements: any[], chatDir: string
     });
   }
 
-  return attachments;
+  return { attachments, failures };
 }
