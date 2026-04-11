@@ -240,9 +240,11 @@ export class KoishiChatController {
     });
 
     const wantedSessionFile = this.getRecoverableSessionFile();
-    if (wantedSessionFile) await session.switchSession(wantedSessionFile);
-    if (this.deliveryEnabled && !session.sessionManager.getSessionName?.())
-      await session.setSessionName(this.chatKey);
+    if (wantedSessionFile) {
+      await session.switchSession(wantedSessionFile);
+      if (this.deliveryEnabled && !session.sessionManager.getSessionName?.())
+        await session.setSessionName(this.chatKey);
+    }
   }
 
   dispose() {
