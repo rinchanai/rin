@@ -195,7 +195,9 @@ test("koishi controller resolves final output from session lifecycle for prompt 
 test("koishi controller reattaches saved session file before bootstrapping a detached session", async () => {
   const controller = await createController("telegram/7:7");
   const calls = [];
-  controller.state.piSessionFile = "/tmp/saved-chat.jsonl";
+  const savedSessionFile = path.join(controller.dataDir, "saved-chat.jsonl");
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = savedSessionFile;
 
   controller.session = {
     sessionManager: {
@@ -208,7 +210,7 @@ test("koishi controller reattaches saved session file before bootstrapping a det
     },
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
-      return { sessionFile: "/tmp/saved-chat.jsonl", sessionId: "session-7" };
+      return { sessionFile: savedSessionFile, sessionId: "session-7" };
     },
     setSessionName: async () => {},
   };
@@ -216,10 +218,59 @@ test("koishi controller reattaches saved session file before bootstrapping a det
   await controller.ensureSessionReady();
 
   assert.deepEqual(calls, [
-    "switch:/tmp/saved-chat.jsonl",
+    `switch:${savedSessionFile}`,
     "ensureSessionReady",
   ]);
-  assert.equal(controller.state.piSessionFile, "/tmp/saved-chat.jsonl");
+  assert.equal(controller.state.piSessionFile, savedSessionFile);
+});
+
+
+test("koishi controller self-heals missing saved session binding before a chat turn", async () => {
+  const controller = await createController("telegram/7:8");
+  const calls = [];
+  controller.deliverFinalAssistantText = async () => {
+    calls.push(`deliver:${controller.latestAssistantText}`);
+  };
+  controller.state.piSessionFile = "/tmp/missing-chat.jsonl";
+
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", content: [{ type: "text", text: "fresh session final" }] },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/fresh-chat.jsonl",
+      getSessionId: () => "session-fresh",
+      getSessionName: () => "telegram/7:8",
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(`switch:${sessionPath}`);
+    },
+    ensureSessionReady: async () => {
+      calls.push("ensureSessionReady");
+      return { sessionFile: "/tmp/fresh-chat.jsonl", sessionId: "session-fresh" };
+    },
+    prompt: async () => {
+      calls.push("prompt");
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
+
+  assert.deepEqual(calls, [
+    "ensureSessionReady",
+    "prompt",
+    "deliver:fresh session final",
+  ]);
+  assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
 
 test("koishi controller summarizes idle tool progress with compact tool input", () => {

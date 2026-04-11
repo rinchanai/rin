@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
@@ -238,9 +239,8 @@ export class KoishiChatController {
       this.handleSessionEvent(event);
     });
 
-    const wantedSessionFile = safeString(this.state.piSessionFile || "").trim();
-    if (wantedSessionFile)
-      await session.switchSession(wantedSessionFile).catch(() => {});
+    const wantedSessionFile = this.getRecoverableSessionFile();
+    if (wantedSessionFile) await session.switchSession(wantedSessionFile);
     if (this.deliveryEnabled && !session.sessionManager.getSessionName?.())
       await session.setSessionName(this.chatKey);
   }
@@ -308,6 +308,14 @@ export class KoishiChatController {
 
   private saveState() {
     writeJsonFile(this.statePath, this.state);
+  }
+  private getRecoverableSessionFile() {
+    const wanted = safeString(this.state.piSessionFile || "").trim();
+    if (!wanted) return "";
+    if (fs.existsSync(wanted)) return wanted;
+    delete this.state.piSessionFile;
+    this.saveState();
+    return "";
   }
   private hasLiveTurn() {
     return Boolean(
@@ -546,13 +554,21 @@ export class KoishiChatController {
         changed: false,
         sessionId: this.currentSessionId() || undefined,
       };
+    if (!fs.existsSync(wanted)) {
+      delete this.state.piSessionFile;
+      this.saveState();
+      return {
+        changed: false,
+        sessionId: this.currentSessionId() || undefined,
+      };
+    }
     await this.connect();
     if (!this.session) return { changed: false, sessionId: undefined };
     const before = safeString(
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
     if (before !== wanted)
-      await this.session.switchSession(wanted).catch(() => {});
+      await this.session.switchSession(wanted);
     if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     this.state.piSessionFile =
@@ -574,12 +590,12 @@ export class KoishiChatController {
   }
   private async ensureSessionReady() {
     if (!this.session) throw new Error("koishi_session_not_connected");
-    const wanted = safeString(this.state.piSessionFile || "").trim();
+    const wanted = this.getRecoverableSessionFile();
     const current = safeString(
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
     if (!current && wanted) {
-      await this.session.switchSession(wanted).catch(() => {});
+      await this.session.switchSession(wanted);
     }
     const result = await this.session.ensureSessionReady();
     this.state.piSessionFile =
