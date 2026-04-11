@@ -26,6 +26,7 @@ test("rpc restore reattaches once and avoids duplicate restore work", async () =
     restorePromise: null,
     reconnecting: true,
     reconnectTimer: null,
+    setRpcConnected: () => {},
     emitEvent: (event) => events.push(event),
     sessionFile: "/tmp/demo.jsonl",
     sessionId: "",
@@ -33,6 +34,7 @@ test("rpc restore reattaches once and avoids duplicate restore work", async () =
       calls.push({ type, payload });
       return {};
     },
+    queueRefreshState: () => Promise.resolve(),
     refreshState: async (flags) => {
       refreshes.push(flags);
       await refreshGate;
@@ -60,7 +62,7 @@ test("rpc restore reattaches once and avoids duplicate restore work", async () =
     calls.filter((item) => item.type === "resume_interrupted_turn").length,
     0,
   );
-  assert.deepEqual(refreshes, [{ messages: true, session: true }]);
+  assert.deepEqual(refreshes, [{ session: true }]);
   assert.deepEqual(events, []);
 });
 
@@ -72,6 +74,7 @@ test("rpc restore flushes queued offline ops after reattach", async () => {
     restorePromise: null,
     reconnecting: true,
     reconnectTimer: null,
+    setRpcConnected: () => {},
     emitEvent: () => {},
     sessionFile: "/tmp/demo.jsonl",
     sessionId: "",
@@ -79,6 +82,7 @@ test("rpc restore flushes queued offline ops after reattach", async () => {
       calls.push({ type, payload });
       return {};
     },
+    queueRefreshState: () => Promise.resolve(),
     refreshState: async () => {},
     queuedOfflineOps: [
       { mode: "prompt", message: "queued-1" },
