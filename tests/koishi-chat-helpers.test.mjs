@@ -24,7 +24,7 @@ async function withTempDir(fn) {
   }
 }
 
-test("koishi chat helpers detect command text and chat metadata", () => {
+test("koishi chat helpers extract chat metadata", () => {
   const session = {
     platform: "telegram",
     guildId: "g1",
@@ -38,8 +38,6 @@ test("koishi chat helpers detect command text and chat metadata", () => {
   assert.equal(helpers.pickSenderNickname(session), "Alice");
   assert.equal(helpers.getChatId(session), "c1");
   assert.equal(helpers.getChatType(session), "group");
-  assert.equal(helpers.isCommandText("/new hello"), true);
-  assert.equal(helpers.commandNameFromText("/new hello"), "new");
 });
 
 test("koishi chat helpers extract reply ids and quote text from canonical koishi quote", () => {
@@ -56,6 +54,40 @@ test("koishi chat helpers extract reply ids and quote text from canonical koishi
     nickname: undefined,
     content: "older context",
   });
+});
+
+test("koishi chat helpers derive incoming text from elements", () => {
+  assert.equal(
+    helpers.elementsToText([
+      { type: "text", attrs: { content: "看一下 /tmp/demo.log" } },
+    ]),
+    "看一下 /tmp/demo.log",
+  );
+  assert.equal(
+    helpers.elementsToText([
+      { type: "at", attrs: { id: "1" } },
+      { type: "text", attrs: { content: " 看一下 /tmp/demo.log" } },
+    ]),
+    "看一下 /tmp/demo.log",
+  );
+  assert.equal(
+    helpers.elementsToText([
+      { type: "paragraph", children: [{ type: "text", attrs: { content: "第一行" } }] },
+      { type: "br" },
+      { type: "text", attrs: { content: "第二行" } },
+    ]),
+    "第一行\n\n第二行",
+  );
+});
+
+
+test("koishi chat helpers synthesize text elements only when upstream omitted elements", () => {
+  assert.deepEqual(
+    helpers.ensureSessionElements({
+      stripped: { content: "看一下 /tmp/demo.log" },
+    }),
+    [{ type: "text", attrs: { content: "看一下 /tmp/demo.log" } }],
+  );
 });
 
 test("koishi chat helpers persist outbound image parts", async () => {
