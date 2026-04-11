@@ -755,7 +755,18 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
+    const interruptedTurn = Boolean(
+      this.isStreaming || this.remoteTurnRunning || this.activeTurn,
+    );
     this.setRpcConnected(false);
+    if (interruptedTurn) {
+      this.emitEvent({
+        type: "agent_end",
+        messages: this.messages,
+        interrupted: true,
+        reason: "daemon_restart_or_disconnect",
+      } as any);
+    }
     emitConnectionLost(this as any);
   }
 

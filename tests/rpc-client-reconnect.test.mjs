@@ -48,9 +48,11 @@ test("rpc client ignores stale socket disconnect after reconnect", () => {
   assert.equal(seen[0]?.name, "connection_lost");
 });
 
-test("rpc interactive session clears local working state when the daemon connection is lost", () => {
+test("rpc interactive session clears local working state and emits synthetic agent_end when the daemon connection is lost mid-turn", () => {
   const client = { isConnected: () => false };
   const session = new RpcInteractiveSession(client);
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
   session.isStreaming = true;
   session.activeTurn = { mode: "prompt", message: "hi" };
   session.ensureReconnectLoop = () => {};
@@ -59,4 +61,21 @@ test("rpc interactive session clears local working state when the daemon connect
 
   assert.equal(session.isStreaming, false);
   assert.equal(session.activeTurn, null);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0]?.type, "agent_end");
+  assert.equal(seen[0]?.interrupted, true);
+  assert.equal(seen[0]?.reason, "daemon_restart_or_disconnect");
+  assert.deepEqual(seen[0]?.messages, []);
+});
+
+test("rpc interactive session does not emit synthetic agent_end when the daemon connection is lost while idle", () => {
+  const client = { isConnected: () => false };
+  const session = new RpcInteractiveSession(client);
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
+  session.ensureReconnectLoop = () => {};
+
+  session.handleConnectionLost();
+
+  assert.deepEqual(seen, []);
 });
