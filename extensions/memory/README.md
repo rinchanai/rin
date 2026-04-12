@@ -11,6 +11,7 @@ Public tool:
 This module owns:
 
 - transcript archiving under `~/.rin/memory/transcripts`
+- structured session task-state snapshots under `~/.rin/memory/task-state`
 - archived session records preserve full message history for recall, including assistant thinking text, tool calls, tool results, and other text-bearing message roles
 - high-signal task-anchor rows are derived from actionable transcript events to mark blockers, completed steps, and likely next actions
 - session recall also derives a deterministic task-state summary from anchors or raw transcript rows when anchors are missing

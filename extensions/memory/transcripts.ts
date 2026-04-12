@@ -62,8 +62,8 @@ export type TranscriptSessionResult = {
   taskState?: TranscriptTaskState;
 };
 
-export function resolveTranscriptRoot(rootOverride = ""): string {
-  const base = safeString(rootOverride).trim()
+function resolveMemoryRoot(rootOverride = ""): string {
+  return safeString(rootOverride).trim()
     ? path.join(path.resolve(rootOverride), "memory")
     : path.join(
         process.env.PI_CODING_AGENT_DIR ||
@@ -71,7 +71,14 @@ export function resolveTranscriptRoot(rootOverride = ""): string {
           path.join(process.env.HOME || "", ".rin"),
         "memory",
       );
-  return path.join(base, "transcripts");
+}
+
+export function resolveTranscriptRoot(rootOverride = ""): string {
+  return path.join(resolveMemoryRoot(rootOverride), "transcripts");
+}
+
+export function resolveTaskStateRoot(rootOverride = ""): string {
+  return path.join(resolveMemoryRoot(rootOverride), "task-state");
 }
 
 function transcriptSessionBasename(input: Record<string, any>): string {
@@ -122,6 +129,33 @@ export function getTranscriptArchivePath(
   }
   const { year, month } = transcriptDateParts(input);
   return path.join(root, year, month, transcriptSessionBasename(input));
+}
+
+export function getTaskStatePath(
+  input: Record<string, any> | string = "",
+  rootOverride = "",
+): string {
+  const root = resolveTaskStateRoot(rootOverride);
+  if (typeof input === "string") {
+    const key = safeString(input).trim();
+    if (!key) return path.join(root, "unknown", "unknown-session.json");
+    if (
+      key.endsWith(".json") &&
+      (key.includes("/") || key.includes(path.sep))
+    ) {
+      return path.join(root, key);
+    }
+    if (key.includes(path.sep) || key.includes("/")) {
+      return path.join(root, "unknown", `${sha(key).slice(0, 16)}.json`);
+    }
+    return path.join(root, "unknown", `${key}.json`);
+  }
+  const { year, month } = transcriptDateParts(input);
+  const basename = transcriptSessionBasename(input).replace(
+    /\.jsonl$/,
+    ".json",
+  );
+  return path.join(root, year, month, basename);
 }
 
 async function ensureTranscriptParent(filePath: string) {
@@ -508,6 +542,50 @@ export function deriveSessionTaskState(
     completed: dedupeTexts(completed),
     anchors: dedupeTexts(anchorTexts, 4),
   };
+}
+
+export type TranscriptTaskStateSnapshot = TranscriptTaskState & {
+  sessionId: string;
+  sessionFile: string;
+  updatedAt: string;
+  entryCount: number;
+  path?: string;
+};
+
+export function buildSessionTaskStateSnapshot(
+  entries: TranscriptArchiveEntry[],
+): TranscriptTaskStateSnapshot | null {
+  if (!entries.length) return null;
+  const ranked = [...entries].sort(
+    (a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp),
+  );
+  const latest = ranked[0];
+  const taskState = deriveSessionTaskState(entries);
+  return {
+    ...taskState,
+    sessionId: safeString(latest.sessionId || "").trim(),
+    sessionFile: safeString(latest.sessionFile || "").trim(),
+    updatedAt: safeString(latest.timestamp || "").trim(),
+    entryCount: entries.length,
+    path: getTaskStatePath(latest),
+  };
+}
+
+export async function persistTranscriptTaskState(
+  params: { sessionId?: string; sessionFile?: string } = {},
+  rootOverride = "",
+) {
+  const entries = await loadTranscriptSessionEntries(params, rootOverride);
+  const snapshot = buildSessionTaskStateSnapshot(entries);
+  if (!snapshot) return null;
+  const filePath = getTaskStatePath(snapshot, rootOverride);
+  await ensureTranscriptParent(filePath);
+  await fs.writeFile(
+    filePath,
+    `${JSON.stringify(snapshot, null, 2)}\n`,
+    "utf8",
+  );
+  return { ...snapshot, path: filePath };
 }
 
 function buildTaskStatePreview(taskState: TranscriptTaskState) {

@@ -9,6 +9,7 @@ import {
   deriveSessionTaskState,
   loadRecentTranscriptSessions,
   loadTranscriptSessionEntries,
+  persistTranscriptTaskState,
   searchTranscriptArchive,
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
@@ -64,6 +65,13 @@ async function archiveMessageTranscript(message: any, ctx: any) {
   const root = String(ctx?.agentDir || "").trim();
   await appendTranscriptArchiveEntry(entry, root);
   await appendTaskAnchorArchiveEntry(entry, root);
+  await persistTranscriptTaskState(
+    {
+      sessionId: entry.sessionId,
+      sessionFile: entry.sessionFile,
+    },
+    root,
+  );
 }
 
 function formatTaskState(taskState: any): string {

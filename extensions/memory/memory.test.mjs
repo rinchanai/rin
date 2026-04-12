@@ -358,3 +358,45 @@ test("memory derives session task state even when old sessions only have raw tra
     assert.match(results[0].preview, /Next:/);
   });
 });
+
+test("memory persists structured task state snapshots for sessions", async () => {
+  await withTempRoot(async (root) => {
+    const message = {
+      timestamp: "2026-04-05T12:22:21.000Z",
+      sessionId: "session-task-state",
+      sessionFile: "/tmp/session-task-state.jsonl",
+      role: "assistant",
+      toolName: "browser_open",
+      content: [
+        {
+          type: "toolCall",
+          name: "browser_open",
+          args: { url: "https://github.com/signup" },
+        },
+        {
+          type: "text",
+          text: "GitHub 注册卡在验证码页面，下一步等待邮箱验证码。",
+        },
+      ],
+    };
+    await transcripts.appendTranscriptArchiveEntry(message, root);
+    await transcripts.appendTaskAnchorArchiveEntry(message, root);
+
+    const snapshot = await transcripts.persistTranscriptTaskState(
+      { sessionId: "session-task-state" },
+      root,
+    );
+    assert.ok(snapshot);
+    assert.equal(snapshot.status, "blocked");
+    assert.match(
+      snapshot.path,
+      /memory[\\/]task-state[\\/]2026[\\/]04[\\/]session-task-state\.json$/,
+    );
+
+    const saved = JSON.parse(await fs.readFile(snapshot.path, "utf8"));
+    assert.equal(saved.sessionId, "session-task-state");
+    assert.equal(saved.status, "blocked");
+    assert.ok(Array.isArray(saved.next));
+    assert.match(saved.next.join("\n"), /下一步/);
+  });
+});
