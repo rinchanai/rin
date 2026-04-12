@@ -34,6 +34,28 @@ node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
 
 Prefer recovering the real install path and target user before you rerun `install.sh`.
 
+## `rin update` finished but the current shell still behaves oddly
+
+Remember what `rin update` does and does not do.
+
+It refreshes the installed core runtime, but it does not rewrite every possible shell environment or ad-hoc launcher state.
+
+Check:
+
+- whether the current shell is using the launcher-owning user
+- whether the runtime symlink moved to a fresh release under `<installDir>/app/current`
+- whether you are calling the stable launcher or an old direct path
+
+Useful commands:
+
+```bash
+rin doctor
+readlink -f <installDir>/app/current
+node <installDir>/app/current/dist/app/rin/main.js doctor -u <targetUser>
+```
+
+If the refreshed runtime works through the direct stable entry but not through your current shell path, debug the launcher/user context before assuming the update failed.
+
 ## Build fails because vendor artifacts are missing
 
 Run the normal build order:

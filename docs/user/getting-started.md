@@ -48,6 +48,13 @@ Normal installed update path:
 rin update
 ```
 
+What this does in practice:
+
+- downloads the current repo source archive
+- rebuilds the core runtime
+- publishes a fresh release under `<installDir>/app/releases/...`
+- repoints `<installDir>/app/current` to that new release
+
 Do not treat repo-local `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the standard way to update an already installed runtime.
 
 ## If `rin` is missing
