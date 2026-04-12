@@ -361,7 +361,7 @@ test("koishi controller idle tool progress intervals default to 60s and stay con
   );
 });
 
-test("koishi controller emits idle tool progress only after a quiet interval", async () => {
+test("koishi controller no longer emits idle working progress messages", async () => {
   const controller = await createController("telegram/1:2");
   controller.idleToolProgressConfig = {
     privateIntervalMs: 10000,
@@ -385,22 +385,14 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   const sent = [];
   controller.emitProgressText = async (text) => {
     sent.push(text);
-    controller.lastVisibleProgressAt = 12000;
     return true;
   };
-  controller.scheduleIdleToolProgress = () => {};
-
-  await controller.handleIdleToolProgressTick(9000);
-  assert.deepEqual(sent, []);
-
-  await controller.handleIdleToolProgressTick(11000);
-  assert.deepEqual(sent, ["Working"]);
-
-  await controller.handleIdleToolProgressTick(19000);
-  assert.deepEqual(sent, ["Working"]);
+  controller.scheduleIdleToolProgress();
+  assert.equal(controller.idleToolProgressTimer, null);
 
   await controller.handleIdleToolProgressTick(22050);
-  assert.deepEqual(sent, ["Working", "Working"]);
+  assert.deepEqual(sent, []);
+  assert.equal(controller.idleToolProgressTimer, null);
 });
 
 test("koishi controller refreshes session messages before resolving a final chat reply", async () => {

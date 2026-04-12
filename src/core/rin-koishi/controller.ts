@@ -40,7 +40,6 @@ export {
 
 const INTERIM_PREFIX = "··· ";
 const INTERIM_MIN_INTERVAL_MS = 1500;
-const KOISHI_WORKING_PROGRESS_TEXT = "Working";
 
 export class KoishiChatController {
   app: any;
@@ -151,8 +150,7 @@ export class KoishiChatController {
         this.latestAssistantText = "";
         this.lastVisibleProgressAt = Date.now();
         this.lastIdleToolProgressAt = 0;
-        this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
-        this.scheduleIdleToolProgress();
+        this.lastToolCallSummary = "";
         break;
       case "message_update":
         if (event?.message?.role !== "assistant") break;
@@ -162,8 +160,7 @@ export class KoishiChatController {
         }
         break;
       case "tool_execution_start":
-        this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
-        this.scheduleIdleToolProgress();
+        this.lastToolCallSummary = "";
         break;
       case "agent_end":
         this.clearIdleToolProgressTimer();
@@ -224,11 +221,6 @@ export class KoishiChatController {
   }
   scheduleIdleToolProgress() {
     this.clearIdleToolProgressTimer();
-    if (!this.deliveryEnabled) return;
-    const intervalMs = this.idleToolProgressIntervalMs();
-    this.idleToolProgressTimer = setTimeout(() => {
-      void this.handleIdleToolProgressTick().catch(() => {});
-    }, intervalMs);
   }
   async emitProgressText(
     text: string,
@@ -269,28 +261,9 @@ export class KoishiChatController {
     return true;
   }
   async handleIdleToolProgressTick(now = Date.now()) {
+    void now;
     this.idleToolProgressTimer = null;
-    if (!this.deliveryEnabled) return;
-    const summary =
-      safeString(this.lastToolCallSummary).trim() ||
-      KOISHI_WORKING_PROGRESS_TEXT;
-    const intervalMs = this.idleToolProgressIntervalMs();
-    if (!this.hasActiveTurn()) {
-      this.clearIdleToolProgressTimer();
-      return;
-    }
-    const lastActivityAt = Math.max(
-      this.lastVisibleProgressAt,
-      this.lastIdleToolProgressAt,
-    );
-    if (now - lastActivityAt >= intervalMs) {
-      const sent = await this.emitProgressText(summary, {
-        force: true,
-        minIntervalMs: 0,
-      });
-      if (sent) this.lastIdleToolProgressAt = now;
-    }
-    this.scheduleIdleToolProgress();
+    this.clearIdleToolProgressTimer();
   }
   private async runExclusiveTurn<T>(run: () => Promise<T>) {
     const previous = this.turnQueue;
