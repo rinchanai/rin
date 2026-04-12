@@ -168,14 +168,17 @@ function formatAgentSearchResult(response: any): string {
 
 function buildRecallPrompt(query: string, transcript: string): string {
   const focus = query
-    ? `Focus on this search query: ${query}`
-    : "No search query was provided. Summarize this recent session for quick browsing recall.";
+    ? `Search focus: ${query}`
+    : "Search focus: none provided — produce a compact recall summary for recent-session browsing.";
   return [
-    "Review the past session transcript below and summarize only what is useful for recall.",
+    "Review the archived session transcript below and write a factual recall summary.",
     focus,
-    "Include concrete decisions, fixes, commands, file paths, and unresolved follow-ups if they matter.",
-    "Be concise and factual. Do not add speculation.",
-    "Return plain text only.",
+    "Prioritize the details that help another agent quickly recover the real work state.",
+    "Include, when present and relevant: the user's goal, key decisions, important tool calls, commands, file paths, URLs, browser/account steps, concrete outcomes, and anything still unresolved.",
+    "Prefer exact details from the transcript over abstraction. Keep chronology only where it helps explain state changes.",
+    "Do not add speculation or generic filler.",
+    "Return plain text only in this shape:",
+    "Goal: ...\nKey steps: ...\nOutcome: ...\nOpen threads: ...",
     "TRANSCRIPT:",
     transcript,
   ].join("\n\n");
