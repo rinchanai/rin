@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
-import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
@@ -13,7 +12,6 @@ import {
   safeString,
 } from "./chat-helpers.js";
 import {
-  extractFinalTextFromTurnResult,
   normalizeKoishiIdleToolProgressConfig,
   summarizeKoishiToolCall,
   type KoishiIdleToolProgressConfig,
@@ -25,6 +23,7 @@ import {
   markProcessedMessage,
   refreshSessionMessages,
 } from "./delivery.js";
+import { recoverKoishiTurnIfNeeded } from "./recovery.js";
 import {
   buildPromptText,
   restorePromptParts,
@@ -613,107 +612,7 @@ export class KoishiChatController {
     return await this.runExclusiveTurn(() => this.runTurnNow(input, mode));
   }
   async recoverIfNeeded() {
-    await this.runExclusiveTurn(async () => {
-      if (this.state.pendingDelivery) {
-        await this.commitPendingDelivery(true);
-        return;
-      }
-      if (!this.state.processing) return;
-      await this.connect();
-      if (!this.session) return;
-      await this.refreshSessionMessages().catch(() => {});
-      const messages = Array.isArray(this.session.messages)
-        ? this.session.messages
-        : [];
-      const lastUserIndex =
-        [...messages]
-          .map((message: any, index: number) => ({ message, index }))
-          .reverse()
-          .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
-      const lastAssistantAfterUser = messages
-        .slice(lastUserIndex + 1)
-        .reverse()
-        .find((message: any) => message?.role === "assistant");
-      const deliveredCompletedText = lastAssistantAfterUser
-        ? extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages))
-        : "";
-      const currentLastUser = [...messages]
-        .reverse()
-        .find((message: any) => message?.role === "user");
-      const lastUserText = extractTextFromContent(currentLastUser?.content);
-      const pending = this.state.processing;
-      const shouldResumeInternally =
-        safeString(lastUserText).trim() ===
-        safeString(buildPromptText(pending.text, pending.attachments)).trim();
-      this.logger.info(
-        `resume interrupted koishi turn chatKey=${this.chatKey}`,
-      );
-      if (deliveredCompletedText && !this.session.isStreaming) {
-        this.latestAssistantText = deliveredCompletedText;
-        this.state.pendingDelivery = this.buildAssistantDelivery({
-          text: this.latestAssistantText,
-          replyToMessageId:
-            safeString(pending.replyToMessageId || "").trim() || undefined,
-          sessionId: this.currentSessionId() || undefined,
-          sessionFile: this.currentSessionFile(),
-        });
-        this.saveState();
-        await this.commitPendingDelivery(true);
-        return;
-      }
-      if (shouldResumeInternally) {
-        this.latestAssistantText = "";
-        const liveTurn = this.startLiveTurn();
-        try {
-          await this.session.resumeInterruptedTurn({
-            source: "koishi-bridge",
-          });
-        } catch (error: any) {
-          this.failLiveTurn(
-            error instanceof Error
-              ? error
-              : new Error(String(error || "koishi_turn_failed")),
-          );
-          throw error;
-        }
-        const completion = await liveTurn.promise;
-        this.latestAssistantText = this.collectFinalAssistantText();
-        if (!safeString(this.latestAssistantText || "").trim()) {
-          throw new Error("final_assistant_text_missing");
-        }
-        this.state.piSessionFile =
-          safeString(
-            completion?.sessionFile ||
-              this.session.sessionManager.getSessionFile?.() ||
-              this.state.piSessionFile ||
-              "",
-          ).trim() || undefined;
-        this.state.pendingDelivery = this.buildAssistantDelivery({
-          text: this.latestAssistantText,
-          replyToMessageId:
-            safeString(pending.replyToMessageId || "").trim() || undefined,
-          sessionId:
-            safeString(
-              completion?.sessionId || this.currentSessionId() || "",
-            ).trim() || undefined,
-          sessionFile:
-            safeString(
-              completion?.sessionFile || this.currentSessionFile() || "",
-            ).trim() || undefined,
-        });
-        this.saveState();
-        await this.commitPendingDelivery(true);
-        return;
-      }
-      await this.runTurnNow(
-        {
-          text: pending.text,
-          attachments: pending.attachments,
-          replyToMessageId: pending.replyToMessageId,
-        },
-        "prompt",
-      );
-    });
+    await recoverKoishiTurnIfNeeded(this as any);
   }
 }
 
