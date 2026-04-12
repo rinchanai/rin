@@ -40,6 +40,22 @@ If behavior changes, update the right docs layer:
 - contributor docs: `docs/development.md`, `CONTRIBUTING.md`, `docs/release-management.md`
 - agent/runtime docs: `docs/rin/*`
 
+## Safe-change checklist
+
+Before landing a bounded cleanup or stabilization change, confirm:
+
+- the change scope is explicit and small enough to validate
+- the highest-risk user path affected is clear
+- docs changed together with user-visible behavior when needed
+- tests were added or updated for the boundary being fixed
+- the repo is clean after build, lint, format, and test checks
+
+For installed runtimes, the normal deployment path is still:
+
+1. land the repo change
+2. push it
+3. run `rin update`
+
 ## High-risk areas
 
 Please be extra careful around:
