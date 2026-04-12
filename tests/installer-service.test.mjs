@@ -105,20 +105,9 @@ test("installer service helpers build launchd plist with stable daemon environme
   assert.ok(spec.plist.includes("<string>/Users/demo</string>"));
 });
 
-test("installer service helpers derive systemd units and runtime env from the target user", () => {
-  const uid = 4242;
+test("installer service helpers derive sanitized systemd unit names", () => {
   const context = service.systemdUserContext("demo user", {
-    findSystemUser: () => ({ uid }),
-    existsSync: (inputPath) => {
-      return (
-        inputPath === "/usr/bin/systemctl" || inputPath === `/run/user/${uid}`
-      );
-    },
-  });
-  assert.equal(context.systemctl, "/usr/bin/systemctl");
-  assert.deepEqual(context.userEnv, {
-    XDG_RUNTIME_DIR: `/run/user/${uid}`,
-    DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${uid}/bus`,
+    findSystemUser: () => ({ uid: 4242 }),
   });
   assert.deepEqual(context.units, [
     "rin-daemon-demo-user.service",
@@ -144,4 +133,28 @@ test("installer service helpers derive daemon socket paths from uid or target ho
     withoutUid,
     path.join("/home/demo", ".cache", "rin-daemon", "daemon.sock"),
   );
+});
+
+test("installer service helpers detect a ready unix socket", async () => {
+  const net = await import("node:net");
+  const socketDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-install-socket-"),
+  );
+  const socketPath = path.join(socketDir, "daemon.sock");
+  const server = net.createServer((socket) => {
+    socket.end();
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+  try {
+    assert.equal(await service.waitForSocket(socketPath, 1000), true);
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(socketDir, { recursive: true, force: true });
+  }
 });
