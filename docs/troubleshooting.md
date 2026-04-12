@@ -10,13 +10,29 @@ Common cause:
 
 - the current shell user is not the launcher-owning user
 
-Check:
+If `rin` still resolves on the current shell, start with:
 
 ```bash
 rin doctor
 ```
 
-If the launcher path is unavailable on the current account, inspect the runtime owner and install layout before reinstalling.
+If `rin` does not resolve at all, inspect the install metadata first instead of reinstalling blindly.
+
+Useful places:
+
+- `~/.config/rin/install.json`
+- `<installDir>/installer.json`
+- Linux user service: `~/.config/systemd/user/rin-daemon*.service`
+- macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+
+Direct runtime recovery shape:
+
+```bash
+node <installDir>/app/current/dist/app/rin/main.js doctor -u <targetUser>
+node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
+```
+
+Prefer recovering the real install path and target user before you rerun `install.sh`.
 
 ## Build fails because vendor artifacts are missing
 
