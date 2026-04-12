@@ -16,6 +16,7 @@ The format is intentionally simple. Keep it short, readable, and focused on mean
 - stabilized TUI local settings hydration and RPC/runtime host boundaries
 - improved Koishi delivery and recovery handling so turn completion no longer depends on a brittle final-text race
 - aligned public README entrypoints so user docs, contributor docs, and agent/runtime docs are clearly separated
+- expanded install, update, troubleshooting, and getting-started docs so runtime refresh behavior and common in-session commands are easier to follow
 - tightened extension build discipline so TypeScript emit does not proceed through extension build errors
 
 ### Fixed
@@ -24,6 +25,7 @@ The format is intentionally simple. Keep it short, readable, and focused on mean
 - Koishi media-only inbound messages are routed without synthetic placeholder text
 - Koishi no longer posts repeated idle `Working` progress messages into chat
 - `rin update` now downloads from the active `rinchanai/rin` repository instead of the retired upstream path
+- installer/runtime helper regressions are now covered by tests for source archive selection, service path derivation, child apply-result parsing, builtin changelog and resume behavior, and model command edge cases
 - stale cron task status is cleared on reruns
 
 ## Notes
