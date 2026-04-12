@@ -81,7 +81,6 @@ export async function executeCronAgentTask(
   const result = await requestKoishiRpc(options.agentDir, {
     type: "run_chat_turn",
     payload: {
-      chatKey: task.chatKey,
       controllerKey: task.id,
       text: task.target.prompt,
       sessionFile,
@@ -97,7 +96,6 @@ export async function executeCronAgentTask(
     text: finalText,
     sessionId: String(result?.sessionId || "").trim() || undefined,
     sessionFile: nextSessionFile,
-    deliveredByChatPipeline: Boolean(task.chatKey),
   };
 }
 
@@ -124,6 +122,14 @@ export async function executeCronTask(
     } else {
       const result = await executeCronAgentTask(task, options);
       task.lastResultText = result.text;
+      if (task.chatKey && result.text) {
+        await sendKoishiText(options.agentDir, {
+          chatKey: task.chatKey,
+          taskId: task.id,
+          runId,
+          text: result.text,
+        }).catch(() => {});
+      }
     }
   } catch (error: any) {
     task.lastError = String(
