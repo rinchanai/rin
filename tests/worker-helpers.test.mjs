@@ -120,3 +120,60 @@ test("runBuiltinCommand renders changelog entries from the vendored changelog", 
   assert.equal(result.handled, true);
   assert.match(result.text, /## \[/);
 });
+
+test("runBuiltinCommand prefers SessionManager.listAll for /resume discovery", async () => {
+  const calls = [];
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async () => {},
+      reload: async () => {},
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: { getAvailable: async () => [] },
+      setModel: async () => {},
+      setThinkingLevel: async () => {},
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async (sessionPath) => {
+      calls.push(sessionPath);
+      return { cancelled: false };
+    },
+  };
+
+  const deps = {
+    SessionManager: {
+      listAll: async () => [
+        {
+          id: "abc",
+          name: "named session",
+          path: "/tmp/sessions/abc.jsonl",
+        },
+      ],
+      list: async () => {
+        throw new Error("list_should_not_be_used_when_listAll_exists");
+      },
+    },
+  };
+
+  const listing = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/resume",
+    deps,
+  );
+  assert.equal(listing.handled, true);
+  assert.match(listing.text, /Available sessions:/);
+  assert.match(listing.text, /abc — named session/);
+
+  const resumed = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/resume abc",
+    deps,
+  );
+  assert.equal(resumed.handled, true);
+  assert.match(resumed.text, /Resumed session: abc/);
+  assert.deepEqual(calls, ["/tmp/sessions/abc.jsonl"]);
+});
