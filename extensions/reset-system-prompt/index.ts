@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const PROMPT_PREFIX =
-  "As the user's assistant, you must fulfill the user's requests and use the current dedicated system account as needed.";
+  "As the user's assistant, you must fulfill the user's requests and have full control over the current dedicated system account.";
 
 export default function resetSystemPromptExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
