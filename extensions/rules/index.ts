@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -11,13 +11,24 @@ import {
   formatSkillsForPrompt,
   loadSkills,
 } from "../../third_party/pi-coding-agent/src/core/skills.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
+import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  type TruncationResult,
+  truncateHead,
+} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+import {
+  getTextOutput,
+  invalidArgText,
+  replaceTabs,
+  shortenPath,
+  str,
+} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
 
-function normalizeInputPath(input: string, _cwd: string): string {
-  const value = input.trim();
-  if (value === "~") return HOME_DIR;
-  if (value.startsWith("~/")) return join(HOME_DIR, value.slice(2));
-  return isAbsolute(value) ? value : resolve(HOME_DIR, value);
+function normalizeInputPath(input: string): string {
+  return input.trim();
 }
 
 function listAncestorContextFiles(targetDir: string): string[] {
@@ -97,128 +108,133 @@ function buildRulesPrompt(targetDir: string) {
   const skillsPrompt = formatSkillsForPrompt(skills).trim();
   if (skillsPrompt) blocks.push(skillsPrompt);
 
-  return {
-    prompt: blocks.join("\n\n").trim(),
-    contextPaths,
-    skillDirs,
-    skillCount: skills.length,
-  };
+  return blocks.join("\n\n").trim();
 }
 
-function formatAgentText(details: {
-  targetDir: string;
-  prompt: string;
-  contextPaths: string[];
-  skillDirs: string[];
-  skillCount: number;
-  error?: string;
-}) {
-  if (details.error) return `rules error\n${details.error}`;
-  if (!details.prompt) return `rules 0\ntarget=${details.targetDir}`;
-  return [
-    `rules target=${details.targetDir}`,
-    `context_files=${details.contextPaths.length}`,
-    `skill_dirs=${details.skillDirs.length}`,
-    `skills=${details.skillCount}`,
-    "",
-    details.prompt,
-  ].join("\n");
+function formatRulesCall(
+  args: { path?: string } | undefined,
+  theme: typeof import("../../third_party/pi-coding-agent/src/modes/interactive/theme/theme.js").theme,
+) {
+  const rawPath = str(args?.path);
+  const path = rawPath !== null ? shortenPath(rawPath) : null;
+  return `${theme.fg("toolTitle", theme.bold("rules"))} ${path === null ? invalidArgText(theme) : theme.fg("accent", path)}`;
 }
 
-function formatUserText(details: {
-  targetDir: string;
-  prompt: string;
-  contextPaths: string[];
-  skillDirs: string[];
-  skillCount: number;
-  error?: string;
-}) {
-  if (details.error) return `Failed to read directory rules: ${details.error}`;
-  if (!details.prompt) return `No directory rules found under ${details.targetDir}.`;
-  return [
-    `Directory rules collected for ${details.targetDir}:`,
-    `- Parent AGENTS/CLAUDE files: ${details.contextPaths.length}`,
-    `- Skill directories: ${details.skillDirs.length}`,
-    `- Skill entries: ${details.skillCount}`,
-  ].join("\n");
+function trimTrailingEmptyLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  return lines.slice(0, end);
+}
+
+function formatRulesResult(
+  result: {
+    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    details?: { truncation?: TruncationResult; emptyMessage?: string };
+  },
+  options: { expanded: boolean },
+  theme: typeof import("../../third_party/pi-coding-agent/src/modes/interactive/theme/theme.js").theme,
+  showImages: boolean,
+) {
+  const output = getTextOutput(result, showImages);
+  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const maxLines = options.expanded ? lines.length : 10;
+  const displayLines = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+
+  let text = "";
+  if (displayLines.length > 0) {
+    text = `\n${displayLines
+      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
+      .join("\n")}`;
+    if (remaining > 0) {
+      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+    }
+  } else if (result.details?.emptyMessage) {
+    text = `\n${theme.fg("muted", result.details.emptyMessage)}`;
+  }
+
+  const truncation = result.details?.truncation;
+  if (truncation?.truncated) {
+    if (truncation.firstLineExceedsLimit) {
+      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
+    } else if (truncation.truncatedBy === "lines") {
+      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
+    } else {
+      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
+    }
+  }
+
+  return text;
 }
 
 export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "rules",
     label: "Rules",
-    description: "List rules for a target directory.",
-    promptSnippet: "List rules for a target directory.",
+    description: "Get effective rules for a target directory.",
+    promptSnippet: "Get effective rules for a target directory.",
     promptGuidelines: [
-      "Use rules to get directory-level rules when switching directory context, including AGENTS.md and skills.",
+      "Always use rules to get directory-level rules when switching directory context, including AGENTS.md and skills.",
     ],
     parameters: Type.Object({
       path: Type.String({
-        description: "Target directory path, relative or absolute",
+        description: "Absolute target directory path.",
       }),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-      const targetPath = normalizeInputPath(
-        String((params as any).path || ""),
-        "",
-      );
-      let stats;
-      try {
-        stats = statSync(targetPath);
-      } catch {
-        const error = `Path does not exist: ${targetPath}`;
-        const details = {
-          targetDir: targetPath,
-          prompt: "",
-          contextPaths: [],
-          skillDirs: [],
-          skillCount: 0,
-          error,
-        };
-        const prepared = await prepareToolTextOutput({
-          agentText: formatAgentText(details),
-          userText: formatUserText(details),
-          tempPrefix: "rin-attention-resources-",
-          filename: "attention-resources.txt",
-        });
+    async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
+      if (signal?.aborted) throw new Error("Operation aborted");
+
+      const targetPath = normalizeInputPath(String((params as any).path || ""));
+      if (!targetPath) throw new Error("Path is required");
+      if (!isAbsolute(targetPath)) {
+        throw new Error(`Path must be absolute: ${targetPath}`);
+      }
+      if (!existsSync(targetPath)) {
+        throw new Error(`Path not found: ${targetPath}`);
+      }
+
+      const stats = statSync(targetPath);
+      if (!stats.isDirectory()) {
+        throw new Error(`Not a directory: ${targetPath}`);
+      }
+
+      const prompt = buildRulesPrompt(targetPath);
+      if (!prompt) {
         return {
-          content: [{ type: "text", text: prepared.agentText }],
+          content: [{ type: "text", text: "" }],
           details: {
-            targetDir: targetPath,
-            contextPaths: [],
-            skillDirs: [],
-            skillCount: 0,
-            error: true,
-            ...prepared,
+            emptyMessage: `No directory rules found under ${targetPath}.`,
           },
         };
       }
 
-      const targetDir = stats.isDirectory()
-        ? targetPath
-        : resolve(targetPath, "..");
-      const details = {
-        targetDir,
-        ...buildRulesPrompt(targetDir),
-      };
-      const prepared = await prepareToolTextOutput({
-        agentText: formatAgentText(details),
-        userText: formatUserText(details),
-        tempPrefix: "rin-rules-",
-        filename: "rules.txt",
-      });
+      const truncation = truncateHead(prompt);
+      let outputText = truncation.content;
+      const details: { truncation?: TruncationResult; emptyMessage?: string } =
+        {};
+      if (truncation.truncated) {
+        details.truncation = truncation;
+        if (truncation.truncatedBy === "lines") {
+          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
+        } else {
+          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+        }
+      }
+
       return {
-        content: [{ type: "text", text: prepared.agentText }],
-        details: { ...details, ...prepared },
+        content: [{ type: "text", text: outputText }],
+        details: Object.keys(details).length > 0 ? details : undefined,
       };
     },
-    renderResult(result) {
-      const details = result.details as any;
-      const fallback =
-        result.content?.[0]?.type === "text"
-          ? (result.content[0] as any).text || ""
-          : "";
-      return new Text(String(details?.userText || fallback), 0, 0);
+    renderCall(args, theme, context) {
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(formatRulesCall(args, theme));
+      return text;
+    },
+    renderResult(result, options, theme, context) {
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(formatRulesResult(result as any, options, theme, context.showImages));
+      return text;
     },
   });
 }
