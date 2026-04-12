@@ -6,6 +6,7 @@ import { Type } from "@sinclair/typebox";
 import {
   appendTaskAnchorArchiveEntry,
   appendTranscriptArchiveEntry,
+  deriveSessionTaskState,
   loadRecentTranscriptSessions,
   loadTranscriptSessionEntries,
   searchTranscriptArchive,
@@ -65,6 +66,22 @@ async function archiveMessageTranscript(message: any, ctx: any) {
   await appendTaskAnchorArchiveEntry(entry, root);
 }
 
+function formatTaskState(taskState: any): string {
+  if (!taskState || typeof taskState !== "object") return "";
+  const rows = [
+    Array.isArray(taskState.blockers) && taskState.blockers.length
+      ? `Blocked: ${taskState.blockers.join(" ; ")}`
+      : "",
+    Array.isArray(taskState.next) && taskState.next.length
+      ? `Next: ${taskState.next.join(" ; ")}`
+      : "",
+    Array.isArray(taskState.completed) && taskState.completed.length
+      ? `Done: ${taskState.completed.join(" ; ")}`
+      : "",
+  ].filter(Boolean);
+  return rows.join("\n");
+}
+
 function formatSearchResult(response: any): string {
   const query = String(response?.query || "").trim();
   const mode = String(response?.mode || "search").trim();
@@ -115,6 +132,7 @@ function formatSearchResult(response: any): string {
       return [
         `${index + 1}. ${kind} — ${meta}`,
         String(item?.path || "").trim(),
+        formatTaskState(item?.taskState),
         String(item?.preview || item?.description || "").trim(),
       ]
         .filter(Boolean)
@@ -159,6 +177,7 @@ function formatAgentSearchResult(response: any): string {
         `score=${Number(item?.score || 0).toFixed(2)}`,
         String(item?.role || "").trim(),
         String(item?.timestamp || "").trim(),
+        item?.taskState?.status ? `state=${String(item.taskState.status)}` : "",
         `path=${String(item?.path || "")}`,
       ]
         .filter(Boolean)
@@ -225,11 +244,29 @@ async function maybeSummarizeTranscriptMatches(
       agentDir,
     );
     if (!entries.length) continue;
-    const transcript = entries
-      .map(
+    const taskState = deriveSessionTaskState(entries);
+    const taskStateBlock = [
+      `TASK_STATE_STATUS: ${taskState.status}`,
+      Array.isArray(taskState.blockers) && taskState.blockers.length
+        ? `TASK_STATE_BLOCKERS: ${taskState.blockers.join(" ; ")}`
+        : "",
+      Array.isArray(taskState.next) && taskState.next.length
+        ? `TASK_STATE_NEXT: ${taskState.next.join(" ; ")}`
+        : "",
+      Array.isArray(taskState.completed) && taskState.completed.length
+        ? `TASK_STATE_DONE: ${taskState.completed.join(" ; ")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const transcript = [
+      taskStateBlock,
+      ...entries.map(
         (entry) =>
           `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`,
-      )
+      ),
+    ]
+      .filter(Boolean)
       .join("\n\n")
       .slice(0, 12000);
     tasks.push({

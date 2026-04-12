@@ -317,7 +317,44 @@ test("memory recent preview prefers task anchors over generic chatter", async ()
       root,
     );
     assert.equal(results[0].sessionId, "session-preview-anchor");
-    assert.match(results[0].preview, /task_anchor/);
+    assert.equal(results[0].taskState.status, "next");
+    assert.match(results[0].preview, /Next:/);
     assert.match(results[0].preview, /填写姓名和生日/);
+  });
+});
+
+test("memory derives session task state even when old sessions only have raw transcript rows", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-05T12:22:21.000Z",
+        sessionId: "session-old-raw",
+        sessionFile: "/tmp/session-old-raw.jsonl",
+        role: "assistant",
+        toolName: "browser_open",
+        content: [
+          {
+            type: "toolCall",
+            name: "browser_open",
+            args: { url: "https://github.com/signup" },
+          },
+          {
+            type: "text",
+            text: "GitHub 注册卡在验证码页面，下一步等待邮箱验证码。",
+          },
+        ],
+      },
+      root,
+    );
+
+    const results = await transcripts.loadRecentTranscriptSessions(
+      { limit: 1 },
+      root,
+    );
+    assert.equal(results[0].sessionId, "session-old-raw");
+    assert.equal(results[0].taskState.status, "blocked");
+    assert.match(results[0].preview, /Blocked:/);
+    assert.match(results[0].preview, /验证码/);
+    assert.match(results[0].preview, /Next:/);
   });
 });

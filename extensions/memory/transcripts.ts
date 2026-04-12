@@ -39,6 +39,14 @@ const TASK_ANCHOR_STATUS_PATTERNS = {
     /\b(browser|page|signup|login|account|oauth|captcha|mail|github|google|outlook)\b|浏览器|页面|注册|登录|账号|邮箱|验证码/u,
 };
 
+export type TranscriptTaskState = {
+  status: "blocked" | "next" | "done" | "state" | "unknown";
+  blockers: string[];
+  next: string[];
+  completed: string[];
+  anchors: string[];
+};
+
 export type TranscriptSessionResult = {
   sourceType: "session";
   id: string;
@@ -51,6 +59,7 @@ export type TranscriptSessionResult = {
   description: string;
   preview: string;
   role: string;
+  taskState?: TranscriptTaskState;
 };
 
 export function resolveTranscriptRoot(rootOverride = ""): string {
@@ -239,17 +248,34 @@ export function deriveTaskAnchorEntry(input: Record<string, any>) {
   if (text.includes("[bash]")) score += 2;
   if (text.includes("http://") || text.includes("https://")) score += 1;
   if (text.includes("/") || text.includes("\\")) score += 1;
-  if (TASK_ANCHOR_STATUS_PATTERNS.blocked.test(text)) score += 3;
-  if (TASK_ANCHOR_STATUS_PATTERNS.done.test(text)) score += 2;
-  if (TASK_ANCHOR_STATUS_PATTERNS.next.test(text)) score += 2;
-  if (TASK_ANCHOR_STATUS_PATTERNS.browser.test(text)) score += 1;
+  const hasBlockedSignal = TASK_ANCHOR_STATUS_PATTERNS.blocked.test(text);
+  const hasDoneSignal = TASK_ANCHOR_STATUS_PATTERNS.done.test(text);
+  const hasNextSignal = TASK_ANCHOR_STATUS_PATTERNS.next.test(text);
+  const hasBrowserSignal = TASK_ANCHOR_STATUS_PATTERNS.browser.test(text);
+  if (hasBlockedSignal) score += 3;
+  if (hasDoneSignal) score += 2;
+  if (hasNextSignal) score += 2;
+  if (hasBrowserSignal) score += 1;
+  if (
+    role === "toolResult" &&
+    !hasBlockedSignal &&
+    !hasDoneSignal &&
+    !hasBrowserSignal &&
+    !text.includes("[bash]") &&
+    !text.includes("http://") &&
+    !text.includes("https://") &&
+    !text.includes("/") &&
+    !text.includes("\\")
+  ) {
+    return null;
+  }
   if (score < 4) return null;
 
-  const status = TASK_ANCHOR_STATUS_PATTERNS.blocked.test(text)
+  const status = hasBlockedSignal
     ? "blocked"
-    : TASK_ANCHOR_STATUS_PATTERNS.done.test(text)
+    : hasDoneSignal
       ? "done"
-      : TASK_ANCHOR_STATUS_PATTERNS.next.test(text)
+      : hasNextSignal
         ? "next"
         : "state";
   const label = [
@@ -389,6 +415,111 @@ function transcriptPreviewText(entry: TranscriptArchiveEntry) {
   return `${label} ${safeString(entry.text || "").trim()}`.trim();
 }
 
+function parseTaskAnchorStatus(entry: TranscriptArchiveEntry) {
+  if (safeString(entry.customType || "").trim() !== "task_anchor") return "";
+  const text = safeString(entry.text || "").trim();
+  const prefix = text.split("|")[0]?.trim().toLowerCase() || "";
+  if (["blocked", "done", "next", "state"].includes(prefix)) return prefix;
+  return "state";
+}
+
+function taskAnchorSignals(text: string) {
+  const value = safeString(text).trim();
+  return {
+    blocked: TASK_ANCHOR_STATUS_PATTERNS.blocked.test(value),
+    done: TASK_ANCHOR_STATUS_PATTERNS.done.test(value),
+    next: TASK_ANCHOR_STATUS_PATTERNS.next.test(value),
+  };
+}
+
+function dedupeTexts(values: string[], limit = 3) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const text = safeString(value).trim();
+    if (!text) continue;
+    const key = normalizeNeedle(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function taskStateLine(label: string, values: string[]) {
+  const rows = dedupeTexts(values);
+  if (!rows.length) return "";
+  return `${label}: ${rows.join(" ; ")}`;
+}
+
+export function deriveSessionTaskState(
+  entries: TranscriptArchiveEntry[],
+): TranscriptTaskState {
+  const ranked = [...entries].sort(
+    (a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp),
+  );
+  const rawAnchors = ranked.filter(
+    (entry) => safeString(entry.customType || "").trim() === "task_anchor",
+  );
+  const anchors = rawAnchors.length
+    ? rawAnchors
+    : ranked
+        .map((entry) => deriveTaskAnchorEntry(entry))
+        .filter(Boolean)
+        .map((entry) => entry as TranscriptArchiveEntry);
+  const blockers = anchors
+    .filter((entry) => {
+      const text = safeString(entry.text || "").trim();
+      const signals = taskAnchorSignals(text);
+      return parseTaskAnchorStatus(entry) === "blocked" || signals.blocked;
+    })
+    .map((entry) => safeString(entry.text || "").trim());
+  const next = anchors
+    .filter((entry) => {
+      const text = safeString(entry.text || "").trim();
+      const signals = taskAnchorSignals(text);
+      return parseTaskAnchorStatus(entry) === "next" || signals.next;
+    })
+    .map((entry) => safeString(entry.text || "").trim());
+  const completed = anchors
+    .filter((entry) => {
+      const text = safeString(entry.text || "").trim();
+      const signals = taskAnchorSignals(text);
+      return parseTaskAnchorStatus(entry) === "done" || signals.done;
+    })
+    .map((entry) => safeString(entry.text || "").trim());
+  const anchorTexts = anchors.map((entry) =>
+    safeString(entry.text || "").trim(),
+  );
+  const status = blockers.length
+    ? "blocked"
+    : next.length
+      ? "next"
+      : completed.length
+        ? "done"
+        : anchorTexts.length
+          ? "state"
+          : "unknown";
+  return {
+    status,
+    blockers: dedupeTexts(blockers),
+    next: dedupeTexts(next),
+    completed: dedupeTexts(completed),
+    anchors: dedupeTexts(anchorTexts, 4),
+  };
+}
+
+function buildTaskStatePreview(taskState: TranscriptTaskState) {
+  return [
+    taskStateLine("Blocked", taskState.blockers),
+    taskStateLine("Next", taskState.next),
+    taskStateLine("Done", taskState.completed),
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 function presentTranscriptResult(
   entry: TranscriptArchiveEntry,
   score: number,
@@ -453,7 +584,13 @@ function buildSessionPreview(entries: TranscriptArchiveEntry[]) {
     )
     .slice(0, 2)
     .map((entry) => transcriptPreviewText(entry));
-  return trimText(chosen.join("\n"), 240);
+  const taskStatePreview = buildTaskStatePreview(
+    deriveSessionTaskState(entries),
+  );
+  return trimText(
+    [taskStatePreview, ...chosen].filter(Boolean).join("\n"),
+    240,
+  );
 }
 
 function presentSessionResult(
@@ -462,6 +599,7 @@ function presentSessionResult(
   score: number,
   rootOverride = "",
 ): TranscriptSessionResult {
+  const taskState = deriveSessionTaskState(entries);
   const preview = buildSessionPreview(entries);
   return {
     sourceType: "session",
@@ -477,6 +615,7 @@ function presentSessionResult(
     timestamp: entry.timestamp,
     description: trimText(preview, 160),
     preview,
+    taskState,
   };
 }
 
