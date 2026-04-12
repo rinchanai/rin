@@ -40,6 +40,24 @@ test("koishi chat helpers extract chat metadata", () => {
   assert.equal(helpers.getChatType(session), "group");
 });
 
+test("koishi chat helpers treat explicit at-elements as mentions even when stripped.appel is missing", () => {
+  const session = {
+    platform: "telegram",
+    guildId: "g1",
+    selfId: "8623230033",
+    bot: {
+      selfId: "8623230033",
+      username: "THE_cattail_rin_chan_bot",
+    },
+    elements: [
+      { type: "at", attrs: { name: "THE_cattail_rin_chan_bot" } },
+      { type: "text", attrs: { content: " 滴度" } },
+    ],
+    stripped: { content: "滴度" },
+  };
+  assert.equal(helpers.mentionLike(session), true);
+});
+
 test("koishi chat helpers extract reply ids and quote text from canonical koishi quote", () => {
   const session = {
     quote: {
