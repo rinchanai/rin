@@ -100,20 +100,23 @@ If `rin` is missing on the current account, do not assume Rin is absent. It usua
 For the full recovery/update workflow, see:
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
-- [`docs/development.md`](docs/development.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 
 ## Documentation
 
 User-facing docs:
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- [`docs/roadmap.md`](docs/roadmap.md)
+
+Contributor docs:
+
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/security.md`](docs/security.md)
-- [`docs/roadmap.md`](docs/roadmap.md)
-- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/dependency-upgrades.md`](docs/dependency-upgrades.md)
 - [`docs/release-management.md`](docs/release-management.md)
 

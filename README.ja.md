@@ -100,20 +100,23 @@ rin update
 完全な復旧・更新フローは次を参照してください。
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
-- [`docs/development.md`](docs/development.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 
 ## ドキュメント
 
 ユーザー向け:
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- [`docs/roadmap.md`](docs/roadmap.md)
+
+コントリビューター向け:
+
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/security.md`](docs/security.md)
-- [`docs/roadmap.md`](docs/roadmap.md)
-- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/dependency-upgrades.md`](docs/dependency-upgrades.md)
 - [`docs/release-management.md`](docs/release-management.md)
 

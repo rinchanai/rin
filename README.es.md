@@ -100,20 +100,23 @@ Si `rin` no existe en la cuenta actual, no asumas que Rin no está instalado. A 
 Para el flujo completo de recuperación o actualización, consulta:
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
-- [`docs/development.md`](docs/development.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 
 ## Documentación
 
 Documentación para usuarios:
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- [`docs/roadmap.md`](docs/roadmap.md)
+
+Documentación para contribuidores:
+
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/security.md`](docs/security.md)
-- [`docs/roadmap.md`](docs/roadmap.md)
-- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/dependency-upgrades.md`](docs/dependency-upgrades.md)
 - [`docs/release-management.md`](docs/release-management.md)
 

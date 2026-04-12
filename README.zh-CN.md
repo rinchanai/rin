@@ -100,20 +100,23 @@ rin update
 完整的恢复 / 更新路径可以看：
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
-- [`docs/development.md`](docs/development.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 
 ## 文档
 
 面向用户的文档：
 
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- [`docs/roadmap.md`](docs/roadmap.md)
+
+面向贡献者的文档：
+
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
-- [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/security.md`](docs/security.md)
-- [`docs/roadmap.md`](docs/roadmap.md)
-- [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/dependency-upgrades.md`](docs/dependency-upgrades.md)
 - [`docs/release-management.md`](docs/release-management.md)
 
