@@ -93,3 +93,30 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
     ["switchSession", "/tmp/sessions/abc.jsonl"],
   ]);
 });
+
+test("runBuiltinCommand renders changelog entries from the vendored changelog", async () => {
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async () => {},
+      reload: async () => {},
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: { getAvailable: async () => [] },
+      setModel: async () => {},
+      setThinkingLevel: async () => {},
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async () => ({ cancelled: false }),
+  };
+
+  const result = await workerHelpers.runBuiltinCommand(runtime, "/changelog", {
+    SessionManager: { list: async () => [] },
+  });
+
+  assert.equal(result.handled, true);
+  assert.match(result.text, /## \[/);
+});
