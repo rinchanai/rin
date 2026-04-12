@@ -114,6 +114,7 @@ User-facing docs:
 - [`docs/roadmap.md`](docs/roadmap.md)
 - [`docs/troubleshooting.md`](docs/troubleshooting.md)
 - [`docs/dependency-upgrades.md`](docs/dependency-upgrades.md)
+- [`docs/release-management.md`](docs/release-management.md)
 
 Agent/runtime docs:
 
