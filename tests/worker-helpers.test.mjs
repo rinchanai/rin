@@ -309,3 +309,121 @@ test("runBuiltinCommand reports model usage errors and empty model catalogs", as
   );
   assert.deepEqual(calls, []);
 });
+
+test("runBuiltinCommand handles compact reload session and plain text inputs", async () => {
+  const calls = [];
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async (note) => {
+        calls.push(["compact", note]);
+      },
+      reload: async () => {
+        calls.push(["reload"]);
+      },
+      getSessionStats: () => ({
+        sessionId: "session-1",
+        sessionFile: "/tmp/session-1.jsonl",
+        totalMessages: 4,
+        userMessages: 2,
+        assistantMessages: 1,
+        toolResults: 1,
+        toolCalls: 3,
+        tokens: { total: 20, input: 8, output: 9, cacheRead: 2, cacheWrite: 1 },
+        cost: 0.02,
+      }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: { getAvailable: async () => [] },
+      setModel: async () => {},
+      setThinkingLevel: async () => {},
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async () => ({ cancelled: false }),
+  };
+
+  const compacted = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/compact keep only the conclusion",
+    {
+      SessionManager: { list: async () => [] },
+    },
+  );
+  assert.equal(compacted.handled, true);
+  assert.equal(compacted.text, "Compacted session.");
+
+  const reloaded = await workerHelpers.runBuiltinCommand(runtime, "/reload", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(reloaded.handled, true);
+  assert.match(
+    reloaded.text,
+    /Reloaded extensions, prompts, skills, and themes/,
+  );
+
+  const sessionInfo = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/session",
+    {
+      SessionManager: { list: async () => [] },
+    },
+  );
+  assert.equal(sessionInfo.handled, true);
+  assert.match(sessionInfo.text, /Session ID: session-1/);
+  assert.match(sessionInfo.text, /Tool Calls: 3/);
+
+  const plainText = await workerHelpers.runBuiltinCommand(runtime, "hello", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.deepEqual(plainText, { handled: false });
+
+  assert.deepEqual(calls, [
+    ["compact", "keep only the conclusion"],
+    ["reload"],
+  ]);
+});
+
+test("runBuiltinCommand reports empty and missing resume targets", async () => {
+  const calls = [];
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async () => {},
+      reload: async () => {},
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: { getAvailable: async () => [] },
+      setModel: async () => {},
+      setThinkingLevel: async () => {},
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async (sessionPath) => {
+      calls.push(sessionPath);
+      return { cancelled: false };
+    },
+  };
+
+  const empty = await workerHelpers.runBuiltinCommand(runtime, "/resume", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(empty.handled, true);
+  assert.equal(empty.text, "No sessions available.");
+
+  const missing = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/resume missing",
+    {
+      SessionManager: {
+        list: async () => [{ id: "abc", path: "/tmp/sessions/abc.jsonl" }],
+      },
+    },
+  );
+  assert.equal(missing.handled, true);
+  assert.equal(missing.text, "Session not found: missing");
+  assert.deepEqual(calls, []);
+});
