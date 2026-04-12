@@ -10,7 +10,6 @@ import {
   KoishiChatState,
   SavedAttachment,
   extractTextFromContent,
-  markProcessedKoishiMessage,
   safeString,
 } from "./chat-helpers.js";
 import {
@@ -19,6 +18,13 @@ import {
   summarizeKoishiToolCall,
   type KoishiIdleToolProgressConfig,
 } from "./progress.js";
+import {
+  buildAssistantDelivery,
+  collectFinalAssistantText,
+  commitPendingDelivery,
+  markProcessedMessage,
+  refreshSessionMessages,
+} from "./delivery.js";
 import {
   buildPromptText,
   restorePromptParts,
@@ -328,23 +334,10 @@ export class KoishiChatController {
     liveTurn.reject(error);
   }
   private async refreshSessionMessages() {
-    const session: any = this.session;
-    if (!session) return;
-    if (typeof session.refreshState === "function") {
-      await session.refreshState({ messages: true, session: true });
-      return;
-    }
-    if (typeof session.refreshMessages === "function") {
-      await session.refreshMessages();
-    }
+    await refreshSessionMessages(this);
   }
   private collectFinalAssistantText() {
-    const messages = Array.isArray(this.session?.messages)
-      ? this.session.messages
-      : [];
-    return extractFinalTextFromTurnResult(
-      buildTurnResultFromMessages(messages),
-    );
+    return collectFinalAssistantText(this);
   }
   private async completeLiveTurn() {
     if (!this.liveTurn) return;
@@ -377,47 +370,13 @@ export class KoishiChatController {
     sessionId?: string;
     sessionFile?: string;
   }) {
-    const text = safeString(input.text ?? this.latestAssistantText).trim();
-    if (!text) throw new Error("koishi_final_assistant_text_missing");
-    return {
-      type: "text_delivery" as const,
-      chatKey: this.chatKey,
-      text,
-      replyToMessageId:
-        safeString(input.replyToMessageId || "").trim() || undefined,
-      sessionId: safeString(input.sessionId || "").trim() || undefined,
-      sessionFile: safeString(input.sessionFile || "").trim() || undefined,
-    };
+    return buildAssistantDelivery(this as any, input);
   }
   private async commitPendingDelivery(clearProcessing = false) {
-    const pending = this.state.pendingDelivery;
-    if (!pending) return;
-    await sendOutboxPayload(
-      this.app,
-      this.agentDir,
-      {
-        ...pending,
-        createdAt: new Date().toISOString(),
-      },
-      this.h,
-    );
-    delete this.state.pendingDelivery;
-    if (clearProcessing) delete this.state.processing;
-    this.saveState();
+    await commitPendingDelivery(this as any, clearProcessing);
   }
   private markProcessedMessage(messageId?: string) {
-    const nextMessageId = safeString(messageId || "").trim();
-    if (!nextMessageId) return;
-    markProcessedKoishiMessage(this.agentDir, this.chatKey, nextMessageId, {
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile:
-        safeString(
-          this.session?.sessionManager?.getSessionFile?.() ||
-            this.state.piSessionFile ||
-            "",
-        ).trim() || undefined,
-      processedAt: new Date().toISOString(),
-    });
+    markProcessedMessage(this as any, messageId);
   }
   async resumeSessionFile(sessionFile: string) {
     const wanted = safeString(sessionFile).trim();
