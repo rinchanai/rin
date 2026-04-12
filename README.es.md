@@ -87,6 +87,19 @@ Rin incluye por defecto:
 - subagentes
 - puente de chat con Koishi
 
+## Comandos útiles dentro de la sesión
+
+Dentro de Rin, estos comandos con barra son especialmente útiles para el control diario:
+
+```text
+/changelog                 ver los cambios recientes ya entregados
+/resume                    listar sesiones reanudables
+/resume <session-id>       volver a una sesión
+/model                     listar modelos disponibles
+/model <provider/model>    cambiar de modelo
+/model <provider/model> high
+```
+
 ## Actualizar Rin
 
 Para un runtime instalado normal, usa:

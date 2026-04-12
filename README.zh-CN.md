@@ -87,6 +87,19 @@ Rin 默认就接好了这些能力：
 - subagent
 - Koishi 聊天桥
 
+## 常用会话内命令
+
+进入 Rin 之后，这几个内建斜杠命令最适合日常控制：
+
+```text
+/changelog                 查看最近已交付的变更
+/resume                    列出可恢复的会话
+/resume <session-id>       切回某个会话
+/model                     列出可用模型
+/model <provider/model>    切换模型
+/model <provider/model> high
+```
+
 ## 更新 Rin
 
 对于正常安装的运行时，直接使用：

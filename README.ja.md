@@ -87,6 +87,19 @@ Rin には最初から次の機能があります。
 - subagent
 - Koishi チャットブリッジ
 
+## よく使うセッション内コマンド
+
+Rin の中では、次の組み込みスラッシュコマンドが日常操作に便利です。
+
+```text
+/changelog                 最近反映された変更を見る
+/resume                    再開できるセッションを一覧表示
+/resume <session-id>       セッションに戻る
+/model                     利用可能なモデルを一覧表示
+/model <provider/model>    モデルを切り替える
+/model <provider/model> high
+```
+
 ## Rin の更新
 
 通常のインストール済みランタイムなら、次を使います。

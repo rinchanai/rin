@@ -87,6 +87,19 @@ Rin inclut par défaut :
 - subagents
 - pont de chat Koishi
 
+## Commandes utiles dans la session
+
+Dans Rin, ces commandes slash intégrées sont particulièrement utiles au quotidien :
+
+```text
+/changelog                 voir les changements récemment livrés
+/resume                    lister les sessions reprenables
+/resume <session-id>       revenir à une session
+/model                     lister les modèles disponibles
+/model <provider/model>    changer de modèle
+/model <provider/model> high
+```
+
 ## Mettre à jour Rin
 
 Pour un runtime installé normalement, utilisez :

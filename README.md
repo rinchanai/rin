@@ -87,6 +87,19 @@ Rin ships with a few capabilities wired in by default:
 - subagents
 - Koishi chat bridge
 
+## Useful in-session commands
+
+Inside Rin, a few built-in slash commands are especially useful for day-to-day control:
+
+```text
+/changelog                 show recent shipped changes
+/resume                    list resumable sessions
+/resume <session-id>       switch back into a session
+/model                     list available models
+/model <provider/model>    switch model
+/model <provider/model> high
+```
+
 ## Updating Rin
 
 For a normal installed runtime, use:
