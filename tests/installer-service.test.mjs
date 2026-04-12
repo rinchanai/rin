@@ -158,3 +158,27 @@ test("installer service helpers detect a ready unix socket", async () => {
     await fs.rm(socketDir, { recursive: true, force: true });
   }
 });
+
+test("installer service helpers time out cleanly for a missing unix socket", async () => {
+  const socketDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-install-missing-socket-"),
+  );
+  const socketPath = path.join(socketDir, "daemon.sock");
+  try {
+    assert.equal(await service.waitForSocket(socketPath, 150), false);
+  } finally {
+    await fs.rm(socketDir, { recursive: true, force: true });
+  }
+});
+
+test("installer service helpers include core daemon failure context", () => {
+  const currentUser = os.userInfo().username;
+  const text = service.collectDaemonFailureDetails(currentUser, "/tmp/rin", {
+    findSystemUser: () => null,
+    targetHomeForUser: () => "/home/demo",
+  });
+  assert.match(text, new RegExp(`targetUser=${currentUser}`));
+  assert.match(text, /installDir=\/tmp\/rin/);
+  assert.match(text, /socketReady=no/);
+  assert.match(text, /socketPath=.+rin-daemon[\\/]daemon\.sock/);
+});
