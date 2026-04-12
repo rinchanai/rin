@@ -22,7 +22,9 @@ async function waitForSocket(socketPath, timeoutMs = 5000) {
         settled = true;
         try {
           socket.destroy();
-        } catch {}
+        } catch {
+          // ignore cleanup errors
+        }
         resolve(value);
       };
       socket.once("connect", () => finish(true));
@@ -74,7 +76,9 @@ async function waitForLine(socket, predicate, timeoutMs = 5000) {
 }
 
 async function withDaemon(workerScript, env, fn) {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-daemon-grace-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-daemon-grace-"),
+  );
   const socketPath = path.join(agentDir, "daemon.sock");
   const workerPath = path.join(agentDir, "fake-worker.mjs");
   await fs.writeFile(workerPath, workerScript);
@@ -83,7 +87,12 @@ async function withDaemon(workerScript, env, fn) {
     [path.join(rootDir, "dist", "core", "rin-daemon", "daemon.js"), socketPath],
     {
       cwd: rootDir,
-      env: { ...process.env, RIN_DIR: agentDir, ...env, RIN_WORKER_PATH: workerPath },
+      env: {
+        ...process.env,
+        RIN_DIR: agentDir,
+        ...env,
+        RIN_WORKER_PATH: workerPath,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -98,11 +107,19 @@ async function withDaemon(workerScript, env, fn) {
 
   try {
     await waitForSocket(socketPath);
-    await fn({ agentDir, socketPath, child, stdoutRef: () => stdout, stderrRef: () => stderr });
+    await fn({
+      agentDir,
+      socketPath,
+      child,
+      stdoutRef: () => stdout,
+      stderrRef: () => stderr,
+    });
   } finally {
     try {
       child.kill("SIGKILL");
-    } catch {}
+    } catch {
+      // ignore cleanup errors
+    }
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 }
@@ -143,59 +160,77 @@ process.stdin.on("data", (chunk) => {
 `;
 
 test("daemon waits for the current worker step to finish before exiting", async () => {
-  await withDaemon(workerScript, { FAKE_STEP_MS: "400", RIN_DAEMON_SHUTDOWN_GRACE_MS: "5000" }, async ({ socketPath, child, stdoutRef, stderrRef }) => {
-    const socket = net.createConnection(socketPath);
-    await new Promise((resolve, reject) => {
-      socket.once("connect", resolve);
-      socket.once("error", reject);
-    });
-    socket.write(`${JSON.stringify({ id: "1", type: "new_session" })}\n`);
-    await waitForLine(socket, (payload) => payload?.type === "response" && payload?.id === "1");
-    socket.write(`${JSON.stringify({ id: "2", type: "prompt", message: "hello" })}\n`);
-    await waitForLine(socket, (payload) => payload?.type === "agent_start");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  await withDaemon(
+    workerScript,
+    { FAKE_STEP_MS: "400", RIN_DAEMON_SHUTDOWN_GRACE_MS: "5000" },
+    async ({ socketPath, child, stdoutRef, stderrRef }) => {
+      const socket = net.createConnection(socketPath);
+      await new Promise((resolve, reject) => {
+        socket.once("connect", resolve);
+        socket.once("error", reject);
+      });
+      socket.write(`${JSON.stringify({ id: "1", type: "new_session" })}\n`);
+      await waitForLine(
+        socket,
+        (payload) => payload?.type === "response" && payload?.id === "1",
+      );
+      socket.write(
+        `${JSON.stringify({ id: "2", type: "prompt", message: "hello" })}\n`,
+      );
+      await waitForLine(socket, (payload) => payload?.type === "agent_start");
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const startedAt = Date.now();
-    const exited = new Promise((resolve, reject) => {
-      child.once("exit", (code, signal) => resolve({ code, signal }));
-      child.once("error", reject);
-    });
-    child.kill("SIGTERM");
-    const result = await exited;
-    const elapsedMs = Date.now() - startedAt;
+      const startedAt = Date.now();
+      const exited = new Promise((resolve, reject) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+        child.once("error", reject);
+      });
+      child.kill("SIGTERM");
+      const result = await exited;
+      const elapsedMs = Date.now() - startedAt;
 
-    assert.deepEqual(result, { code: 0, signal: null });
-    assert.ok(elapsedMs >= 300, `elapsed=${elapsedMs}`);
-    assert.ok(elapsedMs < 3000, `elapsed=${elapsedMs}`);
-    assert.match(stdoutRef(), /rin daemon listening/);
-    assert.equal(stderrRef(), "");
-  });
+      assert.deepEqual(result, { code: 0, signal: null });
+      assert.ok(elapsedMs >= 300, `elapsed=${elapsedMs}`);
+      assert.ok(elapsedMs < 3000, `elapsed=${elapsedMs}`);
+      assert.match(stdoutRef(), /rin daemon listening/);
+      assert.equal(stderrRef(), "");
+    },
+  );
 });
 
 test("daemon stops waiting once the graceful shutdown timeout is reached", async () => {
-  await withDaemon(workerScript, { FAKE_STEP_MS: "3000", RIN_DAEMON_SHUTDOWN_GRACE_MS: "250" }, async ({ socketPath, child }) => {
-    const socket = net.createConnection(socketPath);
-    await new Promise((resolve, reject) => {
-      socket.once("connect", resolve);
-      socket.once("error", reject);
-    });
-    socket.write(`${JSON.stringify({ id: "1", type: "new_session" })}\n`);
-    await waitForLine(socket, (payload) => payload?.type === "response" && payload?.id === "1");
-    socket.write(`${JSON.stringify({ id: "2", type: "prompt", message: "hello" })}\n`);
-    await waitForLine(socket, (payload) => payload?.type === "agent_start");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  await withDaemon(
+    workerScript,
+    { FAKE_STEP_MS: "3000", RIN_DAEMON_SHUTDOWN_GRACE_MS: "250" },
+    async ({ socketPath, child }) => {
+      const socket = net.createConnection(socketPath);
+      await new Promise((resolve, reject) => {
+        socket.once("connect", resolve);
+        socket.once("error", reject);
+      });
+      socket.write(`${JSON.stringify({ id: "1", type: "new_session" })}\n`);
+      await waitForLine(
+        socket,
+        (payload) => payload?.type === "response" && payload?.id === "1",
+      );
+      socket.write(
+        `${JSON.stringify({ id: "2", type: "prompt", message: "hello" })}\n`,
+      );
+      await waitForLine(socket, (payload) => payload?.type === "agent_start");
+      await new Promise((resolve) => setTimeout(resolve, 100));
 
-    const startedAt = Date.now();
-    const exited = new Promise((resolve, reject) => {
-      child.once("exit", (code, signal) => resolve({ code, signal }));
-      child.once("error", reject);
-    });
-    child.kill("SIGTERM");
-    const result = await exited;
-    const elapsedMs = Date.now() - startedAt;
+      const startedAt = Date.now();
+      const exited = new Promise((resolve, reject) => {
+        child.once("exit", (code, signal) => resolve({ code, signal }));
+        child.once("error", reject);
+      });
+      child.kill("SIGTERM");
+      const result = await exited;
+      const elapsedMs = Date.now() - startedAt;
 
-    assert.deepEqual(result, { code: 0, signal: null });
-    assert.ok(elapsedMs >= 200, `elapsed=${elapsedMs}`);
-    assert.ok(elapsedMs < 1500, `elapsed=${elapsedMs}`);
-  });
+      assert.deepEqual(result, { code: 0, signal: null });
+      assert.ok(elapsedMs >= 200, `elapsed=${elapsedMs}`);
+      assert.ok(elapsedMs < 1500, `elapsed=${elapsedMs}`);
+    },
+  );
 });

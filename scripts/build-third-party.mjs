@@ -40,8 +40,6 @@ const result = spawnSync(
     "tsconfig.build.json",
     "--pretty",
     "false",
-    "--noEmitOnError",
-    "false",
   ],
   {
     cwd: projectRoot,

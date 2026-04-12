@@ -1,7 +1,5 @@
 import { parseJsonl } from "../rin-lib/common.js";
-import {
-  createInterruptedToolResultPayload,
-} from "../rin-lib/interruption.js";
+import { createInterruptedToolResultPayload } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
@@ -295,6 +293,7 @@ export async function runCustomRpcMode(
         await runtime.dispose();
         output(done(id, type, { shutdown: true }));
         process.exit(0);
+        return;
       case "attach_session":
         return done(id, type, getSessionState(session));
       case "get_state":

@@ -16,13 +16,14 @@ import {
   setRpcAutoCompaction,
   cycleRpcModel,
   cycleRpcThinkingLevel,
-  getPersistentSettingsManager,
   persistRpcSettingsMutation,
   setRpcFollowUpMode,
   setRpcModel,
   setRpcSteeringMode,
   setRpcThinkingLevel,
 } from "./model-settings.js";
+import { hydrateRpcSettings } from "./settings-hydration.js";
+import { createSettingsManager } from "./settings-manager.js";
 import {
   queueOfflineOperation,
   emitConnectionLost,
@@ -102,6 +103,12 @@ function getRuntimeSessionDirForProfile(profile: {
   return getRuntimeSessionDir(profile.cwd, profile.agentDir);
 }
 
+function clientIsConnected(client: any) {
+  return typeof client?.isConnected === "function"
+    ? Boolean(client.isConnected())
+    : true;
+}
+
 export class RpcInteractiveSession {
   public agent: RemoteAgent;
   public settingsManager: any;
@@ -171,7 +178,7 @@ export class RpcInteractiveSession {
       (this as any)[name] = descriptor.value.bind(this);
     }
     this.agent = new RemoteAgent(client);
-    this.settingsManager = undefined;
+    this.settingsManager = createSettingsManager();
     this.modelRegistry = createModelRegistry(client);
     this.resourceLoader = {
       getThemes: () => ({ themes: [], diagnostics: [] }),
@@ -210,7 +217,7 @@ export class RpcInteractiveSession {
 
   async connect() {
     this.disposed = false;
-    this.settingsManager = await getPersistentSettingsManager();
+    await hydrateRpcSettings(this.settingsManager);
     this.autoCompactionEnabled = Boolean(
       this.settingsManager.getCompactionEnabled?.(),
     );
@@ -239,6 +246,7 @@ export class RpcInteractiveSession {
       this.setRpcConnected(true);
       await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
       await this.modelRegistry.sync().catch(() => {});
+      this.hydrateUnboundUiState();
     } catch {
       this.handleConnectionLost();
     }
@@ -372,7 +380,7 @@ export class RpcInteractiveSession {
     scope: "all" = "all",
     _onProgress?: (loaded: number, total: number) => void,
   ) {
-    if (!this.client.isConnected()) {
+    if (!clientIsConnected(this.client)) {
       await this.waitForDaemonAvailable();
     }
     const data = await this.call("list_sessions", { scope });
@@ -396,10 +404,8 @@ export class RpcInteractiveSession {
   }
 
   async cycleModel(direction?: "forward" | "backward") {
-    return await cycleRpcModel(
-      this as any,
-      direction,
-      () => this.refreshState(REFRESH_MODELS),
+    return await cycleRpcModel(this as any, direction, () =>
+      this.refreshState(REFRESH_MODELS),
     );
   }
 
@@ -468,7 +474,9 @@ export class RpcInteractiveSession {
       const completed = await this.newSession();
       return {
         handled: true,
-        text: completed ? "Started a new session." : "Session switch cancelled.",
+        text: completed
+          ? "Started a new session."
+          : "Session switch cancelled.",
       };
     }
     if (trimmed.startsWith("/resume ")) {
@@ -685,7 +693,7 @@ export class RpcInteractiveSession {
   }
 
   private async waitForDaemonAvailable() {
-    if (this.client.isConnected()) return;
+    if (clientIsConnected(this.client)) return;
     if (this.waitForDaemonPromise) return await this.waitForDaemonPromise;
     this.emitEvent({
       type: "status",
@@ -703,7 +711,7 @@ export class RpcInteractiveSession {
     this.ensureReconnectLoop();
     this.waitForDaemonPromise = (async () => {
       while (!this.disposed) {
-        if (this.client.isConnected()) return;
+        if (clientIsConnected(this.client)) return;
         try {
           await this.client.connect();
           return;
@@ -723,7 +731,7 @@ export class RpcInteractiveSession {
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
-    if (!this.client.isConnected()) {
+    if (!clientIsConnected(this.client)) {
       this.queueOfflineOperation(operation);
       return;
     }
@@ -874,7 +882,7 @@ export class RpcInteractiveSession {
         type,
         ...this.buildSessionCommandPayload(type, payload),
       });
-    if (sessionScoped && !this.client.isConnected()) {
+    if (sessionScoped && !clientIsConnected(this.client)) {
       await this.waitForDaemonAvailable();
     }
     let response: any;
@@ -937,6 +945,30 @@ export class RpcInteractiveSession {
   private applyState(state: any) {
     applyRpcSessionState(this as any, state);
     this.syncStreamingState();
+  }
+
+  private hydrateUnboundUiState() {
+    if (this.sessionId || this.sessionFile) return;
+    this.steeringMode =
+      this.settingsManager.getSteeringMode?.() ?? this.steeringMode;
+    this.followUpMode =
+      this.settingsManager.getFollowUpMode?.() ?? this.followUpMode;
+    this.thinkingLevel =
+      this.settingsManager.getDefaultThinkingLevel?.() ?? this.thinkingLevel;
+    const provider = this.settingsManager.getDefaultProvider?.();
+    const modelId = this.settingsManager.getDefaultModel?.();
+    if (provider && modelId) {
+      const match = this.modelRegistry
+        .getAvailable()
+        .find(
+          (entry: any) =>
+            String(entry?.provider || "") === String(provider) &&
+            String(entry?.id || "") === String(modelId),
+        );
+      if (match) this.model = match;
+    }
+    this.state.model = this.model;
+    this.state.thinkingLevel = this.thinkingLevel;
   }
 
   private async refreshMessages() {

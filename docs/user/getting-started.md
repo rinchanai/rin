@@ -1,0 +1,99 @@
+# Rin Getting Started
+
+This guide is for people using Rin, not for agent-internal runtime behavior.
+
+## Install
+
+From the repo root:
+
+```bash
+./install.sh
+```
+
+The installer will:
+
+- fetch the current `main` branch
+- install dependencies
+- build the runtime
+- launch the interactive installer
+
+## Open Rin
+
+```bash
+rin
+```
+
+Normal usage should prefer `rin`.
+
+Use `rin --std` mainly for troubleshooting when the default daemon/RPC path is unhealthy and you need a foreground session.
+
+## Check health
+
+```bash
+rin doctor
+```
+
+Useful when:
+
+- models are not available
+- the daemon is not responding
+- an update or install feels incomplete
+- chat bridge behavior looks wrong
+
+## Update
+
+Normal installed update path:
+
+```bash
+rin update
+```
+
+Do not treat repo-local `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the standard way to update an already installed runtime.
+
+## If `rin` is missing
+
+That usually means the current shell user is not the launcher-owning user.
+
+Recovery path:
+
+1. find the real install directory from the managed service file or known target home
+2. read `<installDir>/installer.json`
+3. run the stable runtime entry directly
+
+Example shape:
+
+```bash
+node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
+```
+
+Useful places to inspect:
+
+- Linux service: `~/.config/systemd/user/rin-daemon*.service`
+- macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+- install manifest: `<installDir>/installer.json`
+
+## Core commands
+
+```bash
+rin
+rin doctor
+rin start
+rin stop
+rin restart
+rin update
+```
+
+## What Rin can do
+
+- chat in the terminal
+- inspect and edit files
+- persist useful memory and recall it later
+- run scheduled tasks
+- search the web and fetch pages
+- bridge into chat platforms through Koishi
+
+## More docs
+
+- project overview: [`../../README.md`](../../README.md)
+- development notes: [`../development.md`](../development.md)
+- agent/runtime docs: [`../rin/README.md`](../rin/README.md)

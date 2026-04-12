@@ -2,35 +2,36 @@
 
 # Rin
 
-A terminal-first local AI assistant that can chat, edit files, remember things, search the web, and run scheduled tasks.
+Rin is a terminal-first local AI assistant that stays useful between turns.
 
-## What Rin is
+It can chat, edit files, remember durable preferences, search the web, run scheduled tasks, and bridge into chat platforms through Koishi — all behind one entrypoint: `rin`.
 
-Rin is for people who want more than a one-shot coding agent.
+## What Rin is for
 
-It is a local assistant you can keep around in your terminal for day-to-day work:
+Rin is built for people who want an assistant they can keep around for daily work instead of reopening a fresh one-shot agent every time.
 
-- ask questions in plain language
-- inspect and modify files
-- keep useful long-term memory
-- set reminders and recurring tasks
-- look up fresh information on the web
-- bridge the same assistant into chat platforms through Koishi
+Use it when you want to:
 
-The goal is simple: make the agent feel like a tool you can actually live with, not just a shell around a model.
+- inspect and modify a codebase from the terminal
+- keep stable memory and reusable skills
+- schedule reminders and recurring checks
+- look up fresh information without leaving the workflow
+- continue the same assistant from terminal and chat
 
-## Why Rin
+## Current project status
 
-Rin focuses on a few basics:
+Rin is already usable, but it is still an actively refined product.
 
-- terminal-first workflow
-- built-in memory, not just stateless chats
+The core direction is stable:
+
+- local-first workflow
+- built-in memory and recall
 - built-in scheduled tasks
-- built-in web search for time-sensitive questions
-- chat bridge support through Koishi
-- one product entrypoint: `rin`
+- built-in web search and fetch
+- Koishi bridge support
+- one consistent runtime and update path
 
-If you want an assistant that stays useful over time, Rin is designed for that.
+But the project is still being polished in reliability, UX, and docs. If you try it today, expect a moving product rather than a frozen platform.
 
 ## Quick start
 
@@ -40,7 +41,7 @@ Install:
 ./install.sh
 ```
 
-Then open Rin:
+Open Rin:
 
 ```bash
 rin
@@ -52,11 +53,18 @@ Check health if needed:
 rin doctor
 ```
 
-The installer will warn you about security boundaries and possible extra token usage. That can include initialization, memory processing, summarization, subagents, scheduled tasks, and web search.
+## Core commands
+
+```bash
+rin            # open Rin
+rin doctor     # inspect health and configuration
+rin start      # start the daemon
+rin stop       # stop the daemon
+rin restart    # restart the daemon
+rin update     # update the installed Rin runtime
+```
 
 ## What you can ask Rin to do
-
-Once Rin is open, you can just talk to it.
 
 Examples:
 
@@ -68,67 +76,41 @@ Examples:
 - `Check the latest official docs for this tool.`
 - `Watch this folder every hour and tell me if something changes.`
 
-## Core commands
+## Built-in capabilities
 
-```bash
-rin            # open Rin
-rin doctor     # inspect health and configuration
-rin start      # start the daemon
-rin stop       # stop the daemon
-rin restart    # restart the daemon
-rin update     # update the installed Rin core runtime
-```
+Rin ships with a few capabilities wired in by default:
+
+- long-term memory and recall
+- scheduled tasks and reminders
+- live web search
+- direct URL fetch
+- subagents
+- Koishi chat bridge
 
 ## Updating Rin
 
-For a normal installed Rin update, use:
+For a normal installed runtime, use:
 
 ```bash
 rin update
 ```
 
-If `rin` is confirmed missing on the current account, treat that as “this is not the launcher-owning user”.
-In that case, jump straight to the target install manifest flow:
+If `rin` is missing on the current account, do not assume Rin is absent. It usually means the current shell user is not the launcher-owning user.
 
-```bash
-# 1) find installDir from a managed service file or known target home
-# 2) read <installDir>/installer.json to get targetUser
-# 3) run the stable runtime entry directly
-node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
-```
+For the full recovery/update workflow, see:
 
-Typical places to recover `<installDir>`:
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
 
-- target manifest: `<installDir>/installer.json`
-- Linux service: `~/.config/systemd/user/rin-daemon*.service`
-- macOS service: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
-- common target-home default: `<targetHome>/.rin/`
+## Documentation
 
-This is the canonical update path for the installed runtime.
-It refreshes the core runtime and installed docs.
-It does not replace the user-scoped CLI launcher or installer.
+User-facing docs:
 
-Avoid treating repo-local workflows like `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the default way to update an already installed Rin.
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
 
-## Key built-in capabilities
-
-Rin comes with a few things wired in by default:
-
-- long-term memory
-- scheduled tasks and reminders
-- live web search
-- Koishi chat bridge
-- subagents for delegated work
-
-## When to use `rin --std`
-
-Normally, use `rin`.
-
-`rin --std` is mainly a troubleshooting fallback when the default RPC mode has problems and you need a foreground session to recover or debug.
-
-## Docs
-
-If you want more detail, start here:
+Agent/runtime docs:
 
 - [`docs/rin/README.md`](docs/rin/README.md)
 - [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
@@ -137,6 +119,6 @@ If you want more detail, start here:
 
 ## Short version
 
-Install it, run `rin`, and ask for what you need.
+Install it, run `rin`, and keep the assistant around.
 
-That is the main idea.
+That is the whole point.

@@ -29,7 +29,6 @@ test("rpc state utils derive branch and apply state", () => {
     sessionId: "",
     sessionFile: undefined,
     sessionName: undefined,
-    detachedBlankSession: false,
     state: {},
     settingsManager: { setSteeringMode() {}, setFollowUpMode() {} },
   };

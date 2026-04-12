@@ -15,8 +15,6 @@ const result = spawnSync(
     "tsconfig.extensions.json",
     "--pretty",
     "false",
-    "--noEmitOnError",
-    "false",
   ],
   {
     cwd: repoRoot,

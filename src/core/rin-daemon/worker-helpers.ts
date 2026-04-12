@@ -172,7 +172,11 @@ export async function runBuiltinCommand(
       };
     }
     case "resume": {
-      const sessions = await deps.SessionManager.listAll();
+      const listSessions =
+        deps.SessionManager?.listAll || deps.SessionManager?.list;
+      const sessions = listSessions
+        ? await listSessions.call(deps.SessionManager)
+        : [];
       if (!argsText) {
         const lines = sessions.slice(0, 20).map((item: any) => {
           const label =

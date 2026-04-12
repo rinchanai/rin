@@ -13,9 +13,8 @@ const mod = await import(
   ).href
 );
 
-test("tui model settings update detached session state locally", async () => {
+test("tui model settings update local ui state without rpc call support", async () => {
   const target = {
-    detachedBlankSession: true,
     model: null,
     state: {},
     settingsManager: {
@@ -40,10 +39,9 @@ test("tui model settings update detached session state locally", async () => {
   assert.equal(target.steeringMode, "one-at-a-time");
 });
 
-test("tui detached session changes stay local and do not emit rpc commands", async () => {
+test("tui local ui state changes stay local and do not emit rpc commands", async () => {
   const sent = [];
   const target = {
-    detachedBlankSession: true,
     model: { provider: "openai", id: "gpt-5", reasoning: true },
     state: { model: { provider: "openai", id: "gpt-5", reasoning: true } },
     settingsManager: {

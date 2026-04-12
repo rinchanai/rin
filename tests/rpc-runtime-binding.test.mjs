@@ -36,7 +36,6 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
     },
   });
 
-  session.detachedBlankSession = true;
   const model = { provider: "test", id: "demo-model" };
   const {
     setModel,

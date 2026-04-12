@@ -14,7 +14,7 @@ function fileUrl(relativePath) {
   return pathToFileURL(path.join(rootDir, relativePath)).href;
 }
 
-test("rpc detached bootstrap uses persisted preferences for local ui state", async () => {
+test("rpc unbound bootstrap uses persisted preferences for local ui state", async () => {
   const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-detached-ui-"));
   fs.writeFileSync(
     path.join(agentDir, "settings.json"),
@@ -74,7 +74,12 @@ test("rpc detached bootstrap uses persisted preferences for local ui state", asy
             success: true,
             data: {
               models: [
-                { provider: "openai-codex", id: "gpt-5.4", name: "GPT-5.4", reasoning: true },
+                {
+                  provider: "openai-codex",
+                  id: "gpt-5.4",
+                  name: "GPT-5.4",
+                  reasoning: true,
+                },
               ],
             },
           };
@@ -92,7 +97,8 @@ test("rpc detached bootstrap uses persisted preferences for local ui state", asy
   if (oldRinDir === undefined) delete process.env.RIN_DIR;
   else process.env.RIN_DIR = oldRinDir;
 
-  assert.equal(session.detachedBlankSession, true);
+  assert.equal(session.sessionId, "");
+  assert.equal(session.sessionFile, undefined);
   assert.equal(session.settingsManager.getQuietStartup(), true);
   assert.equal(session.steeringMode, "one-at-a-time");
   assert.equal(session.followUpMode, "all");
