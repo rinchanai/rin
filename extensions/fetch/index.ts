@@ -1,19 +1,19 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { tmpdir } from "node:os";
-
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
   truncateHead,
-  withFileMutationQueue,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { prepareToolTextOutput } from "../shared/tool-text.js";
+import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
+import {
+  getTextOutput,
+  replaceTabs,
+} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
+import type { TruncationResult } from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "Rin fetch/1.0";
@@ -35,8 +35,7 @@ type FetchDetails = {
   charset?: string;
   bytes: number;
   title?: string;
-  fullOutputPath?: string;
-  truncated?: boolean;
+  truncation?: TruncationResult;
 };
 
 function normalizeUrl(input: string) {
@@ -189,19 +188,6 @@ function isTextLike(mimeType: string) {
   );
 }
 
-async function writeTempText(
-  prefix: string,
-  filename: string,
-  content: string,
-) {
-  const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  const filePath = path.join(dir, filename);
-  await withFileMutationQueue(filePath, async () => {
-    await writeFile(filePath, content, "utf8");
-  });
-  return filePath;
-}
-
 function formatTextResponse(details: FetchDetails, bodyText: string) {
   const lines = [
     `Fetched: ${details.finalUrl}`,
@@ -214,15 +200,52 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
   return lines.join("\n");
 }
 
-function formatUserSummary(_details: FetchDetails) {
-  return "fetch complete";
+function trimTrailingEmptyLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  return lines.slice(0, end);
+}
+
+function formatFetchResult(
+  result: {
+    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    details?: { truncation?: TruncationResult };
+  },
+  options: { expanded: boolean; isPartial?: boolean },
+  theme: any,
+  showImages: boolean,
+) {
+  if (options.isPartial) return theme.fg("warning", "Fetching...");
+  const output = getTextOutput(result, showImages);
+  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const maxLines = options.expanded ? lines.length : 10;
+  const displayLines = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+  let text = `\n${displayLines
+    .map((line) => theme.fg("toolOutput", replaceTabs(line)))
+    .join("\n")}`;
+  if (remaining > 0) {
+    text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+  }
+
+  const truncation = result.details?.truncation;
+  if (truncation?.truncated) {
+    if (truncation.firstLineExceedsLimit) {
+      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
+    } else if (truncation.truncatedBy === "lines") {
+      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
+    } else {
+      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
+    }
+  }
+  return text;
 }
 
 export default function fetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "fetch",
     label: "Fetch URL",
-    description: `Fetch text content from a specific URL. Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)} (whichever is hit first).`,
+    description: "Fetch text content from a specific URL.",
     promptSnippet: "Fetch text content from a specific URL.",
     promptGuidelines: ["Use fetch to get the plain-text version of a page."],
     parameters: FetchParamsSchema,
@@ -309,30 +332,26 @@ export default function fetchExtension(pi: ExtensionAPI) {
       }
 
       const fullText = formatTextResponse(details, bodyText);
-      if (
-        truncateHead(fullText, {
-          maxLines: DEFAULT_MAX_LINES,
-          maxBytes: DEFAULT_MAX_BYTES,
-        }).truncated
-      ) {
-        details.truncated = true;
-        details.fullOutputPath = await writeTempText(
-          "rin-fetch-",
-          "response.md",
-          fullText,
-        );
-      }
-
-      const prepared = await prepareToolTextOutput({
-        agentText: fullText,
-        userText: formatUserSummary(details),
-        tempPrefix: "rin-fetch-",
-        filename: "response.txt",
+      const truncation = truncateHead(fullText, {
+        maxLines: DEFAULT_MAX_LINES,
+        maxBytes: DEFAULT_MAX_BYTES,
       });
 
+      let outputText = truncation.content;
+      if (truncation.firstLineExceedsLimit) {
+        outputText = `[First line exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
+      } else if (truncation.truncated) {
+        if (truncation.truncatedBy === "lines") {
+          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
+        } else {
+          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(DEFAULT_MAX_BYTES)} limit).]`;
+        }
+        details.truncation = truncation;
+      }
+
       return {
-        content: [{ type: "text", text: prepared.userText }],
-        details: { ...details, ...prepared, agentText: prepared.agentText },
+        content: [{ type: "text", text: outputText }],
+        details,
       };
     },
     renderCall(args, theme) {
@@ -342,13 +361,10 @@ export default function fetchExtension(pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, { isPartial }, theme) {
-      if (isPartial) return new Text(theme.fg("warning", "Fetching..."), 0, 0);
-      const details = (result.details || {}) as FetchDetails & {
-        userText?: string;
-      };
-      const fallback = formatUserSummary(details);
-      return new Text(String(details.userText || fallback), 0, 0);
+    renderResult(result, options, theme, context) {
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(formatFetchResult(result as any, options as any, theme, context.showImages));
+      return text;
     },
   });
 }
