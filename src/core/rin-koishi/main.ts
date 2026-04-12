@@ -46,11 +46,7 @@ import {
   trustOf,
 } from "./support.js";
 import { koishiRpcSocketPath } from "./rpc.js";
-import {
-  recordDeliveredAssistantMessages,
-  sendOutboxPayload,
-  sendText,
-} from "./transport.js";
+import { sendOutboxPayload } from "./transport.js";
 
 const require = createRequire(import.meta.url);
 const { Loader, Logger, h } = require("koishi") as {
@@ -322,24 +318,20 @@ export async function startKoishi(
           )
             ? "Koishi bridge timed out while forwarding the turn. Please retry in a moment."
             : `Koishi error: ${errorMessage || "koishi_turn_failed"}`;
-        appendKoishiChatLog(runtime.agentDir, {
-          timestamp: new Date().toISOString(),
-          chatKey: decision.chatKey,
-          role: "assistant",
-          text: errorText,
-          replyToMessageId: messageId || undefined,
-        });
-        void sendText(app, decision.chatKey, errorText, h, messageId)
-          .then((deliveryResult) => {
-            recordDeliveredAssistantMessages(runtime.agentDir, {
-              chatKey: decision.chatKey,
-              deliveryResult,
-              text: errorText,
-              rawContent: errorText,
-              replyToMessageId: messageId || undefined,
-            });
-          })
-          .catch(() => {});
+        void sendOutboxPayload(
+          app,
+          runtime.agentDir,
+          {
+            type: "text_delivery",
+            createdAt: new Date().toISOString(),
+            chatKey: decision.chatKey,
+            text: errorText,
+            replyToMessageId: messageId || undefined,
+            sessionId: replySession?.sessionId,
+            sessionFile: replySession?.sessionFile,
+          },
+          h,
+        ).catch(() => {});
       });
     return "";
   });
@@ -362,39 +354,35 @@ export async function startKoishi(
         const messageId = pickMessageId(session);
         const replyToMessageId = pickReplyToMessageId(session);
         if (!chatKey) return "";
+        const replySession = lookupReplySession(
+          runtime.agentDir,
+          chatKey,
+          replyToMessageId,
+        );
 
         if (item.name === "help") {
           const lines = commandRows.map(
             (entry) =>
               `/${entry.name}${entry.description ? ` — ${entry.description}` : ""}`,
           );
-          await sendText(app, chatKey, lines.join("\n"), h, messageId)
-            .then((deliveryResult) => {
-              appendKoishiChatLog(runtime.agentDir, {
-                timestamp: new Date().toISOString(),
-                chatKey,
-                role: "assistant",
-                text: lines.join("\n"),
-                replyToMessageId: messageId || undefined,
-              });
-              recordDeliveredAssistantMessages(runtime.agentDir, {
-                chatKey,
-                deliveryResult,
-                text: lines.join("\n"),
-                rawContent: lines.join("\n"),
-                replyToMessageId: messageId || undefined,
-              });
-            })
-            .catch(() => {});
+          await sendOutboxPayload(
+            app,
+            runtime.agentDir,
+            {
+              type: "text_delivery",
+              createdAt: new Date().toISOString(),
+              chatKey,
+              text: lines.join("\n"),
+              replyToMessageId: messageId || undefined,
+              sessionId: replySession?.sessionId,
+              sessionFile: replySession?.sessionFile,
+            },
+            h,
+          ).catch(() => {});
           return "";
         }
 
         const controller = getController(chatKey);
-        const replySession = lookupReplySession(
-          runtime.agentDir,
-          chatKey,
-          replyToMessageId,
-        );
         if (replySession?.sessionFile)
           await controller
             .resumeSessionFile(replySession.sessionFile)

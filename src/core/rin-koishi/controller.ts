@@ -13,12 +13,10 @@ import {
   markProcessedKoishiMessage,
   safeString,
 } from "./chat-helpers.js";
-import { appendKoishiChatLog } from "./chat-log.js";
 import {
   buildPromptText,
-  recordDeliveredAssistantMessages,
   restorePromptParts,
-  sendText,
+  sendOutboxPayload,
   sendTyping,
 } from "./transport.js";
 
@@ -380,30 +378,20 @@ export class KoishiChatController {
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || "",
     ).trim();
-    await sendText(
+    await sendOutboxPayload(
       this.app,
-      this.chatKey,
-      `${INTERIM_PREFIX}${nextText}`,
+      this.agentDir,
+      {
+        type: "text_delivery",
+        createdAt: new Date().toISOString(),
+        chatKey: this.chatKey,
+        text: `${INTERIM_PREFIX}${nextText}`,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      },
       this.h,
-      replyToMessageId,
-    )
-      .then((deliveryResult) => {
-        recordDeliveredAssistantMessages(this.agentDir, {
-          chatKey: this.chatKey,
-          deliveryResult,
-          text: `${INTERIM_PREFIX}${nextText}`,
-          rawContent: `${INTERIM_PREFIX}${nextText}`,
-          replyToMessageId: replyToMessageId || undefined,
-          sessionId: this.currentSessionId() || undefined,
-          sessionFile:
-            safeString(
-              this.session?.sessionManager?.getSessionFile?.() ||
-                this.state.piSessionFile ||
-                "",
-            ).trim() || undefined,
-        });
-      })
-      .catch(() => {});
+    ).catch(() => {});
     return true;
   }
   async handleIdleToolProgressTick(now = Date.now()) {
@@ -499,25 +487,6 @@ export class KoishiChatController {
       this.session?.sessionManager?.getSessionId?.() || "",
     ).trim();
   }
-  private logAssistantText(text: string, replyToMessageId = "") {
-    if (!this.deliveryEnabled) return;
-    const nextText = safeString(text).trim();
-    if (!nextText) return;
-    appendKoishiChatLog(this.agentDir, {
-      timestamp: new Date().toISOString(),
-      chatKey: this.chatKey,
-      role: "assistant",
-      text: nextText,
-      replyToMessageId: safeString(replyToMessageId).trim() || undefined,
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile:
-        safeString(
-          this.session?.sessionManager?.getSessionFile?.() ||
-            this.state.piSessionFile ||
-            "",
-        ).trim() || undefined,
-    });
-  }
   private currentSessionFile() {
     return (
       safeString(
@@ -531,23 +500,20 @@ export class KoishiChatController {
     const text = safeString(this.latestAssistantText || "").trim();
     if (!text) throw new Error("koishi_final_assistant_text_missing");
     if (!this.deliveryEnabled) return;
-    const deliveryResult = await sendText(
+    await sendOutboxPayload(
       this.app,
-      this.chatKey,
-      text,
+      this.agentDir,
+      {
+        type: "text_delivery",
+        createdAt: new Date().toISOString(),
+        chatKey: this.chatKey,
+        text,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      },
       this.h,
-      replyToMessageId,
     );
-    this.logAssistantText(text, replyToMessageId);
-    recordDeliveredAssistantMessages(this.agentDir, {
-      chatKey: this.chatKey,
-      deliveryResult,
-      text,
-      rawContent: text,
-      replyToMessageId: replyToMessageId || undefined,
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile: this.currentSessionFile(),
-    });
   }
   private markProcessedMessage(messageId?: string) {
     const nextMessageId = safeString(messageId || "").trim();
@@ -649,28 +615,20 @@ export class KoishiChatController {
     this.markProcessedMessage(incomingMessageId);
     const text = safeString(data?.text || "").trim();
     if (text) {
-      const deliveryResult = await sendText(
+      await sendOutboxPayload(
         this.app,
-        this.chatKey,
-        text,
+        this.agentDir,
+        {
+          type: "text_delivery",
+          createdAt: new Date().toISOString(),
+          chatKey: this.chatKey,
+          text,
+          replyToMessageId: replyToMessageId || undefined,
+          sessionId: this.currentSessionId() || undefined,
+          sessionFile: this.currentSessionFile(),
+        },
         this.h,
-        replyToMessageId,
       );
-      this.logAssistantText(text, replyToMessageId);
-      recordDeliveredAssistantMessages(this.agentDir, {
-        chatKey: this.chatKey,
-        deliveryResult,
-        text,
-        rawContent: text,
-        replyToMessageId: replyToMessageId || undefined,
-        sessionId: this.currentSessionId() || undefined,
-        sessionFile:
-          safeString(
-            this.session?.sessionManager?.getSessionFile?.() ||
-              this.state.piSessionFile ||
-              "",
-          ).trim() || undefined,
-      });
     }
     return data;
   }
