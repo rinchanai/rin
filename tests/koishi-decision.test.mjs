@@ -50,3 +50,20 @@ test("koishi decision only enforces access policy, not custom slash-command gues
   assert.equal(result.allow, true);
   assert.equal(result.text, "/new hello");
 });
+
+test("koishi decision keeps image-only owner messages routable", async () => {
+  const result = await decision.shouldProcessText(
+    {
+      platform: "telegram",
+      userId: "owner-1",
+      content: '<img src="https://example.com/demo.png" file="demo.png"/>',
+      stripped: { content: "" },
+      isDirect: true,
+    },
+    [{ type: "img", attrs: { src: "https://example.com/demo.png", file: "demo.png" } }],
+    identity,
+  );
+
+  assert.equal(result.allow, true);
+  assert.equal(result.text, "[image:demo.png]");
+});

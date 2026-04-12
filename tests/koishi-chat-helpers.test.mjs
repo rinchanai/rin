@@ -78,6 +78,12 @@ test("koishi chat helpers derive incoming text from elements", () => {
     ]),
     "第一行\n\n第二行",
   );
+  assert.equal(
+    helpers.elementsToText([
+      { type: "img", attrs: { file: "demo.png" } },
+    ]),
+    "[image:demo.png]",
+  );
 });
 
 

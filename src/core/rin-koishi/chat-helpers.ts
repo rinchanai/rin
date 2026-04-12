@@ -112,6 +112,19 @@ function collectIncomingElementText(element: any): string {
     element?.attrs && typeof element.attrs === "object" ? element.attrs : {};
   if (type === "text") return safeString(attrs.content || element.text || "");
   if (type === "br") return "\n";
+  if (type === "img" || type === "image") {
+    const name =
+      safeString(attrs.file || attrs.title || attrs.name || "").trim() ||
+      fileNameFromUrl(safeString(attrs.src || attrs.url || "").trim(), "image");
+    const summary = safeString(attrs.summary || "").trim();
+    return summary || `[image:${name}]`;
+  }
+  if (type === "file") {
+    const name =
+      safeString(attrs.file || attrs.title || attrs.name || "").trim() ||
+      fileNameFromUrl(safeString(attrs.src || attrs.url || "").trim(), "file");
+    return `[file:${name}]`;
+  }
   const children = Array.isArray(element?.children) ? element.children : [];
   const childText = children.map((item) => collectIncomingElementText(item)).join("");
   if (type === "p" || type === "paragraph") return childText ? `${childText}\n` : "";
