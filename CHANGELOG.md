@@ -22,6 +22,8 @@ The format is intentionally simple. Keep it short, readable, and focused on mean
 
 - duplicate transcript archive ids no longer break `search_memory`
 - Koishi media-only inbound messages are routed without synthetic placeholder text
+- Koishi no longer posts repeated idle `Working` progress messages into chat
+- `rin update` now downloads from the active `rinchanai/rin` repository instead of the retired upstream path
 - stale cron task status is cleared on reruns
 
 ## Notes
