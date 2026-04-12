@@ -150,7 +150,7 @@ export default function webSearchExtension(pi: ExtensionAPI) {
     promptSnippet: "Search the web.",
     promptGuidelines: [
       "Use web_search to search the web.",
-      "Always use web_search proactively for latest, time-sensitive, version-sensitive, or potentially changed information.",
+      "Always use web_search proactively whenever web information may be relevant.",
     ],
     parameters: Type.Object({
       q: Type.String({
