@@ -94,8 +94,45 @@ export function directLike(session: any) {
   );
 }
 
+function normalizeMentionToken(value: unknown) {
+  return safeString(value).trim().replace(/^@+/, "").toLowerCase();
+}
+
 export function mentionLike(session: any) {
-  return Boolean(session?.stripped?.appel);
+  if (Boolean(session?.stripped?.appel)) return true;
+  const elements = ensureSessionElements(session);
+  const atElements = elements.filter(
+    (element) => safeString(element?.type).toLowerCase() === "at",
+  );
+  if (!atElements.length) return false;
+
+  const selfTokens = new Set(
+    [
+      session?.selfId,
+      session?.bot?.selfId,
+      session?.username,
+      session?.user?.username,
+      session?.bot?.username,
+      session?.bot?.name,
+      session?.bot?.user?.name,
+      session?.bot?.user?.username,
+      session?.bot?.nick,
+      session?.bot?.user?.nick,
+    ]
+      .map(normalizeMentionToken)
+      .filter(Boolean),
+  );
+
+  for (const element of atElements) {
+    const attrs = element?.attrs || {};
+    const id = normalizeMentionToken(attrs.id);
+    const name = normalizeMentionToken(attrs.name);
+    if ((id && selfTokens.has(id)) || (name && selfTokens.has(name))) {
+      return true;
+    }
+  }
+
+  return atElements.length > 0;
 }
 
 export function ensureSessionElements(session: any) {

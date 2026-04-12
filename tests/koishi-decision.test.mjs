@@ -67,3 +67,33 @@ test("koishi decision keeps image-only owner messages routable", async () => {
   assert.equal(result.allow, true);
   assert.equal(result.text, "");
 });
+
+test("koishi decision allows owner group messages that explicitly at the bot even when stripped.appel is missing", async () => {
+  const result = await decision.shouldProcessText(
+    {
+      platform: "telegram",
+      guildId: "group-1",
+      channelId: "-1001447529496",
+      selfId: "8623230033",
+      userId: "owner-1",
+      bot: {
+        selfId: "8623230033",
+        username: "THE_cattail_rin_chan_bot",
+      },
+      stripped: { content: "滴度" },
+      elements: [
+        { type: "at", attrs: { name: "THE_cattail_rin_chan_bot" } },
+        { type: "text", attrs: { content: " 滴度" } },
+      ],
+    },
+    [
+      { type: "at", attrs: { name: "THE_cattail_rin_chan_bot" } },
+      { type: "text", attrs: { content: " 滴度" } },
+    ],
+    identity,
+  );
+
+  assert.equal(result.allow, true);
+  assert.equal(result.chatKey, "telegram/8623230033:-1001447529496");
+  assert.equal(result.text, "滴度");
+});
