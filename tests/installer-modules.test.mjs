@@ -18,6 +18,11 @@ const persist = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "persist.js"))
     .href
 );
+const applyPlan = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-install", "apply-plan.js"),
+  ).href
+);
 
 async function withTempDir(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-installer-test-"));
@@ -82,5 +87,63 @@ test("persist reconcileInstallerManifest writes manifest with expected fields", 
     assert.equal(writes[0].value.defaultProvider, "openai");
     assert.equal(writes[0].value.defaultModel, "gpt");
     assert.equal(writes[0].value.defaultThinkingLevel, "medium");
+  });
+});
+
+test("apply-plan child result reader returns parsed json on success", async () => {
+  await withTempDir(async (dir) => {
+    const resultPath = path.join(dir, "result.json");
+    const errorPath = path.join(dir, "error.txt");
+    await fs.writeFile(resultPath, '{"ok":true}\n', "utf8");
+    await fs.writeFile(errorPath, "ignored\n", "utf8");
+
+    assert.deepEqual(
+      applyPlan.readFinalizeInstallChildResult(resultPath, errorPath, 0),
+      { ok: true },
+    );
+  });
+});
+
+test("apply-plan child result reader surfaces child error output", async () => {
+  await withTempDir(async (dir) => {
+    const resultPath = path.join(dir, "result.json");
+    const errorPath = path.join(dir, "error.txt");
+    await fs.writeFile(errorPath, "child failed loudly\n", "utf8");
+
+    assert.throws(
+      () => applyPlan.readFinalizeInstallChildResult(resultPath, errorPath, 1),
+      /child failed loudly/,
+    );
+  });
+});
+
+test("apply-plan child result reader falls back when child error output is missing", async () => {
+  await withTempDir(async (dir) => {
+    const resultPath = path.join(dir, "result.json");
+    const errorPath = path.join(dir, "missing-error.txt");
+
+    assert.throws(
+      () => applyPlan.readFinalizeInstallChildResult(resultPath, errorPath, 1),
+      /rin_installer_apply_failed/,
+    );
+  });
+});
+
+test("apply-plan child result reader rejects missing or invalid success payloads", async () => {
+  await withTempDir(async (dir) => {
+    const resultPath = path.join(dir, "result.json");
+    const errorPath = path.join(dir, "error.txt");
+    await fs.writeFile(errorPath, "ignored\n", "utf8");
+
+    assert.throws(
+      () => applyPlan.readFinalizeInstallChildResult(resultPath, errorPath, 0),
+      /rin_installer_apply_result_missing/,
+    );
+
+    await fs.writeFile(resultPath, "not-json\n", "utf8");
+    assert.throws(
+      () => applyPlan.readFinalizeInstallChildResult(resultPath, errorPath, 0),
+      /rin_installer_apply_result_missing/,
+    );
   });
 });

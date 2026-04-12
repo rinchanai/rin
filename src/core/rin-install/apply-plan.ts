@@ -20,6 +20,26 @@ export type FinalizeInstallOptions = {
   sourceRoot?: string;
 };
 
+export function readFinalizeInstallChildResult(
+  resultPath: string,
+  errorPath: string,
+  exitCode: number,
+) {
+  if (exitCode !== 0) {
+    let errorMessage = "rin_installer_apply_failed";
+    try {
+      errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
+    } catch {}
+    throw new Error(errorMessage);
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  } catch {
+    throw new Error("rin_installer_apply_result_missing");
+  }
+}
+
 export async function runFinalizeInstallPlanInChild(
   options: FinalizeInstallOptions,
   message: string,
@@ -58,27 +78,20 @@ export async function runFinalizeInstallPlanInChild(
     throw error;
   });
 
-  if (exitCode !== 0) {
-    waitSpinner.stop("Install step failed.");
-    let errorMessage = "rin_installer_apply_failed";
-    try {
-      errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
-    } catch {}
-    throw new Error(errorMessage);
-  }
-
-  let parsed: any = null;
   try {
-    parsed = JSON.parse(fs.readFileSync(resultPath, "utf8"));
-  } catch {
+    const parsed = readFinalizeInstallChildResult(
+      resultPath,
+      errorPath,
+      exitCode,
+    );
+    waitSpinner.stop("Install step complete.");
+    return parsed;
+  } catch (error) {
     waitSpinner.stop("Install step failed.");
-    throw new Error("rin_installer_apply_result_missing");
+    throw error;
   } finally {
     try {
       fs.rmSync(resultDir, { recursive: true, force: true });
     } catch {}
   }
-
-  waitSpinner.stop("Install step complete.");
-  return parsed;
 }
