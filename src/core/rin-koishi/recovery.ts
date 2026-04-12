@@ -1,5 +1,6 @@
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { extractTextFromContent, safeString } from "./chat-helpers.js";
+import { resolveFinalAssistantText } from "./delivery.js";
 import { extractFinalTextFromTurnResult } from "./progress.js";
 import { buildPromptText } from "./transport.js";
 
@@ -68,10 +69,10 @@ export async function recoverKoishiTurnIfNeeded(controller: any) {
         throw error;
       }
       const completion = await liveTurn.promise;
-      controller.latestAssistantText = controller.collectFinalAssistantText();
-      if (!safeString(controller.latestAssistantText || "").trim()) {
-        throw new Error("final_assistant_text_missing");
-      }
+      controller.latestAssistantText = await resolveFinalAssistantText(
+        controller,
+        completion,
+      );
       controller.state.piSessionFile =
         safeString(
           completion?.sessionFile ||
@@ -79,21 +80,29 @@ export async function recoverKoishiTurnIfNeeded(controller: any) {
             controller.state.piSessionFile ||
             "",
         ).trim() || undefined;
-      controller.state.pendingDelivery = controller.buildAssistantDelivery({
-        text: controller.latestAssistantText,
-        replyToMessageId:
-          safeString(pending.replyToMessageId || "").trim() || undefined,
-        sessionId:
-          safeString(
-            completion?.sessionId || controller.currentSessionId() || "",
-          ).trim() || undefined,
-        sessionFile:
-          safeString(
-            completion?.sessionFile || controller.currentSessionFile() || "",
-          ).trim() || undefined,
-      });
+      if (safeString(controller.latestAssistantText || "").trim()) {
+        controller.state.pendingDelivery = controller.buildAssistantDelivery({
+          text: controller.latestAssistantText,
+          replyToMessageId:
+            safeString(pending.replyToMessageId || "").trim() || undefined,
+          sessionId:
+            safeString(
+              completion?.sessionId || controller.currentSessionId() || "",
+            ).trim() || undefined,
+          sessionFile:
+            safeString(
+              completion?.sessionFile || controller.currentSessionFile() || "",
+            ).trim() || undefined,
+        });
+        controller.saveState();
+        await controller.commitPendingDelivery(true);
+        return;
+      }
+      controller.logger.warn(
+        `koishi recovery completed without visible final text chatKey=${controller.chatKey}`,
+      );
+      delete controller.state.processing;
       controller.saveState();
-      await controller.commitPendingDelivery(true);
       return;
     }
     await controller.runTurnNow(

@@ -22,6 +22,7 @@ import {
   commitPendingDelivery,
   markProcessedMessage,
   refreshSessionMessages,
+  resolveFinalAssistantText,
 } from "./delivery.js";
 import { recoverKoishiTurnIfNeeded } from "./recovery.js";
 import {
@@ -566,10 +567,10 @@ export class KoishiChatController {
       throw error;
     }
     const completion = await liveTurn.promise;
-    this.latestAssistantText = this.collectFinalAssistantText();
-    if (!safeString(this.latestAssistantText || "").trim()) {
-      throw new Error("final_assistant_text_missing");
-    }
+    this.latestAssistantText = await resolveFinalAssistantText(
+      this as any,
+      completion,
+    );
     this.state.piSessionFile =
       safeString(
         completion?.sessionFile ||
@@ -577,21 +578,30 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    this.state.pendingDelivery = this.buildAssistantDelivery({
-      text: this.latestAssistantText,
-      replyToMessageId: replyToMessageId || undefined,
-      sessionId:
-        safeString(
-          completion?.sessionId || this.currentSessionId() || "",
-        ).trim() || undefined,
-      sessionFile:
-        safeString(
-          completion?.sessionFile || this.currentSessionFile() || "",
-        ).trim() || undefined,
-    });
-    this.saveState();
-    this.markProcessedMessage(input.incomingMessageId);
-    await this.commitPendingDelivery(true);
+    if (safeString(this.latestAssistantText || "").trim()) {
+      this.state.pendingDelivery = this.buildAssistantDelivery({
+        text: this.latestAssistantText,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId:
+          safeString(
+            completion?.sessionId || this.currentSessionId() || "",
+          ).trim() || undefined,
+        sessionFile:
+          safeString(
+            completion?.sessionFile || this.currentSessionFile() || "",
+          ).trim() || undefined,
+      });
+      this.saveState();
+      this.markProcessedMessage(input.incomingMessageId);
+      await this.commitPendingDelivery(true);
+    } else {
+      this.logger.warn(
+        `koishi turn completed without visible final text chatKey=${this.chatKey}`,
+      );
+      delete this.state.processing;
+      this.saveState();
+      this.markProcessedMessage(input.incomingMessageId);
+    }
     return {
       finalText: safeString(this.latestAssistantText || "").trim(),
       sessionId: this.currentSessionId() || undefined,

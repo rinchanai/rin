@@ -781,3 +781,57 @@ test("koishi controller retries persisted final reply delivery on recovery", asy
   assert.equal(controller.state.pendingDelivery, undefined);
   assert.equal(sends.length, 1);
 });
+
+test("koishi controller falls back to interim text instead of throwing final_assistant_text_missing", async () => {
+  const controller = await createController("telegram/9:11");
+  const delivered = [];
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push(controller.latestAssistantText);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", content: [] },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/interim-chat.jsonl",
+      getSessionId: () => "session-interim",
+      getSessionName: () => "telegram/9:11",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/interim-chat.jsonl",
+      sessionId: "session-interim",
+    }),
+    prompt: async () => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      controller.handleSessionEvent({
+        type: "message_update",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "interim visible text" }],
+        },
+      });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+    refreshState: async () => {},
+  };
+
+  const result = await controller.runTurn(
+    { text: "hello", attachments: [] },
+    "prompt",
+  );
+
+  assert.equal(result.finalText, "interim visible text");
+  assert.deepEqual(delivered, ["interim visible text"]);
+});

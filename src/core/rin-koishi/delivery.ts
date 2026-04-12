@@ -90,11 +90,43 @@ export async function refreshSessionMessages(controller: { session: any }) {
   }
 }
 
-export function collectFinalAssistantText(controller: { session: any }) {
+export function collectFinalAssistantText(controller: { session?: any }) {
   const messages = Array.isArray(controller.session?.messages)
     ? controller.session.messages
     : [];
   return extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages));
+}
+
+export async function resolveFinalAssistantText(
+  controller: {
+    session?: any;
+    latestAssistantText?: string;
+    interimText?: string;
+    refreshSessionMessages?: () => Promise<void>;
+  },
+  completion: { finalText?: string } | null | undefined,
+) {
+  const direct = safeString(completion?.finalText || "").trim();
+  if (direct) return direct;
+
+  const current = safeString(controller.latestAssistantText || "").trim();
+  if (current) return current;
+
+  const retries = [0, 0, 10];
+  for (const delayMs of retries) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    if (typeof controller.refreshSessionMessages === "function") {
+      await controller.refreshSessionMessages().catch(() => {});
+    }
+    const refreshed = collectFinalAssistantText(controller);
+    if (safeString(refreshed).trim()) return safeString(refreshed).trim();
+  }
+
+  const interim = safeString(controller.interimText || "").trim();
+  if (interim) return interim;
+  return "";
 }
 
 export async function completeLiveTurn(controller: {
@@ -102,9 +134,12 @@ export async function completeLiveTurn(controller: {
   latestAssistantText: string;
   currentSessionId: () => string;
   currentSessionFile: () => string | undefined;
+  refreshSessionMessages?: () => Promise<void>;
+  session?: any;
+  interimText?: string;
 }) {
   if (!controller.liveTurn) return;
-  const finalText = collectFinalAssistantText(controller as any);
+  const finalText = await resolveFinalAssistantText(controller, undefined);
   if (finalText) controller.latestAssistantText = finalText;
   controller.liveTurn.resolve({
     finalText,
