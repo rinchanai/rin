@@ -86,7 +86,7 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
             selfId: "1",
             async sendMessage(chatId, content) {
               sends.push({ chatId, content });
-              return [{ messageId: "m1" }];
+              return ["m1"];
             },
           },
         ],
@@ -135,7 +135,7 @@ test("koishi transport stores explicit session binding for outbox text deliverie
             platform: "telegram",
             selfId: "1",
             async sendMessage() {
-              return [{ messageId: "m-text" }];
+              return ["m-text"];
             },
           },
         ],

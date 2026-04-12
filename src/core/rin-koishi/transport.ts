@@ -34,12 +34,21 @@ export async function sendTyping(app: any, chatKey: string, h: any) {
   } catch {}
 }
 
-async function sendBotMessage(bot: any, chatId: string, content: any) {
-  const result = await bot.sendMessage(chatId, content);
+function normalizeDeliveredMessageIds(result: unknown) {
   if (!Array.isArray(result) || !result.length) {
     throw new Error("koishi_send_message_empty_result");
   }
-  return result;
+  const messageIds = result
+    .map((item) => safeString(item).trim())
+    .filter(Boolean);
+  if (!messageIds.length) {
+    throw new Error("koishi_send_message_empty_result");
+  }
+  return messageIds;
+}
+
+async function sendBotMessage(bot: any, chatId: string, content: any) {
+  return normalizeDeliveredMessageIds(await bot.sendMessage(chatId, content));
 }
 
 function inferChatType(parsed: { platform: string; chatId: string }) {
@@ -47,25 +56,6 @@ function inferChatType(parsed: { platform: string; chatId: string }) {
     return parsed.chatId.startsWith("-") ? "group" : "private";
   if (parsed.chatId.startsWith("private:")) return "private";
   return "group";
-}
-
-function pickDeliveredMessageId(value: any) {
-  const candidates = [
-    value?.messageId,
-    value?.id,
-    value?.message_id,
-    value?.message?.messageId,
-    value?.message?.id,
-    value?.message?.message_id,
-    value?.event?.messageId,
-    value?.event?.id,
-    value?.event?.message_id,
-  ];
-  for (const candidate of candidates) {
-    const text = safeString(candidate).trim();
-    if (text) return text;
-  }
-  return "";
 }
 
 function resolveSessionContext(
@@ -99,7 +89,7 @@ export function recordDeliveredAssistantMessages(
   agentDir: string,
   input: {
     chatKey: string;
-    deliveryResult: any[];
+    deliveryResult: string[];
     text?: string;
     rawContent?: string;
     replyToMessageId?: string;
@@ -111,11 +101,11 @@ export function recordDeliveredAssistantMessages(
   if (!chatKey) return [] as string[];
   const parsed = parseChatKey(chatKey);
   if (!parsed) return [] as string[];
-  const messageIds = (
-    Array.isArray(input.deliveryResult) ? input.deliveryResult : []
-  )
-    .map((item) => pickDeliveredMessageId(item))
-    .filter(Boolean);
+  const messageIds = Array.isArray(input.deliveryResult)
+    ? input.deliveryResult
+        .map((item) => safeString(item).trim())
+        .filter(Boolean)
+    : [];
   if (!messageIds.length) return [] as string[];
 
   const bodyText = safeString(input.text).trim();
