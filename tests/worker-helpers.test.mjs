@@ -177,3 +177,88 @@ test("runBuiltinCommand prefers SessionManager.listAll for /resume discovery", a
   assert.match(resumed.text, /Resumed session: abc/);
   assert.deepEqual(calls, ["/tmp/sessions/abc.jsonl"]);
 });
+
+test("runBuiltinCommand lists available models and reports missing matches", async () => {
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async () => {},
+      reload: async () => {},
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: {
+        getAvailable: async () => [
+          { provider: "openai", id: "gpt-5" },
+          { provider: "anthropic", id: "claude-sonnet" },
+        ],
+      },
+      setModel: async () => {},
+      setThinkingLevel: async () => {},
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async () => ({ cancelled: false }),
+  };
+
+  const listing = await workerHelpers.runBuiltinCommand(runtime, "/model", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(listing.handled, true);
+  assert.match(listing.text, /Available models:/);
+  assert.match(listing.text, /openai\/gpt-5/);
+  assert.match(listing.text, /anthropic\/claude-sonnet/);
+
+  const missing = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/model openai/missing",
+    {
+      SessionManager: { list: async () => [] },
+    },
+  );
+  assert.equal(missing.handled, true);
+  assert.match(missing.text, /Model not found: openai\/missing/);
+});
+
+test("runBuiltinCommand sets model and optional thinking level", async () => {
+  const calls = [];
+  const selectedModel = { provider: "openai", id: "gpt-5" };
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async () => {},
+      reload: async () => {},
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: {
+        getAvailable: async () => [selectedModel],
+      },
+      setModel: async (model) => {
+        calls.push(["setModel", model]);
+      },
+      setThinkingLevel: async (level) => {
+        calls.push(["setThinkingLevel", level]);
+      },
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async () => ({ cancelled: false }),
+  };
+
+  const result = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/model openai/gpt-5 high",
+    {
+      SessionManager: { list: async () => [] },
+    },
+  );
+  assert.equal(result.handled, true);
+  assert.match(result.text, /Model set to: openai\/gpt-5 \(high\)/);
+  assert.deepEqual(calls, [
+    ["setModel", selectedModel],
+    ["setThinkingLevel", "high"],
+  ]);
+});
