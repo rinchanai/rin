@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 
 import { parseJsonl } from "../rin-lib/common.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
+import { writeLine } from "./socket.js";
 
 export type ConnectionState = {
   socket: net.Socket;
@@ -30,10 +31,6 @@ type SessionSelector = {
   sessionFile?: string;
   sessionId?: string;
 };
-
-function writeLine(socket: net.Socket, payload: unknown) {
-  if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
-}
 
 export class WorkerPool {
   private workers = new Set<WorkerHandle>();

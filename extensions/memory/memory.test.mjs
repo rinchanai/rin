@@ -190,3 +190,45 @@ test("memory can browse recent sessions without a query", async () => {
     assert.equal(results[1].sessionId, "session-1");
   });
 });
+
+test("memory search tolerates duplicate archived transcript ids", async () => {
+  await withTempRoot(async (root) => {
+    const filePath = transcripts.getTranscriptArchivePath(
+      {
+        timestamp: "2026-04-05T12:22:22.000Z",
+        sessionId: "session-dup",
+      },
+      root,
+    );
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(
+      filePath,
+      [
+        JSON.stringify({
+          id: "dup-entry",
+          timestamp: "2026-04-05T12:22:22.000Z",
+          sessionId: "session-dup",
+          sessionFile: "/tmp/session-dup.jsonl",
+          role: "assistant",
+          text: "first duplicate transcript row",
+        }),
+        JSON.stringify({
+          id: "dup-entry",
+          timestamp: "2026-04-05T12:22:23.000Z",
+          sessionId: "session-dup",
+          sessionFile: "/tmp/session-dup.jsonl",
+          role: "assistant",
+          text: "latest duplicate transcript row survives search",
+        }),
+      ].join("\n") + "\n",
+    );
+
+    const results = await transcripts.searchTranscriptArchive(
+      "latest duplicate transcript row",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(results.length, 1);
+    assert.match(results[0].preview, /latest duplicate transcript row/);
+  });
+});

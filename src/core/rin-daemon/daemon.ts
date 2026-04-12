@@ -21,61 +21,9 @@ import {
   listCatalogCommands,
   listCatalogModels,
 } from "./catalog.js";
+import { loadRestartState, saveRestartState } from "./restart-state.js";
+import { writeLine } from "./socket.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-function writeLine(socket: net.Socket, payload: unknown) {
-  if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
-}
-
-function restartStatePath(agentDir: string) {
-  return path.join(agentDir, "data", "restart.json");
-}
-
-function loadRestartState(agentDir: string) {
-  try {
-    const parsed = JSON.parse(
-      fs.readFileSync(restartStatePath(agentDir), "utf8"),
-    );
-    const pendingResume = Array.isArray(parsed?.pendingResume)
-      ? parsed.pendingResume
-          .map((item: any) => ({
-            sessionFile:
-              typeof item?.sessionFile === "string" && item.sessionFile
-                ? item.sessionFile
-                : undefined,
-            resumeTurn: Boolean(item?.resumeTurn),
-          }))
-          .filter((item: any) => item.sessionFile)
-      : [];
-    return { pendingResume };
-  } catch {
-    return { pendingResume: [] };
-  }
-}
-
-function saveRestartState(
-  agentDir: string,
-  state: {
-    pendingResume: Array<{ sessionFile?: string; resumeTurn?: boolean }>;
-  },
-) {
-  const filePath = restartStatePath(agentDir);
-  try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    if (!state.pendingResume.length) {
-      fs.rmSync(filePath, { force: true });
-      return;
-    }
-    fs.writeFileSync(
-      filePath,
-      JSON.stringify({ version: 1, pendingResume: state.pendingResume }),
-    );
-  } catch {}
-}
 
 export async function startDaemon(
   options: {
@@ -120,7 +68,7 @@ export async function startDaemon(
     try {
       fs.rmSync(candidate, { force: true });
     } catch {}
-    ensureDir(path.dirname(candidate));
+    fs.mkdirSync(path.dirname(candidate), { recursive: true });
   }
 
   const hasSessionSelector = (command: any) =>

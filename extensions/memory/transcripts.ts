@@ -401,7 +401,22 @@ function presentSessionResult(
   };
 }
 
+function dedupeTranscriptArchiveEntries(entries: TranscriptArchiveEntry[]) {
+  const byId = new Map<string, TranscriptArchiveEntry>();
+  for (const entry of entries) {
+    const id = safeString(entry.id || "").trim();
+    if (!id) continue;
+    byId.set(id, entry);
+  }
+  return [...byId.values()].sort((a, b) => {
+    const byTime = timestampValue(a.timestamp) - timestampValue(b.timestamp);
+    if (byTime) return byTime;
+    return safeString(a.id).localeCompare(safeString(b.id));
+  });
+}
+
 function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
+  const rows = dedupeTranscriptArchiveEntries(entries);
   const db = new BetterSqlite3(":memory:");
   db.exec(`
     CREATE TABLE entries (
@@ -433,7 +448,7 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
   `);
   db.exec("BEGIN;");
   try {
-    for (const entry of entries) {
+    for (const entry of rows) {
       insertEntry.run(
         entry.id,
         entry.timestamp,

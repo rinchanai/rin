@@ -89,3 +89,9 @@ Use the right audience layer:
 - `docs/rin/*`: agent-facing runtime docs
 
 Do not send normal users straight into agent-facing docs unless they are explicitly debugging runtime internals.
+
+## Security notes
+
+Dependency security status and remaining audit constraints are tracked in:
+
+- `docs/security.md`
