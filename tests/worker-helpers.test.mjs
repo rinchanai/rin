@@ -262,3 +262,50 @@ test("runBuiltinCommand sets model and optional thinking level", async () => {
     ["setThinkingLevel", "high"],
   ]);
 });
+
+test("runBuiltinCommand reports model usage errors and empty model catalogs", async () => {
+  const calls = [];
+  const runtime = {
+    session: {
+      abort: async () => {},
+      compact: async () => {},
+      reload: async () => {},
+      getSessionStats: () => ({ sessionId: "s" }),
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+      modelRegistry: {
+        getAvailable: async () => [],
+      },
+      setModel: async (model) => {
+        calls.push(["setModel", model]);
+      },
+      setThinkingLevel: async (level) => {
+        calls.push(["setThinkingLevel", level]);
+      },
+    },
+    newSession: async () => ({ cancelled: false }),
+    switchSession: async () => ({ cancelled: false }),
+  };
+
+  const listing = await workerHelpers.runBuiltinCommand(runtime, "/model", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(listing.handled, true);
+  assert.equal(listing.text, "No models available.");
+
+  const usage = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/model openai",
+    {
+      SessionManager: { list: async () => [] },
+    },
+  );
+  assert.equal(usage.handled, true);
+  assert.match(
+    usage.text,
+    /Usage: \/model <provider\/model> \[thinking-level\]/,
+  );
+  assert.deepEqual(calls, []);
+});
