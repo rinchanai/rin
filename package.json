@@ -1,0 +1,59 @@
+{
+  "name": "rin-v2",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "rin": "dist/app/rin/main.js",
+    "rin-daemon": "dist/app/rin-daemon/daemon.js",
+    "rin-tui": "dist/app/rin-tui/main.js",
+    "rin-koishi": "dist/app/rin-koishi/main.js",
+    "rin-install": "dist/app/rin-install/main.js"
+  },
+  "scripts": {
+    "build:vendor": "node scripts/build-third-party.mjs",
+    "build:core": "tsc -p tsconfig.json --pretty false",
+    "build:extensions": "node scripts/build-extensions.mjs",
+    "build": "npm run build:vendor && npm run build:core && npm run build:extensions && chmod +x dist/app/rin/main.js dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-koishi/main.js dist/app/rin-install/main.js",
+    "format:check": "node scripts/run-format-check.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs extensions/memory/memory.test.mjs extensions/self-improve/self-improve.test.mjs",
+    "lint": "eslint . --ext .ts --max-warnings 0",
+    "lint:fix": "eslint . --ext .ts --fix"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.10.1",
+    "@koishijs/plugin-adapter-telegram": "^4.5.11",
+    "@koishijs/plugin-http": "^0.6.3",
+    "@koishijs/plugin-proxy-agent": "^0.3.3",
+    "@mariozechner/pi-agent-core": "^0.66.1",
+    "@mariozechner/pi-ai": "^0.66.1",
+    "@mariozechner/pi-coding-agent": "file:third_party/pi-coding-agent",
+    "@mariozechner/pi-tui": "^0.66.1",
+    "@silvia-odwyer/photon-node": "^0.3.4",
+    "better-sqlite3": "^12.8.0",
+    "chalk": "^5.6.2",
+    "cli-highlight": "^2.1.11",
+    "diff": "^8.0.4",
+    "extract-zip": "^2.0.1",
+    "file-type": "^21.3.4",
+    "glob": "^13.0.6",
+    "hosted-git-info": "^9.0.2",
+    "ignore": "^7.0.5",
+    "koishi": "^4.18.11",
+    "koishi-plugin-adapter-onebot": "^6.9.0",
+    "marked": "^15.0.12",
+    "minimatch": "^10.2.4",
+    "proper-lockfile": "^4.1.2",
+    "strip-ansi": "^7.2.0",
+    "undici": "^7.24.6",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.24.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.13.10",
+    "eslint": "^9.24.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.29.1"
+  }
+}

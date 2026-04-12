@@ -1,0 +1,577 @@
+import { parseJsonl } from "../rin-lib/common.js";
+import {
+  createInterruptedToolResultPayload,
+} from "../rin-lib/interruption.js";
+import { fail, ok } from "../rin-lib/rpc.js";
+import { buildTurnResultFromMessages } from "../session/turn-result.js";
+import {
+  getOAuthState,
+  getSessionState,
+  getSlashCommands,
+  runBuiltinCommand,
+  writeJsonLine,
+} from "./worker-helpers.js";
+
+function interruptedToolResultMessage(toolCall: any) {
+  const result = createInterruptedToolResultPayload();
+  return {
+    role: "toolResult",
+    toolCallId: String(toolCall?.id || ""),
+    toolName: String(toolCall?.name || ""),
+    content: result.content,
+    details: result.details,
+    isError: true,
+    timestamp: Date.now(),
+  } as any;
+}
+
+function appendInterruptedToolResults(
+  session: any,
+  options: { persistToSession?: boolean } = {},
+) {
+  const messages = Array.isArray(session?.agent?.state?.messages)
+    ? session.agent.state.messages
+    : [];
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage || lastMessage.role !== "assistant") return false;
+  const toolCalls = Array.isArray(lastMessage.content)
+    ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
+    : [];
+  if (!toolCalls.length) return false;
+
+  for (const toolCall of toolCalls) {
+    const message = interruptedToolResultMessage(toolCall);
+    session.agent.state.messages.push(message);
+    if (options.persistToSession !== false) {
+      session.sessionManager.appendMessage(message);
+    }
+  }
+  return true;
+}
+
+async function resumeInterruptedTurn(
+  session: any,
+  options: { persistInterruptionMessage?: boolean } = {},
+) {
+  const lastMessage = Array.isArray(session?.agent?.state?.messages)
+    ? session.agent.state.messages[session.agent.state.messages.length - 1]
+    : null;
+  if (!lastMessage) return false;
+  if (
+    lastMessage.role === "assistant" &&
+    !appendInterruptedToolResults(session, {
+      persistToSession: options.persistInterruptionMessage,
+    })
+  ) {
+    return false;
+  }
+  await session.agent.continue();
+  return true;
+}
+
+async function resumeInterruptedTurnIfNeeded(session: any) {
+  if (!session || session.isStreaming || session.isCompacting) return false;
+  return await resumeInterruptedTurn(session, {
+    persistInterruptionMessage: false,
+  });
+}
+
+export async function runCustomRpcMode(
+  runtimeOrSession: any,
+  deps: { SessionManager: any; builtinSlashCommands: any[] },
+) {
+  const { SessionManager, builtinSlashCommands } = deps;
+  const runtime =
+    runtimeOrSession && runtimeOrSession.session
+      ? runtimeOrSession
+      : {
+          session: runtimeOrSession,
+          newSession: runtimeOrSession.newSession?.bind(runtimeOrSession),
+          switchSession: runtimeOrSession.switchSession?.bind(runtimeOrSession),
+          fork: runtimeOrSession.fork?.bind(runtimeOrSession),
+          importFromJsonl:
+            runtimeOrSession.importFromJsonl?.bind(runtimeOrSession),
+        };
+  const getSession = () => runtime.session;
+  const output = (obj: unknown) => writeJsonLine(obj);
+  const done = (id: string | undefined, type: string, value?: unknown) =>
+    ok(id, type, value);
+  const run = async (
+    id: string | undefined,
+    type: string,
+    fn: () => any,
+    map?: (value: any) => any,
+  ) => {
+    const value = await fn();
+    return done(id, type, map ? map(value) : value);
+  };
+  let activeTurnPromise: Promise<void> | null = null;
+  let interruptQueue = Promise.resolve();
+  const emitTurnEvent = (
+    event: string,
+    requestTag: string,
+    payload: Record<string, unknown> = {},
+  ) => {
+    if (!requestTag) return;
+    output({ type: "rpc_turn_event", event, requestTag, ...payload });
+  };
+  const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
+    const promise = (async () => {
+      emitTurnEvent("start", requestTag);
+      try {
+        await task();
+        const session = getSession();
+        await session.agent.waitForIdle();
+        emitTurnEvent("complete", requestTag, {
+          sessionFile: session.sessionFile,
+          sessionId: session.sessionId,
+          result: buildTurnResultFromMessages(session.messages || []),
+        });
+      } catch (error: any) {
+        emitTurnEvent("error", requestTag, {
+          error: String(error?.message || error || "rpc_turn_failed"),
+        });
+        throw error;
+      } finally {
+        if (activeTurnPromise === promise) activeTurnPromise = null;
+      }
+    })();
+    activeTurnPromise = promise;
+    promise.catch(() => {});
+  };
+  const startInterruptTurnTask = (
+    requestTag: string,
+    task: () => Promise<void>,
+  ) => {
+    interruptQueue = interruptQueue
+      .then(
+        async () => {
+          const session = getSession();
+          if (session.isStreaming || session.isCompacting)
+            await session.abort();
+          try {
+            await activeTurnPromise;
+          } catch {}
+          startTurnTask(requestTag, task);
+        },
+        async () => {
+          const session = getSession();
+          if (session.isStreaming || session.isCompacting)
+            await session.abort();
+          try {
+            await activeTurnPromise;
+          } catch {}
+          startTurnTask(requestTag, task);
+        },
+      )
+      .catch(() => {});
+  };
+  let loginSeq = 0;
+  const activeLogins = new Map<
+    string,
+    {
+      abort: AbortController;
+      waits: Map<
+        string,
+        { resolve: (value: string) => void; reject: (error: Error) => void }
+      >;
+    }
+  >();
+  const emitLoginEvent = (
+    loginId: string,
+    event: string,
+    payload: Record<string, unknown> = {},
+  ) => output({ type: "oauth_login_event", loginId, event, ...payload });
+  const ensureLogin = (loginId: string) => {
+    const login = activeLogins.get(loginId);
+    if (!login) throw new Error(`Unknown OAuth login: ${loginId}`);
+    return login;
+  };
+  const waitForLoginInput = (
+    loginId: string,
+    kind: string,
+    payload: Record<string, unknown> = {},
+  ) => {
+    const login = ensureLogin(loginId);
+    const requestId = `${loginId}:${kind}:${login.waits.size + 1}`;
+    emitLoginEvent(loginId, kind, { requestId, ...payload });
+    return new Promise<string>((resolve, reject) => {
+      login.waits.set(requestId, { resolve, reject });
+    });
+  };
+  const finishLogin = (loginId: string) => {
+    const login = activeLogins.get(loginId);
+    if (!login) return;
+    for (const pending of login.waits.values())
+      pending.reject(new Error("OAuth login cancelled"));
+    activeLogins.delete(loginId);
+  };
+
+  let unsubscribeSessionEvents: (() => void) | undefined;
+  const bindCurrentSession = async () => {
+    const session = getSession();
+    await session.bindExtensions({
+      commandContextActions: {
+        waitForIdle: () => getSession().agent.waitForIdle(),
+        newSession: async (options) => {
+          const result = await runtime.newSession(options);
+          await bindCurrentSession();
+          return result;
+        },
+        fork: async (entryId) => {
+          const result = await runtime.fork(entryId);
+          await bindCurrentSession();
+          return { cancelled: result.cancelled };
+        },
+        navigateTree: async (targetId, options) => ({
+          cancelled: (
+            await getSession().navigateTree(targetId, {
+              summarize: options?.summarize,
+              customInstructions: options?.customInstructions,
+              replaceInstructions: options?.replaceInstructions,
+              label: options?.label,
+            })
+          ).cancelled,
+        }),
+        switchSession: async (sessionPath) => {
+          const result = await runtime.switchSession(sessionPath);
+          await bindCurrentSession();
+          return result;
+        },
+        reload: async () => {
+          await getSession().reload();
+        },
+      },
+      onError: (err) => {
+        output({
+          type: "extension_error",
+          extensionPath: err.extensionPath,
+          event: err.event,
+          error: err.error,
+        });
+      },
+    });
+
+    unsubscribeSessionEvents?.();
+    unsubscribeSessionEvents = session.subscribe((event: unknown) =>
+      output(event),
+    );
+
+    await resumeInterruptedTurnIfNeeded(session);
+  };
+
+  await bindCurrentSession();
+
+  const handleCommand = async (command: any) => {
+    const session = getSession();
+    const id = command?.id;
+    const type = String(command?.type || "unknown");
+    switch (type) {
+      case "prompt":
+        startTurnTask(String(command.requestTag || ""), async () => {
+          await session.prompt(command.message, {
+            images: command.images,
+            streamingBehavior: command.streamingBehavior,
+            source: "rpc" as any,
+          });
+        });
+        return done(id, "prompt");
+      case "resume_interrupted_turn":
+        startInterruptTurnTask(String(command.requestTag || ""), async () => {
+          await resumeInterruptedTurn(session);
+        });
+        return done(id, "resume_interrupted_turn");
+      case "steer":
+        return run(id, type, () =>
+          session.steer(command.message, command.images),
+        );
+      case "follow_up":
+        return run(id, type, () =>
+          session.followUp(command.message, command.images),
+        );
+      case "abort":
+        return run(id, type, () => session.abort());
+      case "shutdown_session":
+        await runtime.dispose();
+        output(done(id, type, { shutdown: true }));
+        process.exit(0);
+      case "attach_session":
+        return done(id, type, getSessionState(session));
+      case "get_state":
+        return done(id, type, getSessionState(session));
+      case "cycle_model":
+        return run(
+          id,
+          type,
+          () => session.cycleModel(),
+          (value) => value ?? null,
+        );
+      case "get_available_models":
+        return run(
+          id,
+          type,
+          () => session.modelRegistry.getAvailable(),
+          (models) => ({ models }),
+        );
+      case "get_oauth_state":
+        return done(id, type, getOAuthState(session));
+      case "set_thinking_level":
+        return run(id, type, () => session.setThinkingLevel(command.level));
+      case "cycle_thinking_level":
+        return run(
+          id,
+          type,
+          () => session.cycleThinkingLevel(),
+          (level) => (level ? { level } : null),
+        );
+      case "set_steering_mode":
+        return run(id, type, () => session.setSteeringMode(command.mode));
+      case "set_follow_up_mode":
+        return run(id, type, () => session.setFollowUpMode(command.mode));
+      case "compact":
+        return run(id, type, () => session.compact(command.customInstructions));
+      case "set_auto_compaction":
+        return run(id, type, () =>
+          session.setAutoCompactionEnabled(Boolean(command.enabled)),
+        );
+      case "set_auto_retry":
+        return run(id, type, () =>
+          session.setAutoRetryEnabled(Boolean(command.enabled)),
+        );
+      case "abort_retry":
+        return run(id, type, () => session.abortRetry());
+      case "bash":
+        return run(id, type, () => session.executeBash(command.command));
+      case "abort_bash":
+        return run(id, type, () => session.abortBash());
+      case "get_session_stats":
+        return done(id, type, session.getSessionStats());
+      case "get_session_entries":
+        return done(id, type, { entries: session.sessionManager.getEntries() });
+      case "get_session_tree":
+        return done(id, type, {
+          tree: session.sessionManager.getTree(),
+          leafId: session.sessionManager.getLeafId(),
+        });
+      case "set_entry_label":
+        return run(id, type, () =>
+          session.sessionManager.appendLabelChange(
+            command.entryId,
+            command.label?.trim() || undefined,
+          ),
+        );
+      case "navigate_tree":
+        return run(id, type, () =>
+          session.navigateTree(command.targetId, {
+            summarize: command.summarize,
+            customInstructions: command.customInstructions,
+            replaceInstructions: command.replaceInstructions,
+            label: command.label,
+          }),
+        );
+      case "export_html":
+        return run(
+          id,
+          type,
+          () => session.exportToHtml(command.outputPath),
+          (path) => ({ path }),
+        );
+      case "export_jsonl":
+        return done(id, type, {
+          path: session.exportToJsonl(command.outputPath),
+        });
+      case "import_jsonl":
+        return run(
+          id,
+          type,
+          async () => {
+            const value = await runtime.importFromJsonl(command.inputPath);
+            await bindCurrentSession();
+            return value;
+          },
+          (value) => ({ cancelled: Boolean(value?.cancelled) }),
+        );
+      case "get_fork_messages":
+        return done(id, type, {
+          messages: session.getUserMessagesForForking(),
+        });
+      case "get_last_assistant_text":
+        return done(id, type, { text: session.getLastAssistantText() });
+      case "get_messages":
+        return done(id, type, { messages: session.messages });
+      case "get_commands":
+        return done(id, type, {
+          commands: getSlashCommands(session, builtinSlashCommands),
+        });
+      case "run_command":
+        return run(
+          id,
+          type,
+          () =>
+            runBuiltinCommand(runtime, String(command.commandLine || ""), {
+              SessionManager,
+            }),
+          (value) => value,
+        );
+      case "new_session":
+        return run(
+          id,
+          type,
+          () =>
+            runtime
+              .newSession(
+                command.parentSession
+                  ? { parentSession: command.parentSession }
+                  : undefined,
+              )
+              .then(async (value: any) => {
+                await bindCurrentSession();
+                return value;
+              }),
+          (value) => ({ cancelled: Boolean(value?.cancelled) }),
+        );
+      case "switch_session":
+        return run(
+          id,
+          type,
+          () =>
+            runtime
+              .switchSession(command.sessionPath)
+              .then(async (value: any) => {
+                await bindCurrentSession();
+                return value;
+              }),
+          (value) => ({ cancelled: Boolean(value?.cancelled) }),
+        );
+      case "fork":
+        return run(
+          id,
+          type,
+          () =>
+            runtime.fork(command.entryId).then(async (value: any) => {
+              await bindCurrentSession();
+              return value;
+            }),
+          (value) => ({ text: value.selectedText, cancelled: value.cancelled }),
+        );
+      case "list_sessions": {
+        const sessions = await SessionManager.listAll();
+        return done(id, type, { sessions });
+      }
+      case "set_model": {
+        const models = await session.modelRegistry.getAvailable();
+        const model = models.find(
+          (m: any) =>
+            m.provider === command.provider && m.id === command.modelId,
+        );
+        if (!model)
+          throw new Error(
+            `Model not found: ${command.provider}/${command.modelId}`,
+          );
+        await session.setModel(model);
+        return done(id, type, model);
+      }
+      case "rename_session": {
+        const name = String(command.name || "").trim();
+        if (!name) throw new Error("Session name cannot be empty");
+        const manager = SessionManager.open(command.sessionPath);
+        manager.appendSessionInfo(name);
+        return done(id, type);
+      }
+      case "set_session_name": {
+        const name = String(command.name || "").trim();
+        if (!name) throw new Error("Session name cannot be empty");
+        session.setSessionName(name);
+        return done(id, type);
+      }
+      case "oauth_login_start": {
+        const providerId = String(command.providerId || "").trim();
+        if (!providerId) throw new Error("providerId is required");
+        const loginId = `login_${++loginSeq}`;
+        const abort = new AbortController();
+        activeLogins.set(loginId, { abort, waits: new Map() });
+        (async () => {
+          try {
+            await session.modelRegistry.authStorage.login(providerId, {
+              onAuth: (info: { url: string; instructions?: string }) =>
+                emitLoginEvent(loginId, "auth", {
+                  url: info.url,
+                  instructions: info.instructions,
+                }),
+              onPrompt: (prompt: { message: string; placeholder?: string }) =>
+                waitForLoginInput(loginId, "prompt", {
+                  message: prompt.message,
+                  placeholder: prompt.placeholder,
+                }),
+              onProgress: (message: string) =>
+                emitLoginEvent(loginId, "progress", { message }),
+              onManualCodeInput: () =>
+                waitForLoginInput(loginId, "manual_code"),
+              signal: abort.signal,
+            });
+            session.modelRegistry.refresh();
+            emitLoginEvent(loginId, "complete", {
+              success: true,
+              state: getOAuthState(session),
+            });
+          } catch (error: any) {
+            emitLoginEvent(loginId, "complete", {
+              success: false,
+              error: String(error?.message || error || "oauth_login_failed"),
+            });
+          } finally {
+            finishLogin(loginId);
+          }
+        })().catch(() => {});
+        return done(id, type, { loginId });
+      }
+      case "oauth_login_respond": {
+        const login = ensureLogin(String(command.loginId || ""));
+        const requestId = String(command.requestId || "");
+        const pending = login.waits.get(requestId);
+        if (!pending)
+          throw new Error(`Unknown OAuth login request: ${requestId}`);
+        login.waits.delete(requestId);
+        pending.resolve(String(command.value || ""));
+        return done(id, type);
+      }
+      case "oauth_login_cancel": {
+        const loginId = String(command.loginId || "");
+        const login = ensureLogin(loginId);
+        login.abort.abort();
+        finishLogin(loginId);
+        return done(id, type);
+      }
+      case "oauth_logout": {
+        const providerId = String(command.providerId || "").trim();
+        if (!providerId) throw new Error("providerId is required");
+        session.modelRegistry.authStorage.logout(providerId);
+        session.modelRegistry.refresh();
+        return done(id, type, getOAuthState(session));
+      }
+      default:
+        throw new Error(`Unknown command: ${type}`);
+    }
+  };
+
+  const state = { buffer: "" };
+  process.stdin.on("data", (chunk) => {
+    parseJsonl(String(chunk), state, async (line) => {
+      let command: any;
+      try {
+        command = JSON.parse(line);
+      } catch (error) {
+        output(fail(undefined, "parse", error));
+        return;
+      }
+      try {
+        const reply = await handleCommand(command);
+        if (reply) output(reply);
+      } catch (error) {
+        output(fail(command?.id, command?.type || "unknown", error));
+      }
+    });
+  });
+
+  await new Promise<never>(() => {});
+}
