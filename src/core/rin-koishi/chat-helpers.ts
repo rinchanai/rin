@@ -38,6 +38,14 @@ export type KoishiChatState = {
     startedAt: number;
     replyToMessageId?: string;
   };
+  pendingDelivery?: {
+    type: "text_delivery";
+    chatKey: string;
+    text: string;
+    replyToMessageId?: string;
+    sessionId?: string;
+    sessionFile?: string;
+  };
 };
 
 export type KoishiBridgePromptMeta = {
