@@ -4,6 +4,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
+  appendTaskAnchorArchiveEntry,
   appendTranscriptArchiveEntry,
   loadRecentTranscriptSessions,
   loadTranscriptSessionEntries,
@@ -37,31 +38,31 @@ const searchMemoryParams = Type.Object({
 
 async function archiveMessageTranscript(message: any, ctx: any) {
   if (!message || typeof message !== "object") return;
-  await appendTranscriptArchiveEntry(
-    {
-      id: String(message?.id || "").trim(),
-      timestamp:
-        String(message?.timestamp || "").trim() || new Date().toISOString(),
-      sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
-      sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
-      role: String(message?.role || "").trim(),
-      content: message?.content,
-      toolName: String(message?.toolName || "").trim(),
-      toolCallId: String(message?.toolCallId || "").trim(),
-      customType: String(message?.customType || "").trim(),
-      stopReason: String(message?.stopReason || "").trim(),
-      errorMessage: String(message?.errorMessage || "").trim(),
-      provider: String(message?.provider || "").trim(),
-      model: String(message?.model || "").trim(),
-      display:
-        typeof message?.display === "boolean" ? message.display : undefined,
-      command: message?.command,
-      output: message?.output,
-      summary: message?.summary,
-      text: String(message?.content || "").trim(),
-    },
-    String(ctx?.agentDir || "").trim(),
-  );
+  const entry = {
+    id: String(message?.id || "").trim(),
+    timestamp:
+      String(message?.timestamp || "").trim() || new Date().toISOString(),
+    sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
+    sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
+    role: String(message?.role || "").trim(),
+    content: message?.content,
+    toolName: String(message?.toolName || "").trim(),
+    toolCallId: String(message?.toolCallId || "").trim(),
+    customType: String(message?.customType || "").trim(),
+    stopReason: String(message?.stopReason || "").trim(),
+    errorMessage: String(message?.errorMessage || "").trim(),
+    provider: String(message?.provider || "").trim(),
+    model: String(message?.model || "").trim(),
+    display:
+      typeof message?.display === "boolean" ? message.display : undefined,
+    command: message?.command,
+    output: message?.output,
+    summary: message?.summary,
+    text: String(message?.content || "").trim(),
+  };
+  const root = String(ctx?.agentDir || "").trim();
+  await appendTranscriptArchiveEntry(entry, root);
+  await appendTaskAnchorArchiveEntry(entry, root);
 }
 
 function formatSearchResult(response: any): string {
@@ -174,6 +175,7 @@ function buildRecallPrompt(query: string, transcript: string): string {
     "Review the archived session transcript below and write a factual recall summary.",
     focus,
     "Prioritize the details that help another agent quickly recover the real work state.",
+    "If task-anchor rows are present, treat them as high-signal state markers for done steps, blockers, and next actions.",
     "Include, when present and relevant: the user's goal, key decisions, important tool calls, commands, file paths, URLs, browser/account steps, concrete outcomes, and anything still unresolved.",
     "Prefer exact details from the transcript over abstraction. Keep chronology only where it helps explain state changes.",
     "Do not add speculation or generic filler.",

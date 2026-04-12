@@ -232,3 +232,92 @@ test("memory search tolerates duplicate archived transcript ids", async () => {
     assert.match(results[0].preview, /latest duplicate transcript row/);
   });
 });
+
+test("memory derives task anchors for actionable blocked steps", async () => {
+  await withTempRoot(async (root) => {
+    const message = {
+      id: "assistant-1",
+      timestamp: "2026-04-05T12:22:24.000Z",
+      sessionId: "session-anchor",
+      sessionFile: "/tmp/session-anchor.jsonl",
+      role: "assistant",
+      toolName: "browser_click",
+      content: [
+        {
+          type: "toolCall",
+          name: "browser_click",
+          args: { selector: "Continue with Google" },
+        },
+        {
+          type: "text",
+          text: "GitHub signup 卡在验证码页面，下一步要收验证码。",
+        },
+      ],
+    };
+    await transcripts.appendTranscriptArchiveEntry(message, root);
+    await transcripts.appendTaskAnchorArchiveEntry(message, root);
+
+    const entries = await transcripts.loadTranscriptSessionEntries(
+      { sessionId: "session-anchor" },
+      root,
+    );
+    assert.equal(entries.length, 2);
+    const anchor = entries.find((entry) => entry.customType === "task_anchor");
+    assert.ok(anchor);
+    assert.match(anchor.text, /blocked \| assistant \| browser_click/);
+    assert.match(anchor.text, /验证码/);
+
+    const results = await transcripts.searchTranscriptArchive(
+      "session-anchor 验证码",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(results[0].role, "custom");
+    assert.match(results[0].preview, /task_anchor/);
+  });
+});
+
+test("memory recent preview prefers task anchors over generic chatter", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-05T12:22:20.000Z",
+        sessionId: "session-preview-anchor",
+        sessionFile: "/tmp/session-preview-anchor.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "好的，我继续看看。" }],
+      },
+      root,
+    );
+    await transcripts.appendTaskAnchorArchiveEntry(
+      {
+        id: "assistant-2",
+        timestamp: "2026-04-05T12:22:24.000Z",
+        sessionId: "session-preview-anchor",
+        sessionFile: "/tmp/session-preview-anchor.jsonl",
+        role: "assistant",
+        toolName: "browser_open",
+        content: [
+          {
+            type: "toolCall",
+            name: "browser_open",
+            args: { url: "https://accounts.google.com/signup" },
+          },
+          {
+            type: "text",
+            text: "已打开 Google 注册页，下一步填写姓名和生日。",
+          },
+        ],
+      },
+      root,
+    );
+
+    const results = await transcripts.loadRecentTranscriptSessions(
+      { limit: 1 },
+      root,
+    );
+    assert.equal(results[0].sessionId, "session-preview-anchor");
+    assert.match(results[0].preview, /task_anchor/);
+    assert.match(results[0].preview, /填写姓名和生日/);
+  });
+});

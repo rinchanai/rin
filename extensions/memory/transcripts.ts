@@ -30,6 +30,15 @@ export type TranscriptArchiveEntry = {
   display?: boolean;
 };
 
+const TASK_ANCHOR_STATUS_PATTERNS = {
+  blocked:
+    /\b(blocked|stuck|captcha|verify|verification|try again|failed|failure|error|risk)\b|卡在|验证码|验证|失败|风控|报错|重试/u,
+  done: /\b(done|completed|complete|success|succeeded|verified|created|finished)\b|完成|成功|已完成|已创建|绑定成功|已验证/u,
+  next: /\b(next|todo|pending|need to|should|follow-up)\b|下一步|待继续|待处理|还要|需要/u,
+  browser:
+    /\b(browser|page|signup|login|account|oauth|captcha|mail|github|google|outlook)\b|浏览器|页面|注册|登录|账号|邮箱|验证码/u,
+};
+
 export type TranscriptSessionResult = {
   sourceType: "session";
   id: string;
@@ -210,6 +219,73 @@ export async function appendTranscriptArchiveEntry(
   await fs.appendFile(filePath, `${JSON.stringify(entry)}\n`);
 }
 
+export function deriveTaskAnchorEntry(input: Record<string, any>) {
+  const role = safeString(input.role || "").trim();
+  const customType = safeString(input.customType || "").trim();
+  if (!role) return null;
+  if (customType === "task_anchor") return null;
+  if (customType === "self_improve_session_transcript") return null;
+  const text = extractTranscriptText(input);
+  if (!text) return null;
+
+  let score = 0;
+  if (role === "assistant") score += 2;
+  if (role === "user") score += 1;
+  if (role === "toolResult" || role === "bashExecution") score += 2;
+  if (safeString(input.toolName || "").trim()) score += 2;
+  if (safeString(input.toolCallId || "").trim()) score += 1;
+  if (text.length >= 48) score += 1;
+  if (text.includes("[tool:")) score += 2;
+  if (text.includes("[bash]")) score += 2;
+  if (text.includes("http://") || text.includes("https://")) score += 1;
+  if (text.includes("/") || text.includes("\\")) score += 1;
+  if (TASK_ANCHOR_STATUS_PATTERNS.blocked.test(text)) score += 3;
+  if (TASK_ANCHOR_STATUS_PATTERNS.done.test(text)) score += 2;
+  if (TASK_ANCHOR_STATUS_PATTERNS.next.test(text)) score += 2;
+  if (TASK_ANCHOR_STATUS_PATTERNS.browser.test(text)) score += 1;
+  if (score < 4) return null;
+
+  const status = TASK_ANCHOR_STATUS_PATTERNS.blocked.test(text)
+    ? "blocked"
+    : TASK_ANCHOR_STATUS_PATTERNS.done.test(text)
+      ? "done"
+      : TASK_ANCHOR_STATUS_PATTERNS.next.test(text)
+        ? "next"
+        : "state";
+  const label = [
+    status,
+    role,
+    safeString(input.toolName || "").trim() || undefined,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+  return {
+    id: `${
+      safeString(input.id || "").trim() ||
+      sha(
+        [role, text, safeString(input.timestamp || "").trim()].join("\n"),
+      ).slice(0, 16)
+    }::task-anchor`,
+    timestamp: safeString(input.timestamp || new Date().toISOString()).trim(),
+    sessionId: safeString(input.sessionId || "").trim(),
+    sessionFile: safeString(input.sessionFile || "").trim(),
+    role: "custom",
+    customType: "task_anchor",
+    toolName: safeString(input.toolName || "").trim() || undefined,
+    toolCallId: safeString(input.toolCallId || "").trim() || undefined,
+    text: trimText(`${label} | ${safeString(text).trim()}`, 320),
+  } satisfies Record<string, any>;
+}
+
+export async function appendTaskAnchorArchiveEntry(
+  input: Record<string, any>,
+  rootOverride = "",
+) {
+  const entry = deriveTaskAnchorEntry(input);
+  if (!entry) return;
+  await appendTranscriptArchiveEntry(entry, rootOverride);
+}
+
 async function loadTranscriptArchiveFile(filePath: string) {
   if (!fssync.existsSync(filePath)) return [];
   const raw = await fs.readFile(filePath, "utf8");
@@ -303,10 +379,12 @@ function timestampValue(value: string): number {
 }
 
 function transcriptPreviewText(entry: TranscriptArchiveEntry) {
-  const label = entry.toolName
-    ? `[${entry.role}:${entry.toolName}]`
-    : entry.customType
-      ? `[${entry.role}:${entry.customType}]`
+  const label = entry.customType
+    ? entry.toolName
+      ? `[${entry.role}:${entry.customType}:${entry.toolName}]`
+      : `[${entry.role}:${entry.customType}]`
+    : entry.toolName
+      ? `[${entry.role}:${entry.toolName}]`
       : `[${entry.role}]`;
   return `${label} ${safeString(entry.text || "").trim()}`.trim();
 }
@@ -340,6 +418,7 @@ function sessionPreviewPriority(entry: TranscriptArchiveEntry) {
   if (entry.role === "toolResult") score += 12;
   if (entry.role === "bashExecution") score += 10;
   if (entry.role === "custom") score += 8;
+  if (entry.customType === "task_anchor") score += 45;
   if (entry.toolName) score += 18;
   if (entry.toolCallId) score += 8;
   if (entry.customType === "self_improve_session_transcript") score -= 25;
@@ -586,10 +665,21 @@ export async function searchTranscriptArchive(
       .map(([id, score]) => {
         const entry = entryById.get(id);
         if (!entry) return null;
-        return presentTranscriptResult(entry, score, rootOverride);
+        return presentTranscriptResult(
+          entry,
+          score + sessionPreviewPriority(entry),
+          rootOverride,
+        );
       })
       .filter(Boolean)
-      .sort((a, b) => Number(b?.score || 0) - Number(a?.score || 0))
+      .sort((a, b) => {
+        const byScore = Number(b?.score || 0) - Number(a?.score || 0);
+        if (byScore) return byScore;
+        return (
+          timestampValue(String(b?.timestamp || "")) -
+          timestampValue(String(a?.timestamp || ""))
+        );
+      })
       .slice(0, limit);
   } finally {
     db.close();
