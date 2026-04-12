@@ -39,11 +39,11 @@ test("koishi transport buildPromptText appends file attachments only", () => {
   assert.ok(!result.includes("b.png: /tmp/b.png"));
 });
 
-test("koishi transport gives image-only prompts an explicit text scaffold", () => {
+test("koishi transport keeps image-only prompts native", () => {
   const result = transport.buildPromptText("", [
     { kind: "image", path: "/tmp/b.png", name: "b.png" },
   ]);
-  assert.match(result, /image attachments with no accompanying text/i);
+  assert.equal(result, "");
 });
 
 test("koishi transport restorePromptParts rebuilds image payloads from disk", async () => {

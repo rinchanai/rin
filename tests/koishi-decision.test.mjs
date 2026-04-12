@@ -65,5 +65,5 @@ test("koishi decision keeps image-only owner messages routable", async () => {
   );
 
   assert.equal(result.allow, true);
-  assert.equal(result.text, "[image:demo.png]");
+  assert.equal(result.text, "");
 });

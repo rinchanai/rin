@@ -112,19 +112,6 @@ function collectIncomingElementText(element: any): string {
     element?.attrs && typeof element.attrs === "object" ? element.attrs : {};
   if (type === "text") return safeString(attrs.content || element.text || "");
   if (type === "br") return "\n";
-  if (type === "img" || type === "image") {
-    const name =
-      safeString(attrs.file || attrs.title || attrs.name || "").trim() ||
-      fileNameFromUrl(safeString(attrs.src || attrs.url || "").trim(), "image");
-    const summary = safeString(attrs.summary || "").trim();
-    return summary || `[image:${name}]`;
-  }
-  if (type === "file") {
-    const name =
-      safeString(attrs.file || attrs.title || attrs.name || "").trim() ||
-      fileNameFromUrl(safeString(attrs.src || attrs.url || "").trim(), "file");
-    return `[file:${name}]`;
-  }
   const children = Array.isArray(element?.children) ? element.children : [];
   const childText = children.map((item) => collectIncomingElementText(item)).join("");
   if (type === "p" || type === "paragraph") return childText ? `${childText}\n` : "";
@@ -215,9 +202,17 @@ export function wrapKoishiBridgePrompt(
   meta: KoishiBridgePromptMeta,
 ) {
   const body = safeString(text).trim();
-  if (!body) return "";
   const encoded = Buffer.from(JSON.stringify(meta), "utf8").toString("base64");
+  if (!body) return `${KOISHI_BRIDGE_PROMPT_META_PREFIX}${encoded}]]`;
   return `${KOISHI_BRIDGE_PROMPT_META_PREFIX}${encoded}]]\n${body}`;
+}
+
+export function hasMediaElements(elements: any[]) {
+  if (!Array.isArray(elements) || !elements.length) return false;
+  return elements.some((element) => {
+    const type = safeString(element?.type || "").toLowerCase();
+    return type === "img" || type === "image" || type === "file";
+  });
 }
 
 export function getChatId(session: any) {

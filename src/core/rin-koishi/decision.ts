@@ -6,6 +6,7 @@ import {
   directLike,
   elementsToText,
   getChatId,
+  hasMediaElements,
   mentionLike,
   pickUserId,
   safeString,
@@ -49,7 +50,8 @@ export async function shouldProcessText(
   identity: any,
 ) {
   const text = elementsToText(elements);
-  if (!text)
+  const hasMedia = hasMediaElements(elements);
+  if (!text && !hasMedia)
     return {
       allow: false,
       text: "",

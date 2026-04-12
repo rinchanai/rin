@@ -82,8 +82,9 @@ test("koishi chat helpers derive incoming text from elements", () => {
     helpers.elementsToText([
       { type: "img", attrs: { file: "demo.png" } },
     ]),
-    "[image:demo.png]",
+    "",
   );
+  assert.equal(helpers.hasMediaElements([{ type: "img", attrs: { file: "demo.png" } }]), true);
 });
 
 
