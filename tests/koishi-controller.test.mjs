@@ -27,8 +27,29 @@ async function createController(chatKey = "telegram/1:2") {
   await fs.mkdir(dataDir, { recursive: true });
   const controller = new KoishiChatController({}, dataDir, chatKey, {
     logger: { info() {}, warn() {} },
-    h: {},
+    h: {
+      text(content) {
+        return { type: "text", attrs: { content } };
+      },
+      quote(id) {
+        return { type: "quote", attrs: { id } };
+      },
+    },
   });
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        async sendMessage() {
+          return ["m1"];
+        },
+        internal: {
+          async sendChatAction() {},
+        },
+      },
+    ],
+  };
   controller.connect = async () => {};
   controller.scheduleIdleDetach = () => {};
   controller.clearIdleDetachTimer = () => {};
@@ -113,8 +134,11 @@ test("koishi controller polls telegram typing only while the controller still ow
 test("koishi controller uses RpcInteractiveSession prompt path for chat turns", async () => {
   const controller = await createController("telegram/9:9");
   const calls = [];
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     calls.push("deliver:final-text");
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
 
   controller.session = {
@@ -158,8 +182,11 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
 test("koishi controller resolves final output from session lifecycle for prompt turns", async () => {
   const controller = await createController("telegram/9:10");
   const delivered = [];
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     delivered.push(controller.latestAssistantText);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
 
   controller.session = {
@@ -234,8 +261,11 @@ test("koishi controller reattaches saved session file before bootstrapping a det
 test("koishi controller self-heals missing saved session binding before a chat turn", async () => {
   const controller = await createController("telegram/7:8");
   const calls = [];
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     calls.push(`deliver:${controller.latestAssistantText}`);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
   controller.state.piSessionFile = "/tmp/missing-chat.jsonl";
 
@@ -363,8 +393,11 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
 test("koishi controller refreshes session messages before resolving a final chat reply", async () => {
   const controller = await createController("telegram/1:4");
   const delivered = [];
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     delivered.push(controller.latestAssistantText);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
   controller.session = {
     isStreaming: false,
@@ -404,8 +437,11 @@ test("koishi controller refreshes session messages before resolving a final chat
 test("koishi controller takes final chat text from session lifecycle instead of rpc completion payload", async () => {
   const controller = await createController("telegram/1:3");
   const delivered = [];
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     delivered.push(controller.latestAssistantText);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
   controller.session = {
     isStreaming: false,
@@ -482,8 +518,11 @@ test("koishi controller steers an active chat turn instead of queueing a replace
     resolve() {},
     reject() {},
   };
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     calls.push("deliver");
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
 
   const result = await controller.runTurn(
@@ -544,8 +583,11 @@ test("koishi controller serializes chat turns instead of replacing the active on
   const controller = await createController("telegram/1:2");
   const order = [];
   let finishFirst;
-  controller.flushChatOutbox = async () => {
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
     order.push(`deliver:${controller.latestAssistantText}`);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
   controller.session = {
     isStreaming: false,
@@ -615,9 +657,13 @@ test("koishi controller delivers completed assistant text during recovery when p
     startedAt: Date.now(),
     replyToMessageId: "42",
   };
-  controller.flushChatOutbox = async () => {
-    if (!controller.latestAssistantText) return;
-    delivered.push({ text: controller.latestAssistantText, replyToMessageId: "42" });
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    if (controller.latestAssistantText) {
+      delivered.push({ text: controller.latestAssistantText, replyToMessageId: "42" });
+    }
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
   };
   controller.session = {
     isStreaming: false,
@@ -638,7 +684,7 @@ test("koishi controller delivers completed assistant text during recovery when p
   ]);
 });
 
-test("koishi controller reuses durable chat outbox for final reply delivery recovery", async () => {
+test("koishi controller retries persisted final reply delivery on recovery", async () => {
   const controller = await createController("telegram/1:2");
   const sends = [];
   controller.app = {
@@ -688,24 +734,20 @@ test("koishi controller reuses durable chat outbox for final reply delivery reco
     switchSession: async () => {},
   };
 
-  controller.flushChatOutbox = async () => {};
+  const originalCommitPendingDelivery = controller.commitPendingDelivery;
+  controller.commitPendingDelivery = async () => {};
   await controller.runTurn(
     { text: "hello", attachments: [], replyToMessageId: "42" },
     "prompt",
   );
 
-  const outboxDir = path.join(controller.agentDir, "data", "chat-outbox");
-  const queuedBefore = await fs.readdir(outboxDir);
-  assert.equal(queuedBefore.some((name) => name.endsWith(".json")), true);
+  assert.equal(controller.state.pendingDelivery?.text, "final text");
   assert.equal(sends.length, 0);
 
-  controller.flushChatOutbox = async function () {
-    await KoishiChatController.prototype.flushChatOutbox.call(this);
-  };
+  controller.commitPendingDelivery = originalCommitPendingDelivery;
   await controller.recoverIfNeeded();
 
-  const queuedAfter = await fs.readdir(outboxDir);
-  assert.equal(queuedAfter.some((name) => name.endsWith(".json")), false);
+  assert.equal(controller.state.pendingDelivery, undefined);
   assert.equal(sends.length, 1);
 });
 

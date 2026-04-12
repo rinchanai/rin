@@ -1,18 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { enqueueChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { drainKoishiOutbox } from "./boot.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
   SavedAttachment,
   extractTextFromContent,
-  listJsonFiles,
   markProcessedKoishiMessage,
   safeString,
 } from "./chat-helpers.js";
@@ -322,12 +319,9 @@ export class KoishiChatController {
   hasActiveTurn() {
     return Boolean(this.liveTurn || this.session?.isStreaming);
   }
-  private hasLiveTurn() {
-    return Boolean(this.state.processing && this.liveTurn);
-  }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
-    if (!this.hasLiveTurn()) return false;
+    if (!this.hasActiveTurn()) return false;
     await sendTyping(this.app, this.chatKey, this.h);
     return true;
   }
@@ -400,7 +394,7 @@ export class KoishiChatController {
     if (!this.deliveryEnabled) return;
     const summary = safeString(this.lastToolCallSummary).trim() || KOISHI_WORKING_PROGRESS_TEXT;
     const intervalMs = this.idleToolProgressIntervalMs();
-    if (!this.hasLiveTurn()) {
+    if (!this.hasActiveTurn()) {
       this.clearIdleToolProgressTimer();
       return;
     }
@@ -514,37 +508,21 @@ export class KoishiChatController {
       sessionFile: safeString(input.sessionFile || "").trim() || undefined,
     };
   }
-  private hasQueuedDelivery(payload: NonNullable<KoishiChatState["pendingDelivery"]>) {
-    const outboxDir = path.join(this.agentDir, "data", "chat-outbox");
-    return listJsonFiles(outboxDir).some((filePath) => {
-      const queued = readJsonFile(filePath, null) as any;
-      return (
-        safeString(queued?.type).trim() === payload.type &&
-        safeString(queued?.chatKey).trim() === payload.chatKey &&
-        safeString(queued?.text).trim() === payload.text &&
-        safeString(queued?.replyToMessageId).trim() ===
-          safeString(payload.replyToMessageId).trim() &&
-        safeString(queued?.sessionId).trim() === safeString(payload.sessionId).trim() &&
-        safeString(queued?.sessionFile).trim() === safeString(payload.sessionFile).trim()
-      );
-    });
-  }
   private async commitPendingDelivery(clearProcessing = false) {
     const pending = this.state.pendingDelivery;
     if (!pending) return;
-    if (!this.hasQueuedDelivery(pending)) {
-      enqueueChatOutboxPayload(this.agentDir, {
+    await sendOutboxPayload(
+      this.app,
+      this.agentDir,
+      {
         ...pending,
         createdAt: new Date().toISOString(),
-      });
-    }
+      },
+      this.h,
+    );
     delete this.state.pendingDelivery;
     if (clearProcessing) delete this.state.processing;
     this.saveState();
-    await this.flushChatOutbox();
-  }
-  private async flushChatOutbox() {
-    await drainKoishiOutbox(this.app, this.agentDir, this.h, this.logger);
   }
   private markProcessedMessage(messageId?: string) {
     const nextMessageId = safeString(messageId || "").trim();
@@ -787,7 +765,6 @@ export class KoishiChatController {
   }
   async recoverIfNeeded() {
     await this.runExclusiveTurn(async () => {
-      await this.flushChatOutbox();
       if (this.state.pendingDelivery) {
         await this.commitPendingDelivery(true);
         return;
