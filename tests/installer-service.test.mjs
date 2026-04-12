@@ -104,3 +104,44 @@ test("installer service helpers build launchd plist with stable daemon environme
   assert.ok(spec.plist.includes("<string>/tmp/rin</string>"));
   assert.ok(spec.plist.includes("<string>/Users/demo</string>"));
 });
+
+test("installer service helpers derive systemd units and runtime env from the target user", () => {
+  const uid = 4242;
+  const context = service.systemdUserContext("demo user", {
+    findSystemUser: () => ({ uid }),
+    existsSync: (inputPath) => {
+      return (
+        inputPath === "/usr/bin/systemctl" || inputPath === `/run/user/${uid}`
+      );
+    },
+  });
+  assert.equal(context.systemctl, "/usr/bin/systemctl");
+  assert.deepEqual(context.userEnv, {
+    XDG_RUNTIME_DIR: `/run/user/${uid}`,
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=/run/user/${uid}/bus`,
+  });
+  assert.deepEqual(context.units, [
+    "rin-daemon-demo-user.service",
+    "rin-daemon.service",
+  ]);
+});
+
+test("installer service helpers derive daemon socket paths from uid or target home", () => {
+  const withUid = service.daemonSocketPathForUser("demo", {
+    findSystemUser: () => ({ uid: 1234 }),
+    targetHomeForUser: () => "/home/demo",
+  });
+  assert.equal(
+    withUid,
+    path.join("/run/user", "1234", "rin-daemon", "daemon.sock"),
+  );
+
+  const withoutUid = service.daemonSocketPathForUser("demo", {
+    findSystemUser: () => null,
+    targetHomeForUser: () => "/home/demo",
+  });
+  assert.equal(
+    withoutUid,
+    path.join("/home/demo", ".cache", "rin-daemon", "daemon.sock"),
+  );
+});

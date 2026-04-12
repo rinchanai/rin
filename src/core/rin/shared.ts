@@ -28,9 +28,16 @@ export type ParsedArgs = {
   hasSavedInstall: boolean;
 };
 
+export const DEFAULT_SOURCE_ARCHIVE_URL =
+  "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz";
+
 export function safeString(value: unknown) {
   if (value == null) return "";
   return String(value);
+}
+
+export function sourceArchiveUrl() {
+  return DEFAULT_SOURCE_ARCHIVE_URL;
 }
 
 export function repoRootFromHere() {
@@ -402,18 +409,9 @@ export async function runUpdate(parsed: ParsedArgs) {
     fs.mkdirSync(sourceRoot, { recursive: true });
     fs.mkdirSync(tmpDir, { recursive: true });
     if (curl) {
-      runCommandSync(curl, [
-        "-fsSL",
-        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
-        "-o",
-        archivePath,
-      ]);
+      runCommandSync(curl, ["-fsSL", sourceArchiveUrl(), "-o", archivePath]);
     } else if (wget) {
-      runCommandSync(wget, [
-        "-qO",
-        archivePath,
-        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
-      ]);
+      runCommandSync(wget, ["-qO", archivePath, sourceArchiveUrl()]);
     } else {
       throw new Error("rin_missing_required_tool:curl_or_wget");
     }

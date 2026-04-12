@@ -269,18 +269,22 @@ export function refreshManagedServiceFiles(
 
 export function systemdUserContext(
   targetUser: string,
-  deps: { findSystemUser: (user: string) => any },
+  deps: {
+    findSystemUser: (user: string) => any;
+    existsSync?: (filePath: string) => boolean;
+  },
 ) {
-  const systemctl = fs.existsSync("/usr/bin/systemctl")
+  const existsSync = deps.existsSync || fs.existsSync;
+  const systemctl = existsSync("/usr/bin/systemctl")
     ? "/usr/bin/systemctl"
-    : fs.existsSync("/bin/systemctl")
+    : existsSync("/bin/systemctl")
       ? "/bin/systemctl"
       : "";
   const target = deps.findSystemUser(targetUser) as any;
   const uid = Number(target?.uid ?? -1);
   const runtimeDir = uid >= 0 ? `/run/user/${uid}` : "";
   const userEnv =
-    runtimeDir && fs.existsSync(runtimeDir)
+    runtimeDir && existsSync(runtimeDir)
       ? {
           XDG_RUNTIME_DIR: runtimeDir,
           DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus`,

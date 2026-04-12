@@ -46,6 +46,14 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
 });
 
+test("shared source archive url follows the active repository", () => {
+  assert.equal(
+    shared.sourceArchiveUrl(),
+    "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+  );
+  assert.equal(shared.sourceArchiveUrl(), shared.DEFAULT_SOURCE_ARCHIVE_URL);
+});
+
 test("tmux socket args target the caller-owned hidden socket", () => {
   assert.deepEqual(launch.buildTmuxSocketArgs("demo"), ["-L", "rin-demo"]);
 });
