@@ -94,6 +94,20 @@ rin update
 
 ## More docs
 
+User-facing docs:
+
 - project overview: [`../../README.md`](../../README.md)
+- changelog: [`../../CHANGELOG.md`](../../CHANGELOG.md)
+- troubleshooting: [`../troubleshooting.md`](../troubleshooting.md)
+- roadmap: [`../roadmap.md`](../roadmap.md)
+
+Contributor docs:
+
 - development notes: [`../development.md`](../development.md)
-- agent/runtime docs: [`../rin/README.md`](../rin/README.md)
+- contributing guide: [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md)
+- architecture: [`../architecture.md`](../architecture.md)
+- release management: [`../release-management.md`](../release-management.md)
+
+Agent/runtime docs:
+
+- [`../rin/README.md`](../rin/README.md)
