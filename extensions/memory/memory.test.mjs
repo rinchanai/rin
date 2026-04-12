@@ -77,6 +77,48 @@ test("memory search returns archived transcript matches", async () => {
   });
 });
 
+test("memory transcripts preserve assistant tool calls and thinking for recall", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-04T11:11:11.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "Need to inspect the repo before editing." },
+          {
+            type: "toolCall",
+            id: "call-1",
+            name: "read",
+            args: { path: "/tmp/demo.txt" },
+          },
+          { type: "text", text: "I checked the file and found the setting." },
+        ],
+      },
+      root,
+    );
+
+    const byTool = await transcripts.searchTranscriptArchive(
+      "read /tmp/demo.txt",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(byTool[0].role, "assistant");
+    assert.match(byTool[0].preview, /tool:read/);
+    assert.match(byTool[0].preview, /demo\.txt/);
+
+    const entries = await transcripts.loadTranscriptSessionEntries(
+      { sessionId: "session-2" },
+      root,
+    );
+    assert.equal(entries.length, 1);
+    assert.match(entries[0].text, /Need to inspect the repo/);
+    assert.match(entries[0].text, /tool:read/);
+  });
+});
+
+
 test("memory can browse recent sessions without a query", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
@@ -96,6 +138,17 @@ test("memory can browse recent sessions without a query", async () => {
         sessionFile: "/tmp/session-2.jsonl",
         role: "user",
         content: [{ type: "text", text: "这是最近的一次会话" }],
+      },
+      root,
+    );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-05T12:22:23.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "toolResult",
+        toolName: "read",
+        content: "tool output should not replace the session preview",
       },
       root,
     );
