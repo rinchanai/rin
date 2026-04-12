@@ -2,35 +2,36 @@
 
 # Rin
 
-一个终端优先的本地 AI 助手：能聊天、改文件、记事情、联网搜索，还能跑定时任务。
+Rin 是一个终端优先的本地 AI 助手，而且不是一次性对话用完就丢的那种。
 
-## Rin 是什么
+它可以聊天、改文件、记住长期偏好、联网搜索、跑定时任务，还能通过 Koishi 接到聊天平台上，统一围绕一个入口：`rin`。
 
-Rin 不是那种只适合一次性对话的 coding agent。
+## Rin 适合做什么
 
-它更像一个可以长期放在终端里陪你做事的本地助手：
+Rin 适合那些希望把助手长期留在日常工作流里，而不是每次都重新开一个一次性 agent 的人。
 
-- 用自然语言直接提需求
-- 查看和修改文件
-- 保留有用的长期记忆
-- 设置提醒和周期任务
-- 查询最新网页信息
-- 通过 Koishi 把同一个助手接到聊天平台
+你可以用它来：
 
-目标很简单：让 agent 更像真正能长期使用的工具，而不只是模型外面套的一层壳。
+- 在终端里查看和修改代码库
+- 保留稳定记忆和可复用技能
+- 设置提醒和周期检查
+- 不跳出当前工作流就查询最新信息
+- 在终端和聊天里延续同一个助手
 
-## 为什么用 Rin
+## 当前项目状态
 
-Rin 主要抓这几件事：
+Rin 已经可以使用，但仍然处于持续打磨阶段。
 
-- 终端优先
-- 不只是无状态聊天，还内建记忆
+核心方向已经比较稳定：
+
+- 本地优先工作流
+- 内建记忆与回忆
 - 内建定时任务
-- 对时效性问题内建 Web 搜索
-- 支持 Koishi 聊天桥接
-- 围绕 `rin` 这个产品入口使用
+- 内建 Web 搜索与页面抓取
+- 支持 Koishi 聊天桥
+- 安装、运行、更新路径统一
 
-如果你想要的是一个能长期帮忙的助手，Rin 就是按这个方向做的。
+但可靠性、交互体验和文档还在持续收敛。如果你现在就尝试它，看到的会是一个持续进化中的产品，而不是完全冻结的平台。
 
 ## 快速开始
 
@@ -40,23 +41,30 @@ Rin 主要抓这几件事：
 ./install.sh
 ```
 
-然后打开 Rin：
+打开 Rin：
 
 ```bash
 rin
 ```
 
-需要时检查运行状态：
+需要时检查状态：
 
 ```bash
 rin doctor
 ```
 
-安装器会提醒你安全边界，以及可能出现的额外 token 开销。这些开销可能来自初始化、记忆处理、总结压缩、subagent、定时任务和 Web 搜索等流程。
+## 核心命令
+
+```bash
+rin            # 打开 Rin
+rin doctor     # 检查健康状态和配置
+rin start      # 启动 daemon
+rin stop       # 停止 daemon
+rin restart    # 重启 daemon
+rin update     # 更新已安装的 Rin 运行时
+```
 
 ## 你可以直接这样让 Rin 做事
-
-打开 Rin 后，直接像聊天一样说就行。
 
 比如：
 
@@ -68,44 +76,50 @@ rin doctor
 - `帮我查一下这个工具最新的官方文档。`
 - `每小时看看这个目录有没有变化。`
 
-## 核心命令
-
-```bash
-rin            # 打开 Rin
-rin doctor     # 检查状态和配置
-rin start      # 启动 daemon
-rin stop       # 停止 daemon
-rin restart    # 重启 daemon
-rin update     # 更新 Rin
-```
-
 ## 默认内建能力
 
 Rin 默认就接好了这些能力：
 
-- 长期记忆
+- 长期记忆与回忆
 - 定时任务和提醒
 - 实时 Web 搜索
+- 直接 URL 抓取
+- subagent
 - Koishi 聊天桥
-- 用于委托工作的 subagent
 
-## 什么时候用 `rin --std`
+## 更新 Rin
 
-正常情况下直接用 `rin`。
+对于正常安装的运行时，直接使用：
 
-`rin --std` 主要是默认 RPC 模式出问题时的排障后备入口，用来前台恢复或调试，不是平时的默认打开方式。
+```bash
+rin update
+```
+
+如果当前账号下没有 `rin`，不要立刻判断 Rin 没装。更常见的原因是当前 shell 用户并不是 launcher 所属用户。
+
+完整的恢复 / 更新路径可以看：
+
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
 
 ## 文档
 
-想继续了解，可以从这里开始：
+面向用户的文档：
+
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`docs/architecture.md`](docs/architecture.md)
+
+面向 agent / runtime 的文档：
 
 - [`docs/rin/README.md`](docs/rin/README.md)
-- [`docs/rin/capabilities.md`](docs/rin/capabilities.md)
-- [`docs/rin/runtime-layout.md`](docs/rin/runtime-layout.md)
-- [`docs/rin/builtin-extensions.md`](docs/rin/builtin-extensions.md)
+- [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](docs/rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
 
 ## 一句话总结
 
-装好它，运行 `rin`，然后直接说你要它做什么。
+装好它，运行 `rin`，然后把助手长期留在你的工作流里。
 
-这就是 Rin。
+这就是 Rin 的核心意义。

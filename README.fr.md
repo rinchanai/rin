@@ -2,35 +2,36 @@
 
 # Rin
 
-Un assistant IA local, centré sur le terminal, capable de discuter, modifier des fichiers, mémoriser des informations, chercher sur le web et exécuter des tâches planifiées.
+Rin est un assistant IA local, centré sur le terminal, qui reste utile d’un tour à l’autre.
 
-## Qu’est-ce que Rin ?
+Il peut discuter, modifier des fichiers, mémoriser des préférences durables, chercher sur le web, exécuter des tâches planifiées et se connecter à des plateformes de chat via Koishi, le tout derrière une seule entrée : `rin`.
 
-Rin n’est pas seulement un agent de code pour des sessions ponctuelles.
+## À quoi sert Rin
 
-L’idée est d’avoir un assistant local que vous pouvez garder dans votre terminal pour le travail au quotidien :
+Rin s’adresse à celles et ceux qui veulent garder un assistant dans leur flux de travail quotidien, au lieu de rouvrir un agent jetable à chaque fois.
 
-- demander des choses en langage naturel
-- inspecter et modifier des fichiers
-- conserver une mémoire utile à long terme
-- définir des rappels et des tâches récurrentes
-- consulter des informations récentes sur le web
-- relier le même assistant à des plateformes de chat via Koishi
+Utilisez-le pour :
 
-L’objectif est simple : faire en sorte que l’agent ressemble à un vrai outil de travail au long cours, pas seulement à une fine couche autour d’un modèle.
+- inspecter et modifier un dépôt depuis le terminal
+- conserver une mémoire stable et des compétences réutilisables
+- programmer des rappels et des vérifications récurrentes
+- consulter des informations récentes sans quitter le flux de travail
+- continuer avec le même assistant depuis le terminal et le chat
 
-## Pourquoi Rin ?
+## État actuel du projet
 
-Rin se concentre sur quelques bases :
+Rin est déjà utilisable, mais reste un produit en cours de raffinement actif.
 
-- un workflow orienté terminal
-- une mémoire intégrée, pas seulement des conversations sans état
-- des tâches planifiées intégrées
-- une recherche web intégrée pour les questions sensibles au temps
-- la prise en charge d’un pont de chat via Koishi
-- un point d’entrée unique : `rin`
+La direction principale est déjà stable :
 
-Si vous voulez un assistant utile sur la durée, Rin est conçu pour cela.
+- workflow local-first
+- mémoire et rappel intégrés
+- tâches planifiées intégrées
+- recherche web et fetch intégrés
+- prise en charge du pont de chat Koishi
+- chemin cohérent d’installation, d’exécution et de mise à jour
+
+Mais la fiabilité, l’UX et la documentation continuent d’être polies. Si vous l’essayez aujourd’hui, pensez à un produit en évolution plutôt qu’à une plateforme figée.
 
 ## Démarrage rapide
 
@@ -40,23 +41,30 @@ Installation :
 ./install.sh
 ```
 
-Puis lancez Rin :
+Ouvrir Rin :
 
 ```bash
 rin
 ```
 
-Vérifiez l’état si nécessaire :
+Vérifier l’état si nécessaire :
 
 ```bash
 rin doctor
 ```
 
-L’installateur vous avertira des limites de sécurité et de la possibilité d’une consommation supplémentaire de jetons. Ce coût supplémentaire peut venir de l’initialisation, du traitement de la mémoire, des résumés, des subagents, des tâches planifiées et de la recherche web.
+## Commandes principales
+
+```bash
+rin            # ouvrir Rin
+rin doctor     # vérifier l’état et la configuration
+rin start      # démarrer le daemon
+rin stop       # arrêter le daemon
+rin restart    # redémarrer le daemon
+rin update     # mettre à jour le runtime Rin installé
+```
 
 ## Ce que vous pouvez demander à Rin
-
-Une fois Rin ouvert, parlez-lui simplement.
 
 Exemples :
 
@@ -68,44 +76,50 @@ Exemples :
 - `Cherche la documentation officielle la plus récente pour cet outil.`
 - `Surveille ce dossier toutes les heures et dis-moi s’il change.`
 
-## Commandes principales
+## Capacités intégrées
 
-```bash
-rin            # ouvrir Rin
-rin doctor     # vérifier l’état et la configuration
-rin start      # démarrer le daemon
-rin stop       # arrêter le daemon
-rin restart    # redémarrer le daemon
-rin update     # mettre à jour Rin
-```
+Rin inclut par défaut :
 
-## Capacités intégrées principales
-
-Rin inclut déjà plusieurs briques importantes :
-
-- mémoire à long terme
+- mémoire et rappel à long terme
 - tâches planifiées et rappels
 - recherche web en direct
+- récupération directe d’URL
+- subagents
 - pont de chat Koishi
-- subagents pour déléguer du travail
 
-## Quand utiliser `rin --std`
+## Mettre à jour Rin
 
-En temps normal, utilisez `rin`.
+Pour un runtime installé normalement, utilisez :
 
-`rin --std` sert surtout de solution de repli pour le dépannage lorsque le mode RPC par défaut a un problème et que vous avez besoin d’une session au premier plan pour réparer ou déboguer.
+```bash
+rin update
+```
+
+Si `rin` est absent sur le compte actuel, ne supposez pas que Rin n’est pas installé. Cela signifie souvent simplement que l’utilisateur shell courant n’est pas le propriétaire du launcher.
+
+Pour le flux complet de récupération ou de mise à jour, voir :
+
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
 
 ## Documentation
 
-Pour aller plus loin, commencez ici :
+Documentation orientée utilisateur :
+
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`docs/architecture.md`](docs/architecture.md)
+
+Documentation agent / runtime :
 
 - [`docs/rin/README.md`](docs/rin/README.md)
-- [`docs/rin/capabilities.md`](docs/rin/capabilities.md)
-- [`docs/rin/runtime-layout.md`](docs/rin/runtime-layout.md)
-- [`docs/rin/builtin-extensions.md`](docs/rin/builtin-extensions.md)
+- [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](docs/rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
 
 ## Version courte
 
-Installez-le, lancez `rin`, puis demandez ce dont vous avez besoin.
+Installez-le, lancez `rin`, et gardez l’assistant dans votre flux de travail.
 
-C’est l’idée principale de Rin.
+C’est le cœur de Rin.

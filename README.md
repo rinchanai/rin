@@ -109,6 +109,7 @@ User-facing docs:
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`docs/architecture.md`](docs/architecture.md)
 
 Agent/runtime docs:
 

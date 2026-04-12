@@ -2,35 +2,36 @@
 
 # Rin
 
-チャット、ファイル編集、記憶、Web 検索、定期実行ができる、ターミナル中心のローカル AI アシスタントです。
+Rin は、ターンをまたいでも使い続けられる、ターミナル中心のローカル AI アシスタントです。
 
-## Rin とは
+チャット、ファイル編集、長期的な設定の記憶、Web 検索、定期タスク、そして Koishi 経由のチャット連携を、ひとつの入口 `rin` にまとめています。
 
-Rin は、一回きりのやり取りで終わるコーディングエージェントではありません。
+## Rin が向いていること
 
-日々の作業でターミナルに置いて使い続けられる、ローカルアシスタントを目指しています。
+Rin は、毎回使い捨てのエージェントを開くのではなく、日々の作業の中に置いて使い続けたい人のために作られています。
 
-- 自然な言葉で依頼できる
-- ファイルを確認・編集できる
-- 役立つ情報を長期記憶できる
-- リマインダーや定期タスクを設定できる
-- 最新情報を Web で調べられる
-- Koishi 経由で同じアシスタントをチャットにもつなげられる
+たとえば次のような用途です。
 
-狙いはシンプルです。モデルの外側にある薄いラッパーではなく、実際に使い続けられる道具にすることです。
+- ターミナルからコードベースを確認・編集する
+- 安定した記憶や再利用できるスキルを持たせる
+- リマインダーや定期チェックを設定する
+- 作業を中断せずに最新情報を調べる
+- ターミナルとチャットの両方で同じアシスタントを使い続ける
 
-## Rin を選ぶ理由
+## 現在のプロジェクト状態
 
-Rin は次の基本を重視しています。
+Rin はすでに使えますが、いまも継続的に磨いている最中です。
 
-- ターミナル優先のワークフロー
-- ステートレスな会話だけでなく、記憶を内蔵
-- 定期タスクを内蔵
-- 時間に敏感な質問のための Web 検索を内蔵
-- Koishi によるチャットブリッジ対応
-- エントリーポイントは `rin` に集約
+コアの方向性は安定しています。
 
-長く使えるアシスタントが欲しいなら、Rin はそのために設計されています。
+- ローカルファーストのワークフロー
+- 記憶と再呼び出しを標準搭載
+- 定期タスクを標準搭載
+- Web 検索と取得を標準搭載
+- Koishi チャットブリッジ対応
+- 一貫した実行・更新パス
+
+ただし、信頼性、UX、ドキュメントはまだ継続的に改善中です。今試すなら、完成品というより進化中の製品として見るのが近いです。
 
 ## クイックスタート
 
@@ -46,17 +47,24 @@ Rin は次の基本を重視しています。
 rin
 ```
 
-必要なら状態確認:
+状態確認:
 
 ```bash
 rin doctor
 ```
 
-インストーラーはセキュリティ境界と追加トークン消費の可能性を警告します。初期設定、メモリ処理、要約、subagent、定期タスク、Web 検索などで追加コストが発生することがあります。
+## 基本コマンド
+
+```bash
+rin            # Rin を開く
+rin doctor     # 状態と設定を確認
+rin start      # デーモンを起動
+rin stop       # デーモンを停止
+rin restart    # デーモンを再起動
+rin update     # インストール済み Rin ランタイムを更新
+```
 
 ## Rin に頼めること
-
-Rin を開いたら、そのまま話しかければ大丈夫です。
 
 例:
 
@@ -68,44 +76,50 @@ Rin を開いたら、そのまま話しかければ大丈夫です。
 - `このツールの最新の公式ドキュメントを調べて。`
 - `このフォルダを毎時間確認して、変化があれば知らせて。`
 
-## 基本コマンド
+## 標準搭載の機能
 
-```bash
-rin            # Rin を開く
-rin doctor     # 状態と設定を確認
-rin start      # デーモンを起動
-rin stop       # デーモンを停止
-rin restart    # デーモンを再起動
-rin update     # Rin を更新
-```
+Rin には最初から次の機能があります。
 
-## 主な内蔵機能
-
-Rin には次の機能が最初から入っています。
-
-- 長期記憶
+- 長期記憶と再呼び出し
 - 定期タスクとリマインダー
 - ライブ Web 検索
+- 直接 URL 取得
+- subagent
 - Koishi チャットブリッジ
-- 作業を委譲する subagent
 
-## `rin --std` を使う場面
+## Rin の更新
 
-通常は `rin` を使ってください。
+通常のインストール済みランタイムなら、次を使います。
 
-`rin --std` は、既定の RPC モードに問題があるときに前景で復旧・デバッグするためのフォールバックです。通常の起動方法ではありません。
+```bash
+rin update
+```
+
+現在のアカウントで `rin` が見つからなくても、すぐに未インストールとは限りません。ランチャー所有ユーザーではないだけ、という場合がよくあります。
+
+完全な復旧・更新フローは次を参照してください。
+
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
 
 ## ドキュメント
 
-詳しく知りたい場合は、まずこちらを参照してください。
+ユーザー向け:
+
+- [`docs/user/getting-started.md`](docs/user/getting-started.md)
+- [`docs/development.md`](docs/development.md)
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`docs/architecture.md`](docs/architecture.md)
+
+agent / runtime 向け:
 
 - [`docs/rin/README.md`](docs/rin/README.md)
-- [`docs/rin/capabilities.md`](docs/rin/capabilities.md)
-- [`docs/rin/runtime-layout.md`](docs/rin/runtime-layout.md)
-- [`docs/rin/builtin-extensions.md`](docs/rin/builtin-extensions.md)
+- [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](docs/rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
 
 ## ひとことで言うと
 
-インストールして、`rin` を実行して、やってほしいことをそのまま伝える。
+インストールして、`rin` を起動して、アシスタントを作業の中に住まわせる。
 
-それが Rin です。
+それが Rin の核です。
