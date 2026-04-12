@@ -18,8 +18,8 @@ import {
 } from "./progress.js";
 import {
   buildAssistantDelivery,
-  collectFinalAssistantText,
   commitPendingDelivery,
+  completeLiveTurn as completeKoishiLiveTurn,
   markProcessedMessage,
   refreshSessionMessages,
   resolveFinalAssistantText,
@@ -336,19 +336,8 @@ export class KoishiChatController {
   private async refreshSessionMessages() {
     await refreshSessionMessages(this);
   }
-  private collectFinalAssistantText() {
-    return collectFinalAssistantText(this);
-  }
   private async completeLiveTurn() {
-    if (!this.liveTurn) return;
-    await this.refreshSessionMessages().catch(() => {});
-    const finalText = this.collectFinalAssistantText();
-    if (finalText) this.latestAssistantText = finalText;
-    this.liveTurn.resolve({
-      finalText,
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile: this.currentSessionFile(),
-    });
+    await completeKoishiLiveTurn(this as any);
   }
   currentSessionId() {
     return safeString(
