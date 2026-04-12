@@ -113,7 +113,7 @@ function buildRulesPrompt(targetDir: string) {
 
 function formatRulesCall(
   args: { path?: string } | undefined,
-  theme: typeof import("../../third_party/pi-coding-agent/src/modes/interactive/theme/theme.js").theme,
+  theme: any,
 ) {
   const rawPath = str(args?.path);
   const path = rawPath !== null ? shortenPath(rawPath) : null;
@@ -132,7 +132,7 @@ function formatRulesResult(
     details?: { truncation?: TruncationResult; emptyMessage?: string };
   },
   options: { expanded: boolean },
-  theme: typeof import("../../third_party/pi-coding-agent/src/modes/interactive/theme/theme.js").theme,
+  theme: any,
   showImages: boolean,
 ) {
   const output = getTextOutput(result, showImages);
