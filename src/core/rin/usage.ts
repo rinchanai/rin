@@ -27,28 +27,30 @@ export type UsageCliOptions = {
 };
 
 function printUsageHelp() {
-  console.log([
-    "rin usage [options]",
-    "",
-    "Options:",
-    "  --from <time>         start time (ISO, YYYY-MM-DD, 24h, 7d, 30m)",
-    "  --to <time>           end time (ISO, YYYY-MM-DD, 24h, 7d, 30m)",
-    "  --group-by <dims>     comma-separated dimensions",
-    "  --filter <k=v>        equality filter, repeatable",
-    "  --limit <n>           row limit (default 20)",
-    "  --order-by <metric>   total_tokens, cost_total, rows, input_tokens...",
-    "  --direction <dir>     asc or desc",
-    "  --events              show raw events instead of aggregates",
-    "  --include-zero        include zero-token rows in aggregates",
-    "  --dimensions          list supported dimensions",
-    "  --help                show this help",
-    "",
-    "Examples:",
-    "  rin usage",
-    "  rin usage --group-by provider_model,capability --from 7d",
-    "  rin usage --group-by session_id,event_type --filter source=extension",
-    "  rin usage --events --limit 50 --filter session_id=abc123",
-  ].join("\n"));
+  console.log(
+    [
+      "rin usage [options]",
+      "",
+      "Options:",
+      "  --from <time>         start time (ISO, YYYY-MM-DD, 24h, 7d, 30m)",
+      "  --to <time>           end time (ISO, YYYY-MM-DD, 24h, 7d, 30m)",
+      "  --group-by <dims>     comma-separated dimensions",
+      "  --filter <k=v>        equality filter, repeatable",
+      "  --limit <n>           row limit (default 20)",
+      "  --order-by <metric>   total_tokens, cost_total, rows, input_tokens...",
+      "  --direction <dir>     asc or desc",
+      "  --events              show raw events instead of aggregates",
+      "  --include-zero        include zero-token rows in aggregates",
+      "  --dimensions          list supported dimensions",
+      "  --help                show this help",
+      "",
+      "Examples:",
+      "  rin usage",
+      "  rin usage --group-by provider_model,capability --from 7d",
+      "  rin usage --group-by session_id,event_type --filter source=extension",
+      "  rin usage --events --limit 50 --filter session_id=abc123",
+    ].join("\n"),
+  );
 }
 
 function parsePositiveInt(value: string, fallback: number) {
@@ -57,7 +59,10 @@ function parsePositiveInt(value: string, fallback: number) {
   return Math.round(num);
 }
 
-function normalizeTimeArg(input: string | undefined, boundary: "start" | "end") {
+function normalizeTimeArg(
+  input: string | undefined,
+  boundary: "start" | "end",
+) {
   const raw = safeString(input).trim();
   if (!raw) return undefined;
   const relative = raw.match(/^(\d+)([mhdw])$/i);
@@ -150,7 +155,10 @@ export function parseUsageArgs(argv: string[]): UsageCliOptions {
       continue;
     }
     if (arg === "--limit") {
-      result.limit = parsePositiveInt(safeString(args[++i]).trim(), result.limit);
+      result.limit = parsePositiveInt(
+        safeString(args[++i]).trim(),
+        result.limit,
+      );
       continue;
     }
     if (arg === "--order-by") {
@@ -158,7 +166,8 @@ export function parseUsageArgs(argv: string[]): UsageCliOptions {
       continue;
     }
     if (arg === "--direction") {
-      result.direction = safeString(args[++i]).trim().toLowerCase() === "asc" ? "asc" : "desc";
+      result.direction =
+        safeString(args[++i]).trim().toLowerCase() === "asc" ? "asc" : "desc";
       continue;
     }
     throw new Error(`unknown_usage_arg:${arg}`);
@@ -194,7 +203,10 @@ function renderTable(rows: Array<Record<string, unknown>>, columns: string[]) {
   for (const row of rows) {
     for (const column of columns) {
       const value = safeString(row[column] ?? "");
-      widths.set(column, Math.min(48, Math.max(widths.get(column) || 0, value.length)));
+      widths.set(
+        column,
+        Math.min(48, Math.max(widths.get(column) || 0, value.length)),
+      );
     }
   }
   const header = columns
@@ -206,7 +218,10 @@ function renderTable(rows: Array<Record<string, unknown>>, columns: string[]) {
   const body = rows.map((row) =>
     columns
       .map((column) =>
-        pad(truncate(safeString(row[column] ?? ""), widths.get(column) || 0), widths.get(column) || 0),
+        pad(
+          truncate(safeString(row[column] ?? ""), widths.get(column) || 0),
+          widths.get(column) || 0,
+        ),
       )
       .join("  "),
   );
@@ -222,7 +237,10 @@ function summarizeOverview(overview: any) {
     `tokens=${formatInt(overview?.total_tokens)} (in=${formatInt(overview?.input_tokens)}, out=${formatInt(overview?.output_tokens)}, cacheRead=${formatInt(overview?.cache_read_tokens)}, cacheWrite=${formatInt(overview?.cache_write_tokens)})`,
     `cost=$${formatCost(overview?.cost_total)}`,
   ];
-  if (safeString(overview?.first_timestamp).trim() || safeString(overview?.last_timestamp).trim()) {
+  if (
+    safeString(overview?.first_timestamp).trim() ||
+    safeString(overview?.last_timestamp).trim()
+  ) {
     lines.push(
       `range=${safeString(overview?.first_timestamp).trim() || "-"} .. ${safeString(overview?.last_timestamp).trim() || "-"}`,
     );
@@ -263,7 +281,9 @@ function renderAggregateTable(
 
 function renderEventTable(rows: Array<Record<string, unknown>>) {
   const formatted = rows.map((row) => ({
-    timestamp: safeString(row.timestamp).replace("T", " ").replace(".000Z", "Z"),
+    timestamp: safeString(row.timestamp)
+      .replace("T", " ")
+      .replace(".000Z", "Z"),
     session_id: row.session_id,
     source: row.source,
     event_type: row.event_type,
@@ -293,7 +313,10 @@ function renderEventTable(rows: Array<Record<string, unknown>>) {
   ]);
 }
 
-export function renderUsageReport(agentDir: string, options: UsageCliOptions): string {
+export function renderUsageReport(
+  agentDir: string,
+  options: UsageCliOptions,
+): string {
   if (options.help) {
     printUsageHelp();
     return "";
@@ -383,7 +406,11 @@ export function renderUsageReport(agentDir: string, options: UsageCliOptions): s
     "",
     renderAggregateTable("top sources", ["source"], bySource),
     "",
-    renderAggregateTable("top sessions", ["session_name", "session_id"], bySession),
+    renderAggregateTable(
+      "top sessions",
+      ["session_name", "session_id"],
+      bySession,
+    ),
     "",
     renderAggregateTable("top capabilities", ["capability"], byCapability),
     "",
@@ -398,7 +425,12 @@ export async function runUsageInternal(rawArgv: string[]) {
     printUsageHelp();
     return;
   }
-  console.log(renderUsageReport(process.env.RIN_DIR || process.env.PI_CODING_AGENT_DIR || "", options));
+  console.log(
+    renderUsageReport(
+      process.env.RIN_DIR || process.env.PI_CODING_AGENT_DIR || "",
+      options,
+    ),
+  );
 }
 
 export async function runUsage(parsed: ParsedArgs, rawArgv: string[]) {

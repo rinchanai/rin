@@ -184,7 +184,9 @@ export class CronScheduler {
     const session = input.session ?? existing?.session;
     if (!session) throw new Error("cron_session_required");
     if (session.mode !== "current" && session.mode !== "dedicated") {
-      throw new Error(`cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`);
+      throw new Error(
+        `cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`,
+      );
     }
     const normalizedSession: CronTaskSessionBinding = {
       mode: session.mode,
@@ -192,9 +194,7 @@ export class CronScheduler {
         session.mode === "current"
           ? path.resolve(
               HOME_DIR,
-              safeString(
-                session.sessionFile || defaults.sessionFile,
-              ).trim() ||
+              safeString(session.sessionFile || defaults.sessionFile).trim() ||
                 (() => {
                   throw new Error("cron_current_session_required");
                 })(),

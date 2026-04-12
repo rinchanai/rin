@@ -72,21 +72,24 @@ test("koishi chat helpers derive incoming text from elements", () => {
   );
   assert.equal(
     helpers.elementsToText([
-      { type: "paragraph", children: [{ type: "text", attrs: { content: "第一行" } }] },
+      {
+        type: "paragraph",
+        children: [{ type: "text", attrs: { content: "第一行" } }],
+      },
       { type: "br" },
       { type: "text", attrs: { content: "第二行" } },
     ]),
     "第一行\n\n第二行",
   );
   assert.equal(
-    helpers.elementsToText([
-      { type: "img", attrs: { file: "demo.png" } },
-    ]),
+    helpers.elementsToText([{ type: "img", attrs: { file: "demo.png" } }]),
     "",
   );
-  assert.equal(helpers.hasMediaElements([{ type: "img", attrs: { file: "demo.png" } }]), true);
+  assert.equal(
+    helpers.hasMediaElements([{ type: "img", attrs: { file: "demo.png" } }]),
+    true,
+  );
 });
-
 
 test("koishi chat helpers synthesize text elements only when upstream omitted elements", () => {
   assert.deepEqual(

@@ -33,7 +33,9 @@ test("memory transcripts archive entries under memory/transcripts", async () => 
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "user",
-        content: [{ type: "text", text: "Does Rin keep raw conversation transcripts?" }],
+        content: [
+          { type: "text", text: "Does Rin keep raw conversation transcripts?" },
+        ],
       },
       root,
     );
@@ -60,7 +62,9 @@ test("memory search returns archived transcript matches", async () => {
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "user",
-        content: [{ type: "text", text: "Does Rin keep raw conversation transcripts?" }],
+        content: [
+          { type: "text", text: "Does Rin keep raw conversation transcripts?" },
+        ],
       },
       root,
     );
@@ -86,7 +90,10 @@ test("memory transcripts preserve assistant tool calls and thinking for recall",
         sessionFile: "/tmp/session-2.jsonl",
         role: "assistant",
         content: [
-          { type: "thinking", thinking: "Need to inspect the repo before editing." },
+          {
+            type: "thinking",
+            thinking: "Need to inspect the repo before editing.",
+          },
           {
             type: "toolCall",
             id: "call-1",
@@ -117,7 +124,6 @@ test("memory transcripts preserve assistant tool calls and thinking for recall",
     assert.match(entries[0].text, /tool:read/);
   });
 });
-
 
 test("memory can browse recent sessions without a query", async () => {
   await withTempRoot(async (root) => {
@@ -159,7 +165,11 @@ test("memory can browse recent sessions without a query", async () => {
         sessionFile: "/tmp/session-2.jsonl",
         role: "assistant",
         content: [
-          { type: "toolCall", name: "browser_click", args: { selector: "Next" } },
+          {
+            type: "toolCall",
+            name: "browser_click",
+            args: { selector: "Next" },
+          },
           { type: "text", text: "卡在验证码页面，下一步要收验证码。" },
         ],
       },

@@ -36,16 +36,20 @@ function stringifyContent(content: unknown): string {
       if (part.type === "text") return safeString(part?.text);
       if (part.type === "thinking") return safeString(part?.thinking);
       if (part.type === "toolCall") {
-        const name = safeString(part?.name || part?.toolName || "tool").trim() || "tool";
+        const name =
+          safeString(part?.name || part?.toolName || "tool").trim() || "tool";
         const args = normalizeInlineValue(part?.args || part?.arguments || "");
         return args ? `[tool:${name}] ${args}` : `[tool:${name}]`;
       }
       if (part.type === "image") {
-        const mimeType = safeString(part?.mimeType || "image").trim() || "image";
+        const mimeType =
+          safeString(part?.mimeType || "image").trim() || "image";
         return `[image:${mimeType}]`;
       }
       if (part.type === "file") {
-        const name = safeString(part?.name || part?.path || part?.url || "file").trim() || "file";
+        const name =
+          safeString(part?.name || part?.path || part?.url || "file").trim() ||
+          "file";
         return `[file:${name}]`;
       }
       return "";
@@ -168,10 +172,13 @@ async function runForkedSessionSelfImproveReview(options: {
       );
     }
 
-    await session.prompt(buildSelfImproveReviewPrompt(safeString(options.trigger).trim()), {
-      expandPromptTemplates: false,
-      source: "extension",
-    });
+    await session.prompt(
+      buildSelfImproveReviewPrompt(safeString(options.trigger).trim()),
+      {
+        expandPromptTemplates: false,
+        source: "extension",
+      },
+    );
     await session.agent.waitForIdle();
     const finalText = safeString(session.getLastAssistantText?.() || "").trim();
     return {

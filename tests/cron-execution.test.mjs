@@ -13,9 +13,8 @@ const execMod = await import(
   ).href
 );
 const cronMod = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-daemon", "cron.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-daemon", "cron.js"))
+    .href
 );
 
 test("cron execution resolves session file preference", async () => {
@@ -61,5 +60,3 @@ test("cron execution shell task returns summarized success body", async () => {
   assert.ok(text.includes("Command: printf hello"));
   assert.ok(text.includes("stdout:"));
 });
-
-

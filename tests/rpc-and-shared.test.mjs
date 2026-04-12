@@ -74,4 +74,3 @@ test("tmux list targets hidden Rin sessions", () => {
     "#S",
   ]);
 });
-

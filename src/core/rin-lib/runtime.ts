@@ -275,7 +275,11 @@ function mutateMessageArray(target: any[], source: any[]) {
   for (const item of Array.isArray(source) ? source : []) target.push(item);
 }
 
-function buildMidTurnLlmContext(session: any, systemPrompt: string, tools: any[]) {
+function buildMidTurnLlmContext(
+  session: any,
+  systemPrompt: string,
+  tools: any[],
+) {
   const rawMessages = Array.isArray(session?.agent?.state?.messages)
     ? session.agent.state.messages
     : [];

@@ -114,7 +114,11 @@ test("koishi controller polls telegram typing only while the controller still ow
   assert.equal(await controller.pollTyping(), false);
   assert.deepEqual(actions, []);
 
-  controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+  };
   controller.liveTurn = {
     promise: Promise.resolve(),
     resolve() {},
@@ -250,13 +254,9 @@ test("koishi controller reattaches saved session file before bootstrapping a det
 
   await controller.ensureSessionReady();
 
-  assert.deepEqual(calls, [
-    `switch:${savedSessionFile}`,
-    "ensureSessionReady",
-  ]);
+  assert.deepEqual(calls, [`switch:${savedSessionFile}`, "ensureSessionReady"]);
   assert.equal(controller.state.piSessionFile, savedSessionFile);
 });
-
 
 test("koishi controller self-heals missing saved session binding before a chat turn", async () => {
   const controller = await createController("telegram/7:8");
@@ -273,7 +273,10 @@ test("koishi controller self-heals missing saved session binding before a chat t
     isStreaming: false,
     messages: [
       { role: "user", content: [{ type: "text", text: "hello" }] },
-      { role: "assistant", content: [{ type: "text", text: "fresh session final" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "fresh session final" }],
+      },
     ],
     sessionManager: {
       getSessionFile: () => "/tmp/fresh-chat.jsonl",
@@ -285,7 +288,10 @@ test("koishi controller self-heals missing saved session binding before a chat t
     },
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
-      return { sessionFile: "/tmp/fresh-chat.jsonl", sessionId: "session-fresh" };
+      return {
+        sessionFile: "/tmp/fresh-chat.jsonl",
+        sessionId: "session-fresh",
+      };
     },
     prompt: async () => {
       calls.push("prompt");
@@ -325,7 +331,10 @@ test("koishi controller summarizes idle tool progress with compact tool input", 
   assert.equal(
     summarizeKoishiToolCall("edit", {
       path: "/tmp/demo.txt",
-      edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }],
+      edits: [
+        { oldText: "a", newText: "b" },
+        { oldText: "c", newText: "d" },
+      ],
     }),
     "edit /tmp/demo.txt (2 edits)",
   );
@@ -360,7 +369,11 @@ test("koishi controller emits idle tool progress only after a quiet interval", a
   };
   controller.lastToolCallSummary = "Working";
   controller.session = { isStreaming: true };
-  controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+  };
   controller.liveTurn = {
     promise: Promise.resolve(),
     resolve() {},
@@ -414,7 +427,10 @@ test("koishi controller refreshes session messages before resolving a final chat
     refreshState: async () => {
       controller.session.messages = [
         { role: "user", content: [{ type: "text", text: "hello" }] },
-        { role: "assistant", content: [{ type: "text", text: "refreshed final text" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "refreshed final text" }],
+        },
       ];
     },
     prompt: async () => {
@@ -469,7 +485,10 @@ test("koishi controller takes final chat text from session lifecycle instead of 
       queueMicrotask(() => {
         controller.session.messages = [
           { role: "user", content: [{ type: "text", text: "hello" }] },
-          { role: "assistant", content: [{ type: "text", text: "session final text" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "session final text" }],
+          },
         ];
         controller.session.isStreaming = false;
         controller.handleSessionEvent({ type: "agent_end" });
@@ -610,7 +629,10 @@ test("koishi controller serializes chat turns instead of replacing the active on
           finishFirst = () => {
             controller.session.messages = [
               { role: "user", content: [{ type: "text", text: "first" }] },
-              { role: "assistant", content: [{ type: "text", text: "first done" }] },
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "first done" }],
+              },
             ];
             controller.session.isStreaming = false;
             controller.handleSessionEvent({ type: "agent_end" });
@@ -630,8 +652,14 @@ test("koishi controller serializes chat turns instead of replacing the active on
     switchSession: async () => {},
   };
 
-  const first = controller.runTurn({ text: "first", attachments: [] }, "prompt");
-  const second = controller.runTurn({ text: "second", attachments: [] }, "prompt");
+  const first = controller.runTurn(
+    { text: "first", attachments: [] },
+    "prompt",
+  );
+  const second = controller.runTurn(
+    { text: "second", attachments: [] },
+    "prompt",
+  );
   for (let i = 0; i < 20 && typeof finishFirst !== "function"; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
@@ -659,7 +687,10 @@ test("koishi controller delivers completed assistant text during recovery when p
   };
   controller.commitPendingDelivery = async function (clearProcessing = false) {
     if (controller.latestAssistantText) {
-      delivered.push({ text: controller.latestAssistantText, replyToMessageId: "42" });
+      delivered.push({
+        text: controller.latestAssistantText,
+        replyToMessageId: "42",
+      });
     }
     delete this.state.pendingDelivery;
     if (clearProcessing) delete this.state.processing;
@@ -750,4 +781,3 @@ test("koishi controller retries persisted final reply delivery on recovery", asy
   assert.equal(controller.state.pendingDelivery, undefined);
   assert.equal(sends.length, 1);
 });
-

@@ -47,7 +47,13 @@ test("terminal title override shows only session name", async () => {
   let title;
   interactiveModeModule.InteractiveMode.prototype.updateTerminalTitle.call({
     sessionManager: { getSessionName: () => "demo" },
-    ui: { terminal: { setTitle(value) { title = value; } } },
+    ui: {
+      terminal: {
+        setTitle(value) {
+          title = value;
+        },
+      },
+    },
   });
 
   assert.equal(title, "π - demo");
@@ -56,7 +62,11 @@ test("terminal title override shows only session name", async () => {
 test("loader stop clears render interval", () => {
   let renders = 0;
   const loader = new loaderModule.Loader(
-    { requestRender() { renders += 1; } },
+    {
+      requestRender() {
+        renders += 1;
+      },
+    },
     (x) => x,
     (x) => x,
     "demo",

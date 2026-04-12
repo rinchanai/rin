@@ -115,5 +115,4 @@ export async function applyRinTuiOverrides() {
         });
       };
   }
-
 }

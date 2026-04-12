@@ -33,13 +33,18 @@ function createCli() {
   cli.command("stop", "Stop the target user daemon");
   cli.command("restart", "Restart the target user daemon");
   cli.command("doctor", "Show daemon/socket diagnostics for the target user");
-  cli.command("usage", "Show token telemetry dashboard and grouped usage stats");
+  cli.command(
+    "usage",
+    "Show token telemetry dashboard and grouped usage stats",
+  );
 
   return cli;
 }
 
 function parseCommandName(name: string): ParsedArgs["command"] {
-  return ["update", "start", "stop", "restart", "doctor", "usage"].includes(name)
+  return ["update", "start", "stop", "restart", "doctor", "usage"].includes(
+    name,
+  )
     ? (name as ParsedArgs["command"])
     : "";
 }
@@ -76,7 +81,8 @@ export async function startRinCli() {
   if (parsed.command === "stop") return await runStop(parsed);
   if (parsed.command === "restart") return await runRestart(parsed);
   if (parsed.command === "doctor") return await runDoctor(parsed);
-  if (parsed.command === "usage") return await runUsage(parsed, process.argv.slice(2));
+  if (parsed.command === "usage")
+    return await runUsage(parsed, process.argv.slice(2));
 
   await launchDefaultRin(parsed);
 }

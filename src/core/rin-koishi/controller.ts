@@ -38,7 +38,10 @@ function normalizeIntervalMs(value: unknown, fallback: number) {
   return Math.max(1000, Math.floor(next));
 }
 
-function shortenPreview(value: unknown, maxChars = DEFAULT_TOOL_INPUT_PREVIEW_CHARS) {
+function shortenPreview(
+  value: unknown,
+  maxChars = DEFAULT_TOOL_INPUT_PREVIEW_CHARS,
+) {
   const text = safeString(value).replace(/\s+/g, " ").trim();
   if (!text) return "";
   if (text.length <= maxChars) return text;
@@ -48,7 +51,8 @@ function shortenPreview(value: unknown, maxChars = DEFAULT_TOOL_INPUT_PREVIEW_CH
 function summarizeGenericArgs(args: any) {
   if (args == null) return "";
   if (typeof args === "string") return shortenPreview(args);
-  if (Array.isArray(args)) return `${args.length} item${args.length === 1 ? "" : "s"}`;
+  if (Array.isArray(args))
+    return `${args.length} item${args.length === 1 ? "" : "s"}`;
   if (typeof args !== "object") return shortenPreview(String(args));
   const preferredKeys = [
     "path",
@@ -84,9 +88,22 @@ function summarizeGenericArgs(args: any) {
   for (const key of preferredKeys) {
     const value = (args as any)?.[key];
     if (value == null) continue;
-    const preview = shortenPreview(value, key === "command" || key === "text" ? 120 : 80);
+    const preview = shortenPreview(
+      value,
+      key === "command" || key === "text" ? 120 : 80,
+    );
     if (!preview) continue;
-    parts.push(key === "path" || key === "file_path" || key === "command" || key === "url" || key === "q" || key === "query" || key === "text" ? preview : `${key}=${preview}`);
+    parts.push(
+      key === "path" ||
+        key === "file_path" ||
+        key === "command" ||
+        key === "url" ||
+        key === "q" ||
+        key === "query" ||
+        key === "text"
+        ? preview
+        : `${key}=${preview}`,
+    );
   }
   if (parts.length) return parts.join(", ");
   for (const [key, value] of Object.entries(args)) {
@@ -126,8 +143,12 @@ export function summarizeKoishiToolCall(toolName: string, args: any) {
   }
   if (name === "read") {
     const target = shortenPreview(args?.path ?? args?.file_path, 100);
-    const offset = Number.isFinite(Number(args?.offset)) ? Number(args.offset) : undefined;
-    const limit = Number.isFinite(Number(args?.limit)) ? Number(args.limit) : undefined;
+    const offset = Number.isFinite(Number(args?.offset))
+      ? Number(args.offset)
+      : undefined;
+    const limit = Number.isFinite(Number(args?.limit))
+      ? Number(args.limit)
+      : undefined;
     const range =
       offset !== undefined || limit !== undefined
         ? `:${offset ?? 1}${limit !== undefined ? `-${(offset ?? 1) + limit - 1}` : ""}`
@@ -137,7 +158,8 @@ export function summarizeKoishiToolCall(toolName: string, args: any) {
   if (name === "edit") {
     const target = shortenPreview(args?.path ?? args?.file_path, 100);
     const editCount = Array.isArray(args?.edits) ? args.edits.length : 0;
-    const suffix = editCount > 0 ? ` (${editCount} edit${editCount === 1 ? "" : "s"})` : "";
+    const suffix =
+      editCount > 0 ? ` (${editCount} edit${editCount === 1 ? "" : "s"})` : "";
     return target ? `edit ${target}${suffix}` : `edit${suffix}`;
   }
   if (name === "write") {
@@ -148,10 +170,15 @@ export function summarizeKoishiToolCall(toolName: string, args: any) {
   return summary ? `${name} ${summary}` : name;
 }
 
-export function normalizeKoishiIdleToolProgressConfig(settings: any): KoishiIdleToolProgressConfig {
-  const koishi = settings && typeof settings.koishi === "object" ? settings.koishi : {};
+export function normalizeKoishiIdleToolProgressConfig(
+  settings: any,
+): KoishiIdleToolProgressConfig {
+  const koishi =
+    settings && typeof settings.koishi === "object" ? settings.koishi : {};
   const idleToolProgress =
-    koishi && typeof koishi.idleToolProgress === "object" ? koishi.idleToolProgress : {};
+    koishi && typeof koishi.idleToolProgress === "object"
+      ? koishi.idleToolProgress
+      : {};
   return {
     privateIntervalMs: normalizeIntervalMs(
       idleToolProgress?.privateIntervalMs,
@@ -174,13 +201,11 @@ export class KoishiChatController {
   client: RinDaemonFrontendClient | null = null;
   session: RpcInteractiveSession | null = null;
   turnQueue: Promise<void> = Promise.resolve();
-  liveTurn:
-    | {
-        promise: Promise<any>;
-        resolve: (value: any) => void;
-        reject: (error: Error) => void;
-      }
-    | null = null;
+  liveTurn: {
+    promise: Promise<any>;
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+  } | null = null;
   interimText = "";
   interimSentText = "";
   interimSentAt = 0;
@@ -293,7 +318,9 @@ export class KoishiChatController {
         this.clearIdleToolProgressTimer();
         void this.completeLiveTurn().catch((error) => {
           this.failLiveTurn(
-            error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")),
+            error instanceof Error
+              ? error
+              : new Error(String(error || "koishi_turn_failed")),
           );
         });
         break;
@@ -362,7 +389,8 @@ export class KoishiChatController {
     if (!options.force && nextText === this.interimSentText) return false;
     if (
       !options.force &&
-      now - this.interimSentAt < (options.minIntervalMs ?? INTERIM_MIN_INTERVAL_MS)
+      now - this.interimSentAt <
+        (options.minIntervalMs ?? INTERIM_MIN_INTERVAL_MS)
     ) {
       return false;
     }
@@ -392,13 +420,18 @@ export class KoishiChatController {
   async handleIdleToolProgressTick(now = Date.now()) {
     this.idleToolProgressTimer = null;
     if (!this.deliveryEnabled) return;
-    const summary = safeString(this.lastToolCallSummary).trim() || KOISHI_WORKING_PROGRESS_TEXT;
+    const summary =
+      safeString(this.lastToolCallSummary).trim() ||
+      KOISHI_WORKING_PROGRESS_TEXT;
     const intervalMs = this.idleToolProgressIntervalMs();
     if (!this.hasActiveTurn()) {
       this.clearIdleToolProgressTimer();
       return;
     }
-    const lastActivityAt = Math.max(this.lastVisibleProgressAt, this.lastIdleToolProgressAt);
+    const lastActivityAt = Math.max(
+      this.lastVisibleProgressAt,
+      this.lastIdleToolProgressAt,
+    );
     if (now - lastActivityAt >= intervalMs) {
       const sent = await this.emitProgressText(summary, {
         force: true,
@@ -464,7 +497,9 @@ export class KoishiChatController {
     const messages = Array.isArray(this.session?.messages)
       ? this.session.messages
       : [];
-    return extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages));
+    return extractFinalTextFromTurnResult(
+      buildTurnResultFromMessages(messages),
+    );
   }
   private async completeLiveTurn() {
     if (!this.liveTurn) return;
@@ -503,7 +538,8 @@ export class KoishiChatController {
       type: "text_delivery" as const,
       chatKey: this.chatKey,
       text,
-      replyToMessageId: safeString(input.replyToMessageId || "").trim() || undefined,
+      replyToMessageId:
+        safeString(input.replyToMessageId || "").trim() || undefined,
       sessionId: safeString(input.sessionId || "").trim() || undefined,
       sessionFile: safeString(input.sessionFile || "").trim() || undefined,
     };
@@ -558,8 +594,7 @@ export class KoishiChatController {
     const before = safeString(
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
-    if (before !== wanted)
-      await this.session.switchSession(wanted);
+    if (before !== wanted) await this.session.switchSession(wanted);
     if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     this.state.piSessionFile =
@@ -645,7 +680,9 @@ export class KoishiChatController {
     await this.connect();
     if (!this.session) throw new Error("koishi_session_not_connected");
     if (!this.session.isStreaming) {
-      return await this.runExclusiveTurn(() => this.runTurnNow(input, "prompt"));
+      return await this.runExclusiveTurn(() =>
+        this.runTurnNow(input, "prompt"),
+      );
     }
     const { text, images } = await restorePromptParts({
       text: input.text,
@@ -718,7 +755,11 @@ export class KoishiChatController {
         streamingBehavior: mode === "steer" ? "steer" : undefined,
       });
     } catch (error: any) {
-      this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+      this.failLiveTurn(
+        error instanceof Error
+          ? error
+          : new Error(String(error || "koishi_turn_failed")),
+      );
       throw error;
     }
     const completion = await liveTurn.promise;
@@ -737,9 +778,13 @@ export class KoishiChatController {
       text: this.latestAssistantText,
       replyToMessageId: replyToMessageId || undefined,
       sessionId:
-        safeString(completion?.sessionId || this.currentSessionId() || "").trim() || undefined,
+        safeString(
+          completion?.sessionId || this.currentSessionId() || "",
+        ).trim() || undefined,
       sessionFile:
-        safeString(completion?.sessionFile || this.currentSessionFile() || "").trim() || undefined,
+        safeString(
+          completion?.sessionFile || this.currentSessionFile() || "",
+        ).trim() || undefined,
     });
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
@@ -773,11 +818,14 @@ export class KoishiChatController {
       await this.connect();
       if (!this.session) return;
       await this.refreshSessionMessages().catch(() => {});
-      const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
-      const lastUserIndex = [...messages]
-        .map((message: any, index: number) => ({ message, index }))
-        .reverse()
-        .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
+      const messages = Array.isArray(this.session.messages)
+        ? this.session.messages
+        : [];
+      const lastUserIndex =
+        [...messages]
+          .map((message: any, index: number) => ({ message, index }))
+          .reverse()
+          .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
       const lastAssistantAfterUser = messages
         .slice(lastUserIndex + 1)
         .reverse()
@@ -793,12 +841,15 @@ export class KoishiChatController {
       const shouldResumeInternally =
         safeString(lastUserText).trim() ===
         safeString(buildPromptText(pending.text, pending.attachments)).trim();
-      this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
+      this.logger.info(
+        `resume interrupted koishi turn chatKey=${this.chatKey}`,
+      );
       if (deliveredCompletedText && !this.session.isStreaming) {
         this.latestAssistantText = deliveredCompletedText;
         this.state.pendingDelivery = this.buildAssistantDelivery({
           text: this.latestAssistantText,
-          replyToMessageId: safeString(pending.replyToMessageId || "").trim() || undefined,
+          replyToMessageId:
+            safeString(pending.replyToMessageId || "").trim() || undefined,
           sessionId: this.currentSessionId() || undefined,
           sessionFile: this.currentSessionFile(),
         });
@@ -814,7 +865,11 @@ export class KoishiChatController {
             source: "koishi-bridge",
           });
         } catch (error: any) {
-          this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+          this.failLiveTurn(
+            error instanceof Error
+              ? error
+              : new Error(String(error || "koishi_turn_failed")),
+          );
           throw error;
         }
         const completion = await liveTurn.promise;
@@ -831,11 +886,16 @@ export class KoishiChatController {
           ).trim() || undefined;
         this.state.pendingDelivery = this.buildAssistantDelivery({
           text: this.latestAssistantText,
-          replyToMessageId: safeString(pending.replyToMessageId || "").trim() || undefined,
+          replyToMessageId:
+            safeString(pending.replyToMessageId || "").trim() || undefined,
           sessionId:
-            safeString(completion?.sessionId || this.currentSessionId() || "").trim() || undefined,
+            safeString(
+              completion?.sessionId || this.currentSessionId() || "",
+            ).trim() || undefined,
           sessionFile:
-            safeString(completion?.sessionFile || this.currentSessionFile() || "").trim() || undefined,
+            safeString(
+              completion?.sessionFile || this.currentSessionFile() || "",
+            ).trim() || undefined,
         });
         this.saveState();
         await this.commitPendingDelivery(true);

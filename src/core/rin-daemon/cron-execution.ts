@@ -3,7 +3,10 @@ import os from "node:os";
 
 const HOME_DIR = os.homedir();
 
-import { deliverKoishiRpcPayload, requestKoishiRpc } from "../rin-koishi/rpc.js";
+import {
+  deliverKoishiRpcPayload,
+  requestKoishiRpc,
+} from "../rin-koishi/rpc.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
 

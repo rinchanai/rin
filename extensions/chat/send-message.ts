@@ -222,9 +222,7 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         ...(safeString((params as any)?.text)
           ? [{ type: "text", text: safeString((params as any).text) }]
           : []),
-        ...(Array.isArray((params as any)?.parts)
-          ? (params as any).parts
-          : []),
+        ...(Array.isArray((params as any)?.parts) ? (params as any).parts : []),
       ]);
 
       if (!parts.length) throw new Error("koishi_send_message_empty");

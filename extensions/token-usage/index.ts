@@ -43,10 +43,16 @@ function previewJson(value: unknown, limit = 260): string {
 function sessionMeta(ctx: any) {
   const manager = ctx?.sessionManager;
   return {
-    sessionId: safeString(ctx?.sessionId || manager?.getSessionId?.() || "").trim(),
-    sessionFile: safeString(ctx?.sessionFile || manager?.getSessionFile?.() || "").trim(),
+    sessionId: safeString(
+      ctx?.sessionId || manager?.getSessionId?.() || "",
+    ).trim(),
+    sessionFile: safeString(
+      ctx?.sessionFile || manager?.getSessionFile?.() || "",
+    ).trim(),
     sessionName: safeString(manager?.getSessionName?.() || "").trim(),
-    sessionPersisted: Boolean(manager?.isPersisted?.() && manager?.getSessionFile?.()),
+    sessionPersisted: Boolean(
+      manager?.isPersisted?.() && manager?.getSessionFile?.(),
+    ),
     cwd: safeString(ctx?.cwd || process.cwd()).trim(),
   };
 }
@@ -103,10 +109,15 @@ function extractToolCalls(message: any): string[] {
 
 function inferCapability(eventType: string, message: any, toolName = "") {
   const normalizedToolName = safeString(toolName).trim();
-  if (eventType === "tool_execution_start" || eventType === "tool_execution_end") {
+  if (
+    eventType === "tool_execution_start" ||
+    eventType === "tool_execution_end"
+  ) {
     return {
       capabilityKind: "tool_execution",
-      capabilityKey: normalizedToolName ? `tool:${normalizedToolName}` : "tool:(unknown)",
+      capabilityKey: normalizedToolName
+        ? `tool:${normalizedToolName}`
+        : "tool:(unknown)",
     };
   }
 
@@ -133,7 +144,9 @@ function inferCapability(eventType: string, message: any, toolName = "") {
   if (message?.role === "toolResult") {
     return {
       capabilityKind: "tool_result",
-      capabilityKey: normalizedToolName ? `tool:${normalizedToolName}` : "tool_result",
+      capabilityKey: normalizedToolName
+        ? `tool:${normalizedToolName}`
+        : "tool_result",
     };
   }
 
@@ -155,7 +168,9 @@ function recordEvent(ctx: any, input: Record<string, any>) {
   const state = getSessionState(ctx);
   appendTokenTelemetryEvent(
     {
-      id: safeString(input.id).trim() || nextEventId(safeString(input.eventType).trim() || "event", ctx),
+      id:
+        safeString(input.id).trim() ||
+        nextEventId(safeString(input.eventType).trim() || "event", ctx),
       timestamp: safeString(input.timestamp).trim() || new Date().toISOString(),
       sessionId: meta.sessionId,
       sessionFile: meta.sessionFile,
@@ -169,7 +184,8 @@ function recordEvent(ctx: any, input: Record<string, any>) {
       phase: safeString(input.phase).trim(),
       provider: safeString(input.provider).trim() || state.provider,
       model: safeString(input.model).trim() || state.model,
-      thinkingLevel: safeString(input.thinkingLevel).trim() || state.thinkingLevel,
+      thinkingLevel:
+        safeString(input.thinkingLevel).trim() || state.thinkingLevel,
       messageId: safeString(input.messageId).trim(),
       messageRole: safeString(input.messageRole).trim(),
       stopReason: safeString(input.stopReason).trim(),
@@ -237,7 +253,8 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
     const state = getSessionState(ctx);
     state.lastPromptPreview = previewText(event?.prompt);
     try {
-      state.thinkingLevel = safeString(pi.getThinkingLevel()).trim() || state.thinkingLevel;
+      state.thinkingLevel =
+        safeString(pi.getThinkingLevel()).trim() || state.thinkingLevel;
     } catch {}
     recordEvent(ctx, {
       eventType: "before_agent_start",
@@ -260,7 +277,9 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
       metadata: {
         source: safeString(event?.source).trim(),
         previousProvider: safeString(event?.previousModel?.provider).trim(),
-        previousModel: safeString(event?.previousModel?.id || event?.previousModel?.name).trim(),
+        previousModel: safeString(
+          event?.previousModel?.id || event?.previousModel?.name,
+        ).trim(),
       },
     });
   });
@@ -279,9 +298,17 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {
-    const capability = inferCapability("tool_execution_start", null, event?.toolName);
+    const capability = inferCapability(
+      "tool_execution_start",
+      null,
+      event?.toolName,
+    );
     recordEvent(ctx, {
-      id: [sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session", "tool_execution_start", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
+      id: [
+        sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session",
+        "tool_execution_start",
+        safeString(event?.toolCallId).trim() || nextEventId("tool", ctx),
+      ].join(":"),
       eventType: "tool_execution_start",
       phase: "tool",
       toolCallId: safeString(event?.toolCallId).trim(),
@@ -295,9 +322,17 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_end", async (event, ctx) => {
-    const capability = inferCapability("tool_execution_end", null, event?.toolName);
+    const capability = inferCapability(
+      "tool_execution_end",
+      null,
+      event?.toolName,
+    );
     recordEvent(ctx, {
-      id: [sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session", "tool_execution_end", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
+      id: [
+        sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session",
+        "tool_execution_end",
+        safeString(event?.toolCallId).trim() || nextEventId("tool", ctx),
+      ].join(":"),
       eventType: "tool_execution_end",
       phase: "tool",
       toolCallId: safeString(event?.toolCallId).trim(),
@@ -314,7 +349,11 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   pi.on("message_end", async (event, ctx) => {
     const message = event?.message as any;
     const toolNames = extractToolCalls(message);
-    const capability = inferCapability("message_end", message, message?.toolName);
+    const capability = inferCapability(
+      "message_end",
+      message,
+      message?.toolName,
+    );
     const usage = message?.usage || {};
     const totalTokens =
       Number(usage?.totalTokens || 0) ||
@@ -323,10 +362,15 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
         Number(usage?.cacheRead || 0) +
         Number(usage?.cacheWrite || 0);
     recordEvent(ctx, {
-      id:
-        safeString(message?.id).trim()
-          ? [sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session", "message_end", safeString(message?.id).trim()].join(":")
-          : nextEventId("message_end", ctx),
+      id: safeString(message?.id).trim()
+        ? [
+            sessionMeta(ctx).sessionId ||
+              sessionMeta(ctx).sessionFile ||
+              "session",
+            "message_end",
+            safeString(message?.id).trim(),
+          ].join(":")
+        : nextEventId("message_end", ctx),
       eventType: "message_end",
       phase: "message",
       provider: safeString(message?.provider).trim(),
@@ -367,7 +411,9 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
       eventType: "agent_end",
       phase: "agent",
       metadata: {
-        messageCount: Array.isArray(event?.messages) ? event.messages.length : 0,
+        messageCount: Array.isArray(event?.messages)
+          ? event.messages.length
+          : 0,
       },
     });
   });

@@ -95,4 +95,3 @@ export function getSessionBranch(
   }
   return branch.reverse();
 }
-

@@ -60,7 +60,12 @@ test("koishi decision keeps image-only owner messages routable", async () => {
       stripped: { content: "" },
       isDirect: true,
     },
-    [{ type: "img", attrs: { src: "https://example.com/demo.png", file: "demo.png" } }],
+    [
+      {
+        type: "img",
+        attrs: { src: "https://example.com/demo.png", file: "demo.png" },
+      },
+    ],
     identity,
   );
 

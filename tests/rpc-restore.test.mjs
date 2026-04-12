@@ -107,4 +107,3 @@ test("rpc restore flushes queued offline ops after reattach", async () => {
   ]);
   assert.deepEqual(target.queuedOfflineOps, []);
 });
-

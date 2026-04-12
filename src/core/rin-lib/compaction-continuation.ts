@@ -39,7 +39,8 @@ export function writeCompactionContinuationMarker(
     version: 1,
     at: Number(marker?.at || Date.now()),
     reason: marker.reason,
-    assistantPreview: String(marker?.assistantPreview || "").trim() || undefined,
+    assistantPreview:
+      String(marker?.assistantPreview || "").trim() || undefined,
   };
   writeFileSync(file, JSON.stringify(next), "utf8");
   return next;

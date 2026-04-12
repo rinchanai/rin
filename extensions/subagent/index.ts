@@ -152,11 +152,7 @@ function buildSubagentUserText(results: TaskResult[]): string {
     `Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
     ...results.map((result) => {
       const status = result.exitCode === 0 ? "ok" : "failed";
-      const preview = (
-        result.output ||
-        result.errorMessage ||
-        "(no output)"
-      )
+      const preview = (result.output || result.errorMessage || "(no output)")
         .replace(/\s+/g, " ")
         .trim();
       const sessionLabel = buildTaskSessionLabel(result);
@@ -415,7 +411,11 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
           ),
         );
         container.addChild(
-          new Text(theme.fg("muted", `session mode: ${task.sessionMode}`), 0, 0),
+          new Text(
+            theme.fg("muted", `session mode: ${task.sessionMode}`),
+            0,
+            0,
+          ),
         );
         if (task.sessionId) {
           container.addChild(
@@ -424,12 +424,20 @@ ${theme.fg("muted", "(Ctrl+O to expand)")}`;
         }
         if (task.sessionName) {
           container.addChild(
-            new Text(theme.fg("muted", `session name: ${task.sessionName}`), 0, 0),
+            new Text(
+              theme.fg("muted", `session name: ${task.sessionName}`),
+              0,
+              0,
+            ),
           );
         }
         if (task.sessionFile) {
           container.addChild(
-            new Text(theme.fg("muted", `session file: ${task.sessionFile}`), 0, 0),
+            new Text(
+              theme.fg("muted", `session file: ${task.sessionFile}`),
+              0,
+              0,
+            ),
           );
         }
         container.addChild(new Text(theme.fg("muted", "prompt:"), 0, 0));

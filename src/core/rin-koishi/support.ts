@@ -352,7 +352,8 @@ export function findBot(app: any, platform: string, botId = "") {
     (bot: any) => bot && bot.platform === nextPlatform,
   );
   if (!matches.length) return null;
-  if (!nextBotId) return platformRequiresBotId(nextPlatform) ? null : matches[0];
+  if (!nextBotId)
+    return platformRequiresBotId(nextPlatform) ? null : matches[0];
   return (
     matches.find((bot: any) => safeString(bot?.selfId).trim() === nextBotId) ||
     null

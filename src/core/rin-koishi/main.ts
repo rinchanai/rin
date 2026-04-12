@@ -77,15 +77,20 @@ async function buildTelegramInboundMediaDebug(session: any) {
       fileSize: Number.isFinite(Number(item?.file_size))
         ? Number(item.file_size)
         : undefined,
-      width: Number.isFinite(Number(item?.width)) ? Number(item.width) : undefined,
-      height: Number.isFinite(Number(item?.height)) ? Number(item.height) : undefined,
+      width: Number.isFinite(Number(item?.width))
+        ? Number(item.width)
+        : undefined,
+      height: Number.isFinite(Number(item?.height))
+        ? Number(item.height)
+        : undefined,
     })),
     message?.document
       ? {
           kind: "document",
           fileId: safeString(message.document?.file_id || "").trim(),
           fileUniqueId:
-            safeString(message.document?.file_unique_id || "").trim() || undefined,
+            safeString(message.document?.file_unique_id || "").trim() ||
+            undefined,
           fileSize: Number.isFinite(Number(message.document?.file_size))
             ? Number(message.document.file_size)
             : undefined,
@@ -104,7 +109,9 @@ async function buildTelegramInboundMediaDebug(session: any) {
   if (typeof getFile === "function") {
     for (const item of candidates.slice(0, 4)) {
       try {
-        const file = await getFile.call(session.bot.internal, { file_id: item.fileId });
+        const file = await getFile.call(session.bot.internal, {
+          file_id: item.fileId,
+        });
         lookups.push({
           fileId: item.fileId,
           ok: true,
@@ -117,7 +124,9 @@ async function buildTelegramInboundMediaDebug(session: any) {
         lookups.push({
           fileId: item.fileId,
           ok: false,
-          error: safeString(error?.description || error?.message || error).trim(),
+          error: safeString(
+            error?.description || error?.message || error,
+          ).trim(),
         });
       }
     }
@@ -145,7 +154,8 @@ export async function startKoishi(
   ensureDir(dataDir);
 
   const settings = loadKoishiSettings(settingsPath);
-  const idleToolProgressConfig = normalizeKoishiIdleToolProgressConfig(settings);
+  const idleToolProgressConfig =
+    normalizeKoishiIdleToolProgressConfig(settings);
 
   materializeKoishiConfig(configPath, settings);
 
@@ -188,16 +198,23 @@ export async function startKoishi(
       const statePath = path.join(
         dataDir,
         "cron-turns",
-        safeString(controllerKey).trim().replace(/[^A-Za-z0-9._:-]+/g, "_"),
+        safeString(controllerKey)
+          .trim()
+          .replace(/[^A-Za-z0-9._:-]+/g, "_"),
         "state.json",
       );
-      controller = new KoishiChatController(app, dataDir, `cron:${controllerKey}`, {
-        logger,
-        h,
-        deliveryEnabled: false,
-        statePath,
-        idleToolProgressConfig,
-      });
+      controller = new KoishiChatController(
+        app,
+        dataDir,
+        `cron:${controllerKey}`,
+        {
+          logger,
+          h,
+          deliveryEnabled: false,
+          statePath,
+          idleToolProgressConfig,
+        },
+      );
       detachedControllers.set(controllerKey, controller);
     }
     return controller;
@@ -436,7 +453,12 @@ export async function startKoishi(
           try {
             const type = safeString(command?.type).trim();
             if (type === "send_chat") {
-              await sendOutboxPayload(app, runtime.agentDir, command?.payload, h);
+              await sendOutboxPayload(
+                app,
+                runtime.agentDir,
+                command?.payload,
+                h,
+              );
               writeLine({ success: true, data: { delivered: true } });
               return;
             }
@@ -444,8 +466,10 @@ export async function startKoishi(
               const payload = command?.payload || {};
               const chatKey = safeString(payload.chatKey).trim();
               const text = safeString(payload.text).trim();
-              const sessionFile = safeString(payload.sessionFile).trim() || undefined;
-              const controllerKey = safeString(payload.controllerKey).trim() || "default";
+              const sessionFile =
+                safeString(payload.sessionFile).trim() || undefined;
+              const controllerKey =
+                safeString(payload.controllerKey).trim() || "default";
               if (!text) throw new Error("koishi_rpc_text_required");
               const controller = chatKey
                 ? getController(chatKey)

@@ -121,8 +121,11 @@ function collectIncomingElementText(element: any): string {
   if (type === "text") return safeString(attrs.content || element.text || "");
   if (type === "br") return "\n";
   const children = Array.isArray(element?.children) ? element.children : [];
-  const childText = children.map((item) => collectIncomingElementText(item)).join("");
-  if (type === "p" || type === "paragraph") return childText ? `${childText}\n` : "";
+  const childText = children
+    .map((item) => collectIncomingElementText(item))
+    .join("");
+  if (type === "p" || type === "paragraph")
+    return childText ? `${childText}\n` : "";
   return childText;
 }
 
@@ -182,7 +185,9 @@ export function pickMessageId(session: any) {
 }
 
 export function pickReplyToMessageId(session: any) {
-  return safeString(session?.quote?.messageId || session?.quote?.id || "").trim();
+  return safeString(
+    session?.quote?.messageId || session?.quote?.id || "",
+  ).trim();
 }
 
 export function summarizeQuote(session: any) {
@@ -406,8 +411,12 @@ export function buildInboundAttachmentNotice(
   failures: InboundAttachmentFailure[],
 ) {
   if (!Array.isArray(failures) || !failures.length) return "";
-  const missing = failures.filter((item) => item.reason === "missing_resource").length;
-  const fetchFailed = failures.filter((item) => item.reason === "fetch_failed").length;
+  const missing = failures.filter(
+    (item) => item.reason === "missing_resource",
+  ).length;
+  const fetchFailed = failures.filter(
+    (item) => item.reason === "fetch_failed",
+  ).length;
   const parts: string[] = [];
   if (missing)
     parts.push(
@@ -420,7 +429,10 @@ export function buildInboundAttachmentNotice(
   return `Note: the incoming message included media that could not be attached for the agent because ${parts.join(" and ")}.`;
 }
 
-export async function extractInboundAttachments(elements: any[], chatDir: string) {
+export async function extractInboundAttachments(
+  elements: any[],
+  chatDir: string,
+) {
   const dir = path.join(chatDir, "inbound");
   ensureDir(dir);
   const attachments: SavedAttachment[] = [];

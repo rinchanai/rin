@@ -273,7 +273,9 @@ async function executeSaveSelfImprovePromptAction(params: any) {
     try {
       if (slot) {
         const existing = await executeSelfImproveTool({ action: "compile" });
-        const currentDoc = Array.isArray(existing?.self_improve_prompt_prompt_docs)
+        const currentDoc = Array.isArray(
+          existing?.self_improve_prompt_prompt_docs,
+        )
           ? existing.self_improve_prompt_prompt_docs.find(
               (doc: any) =>
                 String(doc?.self_improve_prompt_slot || "").trim() === slot,

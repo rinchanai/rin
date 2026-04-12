@@ -212,7 +212,10 @@ test("applyOverflowContinuationPrompt writes marker only for overflow compaction
     aborted: false,
     result: { summary: "threshold" },
   });
-  assert.equal(runtimeMod.consumeCompactionContinuationMarker(session), undefined);
+  assert.equal(
+    runtimeMod.consumeCompactionContinuationMarker(session),
+    undefined,
+  );
 
   listeners[0]({
     type: "compaction_end",

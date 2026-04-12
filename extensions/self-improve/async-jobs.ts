@@ -86,8 +86,7 @@ export async function enqueueMemoryMaintenanceJob(
   const trigger =
     safeString(input.trigger).trim() || "extension:memory_maintainer";
   const snapshotKey = safeString(input.snapshotKey).trim();
-  if (!agentDir || !sessionFile)
-    throw new Error("memory_job_invalid_input");
+  if (!agentDir || !sessionFile) throw new Error("memory_job_invalid_input");
 
   const jobs = await loadQueue(agentDir);
   const existing = jobs.find((job) =>
@@ -197,15 +196,12 @@ async function processJob(job: MemoryMaintenanceJob) {
   if (!agentDir || !sessionFile) {
     throw new Error("memory_job_invalid_payload");
   }
-  await maintainMemory(
-    {} as any,
-    {
-      sessionFile,
-      trigger: job.trigger,
-      messages: Array.isArray(job.messages) ? job.messages : undefined,
-      additionalExtensionPaths: job.additionalExtensionPaths,
-    },
-  );
+  await maintainMemory({} as any, {
+    sessionFile,
+    trigger: job.trigger,
+    messages: Array.isArray(job.messages) ? job.messages : undefined,
+    additionalExtensionPaths: job.additionalExtensionPaths,
+  });
 }
 
 export async function processQueuedMemoryJobs(agentDir: string) {

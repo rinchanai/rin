@@ -134,7 +134,8 @@ function formatUserText(details: {
   error?: string;
 }) {
   if (details.error) return `Failed to read directory rules: ${details.error}`;
-  if (!details.prompt) return `No directory rules found under ${details.targetDir}.`;
+  if (!details.prompt)
+    return `No directory rules found under ${details.targetDir}.`;
   return [
     `Directory rules collected for ${details.targetDir}:`,
     `- Parent AGENTS/CLAUDE files: ${details.contextPaths.length}`,

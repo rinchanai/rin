@@ -260,7 +260,10 @@ export async function startDaemon(
         return true;
       }
       workerPool.terminateWorkerGracefully(target);
-      writeLine(connection.socket, response(id, type, true, { terminated: true }));
+      writeLine(
+        connection.socket,
+        response(id, type, true, { terminated: true }),
+      );
       return true;
     }
     if (type === "list_sessions") {

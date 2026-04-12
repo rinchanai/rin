@@ -10,7 +10,8 @@ const rootDir = path.resolve(
   "..",
 );
 const store = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "token-usage", "store.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "token-usage", "store.js"))
+    .href
 );
 
 async function withTempRoot(fn) {

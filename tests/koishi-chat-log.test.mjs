@@ -86,6 +86,9 @@ test("koishi chat log appends into unified message store and reads one day chat 
     );
     assert.match(filePath, /koishi-message-store[\\/]chat-log-view[\\/]/);
     assert.equal(entries.length, 2);
-    assert.match(chatLog.formatKoishiChatLog(entries), /assistant: Good morning!/);
+    assert.match(
+      chatLog.formatKoishiChatLog(entries),
+      /assistant: Good morning!/,
+    );
   });
 });

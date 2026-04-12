@@ -77,7 +77,9 @@ function nowIso() {
 }
 
 export function resolveAgentDir(agentDir = ""): string {
-  const fromEnv = safeString(process.env.RIN_DIR || process.env.PI_CODING_AGENT_DIR).trim();
+  const fromEnv = safeString(
+    process.env.RIN_DIR || process.env.PI_CODING_AGENT_DIR,
+  ).trim();
   if (safeString(agentDir).trim()) return path.resolve(agentDir);
   if (fromEnv) return path.resolve(fromEnv);
   return path.join(os.homedir(), ".rin");
@@ -171,11 +173,7 @@ export function openTokenUsageDb(agentDir = ""): BetterSqlite3.Database {
 function normalizeToolNames(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
   return Array.from(
-    new Set(
-      input
-        .map((item) => safeString(item).trim())
-        .filter(Boolean),
-    ),
+    new Set(input.map((item) => safeString(item).trim()).filter(Boolean)),
   );
 }
 
@@ -295,7 +293,9 @@ export function appendTokenTelemetryEvent(
     source: safeString(normalized.source).trim() || null,
     trigger: safeString(normalized.trigger).trim() || null,
     turn_index:
-      normalized.turnIndex == null ? null : Math.round(safeNumber(normalized.turnIndex)),
+      normalized.turnIndex == null
+        ? null
+        : Math.round(safeNumber(normalized.turnIndex)),
     phase: safeString(normalized.phase).trim() || null,
     provider: safeString(normalized.provider).trim() || null,
     model: safeString(normalized.model).trim() || null,
@@ -323,13 +323,18 @@ export function appendTokenTelemetryEvent(
     cost_total: safeNumber(normalized.costTotal),
     context_tokens: normalizeInt(normalized.contextTokens),
     is_error: normalized.isError ? 1 : 0,
-    metadata_json: normalized.metadata ? JSON.stringify(normalized.metadata) : null,
+    metadata_json: normalized.metadata
+      ? JSON.stringify(normalized.metadata)
+      : null,
   });
   return { id: normalized.id };
 }
 
 export function getTokenUsageOverview(
-  options: Omit<TokenUsageQueryOptions, "groupBy" | "orderBy" | "direction"> = {},
+  options: Omit<
+    TokenUsageQueryOptions,
+    "groupBy" | "orderBy" | "direction"
+  > = {},
 ) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
@@ -456,7 +461,10 @@ export function listTokenUsageDimensions(): string[] {
   return Object.keys(DIMENSIONS).sort();
 }
 
-function buildWhereClause(options: TokenUsageQueryOptions, forAggregate: boolean) {
+function buildWhereClause(
+  options: TokenUsageQueryOptions,
+  forAggregate: boolean,
+) {
   const clauses: string[] = [];
   const params: Record<string, unknown> = {};
   if (safeString(options.from).trim()) {
@@ -497,9 +505,10 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
     ? `GROUP BY ${dims.map((dim) => dim.select).join(", ")}`
     : "";
   const orderBy = safeString(options.orderBy).trim() || "total_tokens";
-  const direction = safeString(options.direction).trim().toLowerCase() === "asc"
-    ? "ASC"
-    : "DESC";
+  const direction =
+    safeString(options.direction).trim().toLowerCase() === "asc"
+      ? "ASC"
+      : "DESC";
   const supportedOrder = new Set([
     ...dims.map((dim) => dim.key),
     "rows",
@@ -515,7 +524,10 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
   const orderExpr = supportedOrder.has(orderBy)
     ? `"${orderBy}"`
     : `"total_tokens"`;
-  const limit = Math.max(1, Math.min(500, Math.round(safeNumber(options.limit || 20))));
+  const limit = Math.max(
+    1,
+    Math.min(500, Math.round(safeNumber(options.limit || 20))),
+  );
   const sql = `
     SELECT
       ${selectDims.length ? `${selectDims.join(",\n      ")},` : ""}
@@ -540,7 +552,10 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
 export function queryTokenUsageEvents(options: TokenUsageQueryOptions = {}) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
-  const limit = Math.max(1, Math.min(500, Math.round(safeNumber(options.limit || 40))));
+  const limit = Math.max(
+    1,
+    Math.min(500, Math.round(safeNumber(options.limit || 40))),
+  );
   return db
     .prepare(
       `

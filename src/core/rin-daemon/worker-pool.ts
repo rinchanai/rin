@@ -67,7 +67,9 @@ export class WorkerPool {
     if (!this.workers.has(worker) || worker.gracefulShutdownRequested) return;
     worker.gracefulShutdownRequested = true;
     try {
-      worker.child.stdin.write(`${JSON.stringify({ type: "shutdown_session" })}\n`);
+      worker.child.stdin.write(
+        `${JSON.stringify({ type: "shutdown_session" })}\n`,
+      );
     } catch {
       this.destroyWorker(worker);
     }

@@ -535,15 +535,15 @@ Split into:
 
 ## 7. Component strategy table
 
-| Component                | Strategy  | Notes |
-| ------------------------ | --------- | ----- |
-| session                  | reinforce | make it the single core object |
-| memory store             | reinforce | keep markdown as the base, only split responsibilities |
-| memory derivation        | simplify  | move extractor / episode / onboarding out of core |
-| Koishi bridge            | simplify  | converge from a heavy subsystem into a chat bridge adapter |
-| installer / updater      | simplify  | split the all-in-one entry into staged flows |
-| search / SearXNG         | bound     | keep the solution, only manage lifecycle and repeated infrastructure |
-| jiti / source fallback   | remove    | pure runtime-boundary debt |
+| Component              | Strategy  | Notes                                                                |
+| ---------------------- | --------- | -------------------------------------------------------------------- |
+| session                | reinforce | make it the single core object                                       |
+| memory store           | reinforce | keep markdown as the base, only split responsibilities               |
+| memory derivation      | simplify  | move extractor / episode / onboarding out of core                    |
+| Koishi bridge          | simplify  | converge from a heavy subsystem into a chat bridge adapter           |
+| installer / updater    | simplify  | split the all-in-one entry into staged flows                         |
+| search / SearXNG       | bound     | keep the solution, only manage lifecycle and repeated infrastructure |
+| jiti / source fallback | remove    | pure runtime-boundary debt                                           |
 
 ---
 

@@ -8,9 +8,7 @@ const rootDir = path.resolve(
   "..",
 );
 const rpc = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "rpc.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-koishi", "rpc.js")).href
 );
 
 test("koishi rpc uses an extended timeout for chat turns", () => {
@@ -18,8 +16,5 @@ test("koishi rpc uses an extended timeout for chat turns", () => {
     rpc.koishiRpcTimeoutMsFor({ type: "run_chat_turn" }),
     10 * 60_000,
   );
-  assert.equal(
-    rpc.koishiRpcTimeoutMsFor({ type: "send_chat" }),
-    30_000,
-  );
+  assert.equal(rpc.koishiRpcTimeoutMsFor({ type: "send_chat" }), 30_000);
 });

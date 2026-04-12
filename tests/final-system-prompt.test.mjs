@@ -14,7 +14,7 @@ const rootDir = path.resolve(
 );
 const runtimeMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
-    .href,
+    .href
 );
 
 test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt layers", async () => {
@@ -77,9 +77,7 @@ test("buildFinalAppSystemPrompt injects a continuation prompt after automatic co
     undefined,
     baseSystemPrompt,
   );
-  const secondPrompt = String(
-    afterConsume?.systemPrompt || baseSystemPrompt,
-  );
+  const secondPrompt = String(afterConsume?.systemPrompt || baseSystemPrompt);
   assert.equal(
     secondPrompt.includes(
       "Context compacted; treat this as a routine internal checkpoint.",

@@ -127,7 +127,8 @@ function summarizePart(part: any): string {
   if (part.type === "text") return safeString(part.text || "");
   if (part.type === "thinking") return safeString(part.thinking || "");
   if (part.type === "toolCall") {
-    const name = safeString(part.name || part.toolName || "tool").trim() || "tool";
+    const name =
+      safeString(part.name || part.toolName || "tool").trim() || "tool";
     const args = normalizeInlineValue(part.args || part.arguments || "");
     return args ? `[tool:${name}] ${args}` : `[tool:${name}]`;
   }
@@ -136,7 +137,8 @@ function summarizePart(part: any): string {
     return `[image:${mimeType}]`;
   }
   if (part.type === "file") {
-    const name = safeString(part.name || part.path || part.url || "file").trim() || "file";
+    const name =
+      safeString(part.name || part.path || part.url || "file").trim() || "file";
     return `[file:${name}]`;
   }
   return "";
@@ -147,12 +149,19 @@ function extractTranscriptText(input: Record<string, any>): string {
   const content = input.content;
   if (typeof content === "string") return content.trim();
   if (Array.isArray(content)) {
-    return content.map((part) => summarizePart(part)).filter(Boolean).join("\n").trim();
+    return content
+      .map((part) => summarizePart(part))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
   }
   if (role === "bashExecution") {
     const command = safeString(input.command || "").trim();
     const output = safeString(input.output || "").trim();
-    return [command ? `[bash] ${command}` : "", output].filter(Boolean).join("\n\n").trim();
+    return [command ? `[bash] ${command}` : "", output]
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
   }
   if (role === "branchSummary" || role === "compactionSummary") {
     return safeString(input.summary || "").trim();
@@ -359,8 +368,9 @@ function buildSessionPreview(entries: TranscriptArchiveEntry[]) {
   });
   const topScore = ranked.length ? sessionPreviewPriority(ranked[0]) : 0;
   const chosen = ranked
-    .filter((entry, index) =>
-      index === 0 || sessionPreviewPriority(entry) >= topScore - 8,
+    .filter(
+      (entry, index) =>
+        index === 0 || sessionPreviewPriority(entry) >= topScore - 8,
     )
     .slice(0, 2)
     .map((entry) => transcriptPreviewText(entry));
@@ -376,7 +386,8 @@ function presentSessionResult(
   const preview = buildSessionPreview(entries);
   return {
     sourceType: "session",
-    id: safeString(entry.sessionId || entry.sessionFile || entry.id).trim() ||
+    id:
+      safeString(entry.sessionId || entry.sessionFile || entry.id).trim() ||
       entry.id,
     name: "recent session",
     role: entry.role,
@@ -472,10 +483,18 @@ export async function loadRecentTranscriptSessions(
       bucket,
       entry: chooseSessionPreviewEntry(bucket),
     }))
-    .sort((a, b) => timestampValue(b.entry.timestamp) - timestampValue(a.entry.timestamp))
+    .sort(
+      (a, b) =>
+        timestampValue(b.entry.timestamp) - timestampValue(a.entry.timestamp),
+    )
     .slice(0, limit)
     .map(({ entry, bucket }, index) =>
-      presentSessionResult(entry, bucket, Math.max(1, limit - index), rootOverride),
+      presentSessionResult(
+        entry,
+        bucket,
+        Math.max(1, limit - index),
+        rootOverride,
+      ),
     );
 }
 

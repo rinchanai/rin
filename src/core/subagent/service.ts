@@ -102,7 +102,8 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   const exactPath = sessions.find(
     (info: any) =>
       normalizedDirectPath &&
-      path.resolve(String(info?.path || "")).toLowerCase() === normalizedDirectPath,
+      path.resolve(String(info?.path || "")).toLowerCase() ===
+        normalizedDirectPath,
   );
   if (exactPath) return { path: String(exactPath.path || "") };
 
@@ -112,12 +113,15 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   if (exactId) return { path: String(exactId.path || "") };
 
   const exactPathText = sessions.find(
-    (info: any) => path.resolve(String(info?.path || "")).toLowerCase() === normalizedWanted,
+    (info: any) =>
+      path.resolve(String(info?.path || "")).toLowerCase() === normalizedWanted,
   );
   if (exactPathText) return { path: String(exactPathText.path || "") };
 
   const prefixMatches = sessions.filter((info: any) =>
-    String(info?.id || "").toLowerCase().startsWith(normalizedWanted),
+    String(info?.id || "")
+      .toLowerCase()
+      .startsWith(normalizedWanted),
   );
   if (prefixMatches.length === 1) {
     return { path: String(prefixMatches[0]?.path || "") };
@@ -147,11 +151,7 @@ async function createManagedSession(task: SubagentTask) {
     sessionManager = SessionManager.create(cwd, sessionDir);
   } else if (sessionConfig.mode === "resume") {
     const source = await resolveSessionReference(sessionConfig.ref || "");
-    sessionManager = SessionManager.open(
-      source.path,
-      sessionDir,
-      undefined,
-    );
+    sessionManager = SessionManager.open(source.path, sessionDir, undefined);
   } else {
     const source = await resolveSessionReference(sessionConfig.ref || "");
     sessionManager = SessionManager.forkFrom(source.path, cwd, sessionDir);
@@ -294,7 +294,8 @@ function syncSessionMetadata(session: any, result: TaskResult): void {
   result.sessionPersisted = Boolean(
     manager?.isPersisted?.() && manager?.getSessionFile?.(),
   );
-  result.sessionId = safeString(manager?.getSessionId?.() || "").trim() || undefined;
+  result.sessionId =
+    safeString(manager?.getSessionId?.() || "").trim() || undefined;
   result.sessionFile =
     safeString(manager?.getSessionFile?.() || "").trim() || undefined;
   result.sessionName =
@@ -402,22 +403,16 @@ export async function executeSubagentRun(options: {
 
   const results = await Promise.all(
     built.tasks.map((task, index) =>
-      runSubagentTask(
-        task,
-        index + 1,
-        HOME_DIR,
-        options.signal,
-        (partial) => {
-          progressResults[index] = partial;
-          options.onProgress?.(
-            progressResults.map((item) => ({
-              ...item,
-              messages: [...item.messages],
-            })),
-            details,
-          );
-        },
-      ),
+      runSubagentTask(task, index + 1, HOME_DIR, options.signal, (partial) => {
+        progressResults[index] = partial;
+        options.onProgress?.(
+          progressResults.map((item) => ({
+            ...item,
+            messages: [...item.messages],
+          })),
+          details,
+        );
+      }),
     ),
   );
 

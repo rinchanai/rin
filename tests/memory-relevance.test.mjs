@@ -42,7 +42,10 @@ test("memory relevance scores docs and relations", () => {
   };
   assert.ok(relevance.lexicalScore("searxng", docA) > 0);
   assert.ok(relevance.relationScore(docA, docB).score > 0);
-  assert.equal(relevance.shouldInjectRecentHistory("what happened recently"), true);
+  assert.equal(
+    relevance.shouldInjectRecentHistory("what happened recently"),
+    true,
+  );
 });
 
 test("self-improve compile renders prompt slots", () => {
@@ -89,7 +92,9 @@ test("self-improve compile renders prompt slots", () => {
     "/tmp/memory",
   );
   assert.ok(
-    out.self_improve_prompt_context.includes("[agent_profile] Concise and natural"),
+    out.self_improve_prompt_context.includes(
+      "[agent_profile] Concise and natural",
+    ),
   );
   assert.ok(
     out.self_improve_prompt_context.includes(

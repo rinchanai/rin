@@ -79,16 +79,14 @@ test("processing describes prompt slots with content and limits", async () => {
   assert.equal(state.slot, "agent_profile");
   assert.equal(state.maxChars, 1200);
   assert.equal(state.currentChars, 35);
-  assert.equal(
-    state.content,
-    "- Speak concise Chinese by default.",
-  );
+  assert.equal(state.content, "- Speak concise Chinese by default.");
 });
 
 test("processing normalizes revised full-slot content and enforces limits", async () => {
   const refined = processing.refineSelfImprovePromptSlot({
     slot: "user_profile",
-    incomingContent: "Call the user Master by default.\nAvoid markdown in Koishi bridge chats.",
+    incomingContent:
+      "Call the user Master by default.\nAvoid markdown in Koishi bridge chats.",
   });
   assert.equal(
     refined.content,
