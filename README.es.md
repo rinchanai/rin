@@ -111,6 +111,9 @@ Documentación para usuarios:
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/security.md`](docs/security.md)
+- [`docs/roadmap.md`](docs/roadmap.md)
+- [`docs/troubleshooting.md`](docs/troubleshooting.md)
+- [`docs/dependency-upgrades.md`](docs/dependency-upgrades.md)
 
 Documentación para agent / runtime:
 

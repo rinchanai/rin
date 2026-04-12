@@ -95,3 +95,11 @@ Do not send normal users straight into agent-facing docs unless they are explici
 Dependency security status and remaining audit constraints are tracked in:
 
 - `docs/security.md`
+- `docs/dependency-upgrades.md`
+
+## Project planning and troubleshooting
+
+Additional working docs:
+
+- `docs/roadmap.md`
+- `docs/troubleshooting.md`
