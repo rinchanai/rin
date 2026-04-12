@@ -98,6 +98,9 @@ Inside Rin, a few built-in slash commands are especially useful for day-to-day c
 /model                     list available models
 /model <provider/model>    switch model
 /model <provider/model> high
+/compact <instruction>     compact the current session with a focus
+/reload                    reload extensions, prompts, skills, and themes
+/session                   show current session stats
 ```
 
 ## Updating Rin

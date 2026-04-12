@@ -98,6 +98,9 @@ Rin 默认就接好了这些能力：
 /model                     列出可用模型
 /model <provider/model>    切换模型
 /model <provider/model> high
+/compact <instruction>     按指定重点压缩当前会话
+/reload                    重新加载扩展、提示词、技能和主题
+/session                   查看当前会话统计
 ```
 
 ## 更新 Rin

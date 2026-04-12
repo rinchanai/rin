@@ -98,6 +98,9 @@ Dentro de Rin, estos comandos con barra son especialmente útiles para el contro
 /model                     listar modelos disponibles
 /model <provider/model>    cambiar de modelo
 /model <provider/model> high
+/compact <instruction>     compactar la sesión actual con un foco indicado
+/reload                    recargar extensiones, prompts, skills y temas
+/session                   mostrar estadísticas de la sesión actual
 ```
 
 ## Actualizar Rin

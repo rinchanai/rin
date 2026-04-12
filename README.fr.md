@@ -98,6 +98,9 @@ Dans Rin, ces commandes slash intégrées sont particulièrement utiles au quoti
 /model                     lister les modèles disponibles
 /model <provider/model>    changer de modèle
 /model <provider/model> high
+/compact <instruction>     compacter la session courante avec un objectif indiqué
+/reload                    recharger extensions, prompts, skills et thèmes
+/session                   afficher les statistiques de la session courante
 ```
 
 ## Mettre à jour Rin
