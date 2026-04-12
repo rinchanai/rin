@@ -14,7 +14,11 @@ import {
   chatStateDir,
   listChatStateFiles,
 } from "../chat-bridge/session-binding.js";
-import { buildAllowedCommandRows, syncTelegramCommands } from "./boot.js";
+import {
+  buildAllowedCommandRows,
+  drainKoishiOutbox,
+  syncTelegramCommands,
+} from "./boot.js";
 import {
   elementsToText,
   ensureDir,
@@ -167,6 +171,7 @@ export async function startKoishi(
     for (const controller of controllers.values()) {
       void controller.pollTyping().catch(() => {});
     }
+    void drainKoishiOutbox(app, runtime.agentDir, h, logger).catch(() => {});
   }, TYPING_POLL_INTERVAL_MS);
   const commandRows = buildAllowedCommandRows(await discoverRpcCommands());
   const getIdentity = () => loadIdentity(dataDir);
@@ -478,6 +483,7 @@ export async function startKoishi(
   });
 
   await app.start();
+  await drainKoishiOutbox(app, runtime.agentDir, h, logger).catch(() => {});
   await new Promise<void>((resolve, reject) => {
     rpcServer.once("error", reject);
     rpcServer.listen(rpcSocketPath, () => {
