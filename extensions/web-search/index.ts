@@ -23,7 +23,7 @@ function formatResults(response: any): string {
   if (!rows.length)
     return `No web results found for: ${String(response.query || "")}`;
   return [
-    `Fresh web results for: ${String(response.query || "")}`,
+    `Web results for: ${String(response.query || "")}`,
     ...rows.map((item: any, index: number) => {
       const title = String(item?.title || "").trim() || "(untitled)";
       const domain = String(item?.domain || "").trim();
@@ -89,11 +89,17 @@ export default function webSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_search",
     label: "Web Search",
-    description: "Search the web for fresh information.",
-    promptSnippet: "Search live information.",
-    promptGuidelines: ["Use web_search to search live information."],
+    description: "Search the web.",
+    promptSnippet: "Search the web.",
+    promptGuidelines: [
+      "Use web_search to search the web.",
+      "For different topics, prefer separate focused searches instead of one overloaded query.",
+    ],
     parameters: Type.Object({
-      q: Type.String({ description: "Focused search query." }),
+      q: Type.String({
+        description:
+          "Focused web search query. Prefer a few distinctive keywords instead of full sentences; use quotes for exact phrases, site:example.com for domain scoping, -term to exclude terms, and OR for alternatives. For different topics, split them into separate web_search calls instead of one overloaded query.",
+      }),
       limit: Type.Optional(Type.Number({ minimum: 1, maximum: 8 })),
       domains: Type.Optional(
         Type.Array(
