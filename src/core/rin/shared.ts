@@ -404,7 +404,7 @@ export async function runUpdate(parsed: ParsedArgs) {
     if (curl) {
       runCommandSync(curl, [
         "-fsSL",
-        "https://github.com/THE-cattail/rin/archive/refs/heads/main.tar.gz",
+        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
         "-o",
         archivePath,
       ]);
@@ -412,7 +412,7 @@ export async function runUpdate(parsed: ParsedArgs) {
       runCommandSync(wget, [
         "-qO",
         archivePath,
-        "https://github.com/THE-cattail/rin/archive/refs/heads/main.tar.gz",
+        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
       ]);
     } else {
       throw new Error("rin_missing_required_tool:curl_or_wget");

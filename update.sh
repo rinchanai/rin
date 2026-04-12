@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/THE-cattail/rin}
+REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/rinchanai/rin}
 CACHE_BASE=${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}
 TMPDIR_BASE=${RIN_INSTALL_TMPDIR:-$CACHE_BASE/rin-install}
 mkdir -p "$TMPDIR_BASE"
