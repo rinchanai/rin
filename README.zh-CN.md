@@ -110,6 +110,7 @@ rin update
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - [`docs/architecture.md`](docs/architecture.md)
+- [`docs/security.md`](docs/security.md)
 
 面向 agent / runtime 的文档：
 
