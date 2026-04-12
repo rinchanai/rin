@@ -35,32 +35,30 @@ const searchMemoryParams = Type.Object({
   ),
 });
 
-function extractTranscriptText(content: any): string {
-  if (typeof content === "string") return content.trim();
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      return part.type === "text" ? String(part.text || "") : "";
-    })
-    .filter(Boolean)
-    .join("")
-    .trim();
-}
-
 async function archiveMessageTranscript(message: any, ctx: any) {
-  const role = String(message?.role || "").trim();
-  if (role !== "user" && role !== "assistant") return;
-  const text = extractTranscriptText(message?.content);
-  if (!text) return;
+  if (!message || typeof message !== "object") return;
   await appendTranscriptArchiveEntry(
     {
+      id: String(message?.id || "").trim(),
       timestamp:
         String(message?.timestamp || "").trim() || new Date().toISOString(),
       sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
       sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
-      role,
+      role: String(message?.role || "").trim(),
       content: message?.content,
+      toolName: String(message?.toolName || "").trim(),
+      toolCallId: String(message?.toolCallId || "").trim(),
+      customType: String(message?.customType || "").trim(),
+      stopReason: String(message?.stopReason || "").trim(),
+      errorMessage: String(message?.errorMessage || "").trim(),
+      provider: String(message?.provider || "").trim(),
+      model: String(message?.model || "").trim(),
+      display:
+        typeof message?.display === "boolean" ? message.display : undefined,
+      command: message?.command,
+      output: message?.output,
+      summary: message?.summary,
+      text: String(message?.content || "").trim(),
     },
     String(ctx?.agentDir || "").trim(),
   );

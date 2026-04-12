@@ -17,8 +17,17 @@ export type TranscriptArchiveEntry = {
   timestamp: string;
   sessionId: string;
   sessionFile: string;
-  role: "user" | "assistant";
+  role: string;
   text: string;
+  content?: any;
+  toolName?: string;
+  toolCallId?: string;
+  customType?: string;
+  stopReason?: string;
+  errorMessage?: string;
+  provider?: string;
+  model?: string;
+  display?: boolean;
 };
 
 export type TranscriptSessionResult = {
@@ -32,7 +41,7 @@ export type TranscriptSessionResult = {
   timestamp: string;
   description: string;
   preview: string;
-  role: "user" | "assistant";
+  role: string;
 };
 
 export function resolveTranscriptRoot(rootOverride = ""): string {
@@ -101,18 +110,54 @@ async function ensureTranscriptParent(filePath: string) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
 }
 
-function extractTextParts(content: any): string {
+function normalizeInlineValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function summarizePart(part: any): string {
+  if (!part || typeof part !== "object") return "";
+  if (part.type === "text") return safeString(part.text || "");
+  if (part.type === "thinking") return safeString(part.thinking || "");
+  if (part.type === "toolCall") {
+    const name = safeString(part.name || part.toolName || "tool").trim() || "tool";
+    const args = normalizeInlineValue(part.args || part.arguments || "");
+    return args ? `[tool:${name}] ${args}` : `[tool:${name}]`;
+  }
+  if (part.type === "image") {
+    const mimeType = safeString(part.mimeType || "image").trim() || "image";
+    return `[image:${mimeType}]`;
+  }
+  if (part.type === "file") {
+    const name = safeString(part.name || part.path || part.url || "file").trim() || "file";
+    return `[file:${name}]`;
+  }
+  return "";
+}
+
+function extractTranscriptText(input: Record<string, any>): string {
+  const role = safeString(input.role || "").trim();
+  const content = input.content;
   if (typeof content === "string") return content.trim();
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      if (part.type === "text") return safeString(part.text || "");
-      return "";
-    })
-    .filter(Boolean)
-    .join("")
-    .trim();
+  if (Array.isArray(content)) {
+    return content.map((part) => summarizePart(part)).filter(Boolean).join("\n").trim();
+  }
+  if (role === "bashExecution") {
+    const command = safeString(input.command || "").trim();
+    const output = safeString(input.output || "").trim();
+    return [command ? `[bash] ${command}` : "", output].filter(Boolean).join("\n\n").trim();
+  }
+  if (role === "branchSummary" || role === "compactionSummary") {
+    return safeString(input.summary || "").trim();
+  }
+  return safeString(input.text || "").trim();
 }
 
 export async function appendTranscriptArchiveEntry(
@@ -120,8 +165,8 @@ export async function appendTranscriptArchiveEntry(
   rootOverride = "",
 ) {
   const role = safeString(input.role || "").trim();
-  if (role !== "user" && role !== "assistant") return;
-  const text = extractTextParts(input.content);
+  if (!role) return;
+  const text = extractTranscriptText(input);
   if (!text) return;
   const entry: TranscriptArchiveEntry = {
     id:
@@ -132,6 +177,8 @@ export async function appendTranscriptArchiveEntry(
           safeString(input.sessionId || "").trim(),
           role,
           text,
+          safeString(input.toolCallId || "").trim(),
+          safeString(input.toolName || "").trim(),
         ].join("\n"),
       ).slice(0, 16),
     timestamp: safeString(input.timestamp || new Date().toISOString()).trim(),
@@ -139,6 +186,15 @@ export async function appendTranscriptArchiveEntry(
     sessionFile: safeString(input.sessionFile || "").trim(),
     role,
     text,
+    content: input.content,
+    toolName: safeString(input.toolName || "").trim() || undefined,
+    toolCallId: safeString(input.toolCallId || "").trim() || undefined,
+    customType: safeString(input.customType || "").trim() || undefined,
+    stopReason: safeString(input.stopReason || "").trim() || undefined,
+    errorMessage: safeString(input.errorMessage || "").trim() || undefined,
+    provider: safeString(input.provider || "").trim() || undefined,
+    model: safeString(input.model || "").trim() || undefined,
+    display: typeof input.display === "boolean" ? input.display : undefined,
   };
   const filePath = getTranscriptArchivePath(entry, rootOverride);
   await ensureTranscriptParent(filePath);
@@ -154,7 +210,10 @@ async function loadTranscriptArchiveFile(filePath: string) {
     .filter(Boolean)
     .map((line) => {
       try {
-        return JSON.parse(line) as TranscriptArchiveEntry;
+        const parsed = JSON.parse(line) as TranscriptArchiveEntry;
+        if (!parsed?.text)
+          parsed.text = extractTranscriptText(parsed as Record<string, any>);
+        return parsed;
       } catch {
         return null;
       }
@@ -254,6 +313,17 @@ function presentTranscriptResult(
   };
 }
 
+function chooseSessionPreviewEntry(entries: TranscriptArchiveEntry[]) {
+  const preferredRoles = ["assistant", "user", "toolResult", "bashExecution", "custom"];
+  for (const role of preferredRoles) {
+    const match = [...entries]
+      .filter((entry) => entry.role === role)
+      .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))[0];
+    if (match) return match;
+  }
+  return [...entries].sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))[0];
+}
+
 function presentSessionResult(
   entry: TranscriptArchiveEntry,
   score: number,
@@ -340,24 +410,20 @@ export async function loadRecentTranscriptSessions(
   const entries = await loadTranscriptArchiveEntries(rootOverride);
   if (!entries.length) return [];
 
-  const grouped = new Map<string, TranscriptArchiveEntry>();
+  const grouped = new Map<string, TranscriptArchiveEntry[]>();
   for (const entry of entries) {
     const key =
       safeString(entry.sessionFile || "").trim() ||
       safeString(entry.sessionId || "").trim() ||
       safeString(entry.id || "").trim();
     if (!key) continue;
-    const existing = grouped.get(key);
-    if (!existing) {
-      grouped.set(key, entry);
-      continue;
-    }
-    if (timestampValue(entry.timestamp) >= timestampValue(existing.timestamp)) {
-      grouped.set(key, entry);
-    }
+    const bucket = grouped.get(key) || [];
+    bucket.push(entry);
+    grouped.set(key, bucket);
   }
 
   return [...grouped.values()]
+    .map((bucket) => chooseSessionPreviewEntry(bucket))
     .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
     .slice(0, limit)
     .map((entry, index) =>

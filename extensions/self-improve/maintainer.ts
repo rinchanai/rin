@@ -15,12 +15,42 @@ function safeString(value: unknown): string {
   return typeof value === "string" ? value : String(value || "");
 }
 
+function normalizeInlineValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function stringifyContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
-    .filter((part: any) => part?.type === "text")
-    .map((part: any) => safeString(part?.text))
+    .map((part: any) => {
+      if (!part || typeof part !== "object") return "";
+      if (part.type === "text") return safeString(part?.text);
+      if (part.type === "thinking") return safeString(part?.thinking);
+      if (part.type === "toolCall") {
+        const name = safeString(part?.name || part?.toolName || "tool").trim() || "tool";
+        const args = normalizeInlineValue(part?.args || part?.arguments || "");
+        return args ? `[tool:${name}] ${args}` : `[tool:${name}]`;
+      }
+      if (part.type === "image") {
+        const mimeType = safeString(part?.mimeType || "image").trim() || "image";
+        return `[image:${mimeType}]`;
+      }
+      if (part.type === "file") {
+        const name = safeString(part?.name || part?.path || part?.url || "file").trim() || "file";
+        return `[file:${name}]`;
+      }
+      return "";
+    })
+    .filter(Boolean)
     .join("\n")
     .trim();
 }
@@ -32,11 +62,26 @@ function turnTranscript(messages: any[]): string {
         safeString(
           message?.role || message?.message?.role || "unknown",
         ).trim() || "unknown";
-      const content = stringifyContent(
-        message?.content ?? message?.message?.content,
-      );
-      if (!content) return "";
-      return `${role.toUpperCase()}: ${content}`;
+      const source = message?.message || message;
+      const content = stringifyContent(source?.content);
+      const toolLabel = safeString(source?.toolName || "").trim();
+      const customLabel = safeString(source?.customType || "").trim();
+      const command = safeString(source?.command || "").trim();
+      const output = safeString(source?.output || "").trim();
+      const summary = safeString(source?.summary || "").trim();
+      const body =
+        content ||
+        [command ? `[bash] ${command}` : "", output, summary]
+          .filter(Boolean)
+          .join("\n\n")
+          .trim();
+      if (!body) return "";
+      const label = toolLabel
+        ? `${role.toUpperCase()}[${toolLabel}]`
+        : customLabel
+          ? `${role.toUpperCase()}[${customLabel}]`
+          : role.toUpperCase();
+      return `${label}: ${body}`;
     })
     .filter(Boolean)
     .join("\n\n");

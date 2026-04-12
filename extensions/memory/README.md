@@ -11,6 +11,7 @@ Public tool:
 This module owns:
 
 - transcript archiving under `~/.rin/memory/transcripts`
+- archived session records preserve full message history for recall, including assistant thinking text, tool calls, tool results, and other text-bearing message roles
 - cross-session transcript search
 - transcript recall summarization via the current model by default, or `settings.json` -> `auxiliaryModel` when configured
 
