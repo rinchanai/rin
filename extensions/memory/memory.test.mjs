@@ -152,6 +152,19 @@ test("memory can browse recent sessions without a query", async () => {
       },
       root,
     );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-05T12:22:24.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "assistant",
+        content: [
+          { type: "toolCall", name: "browser_click", args: { selector: "Next" } },
+          { type: "text", text: "卡在验证码页面，下一步要收验证码。" },
+        ],
+      },
+      root,
+    );
 
     const results = await transcripts.loadRecentTranscriptSessions(
       { limit: 2 },
@@ -161,7 +174,9 @@ test("memory can browse recent sessions without a query", async () => {
     assert.equal(results.length, 2);
     assert.equal(results[0].sourceType, "session");
     assert.equal(results[0].sessionId, "session-2");
-    assert.match(results[0].preview, /最近/);
+    assert.match(results[0].preview, /browser_click/);
+    assert.match(results[0].preview, /验证码/);
+    assert.doesNotMatch(results[0].preview, /tool output should not replace/);
     assert.equal(results[1].sessionId, "session-1");
   });
 });

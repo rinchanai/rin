@@ -293,11 +293,21 @@ function timestampValue(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function transcriptPreviewText(entry: TranscriptArchiveEntry) {
+  const label = entry.toolName
+    ? `[${entry.role}:${entry.toolName}]`
+    : entry.customType
+      ? `[${entry.role}:${entry.customType}]`
+      : `[${entry.role}]`;
+  return `${label} ${safeString(entry.text || "").trim()}`.trim();
+}
+
 function presentTranscriptResult(
   entry: TranscriptArchiveEntry,
   score: number,
   rootOverride = "",
 ) {
+  const previewText = transcriptPreviewText(entry);
   return {
     sourceType: "transcript",
     id: entry.id,
@@ -308,27 +318,62 @@ function presentTranscriptResult(
     sessionId: entry.sessionId,
     sessionFile: entry.sessionFile,
     timestamp: entry.timestamp,
-    description: trimText(entry.text, 160),
-    preview: trimText(entry.text, 240),
+    description: trimText(previewText, 160),
+    preview: trimText(previewText, 240),
   };
 }
 
+function sessionPreviewPriority(entry: TranscriptArchiveEntry) {
+  const text = safeString(entry.text || "").trim();
+  let score = 0;
+  if (entry.role === "assistant") score += 30;
+  if (entry.role === "user") score += 20;
+  if (entry.role === "toolResult") score += 12;
+  if (entry.role === "bashExecution") score += 10;
+  if (entry.role === "custom") score += 8;
+  if (entry.toolName) score += 18;
+  if (entry.toolCallId) score += 8;
+  if (entry.customType === "self_improve_session_transcript") score -= 25;
+  if (text.includes("[tool:")) score += 12;
+  if (text.includes("[bash]")) score += 10;
+  if (text.includes("http://") || text.includes("https://")) score += 4;
+  if (text.includes("/") || text.includes("\\")) score += 3;
+  if (text.length >= 24) score += 3;
+  if (!text) score -= 100;
+  return score;
+}
+
 function chooseSessionPreviewEntry(entries: TranscriptArchiveEntry[]) {
-  const preferredRoles = ["assistant", "user", "toolResult", "bashExecution", "custom"];
-  for (const role of preferredRoles) {
-    const match = [...entries]
-      .filter((entry) => entry.role === role)
-      .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))[0];
-    if (match) return match;
-  }
-  return [...entries].sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))[0];
+  return [...entries].sort((a, b) => {
+    const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
+    if (priority) return priority;
+    return timestampValue(b.timestamp) - timestampValue(a.timestamp);
+  })[0];
+}
+
+function buildSessionPreview(entries: TranscriptArchiveEntry[]) {
+  const ranked = [...entries].sort((a, b) => {
+    const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
+    if (priority) return priority;
+    return timestampValue(b.timestamp) - timestampValue(a.timestamp);
+  });
+  const topScore = ranked.length ? sessionPreviewPriority(ranked[0]) : 0;
+  const chosen = ranked
+    .filter((entry, index) =>
+      index === 0 || sessionPreviewPriority(entry) >= topScore - 8,
+    )
+    .slice(0, 2)
+    .map((entry) => transcriptPreviewText(entry));
+  return trimText(chosen.join("\n"), 240);
 }
 
 function presentSessionResult(
   entry: TranscriptArchiveEntry,
+  entries: TranscriptArchiveEntry[],
   score: number,
   rootOverride = "",
 ): TranscriptSessionResult {
+  const preview = buildSessionPreview(entries);
   return {
     sourceType: "session",
     id: safeString(entry.sessionId || entry.sessionFile || entry.id).trim() ||
@@ -340,8 +385,8 @@ function presentSessionResult(
     sessionId: entry.sessionId,
     sessionFile: entry.sessionFile,
     timestamp: entry.timestamp,
-    description: trimText(entry.text, 160),
-    preview: trimText(entry.text, 240),
+    description: trimText(preview, 160),
+    preview,
   };
 }
 
@@ -423,11 +468,14 @@ export async function loadRecentTranscriptSessions(
   }
 
   return [...grouped.values()]
-    .map((bucket) => chooseSessionPreviewEntry(bucket))
-    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))
+    .map((bucket) => ({
+      bucket,
+      entry: chooseSessionPreviewEntry(bucket),
+    }))
+    .sort((a, b) => timestampValue(b.entry.timestamp) - timestampValue(a.entry.timestamp))
     .slice(0, limit)
-    .map((entry, index) =>
-      presentSessionResult(entry, Math.max(1, limit - index), rootOverride),
+    .map(({ entry, bucket }, index) =>
+      presentSessionResult(entry, bucket, Math.max(1, limit - index), rootOverride),
     );
 }
 
