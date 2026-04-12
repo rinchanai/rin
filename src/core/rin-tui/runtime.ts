@@ -24,21 +24,21 @@ import {
 } from "./model-settings.js";
 import { hydrateRpcSettings } from "./settings-hydration.js";
 import { createSettingsManager } from "./settings-manager.js";
-import {
-  queueOfflineOperation,
-  emitConnectionLost,
-  type PendingRpcOperation,
-} from "./reconnect.js";
+import { type PendingRpcOperation } from "./reconnect.js";
 import { createModelRegistry } from "./rpc-model-registry.js";
+import {
+  clientIsConnected,
+  handleRuntimeConnectionLost,
+  handleRuntimeConnectionRestored,
+  queueRuntimeOfflineOperation,
+  sendOrQueueOperation,
+  waitForDaemonAvailable,
+} from "./runtime-connection.js";
 import {
   computeAvailableThinkingLevels,
   extractText,
   getLastAssistantText,
 } from "./session-helpers.js";
-import {
-  createInterruptedToolResultPayload,
-  DAEMON_RESTART_OR_DISCONNECT_REASON,
-} from "../rin-lib/interruption.js";
 import {
   computeSessionStats,
   getContextUsage,
@@ -101,12 +101,6 @@ function getRuntimeSessionDirForProfile(profile: {
   agentDir: string;
 }) {
   return getRuntimeSessionDir(profile.cwd, profile.agentDir);
-}
-
-function clientIsConnected(client: any) {
-  return typeof client?.isConnected === "function"
-    ? Boolean(client.isConnected())
-    : true;
 }
 
 export class RpcInteractiveSession {
@@ -693,158 +687,27 @@ export class RpcInteractiveSession {
   }
 
   private async waitForDaemonAvailable() {
-    if (clientIsConnected(this.client)) return;
-    if (this.waitForDaemonPromise) return await this.waitForDaemonPromise;
-    this.emitEvent({
-      type: "status",
-      level: "warning",
-      text: "Waiting daemon...",
-    } as any);
-    this.waitForDaemonHintTimer = setTimeout(() => {
-      this.waitForDaemonHintTimer = null;
-      this.emitEvent({
-        type: "status",
-        level: "warning",
-        text: "Daemon is still unavailable after 30s. Try `rin doctor` and `rin --std` to troubleshoot.",
-      } as any);
-    }, 30000);
-    this.ensureReconnectLoop();
-    this.waitForDaemonPromise = (async () => {
-      while (!this.disposed) {
-        if (clientIsConnected(this.client)) return;
-        try {
-          await this.client.connect();
-          return;
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      }
-      throw new Error("rin_tui_disposed");
-    })().finally(() => {
-      this.clearWaitingDaemonState();
-    });
-    return await this.waitForDaemonPromise;
+    return await waitForDaemonAvailable(this as any);
   }
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
-    queueOfflineOperation(this as any, operation);
+    queueRuntimeOfflineOperation(this as any, operation);
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
-    if (!clientIsConnected(this.client)) {
-      this.queueOfflineOperation(operation);
-      return;
-    }
-
-    const sendOperation = async () => {
-      await this.ensureRemoteSession();
-      this.activeTurn = operation;
-      this.syncStreamingState();
-      await this.call(operation.mode, {
-        message: operation.message,
-        images: operation.images,
-        source: operation.source,
-        requestTag: operation.requestTag,
-      });
-    };
-
-    try {
-      await sendOperation();
-    } catch (error: any) {
-      const message = String(error?.message || error || "");
-      if (/rin_tui_not_connected|rin_disconnected/.test(message)) {
-        this.queueOfflineOperation(operation);
-        return;
-      }
-      if (/rin_no_attached_session/.test(message) && this.sessionFile) {
-        await this.call("switch_session", { sessionPath: this.sessionFile });
-        await this.refreshState(REFRESH_ALL);
-        await sendOperation();
-        return;
-      }
-      throw error;
-    }
+    await sendOrQueueOperation(this as any, operation, REFRESH_ALL);
   }
 
   private handleConnectionLost() {
-    const interruptedTurn = Boolean(
-      this.isStreaming || this.remoteTurnRunning || this.activeTurn,
-    );
-    this.setRpcConnected(false);
-    if (interruptedTurn) {
-      this.emitInterruptedToolExecutionEnds();
-      this.emitEvent({
-        type: "agent_end",
-        messages: this.messages,
-        interrupted: true,
-        reason: DAEMON_RESTART_OR_DISCONNECT_REASON,
-      } as any);
-    }
-    emitConnectionLost(this as any);
-  }
-
-  private emitInterruptedToolExecutionEnds() {
-    const lastMessage = Array.isArray(this.messages)
-      ? this.messages[this.messages.length - 1]
-      : null;
-    if (!lastMessage || lastMessage.role !== "assistant") return;
-    const toolCalls: any[] = Array.isArray(lastMessage.content)
-      ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
-      : [];
-    for (const toolCall of toolCalls) {
-      this.emitEvent({
-        type: "tool_execution_end",
-        toolCallId: String(toolCall?.id || ""),
-        toolName: String(toolCall?.name || ""),
-        result: createInterruptedToolResultPayload(),
-        isError: true,
-      } as any);
-    }
-  }
-
-  private ensureReconnectLoop() {
-    if (this.reconnecting || this.disposed) return;
-    this.reconnecting = true;
-    const tick = async () => {
-      if (this.disposed) return;
-      try {
-        await this.client.connect();
-      } catch {
-        this.reconnectTimer = setTimeout(() => {
-          void tick();
-        }, 1000);
-      }
-    };
-    void tick();
+    handleRuntimeConnectionLost(this as any);
   }
 
   private async handleConnectionRestored() {
-    if (this.disposed) return;
-    if (this.restorePromise) return await this.restorePromise;
-    this.restorePromise = (async () => {
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-      this.setRpcConnected(true);
-      try {
-        if (this.sessionFile) {
-          await this.call("switch_session", { sessionPath: this.sessionFile });
-        } else if (this.sessionId) {
-          await this.call("attach_session", { sessionId: this.sessionId });
-        }
-        await this.refreshState(REFRESH_SESSION).catch(() => {});
-        void this.queueRefreshState(REFRESH_MESSAGES_AND_SESSION);
-        const queued = [...this.queuedOfflineOps];
-        this.queuedOfflineOps = [];
-        for (const operation of queued) {
-          await this.sendOrQueue(operation);
-        }
-      } finally {
-        this.reconnecting = false;
-      }
-    })().finally(() => {
-      this.restorePromise = null;
-    });
-    return await this.restorePromise;
+    return await handleRuntimeConnectionRestored(
+      this as any,
+      REFRESH_SESSION,
+      REFRESH_MESSAGES_AND_SESSION,
+    );
   }
 
   private enqueuePending(
