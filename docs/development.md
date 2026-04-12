@@ -84,28 +84,8 @@ Avoid replacing the runtime by hand unless you are explicitly doing emergency de
 
 Use the right audience layer:
 
-- `README.md`, `docs/user/*`: user-facing
-- `docs/development.md`, `CONTRIBUTING.md`: contributor-facing
-- `docs/rin/*`: agent-facing runtime docs
+- user-facing: `README.md`, `docs/user/*`, `CHANGELOG.md`, `docs/troubleshooting.md`, `docs/roadmap.md`
+- contributor-facing: `docs/development.md`, `CONTRIBUTING.md`, `docs/architecture.md`, `docs/security.md`, `docs/dependency-upgrades.md`, `docs/release-management.md`
+- agent-facing runtime docs: `docs/rin/*`
 
 Do not send normal users straight into agent-facing docs unless they are explicitly debugging runtime internals.
-
-## Security notes
-
-Dependency security status and remaining audit constraints are tracked in:
-
-- `docs/security.md`
-- `docs/dependency-upgrades.md`
-
-Release tracking and version-management guidance live in:
-
-- `CHANGELOG.md`
-- `docs/release-management.md`
-
-## Project planning and troubleshooting
-
-Additional working docs:
-
-- `docs/roadmap.md`
-- `docs/troubleshooting.md`
-- `docs/release-management.md`
