@@ -114,6 +114,7 @@ export async function executeCronTask(
     if (task.target.kind === "shell_command") {
       const text = await executeCronShellTask(task);
       task.lastResultText = text;
+      task.lastError = undefined;
       if (task.chatKey && text) {
         await sendKoishiText(options.agentDir, {
           chatKey: task.chatKey,
@@ -125,6 +126,7 @@ export async function executeCronTask(
     } else {
       const result = await executeCronAgentTask(task, options);
       task.lastResultText = result.text;
+      task.lastError = undefined;
       if (task.chatKey && result.text) {
         await sendKoishiText(options.agentDir, {
           chatKey: task.chatKey,
@@ -135,6 +137,7 @@ export async function executeCronTask(
       }
     }
   } catch (error: any) {
+    task.lastResultText = undefined;
     task.lastError = String(
       error?.message || error || "cron_task_failed",
     ).trim();
