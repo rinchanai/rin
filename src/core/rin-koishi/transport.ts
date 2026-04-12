@@ -372,9 +372,16 @@ export async function sendOutboxPayload(
 
 export function buildPromptText(text: string, attachments: SavedAttachment[]) {
   const files = attachments.filter((item) => item.kind === "file");
-  if (!files.length) return text;
+  const images = attachments.filter((item) => item.kind === "image");
+  const body = safeString(text).trim() ||
+    (images.length
+      ? "The user sent image attachments with no accompanying text. Inspect the attached image content and respond directly to it."
+      : files.length
+        ? "The user sent file attachments with no accompanying text."
+        : "");
+  if (!files.length) return body;
   const lines = files.map((item) => `- ${item.name}: ${item.path}`);
-  return `${text}\n\nAttached files saved locally:\n${lines.join("\n")}`;
+  return `${body}\n\nAttached files saved locally:\n${lines.join("\n")}`.trim();
 }
 
 export async function attachmentToImageContent(
