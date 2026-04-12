@@ -87,7 +87,7 @@ test("koishi controller polls telegram typing only while the controller still ow
   assert.equal(await controller.pollTyping(), false);
   assert.deepEqual(actions, []);
 
-  controller.session = { isStreaming: true };
+  controller.session = { isStreaming: false };
   controller.state.processing = undefined;
   controller.liveTurn = null;
   assert.equal(await controller.pollTyping(), false);
@@ -101,6 +101,13 @@ test("koishi controller polls telegram typing only while the controller still ow
   };
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
+
+  controller.session = { isStreaming: false };
+  assert.equal(await controller.pollTyping(), true);
+  assert.deepEqual(actions, [
+    { chat_id: "2", action: "typing" },
+    { chat_id: "2", action: "typing" },
+  ]);
 });
 
 test("koishi controller uses RpcInteractiveSession prompt path for chat turns", async () => {

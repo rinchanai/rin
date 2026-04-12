@@ -12,6 +12,7 @@ import {
   KoishiChatState,
   SavedAttachment,
   extractTextFromContent,
+  listJsonFiles,
   markProcessedKoishiMessage,
   safeString,
 } from "./chat-helpers.js";
@@ -322,9 +323,7 @@ export class KoishiChatController {
     return Boolean(this.liveTurn || this.session?.isStreaming);
   }
   private hasLiveTurn() {
-    return Boolean(
-      this.state.processing && this.session?.isStreaming && this.liveTurn,
-    );
+    return Boolean(this.state.processing && this.liveTurn);
   }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
@@ -498,7 +497,7 @@ export class KoishiChatController {
       ).trim() || undefined
     );
   }
-  private enqueueAssistantDelivery(input: {
+  private buildAssistantDelivery(input: {
     text?: string;
     replyToMessageId?: string;
     sessionId?: string;
@@ -506,15 +505,43 @@ export class KoishiChatController {
   }) {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
     if (!text) throw new Error("koishi_final_assistant_text_missing");
-    return enqueueChatOutboxPayload(this.agentDir, {
-      type: "text_delivery",
-      createdAt: new Date().toISOString(),
+    return {
+      type: "text_delivery" as const,
       chatKey: this.chatKey,
       text,
       replyToMessageId: safeString(input.replyToMessageId || "").trim() || undefined,
       sessionId: safeString(input.sessionId || "").trim() || undefined,
       sessionFile: safeString(input.sessionFile || "").trim() || undefined,
+    };
+  }
+  private hasQueuedDelivery(payload: NonNullable<KoishiChatState["pendingDelivery"]>) {
+    const outboxDir = path.join(this.agentDir, "data", "chat-outbox");
+    return listJsonFiles(outboxDir).some((filePath) => {
+      const queued = readJsonFile(filePath, null) as any;
+      return (
+        safeString(queued?.type).trim() === payload.type &&
+        safeString(queued?.chatKey).trim() === payload.chatKey &&
+        safeString(queued?.text).trim() === payload.text &&
+        safeString(queued?.replyToMessageId).trim() ===
+          safeString(payload.replyToMessageId).trim() &&
+        safeString(queued?.sessionId).trim() === safeString(payload.sessionId).trim() &&
+        safeString(queued?.sessionFile).trim() === safeString(payload.sessionFile).trim()
+      );
     });
+  }
+  private async commitPendingDelivery(clearProcessing = false) {
+    const pending = this.state.pendingDelivery;
+    if (!pending) return;
+    if (!this.hasQueuedDelivery(pending)) {
+      enqueueChatOutboxPayload(this.agentDir, {
+        ...pending,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+    await this.flushChatOutbox();
   }
   private async flushChatOutbox() {
     await drainKoishiOutbox(this.app, this.agentDir, this.h, this.logger);
@@ -620,13 +647,14 @@ export class KoishiChatController {
     const text = safeString(data?.text || "").trim();
     if (text) {
       this.latestAssistantText = text;
-      this.enqueueAssistantDelivery({
+      this.state.pendingDelivery = this.buildAssistantDelivery({
         text,
         replyToMessageId: replyToMessageId || undefined,
         sessionId: this.currentSessionId() || undefined,
         sessionFile: this.currentSessionFile(),
       });
-      await this.flushChatOutbox();
+      this.saveState();
+      await this.commitPendingDelivery();
     }
     return data;
   }
@@ -727,9 +755,7 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    delete this.state.processing;
-    this.saveState();
-    this.enqueueAssistantDelivery({
+    this.state.pendingDelivery = this.buildAssistantDelivery({
       text: this.latestAssistantText,
       replyToMessageId: replyToMessageId || undefined,
       sessionId:
@@ -737,8 +763,9 @@ export class KoishiChatController {
       sessionFile:
         safeString(completion?.sessionFile || this.currentSessionFile() || "").trim() || undefined,
     });
+    this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
-    await this.flushChatOutbox();
+    await this.commitPendingDelivery(true);
     return {
       finalText: safeString(this.latestAssistantText || "").trim(),
       sessionId: this.currentSessionId() || undefined,
@@ -761,6 +788,10 @@ export class KoishiChatController {
   async recoverIfNeeded() {
     await this.runExclusiveTurn(async () => {
       await this.flushChatOutbox();
+      if (this.state.pendingDelivery) {
+        await this.commitPendingDelivery(true);
+        return;
+      }
       if (!this.state.processing) return;
       await this.connect();
       if (!this.session) return;
@@ -788,15 +819,14 @@ export class KoishiChatController {
       this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
       if (deliveredCompletedText && !this.session.isStreaming) {
         this.latestAssistantText = deliveredCompletedText;
-        delete this.state.processing;
-        this.saveState();
-        this.enqueueAssistantDelivery({
+        this.state.pendingDelivery = this.buildAssistantDelivery({
           text: this.latestAssistantText,
           replyToMessageId: safeString(pending.replyToMessageId || "").trim() || undefined,
           sessionId: this.currentSessionId() || undefined,
           sessionFile: this.currentSessionFile(),
         });
-        await this.flushChatOutbox();
+        this.saveState();
+        await this.commitPendingDelivery(true);
         return;
       }
       if (shouldResumeInternally) {
@@ -822,9 +852,7 @@ export class KoishiChatController {
               this.state.piSessionFile ||
               "",
           ).trim() || undefined;
-        delete this.state.processing;
-        this.saveState();
-        this.enqueueAssistantDelivery({
+        this.state.pendingDelivery = this.buildAssistantDelivery({
           text: this.latestAssistantText,
           replyToMessageId: safeString(pending.replyToMessageId || "").trim() || undefined,
           sessionId:
@@ -832,7 +860,8 @@ export class KoishiChatController {
           sessionFile:
             safeString(completion?.sessionFile || this.currentSessionFile() || "").trim() || undefined,
         });
-        await this.flushChatOutbox();
+        this.saveState();
+        await this.commitPendingDelivery(true);
         return;
       }
       await this.runTurnNow(
