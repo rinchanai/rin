@@ -494,6 +494,45 @@ test("koishi controller steers an active chat turn instead of queueing a replace
   assert.equal(result?.steered, true);
 });
 
+test("koishi controller still steers when the attached session is streaming without a local live turn", async () => {
+  const controller = await createController("telegram/1:2");
+  const calls = [];
+  controller.session = {
+    isStreaming: true,
+    sessionManager: {
+      getSessionFile: () => "/tmp/steer-chat.jsonl",
+      getSessionId: () => "session-steer",
+      getSessionName: () => "telegram/1:2",
+    },
+    prompt: async (message, options) => {
+      calls.push(`prompt:${message}:${options?.streamingBehavior || "none"}`);
+    },
+  };
+  controller.state.processing = {
+    text: "first",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "old",
+  };
+  controller.liveTurn = null;
+
+  assert.equal(controller.hasActiveTurn(), true);
+
+  const result = await controller.runTurn(
+    {
+      text: "interrupt",
+      attachments: [],
+      replyToMessageId: "new",
+      incomingMessageId: "m2",
+    },
+    "steer",
+  );
+
+  assert.deepEqual(calls, ["prompt:interrupt:steer"]);
+  assert.equal(controller.state.processing.replyToMessageId, "new");
+  assert.equal(result?.steered, true);
+});
+
 test("koishi controller serializes chat turns instead of replacing the active one", async () => {
   const controller = await createController("telegram/1:2");
   const order = [];
@@ -586,8 +625,63 @@ test("koishi controller delivers completed assistant text during recovery when p
   await controller.recoverIfNeeded();
 
   assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.state.pendingDelivery, undefined);
   assert.deepEqual(delivered, [
     { text: "final from recovery", replyToMessageId: "42" },
   ]);
+});
+
+test("koishi controller keeps pending delivery durable until a later recovery flush succeeds", async () => {
+  const controller = await createController("telegram/1:2");
+  let attempts = 0;
+  controller.deliverFinalAssistantText = async (replyToMessageId) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error("send failed");
+    assert.equal(replyToMessageId, "42");
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", content: [{ type: "text", text: "final text" }] },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/recover-chat.jsonl",
+      getSessionId: () => "session-recover",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/recover-chat.jsonl",
+      sessionId: "session-recover",
+    }),
+    prompt: async () => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  await assert.rejects(
+    controller.runTurn({ text: "hello", attachments: [] }, "prompt"),
+    /send failed/,
+  );
+
+  assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.state.pendingDelivery?.text, "final text");
+  assert.equal(controller.state.pendingDelivery?.replyToMessageId, undefined);
+  assert.equal(controller.state.pendingDelivery?.sessionId, "session-recover");
+  assert.equal(controller.state.pendingDelivery?.sessionFile, "/tmp/recover-chat.jsonl");
+  assert.equal(typeof controller.state.pendingDelivery?.completedAt, "number");
+
+  controller.state.pendingDelivery.replyToMessageId = "42";
+  await controller.recoverIfNeeded();
+
+  assert.equal(controller.state.pendingDelivery, undefined);
+  assert.equal(attempts, 2);
 });
 
