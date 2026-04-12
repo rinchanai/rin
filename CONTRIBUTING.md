@@ -36,8 +36,8 @@ Examples:
 
 If behavior changes, update the right docs layer:
 
-- product/user docs: `README.md`, `docs/user/*`
-- contributor docs: `docs/development.md`, `CONTRIBUTING.md`
+- product/user docs: `README.md`, `docs/user/*`, `CHANGELOG.md`
+- contributor docs: `docs/development.md`, `CONTRIBUTING.md`, `docs/release-management.md`
 - agent/runtime docs: `docs/rin/*`
 
 ## High-risk areas

@@ -109,6 +109,7 @@ User-facing docs:
 - [`docs/user/getting-started.md`](docs/user/getting-started.md)
 - [`docs/development.md`](docs/development.md)
 - [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/security.md`](docs/security.md)
 - [`docs/roadmap.md`](docs/roadmap.md)

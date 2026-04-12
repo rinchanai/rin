@@ -97,6 +97,11 @@ Dependency security status and remaining audit constraints are tracked in:
 - `docs/security.md`
 - `docs/dependency-upgrades.md`
 
+Release tracking and version-management guidance live in:
+
+- `CHANGELOG.md`
+- `docs/release-management.md`
+
 ## Project planning and troubleshooting
 
 Additional working docs:
