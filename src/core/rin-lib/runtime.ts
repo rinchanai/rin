@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { isContextOverflow } from "@mariozechner/pi-ai";
 
+import { buildSystemPrompt } from "../../../third_party/pi-coding-agent/dist/core/system-prompt.js";
 import { loadRinCodingAgent } from "./loader.js";
 import {
   clearCompactionContinuationMarker,
@@ -91,6 +92,23 @@ export function getManagedSkillPaths(agentDir: string): string[] {
   ];
 }
 
+function extractPiGuidelinesBlock(prompt: string) {
+  const text = String(prompt || "");
+  const startMarker = "Guidelines:\n";
+  const endMarker = "\n\nPi documentation";
+  const start = text.indexOf(startMarker);
+  if (start < 0) return [] as string[];
+  const afterStart = start + startMarker.length;
+  const end = text.indexOf(endMarker, afterStart);
+  const block = end >= 0 ? text.slice(afterStart, end) : text.slice(afterStart);
+  return block
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2).trim())
+    .filter(Boolean);
+}
+
 function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const validToolNames = toolNames.filter((name) =>
     session._toolRegistry.has(name),
@@ -119,20 +137,18 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     uniqueGuidelines.push(normalized);
   };
 
-  const hasBash = validToolNames.includes("bash");
-  const hasGrep = validToolNames.includes("grep");
-  const hasFind = validToolNames.includes("find");
-  const hasLs = validToolNames.includes("ls");
   const hasRead = validToolNames.includes("read");
 
-  if (hasBash && !hasGrep && !hasFind && !hasLs) {
-    addGuideline("Use bash for file operations like ls, rg, find");
-  } else if (hasBash && (hasGrep || hasFind || hasLs)) {
-    addGuideline(
-      "Prefer grep/find/ls tools over bash for file exploration (faster, respects .gitignore)",
-    );
-  }
-  for (const guideline of promptGuidelines) {
+  const piGuidelines = extractPiGuidelinesBlock(
+    buildSystemPrompt({
+      selectedTools: validToolNames,
+      toolSnippets,
+      promptGuidelines,
+      skills: [],
+      contextFiles: [],
+    }),
+  );
+  for (const guideline of piGuidelines) {
     addGuideline(guideline);
   }
   addGuideline(
@@ -144,8 +160,6 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   addGuideline(
     "When searching, search distinct keywords separately and review the results instead of combining everything into one search.",
   );
-  addGuideline("Be concise in your responses");
-  addGuideline("Show file paths clearly when working with files");
 
   const toolsList =
     validToolNames.length > 0
