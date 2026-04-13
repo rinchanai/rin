@@ -169,6 +169,16 @@ function buildTexts(action: string, data: any, params: any) {
     };
   }
 
+  if (action === "save" && data?.task) {
+    const id = String(data.task?.id || "").trim();
+    const name = String(data.task?.name || "").trim();
+    const label = name ? `${id} (${name})` : id || "unnamed_task";
+    return {
+      agentText: `Saved task: ${label}`,
+      userText: `Saved task: ${label}`,
+    };
+  }
+
   const userText = data?.task
     ? renderTask(data.task)
     : data?.deleted
@@ -417,6 +427,19 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
   };
 }
 
+function formatSaveTaskCall(args: any, theme: any) {
+  const name = String(args?.name || "").trim();
+  const trigger = String(args?.trigger?.kind || "").trim();
+  const target = String(args?.target?.kind || "").trim();
+  const parts = [
+    theme.fg("toolTitle", theme.bold("save_task")),
+    name ? ` ${theme.fg("accent", name)}` : "",
+    trigger ? theme.fg("muted", ` ${trigger}`) : "",
+    target ? theme.fg("muted", ` ${target}`) : "",
+  ];
+  return parts.join("");
+}
+
 function renderTaskResult(result: any, options: any, theme: any, context: any) {
   const details = result.details as TaskActionDetails | undefined;
   if (details?.action === "list" || details?.action === "get") {
@@ -463,10 +486,11 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "Save Task",
     description: "Create or update a scheduled task.",
     promptSnippet: "Create or update a scheduled task.",
-    promptGuidelines: ["Use save_task to create or update a scheduled task."],
+    promptGuidelines: [],
     parameters: taskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("save", params, ctx),
+    renderCall: (args, theme) => new Text(formatSaveTaskCall(args, theme), 0, 0),
     renderResult: renderTaskResult,
   });
 
