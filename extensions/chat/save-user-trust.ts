@@ -85,11 +85,11 @@ const paramsSchema = Type.Object({
 
 export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "save_chat_user_access",
-    label: "Save Chat User Access",
+    name: "save_chat_user_identity",
+    label: "Save Chat User Identity",
     description:
-      "Create or update saved access info for a chat user.",
-    promptSnippet: "Save access info for a chat user.",
+      "Create or update saved identity info for a chat user.",
+    promptSnippet: "Save identity info for a chat user.",
     promptGuidelines: [],
     parameters: paramsSchema,
     execute: (async (_toolCallId, params) => {
@@ -142,7 +142,7 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
           {
             type: "text",
             text: [
-              `Saved chat user access: ${result.trust}`,
+              `Saved chat user identity: ${result.trust}`,
               `platform=${result.platform}`,
               `userId=${result.userId}`,
               result.name ? `name=${result.name}` : "",

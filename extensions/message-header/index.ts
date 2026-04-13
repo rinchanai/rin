@@ -39,7 +39,7 @@ function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
     );
   }
   lines.push(
-    "- Use `save_chat_user_access` only when the user explicitly asks to trust or untrust a chat user.",
+    "- Use `save_chat_user_identity` only when the user explicitly asks to trust or untrust a chat user.",
   );
   if (chatType === "group") {
     lines.push(
