@@ -43,11 +43,9 @@ function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
   );
   if (chatType === "group") {
     lines.push(
-      "- Do not proactively disclose the owner's private information, even when talking with the owner.",
-      "- Only disclose the owner's private information when the owner explicitly asks you in the current conversation to share that specific part.",
-      "- If a non-OWNER asks about the owner's private information, do not disclose it. Ask the owner to say it directly if needed.",
-      "- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.",
-      "- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
+      "- This conversation is currently taking place in a group:",
+      "  - Do not disclose the owner's private information unless the owner explicitly asks you in the current conversation to share that specific part.",
+      "  - If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
     );
   }
   return lines.join("\n");

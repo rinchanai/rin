@@ -191,16 +191,21 @@ export async function startKoishi(
       affectChatBinding?: boolean;
     },
   ) => {
+    const statePath = path.join(
+      dataDir,
+      "cron-turns",
+      safeString(controllerKey).trim().replace(/[^A-Za-z0-9._:-]+/g, "_"),
+      "state.json",
+    );
+    const controllerChatKey =
+      safeString(options?.chatKey).trim() || `cron:${controllerKey}`;
     let controller = detachedControllers.get(controllerKey);
+    if (controller && controller.chatKey !== controllerChatKey) {
+      controller.dispose();
+      detachedControllers.delete(controllerKey);
+      controller = undefined;
+    }
     if (!controller) {
-      const statePath = path.join(
-        dataDir,
-        "cron-turns",
-        safeString(controllerKey).trim().replace(/[^A-Za-z0-9._:-]+/g, "_"),
-        "state.json",
-      );
-      const controllerChatKey =
-        safeString(options?.chatKey).trim() || `cron:${controllerKey}`;
       controller = new KoishiChatController(app, dataDir, controllerChatKey, {
         logger,
         h,
