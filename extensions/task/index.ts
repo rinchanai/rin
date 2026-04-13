@@ -156,32 +156,7 @@ function summarizeTaskForAgent(task: any) {
 }
 
 function summarizeTaskForUser(task: any) {
-  const id = String(task?.id || "").trim();
-  const name = String(task?.name || "").trim();
-  const trigger =
-    task?.trigger?.kind === "interval"
-      ? `every ${String(task?.trigger?.intervalMs || 0)}ms`
-      : task?.trigger?.kind === "cron"
-        ? `cron ${String(task?.trigger?.expression || "")}`
-        : `once ${String(task?.trigger?.runAt || "")}`;
-  const target =
-    task?.target?.kind === "shell_command"
-      ? `command: ${String(task?.target?.command || "")}`
-      : `agent: ${String(task?.target?.prompt || "")}`;
-  const status = task?.completedAt
-    ? `completed=${String(task.completedAt)}`
-    : task?.enabled === false
-      ? "disabled"
-      : `next=${String(task?.nextRunAt || "pending")}`;
-  return [
-    name || id || "unnamed_task",
-    id && name ? `id=${id}` : "",
-    trigger,
-    target,
-    status,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return summarizeTask(task);
 }
 
 function buildTexts(action: string, data: any, params: any) {
