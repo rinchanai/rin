@@ -152,17 +152,48 @@ function summarizeTask(task: any) {
 }
 
 function summarizeTaskForAgent(task: any) {
+  return summarizeTask(task);
+}
+
+function summarizeTaskForUser(task: any) {
   const id = String(task?.id || "").trim();
   const name = String(task?.name || "").trim();
-  return name || id || "unnamed_task";
+  const trigger =
+    task?.trigger?.kind === "interval"
+      ? `every ${String(task?.trigger?.intervalMs || 0)}ms`
+      : task?.trigger?.kind === "cron"
+        ? `cron ${String(task?.trigger?.expression || "")}`
+        : `once ${String(task?.trigger?.runAt || "")}`;
+  const target =
+    task?.target?.kind === "shell_command"
+      ? `command: ${String(task?.target?.command || "")}`
+      : `agent: ${String(task?.target?.prompt || "")}`;
+  const status = task?.completedAt
+    ? `completed=${String(task.completedAt)}`
+    : task?.enabled === false
+      ? "disabled"
+      : `next=${String(task?.nextRunAt || "pending")}`;
+  return [
+    name || id || "unnamed_task",
+    id && name ? `id=${id}` : "",
+    trigger,
+    target,
+    status,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function buildTexts(action: string, data: any, params: any) {
   if (action === "list") {
     const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-    const names = tasks.map((task: any) => summarizeTaskForAgent(task));
-    const text = names.length ? names.join("\n") : "No scheduled tasks.";
-    return { agentText: text, userText: text };
+    const agentText = tasks.length
+      ? tasks.map((task: any) => summarizeTaskForAgent(task)).join("\n\n")
+      : "No scheduled tasks.";
+    const userText = tasks.length
+      ? tasks.map((task: any) => summarizeTaskForUser(task)).join("\n\n")
+      : "No scheduled tasks.";
+    return { agentText, userText };
   }
 
   const userText = data?.task
@@ -380,14 +411,23 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
 
   const texts = buildTexts(action, data, params);
   if (action === "list") {
-    const truncation = truncateHead(texts.agentText);
+    const agentTruncation = truncateHead(texts.agentText);
+    const userTruncation = truncateHead(texts.userText);
+    let outputText = agentTruncation.content;
+    if (agentTruncation.truncated) {
+      if (agentTruncation.truncatedBy === "lines") {
+        outputText += `\n\n[Showing ${agentTruncation.outputLines} of ${agentTruncation.totalLines} lines.]`;
+      } else {
+        outputText += `\n\n[Showing ${agentTruncation.outputLines} of ${agentTruncation.totalLines} lines (${formatSize(agentTruncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+      }
+    }
     return {
-      content: [{ type: "text" as const, text: truncation.content }],
+      content: [{ type: "text" as const, text: outputText }],
       details: {
         ...data,
         action,
-        userText: texts.userText,
-        truncation: truncation.truncated ? truncation : undefined,
+        userText: userTruncation.content,
+        truncation: userTruncation.truncated ? userTruncation : undefined,
       } satisfies TaskActionDetails,
     };
   }
