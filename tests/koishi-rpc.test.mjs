@@ -115,6 +115,35 @@ test("koishi rpc times out when the sidecar never responds", async () => {
   );
 });
 
+test("koishi rpc falls back to the raw payload when the sidecar omits data", async () => {
+  await withRpcServer(
+    (socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", () => {
+        socket.write(`${JSON.stringify({ success: true, delivered: true })}\n`);
+      });
+    },
+    async (agentDir) => {
+      const result = await rpc.requestKoishiRpc(agentDir, {
+        type: "send_chat",
+      });
+      assert.deepEqual(result, { success: true, delivered: true });
+    },
+  );
+});
+
+test("koishi rpc surfaces socket connection failures", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-koishi-rpc-"));
+  try {
+    await assert.rejects(
+      rpc.requestKoishiRpc(agentDir, { type: "send_chat" }, 20),
+      /ENOENT|ECONNREFUSED/,
+    );
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("koishi rpc deliver helper sends chat payloads through send_chat", async () => {
   await withRpcServer(
     (socket) => {
