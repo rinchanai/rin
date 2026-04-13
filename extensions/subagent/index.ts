@@ -471,9 +471,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
     label: "List Models",
     description: "List available models.",
     promptSnippet: "List available models.",
-    promptGuidelines: [
-      "Use list_models to get the currently available LLM models.",
-    ],
+    promptGuidelines: [],
     parameters: Type.Object({}),
     async execute(_toolCallId, _rawParams, _signal, _onUpdate, ctx) {
       return await listModelsResult(ctx, pi.getThinkingLevel());
