@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
-import { extractAssistantCommentaryText } from "../session/assistant-text.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
@@ -285,11 +284,8 @@ export class KoishiChatController {
       case "message_update":
         if (event?.message?.role !== "assistant") break;
         {
-          const nextText = extractAssistantCommentaryText(event.message.content);
-          if (nextText) {
-            this.interimText = nextText;
-            void this.emitProgressText(nextText).catch(() => {});
-          }
+          const nextText = extractTextFromContent(event.message.content);
+          if (nextText) this.interimText = nextText;
         }
         break;
       case "tool_execution_start":
