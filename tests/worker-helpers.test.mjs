@@ -13,9 +13,148 @@ const workerHelpers = await import(
   ).href
 );
 
+test("worker helpers write json lines with trailing newlines", () => {
+  const writes = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => {
+    writes.push(String(chunk));
+    return true;
+  };
+  try {
+    workerHelpers.writeJsonLine({ ok: true, value: 1 });
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  assert.deepEqual(writes, ['{"ok":true,"value":1}\n']);
+});
+
+test("worker helpers expose stable session state snapshots", () => {
+  const state = workerHelpers.getSessionState({
+    model: { provider: "openai", id: "gpt-5" },
+    thinkingLevel: "high",
+    isStreaming: true,
+    isCompacting: false,
+    steeringMode: "one-at-a-time",
+    followUpMode: "all",
+    sessionFile: "/tmp/session.jsonl",
+    sessionId: "session-1",
+    sessionName: "demo",
+    autoCompactionEnabled: true,
+    messages: [{ role: "user" }, { role: "assistant" }],
+    pendingMessageCount: 3,
+  });
+
+  assert.deepEqual(state, {
+    model: { provider: "openai", id: "gpt-5" },
+    thinkingLevel: "high",
+    isStreaming: true,
+    isCompacting: false,
+    steeringMode: "one-at-a-time",
+    followUpMode: "all",
+    sessionFile: "/tmp/session.jsonl",
+    sessionId: "session-1",
+    sessionName: "demo",
+    autoCompactionEnabled: true,
+    messageCount: 2,
+    pendingMessageCount: 3,
+  });
+});
+
+test("worker helpers merge builtin extension prompt and skill commands", () => {
+  const commands = workerHelpers.getSlashCommands(
+    {
+      extensionRunner: {
+        getRegisteredCommands: () => [
+          {
+            invocationName: "hello",
+            description: "say hello",
+            sourceInfo: { extension: "demo-extension" },
+          },
+        ],
+      },
+      promptTemplates: [
+        {
+          name: "rewrite",
+          description: "rewrite text",
+          sourceInfo: { file: "/tmp/prompts/rewrite.md" },
+        },
+      ],
+      resourceLoader: {
+        getSkills: () => ({
+          skills: [
+            {
+              name: "debug-skill",
+              description: "debug issues",
+              sourceInfo: { file: "/tmp/skills/debug/SKILL.md" },
+            },
+          ],
+        }),
+      },
+    },
+    [{ name: "help", description: "show help" }],
+  );
+
+  assert.deepEqual(commands, [
+    { name: "help", description: "show help", source: "builtin" },
+    {
+      name: "hello",
+      description: "say hello",
+      source: "extension",
+      sourceInfo: { extension: "demo-extension" },
+    },
+    {
+      name: "rewrite",
+      description: "rewrite text",
+      source: "prompt",
+      sourceInfo: { file: "/tmp/prompts/rewrite.md" },
+    },
+    {
+      name: "skill:debug-skill",
+      description: "debug issues",
+      source: "skill",
+      sourceInfo: { file: "/tmp/skills/debug/SKILL.md" },
+    },
+  ]);
+
+  assert.deepEqual(workerHelpers.getSlashCommands({}, []), []);
+});
+
+test("worker helpers expose oauth provider state without leaking secrets", () => {
+  const state = workerHelpers.getOAuthState({
+    modelRegistry: {
+      authStorage: {
+        list: () => ["github", "google"],
+        get: (providerId) =>
+          providerId === "github"
+            ? { type: "oauth", token: "secret-token" }
+            : undefined,
+        getOAuthProviders: () => [
+          { id: "github", name: "GitHub", usesCallbackServer: true },
+          { id: "google", name: "Google", usesCallbackServer: 0 },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(state, {
+    credentials: {
+      github: { type: "oauth" },
+      google: undefined,
+    },
+    providers: [
+      { id: "github", name: "GitHub", usesCallbackServer: true },
+      { id: "google", name: "Google", usesCallbackServer: false },
+    ],
+  });
+});
+
 test("worker helpers split command args and format stats", () => {
   assert.deepEqual(
     workerHelpers.splitCommandArgs(`model openai/gpt-5 "high detail"`),
+    ["model", "openai/gpt-5", "high detail"],
+  );
+  assert.deepEqual(
+    workerHelpers.splitCommandArgs(`model\t'openai/gpt-5'\t"high detail"`),
     ["model", "openai/gpt-5", "high detail"],
   );
   const text = workerHelpers.formatSessionStats({
@@ -31,6 +170,7 @@ test("worker helpers split command args and format stats", () => {
   });
   assert.ok(text.includes("Session ID: s1"));
   assert.ok(text.includes("Tool Calls: 2"));
+  assert.ok(text.includes("Session File: In-memory"));
 });
 
 test("runBuiltinCommand uses runtime for session replacement commands", async () => {
