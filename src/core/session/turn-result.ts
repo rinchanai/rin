@@ -1,8 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { extractAssistantFinalText } from "./assistant-text.js";
-
 export type TurnResultMessage =
   | {
       type: "text";
@@ -29,7 +27,17 @@ function safeString(value: unknown) {
 }
 
 function extractText(content: any) {
-  return extractAssistantFinalText(content);
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return "";
+      if (part.type === "text") return safeString((part as any).text);
+      return "";
+    })
+    .filter(Boolean)
+    .join("")
+    .trim();
 }
 
 function extractImages(content: any) {
