@@ -7,9 +7,7 @@ import {
 
 const CONTINUATION_BLOCK = [
   "Context compacted; treat this as a routine internal checkpoint.",
-  "Resume the current task immediately from its current state.",
-  "Execute the next concrete step directly without narration.",
-  "If work remains, keep doing it.",
+  "Resume the current task immediately from its current state. Execute the next concrete step directly without narration, and keep going if work remains.",
 ].join("\n");
 
 export default function autoCompactContinueExtension(pi: ExtensionAPI) {
