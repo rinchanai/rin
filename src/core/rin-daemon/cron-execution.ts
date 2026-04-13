@@ -81,7 +81,10 @@ export async function executeCronAgentTask(
   const result = await requestKoishiRpc(options.agentDir, {
     type: "run_chat_turn",
     payload: {
+      chatKey: task.chatKey,
       controllerKey: task.id,
+      deliveryEnabled: false,
+      affectChatBinding: false,
       text: task.target.prompt,
       sessionFile,
     },

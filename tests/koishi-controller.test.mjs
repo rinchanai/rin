@@ -751,28 +751,36 @@ test("koishi controller retries persisted final reply delivery on recovery", asy
   assert.equal(sends.length, 1);
 });
 
-test("koishi controller drops pending delivery for detached cron turns", async () => {
+test("koishi controller keeps cron turns off the chat mainline while preserving the real delivery chatKey", async () => {
   const tempDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "rin-koishi-controller-detached-"),
   );
   const dataDir = path.join(tempDir, "data");
   await fs.mkdir(dataDir, { recursive: true });
-  const controller = new KoishiChatController({}, dataDir, "cron:task-1", {
-    logger: { info() {}, warn() {} },
-    h: {
-      text(content) {
-        return { type: "text", attrs: { content } };
+  const controller = new KoishiChatController(
+    {},
+    dataDir,
+    "onebot/2301401877:1090441185",
+    {
+      logger: { info() {}, warn() {} },
+      h: {
+        text(content) {
+          return { type: "text", attrs: { content } };
+        },
+        quote(id) {
+          return { type: "quote", attrs: { id } };
+        },
       },
-      quote(id) {
-        return { type: "quote", attrs: { id } };
-      },
+      deliveryEnabled: false,
+      affectChatBinding: false,
+      statePath: path.join(dataDir, "cron-turns", "task-1", "state.json"),
     },
-    deliveryEnabled: false,
-  });
+  );
   controller.app = { bots: [] };
   controller.connect = async () => {};
   controller.scheduleIdleDetach = () => {};
   controller.clearIdleDetachTimer = () => {};
+  const setNames = [];
   controller.session = {
     isStreaming: false,
     messages: [
@@ -796,7 +804,9 @@ test("koishi controller drops pending delivery for detached cron turns", async (
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
-    setSessionName: async () => {},
+    setSessionName: async (name) => {
+      setNames.push(name);
+    },
     switchSession: async () => {},
   };
 
@@ -806,6 +816,8 @@ test("koishi controller drops pending delivery for detached cron turns", async (
   );
 
   assert.equal(result?.finalText, "final text");
+  assert.equal(controller.state.chatKey, "onebot/2301401877:1090441185");
   assert.equal(controller.state.pendingDelivery, undefined);
+  assert.deepEqual(setNames, []);
 });
 
