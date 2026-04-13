@@ -161,11 +161,18 @@ function buildTexts(action: string, data: any, params: any) {
     return { agentText, userText };
   }
 
-  if (action === "get" && data?.task) {
-    return {
-      agentText: renderTask(data.task),
-      userText: renderTask(data.task),
-    };
+  if (action === "get") {
+    if (data?.task) {
+      return {
+        agentText: renderTask(data.task),
+        userText: renderTask(data.task),
+      };
+    }
+    const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+    const text = tasks.length
+      ? tasks.map((task: any) => renderTask(task)).join("\n\n")
+      : "No scheduled tasks.";
+    return { agentText: text, userText: text };
   }
 
   if (action === "save" && data?.task) {
@@ -285,7 +292,18 @@ const taskSchema = Type.Object({
   }),
 });
 
-const taskIdSchema = Type.Object({
+const getTaskSchema = Type.Object({
+  taskId: Type.Optional(
+    Type.String({
+      description: "Task id. Omit it to list scheduled tasks instead.",
+    }),
+  ),
+});
+
+const manageTaskSchema = Type.Object({
+  action: StringEnum(["delete", "pause", "resume"] as const, {
+    description: "Task action. Allowed values: `delete`, `pause`, or `resume`.",
+  }),
   taskId: Type.String({
     description: "Task id.",
   }),
@@ -351,9 +369,12 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
   const currentChatKey = parseChatKey(currentSessionName);
 
   let data: any;
-  if (action === "list") data = await sendDaemon({ type: "cron_list_tasks" });
-  else if (action === "get") {
-    data = await sendDaemon({ type: "cron_get_task", taskId: params?.taskId });
+  if (action === "get") {
+    if (String(params?.taskId || "").trim()) {
+      data = await sendDaemon({ type: "cron_get_task", taskId: params?.taskId });
+    } else {
+      data = await sendDaemon({ type: "cron_list_tasks" });
+    }
   } else if (action === "save") {
     const task = buildTaskForSave(params, {
       currentSessionFile,
@@ -391,7 +412,7 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
   }
 
   const texts = buildTexts(action, data, params);
-  if (action === "list" || action === "get") {
+  if (action === "get") {
     const agentTruncation = truncateHead(texts.agentText);
     const userTruncation = truncateHead(texts.userText);
     let outputText = agentTruncation.content;
@@ -456,24 +477,12 @@ function renderTaskResult(result: any, options: any, theme: any, context: any) {
 
 export default function cronExtension(pi: ExtensionAPI) {
   pi.registerTool({
-    name: "list_tasks",
-    label: "List Tasks",
-    description: "List scheduled tasks.",
-    promptSnippet: "List scheduled tasks.",
-    promptGuidelines: [],
-    parameters: Type.Object({}),
-    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
-      await executeTaskAction("list", params, ctx),
-    renderResult: renderTaskResult,
-  });
-
-  pi.registerTool({
     name: "get_task",
     label: "Get Task",
-    description: "Get a specific scheduled task.",
+    description: "Get a specific scheduled task, or list scheduled tasks when taskId is omitted.",
     promptSnippet: "Get a specific scheduled task.",
     promptGuidelines: [],
-    parameters: taskIdSchema,
+    parameters: getTaskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("get", params, ctx),
     renderResult: renderTaskResult,
@@ -494,39 +503,15 @@ export default function cronExtension(pi: ExtensionAPI) {
     renderResult: renderTaskResult,
   });
 
-  for (const [name, label, action, description, guideline] of [
-    [
-      "delete_task",
-      "Delete Task",
-      "delete",
-      "Delete a scheduled task.",
-      "",
-    ],
-    [
-      "pause_task",
-      "Pause Task",
-      "pause",
-      "Pause a scheduled task.",
-      "Use pause_task to pause a scheduled task.",
-    ],
-    [
-      "resume_task",
-      "Resume Task",
-      "resume",
-      "Resume a scheduled task.",
-      "Use resume_task to resume a scheduled task.",
-    ],
-  ] as const) {
-    pi.registerTool({
-      name,
-      label,
-      description,
-      promptSnippet: description,
-      promptGuidelines: [guideline],
-      parameters: taskIdSchema,
-      execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
-        await executeTaskAction(action, params, ctx),
-      renderResult: renderTaskResult,
-    });
-  }
+  pi.registerTool({
+    name: "manage_task",
+    label: "Manage Task",
+    description: "Delete, pause, or resume a scheduled task.",
+    promptSnippet: "Delete, pause, or resume a scheduled task.",
+    promptGuidelines: [],
+    parameters: manageTaskSchema,
+    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
+      await executeTaskAction(String((params as any)?.action || "").trim(), params, ctx),
+    renderResult: renderTaskResult,
+  });
 }
