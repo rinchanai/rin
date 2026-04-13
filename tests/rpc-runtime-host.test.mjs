@@ -66,3 +66,21 @@ test("rpc runtime host adapts RpcInteractiveSession shape for InteractiveMode", 
     ["disconnect"],
   ]);
 });
+
+test("rpc runtime host dispose tolerates terminateSession failures and still disconnects", async () => {
+  const calls = [];
+  const session = {
+    async disconnect() {
+      calls.push(["disconnect"]);
+    },
+    async terminateSession() {
+      calls.push(["terminateSession"]);
+      throw new Error("terminate failed");
+    },
+  };
+
+  const runtimeHost = createRpcRuntimeHost(session);
+  await runtimeHost.dispose();
+
+  assert.deepEqual(calls, [["terminateSession"], ["disconnect"]]);
+});
