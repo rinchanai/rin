@@ -38,7 +38,7 @@ const SessionModeSchema = StringEnum(
   [...VALID_SESSION_MODES] as SubagentSessionMode[],
   {
     description:
-      "Session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session.",
+      "Worker session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session.",
   },
 );
 
@@ -48,20 +48,20 @@ const SessionSchema = Type.Optional(
     ref: Type.Optional(
       Type.String({
         description:
-          "Saved session file path, exact session id, or unique session id prefix. Required for session.mode resume or fork. If you need to discover one, inspect ~/.rin/sessions with bash/find/rg.",
+          "Worker session file path, exact session id, or unique session id prefix. Required for session.mode resume or fork. If you need to discover one, inspect ~/.rin/sessions with bash/find/rg.",
       }),
     ),
     name: Type.Optional(
       Type.String({
         description:
-          "Optional session display name for the saved session. Useful for new persisted sessions and renaming resumed or forked sessions.",
+          "Optional display name for the worker session. Useful for new persisted sessions and renaming resumed or forked sessions.",
       }),
     ),
   }),
 );
 
 const TaskSchema = Type.Object({
-  prompt: Type.String({ description: "Prompt to send to the subagent." }),
+  prompt: Type.String({ description: "Prompt to send to the worker." }),
   model: Type.Optional(
     Type.String({
       description:
@@ -87,7 +87,7 @@ const RunParamsSchema = Type.Object({
   tasks: Type.Optional(
     Type.Array(TaskSchema, {
       description:
-        "Parallel subagent tasks. All tasks finish before the tool returns.",
+        "Parallel worker tasks. All tasks finish before the tool returns.",
     }),
   ),
 });
@@ -279,15 +279,15 @@ export default function subagentExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "run_subagent",
     label: "Run Subagent",
-    description: "Run subagents.",
-    promptSnippet: "Run subagents.",
+    description: "Run a worker with independent context and optional model selection.",
+    promptSnippet: "Run a worker with independent context.",
     promptGuidelines: [
-      "Use run_subagent to start a subagent session.",
-      "Default subagent runs use an isolated in-memory session and do not persist.",
-      "If the delegated work will span multiple turns or needs existing context, set session.mode to persist, resume, or fork.",
-      "When you need an existing session, inspect ~/.rin/sessions with bash/find/rg and pass session.ref as a session file path, exact id, or unique id prefix.",
-      "Use run_subagent for simple independent tasks that do not depend on the current conversation context.",
-      "Use run_subagent when the user asks for a subagent or wants a different model.",
+      "Use run_subagent to run a worker with independent context and optional model selection.",
+      "Default run_subagent calls use an isolated in-memory worker session and do not persist.",
+      "If run_subagent work will span multiple turns or needs existing context, set session.mode to persist, resume, or fork.",
+      "When run_subagent needs an existing worker session, inspect ~/.rin/sessions with bash/find/rg and pass session.ref as a session file path, exact id, or unique id prefix.",
+      "Use run_subagent for simple independent work that does not depend on the current conversation context.",
+      "Use run_subagent when the user asks for a worker or wants a different model.",
       "Use run_subagent for parallelizable tasks.",
     ],
     parameters: RunParamsSchema,
