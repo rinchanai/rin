@@ -84,9 +84,131 @@ test("persist reconcileInstallerManifest writes manifest with expected fields", 
     );
     assert.ok(result.manifestPath.endsWith(path.join(dir, "installer.json")));
     assert.equal(writes.length, 1);
+    assert.equal(writes[0].value.targetUser, "demo");
+    assert.equal(writes[0].value.installDir, dir);
     assert.equal(writes[0].value.defaultProvider, "openai");
     assert.equal(writes[0].value.defaultModel, "gpt");
     assert.equal(writes[0].value.defaultThinkingLevel, "medium");
+    assert.deepEqual(writes[0].value.koishi, { telegram: { token: "x" } });
+  });
+});
+
+test("persist reconcileInstallerManifest uses elevated writes and removes legacy manifests", async () => {
+  await withTempDir(async (dir) => {
+    const privilegedWrites = [];
+    const privilegedCommands = [];
+    const result = persist.reconcileInstallerManifest(
+      {
+        targetUser: "demo",
+        installDir: dir,
+        elevated: true,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        ensureDir: async () => {
+          throw new Error("ensureDir should not run for elevated writes");
+        },
+        readInstallerJson: (filePath, fallback) =>
+          filePath.endsWith(path.join("config", "installer.json"))
+            ? { defaultProvider: "openai" }
+            : fallback,
+        writeJsonFileWithPrivilege: (filePath, value, ownerUser, ownerGroup) =>
+          privilegedWrites.push({ filePath, value, ownerUser, ownerGroup }),
+        writeJsonFile: () => {
+          throw new Error("plain write should not run for elevated writes");
+        },
+        runPrivileged: (command, args) =>
+          privilegedCommands.push({ command, args }),
+      },
+    );
+    assert.equal(privilegedWrites.length, 1);
+    assert.equal(privilegedWrites[0].ownerUser, "demo");
+    assert.equal(privilegedWrites[0].ownerGroup, 1000);
+    assert.equal(privilegedWrites[0].value.defaultProvider, "openai");
+    assert.deepEqual(privilegedCommands, [
+      { command: "rm", args: ["-f", result.legacyManifestPath] },
+    ]);
+  });
+});
+
+test("persistInstallerOutputs merges settings auth launcher metadata and launchers coherently", async () => {
+  await withTempDir(async (dir) => {
+    const writes = [];
+    const result = await persist.persistInstallerOutputs(
+      {
+        currentUser: "builder",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt-5",
+        thinkingLevel: "high",
+        koishiConfig: {
+          telegram: { token: "tg-token" },
+          onebot: { endpoint: "http://127.0.0.1:5700" },
+        },
+        authData: { github: { type: "oauth" } },
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        ensureDir: () => {},
+        readInstallerJson: (filePath, fallback) => {
+          if (filePath.endsWith("settings.json")) {
+            return {
+              quietStartup: true,
+              koishi: { telegram: { token: "old" } },
+            };
+          }
+          if (filePath.endsWith("auth.json")) {
+            return { existing: { type: "api_key", key: "secret" } };
+          }
+          return fallback;
+        },
+        writeJsonFileWithPrivilege: () => {
+          throw new Error("unexpected privileged write");
+        },
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        appConfigDirForUser: (userName) => path.join(dir, ".config", userName),
+        readJsonFile: (_filePath, fallback) => ({ ...fallback, theme: "dark" }),
+        writeLaunchersForUser: (userName, installDir) => ({
+          rinPath: path.join(installDir, `launcher-${userName}`),
+          rinInstallPath: path.join(installDir, `launcher-install-${userName}`),
+        }),
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    const settingsWrite = writes.find((entry) =>
+      entry.filePath.endsWith("settings.json"),
+    );
+    const authWrite = writes.find((entry) =>
+      entry.filePath.endsWith("auth.json"),
+    );
+    const launcherWrite = writes.find((entry) =>
+      entry.filePath.endsWith(path.join("builder", "install.json")),
+    );
+
+    assert.deepEqual(settingsWrite?.value, {
+      quietStartup: true,
+      defaultProvider: "openai",
+      defaultModel: "gpt-5",
+      defaultThinkingLevel: "high",
+      koishi: {
+        telegram: { token: "tg-token" },
+        onebot: { endpoint: "http://127.0.0.1:5700" },
+      },
+    });
+    assert.deepEqual(authWrite?.value, {
+      existing: { type: "api_key", key: "secret" },
+      github: { type: "oauth" },
+    });
+    assert.equal(launcherWrite?.value.defaultTargetUser, "demo");
+    assert.equal(launcherWrite?.value.defaultInstallDir, dir);
+    assert.equal(launcherWrite?.value.installedBy, "builder");
+    assert.ok(result.manifestPath.endsWith(path.join(dir, "installer.json")));
+    assert.ok(result.rinPath.endsWith("launcher-builder"));
+    assert.ok(result.rinInstallPath.endsWith("launcher-install-builder"));
   });
 });
 
