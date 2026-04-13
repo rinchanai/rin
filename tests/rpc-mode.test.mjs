@@ -747,3 +747,383 @@ test(
     }
   },
 );
+
+test(
+  "rpc mode rebinds after switch fork and import session replacement commands",
+  { concurrency: false },
+  async () => {
+    const stdinOn = process.stdin.on;
+    const stdoutWrite = process.stdout.write;
+    const handlers = new Map();
+    const lines = [];
+    const prompts = [];
+    const bindCalls = [];
+    let currentSession;
+    let unsubscribeCount = 0;
+
+    process.stdin.on = function (event, handler) {
+      handlers.set(event, handler);
+      return this;
+    };
+    process.stdout.write = function (chunk) {
+      lines.push(String(chunk));
+      return true;
+    };
+
+    try {
+      const createSession = (name) => ({
+        name,
+        isStreaming: false,
+        isCompacting: false,
+        sessionFile: `/tmp/${name}.jsonl`,
+        sessionId: `${name}-id`,
+        agent: { waitForIdle: async () => {} },
+        bindExtensions: async () => {
+          bindCalls.push(name);
+        },
+        subscribe: () => () => {
+          unsubscribeCount += 1;
+        },
+        prompt: async (message, options) => {
+          prompts.push([name, message, options]);
+        },
+        steer: async () => {},
+        followUp: async () => {},
+        abort: async () => {},
+        modelRegistry: { getAvailable: async () => [] },
+        sessionManager: {
+          getEntries: () => [],
+          getTree: () => [],
+          getLeafId: () => null,
+          getCwd: () => process.cwd(),
+          getSessionDir: () => process.cwd(),
+        },
+        messages: [],
+        getSessionStats: () => ({}),
+        getUserMessagesForForking: () => [],
+        getLastAssistantText: () => "",
+        setThinkingLevel: () => {},
+        cycleThinkingLevel: () => undefined,
+        setSteeringMode: () => {},
+        setFollowUpMode: () => {},
+        compact: async () => {},
+        setAutoCompactionEnabled: () => {},
+        setAutoRetryEnabled: () => {},
+        abortRetry: () => {},
+        executeBash: async () => {},
+        abortBash: async () => {},
+        navigateTree: async () => ({ cancelled: false }),
+        exportToHtml: async () => "",
+        exportToJsonl: () => "",
+        setModel: async () => {},
+        reload: async () => {},
+        setSessionName: () => {},
+      });
+
+      currentSession = createSession("initial");
+      const runtime = {
+        get session() {
+          return currentSession;
+        },
+        async newSession() {
+          throw new Error("unexpected");
+        },
+        async switchSession() {
+          currentSession = createSession("switched");
+          return { cancelled: false };
+        },
+        async fork() {
+          currentSession = createSession("forked");
+          return { cancelled: false, selectedText: "fork text" };
+        },
+        async importFromJsonl() {
+          currentSession = createSession("imported");
+          return { cancelled: false };
+        },
+      };
+
+      void runCustomRpcMode(runtime, {
+        SessionManager: {
+          listAll: async () => [],
+          list: async () => [],
+          open: () => ({ appendSessionInfo() {} }),
+        },
+        builtinSlashCommands: [],
+      });
+      await wait(0);
+
+      const onData = handlers.get("data");
+      assert.equal(typeof onData, "function");
+      onData(
+        Buffer.from(
+          `${JSON.stringify({ id: "switch", type: "switch_session", sessionPath: "/tmp/other.jsonl" })}\n`,
+        ),
+      );
+      await wait(20);
+      onData(
+        Buffer.from(
+          `${JSON.stringify({ id: "fork", type: "fork", entryId: "entry-1" })}\n`,
+        ),
+      );
+      await wait(20);
+      onData(
+        Buffer.from(
+          `${JSON.stringify({ id: "import", type: "import_jsonl", inputPath: "/tmp/import.jsonl" })}\n`,
+        ),
+      );
+      await wait(20);
+      onData(
+        Buffer.from(
+          `${JSON.stringify({ id: "prompt", type: "prompt", message: "after replacements", requestTag: "tag-rebound" })}\n`,
+        ),
+      );
+      await wait(40);
+
+      assert.deepEqual(bindCalls, [
+        "initial",
+        "switched",
+        "forked",
+        "imported",
+      ]);
+      assert.equal(unsubscribeCount, 3);
+      assert.deepEqual(prompts, [
+        [
+          "imported",
+          "after replacements",
+          { images: undefined, streamingBehavior: undefined, source: "rpc" },
+        ],
+      ]);
+
+      const output = lines.join("");
+      assert.match(output, /"id":"switch"/);
+      assert.match(output, /"command":"switch_session"/);
+      assert.match(output, /"id":"fork"/);
+      assert.match(output, /"text":"fork text"/);
+      assert.match(output, /"command":"import_jsonl"/);
+      assert.match(output, /"id":"prompt"/);
+      assert.match(output, /"requestTag":"tag-rebound"/);
+    } finally {
+      process.stdin.on = stdinOn;
+      process.stdout.write = stdoutWrite;
+    }
+  },
+);
+
+test(
+  "rpc mode applies session management and auth control commands through stable side effects",
+  { concurrency: false },
+  async () => {
+    const stdinOn = process.stdin.on;
+    const stdoutWrite = process.stdout.write;
+    const handlers = new Map();
+    const lines = [];
+    const opened = [];
+    const renamed = [];
+    const loggedOut = [];
+    let refreshed = 0;
+    let sessionName = "demo session";
+    let selectedModel = null;
+
+    process.stdin.on = function (event, handler) {
+      handlers.set(event, handler);
+      return this;
+    };
+    process.stdout.write = function (chunk) {
+      lines.push(String(chunk));
+      return true;
+    };
+
+    try {
+      const session = createRpcQuerySession({
+        sessionName,
+        modelRegistry: {
+          getAvailable: async () => [
+            { provider: "openai", id: "gpt-5" },
+            { provider: "anthropic", id: "claude-sonnet" },
+          ],
+          refresh: () => {
+            refreshed += 1;
+          },
+          authStorage: {
+            list: () => ["github"],
+            get: () => undefined,
+            getOAuthProviders: () => [
+              { id: "github", name: "GitHub", usesCallbackServer: true },
+            ],
+            logout: (providerId) => {
+              loggedOut.push(providerId);
+            },
+          },
+        },
+        setModel: async (model) => {
+          selectedModel = model;
+        },
+        setSessionName: (name) => {
+          sessionName = name;
+        },
+      });
+
+      void runCustomRpcMode(session, {
+        SessionManager: {
+          listAll: async () => [
+            { id: "sess-1", name: "Main" },
+            { id: "sess-2", name: "Scratch" },
+          ],
+          list: async () => [],
+          open: (sessionPath) => {
+            opened.push(sessionPath);
+            return {
+              appendSessionInfo(name) {
+                renamed.push(name);
+              },
+            };
+          },
+        },
+        builtinSlashCommands: [],
+      });
+      await wait(0);
+
+      const onData = handlers.get("data");
+      assert.equal(typeof onData, "function");
+      onData(
+        Buffer.from(
+          [
+            {
+              id: "model",
+              type: "set_model",
+              provider: "anthropic",
+              modelId: "claude-sonnet",
+            },
+            {
+              id: "rename",
+              type: "rename_session",
+              sessionPath: "/tmp/demo.jsonl",
+              name: "  Renamed session  ",
+            },
+            {
+              id: "set-name",
+              type: "set_session_name",
+              name: "  Active session  ",
+            },
+            { id: "list", type: "list_sessions" },
+            { id: "logout", type: "oauth_logout", providerId: "github" },
+          ]
+            .map((item) => JSON.stringify(item))
+            .join("\n") + "\n",
+        ),
+      );
+      await wait(100);
+
+      assert.deepEqual(selectedModel, {
+        provider: "anthropic",
+        id: "claude-sonnet",
+      });
+      assert.deepEqual(opened, ["/tmp/demo.jsonl"]);
+      assert.deepEqual(renamed, ["Renamed session"]);
+      assert.equal(sessionName, "Active session");
+      assert.deepEqual(loggedOut, ["github"]);
+      assert.equal(refreshed, 1);
+
+      const output = lines.join("");
+      assert.match(output, /"id":"model"/);
+      assert.match(output, /"command":"set_model"/);
+      assert.match(output, /"provider":"anthropic"/);
+      assert.match(output, /"id":"rename"/);
+      assert.match(output, /"command":"rename_session"/);
+      assert.match(output, /"id":"set-name"/);
+      assert.match(output, /"command":"set_session_name"/);
+      assert.match(output, /"id":"list"/);
+      assert.match(output, /"command":"list_sessions"/);
+      assert.match(output, /"name":"Main"/);
+      assert.match(output, /"name":"Scratch"/);
+      assert.match(output, /"id":"logout"/);
+      assert.match(output, /"command":"oauth_logout"/);
+      assert.match(output, /"providers":\[\{"id":"github"/);
+    } finally {
+      process.stdin.on = stdinOn;
+      process.stdout.write = stdoutWrite;
+    }
+  },
+);
+
+test(
+  "rpc mode reports validation failures for management commands and keeps serving later requests",
+  { concurrency: false },
+  async () => {
+    const stdinOn = process.stdin.on;
+    const stdoutWrite = process.stdout.write;
+    const handlers = new Map();
+    const lines = [];
+
+    process.stdin.on = function (event, handler) {
+      handlers.set(event, handler);
+      return this;
+    };
+    process.stdout.write = function (chunk) {
+      lines.push(String(chunk));
+      return true;
+    };
+
+    try {
+      const session = createRpcQuerySession({
+        modelRegistry: {
+          getAvailable: async () => [{ provider: "openai", id: "gpt-5" }],
+          authStorage: {
+            list: () => [],
+            get: () => undefined,
+            getOAuthProviders: () => [],
+          },
+        },
+      });
+      void runCustomRpcMode(session, {
+        SessionManager: {
+          listAll: async () => [],
+          list: async () => [],
+          open: () => ({ appendSessionInfo() {} }),
+        },
+        builtinSlashCommands: [],
+      });
+      await wait(0);
+
+      const onData = handlers.get("data");
+      assert.equal(typeof onData, "function");
+      onData(
+        Buffer.from(
+          [
+            {
+              id: "bad-model",
+              type: "set_model",
+              provider: "anthropic",
+              modelId: "claude-sonnet",
+            },
+            {
+              id: "bad-rename",
+              type: "rename_session",
+              sessionPath: "/tmp/demo.jsonl",
+              name: "   ",
+            },
+            { id: "bad-set-name", type: "set_session_name", name: "   " },
+            { id: "state", type: "get_state" },
+          ]
+            .map((item) => JSON.stringify(item))
+            .join("\n") + "\n",
+        ),
+      );
+      await wait(100);
+
+      const output = lines.join("");
+      assert.match(output, /"id":"bad-model"/);
+      assert.match(output, /Model not found: anthropic\/claude-sonnet/);
+      assert.match(output, /"id":"bad-rename"/);
+      assert.match(output, /Session name cannot be empty/);
+      assert.match(output, /"id":"bad-set-name"/);
+      assert.match(output, /"id":"state"/);
+      assert.match(output, /"command":"get_state"/);
+      assert.match(output, /"success":true/);
+      assert.match(output, /"sessionId":"query-session"/);
+    } finally {
+      process.stdin.on = stdinOn;
+      process.stdout.write = stdoutWrite;
+    }
+  },
+);
