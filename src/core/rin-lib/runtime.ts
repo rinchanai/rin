@@ -131,7 +131,9 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const uniqueGuidelines: string[] = [];
   const seen = new Set<string>();
   const addGuideline = (value: string) => {
-    const normalized = String(value || "").trim();
+    const normalized = String(value || "")
+      .trim()
+      .replace(/\.$/, "");
     if (!normalized || seen.has(normalized)) return;
     seen.add(normalized);
     uniqueGuidelines.push(normalized);
