@@ -1,7 +1,7 @@
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Container, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -20,10 +20,11 @@ import type {
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 import {
   buildSubagentAgentText,
-  formatUsage,
   summarizeTaskResult,
 } from "./format-utils.js";
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
+import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
+import { truncateToVisualLines } from "../../third_party/pi-coding-agent/src/modes/interactive/components/visual-truncate.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
 
@@ -108,6 +109,102 @@ type SubagentDetails = {
   fullOutputPath?: string;
   truncated?: boolean;
 };
+
+type SubagentRenderState = {
+  startedAt: number | undefined;
+  endedAt: number | undefined;
+  interval: NodeJS.Timeout | undefined;
+};
+
+type SubagentResultRenderState = {
+  cachedWidth: number | undefined;
+  cachedLines: string[] | undefined;
+  cachedSkipped: number | undefined;
+};
+
+class SubagentResultRenderComponent extends Container {
+  state: SubagentResultRenderState = {
+    cachedWidth: undefined,
+    cachedLines: undefined,
+    cachedSkipped: undefined,
+  };
+}
+
+const SUBAGENT_PREVIEW_LINES = 5;
+
+function formatDuration(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function rebuildSubagentResultRenderComponent(
+  component: SubagentResultRenderComponent,
+  outputText: string,
+  fullOutputPath: string | undefined,
+  truncated: boolean | undefined,
+  expanded: boolean,
+  startedAt: number | undefined,
+  endedAt: number | undefined,
+  theme: any,
+): void {
+  const state = component.state;
+  component.clear();
+
+  const output = String(outputText || "").trim();
+  if (output) {
+    const styledOutput = output
+      .split("\n")
+      .map((line) => theme.fg("toolOutput", line))
+      .join("\n");
+
+    if (expanded) {
+      component.addChild(new Text(`\n${styledOutput}`, 0, 0));
+    } else {
+      component.addChild({
+        render: (width: number) => {
+          if (state.cachedLines === undefined || state.cachedWidth !== width) {
+            const preview = truncateToVisualLines(
+              styledOutput,
+              SUBAGENT_PREVIEW_LINES,
+              width,
+            );
+            state.cachedLines = preview.visualLines;
+            state.cachedSkipped = preview.skippedCount;
+            state.cachedWidth = width;
+          }
+          if (state.cachedSkipped && state.cachedSkipped > 0) {
+            const hint =
+              theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
+              ` ${keyHint("app.tools.expand" as any, "to expand")})`;
+            return ["", truncateToWidth(hint, width, "..."), ...(state.cachedLines ?? [])];
+          }
+          return ["", ...(state.cachedLines ?? [])];
+        },
+        invalidate: () => {
+          state.cachedWidth = undefined;
+          state.cachedLines = undefined;
+          state.cachedSkipped = undefined;
+        },
+      });
+    }
+  }
+
+  if (truncated || fullOutputPath) {
+    const warnings: string[] = [];
+    if (fullOutputPath) warnings.push(`Full output: ${fullOutputPath}`);
+    if (truncated) warnings.push("Output truncated");
+    component.addChild(
+      new Text(`\n${theme.fg("warning", `[${warnings.join('. ')}]`)}`, 0, 0),
+    );
+  }
+
+  if (startedAt !== undefined) {
+    const label = endedAt === undefined ? "Elapsed" : "Took";
+    const endTime = endedAt ?? Date.now();
+    component.addChild(
+      new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0),
+    );
+  }
+}
 
 function formatModelList(
   details: SubagentDetails | SubagentBackendInfo,
@@ -300,46 +397,62 @@ export default function subagentExtension(pi: ExtensionAPI) {
         pi.getThinkingLevel(),
       );
     },
-    renderCall(args, theme) {
+    renderCall(args, theme, context) {
+      const state = context.state as SubagentRenderState;
+      if (context.executionStarted && state.startedAt === undefined) {
+        state.startedAt = Date.now();
+        state.endedAt = undefined;
+      }
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       if (Array.isArray(args.tasks) && args.tasks.length > 0) {
-        let text =
+        text.setText(
           theme.fg("toolTitle", theme.bold("run_subagent ")) +
-          theme.fg("accent", `parallel (${args.tasks.length})`);
-        for (const task of args.tasks.slice(0, 3)) {
-          const model = task.model ? ` [${task.model}]` : "";
-          const mode = task.session?.mode ? ` {${task.session.mode}}` : "";
-          const preview = String(task.prompt || "")
-            .replace(/\s+/g, " ")
-            .trim();
-          text += `
-  ${theme.fg("muted", "•")} ${theme.fg("dim", preview.slice(0, 70))}${preview.length > 70 ? "…" : ""}${theme.fg("muted", `${model}${mode}`)}`;
-        }
-        if (args.tasks.length > 3)
-          text += `
-  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
-        return new Text(text, 0, 0);
+            theme.fg("accent", `parallel (${args.tasks.length})`),
+        );
+        return text;
       }
 
-      const model = args.model ? ` [${args.model}]` : "";
-      const mode = args.session?.mode ? ` {${args.session.mode}}` : "";
       const preview = String(args.prompt || "")
         .replace(/\s+/g, " ")
         .trim();
-      return new Text(
-        theme.fg("toolTitle", theme.bold("run_subagent ")) +
-          theme.fg("accent", "run") +
-          `
-  ${theme.fg("dim", preview.slice(0, 100))}${preview.length > 100 ? "…" : ""}${theme.fg("muted", `${model}${mode}`)}`,
-        0,
-        0,
+      const previewText = preview ? preview : theme.fg("toolOutput", "...");
+      text.setText(
+        theme.fg("toolTitle", theme.bold(`run_subagent ${previewText}`)),
       );
+      return text;
     },
-    renderResult(result, _options, theme) {
+    renderResult(result, options, theme, context) {
+      const state = context.state as SubagentRenderState;
+      if (state.startedAt !== undefined && options.isPartial && !state.interval) {
+        state.interval = setInterval(() => context.invalidate(), 1000);
+      }
+      if (!options.isPartial || context.isError) {
+        state.endedAt ??= Date.now();
+        if (state.interval) {
+          clearInterval(state.interval);
+          state.interval = undefined;
+        }
+      }
+
       const details = result.details as SubagentDetails | undefined;
       const fallback =
         result.content?.[0]?.type === "text" ? result.content[0].text : "(no output)";
-      const text = String(details?.userText || fallback);
-      return new Text(theme.fg("toolOutput", text), 0, 0);
+      const outputText = String(details?.userText || fallback);
+      const component =
+        (context.lastComponent as SubagentResultRenderComponent | undefined) ??
+        new SubagentResultRenderComponent();
+      rebuildSubagentResultRenderComponent(
+        component,
+        outputText,
+        details?.fullOutputPath,
+        details?.truncated,
+        options.expanded,
+        state.startedAt,
+        state.endedAt,
+        theme,
+      );
+      component.invalidate();
+      return component;
     },
   });
 
