@@ -17,7 +17,6 @@ import {
   getTextOutput,
   replaceTabs,
 } from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 function defaultDaemonSocketPath() {
   const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
@@ -215,7 +214,7 @@ const taskSchema = Type.Object({
     Type.Union([
       Type.String({
         description:
-          "Explicit bound chat key like telegram/123456:987654321 or onebot/123456:private:12345.",
+          "Explicit bound chat like telegram/123456:987654321 or onebot/123456:private:12345.",
       }),
       Type.Null(),
     ]),
@@ -434,16 +433,22 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
     };
   }
 
-  const prepared = await prepareToolTextOutput({
-    ...texts,
-    tempPrefix: "rin-scheduled-tasks-",
-    filename: "scheduled-tasks.txt",
-  });
-
   return {
-    content: [{ type: "text" as const, text: prepared.agentText }],
-    details: { ...data, action, ...prepared } satisfies TaskActionDetails,
+    content: [{ type: "text" as const, text: texts.agentText }],
+    details: {
+      ...data,
+      action,
+      userText: texts.userText,
+    } satisfies TaskActionDetails,
   };
+}
+
+function formatGetTaskCall(args: any, theme: any) {
+  const taskId = String(args?.taskId || "").trim();
+  return [
+    theme.fg("toolTitle", theme.bold("get_task")),
+    taskId ? ` ${theme.fg("accent", taskId)}` : "",
+  ].join("");
 }
 
 function formatSaveTaskCall(args: any, theme: any) {
@@ -457,6 +462,16 @@ function formatSaveTaskCall(args: any, theme: any) {
     target ? theme.fg("muted", ` ${target}`) : "",
   ];
   return parts.join("");
+}
+
+function formatManageTaskCall(args: any, theme: any) {
+  const action = String(args?.action || "").trim();
+  const taskId = String(args?.taskId || "").trim();
+  return [
+    theme.fg("toolTitle", theme.bold("manage_task")),
+    action ? ` ${theme.fg("muted", action)}` : "",
+    taskId ? ` ${theme.fg("accent", taskId)}` : "",
+  ].join("");
 }
 
 function renderTaskResult(result: any, options: any, theme: any, context: any) {
@@ -480,11 +495,12 @@ export default function cronExtension(pi: ExtensionAPI) {
     name: "get_task",
     label: "Get Task",
     description: "Get a specific scheduled task, or list scheduled tasks when taskId is omitted.",
-    promptSnippet: "Get a specific scheduled task.",
+    promptSnippet: "Get a specific scheduled task, or list scheduled tasks.",
     promptGuidelines: [],
     parameters: getTaskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("get", params, ctx),
+    renderCall: (args, theme) => new Text(formatGetTaskCall(args, theme), 0, 0),
     renderResult: renderTaskResult,
   });
 
@@ -512,6 +528,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     parameters: manageTaskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction(String((params as any)?.action || "").trim(), params, ctx),
+    renderCall: (args, theme) => new Text(formatManageTaskCall(args, theme), 0, 0),
     renderResult: renderTaskResult,
   });
 }

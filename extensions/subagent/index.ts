@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { tmpdir } from "node:os";
+
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -17,7 +21,6 @@ import type {
   SubagentSessionMode,
   TaskResult,
 } from "../../src/core/subagent/types.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
 import {
   buildSubagentAgentText,
   summarizeTaskResult,
@@ -278,6 +281,17 @@ function buildSubagentUserText(results: TaskResult[]): string {
   ].join("\n\n");
 }
 
+async function writeSubagentFullOutput(agentText: string, userText: string) {
+  const dir = await mkdtemp(path.join(tmpdir(), "rin-subagent-"));
+  const filePath = path.join(dir, "subagent.txt");
+  await writeFile(
+    filePath,
+    ["## Agent text", agentText, "", "## User text", userText].join("\n"),
+    "utf8",
+  );
+  return filePath;
+}
+
 function buildRunUpdate(
   results: TaskResult[],
   detailsBase: SubagentBackendInfo,
@@ -365,20 +379,25 @@ async function runSubagentResult(
   }
 
   const failed = run.results.filter((result) => result.exitCode !== 0);
-  const prepared = await prepareToolTextOutput({
-    agentText: buildSubagentAgentText(run.results),
-    userText: buildSubagentUserText(run.results),
-    tempPrefix: "rin-subagent-",
-    filename: "subagent.txt",
-  });
+  const agentText = buildSubagentAgentText(run.results);
+  const userText = buildSubagentUserText(run.results);
+  const agentTruncation = truncateHead(agentText);
+  const userTruncation = truncateHead(userText);
+  const truncated = agentTruncation.truncated || userTruncation.truncated;
+  const fullOutputPath = truncated
+    ? await writeSubagentFullOutput(agentText, userText)
+    : undefined;
   const details: SubagentDetails = {
     ...detailsBase,
     results: run.results,
-    ...prepared,
+    agentText: agentTruncation.content,
+    userText: userTruncation.content,
+    fullOutputPath,
+    truncated,
   };
 
   return {
-    content: [{ type: "text" as const, text: prepared.agentText }],
+    content: [{ type: "text" as const, text: agentTruncation.content }],
     details,
     isError: failed.length > 0,
   };
