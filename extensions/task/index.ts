@@ -124,7 +124,7 @@ function buildTaskForSave(
   };
 }
 
-function summarizeTask(task: any) {
+function formatTaskText(task: any) {
   const target =
     task?.target?.kind === "shell_command"
       ? `command: ${String(task?.target?.command || "")}`
@@ -151,41 +151,33 @@ function summarizeTask(task: any) {
     .join("\n");
 }
 
-function summarizeTaskForAgent(task: any) {
-  return summarizeTask(task);
-}
-
-function summarizeTaskForUser(task: any) {
-  return summarizeTask(task);
-}
-
 function buildTexts(action: string, data: any, params: any) {
   if (action === "list") {
     const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
     const agentText = tasks.length
-      ? tasks.map((task: any) => summarizeTaskForAgent(task)).join("\n\n")
+      ? tasks.map((task: any) => formatTaskText(task)).join("\n\n")
       : "No scheduled tasks.";
     const userText = tasks.length
-      ? tasks.map((task: any) => summarizeTaskForUser(task)).join("\n\n")
+      ? tasks.map((task: any) => formatTaskText(task)).join("\n\n")
       : "No scheduled tasks.";
     return { agentText, userText };
   }
 
   if (action === "get" && data?.task) {
     return {
-      agentText: summarizeTaskForAgent(data.task),
-      userText: summarizeTaskForUser(data.task),
+      agentText: formatTaskText(data.task),
+      userText: formatTaskText(data.task),
     };
   }
 
   const userText = data?.task
-    ? summarizeTask(data.task)
+    ? formatTaskText(data.task)
     : data?.deleted
       ? `Deleted task: ${String(params?.taskId || "")}`
       : JSON.stringify(data, null, 2);
 
   const agentText = data?.task
-    ? summarizeTaskForAgent(data.task)
+    ? formatTaskText(data.task)
     : data?.deleted
       ? `scheduled_task deleted\nid=${String(params?.taskId || "")}`
       : `scheduled_task ${action}`;
