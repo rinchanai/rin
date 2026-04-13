@@ -111,9 +111,8 @@ export default function koishiListChatLogExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "list_chat_log",
     label: "List Chat Log",
-    description: "List chat records for a specific chat, optionally on a specific date.",
-    promptSnippet:
-      "List chat records for a specific chat, optionally on a specific date.",
+    description: "List chat records for a specific chat.",
+    promptSnippet: "List chat records for a specific chat.",
     promptGuidelines: [],
     parameters: Type.Object({
       chatKey: Type.String({
