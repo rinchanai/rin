@@ -153,15 +153,13 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   for (const guideline of piGuidelines) {
     addGuideline(guideline);
   }
-  addGuideline(
-    "Search the web proactively for latest, time-sensitive, version-sensitive, or potentially changed information",
-  );
-  addGuideline(
-    "When searching, use a few distinctive keywords instead of full sentences",
-  );
-  addGuideline(
-    "When searching, search distinct keywords separately and review the results instead of combining everything into one search",
-  );
+
+  const skillGuidanceBlock = [
+    "Skill guidance:",
+    `- Save reusable procedures, workflows, checklists, and playbooks as skills under ${managedSkillPaths[0]} instead of save_prompts content`,
+    "- If a prompt slot accumulates extensive detail on a single topic, extract it into a builtin skill and leave only a compact reference in save_prompts",
+    "- When creating or substantially revising a skill, use the skill-creator skill if it is available",
+  ].join("\n");
 
   const toolsList =
     validToolNames.length > 0
@@ -194,6 +192,8 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       "",
       "Guidelines:",
       guidelines,
+      "",
+      skillGuidanceBlock,
       "",
       docsBlock,
     ].join("\n");
