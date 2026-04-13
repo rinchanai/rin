@@ -132,7 +132,7 @@ export function mentionLike(session: any) {
     }
   }
 
-  return atElements.length > 0;
+  return false;
 }
 
 export function ensureSessionElements(session: any) {

@@ -97,3 +97,33 @@ test("koishi decision allows owner group messages that explicitly at the bot eve
   assert.equal(result.chatKey, "telegram/8623230033:-1001447529496");
   assert.equal(result.text, "滴度");
 });
+
+test("koishi decision ignores owner group messages that only at other users", async () => {
+  const result = await decision.shouldProcessText(
+    {
+      platform: "telegram",
+      guildId: "group-1",
+      channelId: "-1001447529496",
+      selfId: "8623230033",
+      userId: "owner-1",
+      bot: {
+        selfId: "8623230033",
+        username: "THE_cattail_rin_chan_bot",
+      },
+      stripped: { content: "你看这个" },
+      elements: [
+        { type: "at", attrs: { name: "some_other_user" } },
+        { type: "text", attrs: { content: " 你看这个" } },
+      ],
+    },
+    [
+      { type: "at", attrs: { name: "some_other_user" } },
+      { type: "text", attrs: { content: " 你看这个" } },
+    ],
+    identity,
+  );
+
+  assert.equal(result.allow, false);
+  assert.equal(result.chatKey, "telegram/8623230033:-1001447529496");
+  assert.equal(result.text, "你看这个");
+});
