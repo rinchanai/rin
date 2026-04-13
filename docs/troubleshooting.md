@@ -36,6 +36,13 @@ node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
 
 Prefer recovering the real install path and target user before you rerun `install.sh`.
 
+If the installer or updater seems to have written the wrong defaults, inspect the stable state files directly:
+
+- `<installDir>/installer.json` for target/install metadata
+- `<installDir>/settings.json` for provider/model/thinking defaults and Koishi config
+- `<installDir>/auth.json` for saved auth material
+- `~/.config/rin/install.json` for the current user's launcher defaults
+
 ## `rin update` finished but the current shell still behaves oddly
 
 Remember what `rin update` does and does not do.
@@ -58,6 +65,21 @@ node <installDir>/app/current/dist/app/rin/main.js doctor -u <targetUser>
 ```
 
 If the refreshed runtime works through the direct stable entry but not through your current shell path, debug the launcher/user context before assuming the update failed.
+
+## Provider auth or installer prompts behave differently than expected
+
+Check which branch of the interactive installer actually ran:
+
+- existing auth already present in `<installDir>/auth.json`
+- OAuth provider flow
+- plain API key/token entry flow
+- provider selected but no models available in the current runtime build
+
+If the prompt sequence feels wrong, inspect:
+
+- `src/core/rin-install/interactive.ts`
+- `src/core/rin-install/provider-auth.ts`
+- `src/core/rin-install/persist.ts`
 
 ## Build fails because vendor artifacts are missing
 

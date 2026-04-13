@@ -17,6 +17,14 @@ The installer will:
 - build the runtime
 - launch the interactive installer
 
+The interactive installer then walks through:
+
+- target daemon user and install directory
+- provider/model/thinking-level defaults
+- provider auth when needed
+- optional Koishi adapter setup
+- final privilege/service requirements before files are written
+
 ## Open Rin
 
 ```bash
@@ -58,6 +66,14 @@ What this does in practice:
 - repoints `<installDir>/app/current` to that new release
 
 Do not treat repo-local `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the standard way to update an already installed runtime.
+
+A normal install or update refreshes the same stable state surfaces:
+
+- `<installDir>/installer.json`
+- `<installDir>/settings.json`
+- `<installDir>/auth.json`
+- the current-user launcher metadata under `~/.config/rin/install.json`
+- managed launcher files such as `~/.local/bin/rin`
 
 ## If `rin` is missing
 

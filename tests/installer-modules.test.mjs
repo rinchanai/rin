@@ -60,6 +60,193 @@ test("provider-auth computes available thinking levels deterministically", () =>
   );
 });
 
+test("provider-auth createInstallerAuthStorage reads install auth.json into AuthStorage", async () => {
+  const reads = [];
+  const storage = await provider.createInstallerAuthStorage(
+    "/srv/rin",
+    (filePath, fallback) => {
+      reads.push(filePath);
+      return filePath.endsWith("auth.json")
+        ? { github: { type: "oauth" } }
+        : fallback;
+    },
+    {
+      loadRinCodingAgent: async () => ({
+        AuthStorage: {
+          inMemory(value) {
+            return { kind: "storage", value };
+          },
+        },
+      }),
+    },
+  );
+  assert.deepEqual(reads, [path.join("/srv/rin", "auth.json")]);
+  assert.deepEqual(storage, {
+    kind: "storage",
+    value: { github: { type: "oauth" } },
+  });
+});
+
+test("provider-auth configureProviderAuth reuses existing auth without prompting", async () => {
+  let promptCalls = 0;
+  const result = await provider.configureProviderAuth("openai", "/srv/rin", {
+    readJsonFile: (_filePath, fallback) => fallback,
+    ensureNotCancelled: (value) => value,
+    createInstallerAuthStorage: async () => ({
+      hasAuth: () => true,
+      getAll: () => ({ openai: { type: "api_key" } }),
+    }),
+    text: async () => {
+      promptCalls += 1;
+      return "unused";
+    },
+  });
+  assert.deepEqual(result, {
+    available: true,
+    authKind: "existing",
+    authData: { openai: { type: "api_key" } },
+  });
+  assert.equal(promptCalls, 0);
+});
+
+test("provider-auth configureProviderAuth supports api-key entry without oauth providers", async () => {
+  const prompts = [];
+  const store = {
+    entries: {},
+    hasAuth: () => false,
+    getOAuthProviders: () => [],
+    set(providerId, value) {
+      this.entries[providerId] = value;
+    },
+    getAll() {
+      return this.entries;
+    },
+  };
+  const result = await provider.configureProviderAuth("anthropic", "/srv/rin", {
+    readJsonFile: (_filePath, fallback) => fallback,
+    ensureNotCancelled: (value) => value,
+    createInstallerAuthStorage: async () => store,
+    text: async (options) => {
+      prompts.push(options.message);
+      return "sk-ant";
+    },
+  });
+  assert.deepEqual(prompts, ["Enter the API key or token for anthropic."]);
+  assert.deepEqual(result, {
+    available: true,
+    authKind: "api_key",
+    authData: { anthropic: { type: "api_key", key: "sk-ant" } },
+  });
+});
+
+test("provider-auth configureProviderAuth drives oauth login callbacks and manual code prompts", async () => {
+  const spinnerEvents = [];
+  const textPrompts = [];
+  const timeoutCalls = [];
+  const authStore = {
+    hasAuth: () => false,
+    getOAuthProviders: () => [{ id: "github", name: "GitHub" }],
+    async login(providerId, callbacks) {
+      assert.equal(providerId, "github");
+      callbacks.onAuth({
+        url: "https://github.com/login/device",
+        instructions: "enter code ABC-123",
+      });
+      assert.equal(
+        await callbacks.onPrompt({ message: "Enter OTP", placeholder: "otp" }),
+        "otp-123",
+      );
+      callbacks.onProgress("Waiting for approval...");
+      assert.equal(await callbacks.onManualCodeInput(), "code-from-browser");
+      assert.ok(callbacks.signal instanceof AbortSignal);
+    },
+    getAll: () => ({ github: { type: "oauth" } }),
+  };
+
+  const result = await provider.configureProviderAuth("github", "/srv/rin", {
+    readJsonFile: (_filePath, fallback) => fallback,
+    ensureNotCancelled: (value) => value,
+    createInstallerAuthStorage: async () => authStore,
+    spinner: () => ({
+      start(message) {
+        spinnerEvents.push(["start", message]);
+      },
+      stop(message) {
+        spinnerEvents.push(["stop", message]);
+      },
+      message(message) {
+        spinnerEvents.push(["message", message]);
+      },
+    }),
+    text: async (options) => {
+      textPrompts.push([options.message, options.placeholder]);
+      if (options.message === "Enter OTP") return "otp-123";
+      return "code-from-browser";
+    },
+    timeoutSignal(ms) {
+      timeoutCalls.push(ms);
+      return new AbortController().signal;
+    },
+  });
+
+  assert.deepEqual(result, {
+    available: true,
+    authKind: "oauth",
+    authData: { github: { type: "oauth" } },
+  });
+  assert.deepEqual(timeoutCalls, [10 * 60 * 1000]);
+  assert.deepEqual(textPrompts, [
+    ["Enter OTP", "otp"],
+    [
+      "Paste the redirect URL or code from the browser.",
+      "paste the final redirect URL or device code",
+    ],
+  ]);
+  assert.deepEqual(spinnerEvents, [
+    ["start", "Starting GitHub login..."],
+    [
+      "stop",
+      "Open this URL to continue login:\nhttps://github.com/login/device\nenter code ABC-123",
+    ],
+    ["message", "Waiting for approval..."],
+    ["stop", "GitHub login complete."],
+  ]);
+});
+
+test("provider-auth configureProviderAuth surfaces oauth failures after stopping the spinner", async () => {
+  const spinnerEvents = [];
+  await assert.rejects(
+    () =>
+      provider.configureProviderAuth("github", "/srv/rin", {
+        readJsonFile: (_filePath, fallback) => fallback,
+        ensureNotCancelled: (value) => value,
+        createInstallerAuthStorage: async () => ({
+          hasAuth: () => false,
+          getOAuthProviders: () => [{ id: "github", name: "GitHub" }],
+          async login() {
+            throw new Error("oauth_failed");
+          },
+        }),
+        spinner: () => ({
+          start(message) {
+            spinnerEvents.push(["start", message]);
+          },
+          stop(message) {
+            spinnerEvents.push(["stop", message]);
+          },
+          message() {},
+        }),
+        text: async () => "unused",
+        timeoutSignal: () => new AbortController().signal,
+      }),
+    /oauth_failed/,
+  );
+  assert.deepEqual(spinnerEvents, [
+    ["start", "Starting GitHub login..."],
+    ["stop", "Login failed for GitHub."],
+  ]);
+});
+
 test("persist reconcileInstallerManifest writes manifest with expected fields", async () => {
   await withTempDir(async (dir) => {
     const writes = [];

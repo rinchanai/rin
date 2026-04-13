@@ -50,8 +50,12 @@ export async function loadModelChoices() {
 export async function createInstallerAuthStorage(
   installDir: string,
   readJsonFile: <T>(filePath: string, fallback: T) => T,
+  deps: {
+    loadRinCodingAgent?: typeof loadRinCodingAgent;
+  } = {},
 ) {
-  const codingAgentModule = await loadRinCodingAgent();
+  const loadCodingAgent = deps.loadRinCodingAgent ?? loadRinCodingAgent;
+  const codingAgentModule = await loadCodingAgent();
   const { AuthStorage } = codingAgentModule as any;
   const authPath = path.join(installDir, "auth.json");
   const existing = readJsonFile<any>(authPath, {});
@@ -64,12 +68,19 @@ export async function configureProviderAuth(
   deps: {
     readJsonFile: <T>(filePath: string, fallback: T) => T;
     ensureNotCancelled: <T>(value: T | symbol) => T;
+    createInstallerAuthStorage?: typeof createInstallerAuthStorage;
+    spinner?: typeof spinner;
+    text?: typeof text;
+    timeoutSignal?: (ms: number) => AbortSignal;
   },
 ) {
-  const authStorage = await createInstallerAuthStorage(
-    installDir,
-    deps.readJsonFile,
-  );
+  const buildAuthStorage =
+    deps.createInstallerAuthStorage ?? createInstallerAuthStorage;
+  const createSpinner = deps.spinner ?? spinner;
+  const promptText = deps.text ?? text;
+  const timeoutSignal =
+    deps.timeoutSignal ?? ((ms: number) => AbortSignal.timeout(ms));
+  const authStorage = await buildAuthStorage(installDir, deps.readJsonFile);
   if (authStorage.hasAuth?.(provider)) {
     return {
       available: true,
@@ -86,7 +97,7 @@ export async function configureProviderAuth(
   );
 
   if (oauthProvider) {
-    const loginSpinner = spinner();
+    const loginSpinner = createSpinner();
     let lastAuthUrl = "";
     loginSpinner.start(`Starting ${oauthProvider.name || provider} login...`);
     try {
@@ -100,7 +111,7 @@ export async function configureProviderAuth(
         async onPrompt(prompt: { message: string; placeholder?: string }) {
           return String(
             deps.ensureNotCancelled(
-              await text({
+              await promptText({
                 message: prompt.message || "Enter login value.",
                 placeholder: prompt.placeholder,
                 validate(value) {
@@ -119,7 +130,7 @@ export async function configureProviderAuth(
         async onManualCodeInput() {
           return String(
             deps.ensureNotCancelled(
-              await text({
+              await promptText({
                 message: "Paste the redirect URL or code from the browser.",
                 placeholder: lastAuthUrl
                   ? "paste the final redirect URL or device code"
@@ -132,7 +143,7 @@ export async function configureProviderAuth(
             ),
           ).trim();
         },
-        signal: AbortSignal.timeout(10 * 60 * 1000),
+        signal: timeoutSignal(10 * 60 * 1000),
       });
       loginSpinner.stop(`${oauthProvider.name || provider} login complete.`);
       return {
@@ -148,7 +159,7 @@ export async function configureProviderAuth(
 
   const token = String(
     deps.ensureNotCancelled(
-      await text({
+      await promptText({
         message: `Enter the API key or token for ${provider}.`,
         placeholder: "token",
         validate(value) {
