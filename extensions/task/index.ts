@@ -112,7 +112,6 @@ function buildTaskForSave(
         ? {
             kind: "shell_command",
             command: String(input?.target?.command || ""),
-            shell: input?.target?.shell,
           }
         : undefined;
   return {
@@ -280,9 +279,6 @@ const taskSchema = Type.Object({
     ),
     command: Type.Optional(
       Type.String({ description: "Shell command for direct execution." }),
-    ),
-    shell: Type.Optional(
-      Type.String({ description: "Optional shell path for shell_command." }),
     ),
   }),
 });

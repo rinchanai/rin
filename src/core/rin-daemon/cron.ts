@@ -22,7 +22,6 @@ export type CronTaskTarget =
   | {
       kind: "shell_command";
       command: string;
-      shell?: string;
     };
 
 export type CronTaskTrigger =
@@ -221,7 +220,6 @@ export class CronScheduler {
               (() => {
                 throw new Error("cron_command_required");
               })(),
-            shell: safeString(target.shell).trim() || undefined,
           };
 
     const termination =

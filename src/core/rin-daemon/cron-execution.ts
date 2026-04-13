@@ -1,5 +1,8 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 
 const HOME_DIR = os.homedir();
 
@@ -33,13 +36,57 @@ export async function resolveCronSessionFile(task: CronTaskRecord) {
   );
 }
 
-export async function executeCronShellTask(task: CronTaskRecord) {
+function findBashOnPath(): string | null {
+  try {
+    const result = spawnSync("which", ["bash"], {
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+    if (result.status === 0 && result.stdout) {
+      const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
+      if (firstMatch) return firstMatch;
+    }
+  } catch {}
+  return null;
+}
+
+async function getCronShellConfig(agentDir: string) {
+  try {
+    const raw = await readFile(path.join(agentDir, "settings.json"), "utf8");
+    const settings = JSON.parse(raw);
+    const customShellPath = String(settings?.shellPath || "").trim();
+    if (customShellPath) {
+      if (existsSync(customShellPath)) {
+        return { shell: customShellPath, args: ["-c"] };
+      }
+      throw new Error(`Custom shell path not found: ${customShellPath}`);
+    }
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  if (existsSync("/bin/bash")) {
+    return { shell: "/bin/bash", args: ["-c"] };
+  }
+
+  const bashOnPath = findBashOnPath();
+  if (bashOnPath) {
+    return { shell: bashOnPath, args: ["-c"] };
+  }
+
+  return { shell: "sh", args: ["-c"] };
+}
+
+export async function executeCronShellTask(
+  task: CronTaskRecord,
+  options: { agentDir: string },
+) {
   if (task.target.kind !== "shell_command")
     throw new Error("cron_invalid_shell_task");
   const { command } = task.target;
-  const shell = task.target.shell || process.env.SHELL || "/bin/sh";
+  const { shell, args } = await getCronShellConfig(options.agentDir);
   return await new Promise<string>((resolve, reject) => {
-    const child = spawn(shell, ["-lc", command], {
+    const child = spawn(shell, [...args, command], {
       cwd: HOME_DIR,
       env: { ...process.env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -112,7 +159,9 @@ export async function executeCronTask(
   const runId = cronTaskRunId(task);
   try {
     if (task.target.kind === "shell_command") {
-      const text = await executeCronShellTask(task);
+      const text = await executeCronShellTask(task, {
+        agentDir: options.agentDir,
+      });
       task.lastResultText = text;
       if (task.chatKey && text) {
         await sendKoishiText(options.agentDir, {
