@@ -132,6 +132,7 @@ test("cron agent execution keeps dedicated session files from rpc results", asyn
 });
 
 test("cron agent execution does not fail when a turn completes without visible final text", async () => {
+  const deliveries = [];
   const task = {
     id: "task-agent-empty",
     enabled: true,
@@ -142,6 +143,7 @@ test("cron agent execution does not fail when a turn completes without visible f
     trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
     session: { mode: "current", sessionFile: "/tmp/current-session.jsonl" },
     target: { kind: "agent_prompt", prompt: "hello" },
+    chatKey: "onebot/123:456",
     lastResultText: "previous visible result",
     lastError: "previous failure",
   };
@@ -153,6 +155,9 @@ test("cron agent execution does not fail when a turn completes without visible f
       sessionId: "session-empty",
       sessionFile: "/tmp/current-session.jsonl",
     }),
+    sendKoishiText: async (_agentDir, payload) => {
+      deliveries.push(payload);
+    },
   });
 
   assert.equal(task.lastResultText, undefined);
@@ -160,4 +165,40 @@ test("cron agent execution does not fail when a turn completes without visible f
   assert.equal(task.running, false);
   assert.ok(task.lastFinishedAt);
   assert.ok(task.updatedAt);
+  assert.deepEqual(deliveries, []);
+});
+
+test("cron agent execution delivers visible final text to bound chats", async () => {
+  const deliveries = [];
+  const task = {
+    id: "task-agent-visible",
+    enabled: true,
+    running: true,
+    runCount: 1,
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
+    trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
+    session: { mode: "current", sessionFile: "/tmp/current-session.jsonl" },
+    target: { kind: "agent_prompt", prompt: "hello" },
+    chatKey: "onebot/123:456",
+  };
+
+  await execMod.executeCronTask(task, {
+    agentDir: "/tmp/rin-agent",
+    requestKoishiRpc: async () => ({
+      finalText: "visible final text",
+      sessionId: "session-visible",
+      sessionFile: "/tmp/current-session.jsonl",
+    }),
+    sendKoishiText: async (_agentDir, payload) => {
+      deliveries.push(payload);
+    },
+  });
+
+  assert.equal(task.lastResultText, "visible final text");
+  assert.equal(task.lastError, undefined);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].chatKey, "onebot/123:456");
+  assert.equal(deliveries[0].taskId, "task-agent-visible");
+  assert.equal(deliveries[0].text, "visible final text");
 });

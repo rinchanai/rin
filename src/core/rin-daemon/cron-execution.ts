@@ -108,16 +108,19 @@ export async function executeCronTask(
   options: {
     agentDir: string;
     additionalExtensionPaths?: string[];
+    requestKoishiRpc?: typeof requestKoishiRpc;
+    sendKoishiText?: typeof sendKoishiText;
   },
 ) {
   const runId = cronTaskRunId(task);
+  const deliverText = options.sendKoishiText || sendKoishiText;
   try {
     if (task.target.kind === "shell_command") {
       const text = await executeCronShellTask(task);
       task.lastResultText = text;
       task.lastError = undefined;
       if (task.chatKey && text) {
-        await sendKoishiText(options.agentDir, {
+        await deliverText(options.agentDir, {
           chatKey: task.chatKey,
           taskId: task.id,
           runId,
@@ -129,7 +132,7 @@ export async function executeCronTask(
       task.lastResultText = result.text;
       task.lastError = undefined;
       if (task.chatKey && result.text) {
-        await sendKoishiText(options.agentDir, {
+        await deliverText(options.agentDir, {
           chatKey: task.chatKey,
           taskId: task.id,
           runId,
