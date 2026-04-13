@@ -24,7 +24,6 @@ import {
   describeSelfImprovePromptSlot,
   refineSelfImprovePromptSlot,
 } from "./processing.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 let installerAutoInitConsumed = false;
 

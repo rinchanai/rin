@@ -8,7 +8,6 @@ import { Type } from "@sinclair/typebox";
 
 import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import { truncateToVisualLines } from "../../third_party/pi-coding-agent/src/modes/interactive/components/visual-truncate.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 type KoishiMessagePart =
   | {
@@ -357,20 +356,14 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         ...parts.map((part, index) => `${index + 1}. ${formatPartForLog(part)}`),
       ].join("\n");
 
-      const prepared = await prepareToolTextOutput({
-        agentText: outputText,
-        userText: outputText,
-        tempPrefix: "rin-koishi-send-",
-        filename: "koishi-send.txt",
-      });
-
       return {
-        content: [{ type: "text", text: prepared.agentText }],
+        content: [{ type: "text", text: outputText }],
         details: {
           chatKey,
           requestId,
           parts,
-          ...prepared,
+          agentText: outputText,
+          userText: outputText,
         } satisfies SendMessageDetails,
       };
     },
