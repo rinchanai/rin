@@ -486,7 +486,9 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "Save Task",
     description: "Create or update a scheduled task.",
     promptSnippet: "Create or update a scheduled task.",
-    promptGuidelines: [],
+    promptGuidelines: [
+      "When save_task sets chatKey, the agent's final message is sent to that chat automatically, so the scheduled prompt should focus only on generating the final output and should not repeat delivery instructions.",
+    ],
     parameters: taskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("save", params, ctx),
