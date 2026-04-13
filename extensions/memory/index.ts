@@ -3,6 +3,19 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  type TruncationResult,
+  truncateHead,
+} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+import {
+  getTextOutput,
+  replaceTabs,
+} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
+
 import {
   appendTranscriptArchiveEntry,
   loadRecentTranscriptSessions,
@@ -11,26 +24,20 @@ import {
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
-import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 const searchMemoryParams = Type.Object({
   query: Type.Optional(
     Type.String({
       description:
-        "Optional search query for past sessions. Leave it empty to browse recent sessions directly. For broad recall, prefer a few distinctive keywords joined by OR; use quoted phrases for exact wording when needed.",
+        "Optional search query for past sessions. Leave it empty to browse recent sessions directly. For broad recall, prefer a few distinctive keywords joined by OR; use quoted phrases for exact wording when needed. If you do not have a good search phrase yet, call search_memory without a query first.",
     }),
   ),
   limit: Type.Optional(
     Type.Number({
       minimum: 1,
+      maximum: 8,
       description:
         "Maximum number of transcript matches or session summaries to return.",
-    }),
-  ),
-  fidelity: Type.Optional(
-    Type.Union([Type.Literal("exact"), Type.Literal("fuzzy")], {
-      description:
-        "Optional match mode: `exact` for strict substring matching, `fuzzy` for broader recall. Omit it if you are unsure.",
     }),
   ),
 });
@@ -64,106 +71,119 @@ async function archiveMessageTranscript(message: any, ctx: any) {
   );
 }
 
+function trimSnippet(value: string, max = 220): string {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
 function formatSearchResult(response: any): string {
-  const query = String(response?.query || "").trim();
-  const mode = String(response?.mode || "search").trim();
-  const summaries = Array.isArray(response?.summaries)
-    ? response.summaries
-    : [];
+  const summaries = Array.isArray(response?.summaries) ? response.summaries : [];
+  const rows = summaries.length
+    ? summaries.map((item: any) => ({
+        title: String(item?.timestamp || item?.sessionId || "Session").trim() || "Session",
+        snippet: String(item?.summary || "").trim(),
+      }))
+    : Array.isArray(response?.results)
+      ? response.results.map((item: any) => ({
+          title:
+            String(item?.timestamp || "").trim() ||
+            String(item?.sourceType === "session" ? "Session" : "Transcript"),
+          snippet: String(item?.preview || item?.description || "").trim(),
+        }))
+      : [];
+  if (!rows.length) return "No memory results found.";
+  return rows
+    .slice(0, 3)
+    .map((item: any) => [item.title, trimSnippet(item.snippet)].filter(Boolean).join("\n"))
+    .join("\n\n");
+}
+
+function formatAgentSearchResult(response: any): string {
+  const summaries = Array.isArray(response?.summaries) ? response.summaries : [];
   if (summaries.length) {
     return [
-      mode === "recent"
-        ? "Recent session recall"
-        : `Session recall for: ${query}`,
+      `search_memory ${summaries.length}`,
       ...summaries.map((item: any, index: number) => {
-        const meta = [
-          `score=${Number(item?.score || 0).toFixed(2)}`,
-          String(item?.sessionId || "").trim(),
-          String(item?.timestamp || "").trim(),
-        ]
-          .filter(Boolean)
-          .join(" • ");
-        return [
-          `${index + 1}. Session — ${meta}`,
-          String(item?.path || "").trim(),
-          String(item?.summary || "").trim(),
-        ]
-          .filter(Boolean)
-          .join("\n");
+        const title = String(item?.timestamp || item?.sessionId || "Session").trim() || "Session";
+        const snippet = trimSnippet(String(item?.summary || "").trim());
+        return [`${index + 1}. ${title}`, snippet].filter(Boolean).join("\n");
       }),
     ].join("\n\n");
   }
 
   const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length) {
-    return mode === "recent"
-      ? "No recent sessions found"
-      : `No transcript matches for: ${query}`;
-  }
+  if (!rows.length) return "search_memory 0";
   return [
-    mode === "recent" ? "Recent sessions" : `Transcript matches for: ${query}`,
+    `search_memory ${rows.length}`,
     ...rows.map((item: any, index: number) => {
-      const kind = item?.sourceType === "session" ? "Session" : "Transcript";
-      const meta = [
-        `score=${Number(item?.score || 0).toFixed(2)}`,
-        String(item?.role || "").trim(),
-        String(item?.timestamp || "").trim(),
-      ]
-        .filter(Boolean)
-        .join(" • ");
-      return [
-        `${index + 1}. ${kind} — ${meta}`,
-        String(item?.path || "").trim(),
+      const title =
+        String(item?.timestamp || "").trim() ||
+        String(item?.sourceType === "session" ? "Session" : "Transcript");
+      const snippet = trimSnippet(
         String(item?.preview || item?.description || "").trim(),
-      ]
-        .filter(Boolean)
-        .join("\n");
+      );
+      return [`${index + 1}. ${title}`, snippet].filter(Boolean).join("\n");
     }),
   ].join("\n\n");
 }
 
-function formatAgentSearchResult(response: any): string {
-  const query = String(response?.query || "").trim();
-  const mode = String(response?.mode || "search").trim();
-  const head =
-    mode === "recent"
-      ? `memory recent (${Number(response?.count || 0)})`
-      : `memory search ${query} (${Number(response?.count || 0)})`;
-  const summaries = Array.isArray(response?.summaries)
-    ? response.summaries
-    : [];
-  if (summaries.length) {
-    return [
-      head,
-      ...summaries.map((item: any, index: number) =>
-        [
-          `${index + 1}. session`,
-          `score=${Number(item?.score || 0).toFixed(2)}`,
-          String(item?.timestamp || "").trim(),
-          `path=${String(item?.path || "")}`,
-        ]
-          .filter(Boolean)
-          .join(" | "),
-      ),
-    ].join("\n");
+function trimTrailingEmptyLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  return lines.slice(0, end);
+}
+
+function formatMemoryResult(
+  result: {
+    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    details?: {
+      truncation?: TruncationResult;
+      emptyMessage?: string;
+      hiddenCount?: number;
+      totalResults?: number;
+    };
+  },
+  options: { expanded: boolean },
+  theme: any,
+  showImages: boolean,
+) {
+  const output = getTextOutput(result, showImages);
+  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const maxLines = options.expanded ? lines.length : 10;
+  const displayLines = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+
+  let text = "";
+  if (displayLines.length > 0) {
+    text = `\n${displayLines
+      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
+      .join("\n")}`;
+    if (remaining > 0) {
+      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+    }
+  } else if (result.details?.emptyMessage) {
+    text = `\n${theme.fg("muted", result.details.emptyMessage)}`;
   }
 
-  const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length) return head;
-  return [
-    head,
-    ...rows.map((item: any, index: number) =>
-      [
-        `${index + 1}. ${item?.sourceType === "session" ? "session" : "transcript"}`,
-        `score=${Number(item?.score || 0).toFixed(2)}`,
-        String(item?.role || "").trim(),
-        String(item?.timestamp || "").trim(),
-        `path=${String(item?.path || "")}`,
-      ]
-        .filter(Boolean)
-        .join(" | "),
-    ),
-  ].join("\n");
+  if ((result.details?.hiddenCount ?? 0) > 0) {
+    text += `\n${theme.fg("muted", `[Showing top ${Math.max((result.details?.totalResults ?? 0) - (result.details?.hiddenCount ?? 0), 0)} of ${result.details?.totalResults} results.]`)}`;
+  }
+
+  const truncation = result.details?.truncation;
+  if (truncation?.truncated) {
+    if (truncation.firstLineExceedsLimit) {
+      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
+    } else if (truncation.truncatedBy === "lines") {
+      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
+    } else {
+      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
+    }
+  }
+
+  return text;
 }
 
 function buildRecallPrompt(query: string, transcript: string): string {
@@ -265,9 +285,13 @@ async function executeSearchMemory(
   try {
     const query = String(params?.query || "").trim();
     const mode = query ? "search" : "recent";
+    const normalizedParams = {
+      ...(params || {}),
+      limit: Number.isFinite(Number(params?.limit)) ? Number(params.limit) : 8,
+    };
     const results = query
-      ? await searchTranscriptArchive(query, params)
-      : await loadRecentTranscriptSessions(params);
+      ? await searchTranscriptArchive(query, normalizedParams)
+      : await loadRecentTranscriptSessions(normalizedParams);
     const summaries = await maybeSummarizeTranscriptMatches(
       results,
       params,
@@ -281,15 +305,43 @@ async function executeSearchMemory(
       results,
       summaries,
     };
-    const prepared = await prepareToolTextOutput({
-      agentText: formatAgentSearchResult(response),
-      userText: formatSearchResult(response),
-      tempPrefix: "rin-memory-",
-      filename: "memory-search.txt",
-    });
+    const agentText = formatAgentSearchResult(response);
+    const userText = formatSearchResult(response);
+    const truncation = truncateHead(agentText);
+    let outputText = truncation.content;
+    const visibleRows = Array.isArray(response?.summaries) && response.summaries.length
+      ? response.summaries
+      : Array.isArray(response?.results)
+        ? response.results
+        : [];
+    const hiddenCount = visibleRows.length > 3 ? visibleRows.length - 3 : 0;
+    const details: {
+      truncation?: TruncationResult;
+      emptyMessage?: string;
+      hiddenCount?: number;
+      totalResults?: number;
+      userText?: string;
+    } = {
+      hiddenCount,
+      totalResults: visibleRows.length,
+      userText,
+    };
+
+    if (!visibleRows.length) {
+      details.emptyMessage = "No memory results found.";
+    }
+
+    if (truncation.truncated) {
+      details.truncation = truncation;
+      if (truncation.truncatedBy === "lines") {
+        outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
+      } else {
+        outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+      }
+    }
     return {
-      content: [{ type: "text" as const, text: prepared.agentText }],
-      details: { ...response, ...prepared },
+      content: [{ type: "text" as const, text: outputText }],
+      details,
     };
   } catch (error: any) {
     const message = String(error?.message || error || "memory_search_failed");
@@ -306,13 +358,20 @@ async function executeSearchMemory(
   }
 }
 
-function renderMemoryResult(result: any) {
-  const details = result.details as any;
-  const fallback =
-    result.content?.[0]?.type === "text"
-      ? result.content[0].text
-      : "(no output)";
-  return new Text(String(details?.userText || fallback), 0, 0);
+function renderMemoryResult(result: any, options: any, theme: any, context: any) {
+  const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+  const details = (result.details as any) || {};
+  const userResult = {
+    content: [{ type: "text", text: String(details.userText || "") }],
+    details: {
+      truncation: details.truncation,
+      emptyMessage: details.emptyMessage,
+      hiddenCount: details.hiddenCount,
+      totalResults: details.totalResults,
+    },
+  };
+  text.setText(formatMemoryResult(userResult, options, theme, context.showImages));
+  return text;
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
@@ -320,12 +379,11 @@ export default function memoryExtension(pi: ExtensionAPI) {
     name: "search_memory",
     label: "Search Memory",
     description:
-      "Search past sessions for long-term recall, or browse recent sessions directly when no query is provided. Matched sessions are summarized for quick recall, and broad queries work best with a few distinctive keywords joined by OR.",
+      "Search past sessions for long-term recall, or browse recent sessions directly when no query is provided.",
     promptSnippet: "Search archived session history.",
     promptGuidelines: [
       "Use search_memory proactively for past-conversation recall when the user references earlier work or relevant cross-session context may matter; better to search and confirm than to guess or ask them to repeat themselves.",
       "If you do not have a good search phrase yet, call search_memory without a query to browse recent sessions first.",
-      "For broad recall, start with a few distinctive keywords joined by OR, retry with narrower queries if needed, and do not use this tool for self_improve prompts or skills.",
     ],
     parameters: searchMemoryParams,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
