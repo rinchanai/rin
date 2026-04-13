@@ -283,7 +283,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
     promptSnippet: "Run a worker with independent context.",
     promptGuidelines: [
       "Use run_subagent to run a worker with independent context and optional model selection.",
-      "Always use run_subagent for simple independent work that does not depend on the current conversation context, including parallelizable tasks.",
+      "Always use run_subagent for simple independent work that does not depend on the current conversation context.",
       "Use run_subagent when the user asks for a subagent or wants a different model.",
     ],
     parameters: RunParamsSchema,
