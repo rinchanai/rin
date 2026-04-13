@@ -44,8 +44,7 @@ function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
   if (chatType === "group") {
     lines.push(
       "- This conversation is currently taking place in a group:",
-      "  - Do not disclose the owner's private information unless the owner explicitly asks you in the current conversation to share that specific part.",
-      "  - If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
+      "  - Do not disclose the owner's private information unless the owner explicitly asks you in the current conversation to share that specific part, and if they do, answer only that narrow part without expanding beyond it.",
     );
   }
   return lines.join("\n");

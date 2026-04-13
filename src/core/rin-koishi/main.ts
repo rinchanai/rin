@@ -200,11 +200,6 @@ export async function startKoishi(
     const controllerChatKey =
       safeString(options?.chatKey).trim() || `cron:${controllerKey}`;
     let controller = detachedControllers.get(controllerKey);
-    if (controller && controller.chatKey !== controllerChatKey) {
-      controller.dispose();
-      detachedControllers.delete(controllerKey);
-      controller = undefined;
-    }
     if (!controller) {
       controller = new KoishiChatController(app, dataDir, controllerChatKey, {
         logger,
@@ -215,6 +210,12 @@ export async function startKoishi(
         idleToolProgressConfig,
       });
       detachedControllers.set(controllerKey, controller);
+      return controller;
+    }
+    if (controller.chatKey !== controllerChatKey) {
+      controller.chatKey = controllerChatKey;
+      controller.state.chatKey = controllerChatKey;
+      void controller.session?.reload?.().catch(() => {});
     }
     return controller;
   };
