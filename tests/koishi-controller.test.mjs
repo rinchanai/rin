@@ -751,3 +751,61 @@ test("koishi controller retries persisted final reply delivery on recovery", asy
   assert.equal(sends.length, 1);
 });
 
+test("koishi controller drops pending delivery for detached cron turns", async () => {
+  const tempDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-koishi-controller-detached-"),
+  );
+  const dataDir = path.join(tempDir, "data");
+  await fs.mkdir(dataDir, { recursive: true });
+  const controller = new KoishiChatController({}, dataDir, "cron:task-1", {
+    logger: { info() {}, warn() {} },
+    h: {
+      text(content) {
+        return { type: "text", attrs: { content } };
+      },
+      quote(id) {
+        return { type: "quote", attrs: { id } };
+      },
+    },
+    deliveryEnabled: false,
+  });
+  controller.app = { bots: [] };
+  controller.connect = async () => {};
+  controller.scheduleIdleDetach = () => {};
+  controller.clearIdleDetachTimer = () => {};
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      { role: "assistant", content: [{ type: "text", text: "final text" }] },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/cron-detached.jsonl",
+      getSessionId: () => "session-detached",
+      getSessionName: () => "",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/cron-detached.jsonl",
+      sessionId: "session-detached",
+    }),
+    prompt: async () => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn(
+    { text: "hello", attachments: [] },
+    "prompt",
+  );
+
+  assert.equal(result?.finalText, "final text");
+  assert.equal(controller.state.pendingDelivery, undefined);
+});
+

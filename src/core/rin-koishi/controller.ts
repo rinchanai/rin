@@ -511,6 +511,12 @@ export class KoishiChatController {
   private async commitPendingDelivery(clearProcessing = false) {
     const pending = this.state.pendingDelivery;
     if (!pending) return;
+    if (!this.deliveryEnabled) {
+      delete this.state.pendingDelivery;
+      if (clearProcessing) delete this.state.processing;
+      this.saveState();
+      return;
+    }
     await sendOutboxPayload(
       this.app,
       this.agentDir,
