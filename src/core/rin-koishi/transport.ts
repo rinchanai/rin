@@ -155,6 +155,8 @@ function summarizeOutgoingParts(parts: ChatMessagePart[]) {
       if (part.type === "text") return safeString(part.text).trim();
       if (part.type === "at")
         return `[@] ${safeString(part.name).trim() || safeString(part.id).trim()}`;
+      if (part.type === "quote")
+        return `[#quote] ${safeString(part.id).trim()}`;
       if (part.type === "image")
         return `[#image] ${safeString(part.path).trim() || safeString(part.url).trim()}`;
       return `[#file] ${safeString(part.name).trim() || safeString(part.path).trim() || safeString(part.url).trim()}`;
@@ -239,6 +241,7 @@ export async function messagePartToNode(part: ChatMessagePart, h: any) {
   if (part.type === "text") return h.text(part.text);
   if (part.type === "at")
     return h.at(part.id, part.name ? { name: part.name } : undefined);
+  if (part.type === "quote") return h.quote(part.id);
   if (part.type === "image") {
     const localPath = safeString(part.path).trim();
     if (localPath) {
@@ -334,11 +337,12 @@ export async function sendOutboxPayload(
   ).filter(Boolean);
   if (!nodes.length) throw new Error("koishi_outbox_empty_message");
 
-  const replyToMessageId = safeString(payload.replyToMessageId).trim();
-  const content = replyToMessageId
-    ? [h.quote(replyToMessageId), ...nodes]
-    : nodes;
-  const deliveryResult = await sendBotMessage(bot, parsed.chatId, content);
+  const deliveryResult = await sendBotMessage(bot, parsed.chatId, nodes);
+
+  const quotePart = rawParts.find((part) => part.type === "quote") as
+    | { type: "quote"; id: string }
+    | undefined;
+  const replyToMessageId = safeString(quotePart?.id).trim() || undefined;
 
   const finalLoggedText = rawParts
     .filter((part) => part.type === "text")
@@ -352,8 +356,7 @@ export async function sendOutboxPayload(
       chatKey,
       role: "assistant",
       text: finalLoggedText,
-      replyToMessageId:
-        safeString(payload.replyToMessageId).trim() || undefined,
+      replyToMessageId,
       sessionId: safeString(payload.sessionId).trim() || undefined,
       sessionFile: safeString(payload.sessionFile).trim() || undefined,
     });
@@ -364,7 +367,7 @@ export async function sendOutboxPayload(
     deliveryResult,
     text: finalLoggedText || storedSummary || undefined,
     rawContent: storedSummary || finalLoggedText || undefined,
-    replyToMessageId: safeString(payload.replyToMessageId).trim() || undefined,
+    replyToMessageId,
     sessionId: safeString(payload.sessionId).trim() || undefined,
     sessionFile: safeString(payload.sessionFile).trim() || undefined,
   });

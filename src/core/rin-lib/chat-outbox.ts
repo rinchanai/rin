@@ -12,6 +12,10 @@ export type ChatMessagePart =
       name?: string;
     }
   | {
+      type: "quote";
+      id: string;
+    }
+  | {
       type: "image";
       path?: string;
       url?: string;
@@ -45,7 +49,6 @@ export type ChatOutboxPayload =
       taskId?: string;
       runId?: string;
       chatKey: string;
-      replyToMessageId?: string;
       sessionId?: string;
       sessionFile?: string;
       parts: ChatMessagePart[];
