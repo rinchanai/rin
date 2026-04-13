@@ -178,16 +178,18 @@ function buildTexts(action: string, data: any, params: any) {
     };
   }
 
+  const deletedText = `Deleted task: ${String(params?.taskId || "")}`;
+
   const userText = data?.task
     ? renderTask(data.task)
     : data?.deleted
-      ? `Deleted task: ${String(params?.taskId || "")}`
+      ? deletedText
       : JSON.stringify(data, null, 2);
 
   const agentText = data?.task
     ? renderTask(data.task)
     : data?.deleted
-      ? `scheduled_task deleted\nid=${String(params?.taskId || "")}`
+      ? deletedText
       : `scheduled_task ${action}`;
 
   return { agentText, userText };
@@ -498,7 +500,7 @@ export default function cronExtension(pi: ExtensionAPI) {
       "Delete Task",
       "delete",
       "Delete a scheduled task.",
-      "Use delete_task to delete a scheduled task.",
+      "",
     ],
     [
       "pause_task",
