@@ -22,6 +22,7 @@ import {
   extractInboundAttachments,
   buildInboundAttachmentNotice,
   getChatId,
+  getChatType,
   lookupReplySession,
   persistInboundMessage,
   pickChatName,
@@ -296,7 +297,10 @@ export async function startKoishi(
         ? Number(session.timestamp)
         : Date.now(),
       chatKey: decision.chatKey,
-      chatName: pickChatName(session),
+      chatName:
+        pickChatName(session) ||
+        (getChatType(session) === "private" ? pickSenderNickname(session) : ""),
+      chatType: getChatType(session),
       userId: pickUserId(session),
       nickname: pickSenderNickname(session),
       identity: trustOf(

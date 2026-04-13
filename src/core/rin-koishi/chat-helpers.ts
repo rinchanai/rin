@@ -53,6 +53,7 @@ export type KoishiBridgePromptMeta = {
   sentAt?: number;
   chatKey?: string;
   chatName?: string;
+  chatType?: "private" | "group";
   userId?: string;
   nickname?: string;
   identity?: string;
