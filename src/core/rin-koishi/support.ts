@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { extname } from "node:path";
 
 import YAML from "yaml";
@@ -299,6 +300,81 @@ export function loadIdentity(dataDir: string) {
   identity.aliases ||= [];
   identity.trusted ||= [];
   return identity;
+}
+
+export function saveIdentity(dataDir: string, identity: any) {
+  writeJsonFile(identityPath(dataDir), identity);
+}
+
+function trustPersonId(platform: string, userId: string, trust: string) {
+  const key = `${safeString(platform).trim()}\n${safeString(userId).trim()}\n${safeString(trust).trim()}`;
+  const prefix = safeString(trust).trim().toLowerCase() === "trusted" ? "trusted" : "other";
+  return `${prefix}_${createHash("sha1").update(key).digest("hex").slice(0, 10)}`;
+}
+
+export function setIdentityTrust(options: {
+  dataDir: string;
+  platform: string;
+  userId: string;
+  trust: "TRUSTED" | "OTHER";
+  name?: string;
+}) {
+  const platform = safeString(options.platform).trim();
+  const userId = safeString(options.userId).trim();
+  const trust = safeString(options.trust).trim() as "TRUSTED" | "OTHER";
+  const name = safeString(options.name).trim();
+  if (!platform) throw new Error("identity_platform_required");
+  if (!userId) throw new Error("identity_user_id_required");
+  if (trust !== "TRUSTED" && trust !== "OTHER") {
+    throw new Error("identity_trust_invalid");
+  }
+
+  const identity = loadIdentity(options.dataDir);
+  const aliases = Array.isArray(identity.aliases) ? identity.aliases : [];
+  const persons =
+    identity.persons && typeof identity.persons === "object"
+      ? identity.persons
+      : {};
+  const aliasIndex = aliases.findIndex(
+    (entry: any) =>
+      entry && entry.platform === platform && String(entry.userId) === userId,
+  );
+  const existingAlias = aliasIndex >= 0 ? aliases[aliasIndex] : undefined;
+  const existingPersonId = safeString(existingAlias?.personId).trim();
+  if (existingPersonId === "owner") {
+    throw new Error("identity_owner_trust_immutable");
+  }
+
+  const personId = existingPersonId || trustPersonId(platform, userId, trust);
+  const existingPerson =
+    persons[personId] && typeof persons[personId] === "object"
+      ? persons[personId]
+      : {};
+  persons[personId] = {
+    ...existingPerson,
+    ...(name ? { name } : {}),
+    trust,
+  };
+  if (aliasIndex >= 0) {
+    aliases[aliasIndex] = { ...aliases[aliasIndex], platform, userId, personId };
+  } else {
+    aliases.push({ platform, userId, personId });
+  }
+
+  identity.persons = persons;
+  identity.aliases = aliases;
+  identity.trusted = Object.entries(persons)
+    .filter(([, person]: any) => safeString(person?.trust).trim() === "TRUSTED")
+    .map(([id]) => id);
+  saveIdentity(options.dataDir, identity);
+  return {
+    platform,
+    userId,
+    trust,
+    name: safeString(identity.persons?.[personId]?.name).trim() || undefined,
+    personId,
+    path: identityPath(options.dataDir),
+  };
 }
 
 export function trustOf(identity: any, platform: string, userId: string) {
