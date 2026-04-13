@@ -1,7 +1,16 @@
 import { createTargetExecutionContext, ParsedArgs } from "./shared.js";
 
-export async function runDoctor(parsed: ParsedArgs) {
-  const context = createTargetExecutionContext(parsed);
+export async function runDoctor(
+  parsed: ParsedArgs,
+  deps: {
+    createTargetExecutionContext?: typeof createTargetExecutionContext;
+    log?: (text: string) => void;
+  } = {},
+) {
+  const context = (
+    deps.createTargetExecutionContext ?? createTargetExecutionContext
+  )(parsed);
+  const log = deps.log ?? ((text: string) => console.log(text));
   const socketReady = await context.canConnectSocket();
   const daemonStatus = socketReady
     ? await context.queryDaemonStatus()
@@ -111,5 +120,5 @@ export async function runDoctor(parsed: ParsedArgs) {
     }
   }
 
-  console.log(lines.join("\n"));
+  log(lines.join("\n"));
 }

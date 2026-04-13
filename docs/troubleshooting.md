@@ -60,9 +60,12 @@ Useful commands:
 
 ```bash
 rin doctor
+rin restart
 readlink -f <installDir>/app/current
 node <installDir>/app/current/dist/app/rin/main.js doctor -u <targetUser>
 ```
+
+Use `rin restart` when the managed daemon unit exists but the runtime feels stale or wedged. If no managed service is present, Rin falls back to the direct stop/start daemon path for the target install.
 
 If the refreshed runtime works through the direct stable entry but not through your current shell path, debug the launcher/user context before assuming the update failed.
 

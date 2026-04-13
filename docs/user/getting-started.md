@@ -108,6 +108,13 @@ rin restart
 rin update
 ```
 
+Command intent:
+
+- `rin doctor`: inspect the target install, socket, daemon workers, web-search runtime, and Koishi runtime state
+- `rin start`: ensure the target daemon is available
+- `rin stop`: stop the managed daemon when possible, otherwise fall back to the local daemon process pattern
+- `rin restart`: restart the managed daemon or perform the same stop/start fallback pair
+
 ## What Rin can do
 
 - chat in the terminal
