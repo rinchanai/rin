@@ -62,6 +62,25 @@ test("koishi rpc returns response data from the sidecar socket", async () => {
   );
 });
 
+test("koishi rpc skips blank lines and accepts CRLF responses", async () => {
+  await withRpcServer(
+    (socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", () => {
+        socket.write(
+          `\n${JSON.stringify({ success: true, data: { delivered: true } })}\r\n`,
+        );
+      });
+    },
+    async (agentDir) => {
+      const result = await rpc.requestKoishiRpc(agentDir, {
+        type: "send_chat",
+      });
+      assert.deepEqual(result, { delivered: true });
+    },
+  );
+});
+
 test("koishi rpc rejects invalid json responses from the sidecar socket", async () => {
   await withRpcServer(
     (socket) => {
