@@ -124,60 +124,59 @@ function buildTaskForSave(
   };
 }
 
-function formatTaskText(task: any) {
-  const target =
-    task?.target?.kind === "shell_command"
-      ? `command: ${String(task?.target?.command || "")}`
-      : `agent: ${String(task?.target?.prompt || "")}`;
-  const trigger =
-    task?.trigger?.kind === "interval"
-      ? `every ${String(task?.trigger?.intervalMs || 0)}ms`
-      : task?.trigger?.kind === "cron"
-        ? `cron ${String(task?.trigger?.expression || "")}`
-        : `once ${String(task?.trigger?.runAt || "")}`;
-  return [
-    `${String(task?.id || "")}${task?.name ? ` (${String(task.name)})` : ""}`,
-    trigger,
-    target,
-    task?.chatKey ? `chat=${String(task.chatKey)}` : "",
-    `session=${String(task?.session?.mode || "")}${task?.session?.sessionFile ? `:${String(task.session.sessionFile)}` : task?.dedicatedSessionFile ? `:${String(task.dedicatedSessionFile)}` : ""}`,
-    task?.completedAt
-      ? `completed=${String(task.completedAt)}`
-      : task?.enabled === false
-        ? "disabled"
-        : `next=${String(task?.nextRunAt || "pending")}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 function buildTexts(action: string, data: any, params: any) {
+  const renderTask = (task: any) => {
+    const target =
+      task?.target?.kind === "shell_command"
+        ? `command: ${String(task?.target?.command || "")}`
+        : `agent: ${String(task?.target?.prompt || "")}`;
+    const trigger =
+      task?.trigger?.kind === "interval"
+        ? `every ${String(task?.trigger?.intervalMs || 0)}ms`
+        : task?.trigger?.kind === "cron"
+          ? `cron ${String(task?.trigger?.expression || "")}`
+          : `once ${String(task?.trigger?.runAt || "")}`;
+    return [
+      `${String(task?.id || "")}${task?.name ? ` (${String(task.name)})` : ""}`,
+      trigger,
+      target,
+      task?.chatKey ? `chat=${String(task.chatKey)}` : "",
+      `session=${String(task?.session?.mode || "")}${task?.session?.sessionFile ? `:${String(task.session.sessionFile)}` : task?.dedicatedSessionFile ? `:${String(task.dedicatedSessionFile)}` : ""}`,
+      task?.completedAt
+        ? `completed=${String(task.completedAt)}`
+        : task?.enabled === false
+          ? "disabled"
+          : `next=${String(task?.nextRunAt || "pending")}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
   if (action === "list") {
     const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
     const agentText = tasks.length
-      ? tasks.map((task: any) => formatTaskText(task)).join("\n\n")
+      ? tasks.map((task: any) => renderTask(task)).join("\n\n")
       : "No scheduled tasks.";
     const userText = tasks.length
-      ? tasks.map((task: any) => formatTaskText(task)).join("\n\n")
+      ? tasks.map((task: any) => renderTask(task)).join("\n\n")
       : "No scheduled tasks.";
     return { agentText, userText };
   }
 
   if (action === "get" && data?.task) {
     return {
-      agentText: formatTaskText(data.task),
-      userText: formatTaskText(data.task),
+      agentText: renderTask(data.task),
+      userText: renderTask(data.task),
     };
   }
 
   const userText = data?.task
-    ? formatTaskText(data.task)
+    ? renderTask(data.task)
     : data?.deleted
       ? `Deleted task: ${String(params?.taskId || "")}`
       : JSON.stringify(data, null, 2);
 
   const agentText = data?.task
-    ? formatTaskText(data.task)
+    ? renderTask(data.task)
     : data?.deleted
       ? `scheduled_task deleted\nid=${String(params?.taskId || "")}`
       : `scheduled_task ${action}`;
