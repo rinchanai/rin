@@ -196,6 +196,13 @@ function buildTexts(action: string, data: any, params: any) {
     return { agentText, userText };
   }
 
+  if (action === "get" && data?.task) {
+    return {
+      agentText: summarizeTaskForAgent(data.task),
+      userText: summarizeTaskForUser(data.task),
+    };
+  }
+
   const userText = data?.task
     ? summarizeTask(data.task)
     : data?.deleted
@@ -410,7 +417,7 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
   }
 
   const texts = buildTexts(action, data, params);
-  if (action === "list") {
+  if (action === "list" || action === "get") {
     const agentTruncation = truncateHead(texts.agentText);
     const userTruncation = truncateHead(texts.userText);
     let outputText = agentTruncation.content;
@@ -446,7 +453,7 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
 
 function renderTaskResult(result: any, options: any, theme: any, context: any) {
   const details = result.details as TaskActionDetails | undefined;
-  if (details?.action === "list") {
+  if (details?.action === "list" || details?.action === "get") {
     return new Text(
       formatListTaskResult(result, options, theme, context.showImages),
       0,
@@ -478,7 +485,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "Get Task",
     description: "Get a specific scheduled task.",
     promptSnippet: "Get a specific scheduled task.",
-    promptGuidelines: ["Use get_task to view a specific scheduled task."],
+    promptGuidelines: [],
     parameters: taskIdSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("get", params, ctx),
