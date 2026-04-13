@@ -62,6 +62,7 @@ rin start      # start the daemon
 rin stop       # stop the daemon
 rin restart    # restart the daemon
 rin update     # update the installed Rin runtime
+rin usage      # inspect token usage by model/session/capability
 ```
 
 ## What you can ask Rin to do

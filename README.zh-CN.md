@@ -62,6 +62,7 @@ rin start      # 启动 daemon
 rin stop       # 停止 daemon
 rin restart    # 重启 daemon
 rin update     # 更新已安装的 Rin 运行时
+rin usage      # 查看按模型/会话/能力划分的 token 使用情况
 ```
 
 ## 你可以直接这样让 Rin 做事

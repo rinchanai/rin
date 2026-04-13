@@ -419,27 +419,56 @@ export function renderUsageReport(
   ].join("\n");
 }
 
-export async function runUsageInternal(rawArgv: string[]) {
-  const options = parseUsageArgs(rawArgv);
+export async function runUsageInternal(
+  rawArgv: string[],
+  deps: {
+    parseUsageArgs?: typeof parseUsageArgs;
+    renderUsageReport?: typeof renderUsageReport;
+    printUsageHelp?: typeof printUsageHelp;
+    log?: (text: string) => void;
+  } = {},
+) {
+  const options = (deps.parseUsageArgs ?? parseUsageArgs)(rawArgv);
+  const render = deps.renderUsageReport ?? renderUsageReport;
+  const printHelp = deps.printUsageHelp ?? printUsageHelp;
+  const log = deps.log ?? ((text: string) => console.log(text));
   if (options.help) {
-    printUsageHelp();
+    printHelp();
     return;
   }
-  console.log(
-    renderUsageReport(
+  log(
+    render(
       process.env.RIN_DIR || process.env.PI_CODING_AGENT_DIR || "",
       options,
     ),
   );
 }
 
-export async function runUsage(parsed: ParsedArgs, rawArgv: string[]) {
-  const options = parseUsageArgs(rawArgv);
+export async function runUsage(
+  parsed: ParsedArgs,
+  rawArgv: string[],
+  deps: {
+    parseUsageArgs?: typeof parseUsageArgs;
+    renderUsageReport?: typeof renderUsageReport;
+    printUsageHelp?: typeof printUsageHelp;
+    createTargetExecutionContext?: typeof createTargetExecutionContext;
+    stdoutWrite?: (text: string) => void;
+    log?: (text: string) => void;
+  } = {},
+) {
+  const options = (deps.parseUsageArgs ?? parseUsageArgs)(rawArgv);
+  const render = deps.renderUsageReport ?? renderUsageReport;
+  const printHelp = deps.printUsageHelp ?? printUsageHelp;
+  const createContext =
+    deps.createTargetExecutionContext ?? createTargetExecutionContext;
+  const stdoutWrite =
+    deps.stdoutWrite ?? ((text: string) => process.stdout.write(text));
+  const log = deps.log ?? ((text: string) => console.log(text));
   if (options.help) {
-    printUsageHelp();
+    printHelp();
     return;
   }
-  const context = createTargetExecutionContext(parsed);
+  const context = createContext(parsed);
   if (!context.isTargetUser) {
     const entry = path.join(context.repoRoot, "dist", "app", "rin", "main.js");
     const forwarded = context.capture([
@@ -448,8 +477,8 @@ export async function runUsage(parsed: ParsedArgs, rawArgv: string[]) {
       "__usage_internal",
       ...rawArgv.slice(1),
     ]);
-    process.stdout.write(forwarded);
+    stdoutWrite(forwarded);
     return;
   }
-  console.log(renderUsageReport(context.installDir, options));
+  log(render(context.installDir, options));
 }

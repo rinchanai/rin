@@ -62,6 +62,7 @@ rin start      # デーモンを起動
 rin stop       # デーモンを停止
 rin restart    # デーモンを再起動
 rin update     # インストール済み Rin ランタイムを更新
+rin usage      # モデル/セッション/機能ごとのトークン使用量を確認
 ```
 
 ## Rin に頼めること

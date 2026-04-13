@@ -62,6 +62,7 @@ rin start      # iniciar el daemon
 rin stop       # detener el daemon
 rin restart    # reiniciar el daemon
 rin update     # actualizar el runtime instalado de Rin
+rin usage      # inspeccionar el uso de tokens por modelo/sesión/capacidad
 ```
 
 ## Qué puedes pedirle a Rin

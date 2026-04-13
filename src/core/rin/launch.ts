@@ -94,10 +94,31 @@ async function runTargetCommand(
   });
 }
 
-export async function launchDefaultRin(parsed: ParsedArgs) {
-  const repoRoot = repoRootFromHere();
+export async function launchDefaultRin(
+  parsed: ParsedArgs,
+  deps: {
+    repoRootFromHere?: typeof repoRootFromHere;
+    runTargetCommandCapture?: typeof runTargetCommandCapture;
+    runTargetCommand?: typeof runTargetCommand;
+    buildTuiRuntimeEnv?: typeof buildTuiRuntimeEnv;
+    currentUser?: string;
+    stdoutWrite?: (text: string) => void;
+    stderrWrite?: (text: string) => void;
+    exit?: (code: number) => never | void;
+  } = {},
+) {
+  const repoRoot = (deps.repoRootFromHere ?? repoRootFromHere)();
   const targetUser = parsed.targetUser;
-  const currentUser = os.userInfo().username;
+  const currentUser = deps.currentUser ?? os.userInfo().username;
+  const targetCommandCapture =
+    deps.runTargetCommandCapture ?? runTargetCommandCapture;
+  const targetCommand = deps.runTargetCommand ?? runTargetCommand;
+  const buildRuntimeEnv = deps.buildTuiRuntimeEnv ?? buildTuiRuntimeEnv;
+  const stdoutWrite =
+    deps.stdoutWrite ?? ((text: string) => process.stdout.write(text));
+  const stderrWrite =
+    deps.stderrWrite ?? ((text: string) => process.stderr.write(text));
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
   const tmuxSocketArgs = buildTmuxSocketArgs(targetUser);
 
   if (!parsed.explicitUser && !parsed.hasSavedInstall) {
@@ -108,7 +129,7 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   if (parsed.tmuxSession && parsed.tmuxList)
     throw new Error("rin_tmux_mode_conflict");
 
-  const runtimeEnv = buildTuiRuntimeEnv(
+  const runtimeEnv = buildRuntimeEnv(
     targetUser,
     currentUser,
     parsed.installDir,
@@ -116,25 +137,24 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
 
   if (parsed.tmuxList) {
     const commandEnv = runtimeEnv;
-    const result = await runTargetCommandCapture(
+    const result = await targetCommandCapture(
       targetUser,
       buildTmuxListArgs(tmuxSocketArgs),
       commandEnv as Record<string, string>,
       repoRoot,
     );
-    if (result.stdout) process.stdout.write(result.stdout);
+    if (result.stdout) stdoutWrite(result.stdout);
     if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr) {
-      process.stderr.write(result.stderr);
+      stderrWrite(result.stderr);
     }
-    process.exit(
-      isTmuxNoServerError(result.code, result.stderr) ? 0 : result.code,
-    );
+    exit(isTmuxNoServerError(result.code, result.stderr) ? 0 : result.code);
+    return;
   }
 
   if (parsed.tmuxSession) {
     const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
     const commandEnv = runtimeEnv;
-    const code = await runTargetCommand(
+    const code = await targetCommand(
       targetUser,
       [
         "tmux",
@@ -151,10 +171,11 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
       commandEnv as Record<string, string>,
       repoRoot,
     );
-    process.exit(code);
+    exit(code);
+    return;
   }
 
-  const code = await runTargetCommand(
+  const code = await targetCommand(
     targetUser,
     [
       process.execPath,
@@ -165,5 +186,5 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
     runtimeEnv,
     repoRoot,
   );
-  process.exit(code);
+  exit(code);
 }

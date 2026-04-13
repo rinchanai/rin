@@ -106,6 +106,7 @@ rin start
 rin stop
 rin restart
 rin update
+rin usage
 ```
 
 Command intent:
@@ -114,6 +115,17 @@ Command intent:
 - `rin start`: ensure the target daemon is available
 - `rin stop`: stop the managed daemon when possible, otherwise fall back to the local daemon process pattern
 - `rin restart`: restart the managed daemon or perform the same stop/start fallback pair
+- `rin usage`: inspect token telemetry with a text dashboard, grouped summaries, or raw recent events
+
+## Inspect usage telemetry
+
+```bash
+rin usage
+rin usage --group-by provider_model,capability --from 7d
+rin usage --events --limit 20
+```
+
+Use this after installation or model changes when you want a quick view of which models, sessions, or capabilities are consuming tokens.
 
 ## What Rin can do
 
