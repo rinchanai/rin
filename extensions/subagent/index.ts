@@ -283,12 +283,8 @@ export default function subagentExtension(pi: ExtensionAPI) {
     promptSnippet: "Run a worker with independent context.",
     promptGuidelines: [
       "Use run_subagent to run a worker with independent context and optional model selection.",
-      "Default run_subagent calls use an isolated in-memory worker session and do not persist.",
-      "If run_subagent work will span multiple turns or needs existing context, set session.mode to persist, resume, or fork.",
-      "When run_subagent needs an existing worker session, inspect ~/.rin/sessions with bash/find/rg and pass session.ref as a session file path, exact id, or unique id prefix.",
-      "Use run_subagent for simple independent work that does not depend on the current conversation context.",
-      "Use run_subagent when the user asks for a worker or wants a different model.",
-      "Use run_subagent for parallelizable tasks.",
+      "Always use run_subagent for simple independent work that does not depend on the current conversation context, including parallelizable tasks.",
+      "Use run_subagent when the user asks for a subagent or wants a different model.",
     ],
     parameters: RunParamsSchema,
     async execute(_toolCallId, rawParams, signal, onUpdate, ctx) {
