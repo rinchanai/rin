@@ -130,9 +130,13 @@ export function assertMemoryPromptDoc(doc: MemoryDoc): void {
     throw new Error(
       `self_improve_prompt_fidelity_invalid:${slot}:${doc.fidelity}`,
     );
-  if (safeString(doc.content).trim().length > limits.maxChars)
+  const lineCount = safeString(doc.content)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+  if (lineCount > limits.maxLines)
     throw new Error(
-      `self_improve_prompt_content_too_long:${slot}:${limits.maxChars}`,
+      `self_improve_prompt_content_too_long:${slot}:${limits.maxLines}\nCompress existing lines, merge overlapping points, and keep only durable essentials.`,
     );
 }
 

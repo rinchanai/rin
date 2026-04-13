@@ -64,12 +64,12 @@ export const MEMORY_PROMPT_SLOTS = [
 
 export const MEMORY_PROMPT_LIMITS: Record<
   string,
-  { maxChars: number; fidelity: Array<MemoryFidelity> }
+  { maxLines: number; fidelity: Array<MemoryFidelity> }
 > = {
-  agent_profile: { maxChars: 1200, fidelity: ["exact", "fuzzy"] },
-  user_profile: { maxChars: 1200, fidelity: ["exact", "fuzzy"] },
-  core_doctrine: { maxChars: 1800, fidelity: ["fuzzy", "exact"] },
-  core_facts: { maxChars: 2600, fidelity: ["exact", "fuzzy"] },
+  agent_profile: { maxLines: 16, fidelity: ["exact", "fuzzy"] },
+  user_profile: { maxLines: 12, fidelity: ["exact", "fuzzy"] },
+  core_doctrine: { maxLines: 20, fidelity: ["fuzzy", "exact"] },
+  core_facts: { maxLines: 32, fidelity: ["exact", "fuzzy"] },
 };
 
 export const CHRONICLE_TAG = "chronicle";

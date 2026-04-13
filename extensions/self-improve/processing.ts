@@ -11,6 +11,12 @@ export function normalizePromptListContent(text: string) {
     .trim();
 }
 
+export function countPromptLines(text: string) {
+  const content = normalizePromptListContent(text);
+  if (!content) return 0;
+  return content.split(/\r?\n/).filter(Boolean).length;
+}
+
 export function assertSelfImprovePromptSlot(slotInput: string) {
   const slot = safeString(slotInput).trim();
   if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) {
@@ -32,8 +38,8 @@ export function describeSelfImprovePromptSlot(options: {
     slot,
     name: slot.replace(/_/g, " "),
     content,
-    currentChars: content.length,
-    maxChars: limits.maxChars,
+    currentLines: countPromptLines(content),
+    maxLines: limits.maxLines,
   };
 }
 
@@ -46,14 +52,15 @@ export function refineSelfImprovePromptSlot(options: {
   });
   const content = normalizePromptListContent(options.incomingContent || "");
   if (!content) throw new Error("self_improve_content_required");
-  if (content.length > state.maxChars) {
+  const nextLines = countPromptLines(content);
+  if (nextLines > state.maxLines) {
     throw new Error(
-      `self_improve_prompt_content_too_long:${state.slot}:${state.maxChars}`,
+      `self_improve_prompt_content_too_long:${state.slot}:${state.maxLines}\nCompress existing lines, merge overlapping points, and keep only durable essentials.`,
     );
   }
   return {
     ...state,
     content,
-    nextChars: content.length,
+    nextLines,
   };
 }
