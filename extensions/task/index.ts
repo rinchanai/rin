@@ -5,6 +5,18 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  type TruncationResult,
+  truncateHead,
+} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+import {
+  getTextOutput,
+  replaceTabs,
+} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
 import { prepareToolTextOutput } from "../shared/tool-text.js";
 
 function defaultDaemonSocketPath() {
@@ -146,39 +158,24 @@ function summarizeTaskForAgent(task: any) {
 }
 
 function buildTexts(action: string, data: any, params: any) {
-  const userText =
-    action === "list"
-      ? (() => {
-          const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-          return tasks.length
-            ? [
-                "Scheduled tasks:",
-                ...tasks.map((task: any) => summarizeTask(task)),
-              ].join("\n\n")
-            : "No scheduled tasks.";
-        })()
-      : data?.task
-        ? summarizeTask(data.task)
-        : data?.deleted
-          ? `Deleted task: ${String(params?.taskId || "")}`
-          : JSON.stringify(data, null, 2);
+  if (action === "list") {
+    const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+    const names = tasks.map((task: any) => summarizeTaskForAgent(task));
+    const text = names.length ? names.join("\n") : "No scheduled tasks.";
+    return { agentText: text, userText: text };
+  }
 
-  const agentText =
-    action === "list"
-      ? (() => {
-          const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
-          return tasks.length
-            ? [
-                "scheduled_tasks",
-                ...tasks.map((task: any) => summarizeTaskForAgent(task)),
-              ].join("\n\n")
-            : "scheduled_tasks 0";
-        })()
-      : data?.task
-        ? summarizeTaskForAgent(data.task)
-        : data?.deleted
-          ? `scheduled_task deleted\nid=${String(params?.taskId || "")}`
-          : `scheduled_task ${action}`;
+  const userText = data?.task
+    ? summarizeTask(data.task)
+    : data?.deleted
+      ? `Deleted task: ${String(params?.taskId || "")}`
+      : JSON.stringify(data, null, 2);
+
+  const agentText = data?.task
+    ? summarizeTaskForAgent(data.task)
+    : data?.deleted
+      ? `scheduled_task deleted\nid=${String(params?.taskId || "")}`
+      : `scheduled_task ${action}`;
 
   return { agentText, userText };
 }
@@ -282,6 +279,56 @@ const taskIdSchema = Type.Object({
   }),
 });
 
+type TaskActionDetails = {
+  action: string;
+  userText?: string;
+  fullOutputPath?: string;
+  truncated?: boolean;
+  truncation?: TruncationResult;
+};
+
+function trimTrailingEmptyLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  return lines.slice(0, end);
+}
+
+function formatListTaskResult(
+  result: any,
+  options: { expanded: boolean },
+  theme: any,
+  showImages: boolean,
+) {
+  const output = getTextOutput(result, showImages);
+  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const maxLines = options.expanded ? lines.length : 10;
+  const displayLines = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+
+  let text = "";
+  if (displayLines.length > 0) {
+    text = `\n${displayLines
+      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
+      .join("\n")}`;
+    if (remaining > 0) {
+      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+    }
+  }
+
+  const truncation = result.details?.truncation as TruncationResult | undefined;
+  if (truncation?.truncated) {
+    if (truncation.firstLineExceedsLimit) {
+      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
+    } else if (truncation.truncatedBy === "lines") {
+      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
+    } else {
+      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
+    }
+  }
+
+  return text;
+}
+
 async function executeTaskAction(action: string, params: any, ctx: any) {
   const currentSessionFile =
     String(ctx.sessionManager.getSessionFile?.() || "").trim() || undefined;
@@ -331,20 +378,41 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
     throw new Error(`Unsupported action: ${action}`);
   }
 
+  const texts = buildTexts(action, data, params);
+  if (action === "list") {
+    const truncation = truncateHead(texts.agentText);
+    return {
+      content: [{ type: "text" as const, text: truncation.content }],
+      details: {
+        ...data,
+        action,
+        userText: texts.userText,
+        truncation: truncation.truncated ? truncation : undefined,
+      } satisfies TaskActionDetails,
+    };
+  }
+
   const prepared = await prepareToolTextOutput({
-    ...buildTexts(action, data, params),
+    ...texts,
     tempPrefix: "rin-scheduled-tasks-",
     filename: "scheduled-tasks.txt",
   });
 
   return {
     content: [{ type: "text" as const, text: prepared.agentText }],
-    details: { ...data, ...prepared },
+    details: { ...data, action, ...prepared } satisfies TaskActionDetails,
   };
 }
 
-function renderTaskResult(result: any) {
-  const details = result.details as any;
+function renderTaskResult(result: any, options: any, theme: any, context: any) {
+  const details = result.details as TaskActionDetails | undefined;
+  if (details?.action === "list") {
+    return new Text(
+      formatListTaskResult(result, options, theme, context.showImages),
+      0,
+      0,
+    );
+  }
   const fallback =
     result.content?.[0]?.type === "text"
       ? result.content[0].text
@@ -358,7 +426,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     label: "List Tasks",
     description: "List scheduled tasks.",
     promptSnippet: "List scheduled tasks.",
-    promptGuidelines: ["Use list_tasks to list scheduled tasks."],
+    promptGuidelines: [],
     parameters: Type.Object({}),
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("list", params, ctx),
