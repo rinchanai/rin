@@ -22,11 +22,11 @@ const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
 
 function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
   const lines = [
-    `- The current Koishi chatKey is: ${safeString(meta.chatKey).trim() || "unknown"}`,
+    `- The current chatKey is: ${safeString(meta.chatKey).trim() || "unknown"}`,
     `- The current chat name is: ${safeString(meta.chatName).trim() || "unknown"}`,
-    "- In Koishi bridge chats, sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.",
+    "- In chat bridge conversations, sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.",
     "- `sender identity` uses the bridge trust classification: `OWNER` = configured owner, `TRUSTED` = trusted user, `OTHER` = unknown or untrusted user.",
-    "- When replying in Koishi bridge chats, do not use Markdown. Reply in plain text only. Do not use headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.",
+    "- When replying in chat bridge conversations, do not use Markdown. Reply in plain text only. Do not use headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.",
     "- If `reply to message id` is present, use `get_chat_msg` with that message id before replying when the reply context matters.",
     "- In group chats, do not proactively disclose the owner's private information, even when talking with the owner.",
     "- In group chats, only disclose the owner's private information when the owner explicitly asks you in the current conversation to share that specific part.",
