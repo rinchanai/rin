@@ -182,7 +182,14 @@ export async function startKoishi(
     }
     return controller;
   };
-  const getDetachedController = (controllerKey: string) => {
+  const getDetachedController = (
+    controllerKey: string,
+    options?: {
+      chatKey?: string;
+      deliveryEnabled?: boolean;
+      affectChatBinding?: boolean;
+    },
+  ) => {
     let controller = detachedControllers.get(controllerKey);
     if (!controller) {
       const statePath = path.join(
@@ -191,10 +198,13 @@ export async function startKoishi(
         safeString(controllerKey).trim().replace(/[^A-Za-z0-9._:-]+/g, "_"),
         "state.json",
       );
-      controller = new KoishiChatController(app, dataDir, `cron:${controllerKey}`, {
+      const controllerChatKey =
+        safeString(options?.chatKey).trim() || `cron:${controllerKey}`;
+      controller = new KoishiChatController(app, dataDir, controllerChatKey, {
         logger,
         h,
-        deliveryEnabled: false,
+        deliveryEnabled: options?.deliveryEnabled,
+        affectChatBinding: options?.affectChatBinding,
         statePath,
         idleToolProgressConfig,
       });
@@ -446,10 +456,16 @@ export async function startKoishi(
               const text = safeString(payload.text).trim();
               const sessionFile = safeString(payload.sessionFile).trim() || undefined;
               const controllerKey = safeString(payload.controllerKey).trim() || "default";
+              const deliveryEnabled = payload?.deliveryEnabled !== false;
+              const affectChatBinding = payload?.affectChatBinding !== false;
               if (!text) throw new Error("koishi_rpc_text_required");
-              const controller = chatKey
+              const controller = chatKey && controllerKey === "default" && deliveryEnabled && affectChatBinding
                 ? getController(chatKey)
-                : getDetachedController(controllerKey);
+                : getDetachedController(controllerKey, {
+                    chatKey,
+                    deliveryEnabled,
+                    affectChatBinding,
+                  });
               const result = await controller.runTurn(
                 {
                   text,

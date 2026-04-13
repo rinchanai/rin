@@ -11,6 +11,8 @@ export type KoishiRpcCommand =
       payload: {
         chatKey?: string;
         controllerKey?: string;
+        deliveryEnabled?: boolean;
+        affectChatBinding?: boolean;
         text: string;
         sessionFile?: string;
       };

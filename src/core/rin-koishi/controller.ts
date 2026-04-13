@@ -188,6 +188,7 @@ export class KoishiChatController {
   logger: any;
   h: any;
   deliveryEnabled: boolean;
+  affectChatBinding: boolean;
   idleToolProgressConfig: KoishiIdleToolProgressConfig;
   idleToolProgressTimer: NodeJS.Timeout | null = null;
   lastVisibleProgressAt = 0;
@@ -202,6 +203,7 @@ export class KoishiChatController {
       logger: any;
       h: any;
       deliveryEnabled?: boolean;
+      affectChatBinding?: boolean;
       statePath?: string;
       idleToolProgressConfig?: KoishiIdleToolProgressConfig;
     },
@@ -211,6 +213,7 @@ export class KoishiChatController {
     this.dataDir = dataDir;
     this.agentDir = path.resolve(dataDir, "..");
     this.deliveryEnabled = deps.deliveryEnabled !== false;
+    this.affectChatBinding = deps.affectChatBinding !== false;
     this.statePath = deps.statePath || chatStatePath(dataDir, chatKey);
     this.state = readJsonFile<KoishiChatState>(this.statePath, { chatKey });
     this.logger = deps.logger;
@@ -240,7 +243,7 @@ export class KoishiChatController {
     const wantedSessionFile = this.getRecoverableSessionFile();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
-      if (this.deliveryEnabled && !session.sessionManager.getSessionName?.())
+      if (this.shouldAffectChatBinding() && !session.sessionManager.getSessionName?.())
         await session.setSessionName(this.chatKey);
     }
   }
@@ -477,6 +480,9 @@ export class KoishiChatController {
       sessionFile: this.currentSessionFile(),
     });
   }
+  private shouldAffectChatBinding() {
+    return this.affectChatBinding;
+  }
   currentSessionId() {
     return safeString(
       this.session?.sessionManager?.getSessionId?.() || "",
@@ -566,7 +572,7 @@ export class KoishiChatController {
     ).trim();
     if (before !== wanted)
       await this.session.switchSession(wanted);
-    if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
+    if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     this.state.piSessionFile =
       safeString(
@@ -602,7 +608,7 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
+    if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     this.saveState();
     return result;
@@ -623,7 +629,7 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    if (this.deliveryEnabled && !this.session.sessionManager.getSessionName?.())
+    if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
       await this.session.setSessionName(this.chatKey);
     delete this.state.processing;
     this.saveState();
