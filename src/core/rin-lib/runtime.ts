@@ -407,6 +407,51 @@ function extractAssistantText(message: any) {
     .trim();
 }
 
+function parseAssistantTextPhase(signature: unknown) {
+  if (typeof signature !== "string" || !signature.startsWith("{")) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(signature) as { phase?: unknown };
+    return parsed.phase === "commentary" || parsed.phase === "final_answer"
+      ? parsed.phase
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildVisibleAssistantMessageUpdateEvent(event: any) {
+  if (event?.type !== "message_update" || event?.message?.role !== "assistant") {
+    return event;
+  }
+  const content = Array.isArray(event.message.content) ? event.message.content : [];
+  let sawPhasedText = false;
+  const visibleContent = content.filter((part: any) => {
+    if (part?.type !== "text") {
+      return false;
+    }
+    const phase = parseAssistantTextPhase(part.textSignature);
+    if (phase != null) {
+      sawPhasedText = true;
+    }
+    return phase === "commentary";
+  });
+  if (visibleContent.length > 0) {
+    return {
+      ...event,
+      message: {
+        ...event.message,
+        content: visibleContent,
+      },
+    };
+  }
+  if (sawPhasedText) {
+    return null;
+  }
+  return null;
+}
+
 function removeAssistantMessageFromState(session: any, timestamp: number) {
   const messages = Array.isArray(session?.agent?.state?.messages)
     ? session.agent.state.messages
@@ -548,6 +593,15 @@ export function applyTerminalStateConfirmation(session: any) {
       if (event?.type === "message_end" && event?.message?.role === "user") {
         removeHiddenUserMessageFromState(session, Number(event.message.timestamp));
       }
+      return;
+    }
+
+    if (event?.type === "message_update" && event?.message?.role === "assistant") {
+      const visibleEvent = buildVisibleAssistantMessageUpdateEvent(event);
+      if (!visibleEvent) {
+        return;
+      }
+      await originalProcessAgentEvent(visibleEvent);
       return;
     }
 
