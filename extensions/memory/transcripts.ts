@@ -394,7 +394,8 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
   const db = new BetterSqlite3(":memory:");
   db.exec(`
     CREATE TABLE entries (
-      id TEXT PRIMARY KEY,
+      row_key TEXT PRIMARY KEY,
+      id TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       session_id TEXT NOT NULL,
       session_file TEXT NOT NULL,
@@ -404,6 +405,7 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
   `);
   db.exec(`
     CREATE VIRTUAL TABLE entries_fts USING fts5(
+      row_key UNINDEXED,
       id UNINDEXED,
       timestamp,
       session_id,
@@ -413,17 +415,19 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
     );
   `);
   const insertEntry = db.prepare(`
-    INSERT INTO entries (id, timestamp, session_id, session_file, role, text)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO entries (row_key, id, timestamp, session_id, session_file, role, text)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
   const insertFts = db.prepare(`
-    INSERT INTO entries_fts (id, timestamp, session_id, role, text)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO entries_fts (row_key, id, timestamp, session_id, role, text)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   db.exec("BEGIN;");
   try {
-    for (const entry of entries) {
+    entries.forEach((entry, index) => {
+      const rowKey = `${safeString(entry.sessionFile || entry.sessionId || "").trim()}::${entry.id}::${index}`;
       insertEntry.run(
+        rowKey,
         entry.id,
         entry.timestamp,
         entry.sessionId,
@@ -432,13 +436,14 @@ function buildTranscriptSearchDb(entries: TranscriptArchiveEntry[]) {
         entry.text,
       );
       insertFts.run(
+        rowKey,
         entry.id,
         entry.timestamp,
         entry.sessionId,
         entry.role,
         entry.text,
       );
-    }
+    });
     db.exec("COMMIT;");
   } catch (error) {
     db.exec("ROLLBACK;");
@@ -514,22 +519,22 @@ export async function searchTranscriptArchive(
       const rows = db
         .prepare(
           `
-          SELECT id
+          SELECT row_key
           FROM entries_fts
           WHERE entries_fts MATCH ?
           LIMIT ?
         `,
         )
-        .all(ftsQuery, Math.max(limit * 8, 24)) as Array<{ id: string }>;
+        .all(ftsQuery, Math.max(limit * 8, 24)) as Array<{ row_key: string }>;
       rows.forEach((row, index) => {
-        candidates.set(row.id, Math.max(0, 80 - index * 4));
+        candidates.set(row.row_key, Math.max(0, 80 - index * 4));
       });
     }
     const like = `%${escapeLike(rawQuery)}%`;
     const likeRows = db
       .prepare(
         `
-        SELECT id
+        SELECT row_key
         FROM entries
         WHERE text LIKE ? ESCAPE '\\'
            OR role LIKE ? ESCAPE '\\'
@@ -538,19 +543,24 @@ export async function searchTranscriptArchive(
       `,
       )
       .all(like, like, like, Math.max(limit * 8, 24)) as Array<{
-      id: string;
+      row_key: string;
     }>;
     likeRows.forEach((row, index) => {
       candidates.set(
-        row.id,
-        Math.max(candidates.get(row.id) || 0, 36 - index * 2),
+        row.row_key,
+        Math.max(candidates.get(row.row_key) || 0, 36 - index * 2),
       );
     });
     if (!candidates.size) return substringMatches;
-    const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+    const entryByKey = new Map(
+      entries.map((entry, index) => [
+        `${safeString(entry.sessionFile || entry.sessionId || "").trim()}::${entry.id}::${index}`,
+        entry,
+      ]),
+    );
     return [...candidates.entries()]
-      .map(([id, score]) => {
-        const entry = entryById.get(id);
+      .map(([rowKey, score]) => {
+        const entry = entryByKey.get(rowKey);
         if (!entry) return null;
         return presentTranscriptResult(entry, score, rootOverride);
       })

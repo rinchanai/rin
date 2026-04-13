@@ -374,6 +374,14 @@ function renderMemoryResult(result: any, options: any, theme: any, context: any)
   return text;
 }
 
+function formatSearchMemoryCall(args: any, theme: any) {
+  const query = String(args?.query || "").trim();
+  if (!query) {
+    return `${theme.fg("toolTitle", theme.bold("search_memory"))} ${theme.fg("muted", "recent")}`;
+  }
+  return `${theme.fg("toolTitle", theme.bold("search_memory"))} ${theme.fg("accent", query)}`;
+}
+
 export default function memoryExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "search_memory",
@@ -392,6 +400,7 @@ export default function memoryExtension(pi: ExtensionAPI) {
         ctx,
         pi.getThinkingLevel() as ThinkingLevel,
       )) as any,
+    renderCall: (args, theme) => new Text(formatSearchMemoryCall(args, theme), 0, 0),
     renderResult: renderMemoryResult,
   });
 
