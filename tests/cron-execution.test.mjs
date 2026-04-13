@@ -107,3 +107,57 @@ test("cron execution clears stale results after a failed shell run", async () =>
   assert.ok(task.lastFinishedAt);
   assert.ok(task.updatedAt);
 });
+
+test("cron agent execution keeps dedicated session files from rpc results", async () => {
+  const task = {
+    id: "task-agent-session",
+    session: { mode: "dedicated" },
+    dedicatedSessionFile: "/tmp/old-session.jsonl",
+    target: { kind: "agent_prompt", prompt: "hello" },
+  };
+
+  const result = await execMod.executeCronAgentTask(task, {
+    agentDir: "/tmp/rin-agent",
+    requestKoishiRpc: async () => ({
+      finalText: "final response",
+      sessionId: "session-42",
+      sessionFile: "/tmp/new-session.jsonl",
+    }),
+  });
+
+  assert.equal(result.text, "final response");
+  assert.equal(result.sessionId, "session-42");
+  assert.equal(result.sessionFile, "/tmp/new-session.jsonl");
+  assert.equal(task.dedicatedSessionFile, "/tmp/new-session.jsonl");
+});
+
+test("cron agent execution does not fail when a turn completes without visible final text", async () => {
+  const task = {
+    id: "task-agent-empty",
+    enabled: true,
+    running: true,
+    runCount: 1,
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
+    trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
+    session: { mode: "current", sessionFile: "/tmp/current-session.jsonl" },
+    target: { kind: "agent_prompt", prompt: "hello" },
+    lastResultText: "previous visible result",
+    lastError: "previous failure",
+  };
+
+  await execMod.executeCronTask(task, {
+    agentDir: "/tmp/rin-agent",
+    requestKoishiRpc: async () => ({
+      finalText: "   ",
+      sessionId: "session-empty",
+      sessionFile: "/tmp/current-session.jsonl",
+    }),
+  });
+
+  assert.equal(task.lastResultText, undefined);
+  assert.equal(task.lastError, undefined);
+  assert.equal(task.running, false);
+  assert.ok(task.lastFinishedAt);
+  assert.ok(task.updatedAt);
+});

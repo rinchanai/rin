@@ -76,12 +76,14 @@ export async function executeCronAgentTask(
   options: {
     agentDir: string;
     additionalExtensionPaths?: string[];
+    requestKoishiRpc?: typeof requestKoishiRpc;
   },
 ) {
   if (task.target.kind !== "agent_prompt")
     throw new Error("cron_invalid_agent_task");
   const sessionFile = await resolveCronSessionFile(task);
-  const result = await requestKoishiRpc(options.agentDir, {
+  const runKoishiRpc = options.requestKoishiRpc || requestKoishiRpc;
+  const result = await runKoishiRpc(options.agentDir, {
     type: "run_chat_turn",
     payload: {
       controllerKey: task.id,
@@ -89,8 +91,7 @@ export async function executeCronAgentTask(
       sessionFile,
     },
   });
-  const finalText = summarizeText(result?.finalText, 4000);
-  if (!finalText) throw new Error("cron_final_assistant_text_missing");
+  const finalText = summarizeText(result?.finalText, 4000) || undefined;
   const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
   if (task.session.mode === "dedicated" && nextSessionFile) {
     task.dedicatedSessionFile = nextSessionFile;
