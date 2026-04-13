@@ -349,11 +349,7 @@ export class KoishiChatController {
   }
   scheduleIdleToolProgress() {
     this.clearIdleToolProgressTimer();
-    if (!this.deliveryEnabled) return;
-    const intervalMs = this.idleToolProgressIntervalMs();
-    this.idleToolProgressTimer = setTimeout(() => {
-      void this.handleIdleToolProgressTick().catch(() => {});
-    }, intervalMs);
+    return;
   }
   async emitProgressText(
     text: string,
@@ -392,24 +388,9 @@ export class KoishiChatController {
     ).catch(() => {});
     return true;
   }
-  async handleIdleToolProgressTick(now = Date.now()) {
+  async handleIdleToolProgressTick(_now = Date.now()) {
     this.idleToolProgressTimer = null;
-    if (!this.deliveryEnabled) return;
-    const summary = safeString(this.lastToolCallSummary).trim() || KOISHI_WORKING_PROGRESS_TEXT;
-    const intervalMs = this.idleToolProgressIntervalMs();
-    if (!this.hasActiveTurn()) {
-      this.clearIdleToolProgressTimer();
-      return;
-    }
-    const lastActivityAt = Math.max(this.lastVisibleProgressAt, this.lastIdleToolProgressAt);
-    if (now - lastActivityAt >= intervalMs) {
-      const sent = await this.emitProgressText(summary, {
-        force: true,
-        minIntervalMs: 0,
-      });
-      if (sent) this.lastIdleToolProgressAt = now;
-    }
-    this.scheduleIdleToolProgress();
+    return;
   }
   private async runExclusiveTurn<T>(run: () => Promise<T>) {
     const previous = this.turnQueue;
