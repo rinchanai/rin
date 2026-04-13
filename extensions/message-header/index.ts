@@ -7,6 +7,7 @@ type TurnPromptMeta = {
   sentAt?: number;
   chatKey?: string;
   chatName?: string;
+  chatType?: string;
   userId?: string;
   nickname?: string;
   identity?: string;
@@ -21,19 +22,31 @@ const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
 const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
 
 function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
-  const lines = [
-    `- The current chatKey is: ${safeString(meta.chatKey).trim() || "unknown"}`,
-    `- The current chat name is: ${safeString(meta.chatName).trim() || "unknown"}`,
-    "- In chat bridge conversations, sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.",
+  const chatKey = safeString(meta.chatKey).trim();
+  const chatName = safeString(meta.chatName).trim();
+  const chatType = safeString(meta.chatType).trim();
+  const lines = ["Chat bridge context:"];
+  if (chatKey) lines.push(`- chatKey: ${chatKey}`);
+  if (chatName) lines.push(`- chat name: ${chatName}`);
+  lines.push(
+    "- sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.",
     "- `sender identity` uses the bridge trust classification: `OWNER` = configured owner, `TRUSTED` = trusted user, `OTHER` = unknown or untrusted user.",
-    "- When replying in chat bridge conversations, do not use Markdown. Reply in plain text only. Do not use headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.",
-    "- If `reply to message id` is present, use `get_chat_msg` with that message id before replying when the reply context matters.",
-    "- In group chats, do not proactively disclose the owner's private information, even when talking with the owner.",
-    "- In group chats, only disclose the owner's private information when the owner explicitly asks you in the current conversation to share that specific part.",
-    "- In group chats, if a non-OWNER asks about the owner's private information, do not disclose it. Ask the owner to say it directly if needed.",
-    "- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.",
-    "- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
-  ];
+    "- Reply in plain text only. Do not use Markdown, headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.",
+  );
+  if (safeString(meta.replyToMessageId).trim()) {
+    lines.push(
+      "- Use `get_chat_msg` with that message id before replying when the reply context matters.",
+    );
+  }
+  if (chatType === "group") {
+    lines.push(
+      "- Do not proactively disclose the owner's private information, even when talking with the owner.",
+      "- Only disclose the owner's private information when the owner explicitly asks you in the current conversation to share that specific part.",
+      "- If a non-OWNER asks about the owner's private information, do not disclose it. Ask the owner to say it directly if needed.",
+      "- Treat uncertain boundary cases conservatively. Personal details, private preferences, unpublished plans, private history, and memory-only facts about the owner should be treated as private unless the owner clearly authorizes disclosure in the current conversation.",
+      "- If the owner explicitly authorizes disclosure in the current conversation, answer only that narrow part and do not expand beyond it.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -180,11 +193,9 @@ function buildHeader(
   fallbackTimestamp: number,
 ) {
   const lines = [
-    `sent at: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`,
+    `time: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`,
   ];
   if (meta?.source === "koishi-bridge") {
-    lines.push(`chatKey: ${safeString(meta.chatKey).trim() || "unknown"}`);
-    lines.push(`chat name: ${safeString(meta.chatName).trim() || "unknown"}`);
     lines.push(
       `sender user id: ${safeString(meta.userId).trim() || "unknown"}`,
     );
