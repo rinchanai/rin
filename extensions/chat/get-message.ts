@@ -6,7 +6,18 @@ import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { prepareToolTextOutput } from "../shared/tool-text.js";
+import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  type TruncationResult,
+  truncateHead,
+} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+import {
+  getTextOutput,
+  replaceTabs,
+} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
 
 async function loadMessageStoreModule() {
   const root = path.resolve(
@@ -32,15 +43,63 @@ function safeString(value: unknown) {
   return String(value);
 }
 
+type GetChatMessageDetails = {
+  messageId: string;
+  chatKey?: string;
+  matches: any[];
+  userText?: string;
+  truncation?: TruncationResult;
+};
+
+function trimTrailingEmptyLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  return lines.slice(0, end);
+}
+
+function formatGetChatMessageResult(
+  result: any,
+  options: { expanded: boolean },
+  theme: any,
+  showImages: boolean,
+) {
+  const output = getTextOutput(result, showImages);
+  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const maxLines = options.expanded ? lines.length : 10;
+  const displayLines = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+
+  let text = "";
+  if (displayLines.length > 0) {
+    text = `\n${displayLines
+      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
+      .join("\n")}`;
+    if (remaining > 0) {
+      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+    }
+  }
+
+  const truncation = result.details?.truncation as TruncationResult | undefined;
+  if (truncation?.truncated) {
+    if (truncation.firstLineExceedsLimit) {
+      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
+    } else if (truncation.truncatedBy === "lines") {
+      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
+    } else {
+      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
+    }
+  }
+
+  return text;
+}
+
 export default function koishiGetMessageExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "get_chat_msg",
     label: "Get Chat Message",
     description: "Get a specific chat message.",
     promptSnippet: "Get a specific chat message.",
-    promptGuidelines: [
-      "Use get_chat_msg to get the content of a specific chat message.",
-    ],
+    promptGuidelines: [],
     parameters: Type.Object({
       messageId: Type.String({
         description: "Platform message ID to look up.",
@@ -61,45 +120,61 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
       const {
         normalizeKoishiMessageLookup,
         describeKoishiMessageRecord,
-        summarizeKoishiMessageRecord,
       } = await loadMessageStoreModule();
       const matches = normalizeKoishiMessageLookup(
         agentDir,
         messageId,
         chatKey,
       );
-      const agentText = matches.length
-        ? [
-            "get_chat_msg",
-            ...matches.map(
-              (item: any, index: number) =>
-                `match ${index + 1}\n${describeKoishiMessageRecord(item)}`,
-            ),
-          ].join("\n\n")
-        : `get_chat_msg\nnot_found messageId=${messageId}${chatKey ? `\nchatKey=${chatKey}` : ""}`;
-      const prepared = await prepareToolTextOutput({
-        agentText,
-        userText: matches.length
-          ? [
-              "Found these messages:",
-              ...matches.map(
-                (item: any, index: number) =>
-                  `${index + 1}.\n${summarizeKoishiMessageRecord(item)}`,
-              ),
-            ].join("\n\n")
-          : `Message not found: ${messageId}${chatKey ? ` (chatKey=${chatKey})` : ""}`,
-        tempPrefix: "rin-koishi-message-",
-        filename: "koishi-message.txt",
-      });
+      if (!matches.length) {
+        return {
+          content: [{
+            type: "text",
+            text: `Message not found: ${messageId}${chatKey ? ` (chatKey=${chatKey})` : ""}`,
+          }],
+          details: { messageId, chatKey, matches } satisfies GetChatMessageDetails,
+          isError: true,
+        };
+      }
+
+      const text = matches
+        .map((item: any, index: number) => {
+          const body = describeKoishiMessageRecord(item);
+          return matches.length > 1 ? `match ${index + 1}\n${body}` : body;
+        })
+        .join("\n\n");
+      const agentTruncation = truncateHead(text);
+      const userTruncation = truncateHead(text);
+      let outputText = agentTruncation.content;
+      if (agentTruncation.truncated) {
+        if (agentTruncation.truncatedBy === "lines") {
+          outputText += `\n\n[Showing ${agentTruncation.outputLines} of ${agentTruncation.totalLines} lines.]`;
+        } else {
+          outputText += `\n\n[Showing ${agentTruncation.outputLines} of ${agentTruncation.totalLines} lines (${formatSize(agentTruncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+        }
+      }
 
       return {
-        content: [{ type: "text", text: prepared.agentText }],
-        details: { messageId, chatKey, matches, ...prepared },
-        isError: !matches.length,
+        content: [{ type: "text", text: outputText }],
+        details: {
+          messageId,
+          chatKey,
+          matches,
+          userText: userTruncation.content,
+          truncation: userTruncation.truncated ? userTruncation : undefined,
+        } satisfies GetChatMessageDetails,
+        isError: false,
       };
     },
-    renderResult(result) {
-      const details = result.details as any;
+    renderResult(result, options, theme, context) {
+      const details = result.details as GetChatMessageDetails | undefined;
+      if (!result.isError) {
+        return new Text(
+          formatGetChatMessageResult(result, options, theme, context.showImages),
+          0,
+          0,
+        );
+      }
       const fallback =
         result.content?.[0]?.type === "text"
           ? result.content[0].text
