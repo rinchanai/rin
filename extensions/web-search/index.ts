@@ -142,6 +142,10 @@ async function loadSearchWeb() {
   return mod.searchWeb as (params: any) => Promise<any>;
 }
 
+function formatWebSearchCall(args: any, theme: any) {
+  return `${theme.fg("toolTitle", theme.bold("web_search"))} ${theme.fg("accent", String(args?.q || "").trim())}`;
+}
+
 export default function webSearchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "web_search",
@@ -227,6 +231,9 @@ export default function webSearchExtension(pi: ExtensionAPI) {
         details,
         isError: response?.ok !== true,
       };
+    },
+    renderCall(args, theme) {
+      return new Text(formatWebSearchCall(args, theme), 0, 0);
     },
     renderResult(result, options, theme, context) {
       const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);

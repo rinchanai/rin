@@ -57,6 +57,16 @@ function trimTrailingEmptyLines(lines: string[]): string[] {
   return lines.slice(0, end);
 }
 
+function formatGetChatMessageCall(args: any, theme: any) {
+  const messageId = safeString(args?.messageId).trim();
+  const chatKey = safeString(args?.chatKey).trim();
+  return [
+    theme.fg("toolTitle", theme.bold("get_chat_msg")),
+    messageId ? ` ${theme.fg("accent", messageId)}` : "",
+    chatKey ? ` ${theme.fg("muted", chatKey)}` : "",
+  ].join("");
+}
+
 function formatGetChatMessageResult(
   result: any,
   options: { expanded: boolean },
@@ -111,7 +121,10 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
         }),
       ),
     }),
-    execute: async (_toolCallId, params) => {
+    renderCall(args, theme) {
+      return new Text(formatGetChatMessageCall(args, theme), 0, 0);
+    },
+    execute: (async (_toolCallId, params) => {
       const messageId = safeString((params as any)?.messageId).trim();
       const chatKey = safeString((params as any)?.chatKey).trim() || undefined;
       if (!messageId) throw new Error("koishi_get_message_messageId_required");
@@ -165,8 +178,8 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
         } satisfies GetChatMessageDetails,
         isError: false,
       };
-    },
-    renderResult(result, options, theme, context) {
+    }) as any,
+    renderResult(result: any, options, theme, context) {
       const details = result.details as GetChatMessageDetails | undefined;
       if (!result.isError) {
         return new Text(
