@@ -65,11 +65,11 @@ const SessionSchema = Type.Optional(
 );
 
 const TaskSchema = Type.Object({
-  prompt: Type.String({ description: "Prompt to send to the worker." }),
+  prompt: Type.String({ description: "Prompt for the worker." }),
   model: Type.Optional(
     Type.String({
       description:
-        "Exact model id in provider/model form, e.g. anthropic/claude-sonnet-4-5.",
+        "Exact model id in provider/model form. Use list_models to inspect the currently available models first.",
     }),
   ),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
@@ -78,12 +78,12 @@ const TaskSchema = Type.Object({
 
 const RunParamsSchema = Type.Object({
   prompt: Type.Optional(
-    Type.String({ description: "Prompt for single-task mode." }),
+    Type.String({ description: "Prompt for the worker." }),
   ),
   model: Type.Optional(
     Type.String({
       description:
-        "Exact model id in provider/model form, e.g. openai/gpt-5.4.",
+        "Exact model id in provider/model form. Use list_models to inspect the currently available models first.",
     }),
   ),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
@@ -334,118 +334,12 @@ export default function subagentExtension(pi: ExtensionAPI) {
         0,
       );
     },
-    renderResult(result, { expanded }, theme) {
+    renderResult(result, _options, theme) {
       const details = result.details as SubagentDetails | undefined;
-      if (!details) {
-        const first = result.content[0];
-        return new Text(
-          first?.type === "text" ? first.text : "(no output)",
-          0,
-          0,
-        );
-      }
-
-      if (!details.results) {
-        return new Text(String(details.userText || "(no output)"), 0, 0);
-      }
-
-      if (!expanded) {
-        let text = theme.fg(
-          "toolTitle",
-          theme.bold(
-            details.results.length > 1 ? "parallel " : "run_subagent ",
-          ),
-        );
-        text += theme.fg(
-          "accent",
-          `${details.results.length} result${details.results.length > 1 ? "s" : ""}`,
-        );
-        for (const task of details.results) {
-          const ok = task.exitCode === 0;
-          const icon = ok ? theme.fg("success", "✓") : theme.fg("error", "✗");
-          const preview = (task.output || task.errorMessage || "(no output)")
-            .replace(/\s+/g, " ")
-            .trim();
-          const sessionLabel = buildTaskSessionLabel(task);
-          text += `
-
-${icon} ${theme.fg("accent", task.model || task.requestedModel || "(default model)")}`;
-          if (sessionLabel) {
-            text += ` ${theme.fg("muted", `[${sessionLabel}]`)}`;
-          }
-          text += `
-${theme.fg("dim", preview.slice(0, 220))}${preview.length > 220 ? "…" : ""}`;
-          const usage = formatUsage(task.usage, undefined);
-          if (usage)
-            text += `
-${theme.fg("muted", usage)}`;
-        }
-        text += `
-${theme.fg("muted", "(Ctrl+O to expand)")}`;
-        return new Text(text, 0, 0);
-      }
-
-      const container = new Container();
-      container.addChild(
-        new Text(
-          theme.fg(
-            "toolTitle",
-            theme.bold(
-              details.results.length > 1
-                ? "parallel subagents"
-                : "run_subagent",
-            ),
-          ),
-          0,
-          0,
-        ),
-      );
-      container.addChild(
-        new Text(theme.fg("muted", `backend: ${details.backend}`), 0, 0),
-      );
-      for (const task of details.results) {
-        const ok = task.exitCode === 0;
-        const icon = ok ? theme.fg("success", "✓") : theme.fg("error", "✗");
-        container.addChild(new Spacer(1));
-        container.addChild(
-          new Text(
-            `${icon} ${theme.fg("accent", task.model || task.requestedModel || "(default model)")}`,
-            0,
-            0,
-          ),
-        );
-        container.addChild(
-          new Text(theme.fg("muted", `session mode: ${task.sessionMode}`), 0, 0),
-        );
-        if (task.sessionId) {
-          container.addChild(
-            new Text(theme.fg("muted", `session id: ${task.sessionId}`), 0, 0),
-          );
-        }
-        if (task.sessionName) {
-          container.addChild(
-            new Text(theme.fg("muted", `session name: ${task.sessionName}`), 0, 0),
-          );
-        }
-        if (task.sessionFile) {
-          container.addChild(
-            new Text(theme.fg("muted", `session file: ${task.sessionFile}`), 0, 0),
-          );
-        }
-        container.addChild(new Text(theme.fg("muted", "prompt:"), 0, 0));
-        container.addChild(new Text(theme.fg("dim", task.prompt), 0, 0));
-        if (task.errorMessage)
-          container.addChild(
-            new Text(theme.fg("error", task.errorMessage), 0, 0),
-          );
-        if (task.output) {
-          container.addChild(new Spacer(1));
-          container.addChild(new Text(task.output.trim(), 0, 0));
-        }
-        const usage = formatUsage(task.usage, task.model);
-        if (usage) container.addChild(new Text(theme.fg("muted", usage), 0, 0));
-      }
-      return container;
+      const fallback =
+        result.content?.[0]?.type === "text" ? result.content[0].text : "(no output)";
+      const text = String(details?.userText || fallback);
+      return new Text(theme.fg("toolOutput", text), 0, 0);
     },
   });
 

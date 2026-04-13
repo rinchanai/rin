@@ -56,26 +56,36 @@ export function summarizeTaskResult(result: TaskResult): string {
 }
 
 export function buildSubagentAgentText(results: TaskResult[]): string {
-  const failed = results.filter((result) => result.exitCode !== 0).length;
-  return [
-    `subagent results=${results.length} failed=${failed}`,
-    ...results.map((result) => {
+  if (results.length === 1) {
+    const single = results[0];
+    return [
+      single.output || single.errorMessage || "(no output)",
+      single.sessionPersisted
+        ? [
+            "",
+            `Session: ${single.sessionName || single.sessionId || single.sessionFile || "persisted"}`,
+            single.sessionFile ? `Path: ${single.sessionFile}` : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  return results
+    .map((result) => {
       const model = result.model || result.requestedModel || "(default model)";
-      const preview = (result.output || result.errorMessage || "(no output)")
-        .replace(/\s+/g, " ")
-        .trim();
+      const sessionLabel = result.sessionPersisted
+        ? result.sessionName || result.sessionId || result.sessionFile
+        : "";
       return [
-        `${result.index}. status=${result.status} exit=${result.exitCode} model=${model}`,
-        `sessionMode=${result.sessionMode}`,
-        result.sessionId ? `sessionId=${result.sessionId}` : "",
-        result.sessionName ? `sessionName=${result.sessionName}` : "",
-        result.sessionFile ? `sessionFile=${result.sessionFile}` : "",
-        preview
-          ? `preview=${preview.slice(0, 220)}${preview.length > 220 ? "…" : ""}`
-          : "",
+        `${result.index}. ${model}${sessionLabel ? ` [session: ${sessionLabel}]` : ""}`,
+        result.output || result.errorMessage || "(no output)",
       ]
         .filter(Boolean)
-        .join("\n");
-    }),
-  ].join("\n\n");
+        .join("\n\n");
+    })
+    .join("\n\n");
 }
