@@ -35,12 +35,29 @@ async function withRpcServer(onConnection, fn) {
   }
 }
 
-test("koishi rpc uses an extended timeout for chat turns", () => {
+test("koishi rpc resolves socket paths under the sidecar runtime directory", () => {
+  assert.equal(
+    rpc.koishiRpcSocketPath("/tmp/rin-agent"),
+    path.join("/tmp/rin-agent", "data", "koishi-sidecar", "rpc.sock"),
+  );
+  assert.equal(
+    rpc.koishiRpcSocketPath("./tmp/../tmp/rin-agent"),
+    path.resolve("./tmp/rin-agent", "data", "koishi-sidecar", "rpc.sock"),
+  );
+});
+
+test("koishi rpc uses stable timeout defaults across command shapes", () => {
   assert.equal(
     rpc.koishiRpcTimeoutMsFor({ type: "run_chat_turn" }),
     10 * 60_000,
   );
+  assert.equal(
+    rpc.koishiRpcTimeoutMsFor({ type: " run_chat_turn " }),
+    10 * 60_000,
+  );
   assert.equal(rpc.koishiRpcTimeoutMsFor({ type: "send_chat" }), 30_000);
+  assert.equal(rpc.koishiRpcTimeoutMsFor({ type: "unknown" }), 30_000);
+  assert.equal(rpc.koishiRpcTimeoutMsFor({}), 30_000);
 });
 
 test("koishi rpc returns response data from the sidecar socket", async () => {
@@ -51,6 +68,25 @@ test("koishi rpc returns response data from the sidecar socket", async () => {
         socket.write(
           `${JSON.stringify({ success: true, data: { delivered: true } })}\n`,
         );
+      });
+    },
+    async (agentDir) => {
+      const result = await rpc.requestKoishiRpc(agentDir, {
+        type: "send_chat",
+      });
+      assert.deepEqual(result, { delivered: true });
+    },
+  );
+});
+
+test("koishi rpc assembles split response chunks before parsing", async () => {
+  await withRpcServer(
+    (socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", () => {
+        const line = `${JSON.stringify({ success: true, data: { delivered: true } })}\n`;
+        socket.write(line.slice(0, 10));
+        setTimeout(() => socket.write(line.slice(10)), 5);
       });
     },
     async (agentDir) => {
