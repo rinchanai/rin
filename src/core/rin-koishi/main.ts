@@ -323,10 +323,10 @@ export async function startKoishi(
           `koishi turn failed chatKey=${decision.chatKey} err=${errorMessage}`,
         );
         const errorText =
-          /rin_timeout:|rin_disconnected:|rin_tui_not_connected/.test(
+          /rin_timeout:|rin_disconnected:|rin_tui_not_connected|koishi_controller_disposed/.test(
             errorMessage,
           )
-            ? "Koishi bridge timed out while forwarding the turn. Please retry in a moment."
+            ? "Koishi bridge was restarting while forwarding the turn. Please retry in a moment."
             : `Koishi error: ${errorMessage || "koishi_turn_failed"}`;
         void sendOutboxPayload(
           app,
