@@ -260,3 +260,70 @@ test("cron agent execution delivers visible final text to bound chats", async ()
   assert.equal(deliveries[0].taskId, "task-agent-visible");
   assert.equal(deliveries[0].text, "visible final text");
 });
+
+test("cron agent execution ignores delivery failures after a visible result", async () => {
+  const task = {
+    id: "task-agent-delivery-fail",
+    enabled: true,
+    running: true,
+    runCount: 1,
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
+    trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
+    session: { mode: "current", sessionFile: "/tmp/current-session.jsonl" },
+    target: { kind: "agent_prompt", prompt: "hello" },
+    chatKey: "onebot/123:456",
+  };
+
+  await execMod.executeCronTask(task, {
+    agentDir: "/tmp/rin-agent",
+    requestKoishiRpc: async () => ({
+      finalText: "visible final text",
+      sessionId: "session-visible",
+      sessionFile: "/tmp/current-session.jsonl",
+    }),
+    sendKoishiText: async () => {
+      throw new Error("delivery_failed");
+    },
+  });
+
+  assert.equal(task.lastResultText, "visible final text");
+  assert.equal(task.lastError, undefined);
+  assert.equal(task.running, false);
+  assert.ok(task.lastFinishedAt);
+  assert.ok(task.updatedAt);
+});
+
+test("cron agent execution clears stale results when the rpc turn fails", async () => {
+  const deliveries = [];
+  const task = {
+    id: "task-agent-rpc-fail",
+    enabled: true,
+    running: true,
+    runCount: 1,
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
+    trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
+    session: { mode: "current", sessionFile: "/tmp/current-session.jsonl" },
+    target: { kind: "agent_prompt", prompt: "hello" },
+    chatKey: "onebot/123:456",
+    lastResultText: "previous visible result",
+  };
+
+  await execMod.executeCronTask(task, {
+    agentDir: "/tmp/rin-agent",
+    requestKoishiRpc: async () => {
+      throw new Error("koishi_rpc_failed");
+    },
+    sendKoishiText: async (_agentDir, payload) => {
+      deliveries.push(payload);
+    },
+  });
+
+  assert.equal(task.lastResultText, undefined);
+  assert.equal(task.lastError, "koishi_rpc_failed");
+  assert.equal(task.running, false);
+  assert.ok(task.lastFinishedAt);
+  assert.ok(task.updatedAt);
+  assert.deepEqual(deliveries, []);
+});
