@@ -9,6 +9,7 @@ import {
   executeSubagentRun,
   getSubagentBackendInfo,
 } from "../../src/core/subagent/service.js";
+import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 import type {
   ProviderModelSummary,
   RunSubagentParams,
@@ -25,7 +26,10 @@ import {
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
-const DEFAULT_SESSION_DIR = "~/.rin/sessions";
+
+function getDefaultSessionDir() {
+  return `${resolveRuntimeProfile().agentDir}/sessions`;
+}
 
 const ThinkingLevelSchema = StringEnum(
   VALID_THINKING_LEVELS as ThinkingLevel[],
@@ -48,7 +52,7 @@ const SessionSchema = Type.Optional(
     ref: Type.Optional(
       Type.String({
         description:
-          "Worker session file path, exact session id, or unique session id prefix. Required for session.mode resume or fork. If you need to discover one, inspect ~/.rin/sessions with bash/find/rg.",
+          `Worker session file path, exact session id, or unique session id prefix. Required for session.mode resume or fork. If you need to discover one, inspect ${getDefaultSessionDir()} with bash/find/rg.`,
       }),
     ),
     name: Type.Optional(
@@ -245,7 +249,7 @@ async function runSubagentResult(
   if (run.ok === false) {
     const suffix = run.error.startsWith("Unknown or unavailable model:")
       ? `\n\n${formatModelList(detailsBase)}`
-      : `\n\nHint: inspect ${DEFAULT_SESSION_DIR} with bash/find/rg, then pass session.ref as a session file path, exact id, or unique id prefix.`;
+      : `\n\nHint: inspect ${getDefaultSessionDir()} with bash/find/rg, then pass session.ref as a session file path, exact id, or unique id prefix.`;
     return {
       content: [{ type: "text" as const, text: `${run.error}${suffix}` }],
       details: detailsBase,
