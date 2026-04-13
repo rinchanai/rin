@@ -282,7 +282,6 @@ function getTerminalStatePatch(session: any) {
     hiddenUserMessageTimestamps: new Set<number>(),
     suppressNextAgentStart: false,
     pendingAgentEndEvent: undefined as any,
-    bufferedAssistantMessageEndEvent: undefined as any,
   };
   session[TERMINAL_STATE_CONFIRMATION_KEY] = patch;
   return patch;
@@ -374,22 +373,9 @@ function sanitizeAgentEndEvent(session: any, event: any) {
   if (event?.type !== "agent_end") return event;
   const patch = getTerminalStatePatch(session);
   const rawMessages = Array.isArray(event.messages) ? event.messages : [];
-  const bufferedTimestamp = Number(
-    patch.bufferedAssistantMessageEndEvent?.message?.timestamp,
+  const messages = rawMessages.filter(
+    (message) => !isHiddenUserMessage(session, message),
   );
-  const messages = rawMessages.filter((message) => {
-    if (isHiddenUserMessage(session, message)) {
-      return false;
-    }
-    if (
-      Number.isFinite(bufferedTimestamp) &&
-      message?.role === "assistant" &&
-      Number(message?.timestamp) === bufferedTimestamp
-    ) {
-      return false;
-    }
-    return true;
-  });
   for (const message of rawMessages) {
     if (isHiddenUserMessage(session, message)) {
       patch.hiddenUserMessageTimestamps.delete(Number(message?.timestamp));
@@ -405,39 +391,6 @@ function extractAssistantText(message: any) {
     .map((part) => String(part.text || ""))
     .join("")
     .trim();
-}
-
-function removeAssistantMessageFromState(session: any, timestamp: number) {
-  const messages = Array.isArray(session?.agent?.state?.messages)
-    ? session.agent.state.messages
-    : [];
-  session.agent.state.messages = messages.filter(
-    (message: any) =>
-      !(message?.role === "assistant" && Number(message.timestamp) === timestamp),
-  );
-}
-
-async function flushBufferedAssistantMessageEnd(
-  session: any,
-  originalProcessAgentEvent: (event: any) => Promise<void>,
-) {
-  const patch = getTerminalStatePatch(session);
-  const event = patch.bufferedAssistantMessageEndEvent;
-  if (!event) {
-    return;
-  }
-  patch.bufferedAssistantMessageEndEvent = undefined;
-  await originalProcessAgentEvent(event);
-}
-
-function discardBufferedAssistantMessageEnd(session: any) {
-  const patch = getTerminalStatePatch(session);
-  const event = patch.bufferedAssistantMessageEndEvent;
-  if (!event) {
-    return;
-  }
-  patch.bufferedAssistantMessageEndEvent = undefined;
-  removeAssistantMessageFromState(session, Number(event.message?.timestamp));
 }
 
 async function runTerminalStateProbe(session: any) {
@@ -483,15 +436,13 @@ async function resolveTerminalStateForAgentEnd(
     const shouldStop = await runTerminalStateProbe(session);
     if (patch.pendingAgentEndEvent !== event) return;
 
-    patch.pendingAgentEndEvent = undefined;
     if (shouldStop) {
-      await flushBufferedAssistantMessageEnd(session, originalProcessAgentEvent);
+      patch.pendingAgentEndEvent = undefined;
       await originalProcessAgentEvent(sanitizeAgentEndEvent(session, event));
       resolveTerminalStatePromise(session);
       return;
     }
 
-    discardBufferedAssistantMessageEnd(session);
     const continueMessage = createHiddenUserMessage(HIDDEN_CONTINUE_NUDGE);
     patch.hiddenUserMessageTimestamps.add(Number(continueMessage.timestamp));
     patch.suppressNextAgentStart = true;
@@ -499,7 +450,6 @@ async function resolveTerminalStateForAgentEnd(
   } catch {
     if (patch.pendingAgentEndEvent !== event) return;
     patch.pendingAgentEndEvent = undefined;
-    await flushBufferedAssistantMessageEnd(session, originalProcessAgentEvent);
     await originalProcessAgentEvent(sanitizeAgentEndEvent(session, event));
     resolveTerminalStatePromise(session);
   }
@@ -551,14 +501,6 @@ export function applyTerminalStateConfirmation(session: any) {
       return;
     }
 
-    if (
-      event?.type === "message_end" &&
-      event?.message?.role === "assistant"
-    ) {
-      patch.bufferedAssistantMessageEndEvent = event;
-      return;
-    }
-
     if (event?.type === "agent_start" && patch.suppressNextAgentStart) {
       patch.suppressNextAgentStart = false;
       return;
@@ -574,10 +516,6 @@ export function applyTerminalStateConfirmation(session: any) {
         );
       }, 0);
       return;
-    }
-
-    if (patch.bufferedAssistantMessageEndEvent) {
-      await flushBufferedAssistantMessageEnd(session, originalProcessAgentEvent);
     }
 
     if (event?.type === "agent_end") {
@@ -607,9 +545,14 @@ export function applyTerminalStateConfirmation(session: any) {
   }
 
   session.abort = async (...args: any[]) => {
+    const pendingEvent = patch.pendingAgentEndEvent;
     patch.pendingAgentEndEvent = undefined;
     patch.suppressNextAgentStart = false;
-    discardBufferedAssistantMessageEnd(session);
+    if (pendingEvent) {
+      try {
+        await originalProcessAgentEvent(sanitizeAgentEndEvent(session, pendingEvent));
+      } catch {}
+    }
     resolveTerminalStatePromise(session);
     await originalAbort(...args);
   };
