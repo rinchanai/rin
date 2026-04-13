@@ -57,10 +57,8 @@ function buildCrossUserSystemPromptBlock(
   const invokingSystemUser = safeString(meta.invokingSystemUser).trim();
   if (!invokingSystemUser || invokingSystemUser === agentSystemUser) return "";
   return [
-    `- The agent currently exists and executes as the local system user: ${agentSystemUser}`,
-    `- The human user is currently using the machine as the system user: ${invokingSystemUser}`,
-    "- These two system users are different. The user's shell environment, home directory, file ownership, permissions, services, and available files may differ from the agent's local account.",
-    "- When reasoning about paths, configs, permissions, process ownership, or side effects, explicitly distinguish the invoking user's environment from the agent's own runtime environment.",
+    "System user guidance:",
+    `- The agent is currently running as the local system user ${agentSystemUser}, while the human user is currently using the machine as ${invokingSystemUser}.`,
   ].join("\n");
 }
 
