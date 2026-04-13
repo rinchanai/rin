@@ -25,6 +25,17 @@ import {
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
 import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import { truncateToVisualLines } from "../../third_party/pi-coding-agent/src/modes/interactive/components/visual-truncate.js";
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  type TruncationResult,
+  truncateHead,
+} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+import {
+  getTextOutput,
+  replaceTabs,
+} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
 
@@ -108,6 +119,7 @@ type SubagentDetails = {
   userText?: string;
   fullOutputPath?: string;
   truncated?: boolean;
+  truncation?: TruncationResult;
 };
 
 type SubagentRenderState = {
@@ -210,18 +222,17 @@ function formatModelList(
   details: SubagentDetails | SubagentBackendInfo,
 ): string {
   const lines: string[] = [];
-  lines.push(`Backend: ${details.backend}`);
-  lines.push(`Current model: ${details.currentModel ?? "(not set)"}`);
-  lines.push(`Current thinking: ${details.currentThinkingLevel}`);
+  lines.push(`backend=${details.backend}`);
+  lines.push(`currentModel=${details.currentModel ?? "(not set)"}`);
+  lines.push(`currentThinkingLevel=${details.currentThinkingLevel}`);
   lines.push("");
   if (!details.providers.length) {
     lines.push("No available models found. Configure API keys first.");
     return lines.join("\n");
   }
-  lines.push("Available models by provider (latest 3 each):");
   for (const provider of details.providers) {
     lines.push(
-      `- ${provider.provider}: ${provider.top3.join(", ") || "(none)"}${provider.count > 3 ? ` (+${provider.count - 3} more)` : ""}`,
+      `${provider.provider}: ${provider.top3.join(", ") || "(none)"}${provider.count > 3 ? ` (+${provider.count - 3} more)` : ""}`,
     );
   }
   return lines.join("\n");
@@ -296,24 +307,23 @@ function buildRunUpdate(
 
 async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
   const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
-  const prepared = await prepareToolTextOutput({
-    agentText: [
-      `subagent_models providers=${detailsBase.providers.length}`,
-      ...detailsBase.providers.map(
-        (provider) =>
-          `${provider.provider}: ${provider.top3.join(", ")}${provider.count > 3 ? ` (+${provider.count - 3} more)` : ""}`,
-      ),
-    ].join("\n"),
-    userText: formatModelList(detailsBase),
-    tempPrefix: "rin-subagent-models-",
-    filename: "subagent-models.txt",
-  });
+  const text = formatModelList(detailsBase);
+  const truncation = truncateHead(text);
+  let outputText = truncation.content;
+  if (truncation.truncated) {
+    if (truncation.truncatedBy === "lines") {
+      outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
+    } else {
+      outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+    }
+  }
   return {
-    content: [{ type: "text" as const, text: prepared.agentText }],
+    content: [{ type: "text" as const, text: outputText }],
     details: {
       ...detailsBase,
       action: "list_models" as const,
-      ...prepared,
+      userText: truncation.content,
+      truncation: truncation.truncated ? truncation : undefined,
     },
   };
 }
@@ -471,21 +481,39 @@ export default function subagentExtension(pi: ExtensionAPI) {
     renderCall(_args, theme) {
       return new Text(theme.fg("toolTitle", theme.bold("list_models")), 0, 0);
     },
-    renderResult(result, _state, theme) {
+    renderResult(result: any, options, theme, context) {
       const details = result.details as SubagentDetails | undefined;
-      if (!details) {
-        const first = result.content[0];
-        return new Text(
-          first?.type === "text" ? first.text : "(no output)",
-          0,
-          0,
-        );
+      const userResult = {
+        content: [{ type: "text", text: String(details?.userText || "") }],
+        details: {
+          truncation: details?.truncation,
+        },
+      };
+      const output = getTextOutput(userResult as any, context.showImages);
+      const lines = output.split("\n");
+      const maxLines = options.expanded ? lines.length : 10;
+      const displayLines = lines.slice(0, maxLines);
+      const remaining = lines.length - maxLines;
+      let text = "";
+      if (displayLines.length > 0) {
+        text = `\n${displayLines
+          .map((line) => theme.fg("toolOutput", replaceTabs(line)))
+          .join("\n")}`;
+        if (remaining > 0) {
+          text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+        }
       }
-      return new Text(
-        String(details.userText || formatModelList(details)),
-        0,
-        0,
-      );
+      const truncation = details?.truncation;
+      if (truncation?.truncated) {
+        if (truncation.firstLineExceedsLimit) {
+          text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
+        } else if (truncation.truncatedBy === "lines") {
+          text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
+        } else {
+          text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
+        }
+      }
+      return new Text(text, 0, 0);
     },
   });
 }
