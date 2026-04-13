@@ -108,6 +108,64 @@ test("cron execution clears stale results after a failed shell run", async () =>
   assert.ok(task.updatedAt);
 });
 
+test("cron shell execution delivers summarized output to bound chats", async () => {
+  const deliveries = [];
+  const task = {
+    id: "task-shell-visible",
+    enabled: true,
+    running: true,
+    runCount: 1,
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
+    trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
+    session: { mode: "current" },
+    target: { kind: "shell_command", command: "printf hello" },
+    chatKey: "onebot/123:456",
+  };
+
+  await execMod.executeCronTask(task, {
+    agentDir: "/tmp/rin-agent",
+    sendKoishiText: async (_agentDir, payload) => {
+      deliveries.push(payload);
+    },
+  });
+
+  assert.match(task.lastResultText || "", /Command: printf hello/);
+  assert.equal(task.lastError, undefined);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].chatKey, "onebot/123:456");
+  assert.equal(deliveries[0].taskId, "task-shell-visible");
+  assert.match(deliveries[0].text, /stdout:/);
+});
+
+test("cron shell execution ignores delivery failures after a successful run", async () => {
+  const task = {
+    id: "task-shell-delivery-fail",
+    enabled: true,
+    running: true,
+    runCount: 1,
+    createdAt: "2026-04-12T00:00:00.000Z",
+    updatedAt: "2026-04-12T00:00:00.000Z",
+    trigger: { kind: "once", runAt: "2026-04-12T00:00:00.000Z" },
+    session: { mode: "current" },
+    target: { kind: "shell_command", command: "printf hello" },
+    chatKey: "onebot/123:456",
+  };
+
+  await execMod.executeCronTask(task, {
+    agentDir: "/tmp/rin-agent",
+    sendKoishiText: async () => {
+      throw new Error("delivery_failed");
+    },
+  });
+
+  assert.match(task.lastResultText || "", /Command: printf hello/);
+  assert.equal(task.lastError, undefined);
+  assert.equal(task.running, false);
+  assert.ok(task.lastFinishedAt);
+  assert.ok(task.updatedAt);
+});
+
 test("cron agent execution keeps dedicated session files from rpc results", async () => {
   const task = {
     id: "task-agent-session",
