@@ -152,13 +152,13 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
     addGuideline(guideline);
   }
   addGuideline(
-    "Search the web proactively for latest, time-sensitive, version-sensitive, or potentially changed information.",
+    "Search the web proactively for latest, time-sensitive, version-sensitive, or potentially changed information",
   );
   addGuideline(
-    "When searching, use a few distinctive keywords instead of full sentences.",
+    "When searching, use a few distinctive keywords instead of full sentences",
   );
   addGuideline(
-    "When searching, search distinct keywords separately and review the results instead of combining everything into one search.",
+    "When searching, search distinct keywords separately and review the results instead of combining everything into one search",
   );
 
   const toolsList =
