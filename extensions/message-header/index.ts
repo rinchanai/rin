@@ -29,7 +29,7 @@ function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
   if (chatKey) lines.push(`- chatKey: ${chatKey}`);
   if (chatName) lines.push(`- chat name: ${chatName}`);
   lines.push(
-    "- sender fields describe the current incoming platform message sender, not the local OS user and not the agent itself.",
+    "- Each message in this conversation comes from a user on the chat platform. Use the sender fields to identify who sent that message. Different messages may come from different users.",
     "- `sender identity` uses the bridge trust classification: `OWNER` = configured owner, `TRUSTED` = trusted user, `OTHER` = unknown or untrusted user.",
     "- Reply in plain text only. Do not use Markdown, headings, tables, fenced code blocks, emphasis markers, or Markdown link syntax.",
   );
