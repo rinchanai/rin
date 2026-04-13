@@ -306,7 +306,7 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
     parameters: Type.Object({
       chatKey: Type.String({
         description:
-          "Target chat key like telegram/123456:987654321 or onebot/123456:private:12345.",
+          "Target chat like telegram/123456:987654321 or onebot/123456:private:12345.",
       }),
       parts: Type.Array(
         Type.Union([

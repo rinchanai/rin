@@ -117,7 +117,7 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
       chatKey: Type.Optional(
         Type.String({
           description:
-            "Optional chat key to disambiguate duplicated platform message IDs.",
+            "Optional chat to disambiguate duplicated platform message IDs.",
         }),
       ),
     }),
