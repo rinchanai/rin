@@ -111,19 +111,19 @@ const saveSelfImprovePromptParams = Type.Object({
     ],
     {
       description:
-        "Which always-on prompt slot to inspect or update: `agent_profile` = the assistant's stable role and behavior baseline, `user_profile` = the user's stable preferences and working style, `core_doctrine` = durable operating principles, `core_facts` = durable factual context that should remain available every turn.",
+        "Which always-on prompt slot to inspect or update. `agent_profile` stores the assistant's stable role, tone, and behavior style. `user_profile` stores the user's identity knowledge. `core_doctrine` stores durable methodology, worldview, and values. `core_facts` stores durable external facts, environment facts, user preferences, and operating conventions.",
     },
   ),
   content: Type.Optional(
     Type.String({
       description:
-        "Full revised canonical content for the slot. Omit this on the first call to read the current slot state.",
+        "Full revised canonical content for the slot. Use one line per topic. Keep the wording concise and information-dense. Omit this on the first call to read the current slot state.",
     }),
   ),
   baseContent: Type.Optional(
     Type.String({
       description:
-        "Current canonical content returned by the read step. Before updating a populated slot, first call save_prompts with only `slot` to read the current canonical content, then pass that returned content here exactly as `baseContent`. Treat the read result as canonical, and keep `content` in the same normalized shape unless you intentionally want save_prompts to re-normalize it.",
+        "Current canonical content returned by the read step. Before updating a populated slot, first call save_prompts with only `slot` to read the current canonical content. Then pass that returned content here exactly as `baseContent`. Treat the read result as canonical. Keep `content` in the same normalized shape unless you intentionally want save_prompts to re-normalize it.",
     }),
   ),
 });
@@ -143,7 +143,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
       existingContent: String(currentDoc?.content || ""),
     });
 
-    const usageLine = `usage=${currentState.currentChars}/${currentState.maxChars}`;
+    const usageLine = `usage=${currentState.currentLines}/${currentState.maxLines} lines`;
     const baseContent = String(params?.baseContent || "").trim();
     const incomingContent = String(params?.content || "").trim();
 
@@ -162,7 +162,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           ok: true,
           status: "review_required",
           slot: currentState.slot,
-          usage: `${currentState.currentChars}/${currentState.maxChars}`,
+          usage: `${currentState.currentLines}/${currentState.maxLines} lines`,
           currentContent: currentState.content,
           path: String(currentDoc?.path || ""),
         },
@@ -188,7 +188,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           ok: false,
           status: "stale_base_content",
           slot: currentState.slot,
-          usage: `${currentState.currentChars}/${currentState.maxChars}`,
+          usage: `${currentState.currentLines}/${currentState.maxLines} lines`,
           currentContent: currentState.content,
           path: String(currentDoc?.path || ""),
         },
@@ -211,7 +211,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         type: "text" as const,
         text: [
           `Updated save_prompts slot: ${currentState.slot}`,
-          `usage=${refined.nextChars}/${refined.maxChars}`,
+          `usage=${refined.nextLines}/${refined.maxLines} lines`,
           String(response?.doc?.path || ""),
           refined.content || "(empty)",
         ].filter(Boolean).join("\n"),
@@ -221,7 +221,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
         ok: true,
         status: "updated",
         slot: currentState.slot,
-        usage: `${refined.nextChars}/${refined.maxChars}`,
+        usage: `${refined.nextLines}/${refined.maxLines} lines`,
         path: String(response?.doc?.path || ""),
       },
     };
@@ -244,7 +244,7 @@ async function executeSaveSelfImprovePromptAction(params: any) {
           slot,
           existingContent: String(currentDoc?.content || ""),
         });
-        usage = `${currentState.currentChars}/${currentState.maxChars}`;
+        usage = `${currentState.currentLines}/${currentState.maxLines} lines`;
       }
     } catch {}
     return {
@@ -284,9 +284,8 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       "Save durable prompt baselines that persist across sessions and stay available every turn. Keep them compact and focused on what will still matter later.",
     promptSnippet: "Save durable prompt baselines.",
     promptGuidelines: [
-      "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
+      "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
       "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
-      "Before updating a save_prompts slot, first call save_prompts with only `slot` to read the current canonical content.",
     ],
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>
