@@ -25,6 +25,8 @@ Useful places:
 - Linux user service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 
+The updater uses these same sources to discover installed targets. If `rin update` shows more than one candidate, verify which launcher-owning home and install dir you actually want before proceeding.
+
 Direct runtime recovery shape:
 
 ```bash
@@ -43,6 +45,7 @@ It refreshes the installed core runtime, but it does not rewrite every possible 
 Check:
 
 - whether the current shell is using the launcher-owning user
+- whether the updater selected the intended installed target when multiple candidates exist
 - whether the runtime symlink moved to a fresh release under `<installDir>/app/current`
 - whether you are calling the stable launcher or an old direct path
 

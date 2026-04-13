@@ -1,46 +1,58 @@
 import { confirm, intro, note, outro, select } from "@clack/prompts";
 
-import { discoverInstalledTargets } from "./update-targets.js";
+import {
+  discoverInstalledTargets,
+  type InstalledTarget,
+} from "./update-targets.js";
 import {
   runFinalizeInstallPlanInChild,
   type FinalizeInstallOptions,
 } from "./apply-plan.js";
 
-export async function startUpdater(deps: {
-  detectCurrentUser: () => string;
-  repoRootFromHere: () => string;
-  ensureNotCancelled: <T>(value: T | symbol) => T;
-}) {
-  const currentUser = deps.detectCurrentUser();
-  intro("Rin Updater");
+type UpdaterUiDeps = {
+  intro?: typeof intro;
+  note?: typeof note;
+  outro?: typeof outro;
+  select?: typeof select;
+  confirm?: typeof confirm;
+  discoverInstalledTargets?: typeof discoverInstalledTargets;
+  runFinalizeInstallPlanInChild?: typeof runFinalizeInstallPlanInChild;
+};
 
-  const targets = discoverInstalledTargets();
+export async function startUpdater(
+  deps: {
+    detectCurrentUser: () => string;
+    repoRootFromHere: () => string;
+    ensureNotCancelled: <T>(value: T | symbol) => T;
+  } & UpdaterUiDeps,
+) {
+  const currentUser = deps.detectCurrentUser();
+  const introPrompt = deps.intro ?? intro;
+  const notePrompt = deps.note ?? note;
+  const outroPrompt = deps.outro ?? outro;
+  const selectPrompt = deps.select ?? select;
+  const confirmPrompt = deps.confirm ?? confirm;
+  const discoverTargets =
+    deps.discoverInstalledTargets ?? discoverInstalledTargets;
+  const finalizeInstall =
+    deps.runFinalizeInstallPlanInChild ?? runFinalizeInstallPlanInChild;
+
+  introPrompt("Rin Updater");
+
+  const targets = discoverTargets();
   if (!targets.length) {
-    note(
+    notePrompt(
       "No installed Rin daemon targets were discovered on this system.",
       "Update targets",
     );
-    outro("Nothing updated.");
+    outroPrompt("Nothing updated.");
     return;
   }
 
   const target =
     targets.length === 1
       ? targets[0]!
-      : targets[
-          Number(
-            deps.ensureNotCancelled(
-              await select({
-                message: "Choose an installed Rin target to update.",
-                options: targets.map((item, index) => ({
-                  value: index,
-                  label: `${item.targetUser} → ${item.installDir}`,
-                  hint: `${item.ownerHome} · ${item.source}`,
-                })),
-              }),
-            ),
-          )
-        ]!;
+      : await selectTarget(targets, deps.ensureNotCancelled, selectPrompt);
 
   const installDir =
     String(process.env.RIN_UPDATE_INSTALL_DIR || target.installDir).trim() ||
@@ -49,7 +61,7 @@ export async function startUpdater(deps: {
     String(process.env.RIN_UPDATE_TARGET_USER || target.targetUser).trim() ||
     target.targetUser;
 
-  note(
+  notePrompt(
     [
       `Current user: ${currentUser}`,
       `Selected daemon user: ${targetUser}`,
@@ -68,17 +80,17 @@ export async function startUpdater(deps: {
   );
 
   const shouldProceed = deps.ensureNotCancelled(
-    await confirm({
+    await confirmPrompt({
       message: "Publish the latest built runtime to this installed target now?",
       initialValue: true,
     }),
   );
   if (!shouldProceed) {
-    outro("Updater finished without writing changes.");
+    outroPrompt("Updater finished without writing changes.");
     return;
   }
 
-  const result = await runFinalizeInstallPlanInChild(
+  const result = await finalizeInstall(
     {
       currentUser,
       targetUser,
@@ -102,7 +114,7 @@ export async function startUpdater(deps: {
   } = result;
   const userSuffix = currentUser === targetUser ? "" : ` -u ${targetUser}`;
 
-  note(
+  notePrompt(
     [
       `Written: ${written.launcherPath}`,
       `Written: ${written.rinPath}`,
@@ -134,7 +146,28 @@ export async function startUpdater(deps: {
     "Updated target",
   );
 
-  outro(
+  outroPrompt(
     `Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with rin${userSuffix}.` : `Use rin start${userSuffix} if you need to start the daemon manually.`}`,
   );
+}
+
+async function selectTarget(
+  targets: InstalledTarget[],
+  ensureNotCancelled: <T>(value: T | symbol) => T,
+  selectPrompt: typeof select,
+) {
+  return targets[
+    Number(
+      ensureNotCancelled(
+        await selectPrompt({
+          message: "Choose an installed Rin target to update.",
+          options: targets.map((item, index) => ({
+            value: index,
+            label: `${item.targetUser} → ${item.installDir}`,
+            hint: `${item.ownerHome} · ${item.source}`,
+          })),
+        }),
+      ),
+    )
+  ]!;
 }

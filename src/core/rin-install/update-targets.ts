@@ -1,9 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 
-function readJsonFile<T>(filePath: string, fallback: T): T {
+type UpdateTargetDiscoveryDeps = {
+  roots?: string[];
+  readdirSync?: typeof fs.readdirSync;
+  readFileSync?: typeof fs.readFileSync;
+};
+
+function readJsonFile<T>(
+  filePath: string,
+  fallback: T,
+  deps: Pick<UpdateTargetDiscoveryDeps, "readFileSync"> = {},
+): T {
+  const readFileSync = deps.readFileSync ?? fs.readFileSync;
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
+    return JSON.parse(readFileSync(filePath, "utf8")) as T;
   } catch {
     return fallback;
   }
@@ -16,9 +27,15 @@ export type InstalledTarget = {
   source: "manifest" | "systemd" | "launchd";
 };
 
-export function discoverInstalledTargets() {
+export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
   const rows: InstalledTarget[] = [];
   const seen = new Set<string>();
+  const readFileSync = deps.readFileSync ?? fs.readFileSync;
+  const readdirSync = deps.readdirSync ?? fs.readdirSync;
+  const roots =
+    Array.isArray(deps.roots) && deps.roots.length
+      ? deps.roots
+      : ["/home", "/Users"];
 
   const add = (
     targetUser: string,
@@ -52,7 +69,8 @@ export function discoverInstalledTargets() {
     );
     const manifest = readJsonFile<any>(
       manifestPath,
-      readJsonFile<any>(legacyManifestPath, null),
+      readJsonFile<any>(legacyManifestPath, null, { readFileSync }),
+      { readFileSync },
     );
     if (manifest && typeof manifest === "object") {
       add(
@@ -65,10 +83,10 @@ export function discoverInstalledTargets() {
 
     const systemdDir = path.join(homeDir, ".config", "systemd", "user");
     try {
-      for (const entry of fs.readdirSync(systemdDir)) {
-        if (!/^rin-daemon(?:-.+)?\.service$/.test(entry)) continue;
-        const filePath = path.join(systemdDir, entry);
-        const text = fs.readFileSync(filePath, "utf8");
+      for (const entry of readdirSync(systemdDir)) {
+        if (!/^rin-daemon(?:-.+)?\.service$/.test(String(entry))) continue;
+        const filePath = path.join(systemdDir, String(entry));
+        const text = readFileSync(filePath, "utf8");
         const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
         add(
           userName,
@@ -81,10 +99,10 @@ export function discoverInstalledTargets() {
 
     const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
     try {
-      for (const entry of fs.readdirSync(launchAgentsDir)) {
-        if (!/^com\.rin\.daemon\..+\.plist$/.test(entry)) continue;
-        const filePath = path.join(launchAgentsDir, entry);
-        const text = fs.readFileSync(filePath, "utf8");
+      for (const entry of readdirSync(launchAgentsDir)) {
+        if (!/^com\.rin\.daemon\..+\.plist$/.test(String(entry))) continue;
+        const filePath = path.join(launchAgentsDir, String(entry));
+        const text = readFileSync(filePath, "utf8");
         const match = text.match(
           /<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/,
         );
@@ -98,11 +116,13 @@ export function discoverInstalledTargets() {
     } catch {}
   };
 
-  for (const root of ["/home", "/Users"]) {
+  for (const root of roots) {
     try {
-      for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
-        scanHome(path.join(root, entry.name));
+      for (const entry of readdirSync(root, { withFileTypes: true } as any)) {
+        const nextEntry = entry as any;
+        if (typeof nextEntry === "string") continue;
+        if (!nextEntry?.isDirectory?.()) continue;
+        scanHome(path.join(root, String(nextEntry.name || "")));
       }
     } catch {}
   }
