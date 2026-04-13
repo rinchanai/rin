@@ -84,15 +84,37 @@ test("rpc state utils derive branch and apply state", () => {
   );
 });
 
-test("rpc reconnect helper queues and emits status", () => {
+test("rpc reconnect helper queues offline operations and starts reconnect attempts", () => {
   const events = [];
   const target = {
     queuedOfflineOps: [],
-    emitEvent: (e) => events.push(e),
     ensureReconnectLoop: () => events.push({ reconnect: true }),
   };
   reconnect.queueOfflineOperation(target, { mode: "prompt", message: "hi" });
-  assert.equal(target.queuedOfflineOps.length, 1);
-  assert.equal(events.length, 1);
-  assert.deepEqual(events[0], { reconnect: true });
+  reconnect.queueOfflineOperation(target, {
+    mode: "follow_up",
+    message: "next",
+  });
+  assert.deepEqual(target.queuedOfflineOps, [
+    { mode: "prompt", message: "hi" },
+    { mode: "follow_up", message: "next" },
+  ]);
+  assert.deepEqual(events, [{ reconnect: true }, { reconnect: true }]);
+});
+
+test("rpc reconnect helper skips reconnect work after disposal", () => {
+  let reconnects = 0;
+  reconnect.emitConnectionLost({
+    disposed: true,
+    ensureReconnectLoop: () => {
+      reconnects += 1;
+    },
+  });
+  reconnect.emitConnectionLost({
+    disposed: false,
+    ensureReconnectLoop: () => {
+      reconnects += 1;
+    },
+  });
+  assert.equal(reconnects, 1);
 });
