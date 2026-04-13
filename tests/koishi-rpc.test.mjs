@@ -97,3 +97,46 @@ test("koishi rpc surfaces explicit sidecar errors", async () => {
     },
   );
 });
+
+test("koishi rpc times out when the sidecar never responds", async () => {
+  await withRpcServer(
+    (socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", () => {
+        // Intentionally keep the socket open without replying.
+      });
+    },
+    async (agentDir) => {
+      await assert.rejects(
+        rpc.requestKoishiRpc(agentDir, { type: "send_chat" }, 20),
+        /koishi_rpc_timeout:send_chat/,
+      );
+    },
+  );
+});
+
+test("koishi rpc deliver helper sends chat payloads through send_chat", async () => {
+  await withRpcServer(
+    (socket) => {
+      socket.setEncoding("utf8");
+      socket.once("data", (chunk) => {
+        const command = JSON.parse(String(chunk).trim());
+        assert.equal(command.type, "send_chat");
+        assert.deepEqual(command.payload, {
+          chatKey: "onebot/123:456",
+          parts: [{ type: "text", text: "hello" }],
+        });
+        socket.write(
+          `${JSON.stringify({ success: true, data: { delivered: true } })}\n`,
+        );
+      });
+    },
+    async (agentDir) => {
+      const result = await rpc.deliverKoishiRpcPayload(agentDir, {
+        chatKey: "onebot/123:456",
+        parts: [{ type: "text", text: "hello" }],
+      });
+      assert.deepEqual(result, { delivered: true });
+    },
+  );
+});
