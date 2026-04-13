@@ -53,13 +53,9 @@ function buildRinDocsBlock(agentDir: string) {
     `- Additional Rin docs: ${rinDocsRoot}`,
     `- Main Pi documentation: ${path.join(piRoot, "README.md")}`,
     `- Additional Pi docs: ${path.join(piRoot, "docs")}`,
-    `- Pi examples: ${path.join(piRoot, "examples")} (extensions, custom tools, SDK)`,
-    "- Read documentation whenever the task needs details about agent runtime behavior, including installation, update, repair, launcher behavior, runtime layout, daemon behavior, builtin capabilities, extensions, prompts, skills, TUI, chat bridge behavior, stable documentation paths, or other agent-operated behavior.",
+    "- Read documentation whenever the task needs details about the runtime this agent is currently running in, including operations, configuration, behavior, capabilities, layout, or other agent-operated details.",
     "- Rin is built on top of Pi. Use Pi docs as the base reference, then apply Rin docs as overrides or additions where Rin differs.",
-    "- Pi topic map: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)",
-    "- Rin topic map: overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md)",
-    "- When working on Pi or Rin topics, read the docs and examples, and follow .md cross-references before implementing.",
-    "- Always read .md files completely and follow links to related docs when they matter.",
+    `- Topic map: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi examples (${path.join(piRoot, "examples")}: extensions, custom tools, SDK), extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)`,
   ].join("\n");
 }
 
