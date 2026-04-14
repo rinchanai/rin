@@ -13,7 +13,7 @@ This module owns:
 - always-on prompt baselines under `~/.rin/self_improve/prompts`
 - agent-managed reusable skills under `~/.rin/self_improve/skills`
 - onboarding for resident self-improve prompts
-- periodic review and pre-compaction self-improve review
+- periodic review and pre-compaction self-improve review, both running at fixed `low` thinking
 
 It does not own session-history recall. That belongs to the `memory` extension.
 

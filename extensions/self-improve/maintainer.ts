@@ -5,6 +5,7 @@ import type { Model } from "@mariozechner/pi-ai";
 const HOME_DIR = os.homedir();
 
 import { openBoundSession } from "../../src/core/session/factory.js";
+import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
 import { resolveAgentDir } from "./lib.js";
 
 type ExtensionCtxLike = {
@@ -140,6 +141,7 @@ async function runForkedSessionSelfImproveReview(options: {
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
     sessionFile: options.sessionFile,
+    thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
   });
   try {
     const forkTargets = session.getUserMessagesForForking?.() || [];

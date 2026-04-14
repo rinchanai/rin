@@ -54,7 +54,7 @@ Important implications:
 Rin separates session history memory from self-improvement state. As an agent, you should know that:
 
 - `search_memory` is for archived session history recall
-- memory recall summarizes matched sessions by default; if `settings.json` defines `auxiliaryModel`, that helper model is used, otherwise the current model handles the recall summarization
+- memory recall summarizes matched sessions with the active model at fixed `low` thinking
 - always-on baselines live under `~/.rin/self_improve/prompts`
 - agent-managed skills live under `~/.rin/self_improve/skills`
 - not all self-improve content is injected into the prompt automatically

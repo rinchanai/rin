@@ -23,7 +23,7 @@ import {
   searchTranscriptArchive,
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
-import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
+import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
 import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 
 const searchMemoryParams = Type.Object({
@@ -217,23 +217,6 @@ function resolveSearchMemoryAgentDir(ctx: any): string {
   return String(resolveRuntimeProfile().agentDir || "").trim();
 }
 
-function resolveSearchMemoryThinkingLevel(
-  config: { thinkingLevel?: string },
-): ThinkingLevel {
-  const level = String(config?.thinkingLevel || "").trim();
-  if (
-    level === "off" ||
-    level === "minimal" ||
-    level === "low" ||
-    level === "medium" ||
-    level === "high" ||
-    level === "xhigh"
-  ) {
-    return level;
-  }
-  return "low";
-}
-
 export async function maybeSummarizeTranscriptMatches(
   results: any[],
   query: string,
@@ -248,13 +231,11 @@ export async function maybeSummarizeTranscriptMatches(
     throw new Error("search_memory requires an available agent directory for transcript summarization.");
   }
 
-  const config = await loadAuxiliaryModelConfig(agentDir);
-  const fallbackModel = ctx?.model
+  const modelRef = ctx?.model
     ? `${String(ctx.model.provider || "")}/${String(ctx.model.id || "")}`
     : "";
-  const modelRef = String(config.modelRef || fallbackModel).trim();
   if (!modelRef) {
-    throw new Error("search_memory summarization requires an available model.");
+    throw new Error("search_memory summarization requires an active model.");
   }
 
   const tasks: any[] = [];
@@ -271,7 +252,7 @@ export async function maybeSummarizeTranscriptMatches(
     tasks.push({
       prompt: buildRecallPrompt(query, row, buildTranscriptExcerpt(entries)),
       model: modelRef,
-      thinkingLevel: resolveSearchMemoryThinkingLevel(config),
+      thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
       disabledExtensions: ["memory"],
     });
     taskRows.push(row);

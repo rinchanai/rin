@@ -328,12 +328,6 @@ test("memory summarization subagent hides the memory extension", async () => {
       },
       root,
     );
-    await fs.writeFile(
-      path.join(root, "settings.json"),
-      JSON.stringify({ auxiliaryModel: { model: "test/demo", thinkingLevel: "low" } }),
-      "utf8",
-    );
-
     const rows = await transcripts.searchTranscriptArchive(
       "session resume hang",
       { limit: 8 },
@@ -343,7 +337,7 @@ test("memory summarization subagent hides the memory extension", async () => {
     const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
       rows,
       "session resume hang",
-      { agentDir: root },
+      { agentDir: root, model: { provider: "test", id: "demo" } },
       "medium",
       async (options) => {
         calls.push(options);
@@ -377,12 +371,6 @@ test("search_memory summarization falls back to runtime agent dir and low thinki
       },
       root,
     );
-    await fs.writeFile(
-      path.join(root, "settings.json"),
-      JSON.stringify({ auxiliaryModel: { model: "test/demo" } }),
-      "utf8",
-    );
-
     const rows = await transcripts.searchTranscriptArchive(
       "runtime fallback memory summarization",
       { limit: 8 },
@@ -399,7 +387,7 @@ test("search_memory summarization falls back to runtime agent dir and low thinki
       const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
         rows,
         "runtime fallback memory summarization",
-        {},
+        { model: { provider: "test", id: "demo" } },
         "high",
         async (options) => {
           calls.push(options);
@@ -435,12 +423,6 @@ test("search_memory fails instead of silently degrading to raw transcript result
       },
       root,
     );
-    await fs.writeFile(
-      path.join(root, "settings.json"),
-      JSON.stringify({ auxiliaryModel: { model: "test/demo" } }),
-      "utf8",
-    );
-
     const rows = await transcripts.searchTranscriptArchive(
       "nested subagent recall",
       { limit: 8 },
@@ -450,7 +432,7 @@ test("search_memory fails instead of silently degrading to raw transcript result
       () => memoryExtensionModule.maybeSummarizeTranscriptMatches(
         rows,
         "nested subagent recall",
-        { agentDir: root },
+        { agentDir: root, model: { provider: "test", id: "demo" } },
         "medium",
         async () => ({ ok: false, error: "summary worker unavailable" }),
       ),
