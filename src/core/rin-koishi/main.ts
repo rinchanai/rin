@@ -315,6 +315,9 @@ export async function startKoishi(
         pickUserId(session),
       ),
       replyToMessageId: replyToMessageId || undefined,
+      attachedFiles: attachments
+        .filter((item) => item?.kind === "file")
+        .map((item) => ({ name: item.name, path: item.path })),
     });
     const mode = controller.hasActiveTurn() ? "steer" : "prompt";
     void controller

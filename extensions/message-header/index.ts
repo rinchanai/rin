@@ -12,6 +12,7 @@ type TurnPromptMeta = {
   nickname?: string;
   identity?: string;
   replyToMessageId?: string;
+  attachedFiles?: Array<{ name?: string; path?: string }>;
   invokingSystemUser?: string;
 };
 
@@ -214,6 +215,18 @@ function buildHeader(
       lines.push(
         `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
       );
+    const attachedFiles = Array.isArray(meta.attachedFiles)
+      ? meta.attachedFiles
+          .map((item) => ({
+            name: safeString(item?.name).trim(),
+            path: safeString(item?.path).trim(),
+          }))
+          .filter((item) => item.path)
+      : [];
+    if (attachedFiles.length > 0) {
+      lines.push("attached files saved locally:");
+      lines.push(...attachedFiles.map((item) => `- ${item.name || "(unnamed)"}: ${item.path}`));
+    }
   }
   if (safeString(meta?.invokingSystemUser).trim()) {
     lines.push(
