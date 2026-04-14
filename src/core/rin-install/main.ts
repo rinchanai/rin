@@ -424,13 +424,19 @@ async function applyInstalledRuntime(
   };
 }
 
-export async function finalizeCoreUpdate(options: {
-  currentUser: string;
-  targetUser: string;
-  installDir: string;
-  sourceRoot?: string;
-}) {
-  const result = await applyInstalledRuntime({
+export async function finalizeCoreUpdate(
+  options: {
+    currentUser: string;
+    targetUser: string;
+    installDir: string;
+    sourceRoot?: string;
+  },
+  deps: {
+    applyInstalledRuntime?: typeof applyInstalledRuntime;
+  } = {},
+) {
+  const applyRuntime = deps.applyInstalledRuntime ?? applyInstalledRuntime;
+  const result = await applyRuntime({
     ...options,
     persistInstallerState: false,
     daemonFailureCode: "rin_core_update_daemon_not_ready",
@@ -438,8 +444,14 @@ export async function finalizeCoreUpdate(options: {
   return { ...result, mode: "core-only" as const };
 }
 
-export async function finalizeInstallPlan(options: FinalizeInstallOptions) {
-  return await applyInstalledRuntime({
+export async function finalizeInstallPlan(
+  options: FinalizeInstallOptions,
+  deps: {
+    applyInstalledRuntime?: typeof applyInstalledRuntime;
+  } = {},
+) {
+  const applyRuntime = deps.applyInstalledRuntime ?? applyInstalledRuntime;
+  return await applyRuntime({
     ...options,
     persistInstallerState: true,
     daemonFailureCode: "rin_installer_daemon_not_ready",
@@ -459,23 +471,82 @@ async function launchInstallerInitTui(options: {
   });
 }
 
-export async function startInstaller() {
-  const applyPlanRaw = String(process.env.RIN_INSTALL_APPLY_PLAN || "").trim();
+export async function startInstaller(
+  deps: {
+    env?: NodeJS.ProcessEnv;
+    writeFileSync?: typeof fs.writeFileSync;
+    finalizeInstallPlan?: typeof finalizeInstallPlan;
+    startUpdater?: typeof startUpdater;
+    detectCurrentUser?: typeof detectCurrentUser;
+    repoRootFromHere?: typeof repoRootFromHere;
+    ensureNotCancelled?: typeof ensureNotCancelled;
+    listSystemUsers?: typeof listSystemUsers;
+    intro?: typeof intro;
+    note?: typeof note;
+    outro?: typeof outro;
+    select?: typeof select;
+    text?: typeof text;
+    confirm?: typeof confirm;
+    promptTargetInstall?: typeof promptTargetInstall;
+    targetHomeForUser?: typeof targetHomeForUser;
+    describeInstallDirState?: typeof describeInstallDirState;
+    summarizeDirState?: typeof summarizeDirState;
+    promptProviderSetup?: typeof promptProviderSetup;
+    readJsonFile?: typeof readJsonFile;
+    promptKoishiSetup?: typeof promptKoishiSetup;
+    buildInstallPlanText?: typeof buildInstallPlanText;
+    describeOwnership?: typeof describeOwnership;
+    buildFinalRequirements?: typeof buildFinalRequirements;
+    runFinalizeInstallPlanInChild?: typeof runFinalizeInstallPlanInChild;
+    launchInstallerInitTui?: typeof launchInstallerInitTui;
+  } = {},
+) {
+  const env = deps.env ?? process.env;
+  const writeFileSync = deps.writeFileSync ?? fs.writeFileSync;
+  const finalizeInstallPlanFn = deps.finalizeInstallPlan ?? finalizeInstallPlan;
+  const startUpdaterFn = deps.startUpdater ?? startUpdater;
+  const detectCurrentUserFn = deps.detectCurrentUser ?? detectCurrentUser;
+  const repoRootFromHereFn = deps.repoRootFromHere ?? repoRootFromHere;
+  const ensureNotCancelledFn = deps.ensureNotCancelled ?? ensureNotCancelled;
+  const listSystemUsersFn = deps.listSystemUsers ?? listSystemUsers;
+  const introFn = deps.intro ?? intro;
+  const noteFn = deps.note ?? note;
+  const outroFn = deps.outro ?? outro;
+  const selectFn = deps.select ?? select;
+  const textFn = deps.text ?? text;
+  const confirmFn = deps.confirm ?? confirm;
+  const promptTargetInstallFn = deps.promptTargetInstall ?? promptTargetInstall;
+  const targetHomeForUserFn = deps.targetHomeForUser ?? targetHomeForUser;
+  const describeInstallDirStateFn =
+    deps.describeInstallDirState ?? describeInstallDirState;
+  const summarizeDirStateFn = deps.summarizeDirState ?? summarizeDirState;
+  const promptProviderSetupFn = deps.promptProviderSetup ?? promptProviderSetup;
+  const readJsonFileFn = deps.readJsonFile ?? readJsonFile;
+  const promptKoishiSetupFn = deps.promptKoishiSetup ?? promptKoishiSetup;
+  const buildInstallPlanTextFn =
+    deps.buildInstallPlanText ?? buildInstallPlanText;
+  const describeOwnershipFn = deps.describeOwnership ?? describeOwnership;
+  const buildFinalRequirementsFn =
+    deps.buildFinalRequirements ?? buildFinalRequirements;
+  const runFinalizeInstallPlanInChildFn =
+    deps.runFinalizeInstallPlanInChild ?? runFinalizeInstallPlanInChild;
+  const launchInstallerInitTuiFn =
+    deps.launchInstallerInitTui ?? launchInstallerInitTui;
+
+  const applyPlanRaw = String(env.RIN_INSTALL_APPLY_PLAN || "").trim();
   if (applyPlanRaw) {
-    const resultPath = String(
-      process.env.RIN_INSTALL_APPLY_RESULT || "",
-    ).trim();
-    const errorPath = String(process.env.RIN_INSTALL_APPLY_ERROR || "").trim();
+    const resultPath = String(env.RIN_INSTALL_APPLY_RESULT || "").trim();
+    const errorPath = String(env.RIN_INSTALL_APPLY_ERROR || "").trim();
     try {
-      const result = await finalizeInstallPlan(
+      const result = await finalizeInstallPlanFn(
         JSON.parse(applyPlanRaw) as FinalizeInstallOptions,
       );
       if (resultPath)
-        fs.writeFileSync(resultPath, `${JSON.stringify(result)}\n`, "utf8");
+        writeFileSync(resultPath, `${JSON.stringify(result)}\n`, "utf8");
       return;
     } catch (error: any) {
       if (errorPath)
-        fs.writeFileSync(
+        writeFileSync(
           errorPath,
           String(error?.message || error || "rin_installer_apply_failed"),
           "utf8",
@@ -485,32 +556,37 @@ export async function startInstaller() {
   }
 
   if (
-    String(process.env.RIN_INSTALL_MODE || "")
+    String(env.RIN_INSTALL_MODE || "")
       .trim()
       .toLowerCase() === "update"
   ) {
-    await startUpdater({
-      detectCurrentUser,
-      repoRootFromHere,
-      ensureNotCancelled,
+    await startUpdaterFn({
+      detectCurrentUser: detectCurrentUserFn,
+      repoRootFromHere: repoRootFromHereFn,
+      ensureNotCancelled: ensureNotCancelledFn,
     });
     return;
   }
 
-  const currentUser = detectCurrentUser();
-  const allUsers = listSystemUsers();
-  intro("Rin Installer");
-  note(buildInstallSafetyBoundaryText(), "Safety boundary");
+  const currentUser = detectCurrentUserFn();
+  const allUsers = listSystemUsersFn();
+  introFn("Rin Installer");
+  noteFn(buildInstallSafetyBoundaryText(), "Safety boundary");
 
-  const promptApi = { ensureNotCancelled, select, text, confirm };
-  const target = await promptTargetInstall(
+  const promptApi = {
+    ensureNotCancelled: ensureNotCancelledFn,
+    select: selectFn,
+    text: textFn,
+    confirm: confirmFn,
+  };
+  const target = await promptTargetInstallFn(
     promptApi,
     currentUser,
     allUsers,
-    targetHomeForUser,
+    targetHomeForUserFn,
   );
   if (target.cancelled) {
-    note(
+    noteFn(
       [
         "No eligible existing users were found on this system.",
         `Detected current user: ${currentUser}`,
@@ -518,24 +594,24 @@ export async function startInstaller() {
       ].join("\n"),
       "Target user",
     );
-    outro("Nothing installed.");
+    outroFn("Nothing installed.");
     return;
   }
 
   const { targetUser, installDir } = target;
-  const installDirNote = describeInstallDirState(
+  const installDirNote = describeInstallDirStateFn(
     installDir,
-    summarizeDirState(installDir),
+    summarizeDirStateFn(installDir),
   );
-  note(installDirNote.text, installDirNote.title);
+  noteFn(installDirNote.text, installDirNote.title);
 
   const { provider, modelId, thinkingLevel, authResult } =
-    await promptProviderSetup(promptApi, installDir, readJsonFile);
+    await promptProviderSetupFn(promptApi, installDir, readJsonFileFn);
   const { koishiDescription, koishiDetail, koishiConfig } =
-    await promptKoishiSetup(promptApi);
+    await promptKoishiSetupFn(promptApi);
 
-  note(
-    buildInstallPlanText({
+  noteFn(
+    buildInstallPlanTextFn({
       currentUser,
       targetUser,
       installDir,
@@ -549,9 +625,9 @@ export async function startInstaller() {
     "Install choices",
   );
 
-  const ownership = describeOwnership(targetUser, installDir);
+  const ownership = describeOwnershipFn(targetUser, installDir);
   if (!ownership.ownerMatches && ownership.targetUid >= 0) {
-    note(
+    noteFn(
       [
         `Target dir owner uid/gid: ${ownership.statUid}:${ownership.statGid}`,
         `Target user uid/gid: ${ownership.targetUid}:${ownership.targetGid}`,
@@ -562,7 +638,7 @@ export async function startInstaller() {
     );
   }
   if (!ownership.writable)
-    note(
+    noteFn(
       "The selected install directory is not writable by the current installer process.",
       "Ownership check",
     );
@@ -571,13 +647,13 @@ export async function startInstaller() {
     process.platform === "darwin" || process.platform === "linux";
   const needsElevatedWrite = !ownership.writable;
   const needsElevatedService = installServiceNow && targetUser !== currentUser;
-  const finalRequirements = buildFinalRequirements({
+  const finalRequirements = buildFinalRequirementsFn({
     installServiceNow,
     needsElevatedWrite,
     needsElevatedService,
   });
-  const shouldProceed = ensureNotCancelled(
-    await confirm({
+  const shouldProceed = ensureNotCancelledFn(
+    await confirmFn({
       message: [
         "Finalize installation now?",
         ...finalRequirements.map((item) => `- ${item}`),
@@ -586,11 +662,11 @@ export async function startInstaller() {
     }),
   );
   if (!shouldProceed) {
-    outro("Installer finished without writing changes.");
+    outroFn("Installer finished without writing changes.");
     return;
   }
 
-  const result = await runFinalizeInstallPlanInChild(
+  const result = await runFinalizeInstallPlanInChildFn(
     {
       currentUser,
       targetUser,
@@ -606,7 +682,7 @@ export async function startInstaller() {
     needsElevatedWrite
       ? "Publishing runtime and writing configuration with elevated permissions..."
       : "Publishing runtime and writing configuration...",
-    { ensureNotCancelled },
+    { ensureNotCancelled: ensureNotCancelledFn },
   );
   const {
     written,
@@ -615,10 +691,9 @@ export async function startInstaller() {
     installedDocsDir,
     installedService,
     daemonReady,
-    serviceHint,
   } = result;
 
-  note(
+  noteFn(
     [
       `Target install dir: ${installDir}`,
       `Written: ${written.settingsPath}`,
@@ -641,26 +716,25 @@ export async function startInstaller() {
     "Written paths",
   );
 
-  const userSuffix = currentUser === targetUser ? "" : ` -u ${targetUser}`;
   if (daemonReady) {
-    note(
+    noteFn(
       [
         "Installation is done. Rin will now open an initialization TUI.",
         "You can exit it anytime; the installer will print the next-step reminder afterwards.",
       ].join("\n"),
       "Launching init",
     );
-    await launchInstallerInitTui({
+    await launchInstallerInitTuiFn({
       rinPath: written.rinPath,
-      sourceRoot: repoRootFromHere(),
+      sourceRoot: repoRootFromHereFn(),
     });
-    note(
+    noteFn(
       buildPostInstallInitExitText({ currentUser, targetUser }),
       "After init",
     );
   }
 
-  outro(
+  outroFn(
     `Installer wrote config for ${targetUser}.${installedService ? ` (${installedService.kind} service installed).` : ""}`,
   );
 }
