@@ -24,7 +24,7 @@ export type SavedAttachment = {
 export type InboundAttachmentFailure = {
   type: string;
   kind: "image" | "file";
-  reason: "missing_resource" | "fetch_failed";
+  reason: "unresolved_resource" | "fetch_failed";
   resource?: string;
   detail?: string;
 };
@@ -445,12 +445,14 @@ export function buildInboundAttachmentNotice(
   failures: InboundAttachmentFailure[],
 ) {
   if (!Array.isArray(failures) || !failures.length) return "";
-  const missing = failures.filter((item) => item.reason === "missing_resource").length;
+  const unresolved = failures.filter(
+    (item) => item.reason === "unresolved_resource",
+  ).length;
   const fetchFailed = failures.filter((item) => item.reason === "fetch_failed").length;
   const parts: string[] = [];
-  if (missing)
+  if (unresolved)
     parts.push(
-      `${missing} media element${missing === 1 ? "" : "s"} arrived without a downloadable resource`,
+      `${unresolved} media element${unresolved === 1 ? " was" : "s were"} present, but Koishi did not resolve a downloadable resource`,
     );
   if (fetchFailed)
     parts.push(
@@ -477,7 +479,7 @@ export async function extractInboundAttachments(elements: any[], chatDir: string
       failures.push({
         type: type || "unknown",
         kind: kind as "image" | "file",
-        reason: "missing_resource",
+        reason: "unresolved_resource",
       });
       continue;
     }
