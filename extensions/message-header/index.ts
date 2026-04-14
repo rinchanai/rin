@@ -20,7 +20,6 @@ type TurnPromptMeta = {
 
 type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 
-const KOISHI_BRIDGE_PROMPT_META_PREFIX = "[[rin-koishi-bridge-meta:";
 const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
 const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
 
@@ -135,39 +134,13 @@ function tryDecodePromptMeta(text: string, prefix: string) {
 }
 
 function decodePromptMeta(text: string) {
-  let body = safeString(text);
-  let found = false;
-  const mergedMeta: TurnPromptMeta = {};
-
-  while (true) {
-    const runtimeMeta = tryDecodePromptMeta(
-      body,
-      RIN_RUNTIME_PROMPT_META_PREFIX,
-    );
-    if (runtimeMeta.found) {
-      Object.assign(mergedMeta, runtimeMeta.meta || {});
-      body = runtimeMeta.body;
-      found = true;
-      continue;
-    }
-
-    const koishiMeta = tryDecodePromptMeta(
-      body,
-      KOISHI_BRIDGE_PROMPT_META_PREFIX,
-    );
-    if (koishiMeta.found) {
-      Object.assign(mergedMeta, koishiMeta.meta || {});
-      body = koishiMeta.body;
-      found = true;
-      continue;
-    }
-
-    break;
-  }
-
+  const runtimeMeta = tryDecodePromptMeta(
+    safeString(text),
+    RIN_RUNTIME_PROMPT_META_PREFIX,
+  );
   return {
-    meta: found ? mergedMeta : null,
-    body,
+    meta: runtimeMeta.found ? runtimeMeta.meta : null,
+    body: runtimeMeta.body,
   };
 }
 

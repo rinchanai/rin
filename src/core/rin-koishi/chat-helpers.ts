@@ -61,8 +61,6 @@ export type KoishiBridgePromptMeta = {
   attachedFiles?: Array<{ name?: string; path?: string }>;
 };
 
-export const KOISHI_BRIDGE_PROMPT_META_PREFIX = "[[rin-koishi-bridge-meta:";
-
 export function safeString(value: unknown) {
   if (value == null) return "";
   return String(value);
@@ -242,16 +240,6 @@ export function summarizeQuote(session: any) {
     undefined;
   if (!messageId && !userId && !nickname && !content) return undefined;
   return { messageId, userId, nickname, content };
-}
-
-export function wrapKoishiBridgePrompt(
-  text: string,
-  meta: KoishiBridgePromptMeta,
-) {
-  const body = safeString(text).trim();
-  const encoded = Buffer.from(JSON.stringify(meta), "utf8").toString("base64");
-  if (!body) return `${KOISHI_BRIDGE_PROMPT_META_PREFIX}${encoded}]]`;
-  return `${KOISHI_BRIDGE_PROMPT_META_PREFIX}${encoded}]]\n${body}`;
 }
 
 export function hasMediaElements(elements: any[]) {
