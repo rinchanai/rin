@@ -278,6 +278,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
       "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
+      "When revising a slot with save_prompts, you may remove outdated, overly specific, or no-longer-durable lines to keep the baseline converged.",
     ],
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>
