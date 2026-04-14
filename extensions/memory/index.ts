@@ -209,6 +209,7 @@ function buildRecallPrompt(_query: string, row: any, transcript: string): string
   return [
     "Summarize the session in no more than three sentences.",
     `Include the absolute session path: ${sessionPath || "(unknown)"}`,
+    "Do not output anything other than that summary.",
     "TRANSCRIPT:",
     transcript,
   ].join("\n\n");
