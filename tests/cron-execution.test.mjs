@@ -69,15 +69,77 @@ test("cron scheduler installs the built-in daily memory index repair task", asyn
   const scheduler = new cronMod.CronScheduler({ agentDir });
   try {
     scheduler.start();
-    const builtIn = scheduler
-      .listTasks()
-      .find((task) => task.id === "builtin_memory_index_repair_daily");
+    assert.equal(
+      scheduler.listTasks().some((task) => task.id === "builtin_memory_index_repair_daily"),
+      false,
+    );
+    const builtIn = scheduler.getTask("builtin_memory_index_repair_daily", {
+      includeBuiltIn: true,
+    });
     assert.ok(builtIn);
     assert.equal(builtIn.builtIn, true);
     assert.equal(builtIn.trigger.kind, "cron");
     assert.equal(builtIn.trigger.expression, "17 4 * * *");
     assert.equal(builtIn.target.kind, "shell_command");
     assert.match(builtIn.target.command, /memory-index repair/);
+  } finally {
+    scheduler.stop();
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("cron scheduler persists built-in task state across restarts while hiding it publicly", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
+  const builtInId = "builtin_memory_index_repair_daily";
+  try {
+    const first = new cronMod.CronScheduler({ agentDir });
+    first.start();
+    first.stop();
+
+    const rows = JSON.parse(await fs.readFile(tasksFile, "utf8"));
+    const row = rows.find((task) => task.id === builtInId);
+    assert.ok(row);
+    row.runCount = 7;
+    row.lastFinishedAt = "2026-04-14T20:17:01.000Z";
+    await fs.writeFile(tasksFile, JSON.stringify(rows, null, 2));
+
+    const second = new cronMod.CronScheduler({ agentDir });
+    second.start();
+    const builtIn = second.getTask(builtInId, { includeBuiltIn: true });
+    assert.equal(second.getTask(builtInId), undefined);
+    assert.ok(builtIn);
+    assert.equal(builtIn.runCount, 7);
+    assert.equal(builtIn.lastFinishedAt, "2026-04-14T20:17:01.000Z");
+    second.stop();
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("cron scheduler protects built-in tasks from public mutation", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const scheduler = new cronMod.CronScheduler({ agentDir });
+  try {
+    scheduler.start();
+    assert.throws(
+      () => scheduler.pauseTask("builtin_memory_index_repair_daily"),
+      /cron_builtin_task_protected:builtin_memory_index_repair_daily/,
+    );
+    assert.throws(
+      () => scheduler.deleteTask("builtin_memory_index_repair_daily"),
+      /cron_builtin_task_protected:builtin_memory_index_repair_daily/,
+    );
+    assert.throws(
+      () =>
+        scheduler.upsertTask({
+          id: "builtin_memory_index_repair_daily",
+          trigger: { kind: "cron", expression: "0 0 * * *" },
+          session: { mode: "dedicated" },
+          target: { kind: "shell_command", command: "echo nope" },
+        }),
+      /cron_builtin_task_protected:builtin_memory_index_repair_daily/,
+    );
   } finally {
     scheduler.stop();
     await fs.rm(agentDir, { recursive: true, force: true });

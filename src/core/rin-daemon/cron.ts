@@ -117,6 +117,33 @@ function createBuiltInMemoryIndexRepairTask(agentDir: string): CronTaskRecord {
   return task;
 }
 
+function mergeBuiltInTaskState(
+  existing: CronTaskRecord | undefined,
+  builtin: CronTaskRecord,
+): CronTaskRecord {
+  if (!existing) return builtin;
+  const merged: CronTaskRecord = {
+    ...builtin,
+    createdAt: safeString(existing.createdAt).trim() || builtin.createdAt,
+    updatedAt: safeString(existing.updatedAt).trim() || builtin.updatedAt,
+    lastStartedAt: existing.lastStartedAt,
+    lastFinishedAt: existing.lastFinishedAt,
+    lastResultText: existing.lastResultText,
+    lastError: existing.lastError ? safeString(existing.lastError) : undefined,
+    runCount: Number(existing.runCount || 0),
+    nextRunAt:
+      safeString(existing.nextRunAt).trim() ||
+      computeNextRunAt(builtin, Date.now()),
+    running: false,
+  };
+  return merged;
+}
+
+function assertMutableTask(task: CronTaskRecord | undefined) {
+  if (!task) return;
+  if (task.builtIn) throw new Error(`cron_builtin_task_protected:${task.id}`);
+}
+
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>();
   private timer: NodeJS.Timeout | null = null;
@@ -143,15 +170,18 @@ export class CronScheduler {
     this.save();
   }
 
-  listTasks() {
+  listTasks(options: { includeBuiltIn?: boolean } = {}) {
     return Array.from(this.tasks.values())
+      .filter((task) => options.includeBuiltIn || !task.builtIn)
       .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
       .map((task) => JSON.parse(JSON.stringify(task)));
   }
 
-  getTask(taskId: string) {
+  getTask(taskId: string, options: { includeBuiltIn?: boolean } = {}) {
     const task = this.tasks.get(taskId);
-    return task ? JSON.parse(JSON.stringify(task)) : undefined;
+    if (!task) return undefined;
+    if (!options.includeBuiltIn && task.builtIn) return undefined;
+    return JSON.parse(JSON.stringify(task));
   }
 
   upsertTask(
@@ -164,6 +194,7 @@ export class CronScheduler {
     } = {},
   ) {
     const existing = input.id ? this.tasks.get(String(input.id)) : undefined;
+    assertMutableTask(existing);
     const id =
       existing?.id ||
       safeString(input.id).trim() ||
@@ -337,6 +368,7 @@ export class CronScheduler {
   }
 
   deleteTask(taskId: string) {
+    assertMutableTask(this.tasks.get(taskId));
     const ok = this.tasks.delete(taskId);
     if (ok) this.save();
     return ok;
@@ -344,6 +376,7 @@ export class CronScheduler {
 
   completeTask(taskId: string, reason = "completed_by_agent") {
     const task = this.tasks.get(taskId);
+    assertMutableTask(task);
     if (!task) throw new Error(`cron_task_not_found:${taskId}`);
     task.completedAt = nowIso();
     task.completionReason = safeString(reason).trim() || "completed";
@@ -357,6 +390,7 @@ export class CronScheduler {
 
   pauseTask(taskId: string) {
     const task = this.tasks.get(taskId);
+    assertMutableTask(task);
     if (!task) throw new Error(`cron_task_not_found:${taskId}`);
     task.enabled = false;
     task.pausedAt = nowIso();
@@ -368,6 +402,7 @@ export class CronScheduler {
 
   resumeTask(taskId: string) {
     const task = this.tasks.get(taskId);
+    assertMutableTask(task);
     if (!task) throw new Error(`cron_task_not_found:${taskId}`);
     task.enabled = true;
     delete task.pausedAt;
@@ -397,13 +432,14 @@ export class CronScheduler {
   private save() {
     writeJsonAtomic(
       cronTasksPath(this.options.agentDir),
-      Array.from(this.tasks.values()).filter((task) => !task.builtIn),
+      Array.from(this.tasks.values()),
     );
   }
 
   private installBuiltInTasks() {
-    const task = createBuiltInMemoryIndexRepairTask(this.options.agentDir);
-    this.tasks.set(task.id, task);
+    const builtin = createBuiltInMemoryIndexRepairTask(this.options.agentDir);
+    const existing = this.tasks.get(builtin.id);
+    this.tasks.set(builtin.id, mergeBuiltInTaskState(existing, builtin));
   }
 
   private async tick() {
