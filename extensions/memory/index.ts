@@ -205,12 +205,10 @@ function buildTranscriptExcerpt(entries: any[]): string {
 }
 
 function buildRecallPrompt(_query: string, row: any, transcript: string): string {
-  const sessionOverview = String(row?.preview || row?.description || "").trim();
+  const sessionPath = String(row?.sessionFile || row?.path || "").trim();
   return [
-    "Review the archived session transcript below and write exactly one factual sentence summarizing the session as a whole.",
-    `Session overview candidate: ${sessionOverview || "(none)"}`,
-    "Mention the main work, investigation, or outcome when it is clear from the transcript.",
-    "Do not mention the current search query. Do not explain why the session matched. Do not quote raw lines. Do not use bullets.",
+    "Summarize the session in no more than three sentences.",
+    `Include the absolute session path: ${sessionPath || "(unknown)"}`,
     "TRANSCRIPT:",
     transcript,
   ].join("\n\n");
