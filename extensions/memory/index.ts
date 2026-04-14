@@ -19,7 +19,6 @@ import {
 import {
   appendTranscriptArchiveEntry,
   loadRecentTranscriptSessions,
-  loadTranscriptSessionEntries,
   searchTranscriptArchive,
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
@@ -197,21 +196,12 @@ function formatMemoryResult(
   return text;
 }
 
-function buildTranscriptExcerpt(entries: any[]): string {
-  return entries
-    .map((entry) => `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`)
-    .join("\n\n")
-    .slice(0, 12000);
-}
-
-function buildRecallPrompt(_query: string, row: any, transcript: string): string {
+function buildRecallPrompt(_query: string, row: any): string {
   const sessionPath = String(row?.sessionFile || row?.path || "").trim();
   return [
-    "Summarize the session in no more than three sentences.",
+    "Read the session file and summarize the session in no more than three sentences.",
     `Include the absolute session path: ${sessionPath || "(unknown)"}`,
     "Do not output anything other than that summary.",
-    "TRANSCRIPT:",
-    transcript,
   ].join("\n\n");
 }
 
@@ -252,18 +242,11 @@ export async function maybeSummarizeTranscriptMatches(
   const tasks: any[] = [];
   const taskRows: any[] = [];
   for (const row of rows) {
-    const entries = await loadTranscriptSessionEntries(
-      {
-        sessionId: String(row?.sessionId || "").trim(),
-        sessionFile: String(row?.sessionFile || "").trim(),
-        path: String(row?.path || "").trim(),
-      },
-      agentDir,
-    );
+    const sessionPath = String(row?.sessionFile || row?.path || "").trim();
     throwIfAborted(signal);
-    if (!entries.length) continue;
+    if (!sessionPath) continue;
     tasks.push({
-      prompt: buildRecallPrompt(_query, row, buildTranscriptExcerpt(entries)),
+      prompt: buildRecallPrompt(_query, row),
       model: modelRef,
       thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
       disabledExtensions: ["memory"],
