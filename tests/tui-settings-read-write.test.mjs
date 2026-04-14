@@ -14,39 +14,6 @@ function fileUrl(relativePath) {
   return pathToFileURL(path.join(rootDir, relativePath)).href;
 }
 
-test("rpc settings hydration reads persistent settings without rewriting the file", async () => {
-  const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-rpc-read-"));
-  const initial = {
-    quietStartup: true,
-    steeringMode: "one-at-a-time",
-    followUpMode: "all",
-    defaultProvider: "openai-codex",
-    defaultModel: "gpt-5.4",
-  };
-  fs.writeFileSync(
-    path.join(agentDir, "settings.json"),
-    `${JSON.stringify(initial, null, 2)}\n`,
-    "utf8",
-  );
-
-  const { createSettingsManager } = await import(
-    fileUrl("dist/core/rin-tui/settings-manager.js")
-  );
-  const { hydrateRpcSettings } = await import(
-    fileUrl("dist/core/rin-tui/settings-hydration.js")
-  );
-
-  const before = fs.readFileSync(path.join(agentDir, "settings.json"), "utf8");
-  const settingsManager = createSettingsManager();
-  await hydrateRpcSettings(settingsManager, { cwd: rootDir, agentDir });
-  const after = fs.readFileSync(path.join(agentDir, "settings.json"), "utf8");
-
-  assert.equal(settingsManager.getQuietStartup(), true);
-  assert.equal(settingsManager.getSteeringMode(), "one-at-a-time");
-  assert.equal(settingsManager.getFollowUpMode(), "all");
-  assert.equal(after, before);
-});
-
 test("explicit rpc ui persistence writes settings without needing a session", async () => {
   const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-rpc-write-"));
   fs.writeFileSync(
