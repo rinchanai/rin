@@ -13,7 +13,7 @@ const rootDir = path.resolve(
 const transcripts = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "extensions", "memory", "transcripts.js"),
-  ).href
+  ).href,
 );
 
 async function withTempRoot(fn) {
@@ -52,7 +52,7 @@ test("memory transcripts archive entries under memory/transcripts", async () => 
   });
 });
 
-test("memory search returns archived transcript matches", async () => {
+test("memory search returns session-level archived transcript matches and creates persistent index", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
       {
@@ -71,9 +71,49 @@ test("memory search returns archived transcript matches", async () => {
       root,
     );
     assert.ok(Array.isArray(results));
-    assert.equal(results[0].sourceType, "transcript");
+    assert.equal(results[0].sourceType, "session");
+    assert.equal(results[0].sessionId, "session-1");
     assert.match(results[0].path, /2026[\\/]04[\\/]session-1\.jsonl$/);
     assert.match(results[0].preview, /raw conversation transcripts/);
+    assert.equal(results[0].hitCount, 1);
+
+    const searchDbPath = path.join(root, "memory", "search.db");
+    await assert.doesNotReject(() => fs.access(searchDbPath));
+  });
+});
+
+test("memory search index stays in sync when an archived session file grows", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-04T11:11:11.000Z",
+        sessionId: "session-sync",
+        sessionFile: "/tmp/session-sync.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "first alpha result" }],
+      },
+      root,
+    );
+
+    const first = await transcripts.searchTranscriptArchive("alpha", { limit: 8 }, root);
+    assert.equal(first.length, 1);
+    assert.equal(first[0].hitCount, 1);
+
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-04T11:11:12.000Z",
+        sessionId: "session-sync",
+        sessionFile: "/tmp/session-sync.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "second beta result" }],
+      },
+      root,
+    );
+
+    const second = await transcripts.searchTranscriptArchive("beta", { limit: 8 }, root);
+    assert.equal(second.length, 1);
+    assert.equal(second[0].sessionId, "session-sync");
+    assert.equal(second[0].hitCount, 1);
   });
 });
 
@@ -104,20 +144,39 @@ test("memory transcripts preserve assistant tool calls and thinking for recall",
       { limit: 8 },
       root,
     );
-    assert.equal(byTool[0].role, "assistant");
+    assert.equal(byTool[0].sessionId, "session-2");
     assert.match(byTool[0].preview, /tool:read/);
     assert.match(byTool[0].preview, /demo\.txt/);
+    assert.ok(Array.isArray(byTool[0].matchedEntries));
+    assert.match(byTool[0].matchedEntries[0].preview, /demo\.txt/);
+
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-04T11:12:11.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Updated the same session with a follow-up note about retries." }],
+      },
+      root,
+    );
+    const followUp = await transcripts.searchTranscriptArchive(
+      "follow-up note retries",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(followUp[0].sessionId, "session-2");
 
     const entries = await transcripts.loadTranscriptSessionEntries(
       { sessionId: "session-2" },
       root,
     );
-    assert.equal(entries.length, 1);
+    assert.equal(entries.length, 2);
     assert.match(entries[0].text, /Need to inspect the repo/);
     assert.match(entries[0].text, /tool:read/);
+    assert.match(entries[1].text, /follow-up note about retries/);
   });
 });
-
 
 test("memory can browse recent sessions without a query", async () => {
   await withTempRoot(async (root) => {
@@ -178,5 +237,76 @@ test("memory can browse recent sessions without a query", async () => {
     assert.match(results[0].preview, /验证码/);
     assert.doesNotMatch(results[0].preview, /tool output should not replace/);
     assert.equal(results[1].sessionId, "session-1");
+  });
+});
+
+test("memory search merges multiple message hits from the same session", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-06T10:00:00.000Z",
+        sessionId: "session-a",
+        sessionFile: "/tmp/session-a.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Debugged koishi outbound send routing." }],
+      },
+      root,
+    );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-06T10:01:00.000Z",
+        sessionId: "session-a",
+        sessionFile: "/tmp/session-a.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Fixed koishi reply context and outbound send retry." }],
+      },
+      root,
+    );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-06T11:00:00.000Z",
+        sessionId: "session-b",
+        sessionFile: "/tmp/session-b.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Looked at unrelated Telegram bridge code." }],
+      },
+      root,
+    );
+
+    const results = await transcripts.searchTranscriptArchive(
+      "koishi outbound send",
+      { limit: 2 },
+      root,
+    );
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sessionId, "session-a");
+    assert.equal(results[0].hitCount, 2);
+    assert.ok(Array.isArray(results[0].matchedEntries));
+    assert.equal(results[0].matchedEntries.length, 2);
+  });
+});
+
+test("memory search handles structured identifiers beyond exact raw substrings", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-07T08:08:08.000Z",
+        sessionId: "session-ident",
+        sessionFile: "/tmp/session-ident.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Investigated chat-send.ts for the P2.2 outbound bridge regression." }],
+      },
+      root,
+    );
+
+    const results = await transcripts.searchTranscriptArchive(
+      "chat send p2.2",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(results.length, 1);
+    assert.equal(results[0].sessionId, "session-ident");
+    assert.match(results[0].preview, /chat-send\.ts/);
+    assert.match(results[0].matchedEntries[0].preview, /P2\.2/);
   });
 });

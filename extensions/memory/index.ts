@@ -21,6 +21,8 @@ import {
   loadRecentTranscriptSessions,
   loadTranscriptSessionEntries,
   searchTranscriptArchive,
+  type TranscriptArchiveEntry,
+  type TranscriptSessionResult,
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
@@ -37,7 +39,7 @@ const searchMemoryParams = Type.Object({
       minimum: 1,
       maximum: 8,
       description:
-        "Maximum number of transcript matches or session summaries to return.",
+        "Maximum number of session-level memory results to return. Defaults to 8.",
     }),
   ),
 });
@@ -79,60 +81,40 @@ function trimSnippet(value: string, max = 220): string {
   return `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
+function resultSnippet(item: any): string {
+  return trimSnippet(
+    String(item?.summary || item?.preview || item?.description || "").trim(),
+  );
+}
+
+function resultTitle(item: any): string {
+  return String(item?.timestamp || item?.sessionId || "Session").trim() || "Session";
+}
+
 function formatSearchResult(response: any): string {
-  const summaries = Array.isArray(response?.summaries) ? response.summaries : [];
-  const rows = summaries.length
-    ? summaries.map((item: any) => ({
-        title: String(item?.timestamp || item?.sessionId || "Session").trim() || "Session",
-        snippet: String(item?.summary || "").trim(),
-      }))
-    : Array.isArray(response?.results)
-      ? response.results.map((item: any) => ({
-          title:
-            String(item?.timestamp || "").trim() ||
-            String(item?.sourceType === "session" ? "Session" : "Transcript"),
-          snippet: String(item?.preview || item?.description || "").trim(),
-        }))
-      : [];
+  const rows = Array.isArray(response?.results) ? response.results : [];
   if (!rows.length) return "No memory results found.";
   return rows
-    .slice(0, 3)
-    .map((item: any) => [item.title, trimSnippet(item.snippet)].filter(Boolean).join("\n"))
+    .map((item: any) => [resultTitle(item), resultSnippet(item)].filter(Boolean).join("\n"))
     .join("\n\n");
 }
 
 function formatAgentSearchResult(response: any): string {
-  const summaries = Array.isArray(response?.summaries) ? response.summaries : [];
-  if (summaries.length) {
-    return [
-      `search_memory ${summaries.length}`,
-      ...summaries.map((item: any, index: number) => {
-        const title = String(item?.timestamp || item?.sessionId || "Session").trim() || "Session";
-        const snippet = trimSnippet(String(item?.summary || "").trim());
-        return [`${index + 1}. ${title}`, snippet].filter(Boolean).join("\n");
-      }),
-    ].join("\n\n");
-  }
-
   const rows = Array.isArray(response?.results) ? response.results : [];
   if (!rows.length) return "search_memory 0";
   return [
     `search_memory ${rows.length}`,
     ...rows.map((item: any, index: number) => {
-      const title =
-        String(item?.timestamp || "").trim() ||
-        String(item?.sourceType === "session" ? "Session" : "Transcript");
-      const snippet = trimSnippet(
-        String(item?.preview || item?.description || "").trim(),
-      );
-      return [`${index + 1}. ${title}`, snippet].filter(Boolean).join("\n");
+      return [`${index + 1}. ${resultTitle(item)}`, resultSnippet(item)]
+        .filter(Boolean)
+        .join("\n");
     }),
   ].join("\n\n");
 }
 
 function trimTrailingEmptyLines(lines: string[]): string[] {
   let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end--;
+  while (end > 0 && lines[end - 1] === "") end -= 1;
   return lines.slice(0, end);
 }
 
@@ -186,55 +168,69 @@ function formatMemoryResult(
   return text;
 }
 
-function buildRecallPrompt(query: string, transcript: string): string {
+function buildTranscriptExcerpt(entries: TranscriptArchiveEntry[]): string {
+  return entries
+    .map(
+      (entry) =>
+        `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`,
+    )
+    .join("\n\n")
+    .slice(0, 12000);
+}
+
+function buildMatchedHitsBlock(row: TranscriptSessionResult): string {
+  const hits = Array.isArray(row?.matchedEntries) ? row.matchedEntries : [];
+  if (!hits.length) return "none";
+  return hits
+    .map((hit, index) => {
+      return `${index + 1}. ${String(hit?.timestamp || "").trim()} | ${String(hit?.role || "").trim()} | ${String(hit?.preview || "").trim()}`;
+    })
+    .join("\n");
+}
+
+function buildRecallPrompt(
+  query: string,
+  row: TranscriptSessionResult,
+  transcript: string,
+): string {
+  const sessionOverview = String(row?.preview || row?.description || "").trim();
+  const matchedHits = buildMatchedHitsBlock(row);
   const focus = query
     ? `Search focus: ${query}`
-    : "Search focus: none provided — produce a compact recall summary for recent-session browsing.";
+    : "Search focus: none provided — produce a compact one-sentence recall for recent-session browsing.";
   return [
-    "Review the archived session transcript below and write a factual recall summary.",
+    "Review the archived session transcript below and write exactly one factual sentence.",
     focus,
-    "Prioritize the details that help another agent quickly recover the real work state.",
-    "Include, when present and relevant: the user's goal, key decisions, important tool calls, commands, file paths, URLs, browser/account steps, concrete outcomes, and anything still unresolved.",
-    "Prefer exact details from the transcript over abstraction. Keep chronology only where it helps explain state changes.",
-    "Do not add speculation or generic filler.",
-    "Return plain text only in this shape:",
-    "Goal: ...\nKey steps: ...\nOutcome: ...\nOpen threads: ...",
+    `Session overview candidate: ${sessionOverview || "(none)"}`,
+    `Matched search hits within the session:\n${matchedHits}`,
+    "The sentence must fuse the session's overall work with why it matched the current search focus.",
+    "Prefer concrete modules, files, commands, URLs, and outcomes when they matter.",
+    "Do not quote or enumerate the matched hits. Do not use bullets. Do not add filler.",
     "TRANSCRIPT:",
     transcript,
   ].join("\n\n");
 }
 
 async function maybeSummarizeTranscriptMatches(
-  results: any[],
-  params: any,
+  results: TranscriptSessionResult[],
+  query: string,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
 ) {
   const rows = Array.isArray(results) ? results : [];
-  if (!rows.length) return [];
+  if (!rows.length) return rows;
   const agentDir = String(ctx?.agentDir || "").trim();
-  if (!agentDir) return [];
+  if (!agentDir) return rows;
   const config = await loadAuxiliaryModelConfig(agentDir);
   const fallbackModel = ctx?.model
     ? `${String(ctx.model.provider || "")}/${String(ctx.model.id || "")}`
     : "";
   const modelRef = String(config.modelRef || fallbackModel).trim();
-  if (!modelRef) return [];
-
-  const grouped = new Map<string, any>();
-  for (const row of rows) {
-    const key = String(
-      row?.sessionFile || row?.sessionId || row?.path || "",
-    ).trim();
-    if (!key || grouped.has(key)) continue;
-    grouped.set(key, row);
-    if (grouped.size >= Math.min(3, rows.length)) break;
-  }
+  if (!modelRef) return rows;
 
   const tasks = [] as any[];
-  const taskRows = [] as any[];
-  const sessionRows = [...grouped.values()];
-  for (const row of sessionRows) {
+  const taskRows = [] as TranscriptSessionResult[];
+  for (const row of rows) {
     const entries = await loadTranscriptSessionEntries(
       {
         sessionId: String(row?.sessionId || "").trim(),
@@ -243,15 +239,8 @@ async function maybeSummarizeTranscriptMatches(
       agentDir,
     );
     if (!entries.length) continue;
-    const transcript = entries
-      .map(
-        (entry) =>
-          `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`,
-      )
-      .join("\n\n")
-      .slice(0, 12000);
     tasks.push({
-      prompt: buildRecallPrompt(String(params?.query || "").trim(), transcript),
+      prompt: buildRecallPrompt(query, row, buildTranscriptExcerpt(entries)),
       model: modelRef,
       thinkingLevel:
         (config.thinkingLevel as ThinkingLevel | undefined) ||
@@ -260,21 +249,34 @@ async function maybeSummarizeTranscriptMatches(
     taskRows.push(row);
   }
 
-  if (!tasks.length) return [];
+  if (!tasks.length) return rows;
   const run = await executeSubagentRun({
     params: { tasks },
     ctx,
     currentThinkingLevel,
   });
-  if (!run.ok || !Array.isArray(run.results)) return [];
-  return run.results.map((result: any, index: number) => ({
-    sessionId: taskRows[index]?.sessionId,
-    sessionFile: taskRows[index]?.sessionFile,
-    score: taskRows[index]?.score,
-    summary: String(result?.output || result?.errorMessage || "").trim(),
-    model: result?.model,
-    path: String(taskRows[index]?.path || "").trim(),
-  }));
+  if (!run.ok || !Array.isArray(run.results)) return rows;
+
+  const summaryBySession = new Map<string, string>();
+  run.results.forEach((result: any, index: number) => {
+    const row = taskRows[index];
+    if (!row) return;
+    const summary = String(result?.output || result?.errorMessage || "").trim();
+    if (!summary) return;
+    const key = String(row?.sessionFile || row?.sessionId || row?.path || "").trim();
+    if (!key) return;
+    summaryBySession.set(key, summary);
+  });
+
+  return rows.map((row) => {
+    const key = String(row?.sessionFile || row?.sessionId || row?.path || "").trim();
+    const summary = summaryBySession.get(key);
+    if (!summary) return row;
+    return {
+      ...row,
+      summary,
+    };
+  });
 }
 
 async function executeSearchMemory(
@@ -289,12 +291,12 @@ async function executeSearchMemory(
       ...(params || {}),
       limit: Number.isFinite(Number(params?.limit)) ? Number(params.limit) : 8,
     };
-    const results = query
+    const baseResults = (query
       ? await searchTranscriptArchive(query, normalizedParams)
-      : await loadRecentTranscriptSessions(normalizedParams);
-    const summaries = await maybeSummarizeTranscriptMatches(
-      results,
-      params,
+      : await loadRecentTranscriptSessions(normalizedParams)) as TranscriptSessionResult[];
+    const results = await maybeSummarizeTranscriptMatches(
+      baseResults,
+      query,
       ctx,
       currentThinkingLevel,
     );
@@ -303,18 +305,12 @@ async function executeSearchMemory(
       query,
       count: Array.isArray(results) ? results.length : 0,
       results,
-      summaries,
     };
     const agentText = formatAgentSearchResult(response);
     const userText = formatSearchResult(response);
     const truncation = truncateHead(agentText);
     let outputText = truncation.content;
-    const visibleRows = Array.isArray(response?.summaries) && response.summaries.length
-      ? response.summaries
-      : Array.isArray(response?.results)
-        ? response.results
-        : [];
-    const hiddenCount = visibleRows.length > 3 ? visibleRows.length - 3 : 0;
+    const visibleRows = Array.isArray(response?.results) ? response.results : [];
     const details: {
       truncation?: TruncationResult;
       emptyMessage?: string;
@@ -322,7 +318,7 @@ async function executeSearchMemory(
       totalResults?: number;
       userText?: string;
     } = {
-      hiddenCount,
+      hiddenCount: 0,
       totalResults: visibleRows.length,
       userText,
     };
