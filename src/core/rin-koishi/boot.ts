@@ -12,6 +12,7 @@ export function buildAllowedCommandRows(
   const allowedCommandNames = new Set([
     "abort",
     "new",
+    "init",
     "compact",
     "reload",
     "session",
