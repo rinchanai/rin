@@ -602,21 +602,18 @@ export class KoishiChatController {
     await this.connect();
     if (!this.session) throw new Error("koishi_session_not_connected");
     await this.ensureSessionReady();
-    this.markProcessedMessage(incomingMessageId);
-    const data: any = await this.session.runCommand(commandLine);
-    this.state.piSessionFile =
-      safeString(
-        this.session.sessionManager.getSessionFile?.() ||
-          this.state.piSessionFile ||
-          "",
-      ).trim() || undefined;
-    if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
-      await this.session.setSessionName(this.chatKey);
-    delete this.state.processing;
-    this.saveState();
-    this.markProcessedMessage(incomingMessageId);
-    const text = safeString(data?.text || "").trim();
-    if (text) {
+    try {
+      const data: any = await this.session.runCommand(commandLine);
+      this.state.piSessionFile =
+        safeString(
+          this.session.sessionManager.getSessionFile?.() ||
+            this.state.piSessionFile ||
+            "",
+        ).trim() || undefined;
+      if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
+        await this.session.setSessionName(this.chatKey);
+      const text = safeString(data?.text || "").trim();
+      if (!text) throw new Error("koishi_command_text_missing");
       this.latestAssistantText = text;
       this.state.pendingDelivery = this.buildAssistantDelivery({
         text,
@@ -626,8 +623,26 @@ export class KoishiChatController {
       });
       this.saveState();
       await this.commitPendingDelivery();
+      return data;
+    } catch (error: any) {
+      const errorMessage =
+        safeString(error?.message || error).trim() || "koishi_command_failed";
+      const text = `Koishi error: ${errorMessage}`;
+      this.latestAssistantText = text;
+      this.state.pendingDelivery = this.buildAssistantDelivery({
+        text,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      });
+      this.saveState();
+      await this.commitPendingDelivery();
+      throw error;
+    } finally {
+      delete this.state.processing;
+      this.saveState();
+      this.markProcessedMessage(incomingMessageId);
     }
-    return data;
   }
   private async runSteerNow(input: {
     text: string;
