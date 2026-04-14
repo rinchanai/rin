@@ -9,6 +9,8 @@ It intentionally contains only thin executable entrypoints and builtin-extension
 - keep `src/core/` independently runnable and free of app-specific policy
 - define which standard extensions are force-loaded by the app build
 - provide app-specific executable entrypoints for:
+  - top-level `rin` CLI
+  - `rin-install`
   - daemon
   - worker
   - TUI
@@ -29,7 +31,9 @@ So the app build cannot ask core entrypoints to know about app profiles or built
 Instead, app provides a few very small wrappers that only do assembly:
 
 - `builtin-extensions.ts` defines the app's forced builtin extensions
-- `rin-daemon/daemon.ts` points the daemon at the app worker
+- `rin/main.ts` starts the shared core CLI entrypoint
+- `rin-install/main.ts` starts the shared installer entrypoint
+- `rin-daemon/daemon.ts` points the daemon at the app worker and sidecar assembly
 - `rin-daemon/worker.ts` starts the core worker with builtin extension paths
 - `rin-tui/main.ts` starts the shared TUI launcher with builtin extension paths
 - `rin-koishi/main.ts` starts the shared Koishi bridge with builtin extension paths
