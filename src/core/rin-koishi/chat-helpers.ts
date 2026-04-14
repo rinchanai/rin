@@ -58,6 +58,7 @@ export type KoishiBridgePromptMeta = {
   nickname?: string;
   identity?: string;
   replyToMessageId?: string;
+  attachedFiles?: Array<{ name?: string; path?: string }>;
 };
 
 export const KOISHI_BRIDGE_PROMPT_META_PREFIX = "[[rin-koishi-bridge-meta:";

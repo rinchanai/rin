@@ -373,11 +373,8 @@ export async function sendOutboxPayload(
   });
 }
 
-export function buildPromptText(text: string, attachments: SavedAttachment[]) {
-  const files = attachments.filter((item) => item.kind === "file");
-  if (!files.length) return text;
-  const lines = files.map((item) => `- ${item.name}: ${item.path}`);
-  return `${text}\n\nAttached files saved locally:\n${lines.join("\n")}`;
+export function buildPromptText(text: string, _attachments: SavedAttachment[]) {
+  return text;
 }
 
 export async function attachmentToImageContent(
