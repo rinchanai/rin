@@ -359,7 +359,67 @@ test("memory summarization subagent hides the memory extension", async () => {
     assert.deepEqual(calls[0].params.tasks[0].disabledExtensions, ["memory"]);
     assert.equal(calls[0].params.tasks[0].model, "test/demo");
     assert.equal(calls[0].params.tasks[0].thinkingLevel, "low");
+    assert.equal(calls[0].ctx.agentDir, root);
     assert.equal(summarized[0].summary, "Summarized recall sentence.");
+  });
+});
+
+
+test("search_memory summarization falls back to runtime agent dir and low thinking", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "session-runtime",
+        sessionFile: "/tmp/session-runtime.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Verified runtime fallback for memory summarization." }],
+      },
+      root,
+    );
+    await fs.writeFile(
+      path.join(root, "settings.json"),
+      JSON.stringify({ auxiliaryModel: { model: "test/demo" } }),
+      "utf8",
+    );
+
+    const rows = await transcripts.searchTranscriptArchive(
+      "runtime fallback memory summarization",
+      { limit: 8 },
+      root,
+    );
+
+    const previousRinDir = process.env.RIN_DIR;
+    const previousPiDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.RIN_DIR = root;
+    process.env.PI_CODING_AGENT_DIR = root;
+
+    try {
+      const calls = [];
+      const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
+        rows,
+        "runtime fallback memory summarization",
+        {},
+        "high",
+        async (options) => {
+          calls.push(options);
+          return {
+            ok: true,
+            results: [{ output: "Runtime fallback summary." }],
+          };
+        },
+      );
+
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].ctx.agentDir, root);
+      assert.equal(calls[0].params.tasks[0].thinkingLevel, "low");
+      assert.equal(summarized[0].summary, "Runtime fallback summary.");
+    } finally {
+      if (previousRinDir === undefined) delete process.env.RIN_DIR;
+      else process.env.RIN_DIR = previousRinDir;
+      if (previousPiDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previousPiDir;
+    }
   });
 });
 
