@@ -101,7 +101,8 @@ function formatAgentsFilesForPrompt(
 }
 
 export function getManagedSkillPaths(agentDir: string): string[] {
-  const root = String(agentDir || "").trim() || path.join(os.homedir(), ".rin");
+  const root =
+    String(agentDir || "").trim() || resolveRuntimeProfile().agentDir;
   return [
     path.join(root, "self_improve", "skills"),
     path.join(root, "docs", "rin", "builtin-skills"),
@@ -141,7 +142,8 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const promptAgentDir =
     session._resourceLoader.agentDir ||
     process.env.RIN_DIR ||
-    path.join(os.homedir(), ".rin");
+    process.env[PI_AGENT_DIR_ENV] ||
+    resolveRuntimeProfile().agentDir;
   const managedSkillPaths = getManagedSkillPaths(promptAgentDir);
 
   const uniqueGuidelines: string[] = [];
@@ -472,10 +474,11 @@ export const PI_AGENT_DIR_ENV = "PI_CODING_AGENT_DIR";
 export function resolveRuntimeProfile(
   options: { cwd?: string; agentDir?: string } = {},
 ) {
-  const cwd = os.homedir();
+  const cwd = options.cwd || os.homedir();
   const agentDir =
     options.agentDir ||
     process.env[RIN_DIR_ENV]?.trim() ||
+    process.env[PI_AGENT_DIR_ENV]?.trim() ||
     path.join(os.homedir(), ".rin");
   return { cwd, agentDir };
 }

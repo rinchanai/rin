@@ -90,5 +90,7 @@ export function resolveAgentDir(): string {
   const fromEnv = safeString(
     process.env.PI_CODING_AGENT_DIR || process.env.RIN_DIR,
   ).trim();
-  return fromEnv ? path.resolve(fromEnv) : path.join(os.homedir(), ".rin");
+  if (fromEnv) return path.resolve(fromEnv);
+  const fallback = process.env.HOME ? path.join(process.env.HOME, ".rin") : path.join(os.homedir(), ".rin");
+  return path.resolve(fallback);
 }

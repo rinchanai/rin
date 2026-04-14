@@ -94,6 +94,11 @@ async function loadSessionManagerModule() {
   return { SessionManager: (codingAgentModule as any).SessionManager };
 }
 
+function getDefaultSessionDir() {
+  const profile = resolveRuntimeProfile({ cwd: HOME_DIR });
+  return getRuntimeSessionDir(profile.cwd, profile.agentDir);
+}
+
 async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   const wanted = String(ref || "").trim();
   if (!wanted) throw new Error("session_ref_required");
@@ -141,12 +146,12 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   }
   if (prefixMatches.length > 1) {
     throw new Error(
-      `Session ref is ambiguous: ${wanted}. Inspect ${path.join(os.homedir(), ".rin", "sessions")} and use an exact path or a less ambiguous id prefix.`,
+      `Session ref is ambiguous: ${wanted}. Inspect ${getDefaultSessionDir()} and use an exact path or a less ambiguous id prefix.`,
     );
   }
 
   throw new Error(
-    `Session not found: ${wanted}. Inspect ${path.join(os.homedir(), ".rin", "sessions")} and use a session file path, exact id, or unique id prefix.`,
+    `Session not found: ${wanted}. Inspect ${getDefaultSessionDir()} and use a session file path, exact id, or unique id prefix.`,
   );
 }
 
@@ -288,7 +293,7 @@ function validateTasks(
       (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
       !sessionConfig.ref
     ) {
-      return `Session ref is required when session.mode is ${sessionConfig.mode}. Inspect ${path.join(os.homedir(), ".rin", "sessions")} and use a session file path, exact id, or unique id prefix.`;
+      return `Session ref is required when session.mode is ${sessionConfig.mode}. Inspect ${getDefaultSessionDir()} and use a session file path, exact id, or unique id prefix.`;
     }
     if (
       (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
