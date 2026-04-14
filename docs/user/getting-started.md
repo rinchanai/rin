@@ -73,8 +73,11 @@ What this does in practice:
 - rebuilds the core runtime
 - publishes a fresh release under `<installDir>/app/releases/...`
 - repoints `<installDir>/app/current` to that new release
+- prunes older runtime releases and keeps only a small recent set
 
 Do not treat repo-local `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the standard way to update an already installed runtime.
+
+When you need to inspect an installed runtime directly, prefer the stable `app/current` path instead of a timestamped `app/releases/...` path.
 
 A normal install or update refreshes the same stable state surfaces:
 

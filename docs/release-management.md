@@ -68,12 +68,28 @@ node --test tests/*.test.mjs extensions/memory/memory.test.mjs extensions/self-i
 Also inspect whether the change affects:
 
 - install flow
+- `install.sh` bootstrap behavior
+- runtime publishing under `app/releases/...`
+- `app/current` symlink switching
+- old release pruning
 - `rin update`
 - daemon boot / reconnect
 - TUI default path
 - Koishi bridge delivery
 - transcript and memory recall
 - public-facing docs
+
+## Release artifact contract
+
+Treat the installed runtime layout as an operator-facing contract, not an internal accident.
+
+At minimum, a healthy installed update should keep these expectations true:
+
+- a new runtime is published under `app/releases/<timestamp>/`
+- `app/current/` becomes the stable pointer to the active runtime
+- older releases are pruned conservatively instead of accumulating forever
+- direct troubleshooting commands prefer `app/current/...` over timestamped release paths
+- changelog and operator docs mention user-visible install/update behavior changes
 
 ## Update notes
 

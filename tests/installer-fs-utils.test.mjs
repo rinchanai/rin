@@ -15,38 +15,37 @@ const fsUtils = await import(
   ).href
 );
 
-test("installer fs utils compute launcher targets and script", () => {
-  const targets = fsUtils.launcherTargetsForInstallDir("/tmp/rin");
-  assert.ok(
-    targets.rin[0].endsWith(path.join("dist", "app", "rin", "main.js")),
+async function createPublishFixture() {
+  const sourceRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-install-src-"),
   );
-  const script = fsUtils.launcherScript(["/tmp/a.js", "/tmp/b.js"]);
-  assert.ok(script.includes("installed runtime entry not found"));
-  assert.ok(script.includes("/tmp/a.js"));
-});
-
-test("publishInstalledRuntime rebuilds vendored coding-agent dist when missing", async () => {
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rin-install-src-"));
   const installDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "rin-install-dst-"),
   );
 
-  await fs.mkdir(path.join(tempRoot, "dist", "app", "rin"), {
+  await fs.mkdir(path.join(sourceRoot, "dist", "app", "rin"), {
     recursive: true,
   });
   await fs.writeFile(
-    path.join(tempRoot, "dist", "app", "rin", "main.js"),
+    path.join(sourceRoot, "dist", "app", "rin", "main.js"),
     "export {};",
     "utf8",
   );
-  await fs.mkdir(path.join(tempRoot, "extensions"), { recursive: true });
-  await fs.writeFile(path.join(tempRoot, "package.json"), "{\n}\n", "utf8");
+  await fs.mkdir(path.join(sourceRoot, "extensions", "demo"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(sourceRoot, "extensions", "demo", "index.js"),
+    "export {};",
+    "utf8",
+  );
+  await fs.writeFile(path.join(sourceRoot, "package.json"), "{\n}\n", "utf8");
   await fs.copyFile(
     path.join(rootDir, "tsconfig.base.json"),
-    path.join(tempRoot, "tsconfig.base.json"),
+    path.join(sourceRoot, "tsconfig.base.json"),
   );
 
-  const vendorRoot = path.join(tempRoot, "third_party", "pi-coding-agent");
+  const vendorRoot = path.join(sourceRoot, "third_party", "pi-coding-agent");
   await fs.mkdir(path.dirname(vendorRoot), { recursive: true });
   await fs.cp(
     path.join(rootDir, "third_party", "pi-coding-agent", "src"),
@@ -66,11 +65,27 @@ test("publishInstalledRuntime rebuilds vendored coding-agent dist when missing",
 
   await fs.symlink(
     path.join(rootDir, "node_modules"),
-    path.join(tempRoot, "node_modules"),
+    path.join(sourceRoot, "node_modules"),
   );
 
+  return { sourceRoot, installDir };
+}
+
+test("installer fs utils compute launcher targets and script", () => {
+  const targets = fsUtils.launcherTargetsForInstallDir("/tmp/rin");
+  assert.ok(
+    targets.rin[0].endsWith(path.join("dist", "app", "rin", "main.js")),
+  );
+  const script = fsUtils.launcherScript(["/tmp/a.js", "/tmp/b.js"]);
+  assert.ok(script.includes("installed runtime entry not found"));
+  assert.ok(script.includes("/tmp/a.js"));
+});
+
+test("publishInstalledRuntime rebuilds vendored coding-agent dist when missing", async () => {
+  const { sourceRoot, installDir } = await createPublishFixture();
+
   const published = fsUtils.publishInstalledRuntime(
-    tempRoot,
+    sourceRoot,
     installDir,
     "rin",
     false,
@@ -99,4 +114,91 @@ test("publishInstalledRuntime rebuilds vendored coding-agent dist when missing",
       "dark.json",
     ),
   );
+  await fs.access(
+    path.join(published.releaseRoot, "extensions", "demo", "index.js"),
+  );
+  await fs.access(path.join(published.releaseRoot, "package.json"));
+
+  const currentLink = await fs.readlink(
+    path.join(installDir, "app", "current"),
+  );
+  assert.equal(currentLink, published.releaseRoot);
+});
+
+test("publishInstalledRuntime replaces the current symlink and pruneInstalledReleases keeps the newest entries plus the active release", async () => {
+  const { sourceRoot, installDir } = await createPublishFixture();
+
+  const first = fsUtils.publishInstalledRuntime(
+    sourceRoot,
+    installDir,
+    "rin",
+    false,
+    { findSystemUser: () => null },
+  );
+  await fs.writeFile(
+    path.join(sourceRoot, "package.json"),
+    '{"name":"rin-v2"}\n',
+    "utf8",
+  );
+  const second = fsUtils.publishInstalledRuntime(
+    sourceRoot,
+    installDir,
+    "rin",
+    false,
+    { findSystemUser: () => null },
+  );
+
+  const currentLink = await fs.readlink(second.currentLink);
+  assert.equal(currentLink, second.releaseRoot);
+  assert.notEqual(first.releaseRoot, second.releaseRoot);
+
+  const releasesDir = path.join(installDir, "app", "releases");
+  await fs.mkdir(path.join(releasesDir, "2026-01-01T00-00-00-000Z"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(releasesDir, "2026-01-02T00-00-00-000Z"), {
+    recursive: true,
+  });
+  await fs.mkdir(path.join(releasesDir, "2026-01-03T00-00-00-000Z"), {
+    recursive: true,
+  });
+
+  const listed = fsUtils.listInstalledReleaseNames(installDir);
+  assert.ok(listed.includes(path.basename(first.releaseRoot)));
+  assert.ok(listed.includes(path.basename(second.releaseRoot)));
+
+  const pruned = fsUtils.pruneInstalledReleases(
+    installDir,
+    2,
+    first.releaseRoot,
+  );
+  assert.equal(pruned.keepCount, 2);
+  assert.ok(pruned.kept.includes(path.basename(first.releaseRoot)));
+  assert.ok(pruned.kept.includes(path.basename(second.releaseRoot)));
+  assert.equal(
+    pruned.removed.some((entry) => entry.endsWith("2026-01-01T00-00-00-000Z")),
+    true,
+  );
+  assert.equal(
+    pruned.removed.some((entry) => entry.endsWith("2026-01-02T00-00-00-000Z")),
+    true,
+  );
+  assert.equal(
+    pruned.removed.some((entry) => entry.endsWith("2026-01-03T00-00-00-000Z")),
+    true,
+  );
+  assert.deepEqual(
+    fsUtils.listInstalledReleaseNames(installDir).sort(),
+    [
+      path.basename(first.releaseRoot),
+      path.basename(second.releaseRoot),
+    ].sort(),
+  );
+});
+
+test("releaseIdNow emits a filesystem-safe UTC release id", () => {
+  const releaseId = fsUtils.releaseIdNow();
+  assert.match(releaseId, /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/);
+  assert.equal(releaseId.includes(":"), false);
+  assert.equal(releaseId.includes("."), false);
 });
