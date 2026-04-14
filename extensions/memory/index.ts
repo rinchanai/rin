@@ -80,30 +80,38 @@ function trimSnippet(value: string, max = 220): string {
 }
 
 function resultSnippet(item: any): string {
-  return trimSnippet(
-    String(item?.summary || item?.preview || item?.description || "").trim(),
+  return trimSnippet(String(item?.summary || "").trim());
+}
+
+function resultLocation(item: any): string {
+  return (
+    String(item?.sessionFile || item?.path || item?.sessionId || "").trim() ||
+    "Session"
   );
 }
 
-function resultTitle(item: any): string {
-  return String(item?.timestamp || item?.sessionId || "Session").trim() || "Session";
+function searchResultHeader(response: any): string {
+  const query = String(response?.query || "").trim();
+  if (!query) return "search_memory recent";
+  return `search_memory ${query}`;
 }
 
-function formatSearchResult(response: any): string {
+export function formatSearchResult(response: any): string {
   const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length) return "No memory results found.";
-  return rows
-    .map((item: any) => [resultTitle(item), resultSnippet(item)].filter(Boolean).join("\n"))
-    .join("\n\n");
-}
-
-function formatAgentSearchResult(response: any): string {
-  const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length) return "search_memory 0";
+  if (!rows.length) return `${searchResultHeader(response)}\n\nNo memory results found.`;
   return [
-    `search_memory ${rows.length}`,
+    searchResultHeader(response),
+    ...rows.map((item: any) => [resultLocation(item), resultSnippet(item)].join("\n")),
+  ].join("\n\n");
+}
+
+export function formatAgentSearchResult(response: any): string {
+  const rows = Array.isArray(response?.results) ? response.results : [];
+  if (!rows.length) return `${searchResultHeader(response)}\n\n0 results`;
+  return [
+    `${searchResultHeader(response)} (${rows.length})`,
     ...rows.map((item: any, index: number) => {
-      return [`${index + 1}. ${resultTitle(item)}`, resultSnippet(item)]
+      return [`${index + 1}. ${resultLocation(item)}`, resultSnippet(item)]
         .filter(Boolean)
         .join("\n");
     }),
@@ -383,7 +391,7 @@ function renderMemoryResult(result: any, options: any, theme: any, context: any)
   return text;
 }
 
-function formatSearchMemoryCall(args: any, theme: any) {
+export function formatSearchMemoryCall(args: any, theme: any) {
   const query = String(args?.query || "").trim();
   if (!query) {
     return `${theme.fg("toolTitle", theme.bold("search_memory"))} ${theme.fg("muted", "recent")}`;
