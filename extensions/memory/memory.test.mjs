@@ -152,8 +152,9 @@ test("memory transcripts preserve assistant tool calls and thinking for recall",
     assert.equal(byTool[0].sessionId, "session-2");
     assert.match(byTool[0].preview, /tool:read/);
     assert.match(byTool[0].preview, /demo\.txt/);
-    assert.ok(Array.isArray(byTool[0].matchedEntries));
-    assert.match(byTool[0].matchedEntries[0].preview, /demo\.txt/);
+    assert.ok(Array.isArray(byTool[0].messages));
+    assert.match(byTool[0].messages[0].text, /demo\.txt/);
+    assert.equal(byTool[0].messages[0].line, 1);
 
     await transcripts.appendTranscriptArchiveEntry(
       {
@@ -241,6 +242,9 @@ test("memory can browse recent sessions without a query", async () => {
     assert.match(results[0].preview, /browser_click/);
     assert.match(results[0].preview, /验证码/);
     assert.doesNotMatch(results[0].preview, /tool output should not replace/);
+    assert.ok(Array.isArray(results[0].messages));
+    assert.ok(results[0].messages.length >= 1);
+    assert.ok(Number.isInteger(results[0].messages[0].line));
     assert.equal(results[1].sessionId, "session-1");
   });
 });
@@ -286,8 +290,8 @@ test("memory search merges multiple message hits from the same session", async (
     assert.equal(results.length, 1);
     assert.equal(results[0].sessionId, "session-a");
     assert.equal(results[0].hitCount, 2);
-    assert.ok(Array.isArray(results[0].matchedEntries));
-    assert.equal(results[0].matchedEntries.length, 2);
+    assert.ok(Array.isArray(results[0].messages));
+    assert.equal(results[0].messages.length, 2);
   });
 });
 
@@ -312,7 +316,7 @@ test("memory search handles structured identifiers beyond exact raw substrings",
     assert.equal(results.length, 1);
     assert.equal(results[0].sessionId, "session-ident");
     assert.match(results[0].preview, /chat-send\.ts/);
-    assert.match(results[0].matchedEntries[0].preview, /P2\.2/);
+    assert.match(results[0].messages[0].text, /P2\.2/);
   });
 });
 
@@ -544,7 +548,7 @@ test("search_memory fails instead of silently degrading to raw transcript result
   });
 });
 
-test("search_memory formatting shows query and absolute session path", () => {
+test("search_memory formatting shows query, archive path, and raw messages with line numbers", () => {
   const rendered = memoryExtensionModule.formatSearchResult({
     query: "minecraft server",
     results: [
@@ -553,17 +557,26 @@ test("search_memory formatting shows query and absolute session path", () => {
         path: "/home/rin/.rin/memory/transcripts/2026/04/demo.jsonl",
         summary: "Investigated the Minecraft server modpack crash and identified the failing config file.",
         preview: "raw preview should never leak",
+        messages: [
+          {
+            line: 12,
+            role: "toolResult",
+            toolName: "bash",
+            text: "docker restart afbfee08-9ced-462b-9b30-8a5a09c2cb71 && grep 'Done (' logs/latest.log",
+          },
+        ],
       },
     ],
   });
 
   assert.match(rendered, /^search_memory minecraft server/m);
-  assert.match(rendered, /\/home\/rin\/\.rin\/sessions\/demo\.jsonl/);
+  assert.match(rendered, /\/home\/rin\/\.rin\/memory\/transcripts\/2026\/04\/demo\.jsonl/);
   assert.match(rendered, /Investigated the Minecraft server modpack crash/);
+  assert.match(rendered, /L12 toolResult\/bash: docker restart afbfee08-9ced-462b-9b30-8a5a09c2cb71/);
   assert.doesNotMatch(rendered, /raw preview should never leak/);
 });
 
-test("search_memory agent formatting uses absolute path instead of timestamps", () => {
+test("search_memory agent formatting uses archive path and line-numbered raw messages", () => {
   const rendered = memoryExtensionModule.formatAgentSearchResult({
     query: "koishi outbound",
     results: [
@@ -573,6 +586,13 @@ test("search_memory agent formatting uses absolute path instead of timestamps", 
         sessionFile: "/home/rin/.rin/sessions/2026-04-14T06-05-42-876Z_b6745c84-869c-4bc4-9709-9cda7a4f6def.jsonl",
         path: "/home/rin/.rin/memory/transcripts/2026/04/64ccd205-ea35-4716-b2d4-9eff931eb59c.jsonl",
         summary: "Fixed the Koishi outbound send routing bug and verified the affected bridge path.",
+        messages: [
+          {
+            line: 42,
+            role: "assistant",
+            text: "Verified the affected bridge path and confirmed outbound send recovery.",
+          },
+        ],
       },
     ],
   });
@@ -580,8 +600,9 @@ test("search_memory agent formatting uses absolute path instead of timestamps", 
   assert.match(rendered, /^search_memory koishi outbound \(1\)/m);
   assert.match(
     rendered,
-    /1\. \/home\/rin\/\.rin\/sessions\/2026-04-14T06-05-42-876Z_b6745c84-869c-4bc4-9709-9cda7a4f6def\.jsonl/,
+    /1\. \/home\/rin\/\.rin\/memory\/transcripts\/2026\/04\/64ccd205-ea35-4716-b2d4-9eff931eb59c\.jsonl/,
   );
+  assert.match(rendered, /L42 assistant: Verified the affected bridge path/);
   assert.doesNotMatch(rendered, /^1\. 2026-04-14T06:05:42\.876Z/m);
 });
 

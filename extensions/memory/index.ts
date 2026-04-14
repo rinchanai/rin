@@ -85,10 +85,20 @@ function resultSnippet(item: any): string {
 }
 
 function resultLocation(item: any): string {
-  return (
-    String(item?.sessionFile || item?.path || item?.sessionId || "").trim() ||
-    "Session"
-  );
+  return String(item?.path || item?.sessionId || "").trim() || "Session";
+}
+
+function resultMessages(item: any): Array<any> {
+  return Array.isArray(item?.messages) ? item.messages : [];
+}
+
+function formatMessageLine(message: any): string {
+  const line = Math.max(1, Number(message?.line || 0) || 1);
+  const role = String(message?.role || "message").trim() || "message";
+  const toolName = String(message?.toolName || "").trim();
+  const label = toolName ? `${role}/${toolName}` : role;
+  const text = trimSnippet(String(message?.text || "").trim(), 240);
+  return `L${line} ${label}: ${text}`;
 }
 
 function searchResultHeader(response: any): string {
@@ -102,7 +112,15 @@ export function formatSearchResult(response: any): string {
   if (!rows.length) return `${searchResultHeader(response)}\n\nNo memory results found.`;
   return [
     searchResultHeader(response),
-    ...rows.map((item: any) => [resultLocation(item), resultSnippet(item)].join("\n")),
+    ...rows.map((item: any) => {
+      return [
+        resultLocation(item),
+        resultSnippet(item),
+        ...resultMessages(item).map((message: any) => formatMessageLine(message)),
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }),
   ].join("\n\n");
 }
 
@@ -112,7 +130,11 @@ export function formatAgentSearchResult(response: any): string {
   return [
     `${searchResultHeader(response)} (${rows.length})`,
     ...rows.map((item: any, index: number) => {
-      return [`${index + 1}. ${resultLocation(item)}`, resultSnippet(item)]
+      return [
+        `${index + 1}. ${resultLocation(item)}`,
+        resultSnippet(item),
+        ...resultMessages(item).map((message: any) => formatMessageLine(message)),
+      ]
         .filter(Boolean)
         .join("\n");
     }),
@@ -182,30 +204,13 @@ function buildTranscriptExcerpt(entries: any[]): string {
     .slice(0, 12000);
 }
 
-function buildMatchedHitsBlock(row: any): string {
-  const hits = Array.isArray(row?.matchedEntries) ? row.matchedEntries : [];
-  if (!hits.length) return "none";
-  return hits
-    .map((hit: any, index: number) => {
-      return `${index + 1}. ${String(hit?.timestamp || "").trim()} | ${String(hit?.role || "").trim()} | ${String(hit?.preview || "").trim()}`;
-    })
-    .join("\n");
-}
-
-function buildRecallPrompt(query: string, row: any, transcript: string): string {
+function buildRecallPrompt(_query: string, row: any, transcript: string): string {
   const sessionOverview = String(row?.preview || row?.description || "").trim();
-  const matchedHits = buildMatchedHitsBlock(row);
-  const focus = query
-    ? `Search focus: ${query}`
-    : "Search focus: none provided — produce a compact one-sentence recall for recent-session browsing.";
   return [
-    "Review the archived session transcript below and write exactly one factual sentence.",
-    focus,
+    "Review the archived session transcript below and write exactly one factual sentence summarizing the session as a whole.",
     `Session overview candidate: ${sessionOverview || "(none)"}`,
-    `Matched search hits within the session:\n${matchedHits}`,
-    "The sentence must fuse the session's overall work with why it matched the current search focus.",
-    "Prefer concrete modules, files, commands, URLs, and outcomes when they matter.",
-    "Do not quote or enumerate the matched hits. Do not use bullets. Do not add filler.",
+    "Mention the main work, investigation, or outcome when it is clear from the transcript.",
+    "Do not mention the current search query. Do not explain why the session matched. Do not quote raw lines. Do not use bullets.",
     "TRANSCRIPT:",
     transcript,
   ].join("\n\n");
@@ -224,7 +229,7 @@ function throwIfAborted(signal?: AbortSignal) {
 
 export async function maybeSummarizeTranscriptMatches(
   results: any[],
-  query: string,
+  _query: string,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
   runSubagent = executeSubagentRun,
@@ -259,7 +264,7 @@ export async function maybeSummarizeTranscriptMatches(
     throwIfAborted(signal);
     if (!entries.length) continue;
     tasks.push({
-      prompt: buildRecallPrompt(query, row, buildTranscriptExcerpt(entries)),
+      prompt: buildRecallPrompt(_query, row, buildTranscriptExcerpt(entries)),
       model: modelRef,
       thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
       disabledExtensions: ["memory"],

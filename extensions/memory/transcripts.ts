@@ -20,6 +20,7 @@ type IndexedTranscriptEntry = {
   entry: TranscriptArchiveEntry;
   timestampMs: number;
   preview: string;
+  lineNumber: number;
 };
 
 type IndexedSessionBucket = {
@@ -30,13 +31,7 @@ type IndexedSessionBucket = {
   totalScore: number;
   hitCount: number;
   latestHitTimestampMs: number;
-  matchedEntries: Array<{
-    id: string;
-    role: string;
-    timestamp: string;
-    preview: string;
-    score: number;
-  }>;
+  messages: TranscriptResultMessage[];
 };
 
 type TranscriptFileState = {
@@ -61,6 +56,17 @@ export type TranscriptArchiveEntry = {
   provider?: string;
   model?: string;
   display?: boolean;
+  archiveLine?: number;
+  archivePath?: string;
+};
+
+export type TranscriptResultMessage = {
+  id: string;
+  role: string;
+  timestamp: string;
+  line: number;
+  text: string;
+  toolName?: string;
 };
 
 export type TranscriptSessionResult = {
@@ -75,17 +81,12 @@ export type TranscriptSessionResult = {
   description: string;
   preview: string;
   role: string;
+  summary?: string;
   hitCount?: number;
-  matchedEntries?: Array<{
-    id: string;
-    role: string;
-    timestamp: string;
-    preview: string;
-    score: number;
-  }>;
+  messages?: TranscriptResultMessage[];
 };
 
-const SEARCH_DB_SCHEMA_VERSION = 1;
+const SEARCH_DB_SCHEMA_VERSION = 2;
 const DEFAULT_RESULT_LIMIT = 8;
 const RAW_SEARCH_LIMIT = 50;
 const MAX_MATCHED_ENTRIES_PER_SESSION = 3;
@@ -276,14 +277,16 @@ async function loadTranscriptArchiveFile(filePath: string) {
   const raw = await fs.readFile(filePath, "utf8");
   return raw
     .split(/\r?\n/g)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
+    .map((line, index) => ({ rawLine: line.trim(), lineNumber: index + 1 }))
+    .filter((item) => Boolean(item.rawLine))
+    .map((item) => {
       try {
-        const parsed = JSON.parse(line) as TranscriptArchiveEntry;
+        const parsed = JSON.parse(item.rawLine) as TranscriptArchiveEntry;
         if (!parsed?.text) {
           parsed.text = extractTranscriptText(parsed as Record<string, unknown>);
         }
+        parsed.archiveLine = item.lineNumber;
+        parsed.archivePath = filePath;
         return parsed;
       } catch {
         return null;
@@ -385,13 +388,43 @@ function sessionGroupingKey(input: {
   );
 }
 
+function formatTranscriptMessageText(value: string, max = 240) {
+  return trimText(
+    safeString(value)
+      .replace(/\s+/g, " ")
+      .trim(),
+    max,
+  );
+}
+
+function buildResultMessage(entry: TranscriptArchiveEntry): TranscriptResultMessage {
+  return {
+    id: entry.id,
+    role: entry.role,
+    timestamp: entry.timestamp,
+    line: Math.max(1, Number(entry.archiveLine || 0) || 1),
+    text: formatTranscriptMessageText(entry.text),
+    toolName: safeString(entry.toolName || "").trim() || undefined,
+  };
+}
+
+function chooseSessionMessageEntries(entries: TranscriptArchiveEntry[]) {
+  return [...entries]
+    .sort((a, b) => {
+      const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
+      if (priority) return priority;
+      return timestampValue(b.timestamp) - timestampValue(a.timestamp);
+    })
+    .slice(0, MAX_MATCHED_ENTRIES_PER_SESSION);
+}
+
 function presentSessionResult(
   entries: TranscriptArchiveEntry[],
   score: number,
   rootOverride = "",
   extra: {
     hitCount?: number;
-    matchedEntries?: TranscriptSessionResult["matchedEntries"];
+    messages?: TranscriptResultMessage[];
   } = {},
 ): TranscriptSessionResult {
   const previewEntry = chooseSessionPreviewEntry(entries);
@@ -408,14 +441,19 @@ function presentSessionResult(
     name: "session",
     role: previewEntry.role,
     score,
-    path: getTranscriptArchivePath(previewEntry, rootOverride),
+    path:
+      safeString(previewEntry.archivePath || "").trim() ||
+      getTranscriptArchivePath(previewEntry, rootOverride),
     sessionId: previewEntry.sessionId,
     sessionFile: previewEntry.sessionFile,
     timestamp: latestEntry?.timestamp || previewEntry.timestamp,
     description: trimText(preview, 160),
     preview,
     hitCount: extra.hitCount,
-    matchedEntries: extra.matchedEntries,
+    messages:
+      extra.messages && extra.messages.length
+        ? extra.messages
+        : chooseSessionMessageEntries(entries).map((entry) => buildResultMessage(entry)),
   };
 }
 
@@ -517,6 +555,7 @@ function initializeTranscriptSearchDb(db: Database, busyTimeoutMs = 5000) {
       session_file TEXT NOT NULL,
       timestamp TEXT NOT NULL,
       timestamp_ms INTEGER NOT NULL,
+      line_number INTEGER NOT NULL,
       role TEXT NOT NULL,
       tool_name TEXT NOT NULL,
       custom_type TEXT NOT NULL,
@@ -618,10 +657,11 @@ function toIndexedEntry(
   archivePath: string,
   rowIndex: number,
 ): IndexedTranscriptEntry {
+  const lineNumber = Math.max(1, Number(entry.archiveLine || rowIndex + 1) || rowIndex + 1);
   const rowKey = sha(
     [
       archivePath,
-      String(rowIndex),
+      String(lineNumber),
       safeString(entry.id || "").trim(),
       safeString(entry.timestamp || "").trim(),
       safeString(entry.role || "").trim(),
@@ -636,6 +676,7 @@ function toIndexedEntry(
     entry,
     timestampMs: timestampValue(entry.timestamp),
     preview: trimText(transcriptPreviewText(entry), 240),
+    lineNumber,
   };
 }
 
@@ -657,8 +698,8 @@ function insertIndexedEntry(db: Database, item: IndexedTranscriptEntry) {
   db.prepare(`
     INSERT INTO entries(
       row_key, archive_path, entry_id, session_key, session_id, session_file,
-      timestamp, timestamp_ms, role, tool_name, custom_type, text, preview, entry_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      timestamp, timestamp_ms, line_number, role, tool_name, custom_type, text, preview, entry_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     item.rowKey,
     item.archivePath,
@@ -668,6 +709,7 @@ function insertIndexedEntry(db: Database, item: IndexedTranscriptEntry) {
     safeString(item.entry.sessionFile || "").trim(),
     safeString(item.entry.timestamp || "").trim(),
     item.timestampMs,
+    item.lineNumber,
     safeString(item.entry.role || "").trim(),
     safeString(item.entry.toolName || "").trim(),
     safeString(item.entry.customType || "").trim(),
@@ -728,9 +770,9 @@ function appendIndexedArchiveEntry(
 ) {
   const tx = db.transaction(() => {
     const row = db
-      .prepare("SELECT COUNT(*) AS count FROM entries WHERE archive_path = ?")
-      .get(state.archivePath) as { count?: number } | undefined;
-    const nextIndex = Number(row?.count || 0);
+      .prepare("SELECT MAX(line_number) AS max_line_number FROM entries WHERE archive_path = ?")
+      .get(state.archivePath) as { max_line_number?: number } | undefined;
+    const nextIndex = Math.max(0, Number(row?.max_line_number || 0));
     const item = toIndexedEntry(entry, state.archivePath, nextIndex);
     insertIndexedEntry(db, item);
     db.prepare(
@@ -831,10 +873,20 @@ async function withTranscriptSearchDb<T>(
   }
 }
 
-function rowToEntry(row: { entry_json: string }): TranscriptArchiveEntry | null {
+function rowToEntry(row: {
+  entry_json: string;
+  line_number?: number;
+  archive_path?: string;
+}): TranscriptArchiveEntry | null {
   try {
     const entry = JSON.parse(row.entry_json) as TranscriptArchiveEntry;
     if (!entry?.text) return null;
+    if (Number.isFinite(Number(row.line_number))) {
+      entry.archiveLine = Math.max(1, Number(row.line_number));
+    }
+    if (row.archive_path) {
+      entry.archivePath = safeString(row.archive_path).trim() || undefined;
+    }
     return entry;
   } catch {
     return null;
@@ -845,13 +897,17 @@ function loadSessionEntriesByKey(db: Database, sessionKey: string): TranscriptAr
   const rows = db
     .prepare(
       `
-      SELECT entry_json
+      SELECT entry_json, line_number, archive_path
       FROM entries
       WHERE session_key = ?
-      ORDER BY timestamp_ms ASC, row_key ASC
+      ORDER BY timestamp_ms ASC, line_number ASC, row_key ASC
     `,
     )
-    .all(sessionKey) as Array<{ entry_json: string }>;
+    .all(sessionKey) as Array<{
+      entry_json: string;
+      line_number: number;
+      archive_path: string;
+    }>;
   return rows.map((row) => rowToEntry(row)).filter(Boolean) as TranscriptArchiveEntry[];
 }
 
@@ -1021,7 +1077,7 @@ function aggregateSearchResults(
     .prepare(
       `
       SELECT row_key, archive_path, session_key, session_id, session_file,
-             timestamp, timestamp_ms, role, preview, entry_json
+             timestamp, timestamp_ms, line_number, role, preview, entry_json
       FROM entries
       WHERE row_key IN (${placeholders})
     `,
@@ -1034,6 +1090,7 @@ function aggregateSearchResults(
       session_file: string;
       timestamp: string;
       timestamp_ms: number;
+      line_number: number;
       role: string;
       preview: string;
       entry_json: string;
@@ -1058,22 +1115,20 @@ function aggregateSearchResults(
       totalScore: 0,
       hitCount: 0,
       latestHitTimestampMs: row.timestamp_ms,
-      matchedEntries: [],
+      messages: [],
     };
     bucket.bestScore = Math.max(bucket.bestScore, row.score);
     bucket.totalScore += row.score;
     bucket.hitCount += 1;
     bucket.latestHitTimestampMs = Math.max(bucket.latestHitTimestampMs, row.timestamp_ms);
-    if (bucket.matchedEntries.length < MAX_MATCHED_ENTRIES_PER_SESSION) {
-      const entry = rowToEntry({ entry_json: row.entry_json });
+    if (bucket.messages.length < MAX_MATCHED_ENTRIES_PER_SESSION) {
+      const entry = rowToEntry({
+        entry_json: row.entry_json,
+        line_number: row.line_number,
+        archive_path: row.archive_path,
+      });
       if (entry) {
-        bucket.matchedEntries.push({
-          id: entry.id,
-          role: entry.role,
-          timestamp: entry.timestamp,
-          preview: row.preview,
-          score: row.score,
-        });
+        bucket.messages.push(buildResultMessage(entry));
       }
     }
     grouped.set(row.session_key, bucket);
@@ -1098,7 +1153,7 @@ function aggregateSearchResults(
     const entries = loadSessionEntriesByKey(db, bucket.sessionKey);
     return presentSessionResult(entries, bucket.score, rootOverride, {
       hitCount: bucket.hitCount,
-      matchedEntries: bucket.matchedEntries,
+      messages: bucket.messages,
     });
   });
 }
