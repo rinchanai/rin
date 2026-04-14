@@ -10,6 +10,7 @@ import {
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import { canRunCommand } from "../chat-bridge/policy.js";
+import { enqueueKoishiPromptContext } from "../chat-bridge/prompt-context.js";
 import {
   chatStateDir,
   listChatStateFiles,
@@ -31,7 +32,6 @@ import {
   pickSenderNickname,
   pickUserId,
   safeString,
-  wrapKoishiBridgePrompt,
 } from "./chat-helpers.js";
 import {
   KoishiChatController,
@@ -297,7 +297,7 @@ export async function startKoishi(
     const promptBody = inboundAttachmentNotice
       ? `${decision.text}\n\n${inboundAttachmentNotice}`
       : decision.text;
-    const text = wrapKoishiBridgePrompt(promptBody, {
+    enqueueKoishiPromptContext({
       source: "koishi-bridge",
       sentAt: Number.isFinite(Number(session?.timestamp))
         ? Number(session.timestamp)
@@ -323,7 +323,7 @@ export async function startKoishi(
     void controller
       .runTurn(
         {
-          text,
+          text: promptBody,
           attachments,
           replyToMessageId: messageId,
           incomingMessageId: messageId,

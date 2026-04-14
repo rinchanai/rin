@@ -2,6 +2,8 @@ import os from "node:os";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
+import { consumeKoishiPromptContext } from "../../src/core/chat-bridge/prompt-context.js";
+
 type TurnPromptMeta = {
   source?: string;
   sentAt?: number;
@@ -252,6 +254,10 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
 
     const input = safeString(event.text);
     const decoded = decodePromptMeta(input);
+    const queuedKoishiMeta =
+      safeString(event.source).trim() === "koishi-bridge"
+        ? consumeKoishiPromptContext()
+        : null;
     const crossUserMeta = getCrossUserPromptMeta();
 
     if (runtimeRole === "rpc-frontend") {
@@ -269,13 +275,17 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
 
     const mergedMeta = {
       ...(decoded.meta || {}),
+      ...(queuedKoishiMeta || {}),
       ...(runtimeRole === "std-tui" ? crossUserMeta || {} : {}),
     };
     const hasMeta = Object.keys(mergedMeta).length > 0;
     pendingContexts.push({
       meta: hasMeta ? mergedMeta : null,
       body: decoded.body,
-      sentAt: Number(decoded.meta?.sentAt) || Date.now(),
+      sentAt:
+        Number(queuedKoishiMeta?.sentAt) ||
+        Number(decoded.meta?.sentAt) ||
+        Date.now(),
     });
 
     if (decoded.meta) {
