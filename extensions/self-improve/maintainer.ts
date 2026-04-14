@@ -90,13 +90,12 @@ function turnTranscript(messages: any[]): string {
 
 function buildSelfImproveReviewPrompt(trigger: string): string {
   const prompt = [
-    "Review the conversation dialectically and derive only durable conclusions that should still matter across sessions.",
-    "Prefer explicit user statements and repeated evidence over one-off impressions; if a pattern is weak, new, or temporary, leave it in the transcript.",
-    "Save compact stable baselines with save_prompts. Save reusable workflows, troubleshooting methods, operating playbooks, and non-trivial procedures as skills.",
-    "If a transcript shows a complex task, tricky fix, or reusable user-corrected approach, capture that procedure as a skill for future reuse.",
-    "Refine existing prompt slots and skills instead of creating duplicate variants. Prefer a few sharp conclusions over a long noisy list.",
-    "Do not save transcript summaries, task progress, completed-work logs, temporary TODO state, or ephemeral session context.",
-    "Agent-generated skills live under the managed self_improve/skills path as ordinary <skill-name>/SKILL.md packages.",
+    "Review the conversation and derive only durable conclusions that should still matter across sessions.",
+    "Prefer explicit user statements and repeated evidence over one-off impressions. If a pattern is weak, new, temporary, or session-specific, leave it in the transcript.",
+    "Save compact stable baselines with save_prompts. Save reusable workflows, troubleshooting methods, operating playbooks, and other non-trivial procedures as skills.",
+    "If the transcript reveals a complex task, tricky fix, or reusable user-corrected method, capture it as a skill.",
+    "Refine existing prompt slots and skills instead of creating duplicates. Prefer a few sharp conclusions over a long noisy list.",
+    "Do not save summaries, task progress, completed-work logs, temporary TODO state, or other ephemeral session context.",
     "When creating or substantially revising a skill, use the skill-creator skill if it is available.",
     "If an existing skill is missing steps, outdated, incomplete, or wrong, update it immediately.",
   ];
