@@ -398,3 +398,56 @@ test("search_memory fails instead of silently degrading to raw transcript result
     );
   });
 });
+
+test("search_memory formatting shows query and absolute session path", () => {
+  const rendered = memoryExtensionModule.formatSearchResult({
+    query: "minecraft server",
+    results: [
+      {
+        sessionFile: "/home/rin/.rin/sessions/demo.jsonl",
+        path: "/home/rin/.rin/memory/transcripts/2026/04/demo.jsonl",
+        summary: "Investigated the Minecraft server modpack crash and identified the failing config file.",
+        preview: "raw preview should never leak",
+      },
+    ],
+  });
+
+  assert.match(rendered, /^search_memory minecraft server/m);
+  assert.match(rendered, /\/home\/rin\/\.rin\/sessions\/demo\.jsonl/);
+  assert.match(rendered, /Investigated the Minecraft server modpack crash/);
+  assert.doesNotMatch(rendered, /raw preview should never leak/);
+});
+
+test("search_memory agent formatting uses absolute path instead of timestamps", () => {
+  const rendered = memoryExtensionModule.formatAgentSearchResult({
+    query: "koishi outbound",
+    results: [
+      {
+        timestamp: "2026-04-14T06:05:42.876Z",
+        sessionId: "b6745c84-869c-4bc4-9709-9cda7a4f6def",
+        sessionFile: "/home/rin/.rin/sessions/2026-04-14T06-05-42-876Z_b6745c84-869c-4bc4-9709-9cda7a4f6def.jsonl",
+        path: "/home/rin/.rin/memory/transcripts/2026/04/64ccd205-ea35-4716-b2d4-9eff931eb59c.jsonl",
+        summary: "Fixed the Koishi outbound send routing bug and verified the affected bridge path.",
+      },
+    ],
+  });
+
+  assert.match(rendered, /^search_memory koishi outbound \(1\)/m);
+  assert.match(
+    rendered,
+    /1\. \/home\/rin\/\.rin\/sessions\/2026-04-14T06-05-42-876Z_b6745c84-869c-4bc4-9709-9cda7a4f6def\.jsonl/,
+  );
+  assert.doesNotMatch(rendered, /^1\. 2026-04-14T06:05:42\.876Z/m);
+});
+
+test("search_memory call formatting keeps query in the TUI tool title", () => {
+  const theme = {
+    fg: (_name, value) => value,
+    bold: (value) => value,
+  };
+  const rendered = memoryExtensionModule.formatSearchMemoryCall(
+    { query: "search_memory hang" },
+    theme,
+  );
+  assert.equal(rendered, "search_memory search_memory hang");
+});
