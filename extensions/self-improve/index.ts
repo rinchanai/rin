@@ -54,16 +54,13 @@ function getSessionReviewState(sessionId: string) {
 
 function triggerInitConversation(
   pi: ExtensionAPI,
-  mode: "auto" | "manual",
+  _mode: "auto" | "manual",
   busy: boolean,
 ) {
   pi.sendMessage(
     {
       customType: "self-improve-init-trigger",
-      content:
-        mode === "auto"
-          ? "Begin self-improve onboarding."
-          : "Begin requested self-improve onboarding.",
+      content: "The user is requesting initialization.",
       display: false,
     },
     busy ? { triggerTurn: true, deliverAs: "followUp" } : { triggerTurn: true },
