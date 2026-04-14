@@ -493,10 +493,10 @@ function escapeLike(value: string): string {
   return safeString(value).replace(/([%_\\])/g, "\\$1");
 }
 
-function initializeTranscriptSearchDb(db: Database) {
+function initializeTranscriptSearchDb(db: Database, busyTimeoutMs = 5000) {
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
-  db.pragma("busy_timeout = 5000");
+  db.pragma(`busy_timeout = ${Math.max(0, Math.trunc(busyTimeoutMs))}`);
   db.exec(`
     CREATE TABLE IF NOT EXISTS metadata (
       key TEXT PRIMARY KEY,
@@ -563,7 +563,17 @@ function isRebuildableTranscriptSearchDbError(error: unknown): boolean {
   return code === "SQLITE_NOTADB" || message.includes("file is not a database");
 }
 
-function openTranscriptSearchDb(rootOverride = "", allowReset = true): Database {
+function isSqliteBusyError(error: unknown): boolean {
+  const code = String((error as any)?.code || "").trim();
+  const message = String((error as any)?.message || error || "").toLowerCase();
+  return code === "SQLITE_BUSY" || message.includes("database is locked");
+}
+
+function openTranscriptSearchDb(
+  rootOverride = "",
+  allowReset = true,
+  busyTimeoutMs = 5000,
+): Database {
   const dbPath = resolveTranscriptSearchDbPath(rootOverride);
   const parent = path.dirname(dbPath);
   if (!fssync.existsSync(parent)) fssync.mkdirSync(parent, { recursive: true });
@@ -588,7 +598,7 @@ function openTranscriptSearchDb(rootOverride = "", allowReset = true): Database 
       }
     }
 
-    initializeTranscriptSearchDb(db);
+    initializeTranscriptSearchDb(db, busyTimeoutMs);
     return db;
   } catch (error) {
     try {
@@ -598,7 +608,7 @@ function openTranscriptSearchDb(rootOverride = "", allowReset = true): Database 
       try {
         if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
       } catch {}
-      return openTranscriptSearchDb(rootOverride, false);
+      return openTranscriptSearchDb(rootOverride, false, busyTimeoutMs);
     }
     throw error;
   }
@@ -778,27 +788,36 @@ async function syncTranscriptSearchIndex(db: Database, rootOverride = "") {
 
 export async function repairTranscriptSearchIndex(rootOverride = "") {
   const dbPath = resolveTranscriptSearchDbPath(rootOverride);
-  try {
-    if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
-  } catch {}
-  const db = openTranscriptSearchDb(rootOverride, false);
-  try {
-    await syncTranscriptSearchIndex(db, rootOverride);
-    const fileCountRow = db
-      .prepare("SELECT COUNT(*) AS count FROM file_state")
-      .get() as { count?: number } | undefined;
-    const entryCountRow = db
-      .prepare("SELECT COUNT(*) AS count FROM entries")
-      .get() as { count?: number } | undefined;
-    return {
-      dbPath,
-      transcriptRoot: resolveTranscriptRoot(rootOverride),
-      fileCount: Number(fileCountRow?.count || 0),
-      entryCount: Number(entryCountRow?.count || 0),
-    };
-  } finally {
-    db.close();
+  const transcriptRoot = resolveTranscriptRoot(rootOverride);
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      try {
+        if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
+      } catch {}
+      const db = openTranscriptSearchDb(rootOverride, false, 60_000);
+      try {
+        await syncTranscriptSearchIndex(db, rootOverride);
+        const fileCountRow = db
+          .prepare("SELECT COUNT(*) AS count FROM file_state")
+          .get() as { count?: number } | undefined;
+        const entryCountRow = db
+          .prepare("SELECT COUNT(*) AS count FROM entries")
+          .get() as { count?: number } | undefined;
+        return {
+          dbPath,
+          transcriptRoot,
+          fileCount: Number(fileCountRow?.count || 0),
+          entryCount: Number(entryCountRow?.count || 0),
+        };
+      } finally {
+        db.close();
+      }
+    } catch (error) {
+      if (!isSqliteBusyError(error) || attempt >= 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+    }
   }
+  return { dbPath, transcriptRoot, fileCount: 0, entryCount: 0 };
 }
 
 async function withTranscriptSearchDb<T>(
