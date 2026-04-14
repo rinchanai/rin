@@ -411,6 +411,48 @@ test("search_memory summarization falls back to runtime agent dir and low thinki
   });
 });
 
+test("search_memory forwards abort signal into summarization subagents", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "session-abort",
+        sessionFile: "/tmp/session-abort.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Tracked an abort propagation bug in search_memory." }],
+      },
+      root,
+    );
+    const rows = await transcripts.searchTranscriptArchive(
+      "abort propagation bug",
+      { limit: 8 },
+      root,
+    );
+    const controller = new AbortController();
+    const calls = [];
+    await assert.rejects(
+      () => memoryExtensionModule.maybeSummarizeTranscriptMatches(
+        rows,
+        "abort propagation bug",
+        { agentDir: root, model: { provider: "test", id: "demo" } },
+        "medium",
+        async (options) => {
+          calls.push(options);
+          controller.abort();
+          return {
+            ok: true,
+            results: [{ output: "should never be used" }],
+          };
+        },
+        controller.signal,
+      ),
+      /search_memory_aborted/,
+    );
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].signal, controller.signal);
+  });
+});
+
 test("search_memory fails instead of silently degrading to raw transcript results", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
