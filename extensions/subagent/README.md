@@ -18,6 +18,7 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
   - `session`
 - parallel tasks wait for all tasks to finish before returning; no background jobs
 - reuses Rin's own session/runtime layer and works in both std mode and daemon/RPC mode
+- supports hiding selected builtin extensions from worker runtimes, for example `disabledExtensions: ["memory"]`
 - does not support agent presets or prompt presets
 
 ## Parameters

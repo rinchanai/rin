@@ -47,13 +47,30 @@ function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function getSubagentExtensionPaths(): string[] {
+function normalizeDisabledExtensions(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return [...new Set(
+    values
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean),
+  )];
+}
+
+function getExtensionNameFromPath(entry: string): string {
+  const normalized = entry.split(path.sep).join("/");
+  const match = normalized.match(/\/extensions\/([^/]+)\/index\.(?:ts|js)$/);
+  return String(match?.[1] || "").trim().toLowerCase();
+}
+
+export function resolveSubagentExtensionPaths(
+  disabledExtensions: string[] = [],
+): string[] {
+  const blocked = new Set(normalizeDisabledExtensions(disabledExtensions));
+  blocked.add("subagent");
   return getBuiltinExtensionPaths().filter((entry) => {
-    const normalized = entry.split(path.sep).join("/");
-    return (
-      !normalized.endsWith("/extensions/subagent/index.ts") &&
-      !normalized.endsWith("/extensions/subagent/index.js")
-    );
+    const extensionName = getExtensionNameFromPath(entry);
+    if (!extensionName) return true;
+    return !blocked.has(extensionName);
   });
 }
 
@@ -161,7 +178,9 @@ async function createManagedSession(task: SubagentTask) {
     return await createConfiguredAgentSession({
       cwd: sessionManager.getCwd?.() || cwd,
       agentDir: profile.agentDir,
-      additionalExtensionPaths: getSubagentExtensionPaths(),
+      additionalExtensionPaths: resolveSubagentExtensionPaths(
+        task.disabledExtensions,
+      ),
       sessionManager,
       modelRef: task.model,
       thinkingLevel: task.thinkingLevel,
@@ -232,6 +251,9 @@ function buildTasks(
           model: normalizeModelRef(task.model),
           thinkingLevel: task.thinkingLevel,
           session: normalizeSessionConfig(task.session),
+          disabledExtensions: normalizeDisabledExtensions(
+            task.disabledExtensions,
+          ),
         }))
       : [
           {
@@ -241,6 +263,9 @@ function buildTasks(
               (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
             thinkingLevel: params.thinkingLevel || currentThinkingLevel,
             session: normalizeSessionConfig(params.session),
+            disabledExtensions: normalizeDisabledExtensions(
+              params.disabledExtensions,
+            ),
           },
         ],
   };
