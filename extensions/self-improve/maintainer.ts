@@ -23,7 +23,7 @@ function buildSelfImproveReviewPrompt(_trigger: string): string {
     "Review the conversation and derive durable conclusions that should still matter across sessions.",
     "Save compact stable baselines with save_prompts.",
     "Save reusable workflows, operating playbooks, complex task procedures, troubleshooting methods, and similar durable methods as self improve skills.",
-    "Refine existing prompt slots and skills instead of creating duplicates.",
+    "Refine existing prompt slots and skills instead of creating duplicates. Remove outdated, overly specific, or no-longer-durable lines when that keeps the baseline converged.",
     "If an existing skill is missing steps, outdated, incomplete, or wrong, update it.",
     "Do not save summaries, progress, temporary state, or weak session-specific patterns.",
   ];
