@@ -420,13 +420,11 @@ export async function startKoishi(
             .catch(() => {});
 
         const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ""}`;
-        void controller
-          .runCommand(text, messageId, messageId)
-          .catch((error) => {
-            logger.warn(
-              `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
-            );
-          });
+        await controller.runCommand(text, messageId, messageId).catch((error) => {
+          logger.warn(
+            `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
+          );
+        });
         return "";
       });
   }

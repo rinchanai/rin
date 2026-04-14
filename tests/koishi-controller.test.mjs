@@ -60,6 +60,12 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
   const controller = await createController();
   const calls = [];
   const namedSessions = [];
+  const deliveries = [];
+  controller.commitPendingDelivery = async function () {
+    deliveries.push(this.state.pendingDelivery?.text || "");
+    delete this.state.pendingDelivery;
+    this.saveState();
+  };
 
   controller.session = {
     sessionManager: {
@@ -73,7 +79,7 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
     },
     runCommand: async (commandLine) => {
       calls.push(`runCommand:${commandLine}`);
-      return { handled: true };
+      return { handled: true, text: "Session stats" };
     },
     setSessionName: async (name) => {
       namedSessions.push(name);
@@ -84,7 +90,36 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
 
   assert.deepEqual(calls, ["ensureSessionReady", "runCommand:/session"]);
   assert.deepEqual(namedSessions, ["telegram/1:2", "telegram/1:2"]);
+  assert.deepEqual(deliveries, ["Session stats"]);
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
+});
+
+test("koishi controller delivers a visible command error instead of failing silently", async () => {
+  const controller = await createController();
+  const deliveries = [];
+  controller.commitPendingDelivery = async function () {
+    deliveries.push(this.state.pendingDelivery?.text || "");
+    delete this.state.pendingDelivery;
+    this.saveState();
+  };
+
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => "/tmp/fresh-chat.jsonl",
+      getSessionId: () => "session-1",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/fresh-chat.jsonl",
+      sessionId: "session-1",
+    }),
+    runCommand: async () => {
+      throw new Error("boom");
+    },
+  };
+
+  await assert.rejects(controller.runCommand("/reload"), /boom/);
+  assert.deepEqual(deliveries, ["Koishi error: boom"]);
 });
 
 test("koishi controller polls telegram typing only while the controller still owns a live turn", async () => {
