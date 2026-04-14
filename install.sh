@@ -9,7 +9,18 @@ WORKDIR=$(mktemp -d "$TMPDIR_BASE/rin-install.XXXXXX")
 ARCHIVE="$WORKDIR/rin.tar.gz"
 SRC_DIR="$WORKDIR/src"
 LOGFILE="$WORKDIR/install.log"
-TTY=/dev/tty
+TTY=${RIN_INSTALL_TTY:-}
+if [ -z "$TTY" ]; then
+  if tty -s >/dev/null 2>&1; then
+    TTY=/dev/tty
+  else
+    TTY=
+  fi
+fi
+
+tty_available() {
+  [ -n "$TTY" ] && [ -w "$TTY" ] 2>/dev/null
+}
 
 cleanup() {
   rm -rf "$WORKDIR"
@@ -17,7 +28,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 say() {
-  if [ -w "$TTY" ]; then
+  if tty_available; then
     printf '%s\n' "$1" >"$TTY"
   else
     printf '%s\n' "$1"
@@ -41,7 +52,7 @@ render_spinner() {
       8) frame='⠇' ;;
       *) frame='⠏' ;;
     esac
-    if [ -w "$TTY" ]; then
+    if tty_available; then
       printf '\r[rin-install] %s %s' "$frame" "$label" >"$TTY"
     fi
     i=$(( (i + 1) % 10 ))
@@ -60,7 +71,7 @@ run_step() {
   wait "$pid"
   status=$?
   set -e
-  if [ -w "$TTY" ]; then
+  if tty_available; then
     if [ "$status" -eq 0 ]; then
       printf '\r[rin-install] ✓ %s\033[K\n' "$label" >"$TTY"
     else
@@ -110,8 +121,9 @@ fi
 run_step "Building installer" npm run build
 say "[rin-install] Launching installer..."
 
-if [ -r /dev/tty ]; then
-  exec node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+if tty_available; then
+  node dist/app/rin-install/main.js <"$TTY" >"$TTY" 2>&1
+  exit $?
 fi
 
-exec node dist/app/rin-install/main.js
+node dist/app/rin-install/main.js

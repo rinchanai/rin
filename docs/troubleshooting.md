@@ -73,6 +73,23 @@ Use `rin --tmux-list` if you expect a long-lived hidden Rin tmux session to stil
 
 If the refreshed runtime works through the direct stable entry but not through your current shell path, debug the launcher/user context before assuming the update failed.
 
+## `install.sh` fails before the interactive installer starts
+
+Start with the bootstrap prerequisites:
+
+- `curl` or `wget` for downloading the source archive
+- `npm` for dependency install and build
+- `tar` for unpacking the archive
+
+Useful overrides when you need to debug or control bootstrap behavior:
+
+```bash
+RIN_INSTALL_REPO_URL=https://github.com/rinchanai/rin ./install.sh
+RIN_INSTALL_TMPDIR=/tmp/rin-install ./install.sh
+```
+
+If the script exits before the installer UI appears, inspect the temporary `install.log` under `${RIN_INSTALL_TMPDIR:-${XDG_CACHE_HOME:-~/.cache}/rin-install}` before rerunning.
+
 ## Provider auth or installer prompts behave differently than expected
 
 Check which branch of the interactive installer actually ran:

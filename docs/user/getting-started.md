@@ -17,6 +17,15 @@ The installer will:
 - build the runtime
 - launch the interactive installer
 
+Useful bootstrap overrides when you need a mirror or a controlled temp location:
+
+```bash
+RIN_INSTALL_REPO_URL=https://github.com/rinchanai/rin ./install.sh
+RIN_INSTALL_TMPDIR=/tmp/rin-install ./install.sh
+```
+
+If bootstrap fails before the interactive installer appears, check the temporary `install.log` under `${RIN_INSTALL_TMPDIR:-${XDG_CACHE_HOME:-~/.cache}/rin-install}` before rerunning.
+
 The interactive installer then walks through:
 
 - target daemon user and install directory
