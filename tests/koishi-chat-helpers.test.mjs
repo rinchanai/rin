@@ -127,7 +127,7 @@ test("koishi chat helpers persist outbound image parts", async () => {
   });
 });
 
-test("koishi chat helpers report media elements without downloadable resources", async () => {
+test("koishi chat helpers report unresolved media placeholders clearly", async () => {
   await withTempDir(async (dir) => {
     const result = await helpers.extractInboundAttachments(
       [{ type: "img" }],
@@ -138,12 +138,12 @@ test("koishi chat helpers report media elements without downloadable resources",
       {
         type: "img",
         kind: "image",
-        reason: "missing_resource",
+        reason: "unresolved_resource",
       },
     ]);
     assert.match(
       helpers.buildInboundAttachmentNotice(result.failures),
-      /included media that could not be attached/i,
+      /Koishi did not resolve a downloadable resource/i,
     );
   });
 });
