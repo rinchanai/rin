@@ -79,6 +79,19 @@ const SessionSchema = Type.Optional(
   }),
 );
 
+const DisabledExtensionsSchema = Type.Optional(
+  Type.Array(
+    Type.String({
+      description:
+        "Builtin extension name to hide from the worker, for example `memory`.",
+    }),
+    {
+      description:
+        "Optional builtin extension names to hide from the worker runtime.",
+    },
+  ),
+);
+
 const TaskSchema = Type.Object({
   prompt: Type.String({ description: "Prompt for the worker." }),
   model: Type.Optional(
@@ -89,6 +102,7 @@ const TaskSchema = Type.Object({
   ),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
   session: SessionSchema,
+  disabledExtensions: DisabledExtensionsSchema,
 });
 
 const RunParamsSchema = Type.Object({
@@ -103,6 +117,7 @@ const RunParamsSchema = Type.Object({
   ),
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
   session: SessionSchema,
+  disabledExtensions: DisabledExtensionsSchema,
   tasks: Type.Optional(
     Type.Array(TaskSchema, {
       description:

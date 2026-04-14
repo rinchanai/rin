@@ -21,8 +21,6 @@ import {
   loadRecentTranscriptSessions,
   loadTranscriptSessionEntries,
   searchTranscriptArchive,
-  type TranscriptArchiveEntry,
-  type TranscriptSessionResult,
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
@@ -168,31 +166,24 @@ function formatMemoryResult(
   return text;
 }
 
-function buildTranscriptExcerpt(entries: TranscriptArchiveEntry[]): string {
+function buildTranscriptExcerpt(entries: any[]): string {
   return entries
-    .map(
-      (entry) =>
-        `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`,
-    )
+    .map((entry) => `${String(entry.role || "").toUpperCase()}: ${String(entry.text || "").trim()}`)
     .join("\n\n")
     .slice(0, 12000);
 }
 
-function buildMatchedHitsBlock(row: TranscriptSessionResult): string {
+function buildMatchedHitsBlock(row: any): string {
   const hits = Array.isArray(row?.matchedEntries) ? row.matchedEntries : [];
   if (!hits.length) return "none";
   return hits
-    .map((hit, index) => {
+    .map((hit: any, index: number) => {
       return `${index + 1}. ${String(hit?.timestamp || "").trim()} | ${String(hit?.role || "").trim()} | ${String(hit?.preview || "").trim()}`;
     })
     .join("\n");
 }
 
-function buildRecallPrompt(
-  query: string,
-  row: TranscriptSessionResult,
-  transcript: string,
-): string {
+function buildRecallPrompt(query: string, row: any, transcript: string): string {
   const sessionOverview = String(row?.preview || row?.description || "").trim();
   const matchedHits = buildMatchedHitsBlock(row);
   const focus = query
@@ -211,25 +202,31 @@ function buildRecallPrompt(
   ].join("\n\n");
 }
 
-async function maybeSummarizeTranscriptMatches(
-  results: TranscriptSessionResult[],
+export async function maybeSummarizeTranscriptMatches(
+  results: any[],
   query: string,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
+  runSubagent = executeSubagentRun,
 ) {
   const rows = Array.isArray(results) ? results : [];
   if (!rows.length) return rows;
   const agentDir = String(ctx?.agentDir || "").trim();
-  if (!agentDir) return rows;
+  if (!agentDir) {
+    throw new Error("search_memory requires agentDir for transcript summarization.");
+  }
+
   const config = await loadAuxiliaryModelConfig(agentDir);
   const fallbackModel = ctx?.model
     ? `${String(ctx.model.provider || "")}/${String(ctx.model.id || "")}`
     : "";
   const modelRef = String(config.modelRef || fallbackModel).trim();
-  if (!modelRef) return rows;
+  if (!modelRef) {
+    throw new Error("search_memory summarization requires an available model.");
+  }
 
-  const tasks = [] as any[];
-  const taskRows = [] as TranscriptSessionResult[];
+  const tasks: any[] = [];
+  const taskRows: any[] = [];
   for (const row of rows) {
     const entries = await loadTranscriptSessionEntries(
       {
@@ -242,27 +239,41 @@ async function maybeSummarizeTranscriptMatches(
     tasks.push({
       prompt: buildRecallPrompt(query, row, buildTranscriptExcerpt(entries)),
       model: modelRef,
-      thinkingLevel:
-        (config.thinkingLevel as ThinkingLevel | undefined) ||
-        currentThinkingLevel,
+      thinkingLevel: config.thinkingLevel || currentThinkingLevel,
+      disabledExtensions: ["memory"],
     });
     taskRows.push(row);
   }
 
   if (!tasks.length) return rows;
-  const run = await executeSubagentRun({
+
+  const run = await runSubagent({
     params: { tasks },
     ctx,
     currentThinkingLevel,
   });
-  if (!run.ok || !Array.isArray(run.results)) return rows;
+  if (!run.ok) {
+    throw new Error(
+      String(("error" in run && run.error) || "search_memory summarization failed."),
+    );
+  }
+  if (!Array.isArray(run.results)) {
+    throw new Error("search_memory summarization returned no results.");
+  }
 
-  const summaryBySession = new Map<string, string>();
+  const summaryBySession = new Map();
   run.results.forEach((result: any, index: number) => {
     const row = taskRows[index];
     if (!row) return;
-    const summary = String(result?.output || result?.errorMessage || "").trim();
-    if (!summary) return;
+    if (Number(result?.exitCode || 0) !== 0) {
+      throw new Error(
+        String(result?.errorMessage || `search_memory summarization failed for result ${index + 1}.`),
+      );
+    }
+    const summary = String(result?.output || "").trim();
+    if (!summary) {
+      throw new Error(`search_memory summarization returned empty output for result ${index + 1}.`);
+    }
     const key = String(row?.sessionFile || row?.sessionId || row?.path || "").trim();
     if (!key) return;
     summaryBySession.set(key, summary);
@@ -271,7 +282,9 @@ async function maybeSummarizeTranscriptMatches(
   return rows.map((row) => {
     const key = String(row?.sessionFile || row?.sessionId || row?.path || "").trim();
     const summary = summaryBySession.get(key);
-    if (!summary) return row;
+    if (!summary) {
+      throw new Error("search_memory summarization did not produce a summary for every result.");
+    }
     return {
       ...row,
       summary,
@@ -291,11 +304,11 @@ async function executeSearchMemory(
       ...(params || {}),
       limit: Number.isFinite(Number(params?.limit)) ? Number(params.limit) : 8,
     };
-    const baseResults = (query
+    const rawResults = query
       ? await searchTranscriptArchive(query, normalizedParams)
-      : await loadRecentTranscriptSessions(normalizedParams)) as TranscriptSessionResult[];
+      : await loadRecentTranscriptSessions(normalizedParams);
     const results = await maybeSummarizeTranscriptMatches(
-      baseResults,
+      rawResults,
       query,
       ctx,
       currentThinkingLevel,

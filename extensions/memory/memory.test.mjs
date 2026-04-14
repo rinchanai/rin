@@ -15,6 +15,11 @@ const transcripts = await import(
     path.join(rootDir, "dist", "extensions", "memory", "transcripts.js"),
   ).href,
 );
+const memoryExtensionModule = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "extensions", "memory", "index.js"),
+  ).href,
+);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-memory-test-"));
@@ -308,5 +313,88 @@ test("memory search handles structured identifiers beyond exact raw substrings",
     assert.equal(results[0].sessionId, "session-ident");
     assert.match(results[0].preview, /chat-send\.ts/);
     assert.match(results[0].matchedEntries[0].preview, /P2\.2/);
+  });
+});
+
+test("memory summarization subagent hides the memory extension", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "session-summary",
+        sessionFile: "/tmp/session-summary.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Refined the memory recall prompt and fixed the session resume hang." }],
+      },
+      root,
+    );
+    await fs.writeFile(
+      path.join(root, "settings.json"),
+      JSON.stringify({ auxiliaryModel: { model: "test/demo", thinkingLevel: "low" } }),
+      "utf8",
+    );
+
+    const rows = await transcripts.searchTranscriptArchive(
+      "session resume hang",
+      { limit: 8 },
+      root,
+    );
+    const calls = [];
+    const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
+      rows,
+      "session resume hang",
+      { agentDir: root },
+      "medium",
+      async (options) => {
+        calls.push(options);
+        return {
+          ok: true,
+          results: [{ output: "Summarized recall sentence." }],
+        };
+      },
+    );
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].params.tasks.length, 1);
+    assert.deepEqual(calls[0].params.tasks[0].disabledExtensions, ["memory"]);
+    assert.equal(calls[0].params.tasks[0].model, "test/demo");
+    assert.equal(calls[0].params.tasks[0].thinkingLevel, "low");
+    assert.equal(summarized[0].summary, "Summarized recall sentence.");
+  });
+});
+
+test("search_memory fails instead of silently degrading to raw transcript results", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "session-tool",
+        sessionFile: "/tmp/session-tool.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Fixed search_memory hang by removing nested subagent recall." }],
+      },
+      root,
+    );
+    await fs.writeFile(
+      path.join(root, "settings.json"),
+      JSON.stringify({ auxiliaryModel: { model: "test/demo" } }),
+      "utf8",
+    );
+
+    const rows = await transcripts.searchTranscriptArchive(
+      "nested subagent recall",
+      { limit: 8 },
+      root,
+    );
+    await assert.rejects(
+      () => memoryExtensionModule.maybeSummarizeTranscriptMatches(
+        rows,
+        "nested subagent recall",
+        { agentDir: root },
+        "medium",
+        async () => ({ ok: false, error: "summary worker unavailable" }),
+      ),
+      /summary worker unavailable/,
+    );
   });
 });
