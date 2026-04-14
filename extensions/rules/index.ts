@@ -1,8 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 
-const HOME_DIR = homedir();
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
@@ -11,6 +9,7 @@ import {
   formatSkillsForPrompt,
   loadSkills,
 } from "../../third_party/pi-coding-agent/src/core/skills.js";
+import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import {
   DEFAULT_MAX_BYTES,
@@ -91,7 +90,7 @@ function buildRulesPrompt(targetDir: string) {
   const contextFiles = loadContextFiles(contextPaths);
   const skills = loadSkills({
     cwd: targetDir,
-    agentDir: join(HOME_DIR, ".rin"),
+    agentDir: resolveRuntimeProfile().agentDir,
     skillPaths: skillDirs,
     includeDefaults: false,
   }).skills;
