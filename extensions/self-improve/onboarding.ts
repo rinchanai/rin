@@ -48,29 +48,15 @@ function writeInitState(
 }
 
 export function buildOnboardingPrompt(
-  mode: "auto" | "manual" = "manual",
+  _mode: "auto" | "manual" = "manual",
 ): string {
   return [
-    mode === "auto"
-      ? "Memory onboarding is active. Continue the initialization naturally."
-      : "The user requested /init. Continue onboarding naturally.",
-    "Keep the conversation natural and concise. Ask at most one onboarding question in this turn.",
-    "The onboarding order should be handled by you conversationally:",
-    "- first establish the user's preferred language",
-    "- then ask the user to define the assistant's own name / identity / relationship framing",
-    "- then ask how to address the user",
-    "- finally ask for the assistant's default voice/style preferences",
-    "If the user already provided information from later steps early, remember it and use it; do not force redundant questions.",
-    "When a stable fact becomes clear, proactively call save_prompts to save or update it.",
-    "For onboarding or preference updates, prefer updating the existing target slot instead of assuming blank state or creating duplicates.",
-    "Use self-improve prompt slots:",
-    "- agent_profile = assistant identity, relationship framing, default language, and voice/style",
-    "- user_profile = user name, addressing, household context, and stable identity cues",
-    "- core_doctrine = methodology, values, worldview, and stable working doctrine",
-    "- core_facts = curated durable facts that should stay present every turn; this slot can hold more than the profile slots",
-    "Prefer updating existing memory over creating duplicates.",
-    "Stable global work-method preferences, methodology, values, worldview, and a few always-relevant facts belong in always-on self-improve prompts.",
-    "Once the main self-improve prompt slots are established clearly enough, stop onboarding and continue normally.",
+    "The user is requesting initialization. Proactively start the conversation and ask questions in the following flow. Ask only one question in each message:",
+    "1. What the user is called and how to address them.",
+    "2. What the user wants to call you.",
+    "3. What identity the user wants you to become.",
+    "4. Based on that information, continue the conversation on your own and expand the topic naturally while keeping a one-question, one-answer rhythm.",
+    "Persist all of the information above with save_prompts.",
   ].join("\n");
 }
 
