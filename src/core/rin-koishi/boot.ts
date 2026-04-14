@@ -22,8 +22,6 @@ const KOISHI_CHAT_COMMAND_ROWS: readonly KoishiChatCommandRow[] = [
   { name: "model", description: "Show or change the current model" },
 ];
 
-const TELEGRAM_COMMAND_LANGUAGE_CODES = ["en", "zh"] as const;
-
 export function getKoishiChatCommandRows(): KoishiChatCommandRow[] {
   return KOISHI_CHAT_COMMAND_ROWS.map((item) => ({ ...item }));
 }
@@ -74,29 +72,13 @@ export async function syncTelegramCommands(
     try {
       if (typeof bot?.internal?.setMyCommands === "function") {
         if (typeof bot?.internal?.deleteMyCommands === "function") {
-          await bot.internal.deleteMyCommands({});
-          for (const languageCode of TELEGRAM_COMMAND_LANGUAGE_CODES) {
-            await bot.internal.deleteMyCommands({ language_code: languageCode });
-          }
           for (const scope of clearScopes) {
             await bot.internal.deleteMyCommands({ scope });
-            for (const languageCode of TELEGRAM_COMMAND_LANGUAGE_CODES) {
-              await bot.internal.deleteMyCommands({
-                scope,
-                language_code: languageCode,
-              });
-            }
           }
         }
 
         if (payload.length) {
           await bot.internal.setMyCommands({ commands: payload });
-          for (const languageCode of TELEGRAM_COMMAND_LANGUAGE_CODES) {
-            await bot.internal.setMyCommands({
-              commands: payload,
-              language_code: languageCode,
-            });
-          }
         }
         continue;
       }
