@@ -252,6 +252,7 @@ export async function maybeSummarizeTranscriptMatches(
       {
         sessionId: String(row?.sessionId || "").trim(),
         sessionFile: String(row?.sessionFile || "").trim(),
+        path: String(row?.path || "").trim(),
       },
       agentDir,
     );

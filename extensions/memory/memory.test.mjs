@@ -316,6 +316,32 @@ test("memory search handles structured identifiers beyond exact raw substrings",
   });
 });
 
+test("memory transcript session loads can bypass search.db when result path is known", async () => {
+  await withTempRoot(async (root) => {
+    const entry = {
+      timestamp: "2026-04-08T09:09:09.000Z",
+      sessionId: "session-direct-path",
+      sessionFile: "/tmp/session-direct-path.jsonl",
+      role: "assistant",
+      content: [{ type: "text", text: "Loaded transcript entries directly from the archive path." }],
+    };
+    await transcripts.appendTranscriptArchiveEntry(entry, root);
+    const archivePath = transcripts.getTranscriptArchivePath(entry, root);
+    await fs.mkdir(path.join(root, "memory"), { recursive: true });
+    await fs.writeFile(path.join(root, "memory", "search.db"), "not-a-sqlite-db");
+    const loaded = await transcripts.loadTranscriptSessionEntries(
+      {
+        sessionId: entry.sessionId,
+        sessionFile: entry.sessionFile,
+        path: archivePath,
+      },
+      root,
+    );
+    assert.equal(loaded.length, 1);
+    assert.match(loaded[0].text, /directly from the archive path/);
+  });
+});
+
 test("memory summarization subagent hides the memory extension", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(

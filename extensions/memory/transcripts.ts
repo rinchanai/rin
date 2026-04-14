@@ -758,11 +758,19 @@ function loadSessionEntriesByKey(db: Database, sessionKey: string): TranscriptAr
 }
 
 export async function loadTranscriptSessionEntries(
-  params: { sessionId?: string; sessionFile?: string } = {},
+  params: { sessionId?: string; sessionFile?: string; path?: string } = {},
   rootOverride = "",
 ): Promise<TranscriptArchiveEntry[]> {
   const sessionId = safeString(params.sessionId || "").trim();
   const sessionFile = safeString(params.sessionFile || "").trim();
+  const archivePath = safeString(params.path || "").trim();
+  if (archivePath) {
+    const resolvedArchivePath = path.isAbsolute(archivePath)
+      ? archivePath
+      : path.join(resolveTranscriptRoot(rootOverride), archivePath);
+    const directEntries = await loadTranscriptArchiveFile(resolvedArchivePath);
+    if (directEntries.length) return directEntries;
+  }
   if (!sessionId && !sessionFile) return [];
   return withTranscriptSearchDb(rootOverride, (db) => {
     if (sessionFile) {
