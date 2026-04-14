@@ -329,15 +329,23 @@ export async function startKoishi(
       )
       .catch((error) => {
         const errorMessage = safeString((error as any)?.message || error);
-        logger.warn(
-          `koishi turn failed chatKey=${decision.chatKey} err=${errorMessage}`,
-        );
-        const errorText =
+        const transientFailure =
           /rin_timeout:|rin_disconnected:|rin_tui_not_connected|koishi_controller_disposed/.test(
             errorMessage,
-          )
-            ? "Koishi bridge was restarting while forwarding the turn. Please retry in a moment."
-            : `Koishi error: ${errorMessage || "koishi_turn_failed"}`;
+          );
+        logger.warn(
+          `koishi turn failed chatKey=${decision.chatKey} transient=${transientFailure} err=${errorMessage}`,
+        );
+        if (transientFailure) {
+          setTimeout(() => {
+            void controller.recoverIfNeeded().catch((recoverError) => {
+              logger.warn(
+                `koishi recovery failed chatKey=${decision.chatKey} err=${safeString((recoverError as any)?.message || recoverError)}`,
+              );
+            });
+          }, 1000);
+          return;
+        }
         void sendOutboxPayload(
           app,
           runtime.agentDir,
@@ -345,7 +353,7 @@ export async function startKoishi(
             type: "text_delivery",
             createdAt: new Date().toISOString(),
             chatKey: decision.chatKey,
-            text: errorText,
+            text: `Koishi error: ${errorMessage || "koishi_turn_failed"}`,
             replyToMessageId: messageId || undefined,
             sessionId: replySession?.sessionId,
             sessionFile: replySession?.sessionFile,
