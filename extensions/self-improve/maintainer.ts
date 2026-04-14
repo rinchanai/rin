@@ -92,9 +92,10 @@ function buildSelfImproveReviewPrompt(_trigger: string): string {
   const prompt = [
     "Review the conversation and derive durable conclusions that should still matter across sessions.",
     "Save compact stable baselines with save_prompts.",
-    "Save reusable workflows, troubleshooting methods, operating playbooks, complex task procedures, tricky fixes, and reusable user-corrected methods as self improve skills, and update existing skills when they are missing steps, outdated, incomplete, or wrong.",
+    "Save reusable workflows, operating playbooks, complex task procedures, troubleshooting methods, and similar durable methods as self improve skills.",
     "Refine existing prompt slots and skills instead of creating duplicates.",
-    "Do not save summaries, task progress, completed-work logs, temporary TODO state, or other ephemeral session context. Prefer explicit user statements and repeated evidence over one-off impressions, and leave weak, new, temporary, or session-specific patterns in the transcript.",
+    "If an existing skill is missing steps, outdated, incomplete, or wrong, update it.",
+    "Do not save summaries, progress, temporary state, or weak session-specific patterns.",
   ];
 
   return prompt.join(" ");
