@@ -15,7 +15,6 @@ export type MemoryMaintenanceJob = {
   sessionFile: string;
   trigger: string;
   snapshotKey?: string;
-  messages?: any[];
   additionalExtensionPaths?: string[];
 };
 
@@ -98,9 +97,6 @@ export async function enqueueMemoryMaintenanceJob(
     existing.updatedAt = updatedAt;
     existing.trigger = trigger;
     existing.snapshotKey = snapshotKey || undefined;
-    existing.messages = Array.isArray(input.messages)
-      ? JSON.parse(JSON.stringify(input.messages))
-      : undefined;
     existing.additionalExtensionPaths = Array.isArray(
       input.additionalExtensionPaths,
     )
@@ -117,9 +113,6 @@ export async function enqueueMemoryMaintenanceJob(
       sessionFile,
       trigger,
       snapshotKey: snapshotKey || undefined,
-      messages: Array.isArray(input.messages)
-        ? JSON.parse(JSON.stringify(input.messages))
-        : undefined,
       additionalExtensionPaths: Array.isArray(input.additionalExtensionPaths)
         ? input.additionalExtensionPaths
             .map((item) => safeString(item).trim())
@@ -202,7 +195,6 @@ async function processJob(job: MemoryMaintenanceJob) {
     {
       sessionFile,
       trigger: job.trigger,
-      messages: Array.isArray(job.messages) ? job.messages : undefined,
       additionalExtensionPaths: job.additionalExtensionPaths,
     },
   );

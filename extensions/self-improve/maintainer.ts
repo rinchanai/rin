@@ -1,9 +1,11 @@
 import os from "node:os";
+import path from "node:path";
 
 import type { Model } from "@mariozechner/pi-ai";
 
 const HOME_DIR = os.homedir();
 
+import { loadRinSessionManagerModule } from "../../src/core/rin-lib/loader.js";
 import { openBoundSession } from "../../src/core/session/factory.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
 import { resolveAgentDir } from "./lib.js";
@@ -14,78 +16,6 @@ type ExtensionCtxLike = {
 
 function safeString(value: unknown): string {
   return typeof value === "string" ? value : String(value || "");
-}
-
-function normalizeInlineValue(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number" || typeof value === "boolean")
-    return String(value);
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function stringifyContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part: any) => {
-      if (!part || typeof part !== "object") return "";
-      if (part.type === "text") return safeString(part?.text);
-      if (part.type === "thinking") return safeString(part?.thinking);
-      if (part.type === "toolCall") {
-        const name = safeString(part?.name || part?.toolName || "tool").trim() || "tool";
-        const args = normalizeInlineValue(part?.args || part?.arguments || "");
-        return args ? `[tool:${name}] ${args}` : `[tool:${name}]`;
-      }
-      if (part.type === "image") {
-        const mimeType = safeString(part?.mimeType || "image").trim() || "image";
-        return `[image:${mimeType}]`;
-      }
-      if (part.type === "file") {
-        const name = safeString(part?.name || part?.path || part?.url || "file").trim() || "file";
-        return `[file:${name}]`;
-      }
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n")
-    .trim();
-}
-
-function turnTranscript(messages: any[]): string {
-  return messages
-    .map((message) => {
-      const role =
-        safeString(
-          message?.role || message?.message?.role || "unknown",
-        ).trim() || "unknown";
-      const source = message?.message || message;
-      const content = stringifyContent(source?.content);
-      const toolLabel = safeString(source?.toolName || "").trim();
-      const customLabel = safeString(source?.customType || "").trim();
-      const command = safeString(source?.command || "").trim();
-      const output = safeString(source?.output || "").trim();
-      const summary = safeString(source?.summary || "").trim();
-      const body =
-        content ||
-        [command ? `[bash] ${command}` : "", output, summary]
-          .filter(Boolean)
-          .join("\n\n")
-          .trim();
-      if (!body) return "";
-      const label = toolLabel
-        ? `${role.toUpperCase()}[${toolLabel}]`
-        : customLabel
-          ? `${role.toUpperCase()}[${customLabel}]`
-          : role.toUpperCase();
-      return `${label}: ${body}`;
-    })
-    .filter(Boolean)
-    .join("\n\n");
 }
 
 function buildSelfImproveReviewPrompt(_trigger: string): string {
@@ -101,18 +31,29 @@ function buildSelfImproveReviewPrompt(_trigger: string): string {
   return prompt.join(" ");
 }
 
+export async function createSelfImproveReviewSnapshot(options: {
+  sessionFile: string;
+  leafId?: string;
+}) {
+  const sessionFile = path.resolve(safeString(options.sessionFile).trim());
+  if (!sessionFile) return "";
+  const { SessionManager } = await loadRinSessionManagerModule();
+  const sessionDir = path.dirname(sessionFile);
+  const sourceManager = SessionManager.open(sessionFile, sessionDir);
+  const leafId =
+    safeString(options.leafId || "").trim() ||
+    safeString(sourceManager.getLeafId?.() || "").trim();
+  if (!leafId) return "";
+  return safeString(sourceManager.createBranchedSession(leafId) || "").trim();
+}
+
 async function runForkedSessionSelfImproveReview(options: {
   agentDir: string;
   sessionFile: string;
   trigger?: string;
-  transcriptMessages?: any[];
   additionalExtensionPaths?: string[];
 }) {
-  const transcript = Array.isArray(options.transcriptMessages)
-    ? turnTranscript(options.transcriptMessages)
-    : "";
-
-  const { session } = await openBoundSession({
+  const { session, runtime } = await openBoundSession({
     cwd: HOME_DIR,
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
@@ -123,27 +64,8 @@ async function runForkedSessionSelfImproveReview(options: {
     const forkTargets = session.getUserMessagesForForking?.() || [];
     const latest = forkTargets[forkTargets.length - 1];
     if (latest?.entryId) {
-      const result = await session.fork(latest.entryId);
+      const result = await runtime.fork(latest.entryId);
       if (result?.cancelled) return { skipped: "fork-cancelled" };
-    }
-
-    if (transcript.trim()) {
-      await session.sendCustomMessage(
-        {
-          customType: "self_improve_session_transcript",
-          display: false,
-          content: [
-            {
-              type: "text",
-              text: [
-                "Use the archived transcript below as authoritative context before compaction removes it.",
-                transcript,
-              ].join("\n\n"),
-            },
-          ],
-        },
-        { triggerTurn: false },
-      );
     }
 
     await session.prompt(buildSelfImproveReviewPrompt(safeString(options.trigger).trim()), {
@@ -154,7 +76,6 @@ async function runForkedSessionSelfImproveReview(options: {
     const finalText = safeString(session.getLastAssistantText?.() || "").trim();
     return {
       skipped: "",
-      transcriptUsed: Boolean(transcript.trim()),
       forked: Boolean(latest?.entryId),
       saved: true,
       output: finalText,
@@ -164,7 +85,7 @@ async function runForkedSessionSelfImproveReview(options: {
       await session.abort();
     } catch {}
     try {
-      session.dispose?.();
+      await runtime.dispose();
     } catch {}
   }
 }
@@ -174,7 +95,6 @@ export async function maintainMemory(
   opts: {
     sessionFile?: string;
     trigger?: string;
-    messages?: any[];
     additionalExtensionPaths?: string[];
   } = {},
 ) {
@@ -184,7 +104,6 @@ export async function maintainMemory(
     agentDir: resolveAgentDir(),
     sessionFile,
     trigger: safeString(opts.trigger || "extension:self_improve_review").trim(),
-    transcriptMessages: Array.isArray(opts.messages) ? opts.messages : [],
     additionalExtensionPaths: opts.additionalExtensionPaths,
   });
   return {

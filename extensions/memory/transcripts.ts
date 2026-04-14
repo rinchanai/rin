@@ -342,7 +342,6 @@ function sessionPreviewPriority(entry: TranscriptArchiveEntry) {
   if (entry.role === "custom") score += 8;
   if (entry.toolName) score += 18;
   if (entry.toolCallId) score += 8;
-  if (entry.customType === "self_improve_session_transcript") score -= 25;
   if (text.includes("[tool:")) score += 12;
   if (text.includes("[bash]")) score += 10;
   if (text.includes("http://") || text.includes("https://")) score += 4;
