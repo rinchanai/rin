@@ -823,7 +823,6 @@ export async function createConfiguredAgentSession(
     });
 
     applyRinPromptBuilder(result.session);
-    applyImplicitFinalConfirmation(result.session);
     applyDisableEndTurnThresholdCompaction(result.session);
     applyMidTurnCompaction(result.session);
     applyOverflowContinuationPrompt(result.session);
