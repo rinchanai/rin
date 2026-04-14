@@ -1,4 +1,3 @@
-import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { canAccessAgentInput } from "../chat-bridge/policy.js";
 
 import { composeChatKey, trustOf } from "./support.js";
@@ -75,20 +74,4 @@ export async function shouldProcessText(
   });
 
   return { allow, text, chatKey, trust };
-}
-
-export async function discoverRpcCommands() {
-  const client = new RinDaemonFrontendClient();
-  await client.connect();
-  try {
-    const commands = await client.getCommands();
-    return commands
-      .map((item) => ({
-        name: safeString(item.name).replace(/^\//, ""),
-        description: safeString(item.description || "").trim(),
-      }))
-      .filter((item) => item.name);
-  } finally {
-    await client.disconnect().catch(() => {});
-  }
 }

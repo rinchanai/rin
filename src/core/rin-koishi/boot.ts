@@ -6,27 +6,28 @@ import { listJsonFiles, safeString } from "./chat-helpers.js";
 import { readJsonFile } from "./support.js";
 import { sendOutboxPayload } from "./transport.js";
 
-export function buildAllowedCommandRows(
-  rpcCommands: Array<{ name: string; description?: string }>,
-) {
-  const allowedCommandNames = new Set([
-    "abort",
-    "new",
-    "init",
-    "compact",
-    "reload",
-    "session",
-    "resume",
-    "model",
-  ]);
-  return [
-    { name: "help", description: "Show available commands" },
-    ...rpcCommands.filter((item) => allowedCommandNames.has(item.name)),
-  ];
+export type KoishiChatCommandRow = {
+  name: string;
+  description?: string;
+};
+
+const KOISHI_CHAT_COMMAND_ROWS: readonly KoishiChatCommandRow[] = [
+  { name: "help", description: "Show available commands" },
+  { name: "abort", description: "Abort current operation" },
+  { name: "new", description: "Start a new session" },
+  { name: "compact", description: "Compact the current session" },
+  { name: "reload", description: "Reload extensions, prompts, skills, and themes" },
+  { name: "session", description: "Show current session status" },
+  { name: "resume", description: "Resume a previous session" },
+  { name: "model", description: "Show or change the current model" },
+];
+
+export function getKoishiChatCommandRows(): KoishiChatCommandRow[] {
+  return KOISHI_CHAT_COMMAND_ROWS.map((item) => ({ ...item }));
 }
 
 export function buildTelegramCommandPayload(
-  commandRows: Array<{ name: string; description?: string }>,
+  commandRows: KoishiChatCommandRow[],
 ) {
   const payload: Array<{ command: string; description: string }> = [];
   const seen = new Set<string>();
@@ -59,7 +60,7 @@ export function buildTelegramCommandClearScopes() {
 export async function syncTelegramCommands(
   app: any,
   logger: any,
-  commandRows: Array<{ name: string; description?: string }> = [],
+  commandRows: KoishiChatCommandRow[] = [],
 ) {
   const commander = app.$commander;
   const payload = buildTelegramCommandPayload(commandRows);
