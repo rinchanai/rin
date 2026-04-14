@@ -234,7 +234,16 @@ export async function runBuiltinCommand(
         text: `Model set to: ${provider}/${modelId}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
       };
     }
-    default:
+    default: {
+      const extensionCommand = session.extensionRunner?.getCommand?.(command);
+      if (extensionCommand) {
+        await session.prompt(trimmed);
+        return {
+          handled: true,
+          text: `Started command: /${command}`,
+        };
+      }
       return { handled: false };
+    }
   }
 }
