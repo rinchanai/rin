@@ -17,7 +17,15 @@ import {
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
 
 export type ParsedArgs = {
-  command: "" | "update" | "start" | "stop" | "restart" | "doctor" | "usage";
+  command:
+    | ""
+    | "update"
+    | "start"
+    | "stop"
+    | "restart"
+    | "doctor"
+    | "usage"
+    | "memory-index";
   targetUser: string;
   installDir: string;
   std: boolean;

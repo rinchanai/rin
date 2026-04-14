@@ -316,6 +316,41 @@ test("memory search handles structured identifiers beyond exact raw substrings",
   });
 });
 
+test("memory search requires explicit repair for transcript files written outside incremental indexing", async () => {
+  await withTempRoot(async (root) => {
+    const entry = {
+      id: "manual-1",
+      timestamp: "2026-04-08T09:09:09.000Z",
+      sessionId: "session-manual-repair",
+      sessionFile: "/tmp/session-manual-repair.jsonl",
+      role: "assistant",
+      text: "Manual transcript write requires explicit repair.",
+    };
+    const archivePath = transcripts.getTranscriptArchivePath(entry, root);
+    await fs.mkdir(path.dirname(archivePath), { recursive: true });
+    await fs.writeFile(archivePath, `${JSON.stringify(entry)}\n`);
+
+    const beforeRepair = await transcripts.searchTranscriptArchive(
+      "explicit repair",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(beforeRepair.length, 0);
+
+    const repair = await transcripts.repairTranscriptSearchIndex(root);
+    assert.equal(repair.fileCount, 1);
+    assert.equal(repair.entryCount, 1);
+
+    const afterRepair = await transcripts.searchTranscriptArchive(
+      "explicit repair",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(afterRepair.length, 1);
+    assert.equal(afterRepair[0].sessionId, entry.sessionId);
+  });
+});
+
 test("memory transcript session loads can bypass search.db when result path is known", async () => {
   await withTempRoot(async (root) => {
     const entry = {

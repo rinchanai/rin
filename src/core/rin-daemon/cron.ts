@@ -5,6 +5,7 @@ import path from "node:path";
 const HOME_DIR = os.homedir();
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
+import { shellQuote } from "../rin-lib/system.js";
 import { executeCronTask } from "./cron-execution.js";
 import {
   computeNextRunAt,
@@ -91,6 +92,30 @@ export type CronTaskInput = {
   session?: CronTaskSessionBinding;
   target?: CronTaskTarget;
 };
+
+function createBuiltInMemoryIndexRepairTask(agentDir: string): CronTaskRecord {
+  const createdAt = nowIso();
+  const command = `${shellQuote(process.execPath)} ${shellQuote(path.join(agentDir, "app", "current", "dist", "app", "rin", "main.js"))} memory-index repair`;
+  const task: CronTaskRecord = {
+    id: "builtin_memory_index_repair_daily",
+    builtIn: true,
+    createdAt,
+    updatedAt: createdAt,
+    name: "Repair memory search index",
+    enabled: true,
+    trigger: {
+      kind: "cron",
+      expression: "17 4 * * *",
+      timezone: "local",
+    },
+    session: { mode: "dedicated" },
+    target: { kind: "shell_command", command },
+    runCount: 0,
+    running: false,
+  };
+  task.nextRunAt = computeNextRunAt(task, Date.now());
+  return task;
+}
 
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>();
@@ -365,6 +390,7 @@ export class CronScheduler {
         : row.nextRunAt || computeNextRunAt(row, Date.now());
       this.tasks.set(String(row.id), row);
     }
+    this.installBuiltInTasks();
     this.save();
   }
 
@@ -373,6 +399,11 @@ export class CronScheduler {
       cronTasksPath(this.options.agentDir),
       Array.from(this.tasks.values()).filter((task) => !task.builtIn),
     );
+  }
+
+  private installBuiltInTasks() {
+    const task = createBuiltInMemoryIndexRepairTask(this.options.agentDir);
+    this.tasks.set(task.id, task);
   }
 
   private async tick() {

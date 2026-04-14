@@ -256,6 +256,19 @@ export async function appendTranscriptArchiveEntry(
   const filePath = getTranscriptArchivePath(entry, rootOverride);
   await ensureParentDir(filePath);
   await fs.appendFile(filePath, `${JSON.stringify(entry)}\n`);
+  try {
+    const stat = await fs.stat(filePath);
+    const db = openTranscriptSearchDb(rootOverride);
+    try {
+      appendIndexedArchiveEntry(db, {
+        archivePath: filePath,
+        mtimeMs: Math.trunc(stat.mtimeMs),
+        size: stat.size,
+      }, entry);
+    } finally {
+      db.close();
+    }
+  } catch {}
 }
 
 async function loadTranscriptArchiveFile(filePath: string) {
@@ -480,30 +493,10 @@ function escapeLike(value: string): string {
   return safeString(value).replace(/([%_\\])/g, "\\$1");
 }
 
-function openTranscriptSearchDb(rootOverride = ""): Database {
-  const dbPath = resolveTranscriptSearchDbPath(rootOverride);
-  const parent = path.dirname(dbPath);
-  if (!fssync.existsSync(parent)) fssync.mkdirSync(parent, { recursive: true });
-
-  let db = new BetterSqlite3(dbPath);
-  const metadataExists = db
-    .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'metadata'",
-    )
-    .get() as { name?: string } | undefined;
-  if (metadataExists) {
-    const versionRow = db
-      .prepare("SELECT value FROM metadata WHERE key = ?")
-      .get("schema_version") as { value?: string } | undefined;
-    const version = Number(versionRow?.value || 0);
-    if (version !== SEARCH_DB_SCHEMA_VERSION) {
-      db.close();
-      if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
-      db = new BetterSqlite3(dbPath);
-    }
-  }
-
+function initializeTranscriptSearchDb(db: Database) {
   db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = NORMAL");
+  db.pragma("busy_timeout = 5000");
   db.exec(`
     CREATE TABLE IF NOT EXISTS metadata (
       key TEXT PRIMARY KEY,
@@ -562,7 +555,53 @@ function openTranscriptSearchDb(rootOverride = ""): Database {
   db.prepare(
     "INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)",
   ).run("schema_version", String(SEARCH_DB_SCHEMA_VERSION));
-  return db;
+}
+
+function isRebuildableTranscriptSearchDbError(error: unknown): boolean {
+  const code = String((error as any)?.code || "").trim();
+  const message = String((error as any)?.message || error || "").toLowerCase();
+  return code === "SQLITE_NOTADB" || message.includes("file is not a database");
+}
+
+function openTranscriptSearchDb(rootOverride = "", allowReset = true): Database {
+  const dbPath = resolveTranscriptSearchDbPath(rootOverride);
+  const parent = path.dirname(dbPath);
+  if (!fssync.existsSync(parent)) fssync.mkdirSync(parent, { recursive: true });
+
+  let db: Database | undefined;
+  try {
+    db = new BetterSqlite3(dbPath);
+    const metadataExists = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'metadata'",
+      )
+      .get() as { name?: string } | undefined;
+    if (metadataExists) {
+      const versionRow = db
+        .prepare("SELECT value FROM metadata WHERE key = ?")
+        .get("schema_version") as { value?: string } | undefined;
+      const version = Number(versionRow?.value || 0);
+      if (version !== SEARCH_DB_SCHEMA_VERSION) {
+        db.close();
+        if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
+        db = new BetterSqlite3(dbPath);
+      }
+    }
+
+    initializeTranscriptSearchDb(db);
+    return db;
+  } catch (error) {
+    try {
+      db?.close();
+    } catch {}
+    if (allowReset && isRebuildableTranscriptSearchDbError(error)) {
+      try {
+        if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
+      } catch {}
+      return openTranscriptSearchDb(rootOverride, false);
+    }
+    throw error;
+  }
 }
 
 function toIndexedEntry(
@@ -605,6 +644,56 @@ function removeIndexedArchiveEntries(db: Database, archivePath: string) {
   db.prepare("DELETE FROM file_state WHERE archive_path = ?").run(archivePath);
 }
 
+function insertIndexedEntry(db: Database, item: IndexedTranscriptEntry) {
+  db.prepare(`
+    INSERT INTO entries(
+      row_key, archive_path, entry_id, session_key, session_id, session_file,
+      timestamp, timestamp_ms, role, tool_name, custom_type, text, preview, entry_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    item.rowKey,
+    item.archivePath,
+    item.entry.id,
+    item.sessionKey,
+    safeString(item.entry.sessionId || "").trim(),
+    safeString(item.entry.sessionFile || "").trim(),
+    safeString(item.entry.timestamp || "").trim(),
+    item.timestampMs,
+    safeString(item.entry.role || "").trim(),
+    safeString(item.entry.toolName || "").trim(),
+    safeString(item.entry.customType || "").trim(),
+    safeString(item.entry.text || "").trim(),
+    item.preview,
+    JSON.stringify(item.entry),
+  );
+  db.prepare(`
+    INSERT INTO entries_fts_token(
+      row_key, session_id, session_file, role, tool_name, custom_type, text
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    item.rowKey,
+    safeString(item.entry.sessionId || "").trim(),
+    safeString(item.entry.sessionFile || "").trim(),
+    safeString(item.entry.role || "").trim(),
+    safeString(item.entry.toolName || "").trim(),
+    safeString(item.entry.customType || "").trim(),
+    safeString(item.entry.text || "").trim(),
+  );
+  db.prepare(`
+    INSERT INTO entries_fts_trigram(
+      row_key, session_id, session_file, role, tool_name, custom_type, text
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    item.rowKey,
+    safeString(item.entry.sessionId || "").trim(),
+    safeString(item.entry.sessionFile || "").trim(),
+    safeString(item.entry.role || "").trim(),
+    safeString(item.entry.toolName || "").trim(),
+    safeString(item.entry.customType || "").trim(),
+    safeString(item.entry.text || "").trim(),
+  );
+}
+
 function replaceIndexedArchiveEntries(
   db: Database,
   state: TranscriptFileState,
@@ -613,61 +702,28 @@ function replaceIndexedArchiveEntries(
   const indexedEntries = entries.map((entry, index) =>
     toIndexedEntry(entry, state.archivePath, index),
   );
-  const insertEntry = db.prepare(`
-    INSERT INTO entries(
-      row_key, archive_path, entry_id, session_key, session_id, session_file,
-      timestamp, timestamp_ms, role, tool_name, custom_type, text, preview, entry_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertToken = db.prepare(`
-    INSERT INTO entries_fts_token(
-      row_key, session_id, session_file, role, tool_name, custom_type, text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertTrigram = db.prepare(`
-    INSERT INTO entries_fts_trigram(
-      row_key, session_id, session_file, role, tool_name, custom_type, text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-
   const tx = db.transaction(() => {
     removeIndexedArchiveEntries(db, state.archivePath);
-    for (const item of indexedEntries) {
-      insertEntry.run(
-        item.rowKey,
-        item.archivePath,
-        item.entry.id,
-        item.sessionKey,
-        safeString(item.entry.sessionId || "").trim(),
-        safeString(item.entry.sessionFile || "").trim(),
-        safeString(item.entry.timestamp || "").trim(),
-        item.timestampMs,
-        safeString(item.entry.role || "").trim(),
-        safeString(item.entry.toolName || "").trim(),
-        safeString(item.entry.customType || "").trim(),
-        safeString(item.entry.text || "").trim(),
-        item.preview,
-        JSON.stringify(item.entry),
-      );
-      insertToken.run(
-        item.rowKey,
-        safeString(item.entry.sessionId || "").trim(),
-        safeString(item.entry.sessionFile || "").trim(),
-        safeString(item.entry.role || "").trim(),
-        safeString(item.entry.toolName || "").trim(),
-        safeString(item.entry.customType || "").trim(),
-        safeString(item.entry.text || "").trim(),
-      );
-      insertTrigram.run(
-        item.rowKey,
-        safeString(item.entry.sessionId || "").trim(),
-        safeString(item.entry.sessionFile || "").trim(),
-        safeString(item.entry.role || "").trim(),
-        safeString(item.entry.toolName || "").trim(),
-        safeString(item.entry.customType || "").trim(),
-        safeString(item.entry.text || "").trim(),
-      );
-    }
+    for (const item of indexedEntries) insertIndexedEntry(db, item);
+    db.prepare(
+      "INSERT OR REPLACE INTO file_state(archive_path, mtime_ms, size) VALUES (?, ?, ?)",
+    ).run(state.archivePath, state.mtimeMs, state.size);
+  });
+  tx();
+}
+
+function appendIndexedArchiveEntry(
+  db: Database,
+  state: TranscriptFileState,
+  entry: TranscriptArchiveEntry,
+) {
+  const tx = db.transaction(() => {
+    const row = db
+      .prepare("SELECT COUNT(*) AS count FROM entries WHERE archive_path = ?")
+      .get(state.archivePath) as { count?: number } | undefined;
+    const nextIndex = Number(row?.count || 0);
+    const item = toIndexedEntry(entry, state.archivePath, nextIndex);
+    insertIndexedEntry(db, item);
     db.prepare(
       "INSERT OR REPLACE INTO file_state(archive_path, mtime_ms, size) VALUES (?, ?, ?)",
     ).run(state.archivePath, state.mtimeMs, state.size);
@@ -720,13 +776,37 @@ async function syncTranscriptSearchIndex(db: Database, rootOverride = "") {
   }
 }
 
+export async function repairTranscriptSearchIndex(rootOverride = "") {
+  const dbPath = resolveTranscriptSearchDbPath(rootOverride);
+  try {
+    if (fssync.existsSync(dbPath)) fssync.unlinkSync(dbPath);
+  } catch {}
+  const db = openTranscriptSearchDb(rootOverride, false);
+  try {
+    await syncTranscriptSearchIndex(db, rootOverride);
+    const fileCountRow = db
+      .prepare("SELECT COUNT(*) AS count FROM file_state")
+      .get() as { count?: number } | undefined;
+    const entryCountRow = db
+      .prepare("SELECT COUNT(*) AS count FROM entries")
+      .get() as { count?: number } | undefined;
+    return {
+      dbPath,
+      transcriptRoot: resolveTranscriptRoot(rootOverride),
+      fileCount: Number(fileCountRow?.count || 0),
+      entryCount: Number(entryCountRow?.count || 0),
+    };
+  } finally {
+    db.close();
+  }
+}
+
 async function withTranscriptSearchDb<T>(
   rootOverride: string,
   fn: (db: Database) => T | Promise<T>,
 ): Promise<T> {
   const db = openTranscriptSearchDb(rootOverride);
   try {
-    await syncTranscriptSearchIndex(db, rootOverride);
     return await fn(db);
   } finally {
     db.close();
