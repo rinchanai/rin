@@ -14,7 +14,7 @@ import {
   chatStateDir,
   listChatStateFiles,
 } from "../chat-bridge/session-binding.js";
-import { buildAllowedCommandRows, syncTelegramCommands } from "./boot.js";
+import { getKoishiChatCommandRows, syncTelegramCommands } from "./boot.js";
 import {
   elementsToText,
   ensureDir,
@@ -39,7 +39,7 @@ import {
   normalizeKoishiIdleToolProgressConfig,
 } from "./controller.js";
 import { appendKoishiChatLog } from "./chat-log.js";
-import { discoverRpcCommands, shouldProcessText } from "./decision.js";
+import { shouldProcessText } from "./decision.js";
 import {
   composeChatKey,
   loadIdentity,
@@ -169,7 +169,7 @@ export async function startKoishi(
       void controller.pollTyping().catch(() => {});
     }
   }, TYPING_POLL_INTERVAL_MS);
-  const commandRows = buildAllowedCommandRows(await discoverRpcCommands());
+  const commandRows = getKoishiChatCommandRows();
   const getIdentity = () => loadIdentity(dataDir);
   const getController = (chatKey: string) => {
     let controller = controllers.get(chatKey);

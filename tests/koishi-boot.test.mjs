@@ -14,18 +14,14 @@ const boot = await import(
     .href
 );
 
-test("koishi boot builds allowed command rows with help first", () => {
-  const rows = boot.buildAllowedCommandRows([
-    { name: "abort", description: "abort" },
-    { name: "new", description: "new session" },
-    { name: "doctor", description: "should be filtered" },
-    { name: "model", description: "set model" },
-  ]);
+test("koishi boot exposes the dedicated chat command registry", () => {
+  const rows = boot.getKoishiChatCommandRows();
   assert.equal(rows[0].name, "help");
   assert.deepEqual(
     rows.map((row) => row.name),
-    ["help", "abort", "new", "model"],
+    ["help", "abort", "new", "compact", "reload", "session", "resume", "model"],
   );
+  assert.ok(!rows.some((row) => row.name === "init"));
 });
 
 async function withTempDir(fn) {
@@ -53,17 +49,17 @@ test("koishi boot clears common telegram scopes before syncing default commands"
     },
   };
 
-  const rows = boot.buildAllowedCommandRows([
-    { name: "abort", description: "abort" },
-    { name: "new", description: "new session" },
-    { name: "model", description: "set model" },
-  ]);
+  const rows = boot.getKoishiChatCommandRows();
 
   assert.deepEqual(boot.buildTelegramCommandPayload(rows), [
     { command: "help", description: "Show available commands" },
-    { command: "abort", description: "abort" },
-    { command: "new", description: "new session" },
-    { command: "model", description: "set model" },
+    { command: "abort", description: "Abort current operation" },
+    { command: "new", description: "Start a new session" },
+    { command: "compact", description: "Compact the current session" },
+    { command: "reload", description: "Reload extensions, prompts, skills, and themes" },
+    { command: "session", description: "Show current session status" },
+    { command: "resume", description: "Resume a previous session" },
+    { command: "model", description: "Show or change the current model" },
   ]);
   assert.deepEqual(boot.buildTelegramCommandClearScopes(), [
     { type: "all_private_chats" },
@@ -86,9 +82,13 @@ test("koishi boot clears common telegram scopes before syncing default commands"
     {
       commands: [
         { command: "help", description: "Show available commands" },
-        { command: "abort", description: "abort" },
-        { command: "new", description: "new session" },
-        { command: "model", description: "set model" },
+        { command: "abort", description: "Abort current operation" },
+        { command: "new", description: "Start a new session" },
+        { command: "compact", description: "Compact the current session" },
+        { command: "reload", description: "Reload extensions, prompts, skills, and themes" },
+        { command: "session", description: "Show current session status" },
+        { command: "resume", description: "Resume a previous session" },
+        { command: "model", description: "Show or change the current model" },
       ],
     },
   ]);
