@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -56,10 +58,30 @@ test("cron execution shell task returns summarized success body", async () => {
       target: { kind: "shell_command", command: "printf hello" },
       cwd: process.cwd(),
     },
-    process.cwd(),
+    { agentDir: process.cwd() },
   );
   assert.ok(text.includes("Command: printf hello"));
   assert.ok(text.includes("stdout:"));
+});
+
+test("cron scheduler installs the built-in daily memory index repair task", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const scheduler = new cronMod.CronScheduler({ agentDir });
+  try {
+    scheduler.start();
+    const builtIn = scheduler
+      .listTasks()
+      .find((task) => task.id === "builtin_memory_index_repair_daily");
+    assert.ok(builtIn);
+    assert.equal(builtIn.builtIn, true);
+    assert.equal(builtIn.trigger.kind, "cron");
+    assert.equal(builtIn.trigger.expression, "17 4 * * *");
+    assert.equal(builtIn.target.kind, "shell_command");
+    assert.match(builtIn.target.command, /memory-index repair/);
+  } finally {
+    scheduler.stop();
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
 });
 
 
