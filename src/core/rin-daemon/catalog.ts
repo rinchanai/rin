@@ -7,43 +7,6 @@ import {
 } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 
-function resolveExtensionCommands(extensions: any[] = []) {
-  const commands: any[] = [];
-  const counts = new Map<string, number>();
-  for (const extension of extensions) {
-    for (const command of extension?.commands?.values?.() ?? []) {
-      const name = String(command?.name || "").trim();
-      if (!name) continue;
-      commands.push(command);
-      counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-  }
-
-  const seen = new Map<string, number>();
-  const takenInvocationNames = new Set<string>();
-  return commands.map((command) => {
-    const name = String(command?.name || "").trim();
-    const occurrence = (seen.get(name) ?? 0) + 1;
-    seen.set(name, occurrence);
-    let invocationName =
-      (counts.get(name) ?? 0) > 1 ? `${name}:${occurrence}` : name;
-    if (takenInvocationNames.has(invocationName)) {
-      let suffix = occurrence;
-      do {
-        suffix += 1;
-        invocationName = `${name}:${suffix}`;
-      } while (takenInvocationNames.has(invocationName));
-    }
-    takenInvocationNames.add(invocationName);
-    return {
-      name: invocationName,
-      description: String(command?.description || "").trim(),
-      source: "extension",
-      sourceInfo: command?.sourceInfo,
-    };
-  });
-}
-
 async function createCatalogContext(
   options: {
     cwd?: string;
@@ -52,8 +15,15 @@ async function createCatalogContext(
   } = {},
 ) {
   const codingAgentModule = await loadRinCodingAgent();
-  const { AuthStorage, DefaultResourceLoader, ModelRegistry, SettingsManager } =
-    codingAgentModule as any;
+  const {
+    AuthStorage,
+    DefaultResourceLoader,
+    ModelRegistry,
+    SettingsManager,
+    ExtensionRunner,
+    createEventBus,
+    discoverAndLoadExtensions,
+  } = codingAgentModule as any;
 
   const { cwd, agentDir } = resolveRuntimeProfile({
     cwd: options.cwd,
@@ -78,7 +48,28 @@ async function createCatalogContext(
     path.join(agentDir, "models.json"),
   );
 
-  return { agentDir, authStorage, modelRegistry, resourceLoader };
+  const eventBus = createEventBus();
+  const loadedExtensions = await discoverAndLoadExtensions(
+    options.additionalExtensionPaths ?? [],
+    cwd,
+    agentDir,
+    eventBus,
+  );
+  const extensionRunner = new ExtensionRunner(
+    loadedExtensions.extensions,
+    loadedExtensions.runtime,
+    cwd,
+    null,
+    modelRegistry,
+  );
+
+  return {
+    agentDir,
+    authStorage,
+    modelRegistry,
+    resourceLoader,
+    extensionRunner,
+  };
 }
 
 export async function listCatalogCommands(
@@ -88,8 +79,7 @@ export async function listCatalogCommands(
     additionalExtensionPaths?: string[];
   } = {},
 ) {
-  const { resourceLoader } = await createCatalogContext(options);
-  const extensions = resourceLoader.getExtensions().extensions;
+  const { resourceLoader, extensionRunner } = await createCatalogContext(options);
   const prompts = resourceLoader.getPrompts().prompts;
   const skills = resourceLoader.getSkills().skills;
   return [
@@ -98,7 +88,12 @@ export async function listCatalogCommands(
       description: command.description,
       source: "builtin",
     })),
-    ...resolveExtensionCommands(extensions),
+    ...extensionRunner.getRegisteredCommands().map((command: any) => ({
+      name: String(command?.invocationName || command?.name || "").trim(),
+      description: String(command?.description || "").trim(),
+      source: "extension",
+      sourceInfo: command?.sourceInfo,
+    })),
     ...prompts.map((template: any) => ({
       name: String(template?.name || "").trim(),
       description: String(template?.description || "").trim(),

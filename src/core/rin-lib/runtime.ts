@@ -1,9 +1,9 @@
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 
 import { isContextOverflow } from "@mariozechner/pi-ai";
 
-import { buildSystemPrompt } from "../../../third_party/pi-coding-agent/dist/core/system-prompt.js";
 import { loadRinCodingAgent } from "./loader.js";
 import {
   clearCompactionContinuationMarker,
@@ -11,6 +11,26 @@ import {
   getCompactionContinuationMarkerPath,
   writeCompactionContinuationMarker,
 } from "./compaction-continuation.js";
+
+const require = createRequire(import.meta.url);
+
+function loadPiBuildSystemPrompt() {
+  const candidates = [
+    "../../../third_party/pi-coding-agent/dist/core/system-prompt.js",
+    "../../../../third_party/pi-coding-agent/dist/core/system-prompt.js",
+  ];
+  for (const candidate of candidates) {
+    try {
+      const mod = require(candidate);
+      if (typeof mod?.buildSystemPrompt === "function") {
+        return mod.buildSystemPrompt as (...args: any[]) => string;
+      }
+    } catch {}
+  }
+  throw new Error("pi_build_system_prompt_not_found");
+}
+
+const buildSystemPrompt = loadPiBuildSystemPrompt();
 
 function escapeXml(text: string) {
   return text

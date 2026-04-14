@@ -30,10 +30,6 @@ export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
   { name: "login", description: "Login with OAuth provider" },
   { name: "logout", description: "Logout from OAuth provider" },
   { name: "new", description: "Start a new session" },
-  {
-    name: "init",
-    description: "Start or restart self-improve onboarding conversation",
-  },
   { name: "compact", description: "Manually compact the session context" },
   { name: "resume", description: "Resume a different session" },
   {
