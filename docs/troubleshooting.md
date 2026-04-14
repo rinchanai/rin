@@ -90,6 +90,29 @@ RIN_INSTALL_TMPDIR=/tmp/rin-install ./install.sh
 
 If the script exits before the installer UI appears, inspect the temporary `install.log` under `${RIN_INSTALL_TMPDIR:-${XDG_CACHE_HOME:-~/.cache}/rin-install}` before rerunning.
 
+## Koishi or web-search sidecars feel stale
+
+Start with the normal operator surface:
+
+```bash
+rin doctor
+rin restart
+```
+
+`rin doctor` already reports Koishi runtime and web-search runtime state. If that output looks stale or incomplete, inspect the managed sidecar state under the install's agent dir:
+
+- `<installDir>/data/koishi-sidecar/instances/*/state.json`
+- `<installDir>/data/web-search/instances/*/state.json`
+- `<installDir>/data/web-search/runtime/bootstrap.json`
+
+Useful checks:
+
+- whether the recorded `ownerPid` still exists
+- whether the sidecar `pid` is still alive
+- whether `entryPath`, `settingsPath`, or `baseUrl` still point at the expected runtime
+
+If the sidecar state is stale but the managed daemon is healthy, prefer `rin restart` over manually deleting files while the daemon is still running.
+
 ## Provider auth or installer prompts behave differently than expected
 
 Check which branch of the interactive installer actually ran:

@@ -44,3 +44,19 @@ test("sidecar common acquires and releases process lock", async () => {
     await assert.rejects(fs.stat(lockPath));
   });
 });
+
+test("sidecar common clears stale lock files before acquiring the lock", async () => {
+  await withTempDir(async (dir) => {
+    const lockPath = path.join(dir, "stale.lock");
+    await fs.writeFile(
+      lockPath,
+      JSON.stringify({ pid: 999999, ts: Date.now() - 60_000 }),
+    );
+
+    const release = await sidecar.acquireProcessLock(lockPath, 500);
+    const state = JSON.parse(await fs.readFile(lockPath, "utf8"));
+    assert.equal(state.pid, process.pid);
+    release();
+    await assert.rejects(fs.stat(lockPath));
+  });
+});
