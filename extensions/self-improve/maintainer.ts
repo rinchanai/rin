@@ -88,38 +88,14 @@ function turnTranscript(messages: any[]): string {
     .join("\n\n");
 }
 
-function buildSelfImproveReviewPrompt(trigger: string): string {
+function buildSelfImproveReviewPrompt(_trigger: string): string {
   const prompt = [
-    "Review the conversation and derive only durable conclusions that should still matter across sessions.",
-    "Prefer explicit user statements and repeated evidence over one-off impressions. If a pattern is weak, new, temporary, or session-specific, leave it in the transcript.",
-    "Save compact stable baselines with save_prompts. Save reusable workflows, troubleshooting methods, operating playbooks, and other non-trivial procedures as skills.",
-    "If the transcript reveals a complex task, tricky fix, or reusable user-corrected method, capture it as a skill.",
-    "Refine existing prompt slots and skills instead of creating duplicates. Prefer a few sharp conclusions over a long noisy list.",
-    "Do not save summaries, task progress, completed-work logs, temporary TODO state, or other ephemeral session context.",
-    "When creating or substantially revising a skill, use the skill-creator skill if it is available.",
-    "If an existing skill is missing steps, outdated, incomplete, or wrong, update it immediately.",
+    "Review the conversation and derive durable conclusions that should still matter across sessions.",
+    "Save compact stable baselines with save_prompts.",
+    "Save reusable workflows, troubleshooting methods, operating playbooks, complex task procedures, tricky fixes, and reusable user-corrected methods as self improve skills, and update existing skills when they are missing steps, outdated, incomplete, or wrong.",
+    "Refine existing prompt slots and skills instead of creating duplicates.",
+    "Do not save summaries, task progress, completed-work logs, temporary TODO state, or other ephemeral session context. Prefer explicit user statements and repeated evidence over one-off impressions, and leave weak, new, temporary, or session-specific patterns in the transcript.",
   ];
-
-  if (trigger === "extension:periodic_self_improve_review") {
-    prompt.push(
-      "Periodic review: be conservative and save only high-confidence updates that are already clear mid-session.",
-      "Focus on repeated corrections, reiterated preferences, and collaboration patterns that no longer look provisional.",
-    );
-  }
-
-  if (trigger === "extension:session_compaction_self_improve_review") {
-    prompt.push(
-      "Pre-compaction review: rescue durable preferences, conclusions, and reusable procedures from context that is about to be compressed away.",
-      "Treat the archived transcript as authoritative for the soon-to-be-compacted span, but save conclusions and reusable knowledge rather than summaries.",
-    );
-  }
-
-  if (trigger === "extension:session_shutdown_self_improve_review") {
-    prompt.push(
-      "End-of-session review: use the full session arc to consolidate stable conclusions and capture reusable workflows revealed by the completed work.",
-      "Prefer merging or sharpening existing baselines when the session clarified an earlier partial understanding.",
-    );
-  }
 
   return prompt.join(" ");
 }
