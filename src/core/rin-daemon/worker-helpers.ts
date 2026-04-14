@@ -1,5 +1,4 @@
 import { loadRinChangelogModule } from "../rin-lib/loader.js";
-import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 
 export function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -22,18 +21,8 @@ export function getSessionState(session: any) {
   };
 }
 
-export function getSlashCommands(
-  session: any,
-  builtinSlashCommands: any[] = BUILTIN_SLASH_COMMANDS,
-) {
+export function getSlashCommands(session: any) {
   const commands: any[] = [];
-  for (const command of builtinSlashCommands) {
-    commands.push({
-      name: command.name,
-      description: command.description,
-      source: "builtin",
-    });
-  }
   for (const command of session.extensionRunner?.getRegisteredCommands?.() ??
     []) {
     commands.push({
@@ -234,16 +223,7 @@ export async function runBuiltinCommand(
         text: `Model set to: ${provider}/${modelId}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
       };
     }
-    default: {
-      const extensionCommand = session.extensionRunner?.getCommand?.(command);
-      if (extensionCommand) {
-        await session.prompt(trimmed);
-        return {
-          handled: true,
-          text: `Started command: /${command}`,
-        };
-      }
+    default:
       return { handled: false };
-    }
   }
 }

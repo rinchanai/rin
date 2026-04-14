@@ -1,6 +1,5 @@
 import path from "node:path";
 
-import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import {
   applyRuntimeProfileEnvironment,
   resolveRuntimeProfile,
@@ -83,11 +82,6 @@ export async function listCatalogCommands(
   const prompts = resourceLoader.getPrompts().prompts;
   const skills = resourceLoader.getSkills().skills;
   return [
-    ...BUILTIN_SLASH_COMMANDS.map((command) => ({
-      name: command.name,
-      description: command.description,
-      source: "builtin",
-    })),
     ...extensionRunner.getRegisteredCommands().map((command: any) => ({
       name: String(command?.invocationName || command?.name || "").trim(),
       description: String(command?.description || "").trim(),

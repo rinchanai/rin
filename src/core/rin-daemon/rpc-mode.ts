@@ -78,9 +78,9 @@ async function resumeInterruptedTurnIfNeeded(session: any) {
 
 export async function runCustomRpcMode(
   runtimeOrSession: any,
-  deps: { SessionManager: any; builtinSlashCommands: any[] },
+  deps: { SessionManager: any },
 ) {
-  const { SessionManager, builtinSlashCommands } = deps;
+  const { SessionManager } = deps;
   const runtime =
     runtimeOrSession && runtimeOrSession.session
       ? runtimeOrSession
@@ -401,18 +401,36 @@ export async function runCustomRpcMode(
         return done(id, type, { messages: session.messages });
       case "get_commands":
         return done(id, type, {
-          commands: getSlashCommands(session, builtinSlashCommands),
+          commands: getSlashCommands(session),
         });
-      case "run_command":
+      case "run_command": {
+        const commandLine = String(command.commandLine || "").trim();
+        if (commandLine.startsWith("/")) {
+          const spaceIndex = commandLine.indexOf(" ");
+          const commandName =
+            spaceIndex === -1 ? commandLine.slice(1) : commandLine.slice(1, spaceIndex);
+          if (session.extensionRunner?.getCommand?.(commandName)) {
+            return run(
+              id,
+              type,
+              async () => {
+                await session.prompt(commandLine);
+                return { handled: true };
+              },
+              (value) => value,
+            );
+          }
+        }
         return run(
           id,
           type,
           () =>
-            runBuiltinCommand(runtime, String(command.commandLine || ""), {
+            runBuiltinCommand(runtime, commandLine, {
               SessionManager,
             }),
           (value) => value,
         );
+      }
       case "new_session":
         return run(
           id,
