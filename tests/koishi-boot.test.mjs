@@ -74,9 +74,18 @@ test("koishi boot clears common telegram scopes before syncing default commands"
   );
 
   assert.deepEqual(deletes, [
+    {},
+    { language_code: "en" },
+    { language_code: "zh" },
     { scope: { type: "all_private_chats" } },
+    { scope: { type: "all_private_chats" }, language_code: "en" },
+    { scope: { type: "all_private_chats" }, language_code: "zh" },
     { scope: { type: "all_group_chats" } },
+    { scope: { type: "all_group_chats" }, language_code: "en" },
+    { scope: { type: "all_group_chats" }, language_code: "zh" },
     { scope: { type: "all_chat_administrators" } },
+    { scope: { type: "all_chat_administrators" }, language_code: "en" },
+    { scope: { type: "all_chat_administrators" }, language_code: "zh" },
   ]);
   assert.deepEqual(sets, [
     {
@@ -90,6 +99,32 @@ test("koishi boot clears common telegram scopes before syncing default commands"
         { command: "resume", description: "Resume a previous session" },
         { command: "model", description: "Show or change the current model" },
       ],
+    },
+    {
+      commands: [
+        { command: "help", description: "Show available commands" },
+        { command: "abort", description: "Abort current operation" },
+        { command: "new", description: "Start a new session" },
+        { command: "compact", description: "Compact the current session" },
+        { command: "reload", description: "Reload extensions, prompts, skills, and themes" },
+        { command: "session", description: "Show current session status" },
+        { command: "resume", description: "Resume a previous session" },
+        { command: "model", description: "Show or change the current model" },
+      ],
+      language_code: "en",
+    },
+    {
+      commands: [
+        { command: "help", description: "Show available commands" },
+        { command: "abort", description: "Abort current operation" },
+        { command: "new", description: "Start a new session" },
+        { command: "compact", description: "Compact the current session" },
+        { command: "reload", description: "Reload extensions, prompts, skills, and themes" },
+        { command: "session", description: "Show current session status" },
+        { command: "resume", description: "Resume a previous session" },
+        { command: "model", description: "Show or change the current model" },
+      ],
+      language_code: "zh",
     },
   ]);
 });
