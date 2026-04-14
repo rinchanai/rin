@@ -24,6 +24,7 @@ import {
 } from "./transcripts.js";
 import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { loadAuxiliaryModelConfig } from "../../src/core/rin-lib/auxiliary-model.js";
+import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 
 const searchMemoryParams = Type.Object({
   query: Type.Optional(
@@ -210,6 +211,29 @@ function buildRecallPrompt(query: string, row: any, transcript: string): string 
   ].join("\n\n");
 }
 
+function resolveSearchMemoryAgentDir(ctx: any): string {
+  const explicit = String(ctx?.agentDir || "").trim();
+  if (explicit) return explicit;
+  return String(resolveRuntimeProfile().agentDir || "").trim();
+}
+
+function resolveSearchMemoryThinkingLevel(
+  config: { thinkingLevel?: string },
+): ThinkingLevel {
+  const level = String(config?.thinkingLevel || "").trim();
+  if (
+    level === "off" ||
+    level === "minimal" ||
+    level === "low" ||
+    level === "medium" ||
+    level === "high" ||
+    level === "xhigh"
+  ) {
+    return level;
+  }
+  return "low";
+}
+
 export async function maybeSummarizeTranscriptMatches(
   results: any[],
   query: string,
@@ -219,9 +243,9 @@ export async function maybeSummarizeTranscriptMatches(
 ) {
   const rows = Array.isArray(results) ? results : [];
   if (!rows.length) return rows;
-  const agentDir = String(ctx?.agentDir || "").trim();
+  const agentDir = resolveSearchMemoryAgentDir(ctx);
   if (!agentDir) {
-    throw new Error("search_memory requires agentDir for transcript summarization.");
+    throw new Error("search_memory requires an available agent directory for transcript summarization.");
   }
 
   const config = await loadAuxiliaryModelConfig(agentDir);
@@ -247,7 +271,7 @@ export async function maybeSummarizeTranscriptMatches(
     tasks.push({
       prompt: buildRecallPrompt(query, row, buildTranscriptExcerpt(entries)),
       model: modelRef,
-      thinkingLevel: config.thinkingLevel || currentThinkingLevel,
+      thinkingLevel: resolveSearchMemoryThinkingLevel(config),
       disabledExtensions: ["memory"],
     });
     taskRows.push(row);
@@ -257,7 +281,10 @@ export async function maybeSummarizeTranscriptMatches(
 
   const run = await runSubagent({
     params: { tasks },
-    ctx,
+    ctx: {
+      ...ctx,
+      agentDir,
+    },
     currentThinkingLevel,
   });
   if (!run.ok) {
