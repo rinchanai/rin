@@ -6,7 +6,7 @@ import {
   enqueueMemoryMaintenanceJob,
   spawnQueuedMemoryWorker,
 } from "./async-jobs.js";
-import { maintainMemory } from "./maintainer.js";
+import { createSelfImproveReviewSnapshot } from "./maintainer.js";
 import {
   buildOnboardingPrompt,
   compileSelfImprovePrompt,
@@ -37,6 +37,7 @@ function sessionMeta(ctx: any) {
   return {
     sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
     sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
+    leafId: String(ctx?.sessionManager?.getLeafId?.() || "").trim(),
   };
 }
 
@@ -69,33 +70,25 @@ function triggerInitConversation(
   );
 }
 
-function branchToMessages(entries: any[]): any[] {
-  return entries
-    .filter((entry) => entry?.type === "message" && entry?.message)
-    .map((entry) => entry.message);
-}
-
 async function processSelfImproveReview(
   ctx: any,
-  messages: any[],
-  opts: { sessionFile?: string; trigger: string; snapshotKey?: string },
+  opts: { sessionFile?: string; leafId?: string; trigger: string; snapshotKey?: string },
 ) {
   const sessionFile = String(opts.sessionFile || "").trim();
   const agentDir = String(ctx?.agentDir || "").trim();
-  if (
-    !Array.isArray(messages) ||
-    messages.length === 0 ||
-    !sessionFile ||
-    !agentDir
-  ) {
+  if (!sessionFile || !agentDir) {
     return;
   }
+  const snapshotSessionFile =
+    (await createSelfImproveReviewSnapshot({
+      sessionFile,
+      leafId: String(opts.leafId || "").trim(),
+    })) || sessionFile;
   await enqueueMemoryMaintenanceJob({
     agentDir,
-    sessionFile,
+    sessionFile: snapshotSessionFile,
     trigger: opts.trigger,
     snapshotKey: opts.snapshotKey,
-    messages,
   });
   spawnQueuedMemoryWorker(agentDir);
 }
@@ -308,8 +301,9 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       state.userTurns > 0 &&
       state.userTurns - state.lastQueuedTurn >= SELF_IMPROVE_REVIEW_INTERVAL
     ) {
-      await processSelfImproveReview(ctx, [], {
+      await processSelfImproveReview(ctx, {
         sessionFile: meta.sessionFile,
+        leafId: meta.leafId,
         trigger: "extension:periodic_self_improve_review",
         snapshotKey: `review:${state.userTurns}`,
       });
@@ -317,35 +311,24 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     }
   });
 
-  pi.on("session_before_compact", async (event, ctx) => {
-    const preparation = event?.preparation;
-    const messages = [
-      ...(Array.isArray(preparation?.messagesToSummarize)
-        ? preparation.messagesToSummarize
-        : []),
-      ...(Array.isArray(preparation?.turnPrefixMessages)
-        ? preparation.turnPrefixMessages
-        : []),
-    ];
-    const sessionFile = sessionMeta(ctx).sessionFile;
-    if (!sessionFile || messages.length === 0) return;
-    await maintainMemory(ctx as any, {
-      sessionFile,
+  pi.on("session_before_compact", async (_event, ctx) => {
+    const meta = sessionMeta(ctx);
+    if (!meta.sessionFile) return;
+    await processSelfImproveReview(ctx, {
+      sessionFile: meta.sessionFile,
+      leafId: meta.leafId,
       trigger: "extension:session_compaction_self_improve_review",
-      messages,
+      snapshotKey: `compact:${meta.leafId || meta.sessionFile}`,
     });
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
     const meta = sessionMeta(ctx);
-    await processSelfImproveReview(
-      ctx,
-      branchToMessages(ctx?.sessionManager?.getBranch?.() || []),
-      {
-        sessionFile: meta.sessionFile,
-        trigger: "extension:session_shutdown_self_improve_review",
-      },
-    );
+    await processSelfImproveReview(ctx, {
+      sessionFile: meta.sessionFile,
+      leafId: meta.leafId,
+      trigger: "extension:session_shutdown_self_improve_review",
+    });
     if (meta.sessionId) reviewStateBySession.delete(meta.sessionId);
   });
 
