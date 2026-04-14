@@ -217,13 +217,20 @@ function resolveSearchMemoryAgentDir(ctx: any): string {
   return String(resolveRuntimeProfile().agentDir || "").trim();
 }
 
+function throwIfAborted(signal?: AbortSignal) {
+  if (!signal?.aborted) return;
+  throw new Error("search_memory_aborted");
+}
+
 export async function maybeSummarizeTranscriptMatches(
   results: any[],
   query: string,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
   runSubagent = executeSubagentRun,
+  signal?: AbortSignal,
 ) {
+  throwIfAborted(signal);
   const rows = Array.isArray(results) ? results : [];
   if (!rows.length) return rows;
   const agentDir = resolveSearchMemoryAgentDir(ctx);
@@ -248,6 +255,7 @@ export async function maybeSummarizeTranscriptMatches(
       },
       agentDir,
     );
+    throwIfAborted(signal);
     if (!entries.length) continue;
     tasks.push({
       prompt: buildRecallPrompt(query, row, buildTranscriptExcerpt(entries)),
@@ -260,6 +268,7 @@ export async function maybeSummarizeTranscriptMatches(
 
   if (!tasks.length) return rows;
 
+  throwIfAborted(signal);
   const run = await runSubagent({
     params: { tasks },
     ctx: {
@@ -267,7 +276,9 @@ export async function maybeSummarizeTranscriptMatches(
       agentDir,
     },
     currentThinkingLevel,
+    signal,
   });
+  throwIfAborted(signal);
   if (!run.ok) {
     throw new Error(
       String(("error" in run && run.error) || "search_memory summarization failed."),
@@ -308,10 +319,11 @@ export async function maybeSummarizeTranscriptMatches(
   });
 }
 
-async function executeSearchMemory(
+export async function executeSearchMemory(
   params: any,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
+  signal?: AbortSignal,
 ) {
   try {
     const query = String(params?.query || "").trim();
@@ -328,6 +340,8 @@ async function executeSearchMemory(
       query,
       ctx,
       currentThinkingLevel,
+      executeSubagentRun,
+      signal,
     );
     const response = {
       mode,
@@ -419,11 +433,12 @@ export default function memoryExtension(pi: ExtensionAPI) {
       "If you do not have a good search phrase yet, call search_memory without a query to browse recent sessions first.",
     ],
     parameters: searchMemoryParams,
-    execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
+    execute: async (_toolCallId, params, signal, _onUpdate, ctx) =>
       (await executeSearchMemory(
         params,
         ctx,
         pi.getThinkingLevel() as ThinkingLevel,
+        signal,
       )) as any,
     renderCall: (args, theme) => new Text(formatSearchMemoryCall(args, theme), 0, 0),
     renderResult: renderMemoryResult,
