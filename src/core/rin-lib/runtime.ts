@@ -318,6 +318,8 @@ function getImplicitFinalConfirmationState(session: any) {
     bufferedAssistantMessageEndEvent: undefined,
     hiddenMessageTimestamps: new Set<number>(),
     discardedAssistantTimestamps: new Set<number>(),
+    rewriteTurnEndFromTimestamp: 0,
+    rewriteTurnEndMessage: undefined,
   };
   session[IMPLICIT_FINAL_CONFIRMATION_KEY] = state;
   return state;
@@ -328,6 +330,8 @@ function resetImplicitFinalConfirmationState(state: any) {
   state.bufferedAssistantMessageEndEvent = undefined;
   state.hiddenMessageTimestamps.clear();
   state.discardedAssistantTimestamps.clear();
+  state.rewriteTurnEndFromTimestamp = 0;
+  state.rewriteTurnEndMessage = undefined;
 }
 
 function isHiddenImplicitFinalMessage(message: any) {
@@ -352,6 +356,19 @@ function hasAssistantToolCalls(message: any) {
   if (message?.role !== "assistant") return false;
   const content = Array.isArray(message?.content) ? message.content : [];
   return content.some((part: any) => part?.type === "toolCall");
+}
+
+function hasPendingQueuedMessages(session: any) {
+  const agent = session?.agent;
+  const steeringPending =
+    typeof agent?.steeringQueue?.hasItems === "function"
+      ? agent.steeringQueue.hasItems()
+      : false;
+  const followUpPending =
+    typeof agent?.followUpQueue?.hasItems === "function"
+      ? agent.followUpQueue.hasItems()
+      : false;
+  return steeringPending || followUpPending;
 }
 
 function extractAssistantText(message: any) {
@@ -406,7 +423,11 @@ function ensureMessageInAgentState(session: any, message: any) {
   messages.push(message);
 }
 
-function shouldStartImplicitFinalConfirmation(state: any, message: any) {
+function shouldStartImplicitFinalConfirmation(
+  session: any,
+  state: any,
+  message: any,
+) {
   if (state.bufferedAssistantMessageEndEvent) return false;
   if (state.attemptsUsed >= DEFAULT_IMPLICIT_FINAL_CONFIRMATION_LIMIT) {
     return false;
@@ -418,7 +439,9 @@ function shouldStartImplicitFinalConfirmation(state: any, message: any) {
   ) {
     return false;
   }
-  return !hasAssistantToolCalls(message);
+  if (hasAssistantToolCalls(message)) return false;
+  if (hasPendingQueuedMessages(session)) return false;
+  return true;
 }
 
 function sanitizeAgentEndEvent(state: any, event: any) {
@@ -481,9 +504,25 @@ export function applyImplicitFinalConfirmation(session: any) {
     }
 
     if (
+      event?.type === "message_start" &&
+      state.bufferedAssistantMessageEndEvent &&
+      event?.message?.role === "assistant"
+    ) {
+      return;
+    }
+
+    if (
       event?.type === "message_update" &&
       state.bufferedAssistantMessageEndEvent &&
       event?.message?.role === "assistant"
+    ) {
+      return;
+    }
+
+    if (
+      event?.type === "turn_end" &&
+      Number(event?.message?.timestamp || 0) ===
+        Number(state.bufferedAssistantMessageEndEvent?.message?.timestamp || 0)
     ) {
       return;
     }
@@ -497,6 +536,10 @@ export function applyImplicitFinalConfirmation(session: any) {
           removeMessageFromAgentState(session, event.message);
           const bufferedEvent = state.bufferedAssistantMessageEndEvent;
           state.bufferedAssistantMessageEndEvent = undefined;
+          state.rewriteTurnEndFromTimestamp = Number(
+            event.message.timestamp || 0,
+          );
+          state.rewriteTurnEndMessage = bufferedEvent?.message;
           state.attemptsUsed = 0;
           ensureMessageInAgentState(session, bufferedEvent.message);
           await originalProcessAgentEvent(bufferedEvent);
@@ -509,7 +552,7 @@ export function applyImplicitFinalConfirmation(session: any) {
           Number(discardedBufferedEvent?.message?.timestamp || 0),
         );
 
-        if (shouldStartImplicitFinalConfirmation(state, event.message)) {
+        if (shouldStartImplicitFinalConfirmation(session, state, event.message)) {
           removeMessageFromAgentState(session, event.message);
           state.bufferedAssistantMessageEndEvent = event;
           state.attemptsUsed += 1;
@@ -521,7 +564,7 @@ export function applyImplicitFinalConfirmation(session: any) {
         return;
       }
 
-      if (shouldStartImplicitFinalConfirmation(state, event.message)) {
+      if (shouldStartImplicitFinalConfirmation(session, state, event.message)) {
         removeMessageFromAgentState(session, event.message);
         state.bufferedAssistantMessageEndEvent = event;
         state.attemptsUsed += 1;
@@ -530,10 +573,28 @@ export function applyImplicitFinalConfirmation(session: any) {
       }
     }
 
+    if (
+      event?.type === "turn_end" &&
+      Number(event?.message?.timestamp || 0) === state.rewriteTurnEndFromTimestamp &&
+      state.rewriteTurnEndMessage
+    ) {
+      const rewrittenEvent = {
+        ...event,
+        message: state.rewriteTurnEndMessage,
+      };
+      state.rewriteTurnEndFromTimestamp = 0;
+      state.rewriteTurnEndMessage = undefined;
+      await originalProcessAgentEvent(rewrittenEvent);
+      return;
+    }
+
     if (event?.type === "agent_end") {
       const nextEvent = sanitizeAgentEndEvent(state, event);
-      await originalProcessAgentEvent(nextEvent);
-      resetImplicitFinalConfirmationState(state);
+      try {
+        await originalProcessAgentEvent(nextEvent);
+      } finally {
+        resetImplicitFinalConfirmationState(state);
+      }
       return;
     }
 
