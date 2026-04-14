@@ -101,12 +101,14 @@ Useful places to inspect:
 
 ```bash
 rin
+rin --help
 rin doctor
 rin start
 rin stop
 rin restart
 rin update
 rin usage
+rin usage --help
 ```
 
 Command intent:
@@ -116,6 +118,15 @@ Command intent:
 - `rin stop`: stop the managed daemon when possible, otherwise fall back to the local daemon process pattern
 - `rin restart`: restart the managed daemon or perform the same stop/start fallback pair
 - `rin usage`: inspect token telemetry with a text dashboard, grouped summaries, or raw recent events
+
+## Persistent tmux sessions
+
+```bash
+rin --tmux work
+rin --tmux-list
+```
+
+Use hidden tmux sessions when you want a long-lived terminal entrypoint that you can reattach later without keeping the current shell open.
 
 ## Inspect usage telemetry
 

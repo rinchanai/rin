@@ -57,6 +57,7 @@ rin doctor
 
 ```bash
 rin            # open Rin
+rin --help     # show top-level CLI options
 rin doctor     # inspect health and configuration
 rin start      # start the daemon
 rin stop       # stop the daemon

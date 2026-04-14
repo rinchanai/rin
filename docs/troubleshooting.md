@@ -59,13 +59,17 @@ Check:
 Useful commands:
 
 ```bash
+rin --help
 rin doctor
 rin restart
+rin --tmux-list
 readlink -f <installDir>/app/current
 node <installDir>/app/current/dist/app/rin/main.js doctor -u <targetUser>
 ```
 
 Use `rin restart` when the managed daemon unit exists but the runtime feels stale or wedged. If no managed service is present, Rin falls back to the direct stop/start daemon path for the target install.
+
+Use `rin --tmux-list` if you expect a long-lived hidden Rin tmux session to still exist but you have lost track of its name from the current shell.
 
 If the refreshed runtime works through the direct stable entry but not through your current shell path, debug the launcher/user context before assuming the update failed.
 

@@ -12,7 +12,7 @@ import {
 } from "./shared.js";
 import { runUsage, runUsageInternal } from "./usage.js";
 
-function createCli() {
+export function createCli() {
   const cli = cac("rin");
   cli
     .usage("[command] [options] [-- passthrough]")
@@ -41,7 +41,7 @@ function createCli() {
   return cli;
 }
 
-function parseCommandName(name: string): ParsedArgs["command"] {
+export function parseCommandName(name: string): ParsedArgs["command"] {
   return ["update", "start", "stop", "restart", "doctor", "usage"].includes(
     name,
   )
@@ -49,40 +49,67 @@ function parseCommandName(name: string): ParsedArgs["command"] {
     : "";
 }
 
-export async function startRinCli() {
-  if (process.argv[2] === "__usage_internal") {
-    await runUsageInternal(process.argv.slice(3));
+export async function startRinCli(
+  deps: {
+    argv?: string[];
+    createCli?: typeof createCli;
+    runUsageInternal?: typeof runUsageInternal;
+    resolveParsedArgs?: typeof resolveParsedArgs;
+    safeString?: typeof safeString;
+    runUpdate?: typeof runUpdate;
+    runStart?: typeof runStart;
+    runStop?: typeof runStop;
+    runRestart?: typeof runRestart;
+    runDoctor?: typeof runDoctor;
+    runUsage?: typeof runUsage;
+    launchDefaultRin?: typeof launchDefaultRin;
+  } = {},
+) {
+  const argv = deps.argv ?? process.argv;
+  const runUsageInternalFn = deps.runUsageInternal ?? runUsageInternal;
+  const resolveParsedArgsFn = deps.resolveParsedArgs ?? resolveParsedArgs;
+  const safeStringFn = deps.safeString ?? safeString;
+  const runUpdateFn = deps.runUpdate ?? runUpdate;
+  const runStartFn = deps.runStart ?? runStart;
+  const runStopFn = deps.runStop ?? runStop;
+  const runRestartFn = deps.runRestart ?? runRestart;
+  const runDoctorFn = deps.runDoctor ?? runDoctor;
+  const runUsageFn = deps.runUsage ?? runUsage;
+  const launchDefaultRinFn = deps.launchDefaultRin ?? launchDefaultRin;
+
+  if (argv[2] === "__usage_internal") {
+    await runUsageInternalFn(argv.slice(3));
     return;
   }
   if (
-    process.argv[2] === "usage" &&
-    process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")
+    argv[2] === "usage" &&
+    argv.slice(3).some((arg) => arg === "--help" || arg === "-h")
   ) {
-    await runUsageInternal(["--help"]);
+    await runUsageInternalFn(["--help"]);
     return;
   }
 
-  const cli = createCli();
-  const parsedArgv = cli.parse(process.argv, { run: false });
+  const cli = (deps.createCli ?? createCli)();
+  const parsedArgv = cli.parse(argv, { run: false });
   if (parsedArgv.options.help) {
     cli.outputHelp();
     return;
   }
 
-  const command = parseCommandName(safeString(cli.matchedCommandName).trim());
-  const parsed = resolveParsedArgs(
+  const command = parseCommandName(safeStringFn(cli.matchedCommandName).trim());
+  const parsed = resolveParsedArgsFn(
     command,
     parsedArgv.options,
-    process.argv.slice(2),
+    argv.slice(2),
   );
 
-  if (parsed.command === "update") return await runUpdate(parsed);
-  if (parsed.command === "start") return await runStart(parsed);
-  if (parsed.command === "stop") return await runStop(parsed);
-  if (parsed.command === "restart") return await runRestart(parsed);
-  if (parsed.command === "doctor") return await runDoctor(parsed);
+  if (parsed.command === "update") return await runUpdateFn(parsed);
+  if (parsed.command === "start") return await runStartFn(parsed);
+  if (parsed.command === "stop") return await runStopFn(parsed);
+  if (parsed.command === "restart") return await runRestartFn(parsed);
+  if (parsed.command === "doctor") return await runDoctorFn(parsed);
   if (parsed.command === "usage")
-    return await runUsage(parsed, process.argv.slice(2));
+    return await runUsageFn(parsed, argv.slice(2));
 
-  await launchDefaultRin(parsed);
+  await launchDefaultRinFn(parsed);
 }

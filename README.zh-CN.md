@@ -57,6 +57,7 @@ rin doctor
 
 ```bash
 rin            # 打开 Rin
+rin --help     # 查看顶层 CLI 选项
 rin doctor     # 检查健康状态和配置
 rin start      # 启动 daemon
 rin stop       # 停止 daemon

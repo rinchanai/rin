@@ -57,6 +57,7 @@ rin doctor
 
 ```bash
 rin            # Rin を開く
+rin --help     # トップレベルの CLI オプションを表示
 rin doctor     # 状態と設定を確認
 rin start      # デーモンを起動
 rin stop       # デーモンを停止

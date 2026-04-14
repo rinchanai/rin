@@ -57,6 +57,7 @@ rin doctor
 
 ```bash
 rin            # abrir Rin
+rin --help     # mostrar las opciones principales de la CLI
 rin doctor     # revisar estado y configuración
 rin start      # iniciar el daemon
 rin stop       # detener el daemon
