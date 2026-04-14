@@ -2,7 +2,6 @@
 import { pathToFileURL } from "node:url";
 
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
-import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import { createConfiguredAgentSession } from "../rin-lib/runtime.js";
 import { runCustomRpcMode } from "./rpc-mode.js";
 
@@ -15,7 +14,6 @@ export async function startWorker(
   });
   await runCustomRpcMode(runtime, {
     SessionManager: sessionManagerModule.SessionManager,
-    builtinSlashCommands: BUILTIN_SLASH_COMMANDS,
   });
 }
 
