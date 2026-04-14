@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 
 import { isContextOverflow } from "@mariozechner/pi-ai";
 
+import { estimateContextTokens } from "../rin-tui/session-helpers.js";
 import { loadRinCodingAgent } from "./loader.js";
 import {
   clearCompactionContinuationMarker,
@@ -286,20 +287,6 @@ const MID_TURN_CONTINUATION_BLOCK = [
   "If work remains, keep doing it.",
 ].join("\n");
 
-function estimateLlmContextTokens(messages: any[]) {
-  let chars = 0;
-  for (const message of Array.isArray(messages) ? messages : []) {
-    const content = Array.isArray(message?.content) ? message.content : [];
-    for (const part of content) {
-      if (part?.type === "text") chars += String(part.text || "").length;
-      else if (part?.type === "image") chars += 4800;
-      else chars += JSON.stringify(part || "").length;
-    }
-    chars += 32;
-  }
-  return Math.ceil(chars / 4);
-}
-
 function mutateMessageArray(target: any[], source: any[]) {
   if (!Array.isArray(target)) return;
   target.length = 0;
@@ -386,13 +373,13 @@ export function applyMidTurnCompaction(
       : messages;
 
     if (inPreflight) return transformed;
+    if (session?.autoCompactionEnabled === false) return transformed;
     const contextWindow = Number(session.model?.contextWindow || 0);
     if (contextWindow <= 0) return transformed;
 
-    const convertedForEstimate = agent?.convertToLlm
-      ? await Promise.resolve(agent.convertToLlm(transformed))
-      : transformed;
-    const usageTokens = estimateLlmContextTokens(convertedForEstimate);
+    const usageTokens = estimateContextTokens(
+      Array.isArray(transformed) ? transformed : [],
+    );
     const usagePercent = (usageTokens / contextWindow) * 100;
     if (usagePercent < thresholdPercent) return transformed;
 

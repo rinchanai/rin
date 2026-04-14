@@ -190,6 +190,86 @@ test("applyMidTurnCompaction compacts before a provider call and injects continu
   );
 });
 
+test("applyMidTurnCompaction ignores provider-shaped reasoning payload inflation", async () => {
+  let compactCalls = 0;
+  const sourceMessages = [
+    {
+      role: "assistant",
+      stopReason: "done",
+      usage: { input: 140165 },
+      content: [{ type: "text", text: "done" }],
+    },
+    {
+      role: "user",
+      content: [{ type: "text", text: "continue" }],
+    },
+  ];
+
+  const agent = {
+    state: { messages: [...sourceMessages] },
+    async convertToLlm() {
+      return [
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "reasoning",
+              encrypted_content: "x".repeat(500_000),
+            },
+          ],
+        },
+      ];
+    },
+    async streamFn() {
+      return { fake: true };
+    },
+  };
+
+  const session = {
+    model: { provider: "openai-codex", id: "gpt-5.4", contextWindow: 272000 },
+    agent,
+    async _runAutoCompaction() {
+      compactCalls += 1;
+    },
+  };
+
+  runtimeMod.applyMidTurnCompaction(session, 88);
+  const transformed = await agent.transformContext(sourceMessages, undefined);
+  assert.equal(compactCalls, 0);
+  assert.equal(transformed, sourceMessages);
+});
+
+test("applyMidTurnCompaction respects disabled auto compaction", async () => {
+  let compactCalls = 0;
+  const sourceMessages = [
+    {
+      role: "user",
+      content: [{ type: "text", text: "x".repeat(400) }],
+    },
+  ];
+
+  const agent = {
+    state: { messages: [...sourceMessages] },
+    async streamFn() {
+      return { fake: true };
+    },
+  };
+
+  const session = {
+    autoCompactionEnabled: false,
+    model: { provider: "openai", id: "gpt-test", contextWindow: 100 },
+    agent,
+    async _runAutoCompaction() {
+      compactCalls += 1;
+    },
+  };
+
+  runtimeMod.applyMidTurnCompaction(session, 50);
+  const transformed = await agent.transformContext(sourceMessages, undefined);
+  assert.equal(compactCalls, 0);
+  assert.equal(transformed, sourceMessages);
+});
+
 test("applyOverflowContinuationPrompt writes marker only for overflow compaction", async () => {
   const listeners = [];
   const session = {
