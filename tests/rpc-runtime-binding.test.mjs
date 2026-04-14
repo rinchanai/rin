@@ -14,10 +14,33 @@ const { RpcInteractiveSession } = await import(
 
 test("rpc runtime keeps control methods bound to the session instance", async () => {
   const sent = [];
+  const model = { provider: "test", id: "demo-model", name: "Demo Model" };
   const session = new RpcInteractiveSession({
     send(payload) {
       sent.push(payload);
-      return Promise.resolve({ success: true, data: {} });
+      switch (payload.type) {
+        case "set_model":
+          return Promise.resolve({ success: true, data: {} });
+        case "get_state":
+          return Promise.resolve({
+            success: true,
+            data: {
+              sessionId: "s1",
+              sessionFile: "/tmp/s1.jsonl",
+              model,
+              thinkingLevel: "medium",
+              steeringMode: "all",
+              followUpMode: "one-at-a-time",
+              autoCompactionEnabled: false,
+            },
+          });
+        case "get_available_models":
+          return Promise.resolve({ success: true, data: { models: [model] } });
+        case "get_oauth_state":
+          return Promise.resolve({ success: true, data: {} });
+        default:
+          return Promise.resolve({ success: true, data: {} });
+      }
     },
     subscribe() {
       return () => {};
@@ -36,8 +59,25 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
     },
   });
 
-  session.detachedBlankSession = true;
-  const model = { provider: "test", id: "demo-model" };
+  session.sessionId = "s1";
+  session.sessionFile = "/tmp/s1.jsonl";
+  session.settingsManager = {
+    steeringMode: "all",
+    followUpMode: "one-at-a-time",
+    setSteeringMode(mode) {
+      this.steeringMode = mode;
+    },
+    getSteeringMode() {
+      return this.steeringMode;
+    },
+    setFollowUpMode(mode) {
+      this.followUpMode = mode;
+    },
+    getFollowUpMode() {
+      return this.followUpMode;
+    },
+  };
+
   const {
     setModel,
     setSteeringMode,
@@ -60,6 +100,14 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
   assert.equal(session.settingsManager.getFollowUpMode(), "all");
   assert.deepEqual(
     sent.map((entry) => entry.type),
-    [],
+    [
+      "set_model",
+      "get_state",
+      "get_available_models",
+      "get_oauth_state",
+      "set_steering_mode",
+      "set_follow_up_mode",
+      "set_auto_compaction",
+    ],
   );
 });

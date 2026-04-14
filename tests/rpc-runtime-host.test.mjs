@@ -33,6 +33,9 @@ test("rpc runtime host adapts RpcInteractiveSession shape for InteractiveMode", 
       calls.push(["importFromJsonl", inputPath, cwdOverride]);
       return true;
     },
+    async terminateSession() {
+      calls.push(["terminateSession"]);
+    },
     async disconnect() {
       calls.push(["disconnect"]);
     },
@@ -63,6 +66,7 @@ test("rpc runtime host adapts RpcInteractiveSession shape for InteractiveMode", 
     ["switchSession", "/tmp/demo.jsonl", "/tmp/cwd"],
     ["fork", "entry-1"],
     ["importFromJsonl", "/tmp/in.jsonl", "/tmp/cwd"],
+    ["terminateSession"],
     ["disconnect"],
   ]);
 });

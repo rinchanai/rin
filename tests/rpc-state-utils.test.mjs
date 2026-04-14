@@ -29,23 +29,26 @@ test("rpc state utils derive branch and apply state", () => {
     sessionId: "",
     sessionFile: undefined,
     sessionName: undefined,
-    detachedBlankSession: false,
     state: {},
-    settingsManager: { setSteeringMode() {}, setFollowUpMode() {} },
   };
 
   stateUtils.applyRpcSessionState(target, {
-    sessionId: "",
-    sessionFile: undefined,
+    sessionId: "s0",
+    sessionFile: "/tmp/old",
+    model: { provider: "anthropic", id: "claude-sonnet-4-5" },
     thinkingLevel: "medium",
     steeringMode: "one-at-a-time",
     followUpMode: "all",
+    autoCompactionEnabled: true,
     isStreaming: false,
   });
-  assert.equal(target.model, null);
+  assert.equal(target.sessionId, "s0");
+  assert.equal(target.sessionFile, "/tmp/old");
+  assert.equal(target.model.provider, "anthropic");
   assert.equal(target.thinkingLevel, "medium");
   assert.equal(target.steeringMode, "one-at-a-time");
   assert.equal(target.followUpMode, "all");
+  assert.equal(target.autoCompactionEnabled, true);
 
   stateUtils.applyRpcSessionState(target, {
     sessionId: "s1",
