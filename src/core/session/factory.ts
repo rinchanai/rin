@@ -9,6 +9,7 @@ export async function openBoundSession(options: {
   agentDir: string;
   additionalExtensionPaths?: string[];
   sessionFile?: string;
+  thinkingLevel?: any;
 }) {
   const { SessionManager } = await loadRinSessionManagerModule();
   const sessionDir = getRuntimeSessionDir(options.cwd, options.agentDir);
@@ -20,5 +21,6 @@ export async function openBoundSession(options: {
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths ?? [],
     sessionManager,
+    thinkingLevel: options.thinkingLevel,
   });
 }

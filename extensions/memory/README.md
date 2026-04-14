@@ -15,7 +15,7 @@ This module owns:
 - archived session records preserve full message history for recall, including assistant thinking text, tool calls, tool results, and other text-bearing message roles
 - recent-session previews favor actionable entries such as assistant steps, tool activity, commands, paths, and unresolved blockers instead of generic chatter
 - cross-session transcript search with session-level rollup: search gathers many raw message hits, merges them by session, and returns session-scoped recall results
-- transcript recall summarization via the current model by default, or `settings.json` -> `auxiliaryModel` when configured
+- transcript recall summarization via the active model at fixed `low` thinking
 - recall summaries are steered to fuse the overall session context with why the current query matched
 
 It does not own always-on prompts or agent-managed skills. Those belong to the `self-improve` extension.
