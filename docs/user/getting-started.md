@@ -80,6 +80,7 @@ What this does in practice:
 - publishes a fresh release under `<installDir>/app/releases/...`
 - repoints `<installDir>/app/current` to that new release
 - refreshes current-user launcher metadata and managed service files for the selected target
+- may still need `sudo` / `doas` for cross-user target metadata or managed service actions even when the install dir already exists
 - prunes older runtime releases and keeps only a small recent set
 
 Do not treat repo-local `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the standard way to update an already installed runtime.

@@ -108,7 +108,7 @@ test("installer updater exits cleanly when no installed targets are discovered",
   assert.equal(harness.confirms.length, 0);
 });
 
-test("installer updater uses the discovered target directly when only one install exists", async () => {
+test("installer updater keeps launcher-owner and daemon-target responsibilities visible", async () => {
   const harness = createUpdaterHarness({
     currentUser: "rin",
     targets: [
@@ -131,12 +131,19 @@ test("installer updater uses the discovered target directly when only one instal
     installDir: "/srv/rin",
     sourceRoot: "/repo",
   });
+  assert.match(harness.notes[0][1], /Launcher owner user: rin/);
   assert.match(harness.notes[0][1], /Selected daemon user: rin/);
+  assert.match(
+    harness.notes[0][1],
+    /refresh managed daemon service files for the selected target user/,
+  );
+  assert.match(harness.notes[1][1], /Launcher metadata user: rin/);
+  assert.match(harness.notes[1][1], /Daemon target user: rin/);
   assert.match(harness.notes[1][1], /Removed old releases: 1/);
   assert.match(harness.outros[0], /Updater refreshed rin at \/srv\/rin/);
 });
 
-test("installer updater lets overrides replace the selected target and preserves cross-user next-step hints", async () => {
+test("installer updater surfaces override and cross-user ownership semantics in its plan and next steps", async () => {
   const harness = createUpdaterHarness({
     currentUser: "builder",
     selectedIndex: 1,
@@ -191,8 +198,17 @@ test("installer updater lets overrides replace the selected target and preserves
     installDir: "/srv/override",
     sourceRoot: "/repo",
   });
+  assert.match(harness.notes[0][1], /Launcher owner user: builder/);
   assert.match(harness.notes[0][1], /Discovered from: systemd/);
   assert.match(harness.notes[0][1], /Owner home: \/home\/beta/);
+  assert.match(harness.notes[0][1], /Target override: override-user/);
+  assert.match(harness.notes[0][1], /Install dir override: \/srv\/override/);
+  assert.match(
+    harness.notes[0][1],
+    /cross-user updates can still require sudo\/doas/,
+  );
+  assert.match(harness.notes[1][1], /Launcher metadata user: builder/);
+  assert.match(harness.notes[1][1], /Daemon target user: override-user/);
   assert.match(harness.notes[1][1], /rin doctor -u override-user/);
   assert.match(harness.outros[0], /Use rin start -u override-user/);
 });

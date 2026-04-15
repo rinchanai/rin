@@ -54,28 +54,36 @@ export async function startUpdater(
       ? targets[0]!
       : await selectTarget(targets, deps.ensureNotCancelled, selectPrompt);
 
-  const installDir =
-    String(process.env.RIN_UPDATE_INSTALL_DIR || target.installDir).trim() ||
-    target.installDir;
-  const targetUser =
-    String(process.env.RIN_UPDATE_TARGET_USER || target.targetUser).trim() ||
-    target.targetUser;
+  const overrideInstallDir = String(
+    process.env.RIN_UPDATE_INSTALL_DIR || "",
+  ).trim();
+  const overrideTargetUser = String(
+    process.env.RIN_UPDATE_TARGET_USER || "",
+  ).trim();
+  const installDir = overrideInstallDir || target.installDir;
+  const targetUser = overrideTargetUser || target.targetUser;
 
   notePrompt(
     [
       `Current user: ${currentUser}`,
+      `Launcher owner user: ${currentUser}`,
       `Selected daemon user: ${targetUser}`,
       `Install dir: ${installDir}`,
       `Discovered from: ${target.source}`,
       `Owner home: ${target.ownerHome}`,
+      overrideTargetUser ? `Target override: ${overrideTargetUser}` : "",
+      overrideInstallDir ? `Install dir override: ${overrideInstallDir}` : "",
       "",
       "Updater policy:",
       "- publish a new runtime release into the existing install dir",
       "- prune old runtime releases and keep only the 3 most recent ones",
-      "- refresh launchers and installer metadata for the current user",
-      "- refresh managed daemon service files and restart the daemon when applicable",
+      "- refresh launchers and launcher metadata for the current user",
+      "- refresh managed daemon service files for the selected target user and restart the daemon when applicable",
       "- preserve existing provider/auth/settings unless changed elsewhere",
-    ].join("\n"),
+      "- cross-user updates can still require sudo/doas even when the install dir already exists",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     "Update plan",
   );
 
@@ -116,6 +124,9 @@ export async function startUpdater(
 
   notePrompt(
     [
+      `Launcher metadata user: ${currentUser}`,
+      `Daemon target user: ${targetUser}`,
+      "",
       `Written: ${written.launcherPath}`,
       `Written: ${written.rinPath}`,
       `Written: ${written.rinInstallPath}`,
