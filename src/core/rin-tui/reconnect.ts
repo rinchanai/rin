@@ -2,6 +2,7 @@ export type PendingRpcOperation = {
   mode: "prompt" | "steer" | "follow_up";
   message: string;
   images?: any[];
+  streamingBehavior?: "steer" | "followUp";
   source?: string;
   requestTag?: string;
 };
