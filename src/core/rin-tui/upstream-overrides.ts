@@ -57,9 +57,9 @@ function syncRpcTransportLoader(instance: any, theme: any) {
   ensureTransportLoader(
     instance,
     theme,
-    status?.phase === "idle"
+    !status || status.phase === "idle"
       ? undefined
-      : `${String(status?.label || "Working")}...`,
+      : `${String(status.label || "Working")}...`,
   );
 }
 
