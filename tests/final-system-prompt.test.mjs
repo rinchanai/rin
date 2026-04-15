@@ -17,6 +17,29 @@ const runtimeMod = await import(
     .href,
 );
 
+test("createConfiguredAgentSession keeps system prompt empty until first turn", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "rin-lazy-prompt-cwd-"));
+  const agentDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "rin-lazy-prompt-agent-"),
+  );
+
+  const { session } = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+  });
+
+  assert.equal(String(session._baseSystemPrompt || ""), "");
+  assert.equal(String(session.agent?.state?.systemPrompt || ""), "");
+
+  const baseSystemPrompt = runtimeMod.ensureSessionBaseSystemPrompt(session);
+  assert.ok(baseSystemPrompt.includes("Available tools:"));
+  assert.equal(String(session._baseSystemPrompt || ""), baseSystemPrompt);
+  assert.equal(
+    String(session.agent?.state?.systemPrompt || ""),
+    baseSystemPrompt,
+  );
+});
+
 test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt layers", async () => {
   const { baseSystemPrompt, finalSystemPrompt } =
     await buildFinalAppSystemPrompt();
@@ -28,13 +51,13 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
 
   assert.ok(
     finalSystemPrompt.includes(
-      "As the user's assistant, you must fulfill the user's requests and may freely use the current dedicated system account.",
+      "As the assistant, you must fulfill the user's requests.",
     ),
   );
   assert.ok(!finalSystemPrompt.includes("# Self-improve guidance"));
   assert.ok(
     finalSystemPrompt.includes(
-      "Use save_prompts proactively for durable baselines such as preferences, recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
+      "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn",
     ),
   );
 });
@@ -62,7 +85,7 @@ test("buildFinalAppSystemPrompt injects a continuation prompt after automatic co
   );
   assert.ok(
     finalSystemPrompt.includes(
-      "Execute the next concrete step directly without narration.",
+      "Execute the next concrete step directly without narration",
     ),
   );
   assert.equal(
