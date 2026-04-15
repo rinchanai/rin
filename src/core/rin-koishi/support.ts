@@ -408,7 +408,7 @@ export function canAccessAgentInput({
   return Boolean(mentionLike) && (trust === "OWNER" || trust === "TRUSTED");
 }
 
-const TRUSTED_COMMANDS = new Set(["new"]);
+const TRUSTED_COMMANDS = new Set(["new", "abort"]);
 
 export function canRunCommand(trust: string, commandName: string) {
   const nextTrust = safeString(trust).trim();
