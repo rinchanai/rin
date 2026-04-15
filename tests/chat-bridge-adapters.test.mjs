@@ -44,6 +44,37 @@ test("chat bridge adapter config materialization covers built-in official adapte
   });
 });
 
+test("chat bridge adapter config materialization applies minimal guided defaults", () => {
+  const config = support.buildKoishiConfigFromSettings({
+    koishi: {
+      qq: { id: "app-id", secret: "secret", token: "token", type: "public" },
+      lark: { appId: "cli_xxx", appSecret: "secret_xxx" },
+      slack: { token: "xapp-demo", botToken: "xoxb-demo" },
+    },
+  });
+
+  assert.deepEqual(config.plugins["adapter-qq"], {
+    protocol: "websocket",
+    sandbox: false,
+    authType: "bearer",
+    id: "app-id",
+    secret: "secret",
+    token: "token",
+    type: "public",
+  });
+  assert.deepEqual(config.plugins["adapter-lark"], {
+    protocol: "ws",
+    platform: "feishu",
+    appId: "cli_xxx",
+    appSecret: "secret_xxx",
+  });
+  assert.deepEqual(config.plugins["adapter-slack"], {
+    protocol: "ws",
+    token: "xapp-demo",
+    botToken: "xoxb-demo",
+  });
+});
+
 test("chat bridge config materialization includes custom koishi adapters and runtime package deps", () => {
   const settings = {
     koishi: {

@@ -57,7 +57,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     label: "Kook",
     pluginKey: "adapter-kook",
     packageName: "@koishijs/plugin-adapter-kook",
-    defaults: {},
+    defaults: { protocol: "ws" },
     installer: { kind: "json", placeholder: '{"token":"..."}' },
   },
   {
@@ -65,7 +65,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     label: "QQ",
     pluginKey: "adapter-qq",
     packageName: "@koishijs/plugin-adapter-qq",
-    defaults: {},
+    defaults: { protocol: "websocket", sandbox: false, authType: "bearer" },
     installer: {
       kind: "json",
       placeholder: '{"id":"...","secret":"...","token":"..."}',
@@ -76,7 +76,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     label: "Lark",
     pluginKey: "adapter-lark",
     packageName: "@koishijs/plugin-adapter-lark",
-    defaults: {},
+    defaults: { protocol: "ws", platform: "feishu" },
     installer: {
       kind: "json",
       placeholder: '{"appId":"...","appSecret":"..."}',
@@ -121,7 +121,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     label: "DingTalk",
     pluginKey: "adapter-dingtalk",
     packageName: "@koishijs/plugin-adapter-dingtalk",
-    defaults: {},
+    defaults: { protocol: "ws" },
     installer: {
       kind: "json",
       placeholder: '{"appKey":"...","appSecret":"..."}',
@@ -163,7 +163,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     label: "Slack",
     pluginKey: "adapter-slack",
     packageName: "@koishijs/plugin-adapter-slack",
-    defaults: {},
+    defaults: { protocol: "ws" },
     installer: { kind: "json", placeholder: '{"token":"..."}' },
   },
   {
