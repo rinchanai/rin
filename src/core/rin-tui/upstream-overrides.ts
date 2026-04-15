@@ -47,6 +47,22 @@ function ensureTransportLoader(instance: any, theme: any, label?: string) {
   instance.ui.requestRender();
 }
 
+function isRpcTransportControlled(instance: any) {
+  return typeof instance?.session?.getFrontendStatusEvent === "function";
+}
+
+function syncRpcTransportLoader(instance: any, theme: any) {
+  if (!isRpcTransportControlled(instance)) return;
+  const status = instance.session.getFrontendStatusEvent?.();
+  ensureTransportLoader(
+    instance,
+    theme,
+    status?.phase === "idle"
+      ? undefined
+      : `${String(status?.label || "Working")}...`,
+  );
+}
+
 export async function applyRinTuiOverrides() {
   if (applied) return;
   applied = true;
@@ -185,12 +201,7 @@ export async function applyRinTuiOverrides() {
       if (event?.type === "rpc_session_resynced") {
         this.__rinLocalUserEchoQueue = [];
         this.renderCurrentSessionState();
-        const status = this.session.getFrontendStatusEvent?.();
-        ensureTransportLoader(
-          this,
-          theme,
-          status?.phase === "idle" ? undefined : `${String(status?.label || "Working")}...`,
-        );
+        syncRpcTransportLoader(this, theme);
         return;
       }
 
@@ -203,7 +214,19 @@ export async function applyRinTuiOverrides() {
         }
       }
 
+      const shouldReapplyRpcTransport =
+        isRpcTransportControlled(this) &&
+        (event?.type === "agent_end" ||
+          event?.type === "compaction_start" ||
+          event?.type === "compaction_end" ||
+          event?.type === "auto_retry_start" ||
+          event?.type === "auto_retry_end");
+
       await originalHandleEvent.call(this, event);
+
+      if (shouldReapplyRpcTransport) {
+        syncRpcTransportLoader(this, theme);
+      }
     };
   }
 }
