@@ -114,6 +114,7 @@ rin update
 ```
 
 Si `rin` no existe en la cuenta actual, no asumas que Rin no está instalado. A menudo solo significa que el usuario actual de la shell no es el dueño del launcher.
+El updater también puede descubrir objetivos instalados desde los metadatos del launcher, el manifest de instalación y los archivos de servicio gestionados, así que una instalación entre usuarios puede seguir siendo recuperable aunque la shell actual se vea incompleta.
 
 Para el flujo completo de recuperación o actualización, consulta:
 

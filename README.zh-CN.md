@@ -114,6 +114,7 @@ rin update
 ```
 
 如果当前账号下没有 `rin`，不要立刻判断 Rin 没装。更常见的原因是当前 shell 用户并不是 launcher 所属用户。
+updater 现在也会结合 launcher metadata、安装 manifest 和托管 service file 来发现已安装目标，所以即使是跨用户安装，当前 shell 看起来不完整，也仍然可能正确找回目标运行时。
 
 完整的恢复 / 更新路径可以看：
 

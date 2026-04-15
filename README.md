@@ -114,6 +114,7 @@ rin update
 ```
 
 If `rin` is missing on the current account, do not assume Rin is absent. It usually means the current shell user is not the launcher-owning user.
+The updater can recover installed targets from launcher metadata, install manifests, and managed service files, so cross-user installs can still be discoverable even when the current shell looks incomplete.
 
 For the full recovery/update workflow, see:
 
