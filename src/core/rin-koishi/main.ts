@@ -9,6 +9,14 @@ import {
   applyRuntimeProfileEnvironment,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
+import {
+  executeChatBridgeCode,
+  renderChatBridgeResult,
+} from "../chat-bridge/eval.js";
+import {
+  appendChatBridgeAudit,
+  createChatBridgeRuntime,
+} from "../chat-bridge/runtime.js";
 import { canRunCommand } from "../chat-bridge/policy.js";
 import { enqueueKoishiPromptContext } from "../chat-bridge/prompt-context.js";
 import {
@@ -75,15 +83,20 @@ async function buildTelegramInboundMediaDebug(session: any) {
       fileSize: Number.isFinite(Number(item?.file_size))
         ? Number(item.file_size)
         : undefined,
-      width: Number.isFinite(Number(item?.width)) ? Number(item.width) : undefined,
-      height: Number.isFinite(Number(item?.height)) ? Number(item.height) : undefined,
+      width: Number.isFinite(Number(item?.width))
+        ? Number(item.width)
+        : undefined,
+      height: Number.isFinite(Number(item?.height))
+        ? Number(item.height)
+        : undefined,
     })),
     message?.document
       ? {
           kind: "document",
           fileId: safeString(message.document?.file_id || "").trim(),
           fileUniqueId:
-            safeString(message.document?.file_unique_id || "").trim() || undefined,
+            safeString(message.document?.file_unique_id || "").trim() ||
+            undefined,
           fileSize: Number.isFinite(Number(message.document?.file_size))
             ? Number(message.document.file_size)
             : undefined,
@@ -102,7 +115,9 @@ async function buildTelegramInboundMediaDebug(session: any) {
   if (typeof getFile === "function") {
     for (const item of candidates.slice(0, 4)) {
       try {
-        const file = await getFile.call(session.bot.internal, { file_id: item.fileId });
+        const file = await getFile.call(session.bot.internal, {
+          file_id: item.fileId,
+        });
         lookups.push({
           fileId: item.fileId,
           ok: true,
@@ -115,7 +130,9 @@ async function buildTelegramInboundMediaDebug(session: any) {
         lookups.push({
           fileId: item.fileId,
           ok: false,
-          error: safeString(error?.description || error?.message || error).trim(),
+          error: safeString(
+            error?.description || error?.message || error,
+          ).trim(),
         });
       }
     }
@@ -193,7 +210,9 @@ export async function startKoishi(
     const statePath = path.join(
       dataDir,
       "cron-turns",
-      safeString(controllerKey).trim().replace(/[^A-Za-z0-9._:-]+/g, "_"),
+      safeString(controllerKey)
+        .trim()
+        .replace(/[^A-Za-z0-9._:-]+/g, "_"),
       "state.json",
     );
     const controllerChatKey =
@@ -419,11 +438,13 @@ export async function startKoishi(
             .catch(() => {});
 
         const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ""}`;
-        await controller.runCommand(text, messageId, messageId).catch((error) => {
-          logger.warn(
-            `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
-          );
-        });
+        await controller
+          .runCommand(text, messageId, messageId)
+          .catch((error) => {
+            logger.warn(
+              `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
+            );
+          });
         return "";
       });
   }
@@ -464,7 +485,12 @@ export async function startKoishi(
           try {
             const type = safeString(command?.type).trim();
             if (type === "send_chat") {
-              await sendOutboxPayload(app, runtime.agentDir, command?.payload, h);
+              await sendOutboxPayload(
+                app,
+                runtime.agentDir,
+                command?.payload,
+                h,
+              );
               writeLine({ success: true, data: { delivered: true } });
               return;
             }
@@ -472,18 +498,24 @@ export async function startKoishi(
               const payload = command?.payload || {};
               const chatKey = safeString(payload.chatKey).trim();
               const text = safeString(payload.text).trim();
-              const sessionFile = safeString(payload.sessionFile).trim() || undefined;
-              const controllerKey = safeString(payload.controllerKey).trim() || "default";
+              const sessionFile =
+                safeString(payload.sessionFile).trim() || undefined;
+              const controllerKey =
+                safeString(payload.controllerKey).trim() || "default";
               const deliveryEnabled = payload?.deliveryEnabled !== false;
               const affectChatBinding = payload?.affectChatBinding !== false;
               if (!text) throw new Error("koishi_rpc_text_required");
-              const controller = chatKey && controllerKey === "default" && deliveryEnabled && affectChatBinding
-                ? getController(chatKey)
-                : getDetachedController(controllerKey, {
-                    chatKey,
-                    deliveryEnabled,
-                    affectChatBinding,
-                  });
+              const controller =
+                chatKey &&
+                controllerKey === "default" &&
+                deliveryEnabled &&
+                affectChatBinding
+                  ? getController(chatKey)
+                  : getDetachedController(controllerKey, {
+                      chatKey,
+                      deliveryEnabled,
+                      affectChatBinding,
+                    });
               const result = await controller.runTurn(
                 {
                   text,
@@ -494,6 +526,80 @@ export async function startKoishi(
               );
               writeLine({ success: true, data: result || { delivered: true } });
               return;
+            }
+            if (type === "bridge_eval") {
+              const payload = command?.payload || {};
+              const startedAt = Date.now();
+              const currentChatKey =
+                safeString(payload.currentChatKey).trim() || undefined;
+              const requestId =
+                safeString(payload.requestId).trim() || undefined;
+              const code = safeString(payload.code);
+              const runtimeContext = createChatBridgeRuntime({
+                app,
+                agentDir: runtime.agentDir,
+                dataDir,
+                currentChatKey,
+                h,
+                requestId,
+                sessionId: safeString(payload.sessionId).trim() || undefined,
+                sessionFile:
+                  safeString(payload.sessionFile).trim() || undefined,
+              });
+              let auditPath = "";
+              try {
+                const result = await executeChatBridgeCode({
+                  code,
+                  context: runtimeContext,
+                  timeoutMs: payload.timeoutMs,
+                  filename: `${currentChatKey || "chat"}:${requestId || "bridge"}.ts`,
+                });
+                auditPath = appendChatBridgeAudit(runtime.agentDir, {
+                  timestamp: new Date().toISOString(),
+                  ok: true,
+                  currentChatKey,
+                  requestId,
+                  sessionId: safeString(payload.sessionId).trim() || undefined,
+                  sessionFile:
+                    safeString(payload.sessionFile).trim() || undefined,
+                  timeoutMs: result.timeoutMs,
+                  durationMs: Date.now() - startedAt,
+                  code,
+                  result: result.value,
+                });
+                writeLine({
+                  success: true,
+                  data: {
+                    ok: true,
+                    currentChatKey,
+                    requestId,
+                    timeoutMs: result.timeoutMs,
+                    durationMs: Date.now() - startedAt,
+                    auditPath,
+                    value: result.value,
+                    text: renderChatBridgeResult(result.value),
+                  },
+                });
+                return;
+              } catch (error: any) {
+                auditPath = appendChatBridgeAudit(runtime.agentDir, {
+                  timestamp: new Date().toISOString(),
+                  ok: false,
+                  currentChatKey,
+                  requestId,
+                  sessionId: safeString(payload.sessionId).trim() || undefined,
+                  sessionFile:
+                    safeString(payload.sessionFile).trim() || undefined,
+                  durationMs: Date.now() - startedAt,
+                  code,
+                  error: safeString(
+                    error?.stack || error?.message || error,
+                  ).trim(),
+                });
+                throw new Error(
+                  `${safeString(error?.message || error).trim() || "chat_bridge_failed"}${auditPath ? `\naudit=${auditPath}` : ""}`,
+                );
+              }
             }
             writeLine({
               success: false,

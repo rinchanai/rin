@@ -200,7 +200,11 @@ function buildHeader(
       : [];
     if (attachedFiles.length > 0) {
       lines.push("attached files:");
-      lines.push(...attachedFiles.map((item) => `- ${item.name || "(unnamed)"}: ${item.path}`));
+      lines.push(
+        ...attachedFiles.map(
+          (item) => `- ${item.name || "(unnamed)"}: ${item.path}`,
+        ),
+      );
     }
   }
   if (safeString(meta?.invokingSystemUser).trim()) {
