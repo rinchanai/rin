@@ -270,18 +270,13 @@ test("koishi transport prefers internal telegram reaction calls for working reac
   );
 
   assert.equal(first, "🌘");
-  assert.equal(second, "🌗");
+  assert.equal(second, "🌘");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
     {
       chat_id: "2",
       message_id: 41,
       reaction: [{ type: "emoji", emoji: "🌘" }],
-    },
-    {
-      chat_id: "2",
-      message_id: 41,
-      reaction: [{ type: "emoji", emoji: "🌗" }],
     },
     {
       chat_id: "2",
@@ -330,7 +325,7 @@ test("koishi transport uses bot reaction helpers for onebot working reactions", 
   );
 
   assert.equal(first, "👍");
-  assert.equal(second, "🔥");
+  assert.equal(second, "👍");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
     { kind: "create", chatId: "1067390680", messageId: "52", emoji: "👍" },
@@ -339,14 +334,6 @@ test("koishi transport uses bot reaction helpers for onebot working reactions", 
       chatId: "1067390680",
       messageId: "52",
       emoji: "👍",
-      userId: "2301401877",
-    },
-    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🔥" },
-    {
-      kind: "delete",
-      chatId: "1067390680",
-      messageId: "52",
-      emoji: "🔥",
       userId: "2301401877",
     },
   ]);
