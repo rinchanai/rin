@@ -23,11 +23,14 @@ import {
   setRpcSteeringMode,
   setRpcThinkingLevel,
 } from "./model-settings.js";
-import {
-  queueOfflineOperation,
-  emitConnectionLost,
-  type PendingRpcOperation,
-} from "./reconnect.js";
+type PendingRpcOperation = {
+  mode: "prompt" | "steer" | "follow_up";
+  message: string;
+  images?: any[];
+  streamingBehavior?: "steer" | "followUp";
+  source?: string;
+  requestTag?: string;
+};
 import { createModelRegistry } from "./rpc-model-registry.js";
 import {
   computeAvailableThinkingLevels,
@@ -808,7 +811,8 @@ export class RpcInteractiveSession {
   }
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
-    queueOfflineOperation(this as any, operation);
+    this.queuedOfflineOps.push(operation);
+    void this.ensureReconnectLoop();
     this.emitFrontendStatus(true);
   }
 
@@ -853,9 +857,10 @@ export class RpcInteractiveSession {
   }
 
   private handleConnectionLost() {
+    if (this.disposed) return;
     this.recoveryPending = true;
     this.setRpcConnected(false);
-    emitConnectionLost(this as any);
+    void this.ensureReconnectLoop();
   }
 
   private ensureReconnectLoop() {
