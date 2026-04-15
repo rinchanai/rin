@@ -26,7 +26,7 @@ See `docs/capabilities.md` for agent-facing behavior.
 
 ### Builtin capabilities
 
-Rin force-loads additional builtin extensions such as web search, fetch, memory, subagent, scheduled tasks, and Koishi helpers.
+Rin force-loads additional builtin extensions such as web search, fetch, memory, subagent, scheduled tasks, and chat bridge helpers.
 Do not reason from upstream pi defaults alone.
 See `docs/builtin-extensions.md` and `docs/capabilities.md`.
 
@@ -41,7 +41,7 @@ Prefer these stable installed paths over release-specific paths.
 
 ### Rin-specific behavior
 
-When the task involves Rin runtime behavior, launcher layout, daemon behavior, memory, scheduled tasks, Koishi bridge, or other Rin-owned features, read Rin docs first and treat them as authoritative.
+When the task involves Rin runtime behavior, launcher layout, daemon behavior, memory, scheduled tasks, chat bridge behavior, or other Rin-owned features, read Rin docs first and treat them as authoritative.
 
 ## Recommended reading order
 

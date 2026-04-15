@@ -15,7 +15,7 @@ L’idée est d’avoir un assistant local que vous pouvez garder dans votre ter
 - conserver une mémoire utile à long terme
 - définir des rappels et des tâches récurrentes
 - consulter des informations récentes sur le web
-- relier le même assistant à des plateformes de chat via Koishi
+- relier le même assistant à des plateformes de chat via un pont de chat
 
 L’objectif est simple : faire en sorte que l’agent ressemble à un vrai outil de travail au long cours, pas seulement à une fine couche autour d’un modèle.
 
@@ -27,7 +27,7 @@ Rin se concentre sur quelques bases :
 - une mémoire intégrée, pas seulement des conversations sans état
 - des tâches planifiées intégrées
 - une recherche web intégrée pour les questions sensibles au temps
-- la prise en charge d’un pont de chat via Koishi
+- la prise en charge intégrée d’un pont de chat
 - un point d’entrée unique : `rin`
 
 Si vous voulez un assistant utile sur la durée, Rin est conçu pour cela.
@@ -86,7 +86,7 @@ Rin inclut déjà plusieurs briques importantes :
 - mémoire à long terme
 - tâches planifiées et rappels
 - recherche web en direct
-- pont de chat Koishi
+- couverture de pont de chat pour Telegram, OneBot, Discord, Kook, QQ, Lark, Mail, WeChat Official, WeCom, DingTalk, Matrix, WhatsApp, LINE, Slack et Zulip
 - subagents pour déléguer du travail
 
 ## Quand utiliser `rin --std`

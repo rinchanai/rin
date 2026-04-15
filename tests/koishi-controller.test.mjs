@@ -119,7 +119,7 @@ test("koishi controller delivers a visible command error instead of failing sile
   };
 
   await assert.rejects(controller.runCommand("/reload"), /boom/);
-  assert.deepEqual(deliveries, ["Koishi error: boom"]);
+  assert.deepEqual(deliveries, ["Chat bridge error: boom"]);
 });
 
 test("koishi controller polls telegram typing only while the controller still owns a live turn", async () => {

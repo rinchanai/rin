@@ -229,7 +229,7 @@ test("koishi transport treats empty bot send results as delivery failures", asyn
           },
         },
       ),
-      /koishi_send_message_empty_result/,
+      /chat_send_message_empty_result/,
     );
   });
 });

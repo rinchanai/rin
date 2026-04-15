@@ -39,16 +39,18 @@ test("installer interactive helpers describe dir state and plan text", () => {
     thinkingLevel: "medium",
     authAvailable: true,
     koishiDescription: "telegram",
-    koishiDetail: "Koishi token: [saved]",
+    koishiDetail: "Chat bridge token: [saved]",
   });
   assert.ok(plan.includes("Target daemon user: bob"));
   assert.ok(plan.includes("Model auth status: ready"));
   assert.ok(!plan.includes("Rin safety boundary:"));
   assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
+  assert.ok(plan.includes("Chat bridge: telegram"));
 
   const safety = interactive.buildInstallSafetyBoundaryText();
   assert.ok(safety.includes("YOLO mode"));
   assert.ok(safety.includes("memory extraction"));
+  assert.ok(safety.includes("chat-bridge-triggered agent runs"));
 
   const initExit = interactive.buildPostInstallInitExitText({
     currentUser: "alice",

@@ -15,7 +15,7 @@ It is a local assistant you can keep around in your terminal for day-to-day work
 - keep useful long-term memory
 - set reminders and recurring tasks
 - look up fresh information on the web
-- bridge the same assistant into chat platforms through Koishi
+- bridge the same assistant into chat platforms through a chat bridge
 
 The goal is simple: make the agent feel like a tool you can actually live with, not just a shell around a model.
 
@@ -27,7 +27,7 @@ Rin focuses on a few basics:
 - built-in memory, not just stateless chats
 - built-in scheduled tasks
 - built-in web search for time-sensitive questions
-- chat bridge support through Koishi
+- built-in chat bridge support
 - one product entrypoint: `rin`
 
 If you want an assistant that stays useful over time, Rin is designed for that.
@@ -117,7 +117,7 @@ Rin comes with a few things wired in by default:
 - long-term memory
 - scheduled tasks and reminders
 - live web search
-- Koishi chat bridge
+- chat bridge coverage for Telegram, OneBot, Discord, Kook, QQ, Lark, Mail, WeChat Official, WeCom, DingTalk, Matrix, WhatsApp, LINE, Slack, and Zulip
 - subagents for delegated work
 
 ## When to use `rin --std`

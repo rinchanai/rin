@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { promptChatBridgeSetup } from "../chat-bridge/setup.js";
 import {
   configureProviderAuth,
   computeAvailableThinkingLevels,
@@ -7,7 +8,7 @@ import {
 } from "./provider-auth.js";
 
 export type PromptApi = {
-  ensureNotCancelled: <T>(value: T | symbol) => T;
+  ensureNotCancelled: <T>(value: T | symbol | undefined | null) => T;
   select: (options: any) => Promise<any>;
   text: (options: any) => Promise<any>;
   confirm: (options: any) => Promise<any>;
@@ -236,73 +237,12 @@ export async function promptProviderSetup(
 }
 
 export async function promptKoishiSetup(prompt: PromptApi) {
-  const enableKoishi = prompt.ensureNotCancelled(
-    await prompt.confirm({
-      message: "Configure a Koishi adapter now?",
-      initialValue: false,
-    }),
-  );
-
-  let koishiDescription = "disabled for now";
-  let koishiDetail = "";
-  let koishiConfig: any = null;
-  if (!enableKoishi) return { koishiDescription, koishiDetail, koishiConfig };
-
-  const adapter = prompt.ensureNotCancelled(
-    await prompt.select({
-      message: "Choose a Koishi adapter.",
-      options: [
-        { value: "telegram", label: "Telegram", hint: "bot token" },
-        { value: "onebot", label: "OneBot", hint: "endpoint URL" },
-      ],
-    }),
-  ) as "telegram" | "onebot";
-
-  koishiDescription = adapter;
-  if (adapter === "telegram") {
-    const token = String(
-      prompt.ensureNotCancelled(
-        await prompt.text({
-          message: "Enter the Telegram bot token.",
-          placeholder: "123456:ABCDEF...",
-          validate(value: string) {
-            if (!String(value || "").trim()) return "Token is required.";
-          },
-        }),
-      ),
-    ).trim();
-    koishiDetail = "Koishi token: [saved to target settings.json]";
-    koishiConfig = { telegram: { token, protocol: "polling", slash: true } };
-  } else {
-    const endpoint = String(
-      prompt.ensureNotCancelled(
-        await prompt.text({
-          message: "Enter the OneBot endpoint URL.",
-          placeholder: "http://127.0.0.1:5700",
-          validate(value: string) {
-            const next = String(value || "").trim();
-            if (!next) return "Endpoint is required.";
-            try {
-              new URL(next);
-            } catch {
-              return "Use a valid URL.";
-            }
-          },
-        }),
-      ),
-    ).trim();
-    koishiDetail = `Koishi endpoint: ${endpoint}`;
-    koishiConfig = {
-      onebot: {
-        endpoint,
-        protocol: endpoint.startsWith("ws") ? "ws" : "http",
-        selfId: "",
-        token: "",
-      },
-    };
-  }
-
-  return { koishiDescription, koishiDetail, koishiConfig };
+  const result = await promptChatBridgeSetup(prompt);
+  return {
+    koishiDescription: result.koishiDescription,
+    koishiDetail: result.koishiDetail,
+    koishiConfig: result.koishiConfig,
+  };
 }
 
 export function buildInstallSafetyBoundaryText() {
@@ -321,7 +261,7 @@ export function buildInstallSafetyBoundaryText() {
     "- episode synthesis during session shutdown or `/new` handoff",
     "- context compaction / summarization when the session grows large",
     "- subagent runs when the assistant chooses or is asked to delegate work",
-    "- scheduled task / Koishi-triggered agent runs that create their own turns",
+    "- scheduled task / chat-bridge-triggered agent runs that create their own turns",
     "- web-search result text added into the model context when search is used",
   ].join("\n");
 }
@@ -355,7 +295,7 @@ export function buildInstallPlanText(options: {
     `Model: ${modelId || "skipped for now"}`,
     `Thinking level: ${thinkingLevel || "skipped for now"}`,
     `Model auth status: ${provider ? (authAvailable ? "ready" : "needs auth/config later") : "skipped for now"}`,
-    `Koishi: ${koishiDescription}`,
+    `Chat bridge: ${koishiDescription}`,
     koishiDetail,
   ]
     .filter(Boolean)

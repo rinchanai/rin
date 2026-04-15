@@ -15,7 +15,7 @@ Rin 不是那种只适合一次性对话的 coding agent。
 - 保留有用的长期记忆
 - 设置提醒和周期任务
 - 查询最新网页信息
-- 通过 Koishi 把同一个助手接到聊天平台
+- 通过聊天桥把同一个助手接到聊天平台
 
 目标很简单：让 agent 更像真正能长期使用的工具，而不只是模型外面套的一层壳。
 
@@ -27,7 +27,7 @@ Rin 主要抓这几件事：
 - 不只是无状态聊天，还内建记忆
 - 内建定时任务
 - 对时效性问题内建 Web 搜索
-- 支持 Koishi 聊天桥接
+- 内建聊天桥支持
 - 围绕 `rin` 这个产品入口使用
 
 如果你想要的是一个能长期帮忙的助手，Rin 就是按这个方向做的。
@@ -86,7 +86,7 @@ Rin 默认就接好了这些能力：
 - 长期记忆
 - 定时任务和提醒
 - 实时 Web 搜索
-- Koishi 聊天桥
+- 覆盖 Telegram、OneBot、Discord、Kook、QQ、Lark、Mail、WeChat Official、WeCom、DingTalk、Matrix、WhatsApp、LINE、Slack、Zulip 等聊天桥适配器
 - 用于委托工作的 subagent
 
 ## 什么时候用 `rin --std`

@@ -16,7 +16,7 @@ This document describes the extra capabilities Rin gives the agent.
 - `reset-system-prompt`
   - adds Rin's default stance and chat style prefix to the agent
 - `message-header`
-  - adds message metadata such as `sent at`; adds chat-specific context in Koishi bridge scenarios
+  - adds message metadata such as `sent at`; adds chat-specific context in chat bridge scenarios
 - `freeze-session-runtime`
   - keeps the effective system prompt stable within a session
 - `tui-input-compat`
@@ -27,6 +27,7 @@ This document describes the extra capabilities Rin gives the agent.
   - provides task management tools such as `list_tasks`, `save_task`, and `pause_task`
 - `chat`
   - provides `send_chat_msg` and `get_chat_msg`
+  - provides `/chat` for guided official adapter setup inside the TUI
 - `token-usage`
   - records detailed token telemetry under `~/.rin/data/token-usage/usage.db`
   - powers the `rin usage` text dashboard and grouped usage queries

@@ -29,13 +29,13 @@ export async function runDoctor(parsed: ParsedArgs) {
   }
 
   lines.push(
-    `koishiInstanceCount=${String(Array.isArray(koishiStatus?.instances) ? koishiStatus.instances.length : 0)}`,
+    `chatBridgeInstanceCount=${String(Array.isArray(koishiStatus?.instances) ? koishiStatus.instances.length : 0)}`,
   );
   for (const instance of Array.isArray(koishiStatus?.instances)
     ? koishiStatus.instances
     : []) {
     lines.push(
-      `koishiInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} entry=${instance.entryPath || ""}`,
+      `chatBridgeInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} entry=${instance.entryPath || ""}`,
     );
   }
 

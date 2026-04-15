@@ -440,7 +440,7 @@ export function buildInboundAttachmentNotice(
   const parts: string[] = [];
   if (unresolved)
     parts.push(
-      `${unresolved} media element${unresolved === 1 ? " was" : "s were"} present, but Koishi did not resolve a downloadable resource`,
+      `${unresolved} media element${unresolved === 1 ? " was" : "s were"} present, but the chat bridge runtime did not resolve a downloadable resource`,
     );
   if (fetchFailed)
     parts.push(

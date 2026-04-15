@@ -1,9 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { extname } from "node:path";
 
 import YAML from "yaml";
+
+import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
 
 function safeString(value: unknown) {
   if (value == null) return "";
@@ -61,7 +64,11 @@ function looksLikeSingleAdapterConfig(value: any) {
     "ownerUserIds",
     "botId",
   ]);
-  return keys.some((key) => singleConfigKeys.has(key));
+  if (keys.some((key) => singleConfigKeys.has(key))) return true;
+  return keys.some((key) => {
+    const entry = value[key];
+    return !entry || typeof entry !== "object" || Array.isArray(entry);
+  });
 }
 
 function normalizeAdapterEntries(
@@ -131,6 +138,46 @@ function applyAdapterPlugins(
   });
 }
 
+function normalizeCustomKoishiAdapters(settings: any) {
+  const koishi =
+    settings && typeof settings.koishi === "object" ? settings.koishi : {};
+  const items = Array.isArray(koishi?.customAdapters)
+    ? koishi.customAdapters
+    : [];
+  return items
+    .map((item) => {
+      const adapter =
+        item && typeof item === "object" && !Array.isArray(item) ? item : null;
+      const packageName = safeString(adapter?.packageName).trim();
+      const version = safeString(adapter?.version).trim() || "latest";
+      const pluginKey = safeString(adapter?.pluginKey).trim();
+      const config = adapter?.config;
+      const defaults =
+        adapter?.defaults &&
+        typeof adapter.defaults === "object" &&
+        !Array.isArray(adapter.defaults)
+          ? JSON.parse(JSON.stringify(adapter.defaults))
+          : {};
+      const fallbackPrefix =
+        safeString(adapter?.name).trim() ||
+        pluginKey.replace(/^adapter-/, "") ||
+        packageName.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-");
+      const enabled = adapter?.enabled !== false;
+      return {
+        packageName,
+        version,
+        pluginKey,
+        config,
+        defaults,
+        fallbackPrefix,
+        enabled,
+      };
+    })
+    .filter(
+      (item) => item.enabled && item.packageName && item.pluginKey && item.config,
+    );
+}
+
 export function buildKoishiConfigFromSettings(settings: any) {
   const config = {
     name: "rin",
@@ -144,31 +191,122 @@ export function buildKoishiConfigFromSettings(settings: any) {
 
   const koishi =
     settings && typeof settings.koishi === "object" ? settings.koishi : {};
-  applyAdapterPlugins(
-    config.plugins,
-    "adapter-onebot",
-    koishi?.onebot,
-    {
-      protocol: "ws",
-      endpoint: "",
-      selfId: "",
-      token: "",
-    },
-    "onebot",
-  );
-  applyAdapterPlugins(
-    config.plugins,
-    "adapter-telegram",
-    koishi?.telegram,
-    {
-      protocol: "polling",
-      token: "",
-      slash: true,
-    },
-    "telegram",
-  );
+
+  for (const adapter of listChatBridgeAdapterSpecs()) {
+    applyAdapterPlugins(
+      config.plugins,
+      adapter.pluginKey,
+      koishi?.[adapter.key],
+      adapter.defaults,
+      adapter.key,
+    );
+  }
+
+  for (const adapter of normalizeCustomKoishiAdapters(settings)) {
+    applyAdapterPlugins(
+      config.plugins,
+      adapter.pluginKey,
+      adapter.config,
+      adapter.defaults,
+      adapter.fallbackPrefix,
+    );
+  }
 
   return config;
+}
+
+export function buildKoishiRuntimePackageJson(settings: any) {
+  const dependencies: Record<string, string> = {};
+  for (const adapter of normalizeCustomKoishiAdapters(settings)) {
+    dependencies[adapter.packageName] = adapter.version;
+  }
+  const sortedDependencies = Object.fromEntries(
+    Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
+  );
+  return {
+    name: "rin-koishi-runtime",
+    private: true,
+    version: "0.0.0",
+    dependencies: sortedDependencies,
+  };
+}
+
+function dependencyInstallPath(rootDir: string, packageName: string) {
+  const normalized = safeString(packageName).trim();
+  if (!normalized) return "";
+  return path.join(rootDir, "node_modules", ...normalized.split("/"));
+}
+
+export function shouldInstallKoishiRuntimeDependencies(
+  rootDir: string,
+  settings: any,
+) {
+  const runtimePackage = buildKoishiRuntimePackageJson(settings);
+  const dependencies = runtimePackage.dependencies || {};
+  const packageJsonPath = path.join(rootDir, "package.json");
+  const lockPath = path.join(rootDir, "package-lock.json");
+  const expectedText = `${JSON.stringify(runtimePackage, null, 2)}\n`;
+  const currentText = fs.existsSync(packageJsonPath)
+    ? fs.readFileSync(packageJsonPath, "utf8")
+    : "";
+  if (currentText !== expectedText) return true;
+  if (!Object.keys(dependencies).length) return false;
+  if (!fs.existsSync(lockPath)) return true;
+  return Object.keys(dependencies).some(
+    (packageName) => !fs.existsSync(dependencyInstallPath(rootDir, packageName)),
+  );
+}
+
+export function ensureKoishiRuntimeDependencies(
+  rootDir: string,
+  settings: any,
+) {
+  const runtimePackage = buildKoishiRuntimePackageJson(settings);
+  const dependencies = runtimePackage.dependencies || {};
+  if (!shouldInstallKoishiRuntimeDependencies(rootDir, settings)) {
+    return {
+      installed: false,
+      dependencies,
+      rootDir,
+    };
+  }
+  if (!Object.keys(dependencies).length) {
+    return {
+      installed: false,
+      dependencies,
+      rootDir,
+    };
+  }
+  ensureDir(rootDir);
+  const packageJsonPath = path.join(rootDir, "package.json");
+  fs.writeFileSync(
+    packageJsonPath,
+    `${JSON.stringify(runtimePackage, null, 2)}\n`,
+    "utf8",
+  );
+  try {
+    execFileSync(
+      "npm",
+      ["install", "--no-audit", "--no-fund", "--omit=dev"],
+      {
+        cwd: rootDir,
+        stdio: "pipe",
+        encoding: "utf8",
+      },
+    );
+  } catch (error: any) {
+    const detail = safeString(
+      error?.stderr || error?.stdout || error?.message || error,
+    ).trim();
+    throw new Error(
+      `koishi_runtime_install_failed${detail ? `:${detail}` : ""}`,
+    );
+  }
+  return {
+    installed: true,
+    dependencies,
+    rootDir,
+  };
 }
 
 export function materializeKoishiConfig(configPath: string, settings: any) {
@@ -177,21 +315,11 @@ export function materializeKoishiConfig(configPath: string, settings: any) {
   const config = buildKoishiConfigFromSettings(settings);
   fs.writeFileSync(configPath, YAML.stringify(config), "utf8");
   const packageJsonPath = path.join(rootDir, "package.json");
-  if (!fs.existsSync(packageJsonPath)) {
-    fs.writeFileSync(
-      packageJsonPath,
-      `${JSON.stringify(
-        {
-          name: "rin-koishi-runtime",
-          private: true,
-          version: "0.0.0",
-        },
-        null,
-        2,
-      )}\n`,
-      "utf8",
-    );
-  }
+  fs.writeFileSync(
+    packageJsonPath,
+    `${JSON.stringify(buildKoishiRuntimePackageJson(settings), null, 2)}\n`,
+    "utf8",
+  );
   return { configPath, config };
 }
 
