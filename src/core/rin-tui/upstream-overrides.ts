@@ -1,4 +1,4 @@
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { Loader, truncateToWidth } from "@mariozechner/pi-tui";
 
 import {
   loadRinInteractiveFooterModule,
@@ -9,6 +9,43 @@ import {
 } from "../rin-lib/loader.js";
 
 let applied = false;
+
+function extractUserTextFromEvent(event: any) {
+  const message = event?.message;
+  if (!message || message.role !== "user") return "";
+  if (typeof message.content === "string") return message.content.trim();
+  if (!Array.isArray(message.content)) return "";
+  return message.content
+    .filter((item: any) => item?.type === "text")
+    .map((item: any) => String(item?.text || ""))
+    .join("")
+    .trim();
+}
+
+function ensureTransportLoader(instance: any, theme: any, label?: string) {
+  if (!label) {
+    if (instance.loadingAnimation) {
+      instance.loadingAnimation.stop();
+      instance.loadingAnimation = undefined;
+      instance.statusContainer.clear();
+      instance.ui.requestRender();
+    }
+    return;
+  }
+  if (!instance.loadingAnimation) {
+    instance.statusContainer.clear();
+    instance.loadingAnimation = new Loader(
+      instance.ui,
+      (spinner) => theme.fg("accent", spinner),
+      (text) => theme.fg("muted", text),
+      label,
+    );
+    instance.statusContainer.addChild(instance.loadingAnimation);
+  } else {
+    instance.loadingAnimation.setMessage(label);
+  }
+  instance.ui.requestRender();
+}
 
 export async function applyRinTuiOverrides() {
   if (applied) return;
@@ -116,4 +153,57 @@ export async function applyRinTuiOverrides() {
       };
   }
 
+  const originalHandleEvent = InteractiveMode?.prototype?.handleEvent;
+  if (typeof originalHandleEvent === "function") {
+    InteractiveMode.prototype.handleEvent = async function handleEventWithRpcStates(
+      event: any,
+    ) {
+      if (!this.__rinLocalUserEchoQueue) this.__rinLocalUserEchoQueue = [];
+      if (!this.isInitialized) {
+        await this.init();
+      }
+
+      if (event?.type === "rpc_frontend_status") {
+        ensureTransportLoader(this, theme, event.phase === "idle" ? undefined : `${String(event.label || "Working")}...`);
+        return;
+      }
+
+      if (event?.type === "rpc_local_user_message") {
+        const text = String(event.text || "").trim();
+        if (!text) return;
+        this.__rinLocalUserEchoQueue.push(text);
+        await originalHandleEvent.call(this, {
+          type: "message_start",
+          message: {
+            role: "user",
+            content: [{ type: "text", text }],
+          },
+        });
+        return;
+      }
+
+      if (event?.type === "rpc_session_resynced") {
+        this.__rinLocalUserEchoQueue = [];
+        this.renderCurrentSessionState();
+        const status = this.session.getFrontendStatusEvent?.();
+        ensureTransportLoader(
+          this,
+          theme,
+          status?.phase === "idle" ? undefined : `${String(status?.label || "Working")}...`,
+        );
+        return;
+      }
+
+      if (event?.type === "message_start" && extractUserTextFromEvent(event)) {
+        const nextText = extractUserTextFromEvent(event);
+        const queue = this.__rinLocalUserEchoQueue;
+        if (Array.isArray(queue) && queue[0] === nextText) {
+          queue.shift();
+          return;
+        }
+      }
+
+      await originalHandleEvent.call(this, event);
+    };
+  }
 }

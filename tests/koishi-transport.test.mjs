@@ -29,14 +29,12 @@ async function withTempDir(fn) {
   }
 }
 
-test("koishi transport buildPromptText appends file attachments only", () => {
+test("koishi transport buildPromptText keeps the original text intact", () => {
   const result = transport.buildPromptText("hello", [
     { kind: "file", path: "/tmp/a.txt", name: "a.txt" },
     { kind: "image", path: "/tmp/b.png", name: "b.png" },
   ]);
-  assert.ok(result.includes("Attached files saved locally"));
-  assert.ok(result.includes("a.txt: /tmp/a.txt"));
-  assert.ok(!result.includes("b.png: /tmp/b.png"));
+  assert.equal(result, "hello");
 });
 
 test("koishi transport keeps image-only prompts native", () => {
@@ -102,8 +100,8 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
       {
         type: "parts_delivery",
         chatKey: "telegram/1:2",
-        replyToMessageId: "42",
         parts: [
+          { type: "quote", id: "42" },
           { type: "text", text: "intro" },
           { type: "image", path: imagePath, mimeType: "image/png" },
           { type: "image", path: imagePath, mimeType: "image/png" },
@@ -232,4 +230,53 @@ test("koishi transport treats empty bot send results as delivery failures", asyn
       /chat_send_message_empty_result/,
     );
   });
+});
+
+test("koishi transport rotates and clears working reactions without touching other users", async () => {
+  const calls = [];
+  const app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        async createReaction(chatId, messageId, emoji) {
+          calls.push(["create", chatId, messageId, emoji]);
+        },
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          calls.push(["delete", chatId, messageId, emoji, userId]);
+        },
+      },
+    ],
+  };
+
+  const first = await transport.rotateWorkingReaction(
+    app,
+    "telegram/1:2",
+    "m1",
+    0,
+    "",
+  );
+  const second = await transport.rotateWorkingReaction(
+    app,
+    "telegram/1:2",
+    "m1",
+    1,
+    first,
+  );
+  const cleared = await transport.clearWorkingReaction(
+    app,
+    "telegram/1:2",
+    "m1",
+    second,
+  );
+
+  assert.equal(first, "🌘");
+  assert.equal(second, "🌗");
+  assert.equal(cleared, true);
+  assert.deepEqual(calls, [
+    ["create", "2", "m1", "🌘"],
+    ["delete", "2", "m1", "🌘", "1"],
+    ["create", "2", "m1", "🌗"],
+    ["delete", "2", "m1", "🌗", "1"],
+  ]);
 });

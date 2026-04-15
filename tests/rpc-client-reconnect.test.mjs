@@ -48,60 +48,65 @@ test("rpc client ignores stale socket disconnect after reconnect", () => {
   assert.equal(seen[0]?.name, "connection_lost");
 });
 
-test("rpc interactive session clears local working state and emits synthetic interrupted tool end plus agent_end when the daemon connection is lost mid-turn", () => {
+test("rpc interactive session switches to connecting state instead of emitting a fake turn end on disconnect", () => {
   const client = { isConnected: () => false };
   const session = new RpcInteractiveSession(client);
   const seen = [];
   session.subscribe((event) => seen.push(event));
-  session.isStreaming = true;
-  session.activeTurn = { mode: "prompt", message: "hi" };
-  session.messages = [
-    {
-      role: "assistant",
-      content: [
-        {
-          type: "toolCall",
-          id: "tool-1",
-          name: "bash",
-          arguments: { command: "rin update" },
-        },
-      ],
-    },
-  ];
-  session.state.messages = session.messages;
   session.ensureReconnectLoop = () => {};
+  session.recoveryPending = false;
+  session.rpcConnected = true;
+  session.activeTurn = { mode: "prompt", message: "hi" };
+  session.syncStreamingState();
+  seen.length = 0;
 
   session.handleConnectionLost();
 
   assert.equal(session.isStreaming, false);
   assert.equal(session.activeTurn, null);
-  assert.equal(seen.length, 2);
-  assert.equal(seen[0]?.type, "tool_execution_end");
-  assert.equal(seen[0]?.toolCallId, "tool-1");
-  assert.equal(seen[0]?.toolName, "bash");
-  assert.equal(seen[0]?.isError, true);
-  assert.equal(
-    seen[0]?.result?.content?.[0]?.text,
-    "The tool was interrupted by a daemon restart or disconnect.",
-  );
-  assert.deepEqual(seen[0]?.result?.details, {
-    interrupted: true,
-    reason: "daemon_restart_or_disconnect",
-  });
-  assert.equal(seen[1]?.type, "agent_end");
-  assert.equal(seen[1]?.interrupted, true);
-  assert.equal(seen[1]?.reason, "daemon_restart_or_disconnect");
-  assert.equal(seen[1]?.messages, session.messages);
+  assert.deepEqual(seen, [
+    {
+      type: "rpc_frontend_status",
+      phase: "connecting",
+      label: "Connecting",
+      connected: false,
+    },
+  ]);
 });
 
-test("rpc interactive session does not emit synthetic agent_end when the daemon connection is lost while idle", () => {
+test("rpc interactive session replays the current frontend status to new subscribers", () => {
   const client = { isConnected: () => false };
   const session = new RpcInteractiveSession(client);
+  session.sessionOperationPending = true;
+  session.rpcConnected = true;
+
   const seen = [];
   session.subscribe((event) => seen.push(event));
-  session.ensureReconnectLoop = () => {};
 
-  session.handleConnectionLost();
+  assert.deepEqual(seen, [
+    {
+      type: "rpc_frontend_status",
+      phase: "starting",
+      label: "Starting",
+      connected: true,
+    },
+  ]);
+});
 
-  assert.deepEqual(seen, []);
+test("rpc interactive session can terminate an attached worker without local session selectors", async () => {
+  const calls = [];
+  const client = {
+    isConnected: () => true,
+    send: async (payload) => {
+      calls.push(payload);
+      return { success: true, data: { terminated: true } };
+    },
+  };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+
+  await session.terminateSession();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.type, "terminate_session");
 });
