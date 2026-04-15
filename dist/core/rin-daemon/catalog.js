@@ -1,6 +1,7 @@
 import path from "node:path";
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { getBuiltinSlashCommands } from "./worker-helpers.js";
 async function createCatalogContext(options = {}) {
     const codingAgentModule = await loadRinCodingAgent();
     const { AuthStorage, DefaultResourceLoader, ModelRegistry, SettingsManager, ExtensionRunner, createEventBus, discoverAndLoadExtensions, } = codingAgentModule;
@@ -36,7 +37,9 @@ export async function listCatalogCommands(options = {}) {
     const { resourceLoader, extensionRunner } = await createCatalogContext(options);
     const prompts = resourceLoader.getPrompts().prompts;
     const skills = resourceLoader.getSkills().skills;
+    const seen = new Set();
     return [
+        ...getBuiltinSlashCommands(),
         ...extensionRunner.getRegisteredCommands().map((command) => ({
             name: String(command?.invocationName || command?.name || "").trim(),
             description: String(command?.description || "").trim(),
@@ -55,7 +58,13 @@ export async function listCatalogCommands(options = {}) {
             source: "skill",
             sourceInfo: skill?.sourceInfo,
         })),
-    ].filter((item) => item.name);
+    ].filter((item) => {
+        const name = String(item?.name || "").trim();
+        if (!name || seen.has(name))
+            return false;
+        seen.add(name);
+        return true;
+    });
 }
 export async function listCatalogModels(options = {}) {
     const { modelRegistry } = await createCatalogContext(options);

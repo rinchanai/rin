@@ -5,6 +5,7 @@ import {
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { getBuiltinSlashCommands } from "./worker-helpers.js";
 
 async function createCatalogContext(
   options: {
@@ -81,7 +82,9 @@ export async function listCatalogCommands(
   const { resourceLoader, extensionRunner } = await createCatalogContext(options);
   const prompts = resourceLoader.getPrompts().prompts;
   const skills = resourceLoader.getSkills().skills;
+  const seen = new Set<string>();
   return [
+    ...getBuiltinSlashCommands(),
     ...extensionRunner.getRegisteredCommands().map((command: any) => ({
       name: String(command?.invocationName || command?.name || "").trim(),
       description: String(command?.description || "").trim(),
@@ -100,7 +103,12 @@ export async function listCatalogCommands(
       source: "skill",
       sourceInfo: skill?.sourceInfo,
     })),
-  ].filter((item) => item.name);
+  ].filter((item) => {
+    const name = String(item?.name || "").trim();
+    if (!name || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
 }
 
 export async function listCatalogModels(

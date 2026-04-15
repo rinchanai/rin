@@ -1,3 +1,4 @@
+import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import { loadRinChangelogModule } from "../rin-lib/loader.js";
 
 export function writeJsonLine(value: unknown) {
@@ -21,8 +22,26 @@ export function getSessionState(session: any) {
   };
 }
 
+export function getBuiltinSlashCommands() {
+  return BUILTIN_SLASH_COMMANDS.map((command) => ({
+    name: String(command?.name || "").trim(),
+    description: String(command?.description || "").trim(),
+    source: "builtin",
+  })).filter((command) => command.name);
+}
+
+function dedupeSlashCommands(commands: any[]) {
+  const seen = new Set<string>();
+  return commands.filter((command) => {
+    const name = String(command?.name || "").trim();
+    if (!name || seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+
 export function getSlashCommands(session: any) {
-  const commands: any[] = [];
+  const commands: any[] = [...getBuiltinSlashCommands()];
   for (const command of session.extensionRunner?.getRegisteredCommands?.() ??
     []) {
     commands.push({
@@ -48,7 +67,7 @@ export function getSlashCommands(session: any) {
       sourceInfo: skill.sourceInfo,
     });
   }
-  return commands;
+  return dedupeSlashCommands(commands);
 }
 
 export function getOAuthState(session: any) {
