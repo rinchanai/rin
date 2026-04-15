@@ -28,11 +28,12 @@ export async function promptTargetInstall(
   targetHomeForUser: (user: string) => string,
 ) {
   const otherUsers = allUsers.filter((entry) => entry.name !== currentUser);
-  const existingCandidates = otherUsers.length
-    ? otherUsers
-    : allUsers.filter((entry) => entry.name !== currentUser).length
-      ? allUsers.filter((entry) => entry.name !== currentUser)
-      : allUsers;
+  const existingCandidates = otherUsers.length ? otherUsers : allUsers;
+  const existingHint = otherUsers.length
+    ? `${otherUsers.length} other user(s)`
+    : allUsers.length
+      ? "current user only"
+      : "none found";
 
   const targetMode = prompt.ensureNotCancelled(
     await prompt.select({
@@ -41,10 +42,8 @@ export async function promptTargetInstall(
         { value: "current", label: "Current user", hint: currentUser },
         {
           value: "existing",
-          label: "Existing other user",
-          hint: existingCandidates.length
-            ? `${existingCandidates.length} user(s)`
-            : "none found",
+          label: "Existing system user",
+          hint: existingHint,
         },
         { value: "new", label: "New user", hint: "enter a username" },
       ],
@@ -392,14 +391,24 @@ export function buildFinalRequirements(options: {
   needsElevatedWrite: boolean;
   needsElevatedService: boolean;
 }) {
-  return [
+  const requirements = [
     "write configuration and launchers",
     "publish the runtime into the install directory",
     options.installServiceNow
       ? "install and start the daemon service"
       : "skip daemon service installation on this platform",
-    options.needsElevatedWrite || options.needsElevatedService
-      ? "use sudo/doas if needed for the selected target and install dir"
-      : "no extra privilege escalation currently predicted",
   ];
+
+  if (options.needsElevatedWrite)
+    requirements.push(
+      "use sudo/doas for install-dir writes or target-owned metadata updates",
+    );
+  if (options.needsElevatedService)
+    requirements.push(
+      "use sudo/doas for cross-user managed service install/start operations",
+    );
+  if (!options.needsElevatedWrite && !options.needsElevatedService)
+    requirements.push("no extra privilege escalation currently predicted");
+
+  return requirements;
 }

@@ -34,6 +34,12 @@ The interactive installer then walks through:
 - optional Koishi adapter setup
 - final privilege/service requirements before files are written
 
+Keep this distinction in mind during install and update:
+
+- the selected daemon user owns the target runtime, config, and managed service files
+- the current shell user still gets the launcher metadata and `rin` / `rin-install` launchers
+- the installer may still need `sudo` / `doas` even when the install dir looks writable, because cross-user target metadata and managed service actions are privilege-sensitive
+
 ## Open Rin
 
 ```bash
@@ -73,6 +79,7 @@ What this does in practice:
 - rebuilds the core runtime
 - publishes a fresh release under `<installDir>/app/releases/...`
 - repoints `<installDir>/app/current` to that new release
+- refreshes current-user launcher metadata and managed service files for the selected target
 - prunes older runtime releases and keeps only a small recent set
 
 Do not treat repo-local `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the standard way to update an already installed runtime.

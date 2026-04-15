@@ -236,7 +236,7 @@ test("startInstaller stops before finalization when the operator declines the fi
   assert.deepEqual(outros, ["Installer finished without writing changes."]);
 });
 
-test("startInstaller finalizes installation, records written paths, and launches init when daemon is ready", async () => {
+test("startInstaller predicts elevated writes from cross-user ownership and records written paths", async () => {
   const notes = [];
   const outros = [];
   const finalizeCalls = [];
@@ -284,7 +284,16 @@ test("startInstaller finalizes installation, records written paths, and launches
       targetUid: 1001,
       targetGid: 1001,
     }),
-    buildFinalRequirements: () => ["sudo write", "sudo service"],
+    buildFinalRequirements: (options) => {
+      assert.deepEqual(options, {
+        installServiceNow:
+          process.platform === "darwin" || process.platform === "linux",
+        needsElevatedWrite: true,
+        needsElevatedService:
+          process.platform === "darwin" || process.platform === "linux",
+      });
+      return ["sudo write", "sudo service"];
+    },
     confirm: async () => true,
     runFinalizeInstallPlanInChild: async (options, message, helperDeps) => {
       finalizeCalls.push([options, message, helperDeps]);
@@ -299,7 +308,7 @@ test("startInstaller finalizes installation, records written paths, and launches
   assert.equal(finalizeCalls.length, 1);
   assert.equal(
     finalizeCalls[0][1],
-    "Publishing runtime and writing configuration with elevated permissions...",
+    "Publishing runtime, refreshing launchers, and reconciling managed services with elevated permissions...",
   );
   assert.equal(finalizeCalls[0][0].targetUser, "demo");
   assert.deepEqual(initCalls, [
@@ -324,4 +333,74 @@ test("startInstaller finalizes installation, records written paths, and launches
   assert.deepEqual(outros, [
     "Installer wrote config for demo. (systemd service installed).",
   ]);
+});
+
+test("startInstaller surfaces cross-user service elevation even when the install dir is writable", async () => {
+  const finalizeCalls = [];
+
+  await installerMain.startInstaller({
+    detectCurrentUser: () => "builder",
+    repoRootFromHere: () => "/repo",
+    listSystemUsers: () => [{ name: "builder" }, { name: "demo" }],
+    intro: () => {},
+    note: () => {},
+    outro: () => {},
+    ensureNotCancelled: (value) => value,
+    promptTargetInstall: async () => ({
+      cancelled: false,
+      targetUser: "demo",
+      installDir: "/srv/rin",
+    }),
+    describeInstallDirState: () => ({
+      title: "Install dir",
+      text: "existing dir",
+    }),
+    summarizeDirState: () => ({
+      exists: true,
+      entryCount: 1,
+      sample: ["app"],
+    }),
+    promptProviderSetup: async () => ({
+      provider: "",
+      modelId: "",
+      thinkingLevel: "",
+      authResult: { available: false, authData: {} },
+    }),
+    promptKoishiSetup: async () => ({
+      koishiDescription: "disabled",
+      koishiDetail: "",
+      koishiConfig: null,
+    }),
+    buildInstallPlanText: () => "plan",
+    describeOwnership: () => ({
+      ownerMatches: true,
+      writable: true,
+      statUid: 1001,
+      statGid: 1001,
+      targetUid: 1001,
+      targetGid: 1001,
+    }),
+    buildFinalRequirements: (options) => {
+      assert.deepEqual(options, {
+        installServiceNow:
+          process.platform === "darwin" || process.platform === "linux",
+        needsElevatedWrite: true,
+        needsElevatedService:
+          process.platform === "darwin" || process.platform === "linux",
+      });
+      return ["sudo write", "sudo service"];
+    },
+    confirm: async () => true,
+    runFinalizeInstallPlanInChild: async (options, message) => {
+      finalizeCalls.push([options, message]);
+      return createFinalizeResult();
+    },
+    launchInstallerInitTui: async () => 0,
+  });
+
+  assert.equal(finalizeCalls.length, 1);
+  assert.equal(
+    finalizeCalls[0][1],
+    "Publishing runtime, refreshing launchers, and reconciling managed services with elevated permissions...",
+  );
 });

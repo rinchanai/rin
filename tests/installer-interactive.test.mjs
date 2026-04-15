@@ -61,10 +61,19 @@ test("installer interactive helpers describe dir state and plan text", () => {
 test("installer interactive helpers compute final requirements", () => {
   const elevated = interactive.buildFinalRequirements({
     installServiceNow: true,
-    needsElevatedWrite: false,
+    needsElevatedWrite: true,
     needsElevatedService: true,
   });
-  assert.ok(elevated.some((line) => line.includes("use sudo/doas")));
+  assert.ok(
+    elevated.some((line) =>
+      line.includes("install-dir writes or target-owned metadata updates"),
+    ),
+  );
+  assert.ok(
+    elevated.some((line) =>
+      line.includes("cross-user managed service install/start operations"),
+    ),
+  );
 
   const local = interactive.buildFinalRequirements({
     installServiceNow: false,
@@ -73,6 +82,11 @@ test("installer interactive helpers compute final requirements", () => {
   });
   assert.ok(
     local.some((line) => line.includes("skip daemon service installation")),
+  );
+  assert.ok(
+    local.some((line) =>
+      line.includes("no extra privilege escalation currently predicted"),
+    ),
   );
 });
 
@@ -88,22 +102,22 @@ function createPromptHarness(overrides = {}) {
         return value;
       },
       async select(options) {
-        calls.push(["select", options.message]);
+        calls.push(["select", options]);
         return selectValues.shift();
       },
       async text(options) {
-        calls.push(["text", options.message]);
+        calls.push(["text", options]);
         return textValues.shift();
       },
       async confirm(options) {
-        calls.push(["confirm", options.message]);
+        calls.push(["confirm", options]);
         return confirmValues.shift();
       },
     },
   };
 }
 
-test("installer interactive target selection handles existing users, new users, and empty candidate lists", async () => {
+test("installer interactive target selection keeps existing-user prompts honest about available accounts", async () => {
   const existingHarness = createPromptHarness({
     selectValues: ["existing", "bob"],
     textValues: ["/srv/bob-rin"],
@@ -160,6 +174,11 @@ test("installer interactive target selection handles existing users, new users, 
       },
     ],
   });
+  assert.equal(
+    existingHarness.calls[0][1].options[1].label,
+    "Existing system user",
+  );
+  assert.equal(existingHarness.calls[0][1].options[1].hint, "1 other user(s)");
 
   const newHarness = createPromptHarness({
     selectValues: ["new"],
@@ -213,6 +232,14 @@ test("installer interactive target selection handles existing users, new users, 
       shell: "/bin/bash",
     },
   ]);
+  assert.equal(
+    fallbackHarness.calls[0][1].options[1].label,
+    "Existing system user",
+  );
+  assert.equal(
+    fallbackHarness.calls[0][1].options[1].hint,
+    "current user only",
+  );
 });
 
 test("installer interactive provider setup supports skipped, api-key, and oauth flows", async () => {

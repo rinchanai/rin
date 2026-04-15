@@ -645,8 +645,9 @@ export async function startInstaller(
 
   const installServiceNow =
     process.platform === "darwin" || process.platform === "linux";
-  const needsElevatedWrite = !ownership.writable;
+  const needsElevatedWrite = shouldUseElevatedWrite(targetUser, ownership);
   const needsElevatedService = installServiceNow && targetUser !== currentUser;
+  const needsElevatedAccess = needsElevatedWrite || needsElevatedService;
   const finalRequirements = buildFinalRequirementsFn({
     installServiceNow,
     needsElevatedWrite,
@@ -679,9 +680,9 @@ export async function startInstaller(
       koishiConfig,
       authData: authResult.authData || {},
     },
-    needsElevatedWrite
-      ? "Publishing runtime and writing configuration with elevated permissions..."
-      : "Publishing runtime and writing configuration...",
+    needsElevatedAccess
+      ? "Publishing runtime, refreshing launchers, and reconciling managed services with elevated permissions..."
+      : "Publishing runtime, refreshing launchers, and reconciling managed services...",
     { ensureNotCancelled: ensureNotCancelledFn },
   );
   const {

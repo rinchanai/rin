@@ -30,6 +30,13 @@ Useful places:
 
 The updater uses these same sources to discover installed targets. If `rin update` shows more than one candidate, verify which launcher-owning home and install dir you actually want before proceeding.
 
+Also remember the installer/update split of responsibility:
+
+- the current shell user owns `~/.config/rin/install.json` and the `~/.local/bin/rin*` launchers
+- the selected target user owns the runtime state under `<installDir>` and the managed daemon service files
+
+So a cross-user install/update can still legitimately ask for `sudo` / `doas` even if `<installDir>` itself looks writable from the current shell.
+
 Direct runtime recovery shape:
 
 ```bash
@@ -71,6 +78,13 @@ node <installDir>/app/current/dist/app/rin/main.js doctor -u <targetUser>
 ```
 
 Use `rin restart` when the managed daemon unit exists but the runtime feels stale or wedged. If no managed service is present, Rin falls back to the direct stop/start daemon path for the target install.
+
+If an update claimed success but the daemon still did not come back, compare these surfaces together instead of checking only one:
+
+- `<installDir>/app/current`
+- `<installDir>/installer.json`
+- the target user's managed service file
+- the current shell user's launcher metadata under `~/.config/rin/install.json`
 
 Use `rin --tmux-list` if you expect a long-lived hidden Rin tmux session to still exist but you have lost track of its name from the current shell.
 

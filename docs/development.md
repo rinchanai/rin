@@ -78,6 +78,7 @@ For installer and distribution work, treat these as stable operator-facing contr
 - update flow may rotate releases, but should preserve stable entrypoints and recovery surfaces
 - local and elevated installer file helpers should stay deterministic enough to unit-test directly
 - installer service helpers should keep their privilege and platform branching injectable enough to verify routing without mutating the host service manager
+- installer prompt, confirmation, and updater copy should describe launcher-owner vs daemon-owner responsibilities honestly, especially for cross-user installs that still need elevated writes or service control
 
 ## Update and deployment
 
