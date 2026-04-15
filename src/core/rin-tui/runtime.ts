@@ -286,8 +286,13 @@ export class RpcInteractiveSession {
       images?: any[];
       source?: string;
       requestTag?: string;
+      expandPromptTemplates?: boolean;
     },
   ) {
+    const expandPromptTemplates = options?.expandPromptTemplates ?? true;
+    if (expandPromptTemplates && (await this.tryExecuteLocalExtensionCommand(message))) {
+      return;
+    }
     if (
       options?.streamingBehavior === "steer" &&
       !this.isLocalExtensionCommand(message)
@@ -917,13 +922,39 @@ export class RpcInteractiveSession {
     this.syncPendingCount();
   }
 
-  private isLocalExtensionCommand(text: string) {
-    if (!text.startsWith("/")) return false;
+  private getLocalExtensionCommand(text: string) {
+    if (!text.startsWith("/")) return undefined;
     const extensionRunner = this.extensionRunner;
-    if (!extensionRunner?.getCommand) return false;
+    if (!extensionRunner?.getCommand) return undefined;
     const spaceIndex = text.indexOf(" ");
     const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
-    return Boolean(extensionRunner.getCommand(commandName));
+    return extensionRunner.getCommand(commandName);
+  }
+
+  private isLocalExtensionCommand(text: string) {
+    return Boolean(this.getLocalExtensionCommand(text));
+  }
+
+  private async tryExecuteLocalExtensionCommand(text: string) {
+    const command = this.getLocalExtensionCommand(text);
+    if (!command) return false;
+
+    const spaceIndex = text.indexOf(" ");
+    const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+    const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
+    const ctx = this.extensionRunner?.createCommandContext?.();
+    if (!ctx) return false;
+
+    try {
+      await command.handler(args, ctx);
+    } catch (err) {
+      this.extensionRunner?.emitError?.({
+        extensionPath: `command:${commandName}`,
+        event: "command",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return true;
   }
 
   private async ensureRemoteSession() {
