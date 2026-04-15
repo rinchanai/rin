@@ -38,6 +38,7 @@ export type KoishiChatState = {
     startedAt: number;
     replyToMessageId?: string;
     incomingMessageId?: string;
+    workingNoticeSent?: boolean;
   };
   pendingDelivery?: {
     type: "text_delivery";
