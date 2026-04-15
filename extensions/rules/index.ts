@@ -159,9 +159,6 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
       if (!prompt) {
         return {
           content: [{ type: "text", text: "" }],
-          details: {
-            emptyMessage: `No directory rules found under ${targetPath}.`,
-          },
         };
       }
 
