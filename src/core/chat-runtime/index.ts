@@ -889,6 +889,11 @@ function toOneBotReactionEmojiId(value: string) {
   return Number.isFinite(codePoint) ? String(codePoint) : "";
 }
 
+function isOneBotGroupChatId(chatId: string) {
+  const value = safeString(chatId).trim();
+  return Boolean(value) && !value.startsWith("private:");
+}
+
 class OneBotAdapter {
   private readonly app: ChatRuntimeApp;
   private readonly config: Record<string, any>;
@@ -965,6 +970,12 @@ class OneBotAdapter {
               auto_escape: Boolean(autoEscape),
             }),
           setMessageReaction: async (payload: any) => {
+            const chatId = safeString(
+              payload?.chat_id || payload?.chatId,
+            ).trim();
+            if (chatId && !isOneBotGroupChatId(chatId)) {
+              throw new Error("onebot_reaction_requires_group_chat");
+            }
             const reactions = Array.isArray(payload?.reaction)
               ? payload.reaction
               : [];
@@ -1278,7 +1289,9 @@ class OneBotAdapter {
   }
 
   async createReaction(chatId: string, messageId: string, emoji: string) {
-    void chatId;
+    if (!isOneBotGroupChatId(chatId)) {
+      throw new Error("onebot_reaction_requires_group_chat");
+    }
     const emojiId = toOneBotReactionEmojiId(emoji);
     if (!emojiId) throw new Error("onebot_reaction_emoji_unsupported");
     await this.callAction("set_msg_emoji_like", {
@@ -1290,7 +1303,9 @@ class OneBotAdapter {
   }
 
   async deleteReaction(chatId: string, messageId: string, emoji?: string) {
-    void chatId;
+    if (!isOneBotGroupChatId(chatId)) {
+      throw new Error("onebot_reaction_requires_group_chat");
+    }
     const emojiId = toOneBotReactionEmojiId(safeString(emoji).trim());
     if (!emojiId) throw new Error("onebot_reaction_emoji_unsupported");
     await this.callAction("set_msg_emoji_like", {
