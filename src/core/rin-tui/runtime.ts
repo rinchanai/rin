@@ -150,7 +150,7 @@ export class RpcInteractiveSession {
   private additionalExtensionPaths: string[];
   private reconnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private connectionWatchdogTimer: NodeJS.Timeout | null = null;
+  private reconnectPromise: Promise<void> | null = null;
   private queuedOfflineOps: PendingRpcOperation[] = [];
   private activeTurn: PendingRpcOperation | null = null;
   private rpcConnected = false;
@@ -219,7 +219,6 @@ export class RpcInteractiveSession {
   async connect() {
     this.disposed = false;
     this.startupPending = true;
-    this.startConnectionWatchdog();
     this.emitFrontendStatus(true);
     this.settingsManager = await getPersistentSettingsManager();
     this.autoCompactionEnabled = Boolean(
@@ -229,11 +228,6 @@ export class RpcInteractiveSession {
     this.unsubscribeClient = this.client.subscribe((event) => {
       if (event.type === "ui" && event.name === "connection_lost") {
         this.handleConnectionLost();
-        return;
-      }
-      if (event.type === "ui" && event.name === "connection_restored") {
-        this.clearWaitingDaemonState();
-        void this.handleConnectionRestored().catch(() => {});
         return;
       }
       if (event.type !== "ui") return;
@@ -262,7 +256,6 @@ export class RpcInteractiveSession {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
-    this.stopConnectionWatchdog();
     this.clearWaitingDaemonState();
     this.unsubscribeClient?.();
     this.unsubscribeClient = undefined;
@@ -790,39 +783,10 @@ export class RpcInteractiveSession {
     this.waitForDaemonPromise = null;
   }
 
-  private startConnectionWatchdog() {
-    if (this.connectionWatchdogTimer) return;
-    this.connectionWatchdogTimer = setInterval(() => {
-      void this.runConnectionWatchdog().catch(() => {});
-    }, 1000);
-  }
-
-  private stopConnectionWatchdog() {
-    if (this.connectionWatchdogTimer) {
-      clearInterval(this.connectionWatchdogTimer);
-      this.connectionWatchdogTimer = null;
-    }
-  }
-
-  private async runConnectionWatchdog() {
-    if (this.disposed) return;
-    const connected = this.client.isConnected();
-    if (!connected) {
-      if (this.rpcConnected) {
-        this.handleConnectionLost();
-        return;
-      }
-      this.ensureReconnectLoop();
+  private async waitForDaemonAvailable() {
+    if (this.client.isConnected() && this.rpcConnected && !this.recoveryPending) {
       return;
     }
-    if (!this.rpcConnected || this.recoveryPending) {
-      this.clearWaitingDaemonState();
-      await this.handleConnectionRestored();
-    }
-  }
-
-  private async waitForDaemonAvailable() {
-    if (this.client.isConnected()) return;
     if (this.waitForDaemonPromise) return await this.waitForDaemonPromise;
     this.emitEvent({
       type: "status",
@@ -837,19 +801,7 @@ export class RpcInteractiveSession {
         text: "Daemon is still unavailable after 30s. Try `rin doctor` and `rin --std` to troubleshoot.",
       } as any);
     }, 30000);
-    this.ensureReconnectLoop();
-    this.waitForDaemonPromise = (async () => {
-      while (!this.disposed) {
-        if (this.client.isConnected()) return;
-        try {
-          await this.client.connect();
-          return;
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-        }
-      }
-      throw new Error("rin_tui_disposed");
-    })().finally(() => {
+    this.waitForDaemonPromise = this.ensureReconnectLoop().finally(() => {
       this.clearWaitingDaemonState();
     });
     return await this.waitForDaemonPromise;
@@ -907,20 +859,39 @@ export class RpcInteractiveSession {
   }
 
   private ensureReconnectLoop() {
-    if (this.reconnecting || this.disposed) return;
+    if (this.disposed) return Promise.resolve();
+    if (this.reconnectPromise) return this.reconnectPromise;
     this.reconnecting = true;
     this.emitFrontendStatus(true);
-    const tick = async () => {
-      if (this.disposed) return;
-      try {
-        await this.client.connect();
-      } catch {
-        this.reconnectTimer = setTimeout(() => {
-          void tick();
-        }, 1000);
+    this.reconnectPromise = (async () => {
+      while (!this.disposed) {
+        try {
+          if (!this.client.isConnected()) {
+            await this.client.connect();
+          }
+          if (!this.rpcConnected || this.recoveryPending) {
+            await this.handleConnectionRestored();
+          }
+          if (this.client.isConnected() && this.rpcConnected && !this.recoveryPending) {
+            return;
+          }
+        } catch {}
+        await new Promise<void>((resolve) => {
+          this.reconnectTimer = setTimeout(() => {
+            this.reconnectTimer = null;
+            resolve();
+          }, 1000);
+        });
       }
-    };
-    void tick();
+      throw new Error("rin_tui_disposed");
+    })().finally(() => {
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+      this.reconnectPromise = null;
+      this.reconnecting = false;
+      this.emitFrontendStatus(true);
+    });
+    return this.reconnectPromise;
   }
 
   private async handleConnectionRestored() {

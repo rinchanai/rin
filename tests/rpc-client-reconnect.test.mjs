@@ -123,33 +123,44 @@ test("rpc interactive session keeps working status during compaction", () => {
   });
 });
 
-test("rpc interactive session watchdog restarts reconnect loop when socket is gone", async () => {
-  const client = { isConnected: () => false };
-  const session = new RpcInteractiveSession(client);
-  let reconnects = 0;
-  session.ensureReconnectLoop = () => {
-    reconnects += 1;
+test("rpc interactive session reconnect loop restores transport and session in one pipeline", async () => {
+  let connected = false;
+  let connectCalls = 0;
+  let restoreCalls = 0;
+  const client = {
+    isConnected: () => connected,
+    connect: async () => {
+      connectCalls += 1;
+      connected = true;
+    },
   };
-
-  await session.runConnectionWatchdog();
-
-  assert.equal(reconnects, 1);
-});
-
-test("rpc interactive session watchdog resumes recovery when socket is back", async () => {
-  const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
   session.rpcConnected = false;
   session.recoveryPending = true;
-  let restored = 0;
-  session.clearWaitingDaemonState = () => {};
   session.handleConnectionRestored = async () => {
-    restored += 1;
+    restoreCalls += 1;
+    session.rpcConnected = true;
+    session.recoveryPending = false;
   };
 
-  await session.runConnectionWatchdog();
+  await session.ensureReconnectLoop();
 
-  assert.equal(restored, 1);
+  assert.equal(connectCalls, 1);
+  assert.equal(restoreCalls, 1);
+  assert.equal(session.reconnecting, false);
+});
+
+test("rpc interactive session waitForDaemonAvailable reuses the reconnect pipeline", async () => {
+  const client = { isConnected: () => false };
+  const session = new RpcInteractiveSession(client);
+  let reconnects = 0;
+  session.ensureReconnectLoop = async () => {
+    reconnects += 1;
+  };
+
+  await session.waitForDaemonAvailable();
+
+  assert.equal(reconnects, 1);
 });
 
 test("rpc interactive session can terminate an attached worker without local session selectors", async () => {
