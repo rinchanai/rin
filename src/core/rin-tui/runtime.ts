@@ -700,10 +700,16 @@ export class RpcInteractiveSession {
   }
 
   private getFrontendPhase(): RpcFrontendPhase {
-    if (!this.rpcConnected || this.recoveryPending) return "connecting";
-    if (this.startupPending || this.sessionOperationPending) return "starting";
-    if (this.remoteTurnRunning) return "working";
+    if (!this.rpcConnected) return "connecting";
+    if (this.remoteTurnRunning || this.isCompacting) return "working";
     if (this.activeTurn) return "sending";
+    if (
+      this.startupPending ||
+      this.sessionOperationPending ||
+      this.recoveryPending
+    ) {
+      return "starting";
+    }
     return "idle";
   }
 
@@ -898,6 +904,9 @@ export class RpcInteractiveSession {
         }
         await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
         this.emitSessionResynced();
+        this.recoveryPending = false;
+        this.reconnecting = false;
+        this.emitFrontendStatus(true);
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {

@@ -12,6 +12,11 @@ export async function handleRpcSessionEvent(
       target.isStreaming = running;
     }
   };
+  const emitFrontendStatus = () => {
+    if (typeof target.emitFrontendStatus === "function") {
+      target.emitFrontendStatus(true);
+    }
+  };
   if (payload.type === "agent_start") setRemoteTurnRunning(true);
   if (payload.type === "compaction_start") target.isCompacting = true;
   if (payload.type === "compaction_end") {
@@ -34,4 +39,7 @@ export async function handleRpcSessionEvent(
     void refreshMessages();
   }
   target.emitEvent(payload);
+  if (payload.type === "compaction_start" || payload.type === "compaction_end") {
+    emitFrontendStatus();
+  }
 }
