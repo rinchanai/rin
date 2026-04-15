@@ -1,14 +1,11 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import {
-  formatSkillsForPrompt,
-  loadSkills,
-} from "../../third_party/pi-coding-agent/src/core/skills.js";
+import { DefaultResourceLoader } from "../../third_party/pi-coding-agent/src/core/resource-loader.js";
 import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import {
@@ -30,82 +27,43 @@ function normalizeInputPath(input: string): string {
   return input.trim();
 }
 
-function listAncestorContextFiles(targetDir: string): string[] {
-  const results: string[] = [];
-  const seen = new Set<string>();
-  let current = resolve(targetDir);
-  const root = resolve("/");
-
-  while (true) {
-    for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-      const filePath = join(current, name);
-      if (existsSync(filePath) && !seen.has(filePath)) {
-        results.unshift(filePath);
-        seen.add(filePath);
-      }
-    }
-    if (current === root) break;
-    const parent = resolve(current, "..");
-    if (parent === current) break;
-    current = parent;
-  }
-
-  return results;
-}
-
-function listAncestorSkillDirs(targetDir: string): string[] {
-  const results: string[] = [];
-  const seen = new Set<string>();
-  let current = resolve(targetDir);
-  const root = resolve("/");
-
-  while (true) {
-    const skillsDir = join(current, ".agents", "skills");
-    if (existsSync(skillsDir) && !seen.has(skillsDir)) {
-      results.unshift(skillsDir);
-      seen.add(skillsDir);
-    }
-    if (current === root) break;
-    const parent = resolve(current, "..");
-    if (parent === current) break;
-    current = parent;
-  }
-
-  return results;
-}
-
-function loadContextFiles(paths: string[]) {
-  return paths.flatMap((filePath) => {
-    try {
-      return [{ path: filePath, content: readFileSync(filePath, "utf8") }];
-    } catch {
-      return [];
-    }
-  });
-}
-
-function buildRulesPrompt(targetDir: string) {
-  const contextPaths = listAncestorContextFiles(targetDir);
-  const skillDirs = listAncestorSkillDirs(targetDir);
-  const contextFiles = loadContextFiles(contextPaths);
-  const skills = loadSkills({
+async function buildRulesPrompt(targetDir: string) {
+  const { agentDir } = resolveRuntimeProfile();
+  const loader = new DefaultResourceLoader({
     cwd: targetDir,
-    agentDir: resolveRuntimeProfile().agentDir,
-    skillPaths: skillDirs,
-    includeDefaults: false,
-  }).skills;
+    agentDir,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+  });
 
-  const blocks: string[] = [];
-  if (contextFiles.length > 0) {
-    blocks.push(
-      "# Project Context\n\nProject-specific instructions and guidelines:\n",
-    );
-    for (const { path, content } of contextFiles) {
-      blocks.push(`## ${path}\n\n${content}`);
-    }
+  await loader.reload();
+
+  const ancestorDirs = new Set<string>();
+  let current = resolve(targetDir);
+  const root = resolve("/");
+  while (true) {
+    ancestorDirs.add(current);
+    if (current === root) break;
+    const parent = resolve(current, "..");
+    if (parent === current) break;
+    current = parent;
   }
-  const skillsPrompt = formatSkillsForPrompt(skills).trim();
-  if (skillsPrompt) blocks.push(skillsPrompt);
+
+  const contextFiles = loader
+    .getAgentsFiles()
+    .agentsFiles.filter(({ path }) => ancestorDirs.has(dirname(path)));
+  if (contextFiles.length === 0) {
+    return "";
+  }
+
+  const blocks = [
+    "# Project Context\n\nProject-specific instructions and guidelines:\n",
+  ];
+  for (const { path, content } of contextFiles) {
+    blocks.push(`## ${path}\n\n${content}`);
+  }
 
   return blocks.join("\n\n").trim();
 }
@@ -173,7 +131,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
     description: "Get effective rules for a target directory.",
     promptSnippet: "Get effective rules for a target directory.",
     promptGuidelines: [
-      "Always use rules to get directory-level rules when switching directory context, including AGENTS.md and skills.",
+      "Always use rules to get directory-level rules when switching directory context.",
     ],
     parameters: Type.Object({
       path: Type.String({
@@ -197,7 +155,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
         throw new Error(`Not a directory: ${targetPath}`);
       }
 
-      const prompt = buildRulesPrompt(targetPath);
+      const prompt = await buildRulesPrompt(targetPath);
       if (!prompt) {
         return {
           content: [{ type: "text", text: "" }],
