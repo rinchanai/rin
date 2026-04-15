@@ -76,6 +76,11 @@ export function installLaunchdAgent(
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
     repoRootFromHere: () => string;
+    runPrivileged?: typeof runPrivileged;
+    writeTextFileWithPrivilege?: typeof writeTextFileWithPrivilege;
+    writeTextFile?: typeof writeTextFile;
+    ensureDir?: typeof ensureDir;
+    execFileSync?: typeof execFileSync;
   },
 ) {
   const target = deps.findSystemUser(targetUser) as any;
@@ -88,10 +93,16 @@ export function installLaunchdAgent(
     deps.targetHomeForUser,
     deps.repoRootFromHere,
   );
+  const runPrivilegedImpl = deps.runPrivileged ?? runPrivileged;
+  const writeTextFileWithPrivilegeImpl =
+    deps.writeTextFileWithPrivilege ?? writeTextFileWithPrivilege;
+  const writeTextFileImpl = deps.writeTextFile ?? writeTextFile;
+  const ensureDirImpl = deps.ensureDir ?? ensureDir;
+  const execFileSyncImpl = deps.execFileSync ?? execFileSync;
   if (elevated) {
-    runPrivileged("mkdir", ["-p", path.dirname(plistPath)]);
-    runPrivileged("mkdir", ["-p", path.dirname(stdoutPath)]);
-    writeTextFileWithPrivilege(
+    runPrivilegedImpl("mkdir", ["-p", path.dirname(plistPath)]);
+    runPrivilegedImpl("mkdir", ["-p", path.dirname(stdoutPath)]);
+    writeTextFileWithPrivilegeImpl(
       plistPath,
       plist,
       targetUser,
@@ -99,28 +110,36 @@ export function installLaunchdAgent(
       0o644,
     );
     try {
-      runPrivileged("launchctl", ["bootout", `gui/${uid}`, plistPath]);
+      runPrivilegedImpl("launchctl", ["bootout", `gui/${uid}`, plistPath]);
     } catch {}
-    runPrivileged("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
+    runPrivilegedImpl("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
     try {
-      runPrivileged("launchctl", ["kickstart", "-k", `gui/${uid}/${label}`]);
+      runPrivilegedImpl("launchctl", [
+        "kickstart",
+        "-k",
+        `gui/${uid}/${label}`,
+      ]);
     } catch {}
   } else {
-    ensureDir(path.dirname(plistPath));
-    ensureDir(path.dirname(stdoutPath));
-    writeTextFile(plistPath, plist, 0o644);
+    ensureDirImpl(path.dirname(plistPath));
+    ensureDirImpl(path.dirname(stdoutPath));
+    writeTextFileImpl(plistPath, plist, 0o644);
     try {
-      execFileSync("launchctl", ["bootout", `gui/${uid}`, plistPath], {
+      execFileSyncImpl("launchctl", ["bootout", `gui/${uid}`, plistPath], {
         stdio: "ignore",
       });
     } catch {}
-    execFileSync("launchctl", ["bootstrap", `gui/${uid}`, plistPath], {
+    execFileSyncImpl("launchctl", ["bootstrap", `gui/${uid}`, plistPath], {
       stdio: "inherit",
     });
     try {
-      execFileSync("launchctl", ["kickstart", "-k", `gui/${uid}/${label}`], {
-        stdio: "inherit",
-      });
+      execFileSyncImpl(
+        "launchctl",
+        ["kickstart", "-k", `gui/${uid}/${label}`],
+        {
+          stdio: "inherit",
+        },
+      );
     } catch {}
   }
   return {
@@ -168,6 +187,12 @@ export function installSystemdUserService(
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
     repoRootFromHere: () => string;
+    existsSync?: typeof fs.existsSync;
+    runPrivileged?: typeof runPrivileged;
+    runCommandAsUser?: typeof runCommandAsUser;
+    writeTextFileWithPrivilege?: typeof writeTextFileWithPrivilege;
+    writeTextFile?: typeof writeTextFile;
+    execFileSync?: typeof execFileSync;
   },
 ) {
   const target = deps.findSystemUser(targetUser) as any;
@@ -177,23 +202,30 @@ export function installSystemdUserService(
     deps.targetHomeForUser,
     deps.repoRootFromHere,
   );
-  const systemctl = fs.existsSync("/usr/bin/systemctl")
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const runPrivilegedImpl = deps.runPrivileged ?? runPrivileged;
+  const runCommandAsUserImpl = deps.runCommandAsUser ?? runCommandAsUser;
+  const writeTextFileWithPrivilegeImpl =
+    deps.writeTextFileWithPrivilege ?? writeTextFileWithPrivilege;
+  const writeTextFileImpl = deps.writeTextFile ?? writeTextFile;
+  const execFileSyncImpl = deps.execFileSync ?? execFileSync;
+  const systemctl = existsSync("/usr/bin/systemctl")
     ? "/usr/bin/systemctl"
     : "systemctl";
-  const loginctl = fs.existsSync("/usr/bin/loginctl")
+  const loginctl = existsSync("/usr/bin/loginctl")
     ? "/usr/bin/loginctl"
     : "loginctl";
   const uid = Number(target?.uid ?? -1);
   const runtimeDir = uid >= 0 ? `/run/user/${uid}` : "";
   const userEnv =
-    runtimeDir && fs.existsSync(runtimeDir)
+    runtimeDir && existsSync(runtimeDir)
       ? {
           XDG_RUNTIME_DIR: runtimeDir,
           DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus`,
         }
       : {};
   if (elevated) {
-    writeTextFileWithPrivilege(
+    writeTextFileWithPrivilegeImpl(
       spec.servicePath,
       spec.service,
       targetUser,
@@ -201,27 +233,27 @@ export function installSystemdUserService(
       0o644,
     );
     try {
-      runPrivileged(loginctl, ["enable-linger", targetUser]);
+      runPrivilegedImpl(loginctl, ["enable-linger", targetUser]);
     } catch {}
-    runCommandAsUser(
+    runCommandAsUserImpl(
       targetUser,
       systemctl,
       ["--user", "daemon-reload"],
       userEnv,
     );
-    runCommandAsUser(
+    runCommandAsUserImpl(
       targetUser,
       systemctl,
       ["--user", "enable", "--now", spec.label],
       userEnv,
     );
   } else {
-    writeTextFile(spec.servicePath, spec.service, 0o644);
-    execFileSync(systemctl, ["--user", "daemon-reload"], {
+    writeTextFileImpl(spec.servicePath, spec.service, 0o644);
+    execFileSyncImpl(systemctl, ["--user", "daemon-reload"], {
       stdio: "inherit",
       env: { ...process.env, ...userEnv },
     });
-    execFileSync(systemctl, ["--user", "enable", "--now", spec.label], {
+    execFileSyncImpl(systemctl, ["--user", "enable", "--now", spec.label], {
       stdio: "inherit",
       env: { ...process.env, ...userEnv },
     });
@@ -237,6 +269,9 @@ export function refreshManagedServiceFiles(
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
     repoRootFromHere: () => string;
+    existsSync?: typeof fs.existsSync;
+    writeTextFileWithPrivilege?: typeof writeTextFileWithPrivilege;
+    writeTextFile?: typeof writeTextFile;
   },
 ) {
   if (process.platform !== "linux") return;
@@ -247,8 +282,12 @@ export function refreshManagedServiceFiles(
     path.join(unitDir, unitName),
     path.join(unitDir, "rin-daemon.service"),
   ];
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const writeTextFileWithPrivilegeImpl =
+    deps.writeTextFileWithPrivilege ?? writeTextFileWithPrivilege;
+  const writeTextFileImpl = deps.writeTextFile ?? writeTextFile;
   for (const filePath of candidateFiles) {
-    if (!fs.existsSync(filePath)) continue;
+    if (!existsSync(filePath)) continue;
     const spec = buildSystemdUserService(
       targetUser,
       installDir,
@@ -256,14 +295,14 @@ export function refreshManagedServiceFiles(
       deps.repoRootFromHere,
     );
     if (elevated)
-      writeTextFileWithPrivilege(
+      writeTextFileWithPrivilegeImpl(
         filePath,
         spec.service,
         targetUser,
         deps.findSystemUser(targetUser)?.gid,
         0o644,
       );
-    else writeTextFile(filePath, spec.service, 0o644);
+    else writeTextFileImpl(filePath, spec.service, 0o644);
   }
 }
 
@@ -299,6 +338,12 @@ export function captureCommandAsUser(
   command: string,
   args: string[],
   extraEnv: Record<string, string> = {},
+  deps: {
+    getuid?: typeof process.getuid;
+    existsSync?: typeof fs.existsSync;
+    pickPrivilegeCommand?: typeof pickPrivilegeCommand;
+    execFileSync?: typeof execFileSync;
+  } = {},
 ) {
   const envArgs = Object.entries(extraEnv).map(
     ([key, value]) => `${key}=${JSON.stringify(value)}`,
@@ -308,22 +353,26 @@ export function captureCommandAsUser(
     JSON.stringify(command),
     ...args.map((arg) => JSON.stringify(arg)),
   ].join(" ");
-  const isRoot =
-    typeof process.getuid === "function" ? process.getuid() === 0 : false;
-  if (isRoot && fs.existsSync("/usr/sbin/runuser"))
-    return execFileSync(
+  const getuid = deps.getuid ?? process.getuid;
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const execFileSyncImpl = deps.execFileSync ?? execFileSync;
+  const isRoot = typeof getuid === "function" ? getuid() === 0 : false;
+  if (isRoot && existsSync("/usr/sbin/runuser"))
+    return execFileSyncImpl(
       "/usr/sbin/runuser",
       ["-u", targetUser, "--", "sh", "-lc", shellCommand],
       { encoding: "utf8" },
     );
-  const privilegeCommand = pickPrivilegeCommand();
+  const privilegeCommand = (
+    deps.pickPrivilegeCommand ?? pickPrivilegeCommand
+  )();
   if (privilegeCommand.endsWith("doas") || privilegeCommand.endsWith("sudo"))
-    return execFileSync(
+    return execFileSyncImpl(
       privilegeCommand,
       ["-u", targetUser, "sh", "-lc", shellCommand],
       { encoding: "utf8" },
     );
-  return execFileSync(privilegeCommand, ["sh", "-lc", shellCommand], {
+  return execFileSyncImpl(privilegeCommand, ["sh", "-lc", shellCommand], {
     encoding: "utf8",
   });
 }
@@ -449,14 +498,23 @@ export function reconcileSystemdUserService(
   installDir: string,
   action: "start" | "restart",
   elevated = false,
-  deps: { findSystemUser: (user: string) => any },
+  deps: {
+    findSystemUser: (user: string) => any;
+    runCommandAsUser?: typeof runCommandAsUser;
+    execFileSync?: typeof execFileSync;
+    systemdUserContext?: typeof systemdUserContext;
+  },
 ) {
   void installDir;
   if (process.platform !== "linux") return false;
-  const { systemctl, userEnv, units } = systemdUserContext(targetUser, deps);
+  const { systemctl, userEnv, units } = (
+    deps.systemdUserContext ?? systemdUserContext
+  )(targetUser, deps);
+  const runCommandAsUserImpl = deps.runCommandAsUser ?? runCommandAsUser;
+  const execFileSyncImpl = deps.execFileSync ?? execFileSync;
   if (!systemctl) return false;
   if (elevated) {
-    runCommandAsUser(
+    runCommandAsUserImpl(
       targetUser,
       systemctl,
       ["--user", "daemon-reload"],
@@ -464,7 +522,7 @@ export function reconcileSystemdUserService(
     );
     for (const unit of units) {
       try {
-        runCommandAsUser(
+        runCommandAsUserImpl(
           targetUser,
           systemctl,
           ["--user", action, unit],
@@ -475,13 +533,13 @@ export function reconcileSystemdUserService(
     }
     return false;
   }
-  execFileSync(systemctl, ["--user", "daemon-reload"], {
+  execFileSyncImpl(systemctl, ["--user", "daemon-reload"], {
     stdio: "inherit",
     env: { ...process.env, ...userEnv },
   });
   for (const unit of units) {
     try {
-      execFileSync(systemctl, ["--user", action, unit], {
+      execFileSyncImpl(systemctl, ["--user", action, unit], {
         stdio: "inherit",
         env: { ...process.env, ...userEnv },
       });
@@ -499,15 +557,29 @@ export function installDaemonService(
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
     repoRootFromHere: () => string;
+    existsSync?: typeof fs.existsSync;
+    installLaunchdAgent?: typeof installLaunchdAgent;
+    installSystemdUserService?: typeof installSystemdUserService;
   },
 ) {
+  const existsSync = deps.existsSync ?? fs.existsSync;
   if (process.platform === "darwin")
-    return installLaunchdAgent(targetUser, installDir, elevated, deps);
+    return (deps.installLaunchdAgent ?? installLaunchdAgent)(
+      targetUser,
+      installDir,
+      elevated,
+      deps,
+    );
   if (
     process.platform === "linux" &&
-    (fs.existsSync("/usr/bin/systemctl") || fs.existsSync("/bin/systemctl"))
+    (existsSync("/usr/bin/systemctl") || existsSync("/bin/systemctl"))
   )
-    return installSystemdUserService(targetUser, installDir, elevated, deps);
+    return (deps.installSystemdUserService ?? installSystemdUserService)(
+      targetUser,
+      installDir,
+      elevated,
+      deps,
+    );
   throw new Error(`rin_service_install_unsupported:${process.platform}`);
 }
 
@@ -515,23 +587,35 @@ export async function waitForSocket(
   socketPath: string,
   timeoutMs = 5000,
   targetUser?: string,
+  deps: {
+    captureCommandAsUser?: typeof captureCommandAsUser;
+    createConnection?: typeof net.createConnection;
+    currentUser?: () => string;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
 ) {
   const startedAt = Date.now();
-  const currentUser = (() => {
-    try {
-      return os.userInfo().username;
-    } catch {
-      return "";
-    }
-  })();
+  const currentUser =
+    deps.currentUser?.() ??
+    (() => {
+      try {
+        return os.userInfo().username;
+      } catch {
+        return "";
+      }
+    })();
   while (Date.now() - startedAt < timeoutMs) {
     const ok = await new Promise<boolean>((resolve) => {
       if (targetUser && targetUser !== currentUser) {
         try {
-          const probe = captureCommandAsUser(targetUser, process.execPath, [
-            "-e",
-            `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),300);`,
-          ]);
+          const probe = (deps.captureCommandAsUser ?? captureCommandAsUser)(
+            targetUser,
+            process.execPath,
+            [
+              "-e",
+              `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),300);`,
+            ],
+          );
           void probe;
           resolve(true);
           return;
@@ -540,7 +624,9 @@ export async function waitForSocket(
           return;
         }
       }
-      const socket = net.createConnection(socketPath);
+      const socket = (deps.createConnection ?? net.createConnection)(
+        socketPath,
+      );
       let done = false;
       const finish = (value: boolean) => {
         if (done) return;
@@ -555,7 +641,9 @@ export async function waitForSocket(
       setTimeout(() => finish(false), 300);
     });
     if (ok) return true;
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await (
+      deps.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
+    )(150);
   }
   return false;
 }

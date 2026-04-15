@@ -77,6 +77,7 @@ For installer and distribution work, treat these as stable operator-facing contr
 - user launchers and install metadata stay under the target user's normal home/config locations
 - update flow may rotate releases, but should preserve stable entrypoints and recovery surfaces
 - local and elevated installer file helpers should stay deterministic enough to unit-test directly
+- installer service helpers should keep their privilege and platform branching injectable enough to verify routing without mutating the host service manager
 
 ## Update and deployment
 
