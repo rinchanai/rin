@@ -548,6 +548,62 @@ test("search_memory fails instead of silently degrading to raw transcript result
   });
 });
 
+test("search_memory summarization forwards progress snapshots", async () => {
+  await withTempRoot(async (root) => {
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "session-progress",
+        sessionFile: "/tmp/session-progress.jsonl",
+        role: "assistant",
+        content: [{ type: "text", text: "Added visible progress updates while search_memory is summarizing." }],
+      },
+      root,
+    );
+    const rows = await transcripts.searchTranscriptArchive(
+      "visible progress updates",
+      { limit: 8 },
+      root,
+    );
+    const snapshots = [];
+    const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
+      rows,
+      "visible progress updates",
+      { agentDir: root, model: { provider: "test", id: "demo" } },
+      "medium",
+      async (options) => {
+        options.onProgress?.([{ status: "running" }]);
+        options.onProgress?.([{ status: "done" }]);
+        return {
+          ok: true,
+          results: [{ exitCode: 0, output: "Progress summary." }],
+        };
+      },
+      undefined,
+      (results) => snapshots.push(results.map((result) => result.status)),
+    );
+
+    assert.deepEqual(snapshots, [["running"], ["done"]]);
+    assert.equal(summarized[0].summary, "Progress summary.");
+  });
+});
+
+test("executeSearchMemory emits an initial status update before finishing", async () => {
+  await withTempRoot(async (root) => {
+    const updates = [];
+    const result = await memoryExtensionModule.executeSearchMemory(
+      { query: "no hits yet", limit: 8 },
+      { agentDir: root, model: { provider: "test", id: "demo" } },
+      "medium",
+      undefined,
+      (update) => updates.push(update.details.userText),
+    );
+
+    assert.deepEqual(updates, ['Searching archived sessions for "no hits yet"...']);
+    assert.match(result.details.userText, /No memory results found\./);
+  });
+});
+
 test("search_memory formatting shows query, archive path, and raw messages with line numbers", () => {
   const rendered = memoryExtensionModule.formatSearchResult({
     query: "minecraft server",
@@ -616,4 +672,26 @@ test("search_memory call formatting keeps query in the TUI tool title", () => {
     theme,
   );
   assert.equal(rendered, "search_memory search_memory hang");
+});
+
+test("search_memory rendered result appends timing info", () => {
+  const theme = {
+    fg: (_name, value) => value,
+    bold: (value) => value,
+  };
+  const rendered = memoryExtensionModule.formatRenderedMemoryResult(
+    {
+      details: {
+        userText: "Searching archived sessions for \"search_memory hang\"...",
+      },
+    },
+    { expanded: false, isPartial: false },
+    theme,
+    false,
+    1000,
+    3500,
+  );
+
+  assert.match(rendered, /Searching archived sessions for "search_memory hang"/);
+  assert.match(rendered, /Took 2\.5s/);
 });
