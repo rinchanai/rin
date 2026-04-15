@@ -22,7 +22,7 @@ import {
 } from "./chat-helpers.js";
 
 const DEFAULT_WORKING_REACTION_FRAMES = ["🌘"] as const;
-const ONEBOT_WORKING_REACTION_FRAMES = ["👍"] as const;
+const ONEBOT_WORKING_REACTION_FRAMES = ["👀"] as const;
 
 export function getWorkingReactionFrame(platform: string, index: number) {
   const frames =
