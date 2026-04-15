@@ -119,6 +119,44 @@ async function addInstalledDocsFixture(sourceRoot) {
   );
 }
 
+test("installer fs utils read and write local metadata with stable defaults", async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rin-install-io-"));
+  const jsonPath = path.join(tempRoot, "config", "installer.json");
+  const textPath = path.join(tempRoot, "config", "note.txt");
+  const execPath = path.join(tempRoot, "bin", "rin-demo");
+
+  assert.deepEqual(fsUtils.readJsonFile(jsonPath, { ok: false }), {
+    ok: false,
+  });
+  assert.deepEqual(fsUtils.readInstallerJson(jsonPath, { ok: false }), {
+    ok: false,
+  });
+
+  fsUtils.writeJsonFile(jsonPath, { ok: true, nested: { count: 2 } });
+  fsUtils.writeTextFile(textPath, "hello world\n", 0o640);
+  fsUtils.writeExecutable(execPath, "#!/usr/bin/env sh\necho demo\n");
+
+  assert.deepEqual(fsUtils.readJsonFile(jsonPath, null), {
+    ok: true,
+    nested: { count: 2 },
+  });
+  assert.deepEqual(fsUtils.readInstallerJson(jsonPath, null), {
+    ok: true,
+    nested: { count: 2 },
+  });
+  assert.equal(
+    await fs.readFile(jsonPath, "utf8"),
+    '{\n  "ok": true,\n  "nested": {\n    "count": 2\n  }\n}\n',
+  );
+  assert.equal(await fs.readFile(textPath, "utf8"), "hello world\n");
+  assert.match(await fs.readFile(execPath, "utf8"), /echo demo/);
+
+  const textMode = (await fs.stat(textPath)).mode & 0o777;
+  const execMode = (await fs.stat(execPath)).mode & 0o777;
+  assert.equal(textMode, 0o640);
+  assert.equal(execMode, 0o755);
+});
+
 test("installer fs utils compute launcher targets and script", () => {
   const targets = fsUtils.launcherTargetsForInstallDir("/tmp/rin");
   assert.ok(
@@ -163,6 +201,48 @@ test("writeLaunchersForUser and appConfigDirForUser use stable per-user install 
   assert.equal(
     fsUtils.appConfigDirForUser("demo", homeForUser).includes(".config/rin"),
     true,
+  );
+});
+
+test("syncTree and syncInstalledDocTree replace old payloads and ignore missing sources", async () => {
+  const tempRoot = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-install-sync-"),
+  );
+  const sourceDir = path.join(tempRoot, "source");
+  const destDir = path.join(tempRoot, "dest");
+  await fs.mkdir(path.join(sourceDir, "nested"), { recursive: true });
+  await fs.writeFile(
+    path.join(sourceDir, "nested", "new.txt"),
+    "new\n",
+    "utf8",
+  );
+  await fs.mkdir(path.join(destDir, "nested"), { recursive: true });
+  await fs.writeFile(path.join(destDir, "nested", "old.txt"), "old\n", "utf8");
+
+  fsUtils.syncTree(sourceDir, destDir);
+  await fs.access(path.join(destDir, "nested", "new.txt"));
+  await assert.rejects(fs.access(path.join(destDir, "nested", "old.txt")));
+
+  const copiedDocRoot = path.join(tempRoot, "installed-docs");
+  const synced = fsUtils.syncInstalledDocTree(
+    sourceDir,
+    copiedDocRoot,
+    "rin",
+    false,
+    { findSystemUser: () => null },
+  );
+  assert.equal(synced, copiedDocRoot);
+  await fs.access(path.join(copiedDocRoot, "nested", "new.txt"));
+
+  assert.equal(
+    fsUtils.syncInstalledDocTree(
+      path.join(tempRoot, "missing"),
+      path.join(tempRoot, "ignored"),
+      "rin",
+      false,
+      { findSystemUser: () => null },
+    ),
+    null,
   );
 });
 

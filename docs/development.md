@@ -70,6 +70,13 @@ Rin should prefer:
 - repo fixes in Rin-owned code instead of patching runtime state by hand
 - short direct product copy over inflated explanation
 
+For installer and distribution work, treat these as stable operator-facing contracts unless there is an explicit product decision to change them:
+
+- launcher scripts resolve through `app/current/...` rather than timestamped release paths
+- installed runtime docs land under `docs/rin` and `docs/pi`
+- user launchers and install metadata stay under the target user's normal home/config locations
+- update flow may rotate releases, but should preserve stable entrypoints and recovery surfaces
+
 ## Update and deployment
 
 For installed Rin runtimes, the standard deployment path is:
