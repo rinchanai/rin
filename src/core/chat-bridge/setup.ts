@@ -61,10 +61,20 @@ function safeString(value: unknown) {
   return String(value);
 }
 
-function withGuide(message: string, guide?: string) {
+function withGuide(
+  message: string,
+  guide?: string,
+  links?: string | string[],
+) {
   const main = safeString(message).trim();
   const extra = safeString(guide).trim();
-  return extra ? `${main}\nWhere to find it: ${extra}` : main;
+  const linkList = (Array.isArray(links) ? links : [links])
+    .map((item) => safeString(item).trim())
+    .filter(Boolean);
+  const lines = [main];
+  if (extra) lines.push(`Where to find it: ${extra}`);
+  if (linkList.length) lines.push(`Open: ${linkList.join(" · ")}`);
+  return lines.join("\n");
 }
 
 async function promptText(
@@ -214,6 +224,7 @@ async function promptTelegramConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Telegram bot token.",
       "Telegram @BotFather → choose your bot → API token.",
+      "https://t.me/BotFather",
     ),
     placeholder: "123456:ABCDEF...",
     required: true,
@@ -229,6 +240,7 @@ async function promptOneBotConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the OneBot endpoint URL.",
       "Your OneBot bridge or client config, for example NapCat, LLOneBot, or another OneBot server.",
+      "https://11.onebot.dev/",
     ),
     placeholder: "ws://127.0.0.1:3001",
     required: true,
@@ -238,6 +250,7 @@ async function promptOneBotConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the OneBot self ID if you already know it. Leave blank to fill later.",
       "Usually the bot QQ number from your OneBot client or bridge config.",
+      "https://11.onebot.dev/",
     ),
     placeholder: "123456789",
   });
@@ -245,6 +258,7 @@ async function promptOneBotConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the OneBot access token if required. Leave blank otherwise.",
       "Use the access token from your OneBot server config only if you enabled one.",
+      "https://11.onebot.dev/",
     ),
     placeholder: "optional token",
   });
@@ -266,6 +280,7 @@ async function promptDiscordConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Discord bot token.",
       "Discord Developer Portal → your application → Bot → Reset Token / Token.",
+      "https://discord.com/developers/applications",
     ),
     placeholder: "Bot token",
     required: true,
@@ -281,6 +296,7 @@ async function promptKookConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Kook bot token.",
       "Kook developer console → your bot application → Bot token.",
+      "https://developer.kookapp.cn/",
     ),
     placeholder: "Bot token",
     required: true,
@@ -300,7 +316,8 @@ async function promptQQConfig(prompt: ChatBridgePromptApi) {
   const id = await promptText(prompt, {
     message: withGuide(
       "Enter the QQ bot app ID.",
-      "QQ Open Platform → your bot application → app credentials.",
+      "QQ bot developer docs → create your bot application → app credentials.",
+      "https://bot.q.qq.com/wiki/develop/api-v2/",
     ),
     placeholder: "App ID",
     required: true,
@@ -308,7 +325,8 @@ async function promptQQConfig(prompt: ChatBridgePromptApi) {
   const secret = await promptText(prompt, {
     message: withGuide(
       "Enter the QQ bot secret.",
-      "QQ Open Platform → your bot application → app credentials.",
+      "QQ bot developer docs → create your bot application → app credentials.",
+      "https://bot.q.qq.com/wiki/develop/api-v2/",
     ),
     placeholder: "Secret",
     required: true,
@@ -316,7 +334,8 @@ async function promptQQConfig(prompt: ChatBridgePromptApi) {
   const token = await promptText(prompt, {
     message: withGuide(
       "Enter the QQ bot token.",
-      "QQ Open Platform → your bot application → bot token.",
+      "QQ bot developer docs → your bot application → token / credentials.",
+      "https://bot.q.qq.com/wiki/develop/api-v2/",
     ),
     placeholder: "Token",
     required: true,
@@ -325,6 +344,7 @@ async function promptQQConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Choose the QQ bot scope.",
       "Use the bot type shown in your QQ bot application settings.",
+      "https://bot.q.qq.com/wiki/develop/api-v2/",
     ),
     values: [
       { value: "public", label: "Public" },
@@ -342,6 +362,10 @@ async function promptLarkConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Choose the Lark / Feishu region.",
       "If your app is on open.feishu.cn use Feishu. If it is on open.larksuite.com use Lark.",
+      [
+        "Feishu https://open.feishu.cn/app?lang=zh-CN",
+        "Lark https://open.larksuite.com/",
+      ],
     ),
     values: [
       { value: "feishu", label: "Feishu", hint: "China / open.feishu.cn" },
@@ -352,6 +376,10 @@ async function promptLarkConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Lark / Feishu app ID.",
       "Developer console → your app → Credentials / Basic information.",
+      [
+        "Feishu https://open.feishu.cn/app?lang=zh-CN",
+        "Lark https://open.larksuite.com/",
+      ],
     ),
     placeholder: "App ID",
     required: true,
@@ -360,6 +388,10 @@ async function promptLarkConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Lark / Feishu app secret.",
       "Developer console → your app → Credentials / Basic information.",
+      [
+        "Feishu https://open.feishu.cn/app?lang=zh-CN",
+        "Lark https://open.larksuite.com/",
+      ],
     ),
     placeholder: "App secret",
     required: true,
@@ -382,6 +414,12 @@ async function promptMailConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Choose a mail service preset.",
       "Use your provider preset if possible. Choose Custom only when your provider is not listed.",
+      [
+        "Gmail https://support.google.com/mail/answer/7126229",
+        "Outlook https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040",
+        "QQ Mail https://service.mail.qq.com/",
+        "163 Mail https://help.mail.163.com/",
+      ],
     ),
     values: [
       { value: "custom", label: "Custom" },
@@ -395,6 +433,15 @@ async function promptMailConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the mail username.",
       "Usually the full mailbox address used for IMAP / SMTP login.",
+      preset === "qq"
+        ? "https://service.mail.qq.com/"
+        : preset === "163"
+          ? "https://help.mail.163.com/"
+          : preset === "gmail"
+            ? "https://support.google.com/mail/answer/7126229"
+            : preset === "outlook"
+              ? "https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040"
+              : undefined,
     ),
     placeholder: "bot@example.com",
     required: true,
@@ -403,6 +450,15 @@ async function promptMailConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the mail password or authorization code.",
       "Use the provider's SMTP / IMAP authorization code when the mailbox requires one.",
+      preset === "qq"
+        ? "https://service.mail.qq.com/"
+        : preset === "163"
+          ? "https://help.mail.163.com/"
+          : preset === "gmail"
+            ? "https://support.google.com/mail/answer/7126229"
+            : preset === "outlook"
+              ? "https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040"
+              : undefined,
     ),
     placeholder: "Authorization code",
     required: true,
@@ -484,6 +540,10 @@ async function promptWeChatOfficialConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeChat Official account original ID.",
       "WeChat Official Account admin → Settings / Account information.",
+      [
+        "Console https://mp.weixin.qq.com/",
+        "Docs https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Overview.html",
+      ],
     ),
     placeholder: "Original ID",
     required: true,
@@ -492,6 +552,10 @@ async function promptWeChatOfficialConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeChat Official AppID.",
       "WeChat Official Account platform → Development → Basic configuration.",
+      [
+        "Console https://mp.weixin.qq.com/",
+        "Docs https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Getting_Started_Guide.html",
+      ],
     ),
     placeholder: "AppID",
     required: true,
@@ -500,6 +564,10 @@ async function promptWeChatOfficialConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeChat Official AppSecret.",
       "WeChat Official Account platform → Development → Basic configuration.",
+      [
+        "Console https://mp.weixin.qq.com/",
+        "Docs https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Getting_Started_Guide.html",
+      ],
     ),
     placeholder: "AppSecret",
     required: true,
@@ -508,6 +576,10 @@ async function promptWeChatOfficialConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeChat Official webhook token.",
       "WeChat Official Account platform → Development → Basic configuration → Token.",
+      [
+        "Console https://mp.weixin.qq.com/",
+        "Docs https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Getting_Started_Guide.html",
+      ],
     ),
     placeholder: "Webhook Token",
     required: true,
@@ -516,6 +588,10 @@ async function promptWeChatOfficialConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeChat Official EncodingAESKey.",
       "WeChat Official Account platform → Development → Basic configuration → EncodingAESKey.",
+      [
+        "Console https://mp.weixin.qq.com/",
+        "Docs https://developers.weixin.qq.com/doc/offiaccount/Getting_Started/Getting_Started_Guide.html",
+      ],
     ),
     placeholder: "EncodingAESKey",
     required: true,
@@ -533,6 +609,10 @@ async function promptWeComConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeCom corp ID.",
       "WeCom admin console → My Company / Enterprise information.",
+      [
+        "Console https://work.weixin.qq.com/",
+        "Developer center https://developer.work.weixin.qq.com/",
+      ],
     ),
     placeholder: "Corp ID",
     required: true,
@@ -541,6 +621,10 @@ async function promptWeComConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeCom agent ID.",
       "WeCom admin console → Applications → your app → AgentId.",
+      [
+        "Console https://work.weixin.qq.com/",
+        "Developer center https://developer.work.weixin.qq.com/",
+      ],
     ),
     placeholder: "Agent ID",
     required: true,
@@ -549,6 +633,10 @@ async function promptWeComConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeCom app secret.",
       "WeCom admin console → Applications → your app → Secret.",
+      [
+        "Console https://work.weixin.qq.com/",
+        "Developer center https://developer.work.weixin.qq.com/",
+      ],
     ),
     placeholder: "AppSecret",
     required: true,
@@ -557,6 +645,10 @@ async function promptWeComConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeCom webhook token.",
       "WeCom admin console → Applications → your app → Receive messages.",
+      [
+        "Console https://work.weixin.qq.com/",
+        "Developer center https://developer.work.weixin.qq.com/",
+      ],
     ),
     placeholder: "Webhook Token",
     required: true,
@@ -565,6 +657,10 @@ async function promptWeComConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WeCom EncodingAESKey.",
       "WeCom admin console → Applications → your app → Receive messages.",
+      [
+        "Console https://work.weixin.qq.com/",
+        "Developer center https://developer.work.weixin.qq.com/",
+      ],
     ),
     placeholder: "EncodingAESKey",
     required: true,
@@ -580,6 +676,7 @@ async function promptDingTalkConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the DingTalk AppKey.",
       "DingTalk developer console → your application → credentials.",
+      "https://open.dingtalk.com/",
     ),
     placeholder: "AppKey",
     required: true,
@@ -588,6 +685,7 @@ async function promptDingTalkConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the DingTalk secret.",
       "DingTalk developer console → your application → credentials.",
+      "https://open.dingtalk.com/",
     ),
     placeholder: "Secret",
     required: true,
@@ -596,6 +694,7 @@ async function promptDingTalkConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the DingTalk AgentId if you have one. Leave blank to skip.",
       "DingTalk developer console → your application → basic information.",
+      "https://open.dingtalk.com/",
     ),
     placeholder: "AgentId",
   });
@@ -610,6 +709,7 @@ async function promptMatrixConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Matrix bot ID localpart.",
       "Your Matrix application service registration file or bot account setup.",
+      "https://spec.matrix.org/latest/application-service-api/",
     ),
     placeholder: "rin-bot",
     required: true,
@@ -618,6 +718,7 @@ async function promptMatrixConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Matrix homeserver host.",
       "Your Matrix homeserver address, for example matrix.example.com.",
+      "https://spec.matrix.org/latest/application-service-api/",
     ),
     placeholder: "matrix.example.com",
     required: true,
@@ -626,6 +727,7 @@ async function promptMatrixConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Matrix hs_token.",
       "Your Matrix application service registration file.",
+      "https://spec.matrix.org/latest/application-service-api/",
     ),
     placeholder: "hs_token",
     required: true,
@@ -634,6 +736,7 @@ async function promptMatrixConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Matrix as_token.",
       "Your Matrix application service registration file.",
+      "https://spec.matrix.org/latest/application-service-api/",
     ),
     placeholder: "as_token",
     required: true,
@@ -651,6 +754,7 @@ async function promptWhatsAppConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WhatsApp business ID.",
       "Meta for Developers → WhatsApp → API Setup / WhatsApp Business Account ID.",
+      "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/",
     ),
     placeholder: "Business ID",
     required: true,
@@ -659,6 +763,7 @@ async function promptWhatsAppConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WhatsApp app secret.",
       "Meta for Developers → App settings → Basic → App Secret.",
+      "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/",
     ),
     placeholder: "App Secret",
     required: true,
@@ -667,6 +772,7 @@ async function promptWhatsAppConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WhatsApp system user access token.",
       "Meta for Developers → WhatsApp → API Setup → permanent or system user token.",
+      "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/",
     ),
     placeholder: "System Token",
     required: true,
@@ -675,6 +781,7 @@ async function promptWhatsAppConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the WhatsApp webhook verify token.",
       "The verify token you set in Meta webhook settings for this app.",
+      "https://developers.facebook.com/docs/whatsapp/cloud-api/get-started/",
     ),
     placeholder: "Verify Token",
     required: true,
@@ -690,6 +797,7 @@ async function promptLineConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the LINE channel access token.",
       "LINE Developers console → your Messaging API channel → Channel access token.",
+      "https://developers.line.biz/",
     ),
     placeholder: "Channel access token",
     required: true,
@@ -698,6 +806,7 @@ async function promptLineConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the LINE channel secret.",
       "LINE Developers console → your channel → Basic settings.",
+      "https://developers.line.biz/",
     ),
     placeholder: "Channel secret",
     required: true,
@@ -713,6 +822,7 @@ async function promptSlackConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Slack app-level token.",
       "Slack app settings → Basic Information or Socket Mode → App-Level Tokens (starts with xapp-).",
+      "https://api.slack.com/apps",
     ),
     placeholder: "xapp-...",
     required: true,
@@ -721,6 +831,7 @@ async function promptSlackConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Slack bot token.",
       "Slack app settings → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
+      "https://api.slack.com/apps",
     ),
     placeholder: "xoxb-...",
     required: true,
@@ -742,6 +853,7 @@ async function promptZulipConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Zulip bot email.",
       "Zulip bot account details or the bot creation page.",
+      "https://zulip.com/api/rest",
     ),
     placeholder: "bot@example.com",
     required: true,
@@ -750,6 +862,7 @@ async function promptZulipConfig(prompt: ChatBridgePromptApi) {
     message: withGuide(
       "Enter the Zulip bot API key.",
       "Zulip bot account → API key or Personal settings → Account & privacy → API key.",
+      "https://zulip.com/api/rest",
     ),
     placeholder: "API key",
     required: true,
@@ -829,7 +942,7 @@ export async function promptChatBridgeSetup(
         options: listChatBridgeAdapterSpecs().map((item) => ({
           value: item.key,
           label: item.label,
-          hint: "guided setup",
+          hint: "official adapter",
         })),
       }),
     ),

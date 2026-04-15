@@ -78,9 +78,9 @@ Rin can bridge chat platforms through a framework-neutral chat bridge layer. Cur
 - in chat bridge conversations, avoid Markdown in replies
 - `chat_bridge` is the live bridge tool for advanced chat-platform operations
 - read `~/.rin/docs/rin/docs/chat-bridge.md` for runtime objects, examples, and adapter notes
-- `/chat` is the guided TUI command for configuring the built-in official adapters
+- `/chat` is the TUI command for configuring the built-in official adapters
 - `/chat` goes directly into platform selection in the TUI; the installer keeps the separate yes/no gate
-- guided setup should prefer the minimum runnable fields, default to polling / socket modes when the adapter supports them, avoid webhook-only setup when possible, and tell the user where to find each required value
+- official adapter setup should prefer the minimum runnable fields, default to polling / socket modes when the adapter supports them, avoid webhook-only setup when possible, and include direct official links for required values
 
 ### Custom Koishi adapters
 

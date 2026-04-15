@@ -35,7 +35,7 @@ function createPromptHarness(answers) {
   };
 }
 
-test("chat bridge guided setup configures Telegram with minimal polling defaults", async () => {
+test("chat bridge setup configures Telegram with minimal polling defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
       confirm: [true],
@@ -55,7 +55,7 @@ test("chat bridge guided setup configures Telegram with minimal polling defaults
   });
 });
 
-test("chat bridge guided setup configures Slack with socket mode defaults", async () => {
+test("chat bridge setup configures Slack with socket mode defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
       confirm: [true],
@@ -75,7 +75,7 @@ test("chat bridge guided setup configures Slack with socket mode defaults", asyn
   });
 });
 
-test("chat bridge guided setup configures mail preset with minimal required fields", async () => {
+test("chat bridge setup configures mail preset with minimal required fields", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
       confirm: [true],
@@ -95,7 +95,7 @@ test("chat bridge guided setup configures mail preset with minimal required fiel
   });
 });
 
-test("chat bridge guided setup configures Feishu / Lark with websocket defaults", async () => {
+test("chat bridge setup configures Feishu / Lark with websocket defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
       confirm: [true],
@@ -115,7 +115,7 @@ test("chat bridge guided setup configures Feishu / Lark with websocket defaults"
   });
 });
 
-test("chat bridge guided setup can skip the installer yes-no gate", async () => {
+test("chat bridge setup can skip the installer yes-no gate", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
       select: ["telegram"],

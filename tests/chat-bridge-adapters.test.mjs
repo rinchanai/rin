@@ -44,7 +44,7 @@ test("chat bridge adapter config materialization covers built-in official adapte
   });
 });
 
-test("chat bridge adapter config materialization applies minimal guided defaults", () => {
+test("chat bridge adapter config materialization applies minimal setup defaults", () => {
   const config = support.buildKoishiConfigFromSettings({
     koishi: {
       qq: { id: "app-id", secret: "secret", token: "token", type: "public" },
