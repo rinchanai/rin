@@ -44,8 +44,9 @@ import {
   promptTargetInstall,
 } from "./interactive.js";
 import {
-  reconcileInstallerManifest,
+  normalizeInstalledChatSettings,
   persistInstallerOutputs,
+  reconcileInstallerManifest,
 } from "./persist.js";
 import {
   collectDaemonFailureDetails,
@@ -361,7 +362,19 @@ async function applyInstalledRuntime(
           runPrivileged,
         },
       )
-    : undefined;
+    : normalizeInstalledChatSettings(
+        {
+          targetUser,
+          installDir,
+          elevated: useElevatedWrite,
+        },
+        {
+          findSystemUser,
+          readInstallerJson,
+          writeJsonFileWithPrivilege,
+          writeJsonFile,
+        },
+      );
 
   let installedService: null | {
     kind: "launchd" | "systemd";

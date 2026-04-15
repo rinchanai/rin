@@ -81,6 +81,60 @@ export function reconcileInstallerManifest(
   return { manifestPath, legacyManifestPath };
 }
 
+export function normalizeInstalledChatSettings(
+  options: {
+    targetUser: string;
+    installDir: string;
+    elevated?: boolean;
+  },
+  deps: {
+    findSystemUser: (targetUser: string) => any;
+    readInstallerJson: <T>(
+      filePath: string,
+      fallback: T,
+      elevated?: boolean,
+    ) => T;
+    writeJsonFileWithPrivilege: (
+      filePath: string,
+      value: unknown,
+      ownerUser?: string,
+      ownerGroup?: string | number,
+    ) => void;
+    writeJsonFile: (filePath: string, value: unknown) => void;
+  },
+) {
+  const target = deps.findSystemUser(options.targetUser) as any;
+  const ownerUser = target?.name || options.targetUser;
+  const ownerGroup = target?.gid;
+  const settingsPath = path.join(options.installDir, "settings.json");
+  const settingsJson = deps.readInstallerJson<any>(
+    settingsPath,
+    {},
+    Boolean(options.elevated),
+  );
+  if (
+    !settingsJson.chat &&
+    settingsJson.koishi &&
+    typeof settingsJson.koishi === "object"
+  ) {
+    settingsJson.chat = JSON.parse(JSON.stringify(settingsJson.koishi));
+  }
+  if (settingsJson.koishi && typeof settingsJson.koishi === "object") {
+    delete settingsJson.koishi;
+  }
+  if (options.elevated) {
+    deps.writeJsonFileWithPrivilege(
+      settingsPath,
+      settingsJson,
+      ownerUser,
+      ownerGroup,
+    );
+  } else {
+    deps.writeJsonFile(settingsPath, settingsJson);
+  }
+  return { settingsPath };
+}
+
 export async function persistInstallerOutputs(
   options: {
     currentUser: string;
