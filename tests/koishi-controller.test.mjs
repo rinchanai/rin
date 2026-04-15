@@ -163,7 +163,7 @@ test("koishi controller polls typing and rotating reactions while a chat turn is
   assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
 });
 
-test("koishi controller falls back to a single Working notice when typing and reaction are unavailable", async () => {
+test("koishi controller uses a fixed Working notice policy for onebot private chats", async () => {
   const controller = await createController("onebot/1:private:2");
   const deliveries = [];
   controller.app = {

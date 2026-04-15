@@ -5,7 +5,7 @@ import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { readJsonFile, writeJsonFile } from "./support.js";
+import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
   SavedAttachment,
@@ -191,6 +191,24 @@ export class KoishiChatController {
       emoji,
     );
   }
+  private getWorkingIndicatorPolicy() {
+    const parsed = parseChatKey(this.chatKey);
+    if (!parsed) {
+      return { typing: false, reaction: false, notice: false };
+    }
+    if (parsed.platform === "telegram") {
+      return { typing: true, reaction: true, notice: false };
+    }
+    if (parsed.platform === "discord") {
+      return { typing: true, reaction: false, notice: false };
+    }
+    if (parsed.platform === "onebot") {
+      return parsed.chatId.startsWith("private:")
+        ? { typing: false, reaction: false, notice: true }
+        : { typing: false, reaction: true, notice: false };
+    }
+    return { typing: false, reaction: false, notice: true };
+  }
   private async sendWorkingNotice() {
     if (!this.deliveryEnabled) return false;
     const processing = this.state.processing;
@@ -220,9 +238,13 @@ export class KoishiChatController {
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
     if (!this.hasActiveTurn()) return false;
-    let sent = await sendTyping(this.app, this.chatKey, this.h);
+    const policy = this.getWorkingIndicatorPolicy();
+    let sent = false;
+    if (policy.typing) {
+      sent = (await sendTyping(this.app, this.chatKey, this.h)) || sent;
+    }
     const messageId = this.currentIncomingMessageId();
-    if (messageId) {
+    if (policy.reaction && messageId) {
       const nextEmoji = await rotateWorkingReaction(
         this.app,
         this.chatKey,
@@ -236,8 +258,8 @@ export class KoishiChatController {
         this.workingReactionTick += 1;
       }
     }
-    if (!sent) {
-      sent = await this.sendWorkingNotice().catch(() => false);
+    if (policy.notice) {
+      sent = (await this.sendWorkingNotice().catch(() => false)) || sent;
     }
     return sent;
   }
