@@ -94,8 +94,17 @@ function prependQuote(
   return [{ type: "quote", id: nextReplyToMessageId }, ...parts];
 }
 
-function createMethodFacade(target: any, safeFields: string[] = []) {
-  const safeFieldSet = new Set(safeFields);
+function createMethodFacade(
+  target: any,
+  options: {
+    safeFields?: string[];
+    allowedMethods?: string[] | null;
+  } = {},
+) {
+  const safeFieldSet = new Set(options.safeFields || []);
+  const allowedMethodSet = Array.isArray(options.allowedMethods)
+    ? new Set(options.allowedMethods)
+    : null;
   return new Proxy(
     {},
     {
@@ -103,13 +112,16 @@ function createMethodFacade(target: any, safeFields: string[] = []) {
         if (prop === Symbol.toStringTag) return "ChatBridgeFacade";
         if (typeof prop !== "string") return undefined;
         if (safeFieldSet.has(prop)) return target?.[prop];
+        if (allowedMethodSet && !allowedMethodSet.has(prop)) return undefined;
         const value = target?.[prop];
         if (typeof value !== "function") return undefined;
         return (...args: unknown[]) => value.apply(target, args);
       },
       has(_obj, prop) {
         if (typeof prop !== "string") return false;
-        return safeFieldSet.has(prop) || typeof target?.[prop] === "function";
+        if (safeFieldSet.has(prop)) return true;
+        if (allowedMethodSet && !allowedMethodSet.has(prop)) return false;
+        return typeof target?.[prop] === "function";
       },
       ownKeys() {
         return [];
@@ -221,8 +233,14 @@ export function createChatBridgeRuntime(options: {
 
     const scope: any = {
       chat: currentChat,
-      bot: createMethodFacade(bot, ["platform", "selfId", "status"]),
-      internal: createMethodFacade(bot.internal || {}, []),
+      bot: createMethodFacade(bot, {
+        safeFields: ["platform", "selfId", "status"],
+        allowedMethods: ["sendMessage"],
+      }),
+      internal: createMethodFacade(bot.internal || {}, {
+        safeFields: [],
+        allowedMethods: null,
+      }),
       h: options.h,
       store: {
         getMessage(messageId: string, nextChatKey?: string) {

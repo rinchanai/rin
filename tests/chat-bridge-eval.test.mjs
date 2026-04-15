@@ -70,6 +70,12 @@ test("chat bridge eval runs constrained code with bot, internal, helpers, store,
               return { id: chatId, name: "Demo Chat" };
             },
             internal: {
+              async getChat(payload) {
+                return {
+                  ok: true,
+                  chat: { id: payload.chat_id, title: "Demo Chat" },
+                };
+              },
               async getChatMember(payload) {
                 return { ok: true, payload };
               },
@@ -91,18 +97,20 @@ test("chat bridge eval runs constrained code with bot, internal, helpers, store,
 const room = helpers.useChat("telegram/1:2");
 const label: string = "hello 7";
 const sent = await room.helpers.send(label);
-const guild = await room.bot.getGuild(room.chat.chatId);
+const chatInfo = await room.internal.getChat({ chat_id: room.chat.chatId });
 const member = await room.internal.getChatMember({ chat_id: room.chat.chatId, user_id: 7 });
 const saved = room.identity.setTrust({ userId: "7", trust: "TRUSTED", name: "Alice" });
 const stored = room.store.getMessage(sent[0])[0];
 return {
   currentChatKey: helpers.currentChatKey,
   sent,
-  guild,
+  chatInfo,
   member,
   saved,
   storedText: stored.text,
   botStatus: room.bot.status,
+  botGetGuildType: typeof room.bot.getGuild,
+  botSendMessageType: typeof room.bot.sendMessage,
 };
 `,
       context: runtime,
@@ -113,10 +121,12 @@ return {
     assert.equal(result.value.botStatus, 1);
     assert.equal(result.value.currentChatKey, "telegram/1:2");
     assert.deepEqual(result.value.sent, ["m1"]);
-    assert.equal(result.value.guild.name, "Demo Chat");
+    assert.equal(result.value.chatInfo.chat.title, "Demo Chat");
     assert.equal(result.value.member.payload.user_id, 7);
     assert.equal(result.value.saved.trust, "TRUSTED");
     assert.equal(result.value.storedText, "hello 7");
+    assert.equal(result.value.botGetGuildType, "undefined");
+    assert.equal(result.value.botSendMessageType, "function");
     assert.equal(sends.length, 1);
     assert.equal(sends[0].chatId, "2");
 

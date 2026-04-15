@@ -232,18 +232,17 @@ test("koishi transport treats empty bot send results as delivery failures", asyn
   });
 });
 
-test("koishi transport rotates and clears working reactions without touching other users", async () => {
+test("koishi transport prefers internal telegram reaction calls for working reactions", async () => {
   const calls = [];
   const app = {
     bots: [
       {
         platform: "telegram",
         selfId: "1",
-        async createReaction(chatId, messageId, emoji) {
-          calls.push(["create", chatId, messageId, emoji]);
-        },
-        async deleteReaction(chatId, messageId, emoji, userId) {
-          calls.push(["delete", chatId, messageId, emoji, userId]);
+        internal: {
+          async setMessageReaction(payload) {
+            calls.push(payload);
+          },
         },
       },
     ],
@@ -252,21 +251,21 @@ test("koishi transport rotates and clears working reactions without touching oth
   const first = await transport.rotateWorkingReaction(
     app,
     "telegram/1:2",
-    "m1",
+    "41",
     0,
     "",
   );
   const second = await transport.rotateWorkingReaction(
     app,
     "telegram/1:2",
-    "m1",
+    "41",
     1,
     first,
   );
   const cleared = await transport.clearWorkingReaction(
     app,
     "telegram/1:2",
-    "m1",
+    "41",
     second,
   );
 
@@ -274,9 +273,20 @@ test("koishi transport rotates and clears working reactions without touching oth
   assert.equal(second, "🌗");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
-    ["create", "2", "m1", "🌘"],
-    ["delete", "2", "m1", "🌘", "1"],
-    ["create", "2", "m1", "🌗"],
-    ["delete", "2", "m1", "🌗", "1"],
+    {
+      chat_id: "2",
+      message_id: 41,
+      reaction: [{ type: "emoji", emoji: "🌘" }],
+    },
+    {
+      chat_id: "2",
+      message_id: 41,
+      reaction: [{ type: "emoji", emoji: "🌗" }],
+    },
+    {
+      chat_id: "2",
+      message_id: 41,
+      reaction: [],
+    },
   ]);
 });

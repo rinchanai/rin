@@ -22,9 +22,11 @@ Available globals:
   - current bound chat scope when the current session is already bound to a chat
   - `null` when there is no current bound chat
 - `bot`
-  - cross-platform methods for the current bound chat scope
+  - intentionally thin shared bridge surface for the current bound chat scope
+  - primarily for the minimal common send path and a few stable fields
 - `internal`
-  - platform-specific adapter API for the current bound chat scope
+  - primary platform-specific API for the current bound chat scope
+  - prefer this for most chat-platform operations
 - `h`
   - message element builder
 - `store`
@@ -75,9 +77,9 @@ Supported parts:
 ## Basic template
 
 ```ts
-const scope = chat ?? helpers.useChat("onebot/2301401877:1067390680");
+const scope = chat ?? helpers.useChat("telegram/8623230033:-1001234567890");
 
-return await scope.bot.getGuild(scope.chat.chatId);
+return await scope.internal.getChat({ chat_id: scope.chat.chatId });
 ```
 
 ## Examples
@@ -101,11 +103,11 @@ await room.helpers.send([
 return "sent";
 ```
 
-### Use a cross-platform method
+### Use the thin shared `bot` surface
 
 ```ts
-const scope = chat ?? helpers.useChat("telegram/8623230033:-1001234567890");
-return await scope.bot.getGuildMember(scope.chat.chatId, "123456789");
+const scope = helpers.useChat("telegram/8623230033:-1001234567890");
+return await scope.bot.sendMessage(scope.chat.chatId, [scope.h.text("hello")]);
 ```
 
 ### Use a platform-specific method
@@ -118,6 +120,23 @@ return await scope.internal.getChatMember({
 });
 ```
 
+### Use Telegram reaction through `internal`
+
+```ts
+const scope = chat ?? helpers.useChat("telegram/8623230033:-1001234567890");
+const target = scope.store
+  .listLog()
+  .entries.filter((item) => item && item.role === "user" && item.messageId)
+  .at(-1);
+if (!target) throw new Error("no target message");
+await scope.internal.setMessageReaction({
+  chat_id: scope.chat.chatId,
+  message_id: Number(target.messageId),
+  reaction: [{ type: "emoji", emoji: "👍" }],
+});
+return { messageId: target.messageId, emoji: "👍" };
+```
+
 ### Inspect local stored message context
 
 ```ts
@@ -127,7 +146,7 @@ return scope.store.getMessage("1234567890");
 
 ## Notes
 
-- prefer `bot` when a cross-platform method exists
-- use `internal` only when you need platform-specific behavior
+- prefer `internal` for most platform operations
+- treat `bot` as a very small shared surface rather than the main capability layer
 - use `helpers.useChat(chatKey)` when you need to act on a different chat
 - returned values are passed through with safe serialization when needed

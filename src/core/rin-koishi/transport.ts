@@ -59,10 +59,25 @@ export async function rotateWorkingReaction(
   const parsed = parseChatKey(chatKey);
   if (!parsed) return previousEmoji || "";
   const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot || typeof bot?.createReaction !== "function") {
+  if (!bot) return previousEmoji || "";
+  const nextEmoji = getWorkingReactionFrame(frameIndex);
+
+  if (typeof bot?.internal?.setMessageReaction === "function") {
+    try {
+      await bot.internal.setMessageReaction({
+        chat_id: parsed.chatId,
+        message_id: Number(messageId),
+        reaction: [{ type: "emoji", emoji: nextEmoji }],
+      });
+      return nextEmoji;
+    } catch {
+      return previousEmoji || "";
+    }
+  }
+
+  if (typeof bot?.createReaction !== "function") {
     return previousEmoji || "";
   }
-  const nextEmoji = getWorkingReactionFrame(frameIndex);
   if (previousEmoji && previousEmoji !== nextEmoji) {
     if (typeof bot?.deleteReaction !== "function") {
       return previousEmoji || "";
@@ -93,9 +108,24 @@ export async function clearWorkingReaction(
   const parsed = parseChatKey(chatKey);
   if (!parsed) return false;
   const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot || typeof bot?.deleteReaction !== "function") return false;
+  if (!bot) return false;
   const nextEmoji = safeString(emoji).trim();
   if (!nextEmoji) return false;
+
+  if (typeof bot?.internal?.setMessageReaction === "function") {
+    try {
+      await bot.internal.setMessageReaction({
+        chat_id: parsed.chatId,
+        message_id: Number(messageId),
+        reaction: [],
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  if (typeof bot?.deleteReaction !== "function") return false;
   try {
     await bot.deleteReaction(
       parsed.chatId,
