@@ -25,6 +25,13 @@ test("rpc session events do not refresh whole state on every stream update", asy
       this.remoteTurnRunning = value;
       this.isStreaming = value;
     },
+    emitFrontendStatus(force) {
+      seen.push({
+        type: "frontend_status_refresh",
+        force,
+        compacting: this.isCompacting,
+      });
+    },
     emitEvent: (event) => seen.push(event),
   };
 
@@ -56,6 +63,30 @@ test("rpc session events do not refresh whole state on every stream update", asy
 
   await events.handleRpcSessionEvent(
     target,
+    { type: "compaction_start", reason: "threshold" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isCompacting, true);
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "compaction_end", reason: "threshold", aborted: false },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isCompacting, false);
+
+  await events.handleRpcSessionEvent(
+    target,
     { type: "agent_end" },
     async () => {
       refreshMessages += 1;
@@ -67,10 +98,14 @@ test("rpc session events do not refresh whole state on every stream update", asy
   assert.equal(target.isStreaming, false);
   assert.equal(target.remoteTurnRunning, false);
   assert.equal(target.activeTurn, null);
-  assert.equal(refreshMessagesAndSession, 1);
+  assert.equal(refreshMessagesAndSession, 2);
   assert.deepEqual(seen, [
     { type: "message_update", message: { role: "assistant" } },
     { type: "message_end", message: { role: "assistant" } },
+    { type: "compaction_start", reason: "threshold" },
+    { type: "frontend_status_refresh", force: true, compacting: true },
+    { type: "compaction_end", reason: "threshold", aborted: false },
+    { type: "frontend_status_refresh", force: true, compacting: false },
     { type: "agent_end" },
   ]);
 });

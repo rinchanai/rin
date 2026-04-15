@@ -93,6 +93,36 @@ test("rpc interactive session replays the current frontend status to new subscri
   ]);
 });
 
+test("rpc interactive session treats connected recovery as starting instead of connecting", () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.recoveryPending = true;
+
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "starting",
+    label: "Starting",
+    connected: true,
+  });
+});
+
+test("rpc interactive session keeps working status during compaction", () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.isCompacting = true;
+
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "working",
+    label: "Working",
+    connected: true,
+  });
+});
+
 test("rpc interactive session can terminate an attached worker without local session selectors", async () => {
   const calls = [];
   const client = {
