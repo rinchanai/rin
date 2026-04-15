@@ -35,10 +35,10 @@ function createPromptHarness(answers) {
   };
 }
 
-test("chat bridge guided setup configures Telegram with slash toggle", async () => {
+test("chat bridge guided setup configures Telegram with minimal polling defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
-      confirm: [true, false],
+      confirm: [true],
       select: ["telegram"],
       text: ["123456:ABCDEF"],
     }),
@@ -50,17 +50,17 @@ test("chat bridge guided setup configures Telegram with slash toggle", async () 
     telegram: {
       token: "123456:ABCDEF",
       protocol: "polling",
-      slash: false,
+      slash: true,
     },
   });
 });
 
-test("chat bridge guided setup configures Slack http mode", async () => {
+test("chat bridge guided setup configures Slack with socket mode defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
       confirm: [true],
-      select: ["slack", "http"],
-      text: ["xapp-demo", "xoxb-demo", "signing-secret"],
+      select: ["slack"],
+      text: ["xapp-demo", "xoxb-demo"],
     }),
   );
 
@@ -68,29 +68,19 @@ test("chat bridge guided setup configures Slack http mode", async () => {
   assert.equal(result.koishiDescription, "Slack");
   assert.deepEqual(result.koishiConfig, {
     slack: {
-      protocol: "http",
+      protocol: "ws",
       token: "xapp-demo",
       botToken: "xoxb-demo",
-      signing: "signing-secret",
     },
   });
 });
 
-test("chat bridge guided setup configures mail with provider preset", async () => {
+test("chat bridge guided setup configures mail preset with minimal required fields", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
-      confirm: [true, true, true, true],
+      confirm: [true],
       select: ["mail", "qq"],
-      text: [
-        "bot@qq.com",
-        "auth-code",
-        "bot@qq.com",
-        "Rin Mail",
-        "imap.qq.com",
-        "993",
-        "smtp.qq.com",
-        "465",
-      ],
+      text: ["bot@qq.com", "auth-code"],
     }),
   );
 
@@ -99,10 +89,47 @@ test("chat bridge guided setup configures mail with provider preset", async () =
     mail: {
       username: "bot@qq.com",
       password: "auth-code",
-      selfId: "bot@qq.com",
-      subject: "Rin Mail",
       imap: { host: "imap.qq.com", port: 993, tls: true },
       smtp: { host: "smtp.qq.com", port: 465, tls: true },
+    },
+  });
+});
+
+test("chat bridge guided setup configures Feishu / Lark with websocket defaults", async () => {
+  const result = await setup.promptChatBridgeSetup(
+    createPromptHarness({
+      confirm: [true],
+      select: ["lark", "feishu"],
+      text: ["cli_xxx", "secret_xxx"],
+    }),
+  );
+
+  assert.equal(result.adapterKey, "lark");
+  assert.deepEqual(result.koishiConfig, {
+    lark: {
+      platform: "feishu",
+      protocol: "ws",
+      appId: "cli_xxx",
+      appSecret: "secret_xxx",
+    },
+  });
+});
+
+test("chat bridge guided setup can skip the installer yes-no gate", async () => {
+  const result = await setup.promptChatBridgeSetup(
+    createPromptHarness({
+      select: ["telegram"],
+      text: ["123456:ABCDEF"],
+    }),
+    { confirmEnable: false },
+  );
+
+  assert.equal(result.adapterKey, "telegram");
+  assert.deepEqual(result.koishiConfig, {
+    telegram: {
+      token: "123456:ABCDEF",
+      protocol: "polling",
+      slash: true,
     },
   });
 });

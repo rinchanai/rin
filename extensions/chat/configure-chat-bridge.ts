@@ -104,7 +104,7 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
 
       let result;
       try {
-        result = await promptChatBridgeSetup(prompt);
+        result = await promptChatBridgeSetup(prompt, { confirmEnable: false });
       } catch (error: any) {
         if (String(error?.message || error) === CHAT_BRIDGE_COMMAND_CANCELLED) {
           ctx.ui.notify("Chat bridge setup cancelled.", "info");

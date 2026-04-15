@@ -61,6 +61,12 @@ function safeString(value: unknown) {
   return String(value);
 }
 
+function withGuide(message: string, guide?: string) {
+  const main = safeString(message).trim();
+  const extra = safeString(guide).trim();
+  return extra ? `${main}\nWhere to find it: ${extra}` : main;
+}
+
 async function promptText(
   prompt: ChatBridgePromptApi,
   options: {
@@ -205,43 +211,45 @@ function compactObject<T extends Record<string, any>>(value: T) {
 
 async function promptTelegramConfig(prompt: ChatBridgePromptApi) {
   const token = await promptText(prompt, {
-    message: "Enter the Telegram bot token.",
+    message: withGuide(
+      "Enter the Telegram bot token.",
+      "Telegram @BotFather → choose your bot → API token.",
+    ),
     placeholder: "123456:ABCDEF...",
     required: true,
   });
-  const slash = await promptBoolean(prompt, {
-    message: "Enable Telegram slash command sync?",
-    initialValue: true,
-  });
   return {
-    detail: "Chat bridge token: [saved to target settings.json]",
-    config: { telegram: { token, protocol: "polling", slash } },
+    detail: "Chat bridge mode: polling · token saved to target settings.json",
+    config: { telegram: { token, protocol: "polling", slash: true } },
   };
 }
 
 async function promptOneBotConfig(prompt: ChatBridgePromptApi) {
   const endpoint = await promptUrl(prompt, {
-    message: "Enter the OneBot endpoint URL.",
+    message: withGuide(
+      "Enter the OneBot endpoint URL.",
+      "Your OneBot bridge or client config, for example NapCat, LLOneBot, or another OneBot server.",
+    ),
     placeholder: "ws://127.0.0.1:3001",
     required: true,
   });
-  const protocol = await promptSelectValue(prompt, {
-    message: "Choose the OneBot protocol.",
-    values: [
-      { value: "ws", label: "WebSocket", hint: "recommended" },
-      { value: "http", label: "HTTP" },
-    ],
-  });
+  const protocol = /^https?:\/\//i.test(String(endpoint || "")) ? "http" : "ws";
   const selfId = await promptOptionalText(prompt, {
-    message: "Enter the OneBot self ID if you already know it. Leave blank to fill later.",
+    message: withGuide(
+      "Enter the OneBot self ID if you already know it. Leave blank to fill later.",
+      "Usually the bot QQ number from your OneBot client or bridge config.",
+    ),
     placeholder: "123456789",
   });
   const token = await promptOptionalText(prompt, {
-    message: "Enter the OneBot access token if required. Leave blank otherwise.",
+    message: withGuide(
+      "Enter the OneBot access token if required. Leave blank otherwise.",
+      "Use the access token from your OneBot server config only if you enabled one.",
+    ),
     placeholder: "optional token",
   });
   return {
-    detail: `Chat bridge endpoint: ${endpoint}`,
+    detail: `Chat bridge mode: ${protocol} · endpoint: ${endpoint}`,
     config: {
       onebot: compactObject({
         endpoint,
@@ -255,7 +263,10 @@ async function promptOneBotConfig(prompt: ChatBridgePromptApi) {
 
 async function promptDiscordConfig(prompt: ChatBridgePromptApi) {
   const token = await promptText(prompt, {
-    message: "Enter the Discord bot token.",
+    message: withGuide(
+      "Enter the Discord bot token.",
+      "Discord Developer Portal → your application → Bot → Reset Token / Token.",
+    ),
     placeholder: "Bot token",
     required: true,
   });
@@ -266,147 +277,112 @@ async function promptDiscordConfig(prompt: ChatBridgePromptApi) {
 }
 
 async function promptKookConfig(prompt: ChatBridgePromptApi) {
-  const protocol = await promptSelectValue(prompt, {
-    message: "Choose the Kook connection mode.",
-    values: [
-      { value: "ws", label: "WebSocket", hint: "token only" },
-      { value: "http", label: "Webhook / HTTP", hint: "token + verify token" },
-    ],
-  });
   const token = await promptText(prompt, {
-    message: "Enter the Kook bot token.",
+    message: withGuide(
+      "Enter the Kook bot token.",
+      "Kook developer console → your bot application → Bot token.",
+    ),
     placeholder: "Bot token",
     required: true,
   });
-  const verifyToken =
-    protocol === "http"
-      ? await promptText(prompt, {
-          message: "Enter the Kook verify token.",
-          placeholder: "verify token",
-          required: true,
-        })
-      : undefined;
-  const path =
-    protocol === "http"
-      ? await promptText(prompt, {
-          message: "Choose the Kook webhook path.",
-          placeholder: "/kook",
-          defaultValue: "/kook",
-          required: true,
-        })
-      : undefined;
   return {
-    detail: `Chat bridge mode: ${protocol}`,
+    detail: "Chat bridge mode: ws · token saved to target settings.json",
     config: {
-      kook: compactObject({
-        protocol,
+      kook: {
+        protocol: "ws",
         token,
-        verifyToken,
-        path,
-      }),
+      },
     },
   };
 }
 
 async function promptQQConfig(prompt: ChatBridgePromptApi) {
   const id = await promptText(prompt, {
-    message: "Enter the QQ bot app ID.",
+    message: withGuide(
+      "Enter the QQ bot app ID.",
+      "QQ Open Platform → your bot application → app credentials.",
+    ),
     placeholder: "App ID",
     required: true,
   });
-  const key = await promptText(prompt, {
-    message: "Enter the QQ bot secret.",
+  const secret = await promptText(prompt, {
+    message: withGuide(
+      "Enter the QQ bot secret.",
+      "QQ Open Platform → your bot application → app credentials.",
+    ),
     placeholder: "Secret",
     required: true,
   });
   const token = await promptText(prompt, {
-    message: "Enter the QQ bot token.",
+    message: withGuide(
+      "Enter the QQ bot token.",
+      "QQ Open Platform → your bot application → bot token.",
+    ),
     placeholder: "Token",
     required: true,
   });
   const type = await promptSelectValue(prompt, {
-    message: "Choose the QQ bot scope.",
+    message: withGuide(
+      "Choose the QQ bot scope.",
+      "Use the bot type shown in your QQ bot application settings.",
+    ),
     values: [
       { value: "public", label: "Public" },
       { value: "private", label: "Private" },
     ],
   });
-  const sandbox = await promptBoolean(prompt, {
-    message: "Enable QQ sandbox mode?",
-    initialValue: true,
-  });
   return {
-    detail: "Chat bridge app credentials: [saved to target settings.json]",
-    config: { qq: { id, key, token, type, sandbox } },
+    detail: "Chat bridge mode: websocket · app credentials saved to target settings.json",
+    config: { qq: { id, secret, token, type, protocol: "websocket" } },
   };
 }
 
 async function promptLarkConfig(prompt: ChatBridgePromptApi) {
+  const platform = await promptSelectValue(prompt, {
+    message: withGuide(
+      "Choose the Lark / Feishu region.",
+      "If your app is on open.feishu.cn use Feishu. If it is on open.larksuite.com use Lark.",
+    ),
+    values: [
+      { value: "feishu", label: "Feishu", hint: "China / open.feishu.cn" },
+      { value: "lark", label: "Lark", hint: "Global / open.larksuite.com" },
+    ],
+  });
   const appId = await promptText(prompt, {
-    message: "Enter the Lark / Feishu app ID.",
+    message: withGuide(
+      "Enter the Lark / Feishu app ID.",
+      "Developer console → your app → Credentials / Basic information.",
+    ),
     placeholder: "App ID",
     required: true,
   });
   const appSecret = await promptText(prompt, {
-    message: "Enter the Lark / Feishu app secret.",
+    message: withGuide(
+      "Enter the Lark / Feishu app secret.",
+      "Developer console → your app → Credentials / Basic information.",
+    ),
     placeholder: "App secret",
     required: true,
   });
-  const encryptKey = await promptText(prompt, {
-    message: "Enter the Lark / Feishu encrypt key.",
-    placeholder: "Encrypt Key",
-    required: true,
-  });
-  const verificationToken = await promptText(prompt, {
-    message: "Enter the Lark / Feishu verification token.",
-    placeholder: "Verification Token",
-    required: true,
-  });
-  const path = await promptText(prompt, {
-    message: "Choose the webhook path.",
-    placeholder: "/lark",
-    defaultValue: "/lark",
-    required: true,
-  });
-  const selfUrl = await promptOptionalText(prompt, {
-    message: "Enter selfUrl if this adapter should override the global public URL. Leave blank to use the default.",
-    placeholder: "https://example.com",
-    validate(value) {
-      try {
-        new URL(value);
-      } catch {
-        return "Use a valid URL.";
-      }
-    },
-  });
-  const verifyToken = await promptBoolean(prompt, {
-    message: "Verify Lark webhook tokens?",
-    initialValue: true,
-  });
-  const verifySignature = await promptBoolean(prompt, {
-    message: "Verify Lark webhook signatures?",
-    initialValue: true,
-  });
   return {
-    detail: "Chat bridge app credentials: [saved to target settings.json]",
+    detail: `Chat bridge mode: ws · platform: ${platform} · app credentials saved to target settings.json`,
     config: {
-      lark: compactObject({
+      lark: {
+        platform,
+        protocol: "ws",
         appId,
         appSecret,
-        encryptKey,
-        verificationToken,
-        path,
-        selfUrl,
-        verifyToken,
-        verifySignature,
-      }),
+      },
     },
   };
 }
 
 async function promptMailConfig(prompt: ChatBridgePromptApi) {
   const preset = await promptSelectValue(prompt, {
-    message: "Choose a mail service preset.",
+    message: withGuide(
+      "Choose a mail service preset.",
+      "Use your provider preset if possible. Choose Custom only when your provider is not listed.",
+    ),
     values: [
       { value: "custom", label: "Custom" },
       { value: "qq", label: "QQ Mail" },
@@ -416,138 +392,180 @@ async function promptMailConfig(prompt: ChatBridgePromptApi) {
     ],
   });
   const username = await promptText(prompt, {
-    message: "Enter the mail username.",
+    message: withGuide(
+      "Enter the mail username.",
+      "Usually the full mailbox address used for IMAP / SMTP login.",
+    ),
     placeholder: "bot@example.com",
     required: true,
   });
   const password = await promptText(prompt, {
-    message: "Enter the mail password or authorization code.",
+    message: withGuide(
+      "Enter the mail password or authorization code.",
+      "Use the provider's SMTP / IMAP authorization code when the mailbox requires one.",
+    ),
     placeholder: "Authorization code",
     required: true,
   });
-  const selfId = await promptText(prompt, {
-    message: "Enter the sender mail address.",
-    placeholder: username,
-    defaultValue: username,
-    required: true,
-  });
-  const subject = await promptOptionalText(prompt, {
-    message: "Enter the default mail subject. Leave blank if you do not want a fixed subject.",
-    placeholder: "optional subject",
-  });
 
   const presetConfig = preset === "custom" ? undefined : MAIL_PRESETS[preset];
-  const imapHost = await promptText(prompt, {
-    message: "Enter the IMAP host.",
-    placeholder: presetConfig?.imapHost || "imap.example.com",
-    defaultValue: presetConfig?.imapHost,
-    required: true,
-  });
-  const imapPort = await promptRequiredNumber(prompt, {
-    message: "Enter the IMAP port.",
-    placeholder: String(presetConfig?.imapPort || 993),
-    defaultValue: presetConfig?.imapPort || 993,
-    min: 1,
-    max: 65535,
-  });
-  const imapTls = await promptBoolean(prompt, {
-    message: "Enable IMAP TLS?",
-    initialValue: true,
-  });
-  const smtpHost = await promptText(prompt, {
-    message: "Enter the SMTP host.",
-    placeholder: presetConfig?.smtpHost || "smtp.example.com",
-    defaultValue: presetConfig?.smtpHost,
-    required: true,
-  });
-  const smtpPort = await promptRequiredNumber(prompt, {
-    message: "Enter the SMTP port.",
-    placeholder: String(presetConfig?.smtpPort || 465),
-    defaultValue: presetConfig?.smtpPort || 465,
-    min: 1,
-    max: 65535,
-  });
-  const smtpTls = await promptBoolean(prompt, {
-    message: "Enable SMTP TLS?",
-    initialValue: presetConfig?.smtpTls ?? true,
-  });
+  const imapHost =
+    preset === "custom"
+      ? await promptText(prompt, {
+          message: withGuide(
+            "Enter the IMAP host.",
+            "Your mail provider's IMAP settings page.",
+          ),
+          placeholder: "imap.example.com",
+          required: true,
+        })
+      : presetConfig!.imapHost;
+  const imapPort =
+    preset === "custom"
+      ? await promptRequiredNumber(prompt, {
+          message: "Enter the IMAP port.",
+          placeholder: "993",
+          defaultValue: 993,
+          min: 1,
+          max: 65535,
+        })
+      : presetConfig!.imapPort;
+  const imapTls =
+    preset === "custom"
+      ? await promptBoolean(prompt, {
+          message: "Enable IMAP TLS?",
+          initialValue: true,
+        })
+      : true;
+  const smtpHost =
+    preset === "custom"
+      ? await promptText(prompt, {
+          message: withGuide(
+            "Enter the SMTP host.",
+            "Your mail provider's SMTP settings page.",
+          ),
+          placeholder: "smtp.example.com",
+          required: true,
+        })
+      : presetConfig!.smtpHost;
+  const smtpPort =
+    preset === "custom"
+      ? await promptRequiredNumber(prompt, {
+          message: "Enter the SMTP port.",
+          placeholder: "465",
+          defaultValue: 465,
+          min: 1,
+          max: 65535,
+        })
+      : presetConfig!.smtpPort;
+  const smtpTls =
+    preset === "custom"
+      ? await promptBoolean(prompt, {
+          message: "Enable SMTP TLS?",
+          initialValue: true,
+        })
+      : presetConfig!.smtpTls;
 
   return {
-    detail: "Chat bridge mail credentials: [saved to target settings.json]",
+    detail: `Chat bridge mail preset: ${preset}`,
     config: {
-      mail: compactObject({
+      mail: {
         username,
         password,
-        selfId,
-        subject,
         imap: { host: imapHost, port: imapPort, tls: imapTls },
         smtp: { host: smtpHost, port: smtpPort, tls: smtpTls },
-      }),
+      },
     },
   };
 }
 
 async function promptWeChatOfficialConfig(prompt: ChatBridgePromptApi) {
   const account = await promptText(prompt, {
-    message: "Enter the WeChat Official account original ID.",
+    message: withGuide(
+      "Enter the WeChat Official account original ID.",
+      "WeChat Official Account admin → Settings / Account information.",
+    ),
     placeholder: "Original ID",
     required: true,
   });
   const appId = await promptText(prompt, {
-    message: "Enter the WeChat Official AppID.",
+    message: withGuide(
+      "Enter the WeChat Official AppID.",
+      "WeChat Official Account platform → Development → Basic configuration.",
+    ),
     placeholder: "AppID",
     required: true,
   });
   const secret = await promptText(prompt, {
-    message: "Enter the WeChat Official AppSecret.",
+    message: withGuide(
+      "Enter the WeChat Official AppSecret.",
+      "WeChat Official Account platform → Development → Basic configuration.",
+    ),
     placeholder: "AppSecret",
     required: true,
   });
   const token = await promptText(prompt, {
-    message: "Enter the WeChat Official webhook token.",
+    message: withGuide(
+      "Enter the WeChat Official webhook token.",
+      "WeChat Official Account platform → Development → Basic configuration → Token.",
+    ),
     placeholder: "Webhook Token",
     required: true,
   });
   const aesKey = await promptText(prompt, {
-    message: "Enter the WeChat Official EncodingAESKey.",
+    message: withGuide(
+      "Enter the WeChat Official EncodingAESKey.",
+      "WeChat Official Account platform → Development → Basic configuration → EncodingAESKey.",
+    ),
     placeholder: "EncodingAESKey",
     required: true,
-  });
-  const customerService = await promptBoolean(prompt, {
-    message: "Enable WeChat customer service mode?",
-    initialValue: false,
   });
   return {
     detail: "Chat bridge app credentials: [saved to target settings.json]",
     config: {
-      "wechat-official": { account, appId, secret, token, aesKey, customerService },
+      "wechat-official": { account, appId, secret, token, aesKey, customerService: false },
     },
   };
 }
 
 async function promptWeComConfig(prompt: ChatBridgePromptApi) {
   const corpId = await promptText(prompt, {
-    message: "Enter the WeCom corp ID.",
+    message: withGuide(
+      "Enter the WeCom corp ID.",
+      "WeCom admin console → My Company / Enterprise information.",
+    ),
     placeholder: "Corp ID",
     required: true,
   });
   const agentId = await promptText(prompt, {
-    message: "Enter the WeCom agent ID.",
+    message: withGuide(
+      "Enter the WeCom agent ID.",
+      "WeCom admin console → Applications → your app → AgentId.",
+    ),
     placeholder: "Agent ID",
     required: true,
   });
   const secret = await promptText(prompt, {
-    message: "Enter the WeCom app secret.",
+    message: withGuide(
+      "Enter the WeCom app secret.",
+      "WeCom admin console → Applications → your app → Secret.",
+    ),
     placeholder: "AppSecret",
     required: true,
   });
   const token = await promptText(prompt, {
-    message: "Enter the WeCom webhook token.",
+    message: withGuide(
+      "Enter the WeCom webhook token.",
+      "WeCom admin console → Applications → your app → Receive messages.",
+    ),
     placeholder: "Webhook Token",
     required: true,
   });
   const aesKey = await promptText(prompt, {
-    message: "Enter the WeCom EncodingAESKey.",
+    message: withGuide(
+      "Enter the WeCom EncodingAESKey.",
+      "WeCom admin console → Applications → your app → Receive messages.",
+    ),
     placeholder: "EncodingAESKey",
     required: true,
   });
@@ -558,107 +576,106 @@ async function promptWeComConfig(prompt: ChatBridgePromptApi) {
 }
 
 async function promptDingTalkConfig(prompt: ChatBridgePromptApi) {
-  const protocol = await promptSelectValue(prompt, {
-    message: "Choose the DingTalk connection mode.",
-    values: [
-      { value: "ws", label: "Stream / WebSocket" },
-      { value: "http", label: "HTTP callback" },
-    ],
-  });
   const appkey = await promptText(prompt, {
-    message: "Enter the DingTalk AppKey.",
+    message: withGuide(
+      "Enter the DingTalk AppKey.",
+      "DingTalk developer console → your application → credentials.",
+    ),
     placeholder: "AppKey",
     required: true,
   });
   const secret = await promptText(prompt, {
-    message: "Enter the DingTalk secret.",
+    message: withGuide(
+      "Enter the DingTalk secret.",
+      "DingTalk developer console → your application → credentials.",
+    ),
     placeholder: "Secret",
     required: true,
   });
-  const agentId = await promptText(prompt, {
-    message: "Enter the DingTalk AgentId.",
+  const agentId = await promptOptionalText(prompt, {
+    message: withGuide(
+      "Enter the DingTalk AgentId if you have one. Leave blank to skip.",
+      "DingTalk developer console → your application → basic information.",
+    ),
     placeholder: "AgentId",
-    required: true,
   });
   return {
-    detail: `Chat bridge mode: ${protocol}`,
-    config: { dingtalk: { protocol, appkey, secret, agentId } },
+    detail: "Chat bridge mode: ws",
+    config: { dingtalk: compactObject({ protocol: "ws", appkey, secret, agentId }) },
   };
 }
 
 async function promptMatrixConfig(prompt: ChatBridgePromptApi) {
   const id = await promptText(prompt, {
-    message: "Enter the Matrix bot ID localpart.",
+    message: withGuide(
+      "Enter the Matrix bot ID localpart.",
+      "Your Matrix application service registration file or bot account setup.",
+    ),
     placeholder: "rin-bot",
     required: true,
   });
   const host = await promptText(prompt, {
-    message: "Enter the Matrix homeserver host.",
+    message: withGuide(
+      "Enter the Matrix homeserver host.",
+      "Your Matrix homeserver address, for example matrix.example.com.",
+    ),
     placeholder: "matrix.example.com",
     required: true,
   });
   const hsToken = await promptText(prompt, {
-    message: "Enter the Matrix hs_token.",
+    message: withGuide(
+      "Enter the Matrix hs_token.",
+      "Your Matrix application service registration file.",
+    ),
     placeholder: "hs_token",
     required: true,
   });
   const asToken = await promptText(prompt, {
-    message: "Enter the Matrix as_token.",
+    message: withGuide(
+      "Enter the Matrix as_token.",
+      "Your Matrix application service registration file.",
+    ),
     placeholder: "as_token",
     required: true,
-  });
-  const endpoint = await promptOptionalText(prompt, {
-    message: "Enter the Matrix endpoint override if needed. Leave blank to use https://{host}.",
-    placeholder: "https://matrix.example.com",
-    validate(value) {
-      try {
-        new URL(value);
-      } catch {
-        return "Use a valid URL.";
-      }
-    },
-  });
-  const name = await promptOptionalText(prompt, {
-    message: "Enter the Matrix display name if you want Koishi to set it at startup. Leave blank to skip.",
-    placeholder: "optional display name",
-  });
-  const avatar = await promptOptionalText(prompt, {
-    message: "Enter the Matrix avatar URL if you want Koishi to set it at startup. Leave blank to skip.",
-    placeholder: "https://example.com/avatar.png",
-    validate(value) {
-      try {
-        new URL(value);
-      } catch {
-        return "Use a valid URL.";
-      }
-    },
   });
   return {
     detail: "Chat bridge homeserver credentials: [saved to target settings.json]",
     config: {
-      matrix: compactObject({ id, host, hsToken, asToken, endpoint, name, avatar }),
+      matrix: { id, host, hsToken, asToken },
     },
   };
 }
 
 async function promptWhatsAppConfig(prompt: ChatBridgePromptApi) {
   const id = await promptText(prompt, {
-    message: "Enter the WhatsApp business ID.",
+    message: withGuide(
+      "Enter the WhatsApp business ID.",
+      "Meta for Developers → WhatsApp → API Setup / WhatsApp Business Account ID.",
+    ),
     placeholder: "Business ID",
     required: true,
   });
   const secret = await promptText(prompt, {
-    message: "Enter the WhatsApp app secret.",
+    message: withGuide(
+      "Enter the WhatsApp app secret.",
+      "Meta for Developers → App settings → Basic → App Secret.",
+    ),
     placeholder: "App Secret",
     required: true,
   });
   const systemToken = await promptText(prompt, {
-    message: "Enter the WhatsApp system user access token.",
+    message: withGuide(
+      "Enter the WhatsApp system user access token.",
+      "Meta for Developers → WhatsApp → API Setup → permanent or system user token.",
+    ),
     placeholder: "System Token",
     required: true,
   });
   const verifyToken = await promptText(prompt, {
-    message: "Enter the WhatsApp webhook verify token.",
+    message: withGuide(
+      "Enter the WhatsApp webhook verify token.",
+      "The verify token you set in Meta webhook settings for this app.",
+    ),
     placeholder: "Verify Token",
     required: true,
   });
@@ -670,12 +687,18 @@ async function promptWhatsAppConfig(prompt: ChatBridgePromptApi) {
 
 async function promptLineConfig(prompt: ChatBridgePromptApi) {
   const token = await promptText(prompt, {
-    message: "Enter the LINE channel access token.",
+    message: withGuide(
+      "Enter the LINE channel access token.",
+      "LINE Developers console → your Messaging API channel → Channel access token.",
+    ),
     placeholder: "Channel access token",
     required: true,
   });
   const secret = await promptText(prompt, {
-    message: "Enter the LINE channel secret.",
+    message: withGuide(
+      "Enter the LINE channel secret.",
+      "LINE Developers console → your channel → Basic settings.",
+    ),
     placeholder: "Channel secret",
     required: true,
   });
@@ -686,52 +709,48 @@ async function promptLineConfig(prompt: ChatBridgePromptApi) {
 }
 
 async function promptSlackConfig(prompt: ChatBridgePromptApi) {
-  const protocol = await promptSelectValue(prompt, {
-    message: "Choose the Slack connection mode.",
-    values: [
-      { value: "ws", label: "Socket Mode / WebSocket", hint: "recommended" },
-      { value: "http", label: "HTTP callback" },
-    ],
-  });
   const token = await promptText(prompt, {
-    message: "Enter the Slack app-level token.",
+    message: withGuide(
+      "Enter the Slack app-level token.",
+      "Slack app settings → Basic Information or Socket Mode → App-Level Tokens (starts with xapp-).",
+    ),
     placeholder: "xapp-...",
     required: true,
   });
   const botToken = await promptText(prompt, {
-    message: "Enter the Slack bot token.",
+    message: withGuide(
+      "Enter the Slack bot token.",
+      "Slack app settings → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
+    ),
     placeholder: "xoxb-...",
     required: true,
   });
-  const signing =
-    protocol === "http"
-      ? await promptText(prompt, {
-          message: "Enter the Slack signing secret.",
-          placeholder: "Signing Secret",
-          required: true,
-        })
-      : undefined;
   return {
-    detail: `Chat bridge mode: ${protocol}`,
+    detail: "Chat bridge mode: ws",
     config: {
-      slack: compactObject({
-        protocol,
+      slack: {
+        protocol: "ws",
         token,
         botToken,
-        signing,
-      }),
+      },
     },
   };
 }
 
 async function promptZulipConfig(prompt: ChatBridgePromptApi) {
   const email = await promptText(prompt, {
-    message: "Enter the Zulip bot email.",
+    message: withGuide(
+      "Enter the Zulip bot email.",
+      "Zulip bot account details or the bot creation page.",
+    ),
     placeholder: "bot@example.com",
     required: true,
   });
   const key = await promptText(prompt, {
-    message: "Enter the Zulip bot API key.",
+    message: withGuide(
+      "Enter the Zulip bot API key.",
+      "Zulip bot account → API key or Personal settings → Account & privacy → API key.",
+    ),
     placeholder: "API key",
     required: true,
   });
@@ -781,13 +800,19 @@ async function promptChatBridgeAdapterConfig(
   }
 }
 
-export async function promptChatBridgeSetup(prompt: ChatBridgePromptApi) {
-  const enableChatBridge = prompt.ensureNotCancelled(
-    await prompt.confirm({
-      message: "Configure a chat bridge now?",
-      initialValue: false,
-    }),
-  );
+export async function promptChatBridgeSetup(
+  prompt: ChatBridgePromptApi,
+  options: { confirmEnable?: boolean } = {},
+) {
+  const shouldConfirmEnable = options.confirmEnable !== false;
+  const enableChatBridge = shouldConfirmEnable
+    ? prompt.ensureNotCancelled(
+        await prompt.confirm({
+          message: "Configure a chat bridge now?",
+          initialValue: false,
+        }),
+      )
+    : true;
 
   let koishiDescription = "disabled for now";
   let koishiDetail = "";
@@ -804,12 +829,7 @@ export async function promptChatBridgeSetup(prompt: ChatBridgePromptApi) {
         options: listChatBridgeAdapterSpecs().map((item) => ({
           value: item.key,
           label: item.label,
-          hint:
-            item.key === "telegram"
-              ? "bot token"
-              : item.key === "onebot"
-                ? "endpoint + protocol"
-                : "guided setup",
+          hint: "guided setup",
         })),
       }),
     ),
