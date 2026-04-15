@@ -71,7 +71,7 @@ Rin provides scheduled task support. As an agent, you should know that:
 
 ## Chat bridge
 
-Rin can bridge chat platforms through a framework-neutral chat bridge layer. Current built-in adapter coverage includes Telegram, OneBot, Discord, Kook, QQ, Lark, Mail, WeChat Official, WeCom, DingTalk, Matrix, WhatsApp, LINE, Slack, and Zulip. As an agent, you should know that:
+Rin can bridge chat platforms through a framework-neutral chat bridge layer. The direct built-in runtime currently ships Telegram and OneBot first, while the retained next platform targets are QQ, Feishu / Lark, Discord, and Slack. As an agent, you should know that:
 
 - the sender in a chat bridge conversation is not the local shell user; it is the chat-platform sender
 - the prompt may include `chatKey`, chat name, sender identity, and related context
@@ -82,11 +82,11 @@ Rin can bridge chat platforms through a framework-neutral chat bridge layer. Cur
 - `/chat` goes directly into platform selection in the TUI; the installer keeps the separate yes/no gate
 - official adapter setup should prefer the minimum runnable fields, default to polling / socket modes when the adapter supports them, avoid webhook-only setup when possible, and include direct official links for required values
 
-### Custom Koishi adapters
+### Custom chat bridge adapters
 
-The product-facing name is still chat bridge, but the internal runtime config key remains `settings.json -> koishi`.
+The product-facing name is chat bridge. The internal runtime config key currently remains `settings.json -> koishi` for compatibility.
 
-If a user wants a custom Koishi adapter that Rin does not ship as a built-in guided option, use the internal config shape below:
+If a user wants a custom chat bridge adapter that Rin does not ship as a built-in guided option, use the internal config shape below:
 
 ```json
 {
@@ -109,10 +109,10 @@ Notes for the agent:
 
 - `packageName` is the npm package name
 - `version` is optional and defaults to `latest`
-- `pluginKey` is the Koishi plugin key that should appear inside `koishi.yml`
-- `config` can be a single config object, an array of named instances, or a keyed object map just like other Koishi adapter config blocks
-- after editing `settings.json`, restart Rin or let the chat bridge sidecar restart; Rin will materialize the runtime package and install any missing custom adapter dependencies automatically before loading the bridge config
-- treat custom adapters as trusted-code execution because they run as third-party Node.js plugin code under the Rin user account
+- `pluginKey` is the internal adapter key for that package
+- `config` can be a single config object, an array of named instances, or a keyed object map just like other adapter config blocks
+- after editing `settings.json`, restart Rin or let the chat bridge sidecar restart; Rin will materialize the custom runtime package and install any missing custom adapter dependencies automatically before loading the bridge config
+- treat custom adapters as trusted-code execution because they run as third-party Node.js code under the Rin user account
 
 ## Web search
 

@@ -75,26 +75,6 @@ test("chat bridge setup configures Slack with socket mode defaults", async () =>
   });
 });
 
-test("chat bridge setup configures mail preset with minimal required fields", async () => {
-  const result = await setup.promptChatBridgeSetup(
-    createPromptHarness({
-      confirm: [true],
-      select: ["mail", "qq"],
-      text: ["bot@qq.com", "auth-code"],
-    }),
-  );
-
-  assert.equal(result.adapterKey, "mail");
-  assert.deepEqual(result.koishiConfig, {
-    mail: {
-      username: "bot@qq.com",
-      password: "auth-code",
-      imap: { host: "imap.qq.com", port: 993, tls: true },
-      smtp: { host: "smtp.qq.com", port: 465, tls: true },
-    },
-  });
-});
-
 test("chat bridge setup configures Feishu / Lark with websocket defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
@@ -105,6 +85,7 @@ test("chat bridge setup configures Feishu / Lark with websocket defaults", async
   );
 
   assert.equal(result.adapterKey, "lark");
+  assert.equal(result.koishiDescription, "Feishu / Lark");
   assert.deepEqual(result.koishiConfig, {
     lark: {
       platform: "feishu",

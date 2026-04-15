@@ -5,6 +5,7 @@ export type ChatBridgeAdapterSpec = {
   label: string;
   pluginKey: string;
   packageName: string;
+  runtimePackageName?: string;
   defaults: Record<string, any>;
   installer: {
     kind: ChatBridgeAdapterSetupKind;
@@ -17,7 +18,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     key: "telegram",
     label: "Telegram",
     pluginKey: "adapter-telegram",
-    packageName: "@koishijs/plugin-adapter-telegram",
+    packageName: "builtin:telegram",
     defaults: {
       protocol: "polling",
       token: "",
@@ -25,14 +26,15 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     },
     installer: {
       kind: "telegram",
-      placeholder: '{"token":"123456:ABCDEF...","protocol":"polling","slash":true}',
+      placeholder:
+        '{"token":"123456:ABCDEF...","protocol":"polling","slash":true}',
     },
   },
   {
     key: "onebot",
     label: "OneBot",
     pluginKey: "adapter-onebot",
-    packageName: "koishi-plugin-adapter-onebot",
+    packageName: "builtin:onebot",
     defaults: {
       protocol: "ws",
       endpoint: "",
@@ -41,31 +43,20 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     },
     installer: {
       kind: "onebot",
-      placeholder: '{"endpoint":"ws://127.0.0.1:3001","protocol":"ws","selfId":"","token":""}',
+      placeholder:
+        '{"endpoint":"ws://127.0.0.1:3001","protocol":"ws","selfId":"","token":""}',
     },
-  },
-  {
-    key: "discord",
-    label: "Discord",
-    pluginKey: "adapter-discord",
-    packageName: "@koishijs/plugin-adapter-discord",
-    defaults: {},
-    installer: { kind: "json", placeholder: '{"token":"..."}' },
-  },
-  {
-    key: "kook",
-    label: "Kook",
-    pluginKey: "adapter-kook",
-    packageName: "@koishijs/plugin-adapter-kook",
-    defaults: { protocol: "ws" },
-    installer: { kind: "json", placeholder: '{"token":"..."}' },
   },
   {
     key: "qq",
     label: "QQ",
     pluginKey: "adapter-qq",
-    packageName: "@koishijs/plugin-adapter-qq",
-    defaults: { protocol: "websocket", sandbox: false, authType: "bearer" },
+    packageName: "builtin:qq",
+    defaults: {
+      protocol: "websocket",
+      sandbox: false,
+      authType: "bearer",
+    },
     installer: {
       kind: "json",
       placeholder: '{"id":"...","secret":"...","token":"..."}',
@@ -73,109 +64,37 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
   },
   {
     key: "lark",
-    label: "Lark",
+    label: "Feishu / Lark",
     pluginKey: "adapter-lark",
-    packageName: "@koishijs/plugin-adapter-lark",
-    defaults: { protocol: "ws", platform: "feishu" },
+    packageName: "builtin:lark",
+    defaults: {
+      protocol: "ws",
+      platform: "feishu",
+    },
     installer: {
       kind: "json",
-      placeholder: '{"appId":"...","appSecret":"..."}',
+      placeholder: '{"platform":"feishu","appId":"...","appSecret":"..."}',
     },
   },
   {
-    key: "mail",
-    label: "Mail",
-    pluginKey: "adapter-mail",
-    packageName: "@koishijs/plugin-adapter-mail",
-    defaults: {},
-    installer: {
-      kind: "json",
-      placeholder:
-        '{"transport":{"host":"smtp.example.com","port":465,"secure":true,"auth":{"user":"bot@example.com","pass":"..."}},"from":"bot@example.com"}',
-    },
-  },
-  {
-    key: "wechat-official",
-    label: "WeChat Official",
-    pluginKey: "adapter-wechat-official",
-    packageName: "@koishijs/plugin-adapter-wechat-official",
-    defaults: {},
-    installer: {
-      kind: "json",
-      placeholder: '{"appId":"...","appSecret":"..."}',
-    },
-  },
-  {
-    key: "wecom",
-    label: "WeCom",
-    pluginKey: "adapter-wecom",
-    packageName: "@koishijs/plugin-adapter-wecom",
-    defaults: {},
-    installer: {
-      kind: "json",
-      placeholder: '{"corpId":"...","agentId":"...","secret":"..."}',
-    },
-  },
-  {
-    key: "dingtalk",
-    label: "DingTalk",
-    pluginKey: "adapter-dingtalk",
-    packageName: "@koishijs/plugin-adapter-dingtalk",
-    defaults: { protocol: "ws" },
-    installer: {
-      kind: "json",
-      placeholder: '{"appKey":"...","appSecret":"..."}',
-    },
-  },
-  {
-    key: "matrix",
-    label: "Matrix",
-    pluginKey: "adapter-matrix",
-    packageName: "@koishijs/plugin-adapter-matrix",
-    defaults: {},
-    installer: {
-      kind: "json",
-      placeholder:
-        '{"homeserver":"https://matrix.example.com","userId":"@bot:example.com","accessToken":"..."}',
-    },
-  },
-  {
-    key: "whatsapp",
-    label: "WhatsApp",
-    pluginKey: "adapter-whatsapp",
-    packageName: "@koishijs/plugin-adapter-whatsapp",
+    key: "discord",
+    label: "Discord",
+    pluginKey: "adapter-discord",
+    packageName: "builtin:discord",
     defaults: {},
     installer: { kind: "json", placeholder: '{"token":"..."}' },
-  },
-  {
-    key: "line",
-    label: "LINE",
-    pluginKey: "adapter-line",
-    packageName: "@koishijs/plugin-adapter-line",
-    defaults: {},
-    installer: {
-      kind: "json",
-      placeholder: '{"channelAccessToken":"...","channelSecret":"..."}',
-    },
   },
   {
     key: "slack",
     label: "Slack",
     pluginKey: "adapter-slack",
-    packageName: "@koishijs/plugin-adapter-slack",
-    defaults: { protocol: "ws" },
-    installer: { kind: "json", placeholder: '{"token":"..."}' },
-  },
-  {
-    key: "zulip",
-    label: "Zulip",
-    pluginKey: "adapter-zulip",
-    packageName: "@koishijs/plugin-adapter-zulip",
-    defaults: {},
+    packageName: "builtin:slack",
+    defaults: {
+      protocol: "ws",
+    },
     installer: {
       kind: "json",
-      placeholder:
-        '{"server":"https://zulip.example.com","email":"bot@example.com","apiKey":"..."}',
+      placeholder: '{"protocol":"ws","token":"xapp-...","botToken":"xoxb-..."}',
     },
   },
 ];

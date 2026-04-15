@@ -159,8 +159,11 @@ function collectIncomingElementText(element: any): string {
   if (type === "text") return safeString(attrs.content || element.text || "");
   if (type === "br") return "\n";
   const children = Array.isArray(element?.children) ? element.children : [];
-  const childText = children.map((item) => collectIncomingElementText(item)).join("");
-  if (type === "p" || type === "paragraph") return childText ? `${childText}\n` : "";
+  const childText = children
+    .map((item) => collectIncomingElementText(item))
+    .join("");
+  if (type === "p" || type === "paragraph")
+    return childText ? `${childText}\n` : "";
   return childText;
 }
 
@@ -220,7 +223,9 @@ export function pickMessageId(session: any) {
 }
 
 export function pickReplyToMessageId(session: any) {
-  return safeString(session?.quote?.messageId || session?.quote?.id || "").trim();
+  return safeString(
+    session?.quote?.messageId || session?.quote?.id || "",
+  ).trim();
 }
 
 export function summarizeQuote(session: any) {
@@ -437,7 +442,9 @@ export function buildInboundAttachmentNotice(
   const unresolved = failures.filter(
     (item) => item.reason === "unresolved_resource",
   ).length;
-  const fetchFailed = failures.filter((item) => item.reason === "fetch_failed").length;
+  const fetchFailed = failures.filter(
+    (item) => item.reason === "fetch_failed",
+  ).length;
   const parts: string[] = [];
   if (unresolved)
     parts.push(
@@ -450,7 +457,10 @@ export function buildInboundAttachmentNotice(
   return `Note: the incoming message included media that could not be attached for the agent because ${parts.join(" and ")}.`;
 }
 
-export async function extractInboundAttachments(elements: any[], chatDir: string) {
+export async function extractInboundAttachments(
+  elements: any[],
+  chatDir: string,
+) {
   const dir = path.join(chatDir, "inbound");
   ensureDir(dir);
   const attachments: SavedAttachment[] = [];
@@ -474,35 +484,63 @@ export async function extractInboundAttachments(elements: any[], chatDir: string
     }
 
     index += 1;
-    let response: Response;
-    try {
-      response = await fetch(src);
-    } catch (error: any) {
-      failures.push({
-        type: type || "unknown",
-        kind: kind as "image" | "file",
-        reason: "fetch_failed",
-        resource: src,
-        detail: safeString(error?.message || error).trim() || undefined,
-      });
-      continue;
+    let arrayBuffer: ArrayBuffer;
+    let mimeType = "";
+    if (src.startsWith("file://")) {
+      try {
+        const filePath = new URL(src);
+        const buffer = await fs.promises.readFile(filePath);
+        arrayBuffer = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        );
+        mimeType = safeString(attrs.mime || attrs.mimeType || "")
+          .split(";", 1)[0]
+          .trim();
+      } catch (error: any) {
+        failures.push({
+          type: type || "unknown",
+          kind: kind as "image" | "file",
+          reason: "fetch_failed",
+          resource: src,
+          detail: safeString(error?.message || error).trim() || undefined,
+        });
+        continue;
+      }
+    } else {
+      let response: Response;
+      try {
+        response = await fetch(src);
+      } catch (error: any) {
+        failures.push({
+          type: type || "unknown",
+          kind: kind as "image" | "file",
+          reason: "fetch_failed",
+          resource: src,
+          detail: safeString(error?.message || error).trim() || undefined,
+        });
+        continue;
+      }
+      if (!response.ok) {
+        failures.push({
+          type: type || "unknown",
+          kind: kind as "image" | "file",
+          reason: "fetch_failed",
+          resource: src,
+          detail: `http_${response.status}`,
+        });
+        continue;
+      }
+      arrayBuffer = await response.arrayBuffer();
+      mimeType = safeString(
+        response.headers.get("content-type") ||
+          attrs.mime ||
+          attrs.mimeType ||
+          "",
+      )
+        .split(";", 1)[0]
+        .trim();
     }
-    if (!response.ok) {
-      failures.push({
-        type: type || "unknown",
-        kind: kind as "image" | "file",
-        reason: "fetch_failed",
-        resource: src,
-        detail: `http_${response.status}`,
-      });
-      continue;
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const mimeType = safeString(
-      response.headers.get("content-type") || attrs.mime || "",
-    )
-      .split(";", 1)[0]
-      .trim();
     const rawName =
       safeString(
         attrs.file ||
