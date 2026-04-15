@@ -112,6 +112,55 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
   );
 });
 
+test("rpc runtime executes local extension commands immediately through prompt", async () => {
+  const session = new RpcInteractiveSession({
+    send() {
+      throw new Error("should_not_send_remote_prompt");
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  const calls = [];
+  session.extensionRunner = {
+    getCommand(name) {
+      return name === "chat"
+        ? {
+            invocationName: "chat",
+            handler: async (args, ctx) => {
+              calls.push(["handler", args, Boolean(ctx)]);
+            },
+          }
+        : undefined;
+    },
+    createCommandContext() {
+      return { ui: {}, waitForIdle: async () => {} };
+    },
+    emitError(error) {
+      calls.push(["error", error.error]);
+    },
+  };
+
+  await session.prompt("/chat telegram", { streamingBehavior: "steer" });
+
+  assert.deepEqual(calls, [["handler", "telegram", true]]);
+  assert.deepEqual(session.getSteeringMessages(), []);
+  assert.equal(session.pendingMessageCount, 0);
+});
+
 test("rpc runtime forwards prompt streamingBehavior through prompt mode", async () => {
   const sent = [];
   const session = new RpcInteractiveSession({
@@ -154,50 +203,3 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
   assert.equal(session.pendingMessageCount, 1);
 });
 
-test("rpc runtime does not locally queue extension commands when forwarding prompt streamingBehavior", async () => {
-  const sent = [];
-  const session = new RpcInteractiveSession({
-    send(payload) {
-      sent.push(payload);
-      return Promise.resolve({ success: true, data: {} });
-    },
-    subscribe() {
-      return () => {};
-    },
-    abort() {
-      return Promise.resolve();
-    },
-    isConnected() {
-      return true;
-    },
-    connect() {
-      return Promise.resolve();
-    },
-    disconnect() {
-      return Promise.resolve();
-    },
-  });
-
-  session.sessionId = "s1";
-  session.extensionRunner = {
-    getCommand(name) {
-      return name === "chat" ? { invocationName: "chat" } : undefined;
-    },
-  };
-
-  await session.prompt("/chat", { streamingBehavior: "steer" });
-
-  assert.deepEqual(sent, [
-    {
-      type: "prompt",
-      sessionId: "s1",
-      message: "/chat",
-      images: undefined,
-      streamingBehavior: "steer",
-      source: undefined,
-      requestTag: undefined,
-    },
-  ]);
-  assert.deepEqual(session.getSteeringMessages(), []);
-  assert.equal(session.pendingMessageCount, 0);
-});
