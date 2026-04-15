@@ -113,6 +113,10 @@ test("release docs and changelog stay aligned with the installed runtime contrac
     path.join(rootDir, "docs", "user", "getting-started.md"),
     "utf8",
   );
+  const troubleshooting = fs.readFileSync(
+    path.join(rootDir, "docs", "troubleshooting.md"),
+    "utf8",
+  );
 
   for (const snippet of [
     "`install.sh` bootstrap behavior",
@@ -128,6 +132,12 @@ test("release docs and changelog stay aligned with the installed runtime contrac
     gettingStarted,
     /prefer the stable `app\/current` path instead of a timestamped `app\/releases\/\.\.\.` path/,
   );
+  assert.match(
+    gettingStarted,
+    /installed runtime docs under `<installDir>\/docs\/rin` and `<installDir>\/docs\/pi`/,
+  );
+  assert.match(troubleshooting, /<installDir>\/docs\/rin/);
+  assert.match(troubleshooting, /<installDir>\/docs\/pi/);
   assert.match(changelog, /install\.sh` bootstrap behavior/);
   assert.match(changelog, /app assembly entrypoints/);
   assert.match(changelog, /runtime release publishing/);

@@ -87,6 +87,8 @@ At minimum, a healthy installed update should keep these expectations true:
 
 - a new runtime is published under `app/releases/<timestamp>/`
 - `app/current/` becomes the stable pointer to the active runtime
+- launcher scripts continue to target the stable `app/current/...` entrypoints
+- installed docs continue to land in stable `docs/rin` and `docs/pi` locations
 - older releases are pruned conservatively instead of accumulating forever
 - direct troubleshooting commands prefer `app/current/...` over timestamped release paths
 - changelog and operator docs mention user-visible install/update behavior changes

@@ -22,6 +22,9 @@ Useful places:
 
 - `~/.config/rin/install.json`
 - `<installDir>/installer.json`
+- `<installDir>/app/current`
+- `<installDir>/docs/rin`
+- `<installDir>/docs/pi`
 - Linux user service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 

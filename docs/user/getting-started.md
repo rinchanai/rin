@@ -84,6 +84,8 @@ A normal install or update refreshes the same stable state surfaces:
 - `<installDir>/installer.json`
 - `<installDir>/settings.json`
 - `<installDir>/auth.json`
+- `<installDir>/app/current`
+- installed runtime docs under `<installDir>/docs/rin` and `<installDir>/docs/pi`
 - the current-user launcher metadata under `~/.config/rin/install.json`
 - managed launcher files such as `~/.local/bin/rin`
 

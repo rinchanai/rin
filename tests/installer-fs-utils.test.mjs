@@ -71,14 +71,99 @@ async function createPublishFixture() {
   return { sourceRoot, installDir };
 }
 
+async function addInstalledDocsFixture(sourceRoot) {
+  await fs.mkdir(path.join(sourceRoot, "docs", "rin", "docs"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(sourceRoot, "docs", "rin", "README.md"),
+    "# Rin runtime docs\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(sourceRoot, "docs", "rin", "docs", "capabilities.md"),
+    "runtime capability docs\n",
+    "utf8",
+  );
+
+  await fs.mkdir(
+    path.join(sourceRoot, "third_party", "anthropics-skills", "skill-creator"),
+    { recursive: true },
+  );
+  await fs.writeFile(
+    path.join(
+      sourceRoot,
+      "third_party",
+      "anthropics-skills",
+      "skill-creator",
+      "SKILL.md",
+    ),
+    "# skill creator\n",
+    "utf8",
+  );
+
+  const piRoot = path.join(sourceRoot, "third_party", "pi-coding-agent");
+  await fs.writeFile(path.join(piRoot, "README.md"), "# Pi\n", "utf8");
+  await fs.writeFile(
+    path.join(piRoot, "CHANGELOG.md"),
+    "# Pi changelog\n",
+    "utf8",
+  );
+  await fs.mkdir(path.join(piRoot, "docs"), { recursive: true });
+  await fs.writeFile(path.join(piRoot, "docs", "guide.md"), "guide\n", "utf8");
+  await fs.mkdir(path.join(piRoot, "examples"), { recursive: true });
+  await fs.writeFile(
+    path.join(piRoot, "examples", "demo.md"),
+    "demo\n",
+    "utf8",
+  );
+}
+
 test("installer fs utils compute launcher targets and script", () => {
   const targets = fsUtils.launcherTargetsForInstallDir("/tmp/rin");
   assert.ok(
     targets.rin[0].endsWith(path.join("dist", "app", "rin", "main.js")),
   );
+  assert.ok(
+    targets.rinInstall[0].endsWith(
+      path.join("dist", "app", "rin-install", "main.js"),
+    ),
+  );
   const script = fsUtils.launcherScript(["/tmp/a.js", "/tmp/b.js"]);
   assert.ok(script.includes("installed runtime entry not found"));
   assert.ok(script.includes("/tmp/a.js"));
+});
+
+test("writeLaunchersForUser and appConfigDirForUser use stable per-user install locations", async () => {
+  const homeRoot = await fs.mkdtemp(path.join(os.tmpdir(), "rin-home-"));
+  const homeForUser = (user) => path.join(homeRoot, user);
+  await fs.mkdir(homeForUser("demo"), { recursive: true });
+
+  const written = fsUtils.writeLaunchersForUser(
+    "demo",
+    "/srv/rin",
+    homeForUser,
+  );
+  assert.equal(
+    written.rinPath,
+    path.join(homeForUser("demo"), ".local", "bin", "rin"),
+  );
+  assert.equal(
+    written.rinInstallPath,
+    path.join(homeForUser("demo"), ".local", "bin", "rin-install"),
+  );
+
+  const rinLauncher = await fs.readFile(written.rinPath, "utf8");
+  const installLauncher = await fs.readFile(written.rinInstallPath, "utf8");
+  assert.match(rinLauncher, /app\/current\/dist\/app\/rin\/main\.js/);
+  assert.match(
+    installLauncher,
+    /app\/current\/dist\/app\/rin-install\/main\.js/,
+  );
+  assert.equal(
+    fsUtils.appConfigDirForUser("demo", homeForUser).includes(".config/rin"),
+    true,
+  );
 });
 
 test("publishInstalledRuntime rebuilds vendored coding-agent dist when missing", async () => {
@@ -194,6 +279,46 @@ test("publishInstalledRuntime replaces the current symlink and pruneInstalledRel
       path.basename(second.releaseRoot),
     ].sort(),
   );
+});
+
+test("syncInstalledDocs copies Rin runtime docs, builtin skills, and bundled Pi docs into stable install locations", async () => {
+  const { sourceRoot, installDir } = await createPublishFixture();
+  await addInstalledDocsFixture(sourceRoot);
+
+  const installed = fsUtils.syncInstalledDocs(
+    sourceRoot,
+    installDir,
+    "rin",
+    false,
+    {
+      findSystemUser: () => null,
+    },
+  );
+
+  assert.equal(installed.rin, path.join(installDir, "docs", "rin"));
+  assert.deepEqual(installed.pi, [
+    path.join(installDir, "docs", "pi", "README.md"),
+    path.join(installDir, "docs", "pi", "CHANGELOG.md"),
+    path.join(installDir, "docs", "pi", "docs"),
+    path.join(installDir, "docs", "pi", "examples"),
+  ]);
+  await fs.access(path.join(installDir, "docs", "rin", "README.md"));
+  await fs.access(
+    path.join(installDir, "docs", "rin", "docs", "capabilities.md"),
+  );
+  await fs.access(
+    path.join(
+      installDir,
+      "docs",
+      "rin",
+      "builtin-skills",
+      "skill-creator",
+      "SKILL.md",
+    ),
+  );
+  await fs.access(path.join(installDir, "docs", "pi", "README.md"));
+  await fs.access(path.join(installDir, "docs", "pi", "docs", "guide.md"));
+  await fs.access(path.join(installDir, "docs", "pi", "examples", "demo.md"));
 });
 
 test("releaseIdNow emits a filesystem-safe UTC release id", () => {
