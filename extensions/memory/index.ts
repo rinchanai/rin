@@ -25,6 +25,23 @@ import { executeSubagentRun } from "../../src/core/subagent/service.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
 import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 
+const MEMORY_RESULT_PREVIEW_LINES = 10;
+
+type MemoryToolDetails = {
+  truncation?: TruncationResult;
+  emptyMessage?: string;
+  hiddenCount?: number;
+  totalResults?: number;
+  userText?: string;
+  phase?: "search" | "recent" | "summarize";
+};
+
+type MemoryRenderState = {
+  startedAt: number | undefined;
+  endedAt: number | undefined;
+  interval: NodeJS.Timeout | undefined;
+};
+
 const searchMemoryParams = Type.Object({
   query: Type.Optional(
     Type.String({
@@ -146,15 +163,51 @@ function trimTrailingEmptyLines(lines: string[]): string[] {
   return lines.slice(0, end);
 }
 
+function formatDuration(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function buildSearchMemorySearchStatusText(mode: "search" | "recent", query: string): string {
+  if (mode === "recent") return "Loading recent archived sessions...";
+  return `Searching archived sessions for ${JSON.stringify(query)}...`;
+}
+
+function buildSearchMemorySummarizationStatusText(
+  mode: "search" | "recent",
+  total: number,
+  results?: any[],
+): string {
+  const sessionLabel = total === 1 ? "session" : "sessions";
+  if (!Array.isArray(results) || !results.length) {
+    if (mode === "recent") return `Loaded ${total} recent ${sessionLabel}. Summarizing...`;
+    return `Found ${total} matching ${sessionLabel}. Summarizing...`;
+  }
+
+  const done = results.filter((result) => result?.status === "done").length;
+  const failed = results.filter((result) => result?.status === "error").length;
+  const running = results.filter((result) => result?.status === "running").length;
+  const pending = results.filter((result) => result?.status === "pending").length;
+  return `Summarizing ${total} ${sessionLabel}: ${done} done, ${failed} failed, ${running} running, ${pending} pending`;
+}
+
+function emitSearchMemoryUpdate(
+  onUpdate: ((value: { content: Array<{ type: "text"; text: string }>; details: MemoryToolDetails }) => void) | undefined,
+  userText: string,
+  details: Partial<MemoryToolDetails> = {},
+) {
+  onUpdate?.({
+    content: [{ type: "text", text: userText }],
+    details: {
+      ...details,
+      userText,
+    },
+  });
+}
+
 function formatMemoryResult(
   result: {
     content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-    details?: {
-      truncation?: TruncationResult;
-      emptyMessage?: string;
-      hiddenCount?: number;
-      totalResults?: number;
-    };
+    details?: MemoryToolDetails;
   },
   options: { expanded: boolean },
   theme: any,
@@ -162,7 +215,7 @@ function formatMemoryResult(
 ) {
   const output = getTextOutput(result, showImages);
   const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
-  const maxLines = options.expanded ? lines.length : 10;
+  const maxLines = options.expanded ? lines.length : MEMORY_RESULT_PREVIEW_LINES;
   const displayLines = lines.slice(0, maxLines);
   const remaining = lines.length - maxLines;
 
@@ -223,6 +276,7 @@ export async function maybeSummarizeTranscriptMatches(
   currentThinkingLevel: ThinkingLevel,
   runSubagent = executeSubagentRun,
   signal?: AbortSignal,
+  onProgress?: (results: any[]) => void,
 ) {
   throwIfAborted(signal);
   const rows = Array.isArray(results) ? results : [];
@@ -265,6 +319,9 @@ export async function maybeSummarizeTranscriptMatches(
     },
     currentThinkingLevel,
     signal,
+    onProgress(results: any[]) {
+      onProgress?.(results);
+    },
   });
   throwIfAborted(signal);
   if (!run.ok) {
@@ -312,17 +369,32 @@ export async function executeSearchMemory(
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
   signal?: AbortSignal,
+  onUpdate?: (value: { content: Array<{ type: "text"; text: string }>; details: MemoryToolDetails }) => void,
 ) {
   try {
     const query = String(params?.query || "").trim();
-    const mode = query ? "search" : "recent";
+    const mode = (query ? "search" : "recent") as "search" | "recent";
     const normalizedParams = {
       ...(params || {}),
       limit: Number.isFinite(Number(params?.limit)) ? Number(params.limit) : 8,
     };
+    const rootOverride = resolveSearchMemoryAgentDir(ctx);
+
+    emitSearchMemoryUpdate(onUpdate, buildSearchMemorySearchStatusText(mode, query), {
+      phase: mode,
+    });
+
     const rawResults = query
-      ? await searchTranscriptArchive(query, normalizedParams)
-      : await loadRecentTranscriptSessions(normalizedParams);
+      ? await searchTranscriptArchive(query, normalizedParams, rootOverride)
+      : await loadRecentTranscriptSessions(normalizedParams, rootOverride);
+
+    if (rawResults.length > 0) {
+      emitSearchMemoryUpdate(onUpdate, buildSearchMemorySummarizationStatusText(mode, rawResults.length), {
+        phase: "summarize",
+        totalResults: rawResults.length,
+      });
+    }
+
     const results = await maybeSummarizeTranscriptMatches(
       rawResults,
       query,
@@ -330,6 +402,16 @@ export async function executeSearchMemory(
       currentThinkingLevel,
       executeSubagentRun,
       signal,
+      (progressResults) => {
+        emitSearchMemoryUpdate(
+          onUpdate,
+          buildSearchMemorySummarizationStatusText(mode, rawResults.length, progressResults),
+          {
+            phase: "summarize",
+            totalResults: rawResults.length,
+          },
+        );
+      },
     );
     const response = {
       mode,
@@ -342,13 +424,7 @@ export async function executeSearchMemory(
     const truncation = truncateHead(agentText);
     let outputText = truncation.content;
     const visibleRows = Array.isArray(response?.results) ? response.results : [];
-    const details: {
-      truncation?: TruncationResult;
-      emptyMessage?: string;
-      hiddenCount?: number;
-      totalResults?: number;
-      userText?: string;
-    } = {
+    const details: MemoryToolDetails = {
       hiddenCount: 0,
       totalResults: visibleRows.length,
       userText,
@@ -385,11 +461,17 @@ export async function executeSearchMemory(
   }
 }
 
-function renderMemoryResult(result: any, options: any, theme: any, context: any) {
-  const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-  const details = (result.details as any) || {};
+export function formatRenderedMemoryResult(
+  result: any,
+  options: any,
+  theme: any,
+  showImages: boolean,
+  startedAt?: number,
+  endedAt?: number,
+) {
+  const details = (result.details as MemoryToolDetails | undefined) || {};
   const userResult = {
-    content: [{ type: "text", text: String(details.userText || "") }],
+    content: [{ type: "text", text: String(details.userText || getTextOutput(result, showImages) || "") }],
     details: {
       truncation: details.truncation,
       emptyMessage: details.emptyMessage,
@@ -397,7 +479,39 @@ function renderMemoryResult(result: any, options: any, theme: any, context: any)
       totalResults: details.totalResults,
     },
   };
-  text.setText(formatMemoryResult(userResult, options, theme, context.showImages));
+  let text = formatMemoryResult(userResult, options, theme, showImages);
+  if (startedAt !== undefined) {
+    const label = endedAt === undefined ? "Elapsed" : "Took";
+    const duration = theme.fg("muted", `${label} ${formatDuration((endedAt ?? Date.now()) - startedAt)}`);
+    text = text ? `${text}\n${duration}` : `\n${duration}`;
+  }
+  return text;
+}
+
+function renderMemoryResult(result: any, options: any, theme: any, context: any) {
+  const state = context.state as MemoryRenderState;
+  if (state.startedAt !== undefined && options.isPartial && !state.interval) {
+    state.interval = setInterval(() => context.invalidate(), 1000);
+  }
+  if (!options.isPartial || context.isError) {
+    state.endedAt ??= Date.now();
+    if (state.interval) {
+      clearInterval(state.interval);
+      state.interval = undefined;
+    }
+  }
+
+  const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+  text.setText(
+    formatRenderedMemoryResult(
+      result,
+      options,
+      theme,
+      context.showImages,
+      state.startedAt,
+      state.endedAt,
+    ),
+  );
   return text;
 }
 
@@ -421,14 +535,24 @@ export default function memoryExtension(pi: ExtensionAPI) {
       "If you do not have a good search phrase yet, call search_memory without a query to browse recent sessions first.",
     ],
     parameters: searchMemoryParams,
-    execute: async (_toolCallId, params, signal, _onUpdate, ctx) =>
+    execute: async (_toolCallId, params, signal, onUpdate, ctx) =>
       (await executeSearchMemory(
         params,
         ctx,
         pi.getThinkingLevel() as ThinkingLevel,
         signal,
+        onUpdate as any,
       )) as any,
-    renderCall: (args, theme) => new Text(formatSearchMemoryCall(args, theme), 0, 0),
+    renderCall: (args, theme, context) => {
+      const state = context.state as MemoryRenderState;
+      if (context.executionStarted && state.startedAt === undefined) {
+        state.startedAt = Date.now();
+        state.endedAt = undefined;
+      }
+      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(formatSearchMemoryCall(args, theme));
+      return text;
+    },
     renderResult: renderMemoryResult,
   });
 
