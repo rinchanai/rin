@@ -1,15 +1,15 @@
 import path from "node:path";
 
 import {
-  findKoishiMessageByChatAndId,
-  listKoishiMessagesByChatAndDate,
-  saveKoishiMessage,
-  updateKoishiMessage,
-  type StoredKoishiMessage,
+  findChatMessageByChatAndId,
+  listChatMessagesByChatAndDate,
+  saveChatMessage,
+  updateChatMessage,
+  type StoredChatMessage,
 } from "./message-store.js";
 import { parseChatKey } from "./support.js";
 
-export type KoishiChatLogEntry = {
+export type ChatLogEntry = {
   version: 1;
   timestamp: string;
   chatKey: string;
@@ -52,15 +52,15 @@ function inferChatType(parsed: { platform: string; chatId: string }) {
   return "group";
 }
 
-function normalizeStoredText(record: StoredKoishiMessage) {
+function normalizeStoredText(record: StoredChatMessage) {
   return safeString(
     record.text || record.strippedContent || record.rawContent,
   ).trim();
 }
 
 function storedMessageToChatLogEntry(
-  record: StoredKoishiMessage,
-): KoishiChatLogEntry | null {
+  record: StoredChatMessage,
+): ChatLogEntry | null {
   const role = normalizeRole(record.role);
   const text = normalizeStoredText(record);
   if (!role || !text) return null;
@@ -80,8 +80,8 @@ function storedMessageToChatLogEntry(
 }
 
 function buildStoredMessageFromChatLogEntry(
-  input: Omit<KoishiChatLogEntry, "version">,
-): Omit<StoredKoishiMessage, "version" | "recordKey"> | null {
+  input: Omit<ChatLogEntry, "version">,
+): Omit<StoredChatMessage, "version" | "recordKey"> | null {
   const chatKey = safeString(input.chatKey).trim();
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
@@ -113,46 +113,42 @@ function buildStoredMessageFromChatLogEntry(
   };
 }
 
-export function koishiChatLogDir(agentDir: string) {
+export function chatLogDir(agentDir: string) {
   return path.join(
     path.resolve(agentDir),
     "data",
-    "koishi-message-store",
+    "chat-message-store",
     "chat-log-view",
   );
 }
 
-export function koishiChatLogPath(
-  agentDir: string,
-  chatKey: string,
-  date: string,
-) {
+export function chatLogPath(agentDir: string, chatKey: string, date: string) {
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
   const day = normalizeDateOnly(date);
   return parsed.botId
     ? path.join(
-        koishiChatLogDir(agentDir),
+        chatLogDir(agentDir),
         parsed.platform,
         parsed.botId,
         parsed.chatId,
         `${day}.txt`,
       )
     : path.join(
-        koishiChatLogDir(agentDir),
+        chatLogDir(agentDir),
         parsed.platform,
         parsed.chatId,
         `${day}.txt`,
       );
 }
 
-export function appendKoishiChatLog(
+export function appendChatLog(
   agentDir: string,
-  input: Omit<KoishiChatLogEntry, "version">,
+  input: Omit<ChatLogEntry, "version">,
 ) {
   const normalized = buildStoredMessageFromChatLogEntry(input);
   if (!normalized) return null;
-  const existing = findKoishiMessageByChatAndId(
+  const existing = findChatMessageByChatAndId(
     agentDir,
     normalized.chatKey,
     normalized.messageId,
@@ -173,34 +169,30 @@ export function appendKoishiChatLog(
     }).filter(([, value]) => value !== undefined),
   );
   const record = existing
-    ? updateKoishiMessage(
+    ? updateChatMessage(
         agentDir,
         normalized.chatKey,
         normalized.messageId,
         patch,
       ) || existing
-    : saveKoishiMessage(agentDir, normalized).record;
+    : saveChatMessage(agentDir, normalized).record;
   const entry = storedMessageToChatLogEntry(record);
   if (!entry) return null;
   return {
     entry,
-    filePath: koishiChatLogPath(agentDir, entry.chatKey, entry.timestamp),
+    filePath: chatLogPath(agentDir, entry.chatKey, entry.timestamp),
   };
 }
 
-export function readKoishiChatLog(
-  agentDir: string,
-  chatKey: string,
-  date: string,
-) {
-  const filePath = koishiChatLogPath(agentDir, chatKey, date);
-  const entries = listKoishiMessagesByChatAndDate(agentDir, chatKey, date)
+export function readChatLog(agentDir: string, chatKey: string, date: string) {
+  const filePath = chatLogPath(agentDir, chatKey, date);
+  const entries = listChatMessagesByChatAndDate(agentDir, chatKey, date)
     .map((record) => storedMessageToChatLogEntry(record))
-    .filter((item): item is KoishiChatLogEntry => Boolean(item));
+    .filter((item): item is ChatLogEntry => Boolean(item));
   return { filePath, entries };
 }
 
-export function formatKoishiChatLog(entries: KoishiChatLogEntry[]) {
+export function formatChatLog(entries: ChatLogEntry[]) {
   return entries
     .map((entry) => {
       const stamp = safeString(entry.timestamp).trim();

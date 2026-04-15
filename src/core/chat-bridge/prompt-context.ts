@@ -11,12 +11,12 @@ type PromptContextMeta = {
   attachedFiles?: Array<{ name?: string; path?: string }>;
 };
 
-const koishiPromptContextQueue: PromptContextMeta[] = [];
+const chatPromptContextQueue: PromptContextMeta[] = [];
 
-export function enqueueKoishiPromptContext(meta: PromptContextMeta) {
-  koishiPromptContextQueue.push({ ...meta });
+export function enqueueChatPromptContext(meta: PromptContextMeta) {
+  chatPromptContextQueue.push({ ...meta });
 }
 
-export function consumeKoishiPromptContext(): PromptContextMeta | null {
-  return koishiPromptContextQueue.shift() || null;
+export function consumeChatPromptContext(): PromptContextMeta | null {
+  return chatPromptContextQueue.shift() || null;
 }

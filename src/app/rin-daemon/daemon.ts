@@ -12,10 +12,10 @@ import { fileURLToPath } from "node:url";
 import { getBuiltinExtensionPaths } from "../builtin-extensions.js";
 import { startDaemon } from "../../core/rin-daemon/daemon.js";
 import {
-  cleanupOrphanKoishiSidecars,
-  ensureKoishiSidecar,
-  stopKoishiSidecar,
-} from "../../core/rin-koishi/service.js";
+  cleanupOrphanChatSidecars,
+  ensureChatSidecar,
+  stopChatSidecar,
+} from "../../core/chat/service.js";
 import { resolveRuntimeProfile } from "../../core/rin-lib/runtime.js";
 import {
   cleanupOrphanSearxngSidecars,
@@ -27,7 +27,7 @@ async function main() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const ext = path.extname(fileURLToPath(import.meta.url)) || ".js";
   const workerPath = path.join(here, `worker${ext}`);
-  const koishiEntryPath = path.join(here, "..", "rin-koishi", `main${ext}`);
+  const chatEntryPath = path.join(here, "..", "rin-chat", `main${ext}`);
   const runtime = resolveRuntimeProfile();
   const sidecars = [
     {
@@ -40,14 +40,14 @@ async function main() {
     },
     {
       instanceId: `daemon-${process.pid}`,
-      cleanup: () => cleanupOrphanKoishiSidecars(runtime.agentDir),
+      cleanup: () => cleanupOrphanChatSidecars(runtime.agentDir),
       ensure: (instanceId: string) =>
-        ensureKoishiSidecar(runtime.agentDir, {
+        ensureChatSidecar(runtime.agentDir, {
           instanceId,
-          entryPath: koishiEntryPath,
+          entryPath: chatEntryPath,
         }),
       stop: (instanceId: string) =>
-        stopKoishiSidecar(runtime.agentDir, { instanceId }),
+        stopChatSidecar(runtime.agentDir, { instanceId }),
     },
   ];
 

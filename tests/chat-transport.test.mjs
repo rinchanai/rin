@@ -10,14 +10,11 @@ const rootDir = path.resolve(
   "..",
 );
 const transport = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "transport.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "transport.js")).href
 );
 const messageStore = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "message-store.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js"))
+    .href
 );
 
 async function withTempDir(fn) {
@@ -29,7 +26,7 @@ async function withTempDir(fn) {
   }
 }
 
-test("koishi transport buildPromptText keeps the original text intact", () => {
+test("chat transport buildPromptText keeps the original text intact", () => {
   const result = transport.buildPromptText("hello", [
     { kind: "file", path: "/tmp/a.txt", name: "a.txt" },
     { kind: "image", path: "/tmp/b.png", name: "b.png" },
@@ -37,14 +34,14 @@ test("koishi transport buildPromptText keeps the original text intact", () => {
   assert.equal(result, "hello");
 });
 
-test("koishi transport keeps image-only prompts native", () => {
+test("chat transport keeps image-only prompts native", () => {
   const result = transport.buildPromptText("", [
     { kind: "image", path: "/tmp/b.png", name: "b.png" },
   ]);
   assert.equal(result, "");
 });
 
-test("koishi transport restorePromptParts rebuilds image payloads from disk", async () => {
+test("chat transport restorePromptParts rebuilds image payloads from disk", async () => {
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
     await fs.writeFile(imagePath, Buffer.from("abc"));
@@ -66,11 +63,11 @@ test("koishi transport restorePromptParts rebuilds image payloads from disk", as
   });
 });
 
-test("koishi transport forwards mixed parts as a single native koishi send", async () => {
+test("chat transport forwards mixed parts as a single native chat send", async () => {
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
     await fs.writeFile(imagePath, Buffer.from("abc"));
-    messageStore.saveKoishiMessage(dir, {
+    messageStore.saveChatMessage(dir, {
       messageId: "42",
       chatKey: "telegram/1:2",
       platform: "telegram",
@@ -123,7 +120,7 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
     assert.equal(sends[0].content[2].type, "image");
     assert.equal(sends[0].content[3].type, "image");
 
-    const stored = messageStore.getKoishiMessage(dir, "telegram/1:2", "m1");
+    const stored = messageStore.getChatMessage(dir, "telegram/1:2", "m1");
     assert.equal(stored?.text, "intro");
     assert.equal(stored?.replyToMessageId, "42");
     assert.equal(stored?.sessionId, "sess-42");
@@ -131,7 +128,7 @@ test("koishi transport forwards mixed parts as a single native koishi send", asy
   });
 });
 
-test("koishi transport stores explicit session binding for outbox text deliveries", async () => {
+test("chat transport stores explicit session binding for outbox text deliveries", async () => {
   await withTempDir(async (dir) => {
     await transport.sendOutboxPayload(
       {
@@ -162,14 +159,14 @@ test("koishi transport stores explicit session binding for outbox text deliverie
         },
       }),
     );
-    const stored = messageStore.getKoishiMessage(dir, "telegram/1:2", "m-text");
+    const stored = messageStore.getChatMessage(dir, "telegram/1:2", "m-text");
     assert.equal(stored?.text, "scheduled hello");
     assert.equal(stored?.sessionId, "sess-task");
     assert.equal(stored?.sessionFile, "/tmp/task-session.jsonl");
   });
 });
 
-test("koishi transport keeps local image parts as file urls instead of inlining data urls", async () => {
+test("chat transport keeps local image parts as file urls instead of inlining data urls", async () => {
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
     await fs.writeFile(imagePath, Buffer.from("abc"));
@@ -197,7 +194,7 @@ test("koishi transport keeps local image parts as file urls instead of inlining 
   });
 });
 
-test("koishi transport treats empty bot send results as delivery failures", async () => {
+test("chat transport treats empty bot send results as delivery failures", async () => {
   await withTempDir(async (dir) => {
     await assert.rejects(
       transport.sendOutboxPayload(
@@ -232,7 +229,7 @@ test("koishi transport treats empty bot send results as delivery failures", asyn
   });
 });
 
-test("koishi transport prefers internal telegram reaction calls for working reactions", async () => {
+test("chat transport prefers internal telegram reaction calls for working reactions", async () => {
   const calls = [];
   const app = {
     bots: [
@@ -286,7 +283,7 @@ test("koishi transport prefers internal telegram reaction calls for working reac
   ]);
 });
 
-test("koishi transport uses bot reaction helpers for onebot working reactions", async () => {
+test("chat transport uses bot reaction helpers for onebot working reactions", async () => {
   const calls = [];
   const app = {
     bots: [
@@ -339,7 +336,7 @@ test("koishi transport uses bot reaction helpers for onebot working reactions", 
   ]);
 });
 
-test("koishi transport skips onebot working reactions in private chats", async () => {
+test("chat transport skips onebot working reactions in private chats", async () => {
   const app = {
     bots: [
       {

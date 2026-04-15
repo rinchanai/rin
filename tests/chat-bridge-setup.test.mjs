@@ -45,8 +45,8 @@ test("chat bridge setup configures Telegram with minimal polling defaults", asyn
   );
 
   assert.equal(result.adapterKey, "telegram");
-  assert.equal(result.koishiDescription, "Telegram");
-  assert.deepEqual(result.koishiConfig, {
+  assert.equal(result.chatDescription, "Telegram");
+  assert.deepEqual(result.chatConfig, {
     telegram: {
       token: "123456:ABCDEF",
       protocol: "polling",
@@ -65,8 +65,8 @@ test("chat bridge setup configures Slack with socket mode defaults", async () =>
   );
 
   assert.equal(result.adapterKey, "slack");
-  assert.equal(result.koishiDescription, "Slack");
-  assert.deepEqual(result.koishiConfig, {
+  assert.equal(result.chatDescription, "Slack");
+  assert.deepEqual(result.chatConfig, {
     slack: {
       protocol: "ws",
       token: "xapp-demo",
@@ -85,8 +85,8 @@ test("chat bridge setup configures Feishu / Lark with websocket defaults", async
   );
 
   assert.equal(result.adapterKey, "lark");
-  assert.equal(result.koishiDescription, "Feishu / Lark");
-  assert.deepEqual(result.koishiConfig, {
+  assert.equal(result.chatDescription, "Feishu / Lark");
+  assert.deepEqual(result.chatConfig, {
     lark: {
       platform: "feishu",
       protocol: "ws",
@@ -106,8 +106,8 @@ test("chat bridge setup configures Minecraft / QueQiao with websocket defaults",
   );
 
   assert.equal(result.adapterKey, "minecraft");
-  assert.equal(result.koishiDescription, "Minecraft / QueQiao");
-  assert.deepEqual(result.koishiConfig, {
+  assert.equal(result.chatDescription, "Minecraft / QueQiao");
+  assert.deepEqual(result.chatConfig, {
     minecraft: {
       protocol: "ws",
       url: "ws://127.0.0.1:8080",
@@ -128,7 +128,7 @@ test("chat bridge setup can skip the installer yes-no gate", async () => {
   );
 
   assert.equal(result.adapterKey, "telegram");
-  assert.deepEqual(result.koishiConfig, {
+  assert.deepEqual(result.chatConfig, {
     telegram: {
       token: "123456:ABCDEF",
       protocol: "polling",

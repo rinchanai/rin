@@ -7,10 +7,10 @@ import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
-  KoishiChatState,
+  ChatState,
   SavedAttachment,
   extractTextFromContent,
-  markProcessedKoishiMessage,
+  markProcessedChatMessage,
   safeString,
 } from "./chat-helpers.js";
 import {
@@ -33,13 +33,13 @@ function extractFinalTextFromTurnResult(result: any) {
   return "";
 }
 
-export class KoishiChatController {
+export class ChatController {
   app: any;
   chatKey: string;
   dataDir: string;
   agentDir: string;
   statePath: string;
-  state: KoishiChatState;
+  state: ChatState;
   client: RinDaemonFrontendClient | null = null;
   session: RpcInteractiveSession | null = null;
   turnQueue: Promise<void> = Promise.resolve();
@@ -75,7 +75,7 @@ export class KoishiChatController {
     this.deliveryEnabled = deps.deliveryEnabled !== false;
     this.affectChatBinding = deps.affectChatBinding !== false;
     this.statePath = deps.statePath || chatStatePath(dataDir, chatKey);
-    this.state = readJsonFile<KoishiChatState>(this.statePath, { chatKey });
+    this.state = readJsonFile<ChatState>(this.statePath, { chatKey });
     this.logger = deps.logger;
     this.h = deps.h;
     if (!this.state.chatKey) this.state.chatKey = chatKey;
@@ -110,7 +110,7 @@ export class KoishiChatController {
 
   dispose() {
     void this.clearWorkingReaction().catch(() => {});
-    this.failLiveTurn(new Error("koishi_controller_disposed"));
+    this.failLiveTurn(new Error("chat_controller_disposed"));
     void this.session?.disconnect().catch(() => {});
     this.client = null;
     this.session = null;
@@ -139,7 +139,7 @@ export class KoishiChatController {
           this.failLiveTurn(
             error instanceof Error
               ? error
-              : new Error(String(error || "koishi_turn_failed")),
+              : new Error(String(error || "chat_turn_failed")),
           );
         });
         break;
@@ -278,7 +278,7 @@ export class KoishiChatController {
     }
   }
   private startLiveTurn() {
-    if (this.liveTurn) throw new Error("koishi_turn_already_running");
+    if (this.liveTurn) throw new Error("chat_turn_already_running");
     let resolve!: (value: any) => void;
     let reject!: (error: Error) => void;
     const liveTurn = {
@@ -358,7 +358,7 @@ export class KoishiChatController {
     sessionFile?: string;
   }) {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
-    if (!text) throw new Error("koishi_final_assistant_text_missing");
+    if (!text) throw new Error("chat_final_assistant_text_missing");
     return {
       type: "text_delivery" as const,
       chatKey: this.chatKey,
@@ -400,7 +400,7 @@ export class KoishiChatController {
   private markProcessedMessage(messageId?: string) {
     const nextMessageId = safeString(messageId || "").trim();
     if (!nextMessageId) return;
-    markProcessedKoishiMessage(this.agentDir, this.chatKey, nextMessageId, {
+    markProcessedChatMessage(this.agentDir, this.chatKey, nextMessageId, {
       sessionId: this.currentSessionId() || undefined,
       sessionFile:
         safeString(
@@ -455,7 +455,7 @@ export class KoishiChatController {
     };
   }
   private async ensureSessionReady() {
-    if (!this.session) throw new Error("koishi_session_not_connected");
+    if (!this.session) throw new Error("chat_session_not_connected");
     const wanted = this.getRecoverableSessionFile();
     const current = safeString(
       this.session.sessionManager.getSessionFile?.() || "",
@@ -485,7 +485,7 @@ export class KoishiChatController {
     incomingMessageId = "",
   ) {
     await this.connect();
-    if (!this.session) throw new Error("koishi_session_not_connected");
+    if (!this.session) throw new Error("chat_session_not_connected");
     await this.ensureSessionReady();
     try {
       const data: any = await this.session.runCommand(commandLine);
@@ -501,7 +501,7 @@ export class KoishiChatController {
       )
         await this.session.setSessionName(this.chatKey);
       const text = safeString(data?.text || "").trim();
-      if (!text) throw new Error("koishi_command_text_missing");
+      if (!text) throw new Error("chat_command_text_missing");
       this.latestAssistantText = text;
       this.state.pendingDelivery = this.buildAssistantDelivery({
         text,
@@ -514,7 +514,7 @@ export class KoishiChatController {
       return data;
     } catch (error: any) {
       const errorMessage =
-        safeString(error?.message || error).trim() || "koishi_command_failed";
+        safeString(error?.message || error).trim() || "chat_command_failed";
       const text = `Chat bridge error: ${errorMessage}`;
       this.latestAssistantText = text;
       this.state.pendingDelivery = this.buildAssistantDelivery({
@@ -540,7 +540,7 @@ export class KoishiChatController {
     incomingMessageId?: string;
   }) {
     await this.connect();
-    if (!this.session) throw new Error("koishi_session_not_connected");
+    if (!this.session) throw new Error("chat_session_not_connected");
     if (!this.session.isStreaming) {
       return await this.runExclusiveTurn(() =>
         this.runTurnNow(input, "prompt"),
@@ -571,7 +571,7 @@ export class KoishiChatController {
     await this.pollTyping().catch(() => {});
     await this.session.prompt(text, {
       images,
-      source: "koishi-bridge",
+      source: "chat-bridge",
       streamingBehavior: "steer",
     });
     return {
@@ -591,7 +591,7 @@ export class KoishiChatController {
     mode: "prompt" | "steer" = "prompt",
   ) {
     await this.connect();
-    if (!this.session) throw new Error("koishi_session_not_connected");
+    if (!this.session) throw new Error("chat_session_not_connected");
     const wantedSessionFile = safeString(input.sessionFile || "").trim();
     if (wantedSessionFile) await this.resumeSessionFile(wantedSessionFile);
     await this.ensureSessionReady();
@@ -628,14 +628,14 @@ export class KoishiChatController {
     try {
       await this.session.prompt(text, {
         images,
-        source: "koishi-bridge",
+        source: "chat-bridge",
         streamingBehavior: mode === "steer" ? "steer" : undefined,
       });
     } catch (error: any) {
       this.failLiveTurn(
         error instanceof Error
           ? error
-          : new Error(String(error || "koishi_turn_failed")),
+          : new Error(String(error || "chat_turn_failed")),
       );
       throw error;
     }
@@ -731,9 +731,7 @@ export class KoishiChatController {
         safeString(lastUserText).trim() ===
         safeString(buildPromptText(pending.text, pending.attachments)).trim();
       await this.pollTyping().catch(() => {});
-      this.logger.info(
-        `resume interrupted koishi turn chatKey=${this.chatKey}`,
-      );
+      this.logger.info(`resume interrupted chat turn chatKey=${this.chatKey}`);
       if (deliveredCompletedText && !this.session.isStreaming) {
         this.latestAssistantText = deliveredCompletedText;
         this.state.pendingDelivery = this.buildAssistantDelivery({
@@ -753,13 +751,13 @@ export class KoishiChatController {
         await this.pollTyping().catch(() => {});
         try {
           await this.session.resumeInterruptedTurn({
-            source: "koishi-bridge",
+            source: "chat-bridge",
           });
         } catch (error: any) {
           this.failLiveTurn(
             error instanceof Error
               ? error
-              : new Error(String(error || "koishi_turn_failed")),
+              : new Error(String(error || "chat_turn_failed")),
           );
           throw error;
         }
@@ -804,7 +802,7 @@ export class KoishiChatController {
   }
 }
 
-export function loadKoishiSettings(settingsPath: string) {
+export function loadChatSettings(settingsPath: string) {
   const settings: any = readJsonFile(settingsPath, {}) || {};
   if (settings.enableSkillCommands == null) settings.enableSkillCommands = true;
   return settings;

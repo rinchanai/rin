@@ -7,7 +7,7 @@ export async function runDoctor(parsed: ParsedArgs) {
     ? await context.queryDaemonStatus()
     : undefined;
   const webSearchStatus = daemonStatus?.webSearch;
-  const koishiStatus = daemonStatus?.koishi;
+  const chatStatus = daemonStatus?.chat;
   const lines = [
     `targetUser=${context.targetUser}`,
     `installDir=${context.installDir}`,
@@ -29,10 +29,10 @@ export async function runDoctor(parsed: ParsedArgs) {
   }
 
   lines.push(
-    `chatBridgeInstanceCount=${String(Array.isArray(koishiStatus?.instances) ? koishiStatus.instances.length : 0)}`,
+    `chatBridgeInstanceCount=${String(Array.isArray(chatStatus?.instances) ? chatStatus.instances.length : 0)}`,
   );
-  for (const instance of Array.isArray(koishiStatus?.instances)
-    ? koishiStatus.instances
+  for (const instance of Array.isArray(chatStatus?.instances)
+    ? chatStatus.instances
     : []) {
     lines.push(
       `chatBridgeInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} entry=${instance.entryPath || ""}`,

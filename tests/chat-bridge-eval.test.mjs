@@ -18,9 +18,8 @@ const runtimeModule = await import(
     .href
 );
 const messageStore = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "message-store.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js"))
+    .href
 );
 
 async function withTempDir(fn) {
@@ -133,11 +132,7 @@ return {
     assert.equal(sends.length, 1);
     assert.equal(sends[0].chatId, "2");
 
-    const stored = messageStore.getKoishiMessage(
-      agentDir,
-      "telegram/1:2",
-      "m1",
-    );
+    const stored = messageStore.getChatMessage(agentDir, "telegram/1:2", "m1");
     assert.equal(stored?.text, "hello 7");
     assert.equal(stored?.sessionId, "sess-1");
     assert.equal(stored?.sessionFile, "/tmp/sess-1.jsonl");

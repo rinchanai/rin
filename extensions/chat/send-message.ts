@@ -9,7 +9,7 @@ import { Type } from "@sinclair/typebox";
 import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import { truncateToVisualLines } from "../../third_party/pi-coding-agent/src/modes/interactive/components/visual-truncate.js";
 
-type KoishiMessagePart =
+type ChatMessagePart =
   | {
       type: "text";
       text: string;
@@ -40,7 +40,7 @@ type KoishiMessagePart =
 type SendMessageDetails = {
   chatKey: string;
   requestId: string;
-  parts: KoishiMessagePart[];
+  parts: ChatMessagePart[];
   agentText?: string;
   userText?: string;
   fullOutputPath?: string;
@@ -69,19 +69,19 @@ class SendMessageResultRenderComponent extends Container {
 
 const SEND_MESSAGE_PREVIEW_LINES = 5;
 
-async function loadKoishiRpcModule() {
+async function loadChatRpcModule() {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-koishi", "rpc.js"),
-    path.join(root, "dist", "core", "rin-koishi", "rpc.js"),
+    path.join(root, "core", "chat", "rpc.js"),
+    path.join(root, "dist", "core", "chat", "rpc.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
-    throw new Error(`rin_koishi_rpc_not_found:${candidates.join(" | ")}`);
+    throw new Error(`rin_chat_rpc_not_found:${candidates.join(" | ")}`);
   }
   return await import(pathToFileURL(distPath).href);
 }
@@ -132,8 +132,8 @@ function safeString(value: unknown) {
   return String(value);
 }
 
-function normalizeParts(parts: any[]): KoishiMessagePart[] {
-  const normalized: KoishiMessagePart[] = [];
+function normalizeParts(parts: any[]): ChatMessagePart[] {
+  const normalized: ChatMessagePart[] = [];
   for (const raw of parts) {
     const type = safeString(raw?.type).trim();
     if (type === "text") {
@@ -187,9 +187,7 @@ function normalizeParts(parts: any[]): KoishiMessagePart[] {
       }
       continue;
     }
-    throw new Error(
-      `chat_send_message_unsupported_part:${type || "unknown"}`,
-    );
+    throw new Error(`chat_send_message_unsupported_part:${type || "unknown"}`);
   }
   return normalized;
 }
@@ -198,7 +196,7 @@ function isChatKey(value: string) {
   return /^[^/:]+(?:\/[^:]+)?:.+$/.test(value.trim());
 }
 
-function formatPartForLog(part: KoishiMessagePart) {
+function formatPartForLog(part: ChatMessagePart) {
   if (part.type === "text") return `text chars=${part.text.length}`;
   if (part.type === "at") return `at id=${part.id}`;
   if (part.type === "quote") return `quote id=${part.id}`;
@@ -261,7 +259,11 @@ function rebuildSendMessageResultRenderComponent(
             const hint =
               theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
               ` ${keyHint("app.tools.expand" as any, "to expand")})`;
-            return ["", truncateToWidth(hint, width, "..."), ...(state.cachedLines ?? [])];
+            return [
+              "",
+              truncateToWidth(hint, width, "..."),
+              ...(state.cachedLines ?? []),
+            ];
           }
           return ["", ...(state.cachedLines ?? [])];
         },
@@ -287,12 +289,16 @@ function rebuildSendMessageResultRenderComponent(
     const label = endedAt === undefined ? "Elapsed" : "Took";
     const endTime = endedAt ?? Date.now();
     component.addChild(
-      new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0),
+      new Text(
+        `\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`,
+        0,
+        0,
+      ),
     );
   }
 }
 
-export default function koishiSendMessageExtension(pi: ExtensionAPI) {
+export default function chatSendMessageExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "send_chat_msg",
     label: "Send Chat Message",
@@ -334,8 +340,8 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
       const agentDir = getAgentDir();
       const requestId =
         safeString(toolCallId).trim() || `chat_${Date.now().toString(36)}`;
-      const { deliverKoishiRpcPayload } = await loadKoishiRpcModule();
-      await deliverKoishiRpcPayload(agentDir, {
+      const { deliverChatRpcPayload } = await loadChatRpcModule();
+      await deliverChatRpcPayload(agentDir, {
         type: "parts_delivery",
         createdAt: new Date().toISOString(),
         requestId,
@@ -353,7 +359,9 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         `Sent message to: ${chatKey}`,
         `Request ID: ${requestId}`,
         `Parts: ${parts.length}`,
-        ...parts.map((part, index) => `${index + 1}. ${formatPartForLog(part)}`),
+        ...parts.map(
+          (part, index) => `${index + 1}. ${formatPartForLog(part)}`,
+        ),
       ].join("\n");
 
       return {
@@ -373,13 +381,18 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
         state.startedAt = Date.now();
         state.endedAt = undefined;
       }
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       text.setText(formatSendMessageCall(args, theme));
       return text;
     },
     renderResult(result, options, theme, context) {
       const state = context.state as SendMessageRenderState;
-      if (state.startedAt !== undefined && options.isPartial && !state.interval) {
+      if (
+        state.startedAt !== undefined &&
+        options.isPartial &&
+        !state.interval
+      ) {
         state.interval = setInterval(() => context.invalidate(), 1000);
       }
       if (!options.isPartial || context.isError) {
@@ -392,11 +405,14 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
 
       const details = result.details as SendMessageDetails | undefined;
       const fallback =
-        result.content?.[0]?.type === "text" ? result.content[0].text : "(no output)";
+        result.content?.[0]?.type === "text"
+          ? result.content[0].text
+          : "(no output)";
       const outputText = String(details?.userText || fallback);
       const component =
-        (context.lastComponent as SendMessageResultRenderComponent | undefined) ??
-        new SendMessageResultRenderComponent();
+        (context.lastComponent as
+          | SendMessageResultRenderComponent
+          | undefined) ?? new SendMessageResultRenderComponent();
       rebuildSendMessageResultRenderComponent(
         component,
         outputText,

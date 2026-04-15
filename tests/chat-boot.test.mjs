@@ -10,12 +10,11 @@ const rootDir = path.resolve(
   "..",
 );
 const boot = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-koishi", "boot.js"))
-    .href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "boot.js")).href
 );
 
-test("koishi boot exposes the dedicated chat command registry", () => {
-  const rows = boot.getKoishiChatCommandRows();
+test("chat boot exposes the dedicated chat command registry", () => {
+  const rows = boot.getChatCommandRows();
   assert.equal(rows[0].name, "help");
   assert.deepEqual(
     rows.map((row) => row.name),
@@ -25,7 +24,7 @@ test("koishi boot exposes the dedicated chat command registry", () => {
 });
 
 async function withTempDir(fn) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-koishi-boot-test-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-boot-test-"));
   try {
     await fn(dir);
   } finally {
@@ -33,7 +32,7 @@ async function withTempDir(fn) {
   }
 }
 
-test("koishi boot clears common telegram scopes before syncing default commands", async () => {
+test("chat boot clears common telegram scopes before syncing default commands", async () => {
   const deletes = [];
   const sets = [];
   const bot = {
@@ -49,14 +48,17 @@ test("koishi boot clears common telegram scopes before syncing default commands"
     },
   };
 
-  const rows = boot.getKoishiChatCommandRows();
+  const rows = boot.getChatCommandRows();
 
   assert.deepEqual(boot.buildTelegramCommandPayload(rows), [
     { command: "help", description: "Show available commands" },
     { command: "abort", description: "Abort current operation" },
     { command: "new", description: "Start a new session" },
     { command: "compact", description: "Compact the current session" },
-    { command: "reload", description: "Reload extensions, prompts, skills, and themes" },
+    {
+      command: "reload",
+      description: "Reload extensions, prompts, skills, and themes",
+    },
     { command: "session", description: "Show current session status" },
     { command: "resume", description: "Resume a previous session" },
     { command: "model", description: "Show or change the current model" },
@@ -85,7 +87,10 @@ test("koishi boot clears common telegram scopes before syncing default commands"
         { command: "abort", description: "Abort current operation" },
         { command: "new", description: "Start a new session" },
         { command: "compact", description: "Compact the current session" },
-        { command: "reload", description: "Reload extensions, prompts, skills, and themes" },
+        {
+          command: "reload",
+          description: "Reload extensions, prompts, skills, and themes",
+        },
         { command: "session", description: "Show current session status" },
         { command: "resume", description: "Resume a previous session" },
         { command: "model", description: "Show or change the current model" },
@@ -94,7 +99,7 @@ test("koishi boot clears common telegram scopes before syncing default commands"
   ]);
 });
 
-test("koishi boot claims outbox files before sending so concurrent drains do not duplicate delivery", async () => {
+test("chat boot claims outbox files before sending so concurrent drains do not duplicate delivery", async () => {
   await withTempDir(async (agentDir) => {
     const outboxDir = path.join(agentDir, "data", "chat-outbox");
     await fs.mkdir(outboxDir, { recursive: true });
@@ -131,8 +136,8 @@ test("koishi boot claims outbox files before sending so concurrent drains do not
     };
 
     await Promise.all([
-      boot.drainKoishiOutbox(app, agentDir, h, { warn() {} }),
-      boot.drainKoishiOutbox(app, agentDir, h, { warn() {} }),
+      boot.drainChatOutbox(app, agentDir, h, { warn() {} }),
+      boot.drainChatOutbox(app, agentDir, h, { warn() {} }),
     ]);
 
     assert.equal(sends.length, 1);

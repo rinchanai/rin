@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "../rin-lib/common.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
-import { getKoishiSidecarStatus } from "../rin-koishi/service.js";
+import { getChatSidecarStatus } from "../chat/service.js";
 import { emptySessionState, response } from "../rin-lib/rpc.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
@@ -205,7 +205,7 @@ export async function startDaemon(options = {}) {
                 ...workerPool.getStatusSnapshot(),
                 taskCount: cronScheduler.listTasks().length,
                 webSearch: getSearxngSidecarStatus(runtime.agentDir),
-                koishi: getKoishiSidecarStatus(runtime.agentDir),
+                chat: getChatSidecarStatus(runtime.agentDir),
             }));
             return true;
         }

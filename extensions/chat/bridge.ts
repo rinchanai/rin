@@ -23,19 +23,19 @@ import { getTextOutput } from "../../third_party/pi-coding-agent/src/core/tools/
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
 
-async function loadKoishiRpcModule() {
+async function loadChatRpcModule() {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "..",
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-koishi", "rpc.js"),
-    path.join(root, "dist", "core", "rin-koishi", "rpc.js"),
+    path.join(root, "core", "chat", "rpc.js"),
+    path.join(root, "dist", "core", "chat", "rpc.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
-    throw new Error(`rin_koishi_rpc_not_found:${candidates.join(" | ")}`);
+    throw new Error(`rin_chat_rpc_not_found:${candidates.join(" | ")}`);
   }
   return await import(pathToFileURL(distPath).href);
 }
@@ -238,8 +238,8 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       const currentChatKey = parseChatKey(
         ctx.sessionManager?.getSessionName?.() || "",
       );
-      const { evalKoishiBridgePayload } = await loadKoishiRpcModule();
-      const result = await evalKoishiBridgePayload(agentDir, {
+      const { evalChatBridgePayload } = await loadChatRpcModule();
+      const result = await evalChatBridgePayload(agentDir, {
         createdAt: new Date().toISOString(),
         requestId,
         currentChatKey,

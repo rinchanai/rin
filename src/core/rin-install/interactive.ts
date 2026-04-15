@@ -236,12 +236,12 @@ export async function promptProviderSetup(
   return { provider, modelId, thinkingLevel, authResult };
 }
 
-export async function promptKoishiSetup(prompt: PromptApi) {
+export async function promptChatSetup(prompt: PromptApi) {
   const result = await promptChatBridgeSetup(prompt);
   return {
-    koishiDescription: result.koishiDescription,
-    koishiDetail: result.koishiDetail,
-    koishiConfig: result.koishiConfig,
+    chatDescription: result.chatDescription,
+    chatDetail: result.chatDetail,
+    chatConfig: result.chatConfig,
   };
 }
 
@@ -274,8 +274,8 @@ export function buildInstallPlanText(options: {
   modelId: string;
   thinkingLevel: string;
   authAvailable: boolean;
-  koishiDescription: string;
-  koishiDetail: string;
+  chatDescription: string;
+  chatDetail: string;
 }) {
   const {
     currentUser,
@@ -285,8 +285,8 @@ export function buildInstallPlanText(options: {
     modelId,
     thinkingLevel,
     authAvailable,
-    koishiDescription,
-    koishiDetail,
+    chatDescription,
+    chatDetail,
   } = options;
   return [
     `Target daemon user: ${targetUser}`,
@@ -295,8 +295,8 @@ export function buildInstallPlanText(options: {
     `Model: ${modelId || "skipped for now"}`,
     `Thinking level: ${thinkingLevel || "skipped for now"}`,
     `Model auth status: ${provider ? (authAvailable ? "ready" : "needs auth/config later") : "skipped for now"}`,
-    `Chat bridge: ${koishiDescription}`,
-    koishiDetail,
+    `Chat bridge: ${chatDescription}`,
+    chatDetail,
   ]
     .filter(Boolean)
     .join("\n");

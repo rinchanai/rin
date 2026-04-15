@@ -9,19 +9,18 @@ const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
 );
-const { KoishiChatController } = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "controller.js"),
-  ).href
+const { ChatController } = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js"))
+    .href
 );
 
 async function createController(chatKey = "telegram/1:2") {
   const tempDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "rin-koishi-controller-"),
+    path.join(os.tmpdir(), "rin-chat-controller-"),
   );
   const dataDir = path.join(tempDir, "data");
   await fs.mkdir(dataDir, { recursive: true });
-  const controller = new KoishiChatController({}, dataDir, chatKey, {
+  const controller = new ChatController({}, dataDir, chatKey, {
     logger: { info() {}, warn() {} },
     h: {
       text(content) {
@@ -50,7 +49,7 @@ async function createController(chatKey = "telegram/1:2") {
   return controller;
 }
 
-test("koishi controller uses RpcInteractiveSession session bootstrap before first command on a fresh chat", async () => {
+test("chat controller uses RpcInteractiveSession session bootstrap before first command on a fresh chat", async () => {
   const controller = await createController();
   const calls = [];
   const namedSessions = [];
@@ -88,7 +87,7 @@ test("koishi controller uses RpcInteractiveSession session bootstrap before firs
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
 
-test("koishi controller delivers a visible command error instead of failing silently", async () => {
+test("chat controller delivers a visible command error instead of failing silently", async () => {
   const controller = await createController();
   const deliveries = [];
   controller.commitPendingDelivery = async function () {
@@ -116,7 +115,7 @@ test("koishi controller delivers a visible command error instead of failing sile
   assert.deepEqual(deliveries, ["Chat bridge error: boom"]);
 });
 
-test("koishi controller polls typing and rotating reactions while a chat turn is still pending", async () => {
+test("chat controller polls typing and rotating reactions while a chat turn is still pending", async () => {
   const controller = await createController("telegram/1:2");
   const actions = [];
   const reactions = [];
@@ -163,7 +162,7 @@ test("koishi controller polls typing and rotating reactions while a chat turn is
   assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
 });
 
-test("koishi controller uses a fixed Working notice policy for onebot private chats", async () => {
+test("chat controller uses a fixed Working notice policy for onebot private chats", async () => {
   const controller = await createController("onebot/1:private:2");
   const deliveries = [];
   controller.app = {
@@ -197,7 +196,7 @@ test("koishi controller uses a fixed Working notice policy for onebot private ch
   assert.equal(deliveries[0].content[1].attrs.content, "Working……");
 });
 
-test("koishi controller uses RpcInteractiveSession prompt path for chat turns", async () => {
+test("chat controller uses RpcInteractiveSession prompt path for chat turns", async () => {
   const controller = await createController("telegram/9:9");
   const calls = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -245,7 +244,7 @@ test("koishi controller uses RpcInteractiveSession prompt path for chat turns", 
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });
 
-test("koishi controller resolves final output from session lifecycle for prompt turns", async () => {
+test("chat controller resolves final output from session lifecycle for prompt turns", async () => {
   const controller = await createController("telegram/9:10");
   const delivered = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -291,7 +290,7 @@ test("koishi controller resolves final output from session lifecycle for prompt 
   assert.deepEqual(delivered, ["prompt final text"]);
 });
 
-test("koishi controller reattaches saved session file before bootstrapping a detached session", async () => {
+test("chat controller reattaches saved session file before bootstrapping a detached session", async () => {
   const controller = await createController("telegram/7:7");
   const calls = [];
   const savedSessionFile = path.join(controller.dataDir, "saved-chat.jsonl");
@@ -320,7 +319,7 @@ test("koishi controller reattaches saved session file before bootstrapping a det
   assert.equal(controller.state.piSessionFile, savedSessionFile);
 });
 
-test("koishi controller reattaches idle saved sessions during recovery so chat workers stay attached", async () => {
+test("chat controller reattaches idle saved sessions during recovery so chat workers stay attached", async () => {
   const controller = await createController("telegram/7:7");
   const calls = [];
   const savedSessionFile = path.join(controller.dataDir, "saved-chat.jsonl");
@@ -344,7 +343,7 @@ test("koishi controller reattaches idle saved sessions during recovery so chat w
   assert.deepEqual(calls, [`switch:${savedSessionFile}`]);
 });
 
-test("koishi controller self-heals missing saved session binding before a chat turn", async () => {
+test("chat controller self-heals missing saved session binding before a chat turn", async () => {
   const controller = await createController("telegram/7:8");
   const calls = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -401,7 +400,7 @@ test("koishi controller self-heals missing saved session binding before a chat t
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
 
-test("koishi controller clears its working reaction after final delivery", async () => {
+test("chat controller clears its working reaction after final delivery", async () => {
   const controller = await createController("telegram/1:2");
   const reactions = [];
   controller.app = {
@@ -436,7 +435,7 @@ test("koishi controller clears its working reaction after final delivery", async
   assert.deepEqual(reactions, [["2", "m1", "🌗", "1"]]);
 });
 
-test("koishi controller refreshes session messages before resolving a final chat reply", async () => {
+test("chat controller refreshes session messages before resolving a final chat reply", async () => {
   const controller = await createController("telegram/1:4");
   const delivered = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -483,7 +482,7 @@ test("koishi controller refreshes session messages before resolving a final chat
   assert.deepEqual(delivered, ["refreshed final text"]);
 });
 
-test("koishi controller takes final chat text from session lifecycle instead of rpc completion payload", async () => {
+test("chat controller takes final chat text from session lifecycle instead of rpc completion payload", async () => {
   const controller = await createController("telegram/1:3");
   const delivered = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -536,7 +535,7 @@ test("koishi controller takes final chat text from session lifecycle instead of 
   assert.deepEqual(delivered, ["session final text"]);
 });
 
-test("koishi controller rejects the owned turn on connection loss", async () => {
+test("chat controller rejects the owned turn on connection loss", async () => {
   const controller = await createController("telegram/1:2");
   controller.session = { isStreaming: true };
   const liveTurn = controller.startLiveTurn();
@@ -545,7 +544,7 @@ test("koishi controller rejects the owned turn on connection loss", async () => 
   assert.equal(controller.liveTurn, null);
 });
 
-test("koishi controller steers an active chat turn instead of queueing a replacement", async () => {
+test("chat controller steers an active chat turn instead of queueing a replacement", async () => {
   const controller = await createController("telegram/1:2");
   const calls = [];
   controller.session = {
@@ -592,7 +591,7 @@ test("koishi controller steers an active chat turn instead of queueing a replace
   assert.equal(result?.steered, true);
 });
 
-test("koishi controller still steers when the attached session is streaming without a local live turn", async () => {
+test("chat controller still steers when the attached session is streaming without a local live turn", async () => {
   const controller = await createController("telegram/1:2");
   const calls = [];
   controller.session = {
@@ -631,7 +630,7 @@ test("koishi controller still steers when the attached session is streaming with
   assert.equal(result?.steered, true);
 });
 
-test("koishi controller serializes chat turns instead of replacing the active one", async () => {
+test("chat controller serializes chat turns instead of replacing the active one", async () => {
   const controller = await createController("telegram/1:2");
   const order = [];
   let finishFirst;
@@ -709,7 +708,7 @@ test("koishi controller serializes chat turns instead of replacing the active on
   ]);
 });
 
-test("koishi controller delivers completed assistant text during recovery when processing state is stale", async () => {
+test("chat controller delivers completed assistant text during recovery when processing state is stale", async () => {
   const controller = await createController("telegram/1:2");
   const delivered = [];
   controller.state.processing = {
@@ -748,7 +747,7 @@ test("koishi controller delivers completed assistant text during recovery when p
   ]);
 });
 
-test("koishi controller retries persisted final reply delivery on recovery", async () => {
+test("chat controller retries persisted final reply delivery on recovery", async () => {
   const controller = await createController("telegram/1:2");
   const sends = [];
   controller.app = {
@@ -818,13 +817,13 @@ test("koishi controller retries persisted final reply delivery on recovery", asy
   assert.equal(sends.length, 1);
 });
 
-test("koishi controller keeps cron turns off the chat mainline while preserving the real delivery chatKey", async () => {
+test("chat controller keeps cron turns off the chat mainline while preserving the real delivery chatKey", async () => {
   const tempDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "rin-koishi-controller-detached-"),
+    path.join(os.tmpdir(), "rin-chat-controller-detached-"),
   );
   const dataDir = path.join(tempDir, "data");
   await fs.mkdir(dataDir, { recursive: true });
-  const controller = new KoishiChatController(
+  const controller = new ChatController(
     {},
     dataDir,
     "onebot/2301401877:1090441185",

@@ -65,7 +65,7 @@ test("persist reconcileInstallerManifest writes manifest with expected fields", 
         provider: "openai",
         modelId: "gpt",
         thinkingLevel: "medium",
-        koishiConfig: { telegram: { token: "x" } },
+        chatConfig: { telegram: { token: "x" } },
         elevated: false,
       },
       {

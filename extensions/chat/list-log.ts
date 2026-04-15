@@ -26,12 +26,12 @@ async function loadChatLogModule() {
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-koishi", "chat-log.js"),
-    path.join(root, "dist", "core", "rin-koishi", "chat-log.js"),
+    path.join(root, "core", "chat", "chat-log.js"),
+    path.join(root, "dist", "core", "chat", "chat-log.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
-    throw new Error(`rin_koishi_chat_log_not_found:${candidates.join(" | ")}`);
+    throw new Error(`rin_chat_log_not_found:${candidates.join(" | ")}`);
   }
   return await import(pathToFileURL(distPath).href);
 }
@@ -107,7 +107,7 @@ function formatListChatLogResult(
   return text;
 }
 
-export default function koishiListChatLogExtension(pi: ExtensionAPI) {
+export default function chatListChatLogExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "list_chat_log",
     label: "List Chat Log",
@@ -121,19 +121,20 @@ export default function koishiListChatLogExtension(pi: ExtensionAPI) {
       }),
       date: Type.Optional(
         Type.String({
-          description: "Optional date to inspect in YYYY-MM-DD format. Defaults to today.",
+          description:
+            "Optional date to inspect in YYYY-MM-DD format. Defaults to today.",
         }),
       ),
     }),
     execute: async (_toolCallId, params) => {
       const chatKey = safeString((params as any)?.chatKey).trim();
-      const date = safeString((params as any)?.date).trim() || localDateString();
+      const date =
+        safeString((params as any)?.date).trim() || localDateString();
       if (!chatKey) throw new Error("chat_list_log_chatKey_required");
 
       const agentDir = getAgentDir();
-      const { readKoishiChatLog, formatKoishiChatLog } =
-        await loadChatLogModule();
-      const { filePath, entries } = readKoishiChatLog(agentDir, chatKey, date);
+      const { readChatLog, formatChatLog } = await loadChatLogModule();
+      const { filePath, entries } = readChatLog(agentDir, chatKey, date);
       const text = entries.length
         ? [
             `chatKey=${chatKey}`,
@@ -141,7 +142,7 @@ export default function koishiListChatLogExtension(pi: ExtensionAPI) {
             `path=${filePath}`,
             `count=${entries.length}`,
             "",
-            formatKoishiChatLog(entries),
+            formatChatLog(entries),
           ].join("\n")
         : `No chat log found\nchatKey=${chatKey}\ndate=${date}\npath=${filePath}`;
       const truncation = truncateHead(text);

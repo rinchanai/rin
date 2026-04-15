@@ -8,10 +8,10 @@ import {
   fileNameFromUrl,
 } from "./support.js";
 import {
-  findKoishiMessageByChatAndId,
+  findChatMessageByChatAndId,
   normalizeElementSummary,
-  saveKoishiMessage,
-  updateKoishiMessage,
+  saveChatMessage,
+  updateChatMessage,
 } from "./message-store.js";
 
 export type SavedAttachment = {
@@ -29,7 +29,7 @@ export type InboundAttachmentFailure = {
   detail?: string;
 };
 
-export type KoishiChatState = {
+export type ChatState = {
   chatKey: string;
   piSessionFile?: string;
   processing?: {
@@ -50,8 +50,8 @@ export type KoishiChatState = {
   };
 };
 
-export type KoishiBridgePromptMeta = {
-  source: "koishi-bridge";
+export type ChatBridgePromptMeta = {
+  source: "chat-bridge";
   sentAt?: number;
   chatKey?: string;
   chatName?: string;
@@ -339,7 +339,7 @@ export function persistInboundMessage(
   const messageId = pickMessageId(session);
   if (!chatKey || !messageId) return null;
   const userId = pickUserId(session);
-  return saveKoishiMessage(agentDir, {
+  return saveChatMessage(agentDir, {
     messageId,
     role: "user",
     replyToMessageId: pickReplyToMessageId(session) || undefined,
@@ -374,7 +374,7 @@ export function lookupReplyMessage(
   const nextReplyToMessageId = safeString(replyToMessageId).trim();
   if (!nextChatKey || !nextReplyToMessageId) return null;
   return (
-    findKoishiMessageByChatAndId(agentDir, nextChatKey, nextReplyToMessageId) ||
+    findChatMessageByChatAndId(agentDir, nextChatKey, nextReplyToMessageId) ||
     null
   );
 }
@@ -395,13 +395,13 @@ export function lookupReplySession(
   };
 }
 
-export function markProcessedKoishiMessage(
+export function markProcessedChatMessage(
   agentDir: string,
   chatKey: string,
   messageId: string,
   update: Record<string, unknown>,
 ) {
-  updateKoishiMessage(agentDir, chatKey, messageId, update);
+  updateChatMessage(agentDir, chatKey, messageId, update);
 }
 
 export async function persistImageParts(

@@ -6,29 +6,30 @@ import { listJsonFiles, safeString } from "./chat-helpers.js";
 import { readJsonFile } from "./support.js";
 import { sendOutboxPayload } from "./transport.js";
 
-export type KoishiChatCommandRow = {
+export type ChatCommandRow = {
   name: string;
   description?: string;
 };
 
-const KOISHI_CHAT_COMMAND_ROWS: readonly KoishiChatCommandRow[] = [
+const KOISHI_CHAT_COMMAND_ROWS: readonly ChatCommandRow[] = [
   { name: "help", description: "Show available commands" },
   { name: "abort", description: "Abort current operation" },
   { name: "new", description: "Start a new session" },
   { name: "compact", description: "Compact the current session" },
-  { name: "reload", description: "Reload extensions, prompts, skills, and themes" },
+  {
+    name: "reload",
+    description: "Reload extensions, prompts, skills, and themes",
+  },
   { name: "session", description: "Show current session status" },
   { name: "resume", description: "Resume a previous session" },
   { name: "model", description: "Show or change the current model" },
 ];
 
-export function getKoishiChatCommandRows(): KoishiChatCommandRow[] {
+export function getChatCommandRows(): ChatCommandRow[] {
   return KOISHI_CHAT_COMMAND_ROWS.map((item) => ({ ...item }));
 }
 
-export function buildTelegramCommandPayload(
-  commandRows: KoishiChatCommandRow[],
-) {
+export function buildTelegramCommandPayload(commandRows: ChatCommandRow[]) {
   const payload: Array<{ command: string; description: string }> = [];
   const seen = new Set<string>();
 
@@ -60,7 +61,7 @@ export function buildTelegramCommandClearScopes() {
 export async function syncTelegramCommands(
   app: any,
   logger: any,
-  commandRows: KoishiChatCommandRow[] = [],
+  commandRows: ChatCommandRow[] = [],
 ) {
   const commander = app.$commander;
   const payload = buildTelegramCommandPayload(commandRows);
@@ -91,13 +92,13 @@ export async function syncTelegramCommands(
       }
     } catch (error: any) {
       logger.warn(
-        `koishi command sync failed platform=${safeString(bot?.platform)} selfId=${safeString(bot?.selfId)} err=${safeString(error?.message || error)}`,
+        `chat command sync failed platform=${safeString(bot?.platform)} selfId=${safeString(bot?.selfId)} err=${safeString(error?.message || error)}`,
       );
     }
   }
 }
 
-export async function drainKoishiOutbox(
+export async function drainChatOutbox(
   app: any,
   agentDir: string,
   h: any,
@@ -122,7 +123,7 @@ export async function drainKoishiOutbox(
       fs.rmSync(claimedPath, { force: true });
     } catch (error: any) {
       logger.warn(
-        `koishi outbox failed file=${claimedPath || filePath} err=${safeString(error?.message || error)}`,
+        `chat outbox failed file=${claimedPath || filePath} err=${safeString(error?.message || error)}`,
       );
       try {
         fs.mkdirSync(failedDir, { recursive: true });

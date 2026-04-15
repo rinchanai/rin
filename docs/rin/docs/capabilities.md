@@ -84,16 +84,16 @@ Rin can bridge chat platforms through a framework-neutral chat bridge layer. The
 
 ### Custom chat bridge adapters
 
-The product-facing name is chat bridge. The internal runtime config key currently remains `settings.json -> koishi` for compatibility.
+The product-facing name is chat bridge. The internal runtime config key currently remains `settings.json -> chat` for compatibility.
 
 If a user wants a custom chat bridge adapter that Rin does not ship as a built-in guided option, use the internal config shape below:
 
 ```json
 {
-  "koishi": {
+  "chat": {
     "customAdapters": [
       {
-        "packageName": "koishi-plugin-adapter-example",
+        "packageName": "chat-plugin-adapter-example",
         "version": "latest",
         "pluginKey": "adapter-example",
         "config": {

@@ -1,1 +1,1 @@
-export { canAccessAgentInput, canRunCommand } from "../rin-koishi/support.js";
+export { canAccessAgentInput, canRunCommand } from "../chat/support.js";

@@ -38,8 +38,8 @@ test("installer interactive helpers describe dir state and plan text", () => {
     modelId: "gpt-5",
     thinkingLevel: "medium",
     authAvailable: true,
-    koishiDescription: "telegram",
-    koishiDetail: "Chat bridge token: [saved]",
+    chatDescription: "telegram",
+    chatDetail: "Chat bridge token: [saved]",
   });
   assert.ok(plan.includes("Target daemon user: bob"));
   assert.ok(plan.includes("Model auth status: ready"));

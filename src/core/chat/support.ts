@@ -30,7 +30,7 @@ export function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-function normalizeKoishiAdapterConfig(
+function normalizeChatAdapterConfig(
   value: any,
   defaults: Record<string, any> = {},
 ) {
@@ -113,7 +113,7 @@ function normalizeAdapterEntries(
   return rawEntries
     .filter((entry) => entry.config.enabled !== false)
     .map((entry) => {
-      const config = normalizeKoishiAdapterConfig(entry.config, defaults);
+      const config = normalizeChatAdapterConfig(entry.config, defaults);
       delete (config as any).name;
       delete (config as any).owners;
       delete (config as any).ownerUserIds;
@@ -138,12 +138,15 @@ function applyAdapterPlugins(
   });
 }
 
-function normalizeCustomKoishiAdapters(settings: any) {
-  const koishi =
-    settings && typeof settings.koishi === "object" ? settings.koishi : {};
-  const items = Array.isArray(koishi?.customAdapters)
-    ? koishi.customAdapters
-    : [];
+function chatConfigRoot(settings: any) {
+  if (settings && typeof settings.chat === "object") return settings.chat;
+  if (settings && typeof settings.koishi === "object") return settings.koishi;
+  return {};
+}
+
+function normalizeCustomChatAdapters(settings: any) {
+  const chat = chatConfigRoot(settings);
+  const items = Array.isArray(chat?.customAdapters) ? chat.customAdapters : [];
   return items
     .map((item) => {
       const adapter =
@@ -179,7 +182,7 @@ function normalizeCustomKoishiAdapters(settings: any) {
     );
 }
 
-export function buildKoishiConfigFromSettings(settings: any) {
+export function buildChatConfigFromSettings(settings: any) {
   const config = {
     name: "rin",
     prefix: ["/"],
@@ -190,20 +193,19 @@ export function buildKoishiConfigFromSettings(settings: any) {
     } as Record<string, any>,
   };
 
-  const koishi =
-    settings && typeof settings.koishi === "object" ? settings.koishi : {};
+  const chat = chatConfigRoot(settings);
 
   for (const adapter of listChatBridgeAdapterSpecs()) {
     applyAdapterPlugins(
       config.plugins,
       adapter.pluginKey,
-      koishi?.[adapter.key],
+      chat?.[adapter.key],
       adapter.defaults,
       adapter.key,
     );
   }
 
-  for (const adapter of normalizeCustomKoishiAdapters(settings)) {
+  for (const adapter of normalizeCustomChatAdapters(settings)) {
     applyAdapterPlugins(
       config.plugins,
       adapter.pluginKey,
@@ -216,7 +218,7 @@ export function buildKoishiConfigFromSettings(settings: any) {
   return config;
 }
 
-export type KoishiRuntimeAdapterEntry = {
+export type ChatRuntimeAdapterEntry = {
   key: string;
   name: string;
   config: Record<string, any>;
@@ -224,14 +226,13 @@ export type KoishiRuntimeAdapterEntry = {
   packageName?: string;
 };
 
-export function listKoishiRuntimeAdapterEntries(settings: any) {
-  const koishi =
-    settings && typeof settings.koishi === "object" ? settings.koishi : {};
-  const entries: KoishiRuntimeAdapterEntry[] = [];
+export function listChatRuntimeAdapterEntries(settings: any) {
+  const chat = chatConfigRoot(settings);
+  const entries: ChatRuntimeAdapterEntry[] = [];
 
   for (const adapter of listChatBridgeAdapterSpecs()) {
     for (const entry of normalizeAdapterEntries(
-      koishi?.[adapter.key],
+      chat?.[adapter.key],
       adapter.defaults,
       adapter.key,
     )) {
@@ -244,7 +245,7 @@ export function listKoishiRuntimeAdapterEntries(settings: any) {
     }
   }
 
-  for (const adapter of normalizeCustomKoishiAdapters(settings)) {
+  for (const adapter of normalizeCustomChatAdapters(settings)) {
     for (const entry of normalizeAdapterEntries(
       adapter.config,
       adapter.defaults,
@@ -263,10 +264,10 @@ export function listKoishiRuntimeAdapterEntries(settings: any) {
   return entries;
 }
 
-export function buildKoishiRuntimePackageJson(settings: any) {
+export function buildChatRuntimePackageJson(settings: any) {
   const dependencies: Record<string, string> = {};
 
-  for (const adapter of normalizeCustomKoishiAdapters(settings)) {
+  for (const adapter of normalizeCustomChatAdapters(settings)) {
     dependencies[adapter.packageName] = adapter.version;
   }
 
@@ -274,7 +275,7 @@ export function buildKoishiRuntimePackageJson(settings: any) {
     Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
   );
   return {
-    name: "rin-koishi-runtime",
+    name: "rin-chat-runtime",
     private: true,
     version: "0.0.0",
     dependencies: sortedDependencies,
@@ -287,11 +288,11 @@ function dependencyInstallPath(rootDir: string, packageName: string) {
   return path.join(rootDir, "node_modules", ...normalized.split("/"));
 }
 
-export function shouldInstallKoishiRuntimeDependencies(
+export function shouldInstallChatRuntimeDependencies(
   rootDir: string,
   settings: any,
 ) {
-  const runtimePackage = buildKoishiRuntimePackageJson(settings);
+  const runtimePackage = buildChatRuntimePackageJson(settings);
   const dependencies = runtimePackage.dependencies || {};
   if (!Object.keys(dependencies).length) return false;
   const packageJsonPath = path.join(rootDir, "package.json");
@@ -308,13 +309,10 @@ export function shouldInstallKoishiRuntimeDependencies(
   );
 }
 
-export function ensureKoishiRuntimeDependencies(
-  rootDir: string,
-  settings: any,
-) {
-  const runtimePackage = buildKoishiRuntimePackageJson(settings);
+export function ensureChatRuntimeDependencies(rootDir: string, settings: any) {
+  const runtimePackage = buildChatRuntimePackageJson(settings);
   const dependencies = runtimePackage.dependencies || {};
-  if (!shouldInstallKoishiRuntimeDependencies(rootDir, settings)) {
+  if (!shouldInstallChatRuntimeDependencies(rootDir, settings)) {
     return {
       installed: false,
       dependencies,
@@ -355,9 +353,7 @@ export function ensureKoishiRuntimeDependencies(
     const detail = safeString(
       error?.stderr || error?.stdout || error?.message || error,
     ).trim();
-    throw new Error(
-      `koishi_runtime_install_failed${detail ? `:${detail}` : ""}`,
-    );
+    throw new Error(`chat_runtime_install_failed${detail ? `:${detail}` : ""}`);
   }
   return {
     installed: true,
@@ -366,15 +362,15 @@ export function ensureKoishiRuntimeDependencies(
   };
 }
 
-export function materializeKoishiConfig(configPath: string, settings: any) {
+export function materializeChatConfig(configPath: string, settings: any) {
   const rootDir = path.dirname(configPath);
   ensureDir(rootDir);
-  const config = buildKoishiConfigFromSettings(settings);
+  const config = buildChatConfigFromSettings(settings);
   fs.writeFileSync(configPath, YAML.stringify(config), "utf8");
   const packageJsonPath = path.join(rootDir, "package.json");
   fs.writeFileSync(
     packageJsonPath,
-    `${JSON.stringify(buildKoishiRuntimePackageJson(settings), null, 2)}\n`,
+    `${JSON.stringify(buildChatRuntimePackageJson(settings), null, 2)}\n`,
     "utf8",
   );
   return { configPath, config };
