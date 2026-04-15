@@ -6,7 +6,7 @@ This document describes the extra capabilities Rin gives the agent.
 
 - `rules`
   - provides the `rules` tool
-  - helps the agent find ancestor `AGENTS.md` / `CLAUDE.md` files and `.agents/skills`
+  - helps the agent find ancestor `AGENTS.md` / `CLAUDE.md` files for a target directory
 - `web-search`
   - provides live web search
 - `fetch`

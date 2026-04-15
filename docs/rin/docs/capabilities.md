@@ -133,8 +133,7 @@ Rin provides a `fetch` tool. As an agent, you should know that:
 
 Rin provides the `rules` tool. As an agent, you should know that:
 
-- it can discover ancestor `AGENTS.md` / `CLAUDE.md` files
-- it can also discover `.agents/skills/*/SKILL.md`
+- it can discover ancestor `AGENTS.md` / `CLAUDE.md` files for a target directory
 - when you need project-specific rules, this is often one of the best first entrypoints
 
 ## Token usage telemetry
