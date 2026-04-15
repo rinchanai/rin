@@ -865,6 +865,30 @@ function escapeOneBotText(value: string) {
     .replace(/,/g, "&#44;");
 }
 
+const NAPCAT_ONEBOT_EMOJI_ID_OVERRIDES: Record<string, string> = {
+  "🌘": "75",
+  "🌗": "74",
+  "🌖": "127881",
+  "🌕": "128293",
+  "👍": "128077",
+  "🔥": "128293",
+  "🎉": "127881",
+  "🌹": "127801",
+  "👀": "128064",
+  "🤔": "129300",
+};
+
+function toOneBotReactionEmojiId(value: string) {
+  const emoji = safeString(value).trim();
+  if (!emoji) return "";
+  const mapped = NAPCAT_ONEBOT_EMOJI_ID_OVERRIDES[emoji];
+  if (mapped) return mapped;
+  const [first] = Array.from(emoji);
+  if (!first) return "";
+  const codePoint = first.codePointAt(0);
+  return Number.isFinite(codePoint) ? String(codePoint) : "";
+}
+
 class OneBotAdapter {
   private readonly app: ChatRuntimeApp;
   private readonly config: Record<string, any>;
@@ -940,6 +964,32 @@ class OneBotAdapter {
               message,
               auto_escape: Boolean(autoEscape),
             }),
+          setMessageReaction: async (payload: any) => {
+            const reactions = Array.isArray(payload?.reaction)
+              ? payload.reaction
+              : [];
+            const emoji = safeString(
+              reactions.find((item) => item && typeof item === "object")
+                ?.emoji ||
+                payload?.emoji ||
+                payload?.emoji_id ||
+                "",
+            ).trim();
+            const emojiId = toOneBotReactionEmojiId(emoji);
+            if (!emojiId) {
+              throw new Error("onebot_reaction_emoji_unsupported");
+            }
+            return await this.callAction("set_msg_emoji_like", {
+              message_id: Number(payload?.message_id),
+              emoji_id: emojiId,
+              set:
+                reactions.length > 0
+                  ? true
+                  : payload?.set === false
+                    ? false
+                    : undefined,
+            });
+          },
         },
         {
           get: (target, property) => {
@@ -960,6 +1010,17 @@ class OneBotAdapter {
       ),
       sendMessage: async (chatId: string, content: any) =>
         await this.sendMessage(chatId, content),
+      createReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.createReaction(chatId, messageId, emoji),
+      deleteReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji?: string,
+        _userId?: string,
+      ) => await this.deleteReaction(chatId, messageId, emoji),
     };
     this.app.register(this, this.bot);
   }
@@ -1214,6 +1275,30 @@ class OneBotAdapter {
     const messageId = safeString(data?.message_id || data).trim();
     if (!messageId) throw new Error("onebot_send_message_empty_result");
     return [messageId];
+  }
+
+  async createReaction(chatId: string, messageId: string, emoji: string) {
+    void chatId;
+    const emojiId = toOneBotReactionEmojiId(emoji);
+    if (!emojiId) throw new Error("onebot_reaction_emoji_unsupported");
+    await this.callAction("set_msg_emoji_like", {
+      message_id: Number(messageId),
+      emoji_id: emojiId,
+      set: true,
+    });
+    return true;
+  }
+
+  async deleteReaction(chatId: string, messageId: string, emoji?: string) {
+    void chatId;
+    const emojiId = toOneBotReactionEmojiId(safeString(emoji).trim());
+    if (!emojiId) throw new Error("onebot_reaction_emoji_unsupported");
+    await this.callAction("set_msg_emoji_like", {
+      message_id: Number(messageId),
+      emoji_id: emojiId,
+      set: false,
+    });
+    return true;
   }
 
   private async buildSession(payload: any) {

@@ -21,15 +21,20 @@ import {
   safeString,
 } from "./chat-helpers.js";
 
-const WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
+const DEFAULT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
+const ONEBOT_WORKING_REACTION_FRAMES = ["👍", "🔥", "🎉", "🌹"] as const;
 
-export function getWorkingReactionFrame(index: number) {
-  const size = WORKING_REACTION_FRAMES.length;
+export function getWorkingReactionFrame(platform: string, index: number) {
+  const frames =
+    safeString(platform).trim() === "onebot"
+      ? ONEBOT_WORKING_REACTION_FRAMES
+      : DEFAULT_WORKING_REACTION_FRAMES;
+  const size = frames.length;
   if (!size) return "🌕";
   const nextIndex = Number.isFinite(index)
     ? Math.abs(Math.floor(index)) % size
     : 0;
-  return WORKING_REACTION_FRAMES[nextIndex] || WORKING_REACTION_FRAMES[0];
+  return frames[nextIndex] || frames[0];
 }
 
 export async function sendTyping(app: any, chatKey: string, h: any) {
@@ -66,9 +71,12 @@ export async function rotateWorkingReaction(
   if (!parsed) return previousEmoji || "";
   const bot = findBot(app, parsed.platform, parsed.botId);
   if (!bot) return previousEmoji || "";
-  const nextEmoji = getWorkingReactionFrame(frameIndex);
+  const nextEmoji = getWorkingReactionFrame(parsed.platform, frameIndex);
 
-  if (typeof bot?.internal?.setMessageReaction === "function") {
+  if (
+    parsed.platform !== "onebot" &&
+    typeof bot?.internal?.setMessageReaction === "function"
+  ) {
     try {
       await bot.internal.setMessageReaction({
         chat_id: parsed.chatId,
@@ -118,7 +126,22 @@ export async function clearWorkingReaction(
   const nextEmoji = safeString(emoji).trim();
   if (!nextEmoji) return false;
 
-  if (typeof bot?.internal?.setMessageReaction === "function") {
+  if (typeof bot?.deleteReaction === "function") {
+    try {
+      await bot.deleteReaction(
+        parsed.chatId,
+        messageId,
+        nextEmoji,
+        safeString(bot?.selfId).trim() || undefined,
+      );
+      return true;
+    } catch {}
+  }
+
+  if (
+    parsed.platform !== "onebot" &&
+    typeof bot?.internal?.setMessageReaction === "function"
+  ) {
     try {
       await bot.internal.setMessageReaction({
         chat_id: parsed.chatId,

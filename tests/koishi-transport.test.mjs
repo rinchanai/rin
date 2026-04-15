@@ -290,3 +290,64 @@ test("koishi transport prefers internal telegram reaction calls for working reac
     },
   ]);
 });
+
+test("koishi transport uses bot reaction helpers for onebot working reactions", async () => {
+  const calls = [];
+  const app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "2301401877",
+        async createReaction(chatId, messageId, emoji) {
+          calls.push({ kind: "create", chatId, messageId, emoji });
+        },
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          calls.push({ kind: "delete", chatId, messageId, emoji, userId });
+        },
+      },
+    ],
+  };
+
+  const first = await transport.rotateWorkingReaction(
+    app,
+    "onebot/2301401877:1067390680",
+    "52",
+    0,
+    "",
+  );
+  const second = await transport.rotateWorkingReaction(
+    app,
+    "onebot/2301401877:1067390680",
+    "52",
+    1,
+    first,
+  );
+  const cleared = await transport.clearWorkingReaction(
+    app,
+    "onebot/2301401877:1067390680",
+    "52",
+    second,
+  );
+
+  assert.equal(first, "👍");
+  assert.equal(second, "🔥");
+  assert.equal(cleared, true);
+  assert.deepEqual(calls, [
+    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "👍" },
+    {
+      kind: "delete",
+      chatId: "1067390680",
+      messageId: "52",
+      emoji: "👍",
+      userId: "2301401877",
+    },
+    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🔥" },
+    {
+      kind: "delete",
+      chatId: "1067390680",
+      messageId: "52",
+      emoji: "🔥",
+      userId: "2301401877",
+    },
+  ]);
+});
