@@ -269,20 +269,23 @@ export class RpcInteractiveSession {
       requestTag?: string;
     },
   ) {
-    if (options?.streamingBehavior === "steer")
-      return await this.steer(message, options.images, {
-        source: options?.source,
-        requestTag: options?.requestTag,
-      });
-    if (options?.streamingBehavior === "followUp")
-      return await this.followUp(message, options.images, {
-        source: options?.source,
-        requestTag: options?.requestTag,
-      });
+    if (
+      options?.streamingBehavior === "steer" &&
+      !this.isLocalExtensionCommand(message)
+    ) {
+      this.enqueuePending("steeringMessages", message);
+    }
+    if (
+      options?.streamingBehavior === "followUp" &&
+      !this.isLocalExtensionCommand(message)
+    ) {
+      this.enqueuePending("followUpMessages", message);
+    }
     await this.sendOrQueue({
       mode: "prompt",
       message,
       images: options?.images,
+      streamingBehavior: options?.streamingBehavior,
       source: options?.source,
       requestTag: options?.requestTag,
     });
@@ -735,6 +738,7 @@ export class RpcInteractiveSession {
       await this.call(operation.mode, {
         message: operation.message,
         images: operation.images,
+        streamingBehavior: operation.streamingBehavior,
         source: operation.source,
         requestTag: operation.requestTag,
       });
@@ -845,6 +849,15 @@ export class RpcInteractiveSession {
   ) {
     this[queue].push(message);
     this.syncPendingCount();
+  }
+
+  private isLocalExtensionCommand(text: string) {
+    if (!text.startsWith("/")) return false;
+    const extensionRunner = this.extensionRunner;
+    if (!extensionRunner?.getCommand) return false;
+    const spaceIndex = text.indexOf(" ");
+    const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+    return Boolean(extensionRunner.getCommand(commandName));
   }
 
   private async ensureRemoteSession() {
