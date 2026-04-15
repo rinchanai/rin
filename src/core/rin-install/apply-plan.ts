@@ -45,18 +45,38 @@ export async function runFinalizeInstallPlanInChild(
   message: string,
   deps: {
     ensureNotCancelled: <T>(value: T | symbol) => T;
+    mkdtempSync?: typeof fs.mkdtempSync;
+    rmSync?: typeof fs.rmSync;
+    spawn?: typeof spawn;
+    spinner?: typeof spinner;
+    readFinalizeInstallChildResult?: typeof readFinalizeInstallChildResult;
+    processExecPath?: string;
+    processArgv1?: string;
+    processEnv?: NodeJS.ProcessEnv;
+    importMetaUrl?: string;
   },
 ) {
-  const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-"));
+  const mkdtempSyncImpl = deps.mkdtempSync ?? fs.mkdtempSync;
+  const rmSyncImpl = deps.rmSync ?? fs.rmSync;
+  const spawnImpl = deps.spawn ?? spawn;
+  const spinnerFactory = deps.spinner ?? spinner;
+  const readChildResult =
+    deps.readFinalizeInstallChildResult ?? readFinalizeInstallChildResult;
+  const processExecPath = deps.processExecPath ?? process.execPath;
+  const processArgv1 = deps.processArgv1 ?? process.argv[1];
+  const processEnv = deps.processEnv ?? process.env;
+  const importMetaUrl = deps.importMetaUrl ?? import.meta.url;
+
+  const resultDir = mkdtempSyncImpl(path.join(os.tmpdir(), "rin-install-"));
   const resultPath = path.join(resultDir, "result.json");
   const errorPath = path.join(resultDir, "error.txt");
-  const child = spawn(
-    process.execPath,
-    [process.argv[1] || fileURLToPath(import.meta.url)],
+  const child = spawnImpl(
+    processExecPath,
+    [processArgv1 || fileURLToPath(importMetaUrl)],
     {
       stdio: "ignore",
       env: {
-        ...process.env,
+        ...processEnv,
         RIN_INSTALL_APPLY_PLAN: JSON.stringify(options),
         RIN_INSTALL_APPLY_RESULT: resultPath,
         RIN_INSTALL_APPLY_ERROR: errorPath,
@@ -64,34 +84,33 @@ export async function runFinalizeInstallPlanInChild(
     },
   );
 
-  const waitSpinner = spinner();
+  const waitSpinner = spinnerFactory();
   waitSpinner.start(message);
 
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (signal) reject(new Error(`rin_installer_child_terminated:${signal}`));
-      else resolve(code ?? 1);
-    });
-  }).catch((error) => {
-    waitSpinner.stop("Install step failed.");
-    throw error;
-  });
-
   try {
-    const parsed = readFinalizeInstallChildResult(
-      resultPath,
-      errorPath,
-      exitCode,
-    );
-    waitSpinner.stop("Install step complete.");
-    return parsed;
-  } catch (error) {
-    waitSpinner.stop("Install step failed.");
-    throw error;
+    const exitCode = await new Promise<number>((resolve, reject) => {
+      child.on("error", reject);
+      child.on("exit", (code, signal) => {
+        if (signal)
+          reject(new Error(`rin_installer_child_terminated:${signal}`));
+        else resolve(code ?? 1);
+      });
+    }).catch((error) => {
+      waitSpinner.stop("Install step failed.");
+      throw error;
+    });
+
+    try {
+      const parsed = readChildResult(resultPath, errorPath, exitCode);
+      waitSpinner.stop("Install step complete.");
+      return parsed;
+    } catch (error) {
+      waitSpinner.stop("Install step failed.");
+      throw error;
+    }
   } finally {
     try {
-      fs.rmSync(resultDir, { recursive: true, force: true });
+      rmSyncImpl(resultDir, { recursive: true, force: true });
     } catch {}
   }
 }

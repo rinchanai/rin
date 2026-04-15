@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { EventEmitter } from "node:events";
 import { pathToFileURL } from "node:url";
 
 const rootDir = path.resolve(
@@ -455,4 +456,183 @@ test("apply-plan child result reader rejects missing or invalid success payloads
       /rin_installer_apply_result_missing/,
     );
   });
+});
+
+test("apply-plan child runner spawns the installer child with stable env, spinner messages, and cleanup", async () => {
+  const spinnerEvents = [];
+  const spawnCalls = [];
+  const removed = [];
+  const child = new EventEmitter();
+  const result = await applyPlan.runFinalizeInstallPlanInChild(
+    {
+      currentUser: "builder",
+      targetUser: "demo",
+      installDir: "/srv/rin",
+      provider: "openai",
+    },
+    "Publishing runtime...",
+    {
+      ensureNotCancelled: (value) => value,
+      mkdtempSync: () => "/tmp/rin-install-demo",
+      rmSync: (targetPath, options) => removed.push([targetPath, options]),
+      spawn: (command, args, options) => {
+        spawnCalls.push([command, args, options]);
+        queueMicrotask(() => child.emit("exit", 0, null));
+        return child;
+      },
+      spinner: () => ({
+        start(message) {
+          spinnerEvents.push(["start", message]);
+        },
+        stop(message) {
+          spinnerEvents.push(["stop", message]);
+        },
+      }),
+      readFinalizeInstallChildResult: (resultPath, errorPath, exitCode) => {
+        spinnerEvents.push(["read", resultPath, errorPath, exitCode]);
+        return { ok: true, resultPath, errorPath };
+      },
+      processExecPath: "/usr/bin/node",
+      processArgv1: "/workspace/dist/app/rin-install/main.js",
+      processEnv: { BASE: "1" },
+    },
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    resultPath: "/tmp/rin-install-demo/result.json",
+    errorPath: "/tmp/rin-install-demo/error.txt",
+  });
+  assert.deepEqual(spawnCalls, [
+    [
+      "/usr/bin/node",
+      ["/workspace/dist/app/rin-install/main.js"],
+      {
+        stdio: "ignore",
+        env: {
+          BASE: "1",
+          RIN_INSTALL_APPLY_PLAN: JSON.stringify({
+            currentUser: "builder",
+            targetUser: "demo",
+            installDir: "/srv/rin",
+            provider: "openai",
+          }),
+          RIN_INSTALL_APPLY_RESULT: "/tmp/rin-install-demo/result.json",
+          RIN_INSTALL_APPLY_ERROR: "/tmp/rin-install-demo/error.txt",
+        },
+      },
+    ],
+  ]);
+  assert.deepEqual(spinnerEvents, [
+    ["start", "Publishing runtime..."],
+    [
+      "read",
+      "/tmp/rin-install-demo/result.json",
+      "/tmp/rin-install-demo/error.txt",
+      0,
+    ],
+    ["stop", "Install step complete."],
+  ]);
+  assert.deepEqual(removed, [
+    ["/tmp/rin-install-demo", { recursive: true, force: true }],
+  ]);
+});
+
+test("apply-plan child runner reports child failures and still cleans temp state", async () => {
+  const spinnerEvents = [];
+  const removed = [];
+  const child = new EventEmitter();
+
+  await assert.rejects(
+    () =>
+      applyPlan.runFinalizeInstallPlanInChild(
+        {
+          currentUser: "builder",
+          targetUser: "demo",
+          installDir: "/srv/rin",
+        },
+        "Publishing runtime...",
+        {
+          ensureNotCancelled: (value) => value,
+          mkdtempSync: () => "/tmp/rin-install-demo",
+          rmSync: (targetPath, options) => removed.push([targetPath, options]),
+          spawn: () => {
+            queueMicrotask(() => child.emit("error", new Error("spawn_boom")));
+            return child;
+          },
+          spinner: () => ({
+            start(message) {
+              spinnerEvents.push(["start", message]);
+            },
+            stop(message) {
+              spinnerEvents.push(["stop", message]);
+            },
+          }),
+        },
+      ),
+    /spawn_boom/,
+  );
+
+  assert.deepEqual(spinnerEvents, [
+    ["start", "Publishing runtime..."],
+    ["stop", "Install step failed."],
+  ]);
+  assert.deepEqual(removed, [
+    ["/tmp/rin-install-demo", { recursive: true, force: true }],
+  ]);
+});
+
+test("apply-plan child runner falls back to import.meta entry and reports read failures after exit", async () => {
+  const spinnerEvents = [];
+  const spawnCalls = [];
+  const removed = [];
+  const child = new EventEmitter();
+
+  await assert.rejects(
+    () =>
+      applyPlan.runFinalizeInstallPlanInChild(
+        {
+          currentUser: "builder",
+          targetUser: "demo",
+          installDir: "/srv/rin",
+        },
+        "Publishing runtime...",
+        {
+          ensureNotCancelled: (value) => value,
+          mkdtempSync: () => "/tmp/rin-install-demo",
+          rmSync: (targetPath, options) => removed.push([targetPath, options]),
+          spawn: (command, args) => {
+            spawnCalls.push([command, args]);
+            queueMicrotask(() => child.emit("exit", 1, null));
+            return child;
+          },
+          spinner: () => ({
+            start(message) {
+              spinnerEvents.push(["start", message]);
+            },
+            stop(message) {
+              spinnerEvents.push(["stop", message]);
+            },
+          }),
+          readFinalizeInstallChildResult: () => {
+            throw new Error("child_failed");
+          },
+          processExecPath: "/usr/bin/node",
+          processArgv1: "",
+          importMetaUrl: "file:///workspace/dist/app/rin-install/main.js",
+        },
+      ),
+    /child_failed/,
+  );
+
+  assert.deepEqual(spawnCalls, [
+    ["/usr/bin/node", ["/workspace/dist/app/rin-install/main.js"]],
+  ]);
+  assert.deepEqual(spinnerEvents, [
+    ["start", "Publishing runtime..."],
+    ["stop", "Install step failed."],
+  ]);
+  assert.deepEqual(removed, [
+    ["/tmp/rin-install-demo", { recursive: true, force: true }],
+  ]);
 });
