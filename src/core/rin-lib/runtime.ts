@@ -231,6 +231,56 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   return prompt.trimEnd();
 }
 
+const LAZY_SYSTEM_PROMPT_STATE_KEY = Symbol.for(
+  "rin.lazySystemPromptState",
+);
+
+function getSessionActiveToolNames(session: any): string[] {
+  try {
+    if (typeof session?.getActiveToolNames === "function") {
+      const toolNames = session.getActiveToolNames();
+      return Array.isArray(toolNames) ? toolNames : [];
+    }
+  } catch {}
+  return [];
+}
+
+function applySessionBaseSystemPrompt(session: any, systemPrompt: string) {
+  if (!session || typeof session !== "object") return;
+  const next = String(systemPrompt || "");
+  session._baseSystemPrompt = next;
+  if (session.agent?.state && typeof session.agent.state === "object") {
+    session.agent.state.systemPrompt = next;
+  }
+  if (typeof session.agent?.setSystemPrompt === "function") {
+    session.agent.setSystemPrompt(next);
+  }
+}
+
+export function clearSessionBaseSystemPrompt(session: any) {
+  if (!session || typeof session !== "object") return;
+  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
+  if (state && typeof state === "object") {
+    state.materialized = false;
+  }
+  applySessionBaseSystemPrompt(session, "");
+}
+
+export function ensureSessionBaseSystemPrompt(session: any): string {
+  if (!session || typeof session !== "object") return "";
+  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
+  if (!state || typeof state.compute !== "function") {
+    return String(session._baseSystemPrompt || session.agent?.state?.systemPrompt || "");
+  }
+  if (state.materialized) {
+    return String(session._baseSystemPrompt || session.agent?.state?.systemPrompt || "");
+  }
+  const next = state.compute(getSessionActiveToolNames(session));
+  state.materialized = true;
+  applySessionBaseSystemPrompt(session, next);
+  return next;
+}
+
 function applyRinPromptBuilder(session: any) {
   if (!session || typeof session !== "object") return;
   const originalRebuild =
@@ -239,7 +289,7 @@ function applyRinPromptBuilder(session: any) {
       : null;
   if (!originalRebuild) return;
 
-  session._rebuildSystemPrompt = (toolNames: string[]) => {
+  const computePrompt = (toolNames: string[]) => {
     try {
       return buildRinSystemPrompt(
         session,
@@ -250,25 +300,36 @@ function applyRinPromptBuilder(session: any) {
     }
   };
 
-  let activeToolNames: string[] = [];
-  try {
-    if (typeof session.getActiveToolNames === "function") {
-      activeToolNames = session.getActiveToolNames();
-    }
-  } catch {}
+  const state = {
+    materialized: false,
+    compute: computePrompt,
+  };
+  session[LAZY_SYSTEM_PROMPT_STATE_KEY] = state;
 
-  try {
-    const next = session._rebuildSystemPrompt(activeToolNames);
-    if (String(next || "").trim()) {
-      session._baseSystemPrompt = next;
-      if (session.agent?.state && typeof session.agent.state === "object") {
-        session.agent.state.systemPrompt = next;
-      }
-      if (typeof session.agent?.setSystemPrompt === "function") {
-        session.agent.setSystemPrompt(next);
-      }
-    }
-  } catch {}
+  session._rebuildSystemPrompt = (toolNames: string[]) => {
+    if (!state.materialized) return "";
+    return state.compute(Array.isArray(toolNames) ? toolNames : []);
+  };
+
+  const originalPrompt =
+    typeof session.prompt === "function" ? session.prompt.bind(session) : null;
+  if (originalPrompt) {
+    session.prompt = async (text: string, options?: any) => {
+      ensureSessionBaseSystemPrompt(session);
+      return await originalPrompt(text, options);
+    };
+  }
+
+  const originalReload =
+    typeof session.reload === "function" ? session.reload.bind(session) : null;
+  if (originalReload) {
+    session.reload = async (...args: any[]) => {
+      clearSessionBaseSystemPrompt(session);
+      return await originalReload(...args);
+    };
+  }
+
+  clearSessionBaseSystemPrompt(session);
 }
 
 const AUTO_RELOAD_AFTER_COMPACTION_KEY = Symbol.for(
