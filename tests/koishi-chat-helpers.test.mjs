@@ -143,7 +143,7 @@ test("koishi chat helpers report unresolved media placeholders clearly", async (
     ]);
     assert.match(
       helpers.buildInboundAttachmentNotice(result.failures),
-      /Koishi did not resolve a downloadable resource/i,
+      /chat bridge runtime did not resolve a downloadable resource/i,
     );
   });
 });

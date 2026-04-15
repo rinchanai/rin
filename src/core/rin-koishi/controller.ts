@@ -627,7 +627,7 @@ export class KoishiChatController {
     } catch (error: any) {
       const errorMessage =
         safeString(error?.message || error).trim() || "koishi_command_failed";
-      const text = `Koishi error: ${errorMessage}`;
+      const text = `Chat bridge error: ${errorMessage}`;
       this.latestAssistantText = text;
       this.state.pendingDelivery = this.buildAssistantDelivery({
         text,

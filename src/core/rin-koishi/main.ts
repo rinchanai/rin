@@ -42,6 +42,7 @@ import { appendKoishiChatLog } from "./chat-log.js";
 import { shouldProcessText } from "./decision.js";
 import {
   composeChatKey,
+  ensureKoishiRuntimeDependencies,
   loadIdentity,
   materializeKoishiConfig,
   trustOf,
@@ -149,6 +150,7 @@ export async function startKoishi(
   const idleToolProgressConfig = normalizeKoishiIdleToolProgressConfig(settings);
 
   materializeKoishiConfig(configPath, settings);
+  ensureKoishiRuntimeDependencies(dataDir, settings);
 
   const loader = new Loader();
   const previousCwd = process.cwd();
@@ -257,7 +259,7 @@ export async function startKoishi(
   }, true);
 
   app.middleware(async (session: any, next: () => Promise<any>) => {
-    // Let Koishi's native command middleware short-circuit command messages.
+    // Let the underlying bridge runtime command middleware short-circuit command messages.
     // This middleware only handles ordinary chat turns that continue past it.
     const identity = getIdentity();
     const elements = ensureSessionElements(session);
@@ -356,7 +358,7 @@ export async function startKoishi(
             type: "text_delivery",
             createdAt: new Date().toISOString(),
             chatKey: decision.chatKey,
-            text: `Koishi error: ${errorMessage || "koishi_turn_failed"}`,
+            text: `Chat bridge error: ${errorMessage || "chat_bridge_turn_failed"}`,
             replyToMessageId: messageId || undefined,
             sessionId: replySession?.sessionId,
             sessionFile: replySession?.sessionFile,

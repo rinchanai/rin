@@ -36,13 +36,13 @@ export async function sendTyping(app: any, chatKey: string, h: any) {
 
 function normalizeDeliveredMessageIds(result: unknown) {
   if (!Array.isArray(result) || !result.length) {
-    throw new Error("koishi_send_message_empty_result");
+    throw new Error("chat_send_message_empty_result");
   }
   const messageIds = result
     .map((item) => safeString(item).trim())
     .filter(Boolean);
   if (!messageIds.length) {
-    throw new Error("koishi_send_message_empty_result");
+    throw new Error("chat_send_message_empty_result");
   }
   return messageIds;
 }
@@ -330,12 +330,12 @@ export async function sendOutboxPayload(
   const rawParts = Array.isArray(payload.parts)
     ? payload.parts.filter(Boolean)
     : [];
-  if (!rawParts.length) throw new Error("koishi_outbox_empty_message");
+  if (!rawParts.length) throw new Error("chat_outbox_empty_message");
 
   const nodes = (
     await Promise.all(rawParts.map((part) => messagePartToNode(part, h)))
   ).filter(Boolean);
-  if (!nodes.length) throw new Error("koishi_outbox_empty_message");
+  if (!nodes.length) throw new Error("chat_outbox_empty_message");
 
   const deliveryResult = await sendBotMessage(bot, parsed.chatId, nodes);
 

@@ -128,7 +128,7 @@ export default function koishiListChatLogExtension(pi: ExtensionAPI) {
     execute: async (_toolCallId, params) => {
       const chatKey = safeString((params as any)?.chatKey).trim();
       const date = safeString((params as any)?.date).trim() || localDateString();
-      if (!chatKey) throw new Error("koishi_list_chat_log_chatKey_required");
+      if (!chatKey) throw new Error("chat_list_log_chatKey_required");
 
       const agentDir = getAgentDir();
       const { readKoishiChatLog, formatKoishiChatLog } =

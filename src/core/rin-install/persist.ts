@@ -127,12 +127,12 @@ export async function persistInstallerOutputs(
   if (options.modelId) settingsJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     settingsJson.defaultThinkingLevel = options.thinkingLevel;
-  if (options.koishiConfig) {
+  if (options.koishiConfig && typeof options.koishiConfig === "object") {
     settingsJson.koishi ||= {};
-    if (options.koishiConfig.telegram)
-      settingsJson.koishi.telegram = options.koishiConfig.telegram;
-    if (options.koishiConfig.onebot)
-      settingsJson.koishi.onebot = options.koishiConfig.onebot;
+    for (const [adapterKey, adapterConfig] of Object.entries(options.koishiConfig)) {
+      if (adapterConfig === undefined) continue;
+      settingsJson.koishi[adapterKey] = adapterConfig;
+    }
   }
 
   const authPath = path.join(options.installDir, "auth.json");

@@ -20,11 +20,11 @@ export async function runDoctor(parsed) {
         : []) {
         lines.push(`webSearchInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} port=${String(instance.port || "")} baseUrl=${instance.baseUrl || ""}`);
     }
-    lines.push(`koishiInstanceCount=${String(Array.isArray(koishiStatus?.instances) ? koishiStatus.instances.length : 0)}`);
+    lines.push(`chatBridgeInstanceCount=${String(Array.isArray(koishiStatus?.instances) ? koishiStatus.instances.length : 0)}`);
     for (const instance of Array.isArray(koishiStatus?.instances)
         ? koishiStatus.instances
         : []) {
-        lines.push(`koishiInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} entry=${instance.entryPath || ""}`);
+        lines.push(`chatBridgeInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} entry=${instance.entryPath || ""}`);
     }
     if (daemonStatus) {
         lines.push(`daemonWorkerCount=${String(daemonStatus.workerCount ?? 0)}`);

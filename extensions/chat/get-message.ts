@@ -127,7 +127,7 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
     execute: (async (_toolCallId, params) => {
       const messageId = safeString((params as any)?.messageId).trim();
       const chatKey = safeString((params as any)?.chatKey).trim() || undefined;
-      if (!messageId) throw new Error("koishi_get_message_messageId_required");
+      if (!messageId) throw new Error("chat_get_message_messageId_required");
 
       const agentDir = getAgentDir();
       const {

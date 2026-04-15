@@ -143,7 +143,7 @@ function normalizeParts(parts: any[]): KoishiMessagePart[] {
     }
     if (type === "at") {
       const id = safeString(raw?.id).trim();
-      if (!id) throw new Error("koishi_send_message_invalid_at_id");
+      if (!id) throw new Error("chat_send_message_invalid_at_id");
       normalized.push({
         type: "at",
         id,
@@ -153,7 +153,7 @@ function normalizeParts(parts: any[]): KoishiMessagePart[] {
     }
     if (type === "quote") {
       const id = safeString(raw?.id).trim();
-      if (!id) throw new Error("koishi_send_message_invalid_quote_id");
+      if (!id) throw new Error("chat_send_message_invalid_quote_id");
       normalized.push({ type: "quote", id });
       continue;
     }
@@ -161,13 +161,13 @@ function normalizeParts(parts: any[]): KoishiMessagePart[] {
       const localPath = safeString(raw?.path).trim();
       const url = safeString(raw?.url).trim();
       if (!localPath && !url) {
-        throw new Error(`koishi_send_message_${type}_requires_path_or_url`);
+        throw new Error(`chat_send_message_${type}_requires_path_or_url`);
       }
       if (localPath && !path.isAbsolute(localPath)) {
-        throw new Error(`koishi_send_message_path_must_be_absolute:${localPath}`);
+        throw new Error(`chat_send_message_path_must_be_absolute:${localPath}`);
       }
       if (localPath && !fs.existsSync(localPath)) {
-        throw new Error(`koishi_send_message_missing_file:${localPath}`);
+        throw new Error(`chat_send_message_missing_file:${localPath}`);
       }
       if (type === "image") {
         normalized.push({
@@ -188,7 +188,7 @@ function normalizeParts(parts: any[]): KoishiMessagePart[] {
       continue;
     }
     throw new Error(
-      `koishi_send_message_unsupported_part:${type || "unknown"}`,
+      `chat_send_message_unsupported_part:${type || "unknown"}`,
     );
   }
   return normalized;
@@ -315,25 +315,25 @@ export default function koishiSendMessageExtension(pi: ExtensionAPI) {
           imagePartSchema,
           filePartSchema,
         ]),
-        { description: "Koishi-style message parts for mixed content." },
+        { description: "Chat message parts for mixed content." },
       ),
     }),
     execute: async (toolCallId, params, _signal, _onUpdate, ctx) => {
       const chatKey = safeString((params as any)?.chatKey).trim();
       if (!isChatKey(chatKey)) {
         throw new Error(
-          `koishi_send_message_invalid_chatKey:${chatKey || "missing"}`,
+          `chat_send_message_invalid_chatKey:${chatKey || "missing"}`,
         );
       }
 
       const parts = normalizeParts(
         Array.isArray((params as any)?.parts) ? (params as any).parts : [],
       );
-      if (!parts.length) throw new Error("koishi_send_message_empty");
+      if (!parts.length) throw new Error("chat_send_message_empty");
 
       const agentDir = getAgentDir();
       const requestId =
-        safeString(toolCallId).trim() || `koishi_${Date.now().toString(36)}`;
+        safeString(toolCallId).trim() || `chat_${Date.now().toString(36)}`;
       const { deliverKoishiRpcPayload } = await loadKoishiRpcModule();
       await deliverKoishiRpcPayload(agentDir, {
         type: "parts_delivery",
