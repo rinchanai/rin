@@ -160,11 +160,41 @@ test("koishi controller polls typing and rotating reactions while a chat turn is
     { chat_id: "2", action: "typing" },
     { chat_id: "2", action: "typing" },
   ]);
-  assert.deepEqual(reactions, [
-    ["create", "2", "m1", "🌘"],
-    ["delete", "2", "m1", "🌘", "1"],
-    ["create", "2", "m1", "🌗"],
-  ]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
+});
+
+test("koishi controller falls back to a single Working notice when typing and reaction are unavailable", async () => {
+  const controller = await createController("onebot/1:private:2");
+  const deliveries = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "1",
+        async sendMessage(chatId, content) {
+          deliveries.push({ chatId, content });
+          return ["working-msg-1"];
+        },
+      },
+    ],
+  };
+
+  controller.session = { isStreaming: false };
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
+    workingNoticeSent: false,
+  };
+
+  assert.equal(await controller.pollTyping(), true);
+  assert.equal(await controller.pollTyping(), false);
+  assert.equal(controller.state.processing.workingNoticeSent, true);
+  assert.equal(deliveries.length, 1);
+  assert.equal(deliveries[0].chatId, "private:2");
+  assert.equal(deliveries[0].content[0].attrs.id, "m1");
+  assert.equal(deliveries[0].content[1].attrs.content, "Working……");
 });
 
 test("koishi controller uses RpcInteractiveSession prompt path for chat turns", async () => {
@@ -286,10 +316,7 @@ test("koishi controller reattaches saved session file before bootstrapping a det
 
   await controller.ensureSessionReady();
 
-  assert.deepEqual(calls, [
-    `switch:${savedSessionFile}`,
-    "ensureSessionReady",
-  ]);
+  assert.deepEqual(calls, [`switch:${savedSessionFile}`, "ensureSessionReady"]);
   assert.equal(controller.state.piSessionFile, savedSessionFile);
 });
 
@@ -317,7 +344,6 @@ test("koishi controller reattaches idle saved sessions during recovery so chat w
   assert.deepEqual(calls, [`switch:${savedSessionFile}`]);
 });
 
-
 test("koishi controller self-heals missing saved session binding before a chat turn", async () => {
   const controller = await createController("telegram/7:8");
   const calls = [];
@@ -333,7 +359,10 @@ test("koishi controller self-heals missing saved session binding before a chat t
     isStreaming: false,
     messages: [
       { role: "user", content: [{ type: "text", text: "hello" }] },
-      { role: "assistant", content: [{ type: "text", text: "fresh session final" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "fresh session final" }],
+      },
     ],
     sessionManager: {
       getSessionFile: () => "/tmp/fresh-chat.jsonl",
@@ -345,7 +374,10 @@ test("koishi controller self-heals missing saved session binding before a chat t
     },
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
-      return { sessionFile: "/tmp/fresh-chat.jsonl", sessionId: "session-fresh" };
+      return {
+        sessionFile: "/tmp/fresh-chat.jsonl",
+        sessionId: "session-fresh",
+      };
     },
     prompt: async () => {
       calls.push("prompt");
@@ -428,7 +460,10 @@ test("koishi controller refreshes session messages before resolving a final chat
     refreshState: async () => {
       controller.session.messages = [
         { role: "user", content: [{ type: "text", text: "hello" }] },
-        { role: "assistant", content: [{ type: "text", text: "refreshed final text" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "refreshed final text" }],
+        },
       ];
     },
     prompt: async () => {
@@ -483,7 +518,10 @@ test("koishi controller takes final chat text from session lifecycle instead of 
       queueMicrotask(() => {
         controller.session.messages = [
           { role: "user", content: [{ type: "text", text: "hello" }] },
-          { role: "assistant", content: [{ type: "text", text: "session final text" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "session final text" }],
+          },
         ];
         controller.session.isStreaming = false;
         controller.handleSessionEvent({ type: "agent_end" });
@@ -624,7 +662,10 @@ test("koishi controller serializes chat turns instead of replacing the active on
           finishFirst = () => {
             controller.session.messages = [
               { role: "user", content: [{ type: "text", text: "first" }] },
-              { role: "assistant", content: [{ type: "text", text: "first done" }] },
+              {
+                role: "assistant",
+                content: [{ type: "text", text: "first done" }],
+              },
             ];
             controller.session.isStreaming = false;
             controller.handleSessionEvent({ type: "agent_end" });
@@ -644,8 +685,14 @@ test("koishi controller serializes chat turns instead of replacing the active on
     switchSession: async () => {},
   };
 
-  const first = controller.runTurn({ text: "first", attachments: [] }, "prompt");
-  const second = controller.runTurn({ text: "second", attachments: [] }, "prompt");
+  const first = controller.runTurn(
+    { text: "first", attachments: [] },
+    "prompt",
+  );
+  const second = controller.runTurn(
+    { text: "second", attachments: [] },
+    "prompt",
+  );
   for (let i = 0; i < 20 && typeof finishFirst !== "function"; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
@@ -673,7 +720,10 @@ test("koishi controller delivers completed assistant text during recovery when p
   };
   controller.commitPendingDelivery = async function (clearProcessing = false) {
     if (controller.latestAssistantText) {
-      delivered.push({ text: controller.latestAssistantText, replyToMessageId: "42" });
+      delivered.push({
+        text: controller.latestAssistantText,
+        replyToMessageId: "42",
+      });
     }
     delete this.state.pendingDelivery;
     if (clearProcessing) delete this.state.processing;
@@ -709,6 +759,9 @@ test("koishi controller retries persisted final reply delivery on recovery", asy
         async sendMessage(chatId, content) {
           sends.push({ chatId, content });
           return ["m1"];
+        },
+        internal: {
+          async sendChatAction() {},
         },
       },
     ],
@@ -832,4 +885,3 @@ test("koishi controller keeps cron turns off the chat mainline while preserving 
   assert.equal(controller.state.pendingDelivery, undefined);
   assert.deepEqual(setNames, []);
 });
-

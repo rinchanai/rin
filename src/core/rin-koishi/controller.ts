@@ -43,13 +43,11 @@ export class KoishiChatController {
   client: RinDaemonFrontendClient | null = null;
   session: RpcInteractiveSession | null = null;
   turnQueue: Promise<void> = Promise.resolve();
-  liveTurn:
-    | {
-        promise: Promise<any>;
-        resolve: (value: any) => void;
-        reject: (error: Error) => void;
-      }
-    | null = null;
+  liveTurn: {
+    promise: Promise<any>;
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+  } | null = null;
   latestAssistantText = "";
   logger: any;
   h: any;
@@ -102,7 +100,10 @@ export class KoishiChatController {
     const wantedSessionFile = this.getRecoverableSessionFile();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
-      if (this.shouldAffectChatBinding() && !session.sessionManager.getSessionName?.())
+      if (
+        this.shouldAffectChatBinding() &&
+        !session.sessionManager.getSessionName?.()
+      )
         await session.setSessionName(this.chatKey);
     }
   }
@@ -190,6 +191,32 @@ export class KoishiChatController {
       emoji,
     );
   }
+  private async sendWorkingNotice() {
+    if (!this.deliveryEnabled) return false;
+    const processing = this.state.processing;
+    if (!processing || processing.workingNoticeSent) return false;
+    const replyToMessageId =
+      safeString(
+        processing.replyToMessageId || processing.incomingMessageId || "",
+      ).trim() || undefined;
+    await sendOutboxPayload(
+      this.app,
+      this.agentDir,
+      {
+        type: "text_delivery",
+        chatKey: this.chatKey,
+        text: "Working……",
+        replyToMessageId,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+        createdAt: new Date().toISOString(),
+      },
+      this.h,
+    );
+    processing.workingNoticeSent = true;
+    this.saveState();
+    return true;
+  }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
     if (!this.hasActiveTurn()) return false;
@@ -208,6 +235,9 @@ export class KoishiChatController {
         this.workingReactionEmoji = nextEmoji;
         this.workingReactionTick += 1;
       }
+    }
+    if (!sent) {
+      sent = await this.sendWorkingNotice().catch(() => false);
     }
     return sent;
   }
@@ -267,7 +297,9 @@ export class KoishiChatController {
     const messages = Array.isArray(this.session?.messages)
       ? this.session.messages
       : [];
-    return extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages));
+    return extractFinalTextFromTurnResult(
+      buildTurnResultFromMessages(messages),
+    );
   }
   private async completeLiveTurn() {
     if (!this.liveTurn) return;
@@ -309,7 +341,8 @@ export class KoishiChatController {
       type: "text_delivery" as const,
       chatKey: this.chatKey,
       text,
-      replyToMessageId: safeString(input.replyToMessageId || "").trim() || undefined,
+      replyToMessageId:
+        safeString(input.replyToMessageId || "").trim() || undefined,
       sessionId: safeString(input.sessionId || "").trim() || undefined,
       sessionFile: safeString(input.sessionFile || "").trim() || undefined,
     };
@@ -376,9 +409,11 @@ export class KoishiChatController {
     const before = safeString(
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
-    if (before !== wanted)
-      await this.session.switchSession(wanted);
-    if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
+    if (before !== wanted) await this.session.switchSession(wanted);
+    if (
+      this.shouldAffectChatBinding() &&
+      !this.session.sessionManager.getSessionName?.()
+    )
       await this.session.setSessionName(this.chatKey);
     this.state.piSessionFile =
       safeString(
@@ -414,7 +449,10 @@ export class KoishiChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
+    if (
+      this.shouldAffectChatBinding() &&
+      !this.session.sessionManager.getSessionName?.()
+    )
       await this.session.setSessionName(this.chatKey);
     this.saveState();
     return result;
@@ -435,7 +473,10 @@ export class KoishiChatController {
             this.state.piSessionFile ||
             "",
         ).trim() || undefined;
-      if (this.shouldAffectChatBinding() && !this.session.sessionManager.getSessionName?.())
+      if (
+        this.shouldAffectChatBinding() &&
+        !this.session.sessionManager.getSessionName?.()
+      )
         await this.session.setSessionName(this.chatKey);
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("koishi_command_text_missing");
@@ -479,7 +520,9 @@ export class KoishiChatController {
     await this.connect();
     if (!this.session) throw new Error("koishi_session_not_connected");
     if (!this.session.isStreaming) {
-      return await this.runExclusiveTurn(() => this.runTurnNow(input, "prompt"));
+      return await this.runExclusiveTurn(() =>
+        this.runTurnNow(input, "prompt"),
+      );
     }
     const { text, images } = await restorePromptParts({
       text: input.text,
@@ -550,6 +593,7 @@ export class KoishiChatController {
         safeString(input.replyToMessageId || "").trim() || undefined,
       incomingMessageId:
         safeString(input.incomingMessageId || "").trim() || undefined,
+      workingNoticeSent: false,
     };
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
@@ -566,7 +610,11 @@ export class KoishiChatController {
         streamingBehavior: mode === "steer" ? "steer" : undefined,
       });
     } catch (error: any) {
-      this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+      this.failLiveTurn(
+        error instanceof Error
+          ? error
+          : new Error(String(error || "koishi_turn_failed")),
+      );
       throw error;
     }
     const completion = await liveTurn.promise;
@@ -585,9 +633,13 @@ export class KoishiChatController {
       text: this.latestAssistantText,
       replyToMessageId: replyToMessageId || undefined,
       sessionId:
-        safeString(completion?.sessionId || this.currentSessionId() || "").trim() || undefined,
+        safeString(
+          completion?.sessionId || this.currentSessionId() || "",
+        ).trim() || undefined,
       sessionFile:
-        safeString(completion?.sessionFile || this.currentSessionFile() || "").trim() || undefined,
+        safeString(
+          completion?.sessionFile || this.currentSessionFile() || "",
+        ).trim() || undefined,
     });
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
@@ -633,11 +685,14 @@ export class KoishiChatController {
       await this.connect();
       if (!this.session) return;
       await this.refreshSessionMessages().catch(() => {});
-      const messages = Array.isArray(this.session.messages) ? this.session.messages : [];
-      const lastUserIndex = [...messages]
-        .map((message: any, index: number) => ({ message, index }))
-        .reverse()
-        .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
+      const messages = Array.isArray(this.session.messages)
+        ? this.session.messages
+        : [];
+      const lastUserIndex =
+        [...messages]
+          .map((message: any, index: number) => ({ message, index }))
+          .reverse()
+          .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
       const lastAssistantAfterUser = messages
         .slice(lastUserIndex + 1)
         .reverse()
@@ -654,12 +709,15 @@ export class KoishiChatController {
         safeString(lastUserText).trim() ===
         safeString(buildPromptText(pending.text, pending.attachments)).trim();
       await this.pollTyping().catch(() => {});
-      this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
+      this.logger.info(
+        `resume interrupted koishi turn chatKey=${this.chatKey}`,
+      );
       if (deliveredCompletedText && !this.session.isStreaming) {
         this.latestAssistantText = deliveredCompletedText;
         this.state.pendingDelivery = this.buildAssistantDelivery({
           text: this.latestAssistantText,
-          replyToMessageId: safeString(pending.replyToMessageId || "").trim() || undefined,
+          replyToMessageId:
+            safeString(pending.replyToMessageId || "").trim() || undefined,
           sessionId: this.currentSessionId() || undefined,
           sessionFile: this.currentSessionFile(),
         });
@@ -676,7 +734,11 @@ export class KoishiChatController {
             source: "koishi-bridge",
           });
         } catch (error: any) {
-          this.failLiveTurn(error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")));
+          this.failLiveTurn(
+            error instanceof Error
+              ? error
+              : new Error(String(error || "koishi_turn_failed")),
+          );
           throw error;
         }
         const completion = await liveTurn.promise;
@@ -693,11 +755,16 @@ export class KoishiChatController {
           ).trim() || undefined;
         this.state.pendingDelivery = this.buildAssistantDelivery({
           text: this.latestAssistantText,
-          replyToMessageId: safeString(pending.replyToMessageId || "").trim() || undefined,
+          replyToMessageId:
+            safeString(pending.replyToMessageId || "").trim() || undefined,
           sessionId:
-            safeString(completion?.sessionId || this.currentSessionId() || "").trim() || undefined,
+            safeString(
+              completion?.sessionId || this.currentSessionId() || "",
+            ).trim() || undefined,
           sessionFile:
-            safeString(completion?.sessionFile || this.currentSessionFile() || "").trim() || undefined,
+            safeString(
+              completion?.sessionFile || this.currentSessionFile() || "",
+            ).trim() || undefined,
         });
         this.saveState();
         await this.commitPendingDelivery(true);
