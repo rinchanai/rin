@@ -13,12 +13,11 @@ const rootDir = path.resolve(
 const transcripts = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "extensions", "memory", "transcripts.js"),
-  ).href,
+  ).href
 );
 const memoryExtensionModule = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "memory", "index.js"),
-  ).href,
+  pathToFileURL(path.join(rootDir, "dist", "extensions", "memory", "index.js"))
+    .href
 );
 
 async function withTempRoot(fn) {
@@ -38,7 +37,9 @@ test("memory transcripts archive entries under memory/transcripts", async () => 
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "user",
-        content: [{ type: "text", text: "Does Rin keep raw conversation transcripts?" }],
+        content: [
+          { type: "text", text: "Does Rin keep raw conversation transcripts?" },
+        ],
       },
       root,
     );
@@ -65,7 +66,9 @@ test("memory search returns session-level archived transcript matches and create
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "user",
-        content: [{ type: "text", text: "Does Rin keep raw conversation transcripts?" }],
+        content: [
+          { type: "text", text: "Does Rin keep raw conversation transcripts?" },
+        ],
       },
       root,
     );
@@ -100,7 +103,11 @@ test("memory search index stays in sync when an archived session file grows", as
       root,
     );
 
-    const first = await transcripts.searchTranscriptArchive("alpha", { limit: 8 }, root);
+    const first = await transcripts.searchTranscriptArchive(
+      "alpha",
+      { limit: 8 },
+      root,
+    );
     assert.equal(first.length, 1);
     assert.equal(first[0].hitCount, 1);
 
@@ -115,7 +122,11 @@ test("memory search index stays in sync when an archived session file grows", as
       root,
     );
 
-    const second = await transcripts.searchTranscriptArchive("beta", { limit: 8 }, root);
+    const second = await transcripts.searchTranscriptArchive(
+      "beta",
+      { limit: 8 },
+      root,
+    );
     assert.equal(second.length, 1);
     assert.equal(second[0].sessionId, "session-sync");
     assert.equal(second[0].hitCount, 1);
@@ -131,7 +142,10 @@ test("memory transcripts preserve assistant tool calls and thinking for recall",
         sessionFile: "/tmp/session-2.jsonl",
         role: "assistant",
         content: [
-          { type: "thinking", thinking: "Need to inspect the repo before editing." },
+          {
+            type: "thinking",
+            thinking: "Need to inspect the repo before editing.",
+          },
           {
             type: "toolCall",
             id: "call-1",
@@ -162,7 +176,12 @@ test("memory transcripts preserve assistant tool calls and thinking for recall",
         sessionId: "session-2",
         sessionFile: "/tmp/session-2.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Updated the same session with a follow-up note about retries." }],
+        content: [
+          {
+            type: "text",
+            text: "Updated the same session with a follow-up note about retries.",
+          },
+        ],
       },
       root,
     );
@@ -224,7 +243,11 @@ test("memory can browse recent sessions without a query", async () => {
         sessionFile: "/tmp/session-2.jsonl",
         role: "assistant",
         content: [
-          { type: "toolCall", name: "browser_click", args: { selector: "Next" } },
+          {
+            type: "toolCall",
+            name: "browser_click",
+            args: { selector: "Next" },
+          },
           { type: "text", text: "卡在验证码页面，下一步要收验证码。" },
         ],
       },
@@ -257,7 +280,9 @@ test("memory search merges multiple message hits from the same session", async (
         sessionId: "session-a",
         sessionFile: "/tmp/session-a.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Debugged koishi outbound send routing." }],
+        content: [
+          { type: "text", text: "Debugged chat outbound send routing." },
+        ],
       },
       root,
     );
@@ -267,7 +292,12 @@ test("memory search merges multiple message hits from the same session", async (
         sessionId: "session-a",
         sessionFile: "/tmp/session-a.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Fixed koishi reply context and outbound send retry." }],
+        content: [
+          {
+            type: "text",
+            text: "Fixed chat reply context and outbound send retry.",
+          },
+        ],
       },
       root,
     );
@@ -277,13 +307,15 @@ test("memory search merges multiple message hits from the same session", async (
         sessionId: "session-b",
         sessionFile: "/tmp/session-b.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Looked at unrelated Telegram bridge code." }],
+        content: [
+          { type: "text", text: "Looked at unrelated Telegram bridge code." },
+        ],
       },
       root,
     );
 
     const results = await transcripts.searchTranscriptArchive(
-      "koishi outbound send",
+      "chat outbound send",
       { limit: 2 },
       root,
     );
@@ -303,7 +335,12 @@ test("memory search handles structured identifiers beyond exact raw substrings",
         sessionId: "session-ident",
         sessionFile: "/tmp/session-ident.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Investigated chat-send.ts for the P2.2 outbound bridge regression." }],
+        content: [
+          {
+            type: "text",
+            text: "Investigated chat-send.ts for the P2.2 outbound bridge regression.",
+          },
+        ],
       },
       root,
     );
@@ -362,12 +399,20 @@ test("memory transcript session loads can bypass search.db when result path is k
       sessionId: "session-direct-path",
       sessionFile: "/tmp/session-direct-path.jsonl",
       role: "assistant",
-      content: [{ type: "text", text: "Loaded transcript entries directly from the archive path." }],
+      content: [
+        {
+          type: "text",
+          text: "Loaded transcript entries directly from the archive path.",
+        },
+      ],
     };
     await transcripts.appendTranscriptArchiveEntry(entry, root);
     const archivePath = transcripts.getTranscriptArchivePath(entry, root);
     await fs.mkdir(path.join(root, "memory"), { recursive: true });
-    await fs.writeFile(path.join(root, "memory", "search.db"), "not-a-sqlite-db");
+    await fs.writeFile(
+      path.join(root, "memory", "search.db"),
+      "not-a-sqlite-db",
+    );
     const loaded = await transcripts.loadTranscriptSessionEntries(
       {
         sessionId: entry.sessionId,
@@ -389,7 +434,12 @@ test("memory summarization subagent hides the memory extension", async () => {
         sessionId: "session-summary",
         sessionFile: "/tmp/session-summary.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Refined the memory recall prompt and fixed the session resume hang." }],
+        content: [
+          {
+            type: "text",
+            text: "Refined the memory recall prompt and fixed the session resume hang.",
+          },
+        ],
       },
       root,
     );
@@ -399,19 +449,20 @@ test("memory summarization subagent hides the memory extension", async () => {
       root,
     );
     const calls = [];
-    const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
-      rows,
-      "session resume hang",
-      { agentDir: root, model: { provider: "test", id: "demo" } },
-      "medium",
-      async (options) => {
-        calls.push(options);
-        return {
-          ok: true,
-          results: [{ output: "Summarized recall sentence." }],
-        };
-      },
-    );
+    const summarized =
+      await memoryExtensionModule.maybeSummarizeTranscriptMatches(
+        rows,
+        "session resume hang",
+        { agentDir: root, model: { provider: "test", id: "demo" } },
+        "medium",
+        async (options) => {
+          calls.push(options);
+          return {
+            ok: true,
+            results: [{ output: "Summarized recall sentence." }],
+          };
+        },
+      );
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].params.tasks.length, 1);
@@ -423,7 +474,6 @@ test("memory summarization subagent hides the memory extension", async () => {
   });
 });
 
-
 test("search_memory summarization falls back to runtime agent dir and low thinking", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
@@ -432,7 +482,12 @@ test("search_memory summarization falls back to runtime agent dir and low thinki
         sessionId: "session-runtime",
         sessionFile: "/tmp/session-runtime.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Verified runtime fallback for memory summarization." }],
+        content: [
+          {
+            type: "text",
+            text: "Verified runtime fallback for memory summarization.",
+          },
+        ],
       },
       root,
     );
@@ -449,19 +504,20 @@ test("search_memory summarization falls back to runtime agent dir and low thinki
 
     try {
       const calls = [];
-      const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
-        rows,
-        "runtime fallback memory summarization",
-        { model: { provider: "test", id: "demo" } },
-        "high",
-        async (options) => {
-          calls.push(options);
-          return {
-            ok: true,
-            results: [{ output: "Runtime fallback summary." }],
-          };
-        },
-      );
+      const summarized =
+        await memoryExtensionModule.maybeSummarizeTranscriptMatches(
+          rows,
+          "runtime fallback memory summarization",
+          { model: { provider: "test", id: "demo" } },
+          "high",
+          async (options) => {
+            calls.push(options);
+            return {
+              ok: true,
+              results: [{ output: "Runtime fallback summary." }],
+            };
+          },
+        );
 
       assert.equal(calls.length, 1);
       assert.equal(calls[0].ctx.agentDir, root);
@@ -484,7 +540,12 @@ test("search_memory forwards abort signal into summarization subagents", async (
         sessionId: "session-abort",
         sessionFile: "/tmp/session-abort.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Tracked an abort propagation bug in search_memory." }],
+        content: [
+          {
+            type: "text",
+            text: "Tracked an abort propagation bug in search_memory.",
+          },
+        ],
       },
       root,
     );
@@ -496,21 +557,22 @@ test("search_memory forwards abort signal into summarization subagents", async (
     const controller = new AbortController();
     const calls = [];
     await assert.rejects(
-      () => memoryExtensionModule.maybeSummarizeTranscriptMatches(
-        rows,
-        "abort propagation bug",
-        { agentDir: root, model: { provider: "test", id: "demo" } },
-        "medium",
-        async (options) => {
-          calls.push(options);
-          controller.abort();
-          return {
-            ok: true,
-            results: [{ output: "should never be used" }],
-          };
-        },
-        controller.signal,
-      ),
+      () =>
+        memoryExtensionModule.maybeSummarizeTranscriptMatches(
+          rows,
+          "abort propagation bug",
+          { agentDir: root, model: { provider: "test", id: "demo" } },
+          "medium",
+          async (options) => {
+            calls.push(options);
+            controller.abort();
+            return {
+              ok: true,
+              results: [{ output: "should never be used" }],
+            };
+          },
+          controller.signal,
+        ),
       /search_memory_aborted/,
     );
     assert.equal(calls.length, 1);
@@ -526,7 +588,12 @@ test("search_memory fails instead of silently degrading to raw transcript result
         sessionId: "session-tool",
         sessionFile: "/tmp/session-tool.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Fixed search_memory hang by removing nested subagent recall." }],
+        content: [
+          {
+            type: "text",
+            text: "Fixed search_memory hang by removing nested subagent recall.",
+          },
+        ],
       },
       root,
     );
@@ -536,13 +603,14 @@ test("search_memory fails instead of silently degrading to raw transcript result
       root,
     );
     await assert.rejects(
-      () => memoryExtensionModule.maybeSummarizeTranscriptMatches(
-        rows,
-        "nested subagent recall",
-        { agentDir: root, model: { provider: "test", id: "demo" } },
-        "medium",
-        async () => ({ ok: false, error: "summary worker unavailable" }),
-      ),
+      () =>
+        memoryExtensionModule.maybeSummarizeTranscriptMatches(
+          rows,
+          "nested subagent recall",
+          { agentDir: root, model: { provider: "test", id: "demo" } },
+          "medium",
+          async () => ({ ok: false, error: "summary worker unavailable" }),
+        ),
       /summary worker unavailable/,
     );
   });
@@ -556,7 +624,12 @@ test("search_memory summarization forwards progress snapshots", async () => {
         sessionId: "session-progress",
         sessionFile: "/tmp/session-progress.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "Added visible progress updates while search_memory is summarizing." }],
+        content: [
+          {
+            type: "text",
+            text: "Added visible progress updates while search_memory is summarizing.",
+          },
+        ],
       },
       root,
     );
@@ -566,22 +639,23 @@ test("search_memory summarization forwards progress snapshots", async () => {
       root,
     );
     const snapshots = [];
-    const summarized = await memoryExtensionModule.maybeSummarizeTranscriptMatches(
-      rows,
-      "visible progress updates",
-      { agentDir: root, model: { provider: "test", id: "demo" } },
-      "medium",
-      async (options) => {
-        options.onProgress?.([{ status: "running" }]);
-        options.onProgress?.([{ status: "done" }]);
-        return {
-          ok: true,
-          results: [{ exitCode: 0, output: "Progress summary." }],
-        };
-      },
-      undefined,
-      (results) => snapshots.push(results.map((result) => result.status)),
-    );
+    const summarized =
+      await memoryExtensionModule.maybeSummarizeTranscriptMatches(
+        rows,
+        "visible progress updates",
+        { agentDir: root, model: { provider: "test", id: "demo" } },
+        "medium",
+        async (options) => {
+          options.onProgress?.([{ status: "running" }]);
+          options.onProgress?.([{ status: "done" }]);
+          return {
+            ok: true,
+            results: [{ exitCode: 0, output: "Progress summary." }],
+          };
+        },
+        undefined,
+        (results) => snapshots.push(results.map((result) => result.status)),
+      );
 
     assert.deepEqual(snapshots, [["running"], ["done"]]);
     assert.equal(summarized[0].summary, "Progress summary.");
@@ -599,7 +673,9 @@ test("executeSearchMemory emits an initial status update before finishing", asyn
       (update) => updates.push(update.details.userText),
     );
 
-    assert.deepEqual(updates, ['Searching archived sessions for "no hits yet"...']);
+    assert.deepEqual(updates, [
+      'Searching archived sessions for "no hits yet"...',
+    ]);
     assert.match(result.details.userText, /No memory results found\./);
   });
 });
@@ -611,7 +687,8 @@ test("search_memory formatting shows query, archive path, and raw messages with 
       {
         sessionFile: "/home/rin/.rin/sessions/demo.jsonl",
         path: "/home/rin/.rin/memory/transcripts/2026/04/demo.jsonl",
-        summary: "Investigated the Minecraft server modpack crash and identified the failing config file.",
+        summary:
+          "Investigated the Minecraft server modpack crash and identified the failing config file.",
         preview: "raw preview should never leak",
         messages: [
           {
@@ -626,22 +703,30 @@ test("search_memory formatting shows query, archive path, and raw messages with 
   });
 
   assert.match(rendered, /^search_memory minecraft server/m);
-  assert.match(rendered, /\/home\/rin\/\.rin\/memory\/transcripts\/2026\/04\/demo\.jsonl/);
+  assert.match(
+    rendered,
+    /\/home\/rin\/\.rin\/memory\/transcripts\/2026\/04\/demo\.jsonl/,
+  );
   assert.match(rendered, /Investigated the Minecraft server modpack crash/);
-  assert.match(rendered, /L12 toolResult\/bash: docker restart afbfee08-9ced-462b-9b30-8a5a09c2cb71/);
+  assert.match(
+    rendered,
+    /L12 toolResult\/bash: docker restart afbfee08-9ced-462b-9b30-8a5a09c2cb71/,
+  );
   assert.doesNotMatch(rendered, /raw preview should never leak/);
 });
 
 test("search_memory agent formatting uses archive path and line-numbered raw messages", () => {
   const rendered = memoryExtensionModule.formatAgentSearchResult({
-    query: "koishi outbound",
+    query: "chat outbound",
     results: [
       {
         timestamp: "2026-04-14T06:05:42.876Z",
         sessionId: "b6745c84-869c-4bc4-9709-9cda7a4f6def",
-        sessionFile: "/home/rin/.rin/sessions/2026-04-14T06-05-42-876Z_b6745c84-869c-4bc4-9709-9cda7a4f6def.jsonl",
+        sessionFile:
+          "/home/rin/.rin/sessions/2026-04-14T06-05-42-876Z_b6745c84-869c-4bc4-9709-9cda7a4f6def.jsonl",
         path: "/home/rin/.rin/memory/transcripts/2026/04/64ccd205-ea35-4716-b2d4-9eff931eb59c.jsonl",
-        summary: "Fixed the Koishi outbound send routing bug and verified the affected bridge path.",
+        summary:
+          "Fixed the Chat outbound send routing bug and verified the affected bridge path.",
         messages: [
           {
             line: 42,
@@ -653,7 +738,7 @@ test("search_memory agent formatting uses archive path and line-numbered raw mes
     ],
   });
 
-  assert.match(rendered, /^search_memory koishi outbound \(1\)/m);
+  assert.match(rendered, /^search_memory chat outbound \(1\)/m);
   assert.match(
     rendered,
     /1\. \/home\/rin\/\.rin\/memory\/transcripts\/2026\/04\/64ccd205-ea35-4716-b2d4-9eff931eb59c\.jsonl/,
@@ -682,7 +767,7 @@ test("search_memory rendered result appends timing info", () => {
   const rendered = memoryExtensionModule.formatRenderedMemoryResult(
     {
       details: {
-        userText: "Searching archived sessions for \"search_memory hang\"...",
+        userText: 'Searching archived sessions for "search_memory hang"...',
       },
     },
     { expanded: false, isPartial: false },
@@ -692,6 +777,9 @@ test("search_memory rendered result appends timing info", () => {
     3500,
   );
 
-  assert.match(rendered, /Searching archived sessions for "search_memory hang"/);
+  assert.match(
+    rendered,
+    /Searching archived sessions for "search_memory hang"/,
+  );
   assert.match(rendered, /Took 2\.5s/);
 });

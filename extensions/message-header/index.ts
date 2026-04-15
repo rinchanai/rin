@@ -2,7 +2,7 @@ import os from "node:os";
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
-import { consumeKoishiPromptContext } from "../../src/core/chat-bridge/prompt-context.js";
+import { consumeChatPromptContext } from "../../src/core/chat-bridge/prompt-context.js";
 
 type TurnPromptMeta = {
   source?: string;
@@ -23,7 +23,7 @@ type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
 const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
 
-function buildKoishiSystemPromptBlock(meta: TurnPromptMeta) {
+function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
   const chatKey = safeString(meta.chatKey).trim();
   const chatName = safeString(meta.chatName).trim();
   const chatType = safeString(meta.chatType).trim();
@@ -178,7 +178,7 @@ function buildHeader(
   const lines = [
     `time: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`,
   ];
-  if (meta?.source === "koishi-bridge") {
+  if (meta?.source === "chat-bridge") {
     lines.push(
       `sender user id: ${safeString(meta.userId).trim() || "unknown"}`,
     );
@@ -231,9 +231,9 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
 
     const input = safeString(event.text);
     const decoded = decodePromptMeta(input);
-    const queuedKoishiMeta =
-      safeString(event.source).trim() === "koishi-bridge"
-        ? consumeKoishiPromptContext()
+    const queuedChatMeta =
+      safeString(event.source).trim() === "chat-bridge"
+        ? consumeChatPromptContext()
         : null;
     const crossUserMeta = getCrossUserPromptMeta();
 
@@ -252,7 +252,7 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
 
     const mergedMeta = {
       ...(decoded.meta || {}),
-      ...(queuedKoishiMeta || {}),
+      ...(queuedChatMeta || {}),
       ...(runtimeRole === "std-tui" ? crossUserMeta || {} : {}),
     };
     const hasMeta = Object.keys(mergedMeta).length > 0;
@@ -260,7 +260,7 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
       meta: hasMeta ? mergedMeta : null,
       body: decoded.body,
       sentAt:
-        Number(queuedKoishiMeta?.sentAt) ||
+        Number(queuedChatMeta?.sentAt) ||
         Number(decoded.meta?.sentAt) ||
         Date.now(),
     });
@@ -290,8 +290,8 @@ export default function messageHeaderExtension(pi: ExtensionAPI) {
     };
 
     const blocks = [
-      current.meta?.source === "koishi-bridge"
-        ? buildKoishiSystemPromptBlock(current.meta)
+      current.meta?.source === "chat-bridge"
+        ? buildChatSystemPromptBlock(current.meta)
         : "",
       buildCrossUserSystemPromptBlock(
         current.meta || {},

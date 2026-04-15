@@ -8,7 +8,7 @@ export function reconcileInstallerManifest(
     provider?: string;
     modelId?: string;
     thinkingLevel?: string;
-    koishiConfig?: any;
+    chatConfig?: any;
     elevated?: boolean;
   },
   deps: {
@@ -55,7 +55,10 @@ export function reconcileInstallerManifest(
   if (options.modelId) manifestJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     manifestJson.defaultThinkingLevel = options.thinkingLevel;
-  if (options.koishiConfig) manifestJson.koishi = options.koishiConfig;
+  if (options.chatConfig) manifestJson.chat = options.chatConfig;
+  if (manifestJson.koishi && typeof manifestJson.koishi === "object") {
+    delete manifestJson.koishi;
+  }
   manifestJson.updatedAt = new Date().toISOString();
 
   if (options.elevated) {
@@ -86,7 +89,7 @@ export async function persistInstallerOutputs(
     provider: string;
     modelId: string;
     thinkingLevel: string;
-    koishiConfig: any;
+    chatConfig: any;
     authData: any;
     elevated?: boolean;
   },
@@ -127,12 +130,24 @@ export async function persistInstallerOutputs(
   if (options.modelId) settingsJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     settingsJson.defaultThinkingLevel = options.thinkingLevel;
-  if (options.koishiConfig && typeof options.koishiConfig === "object") {
-    settingsJson.koishi ||= {};
-    for (const [adapterKey, adapterConfig] of Object.entries(options.koishiConfig)) {
+  if (
+    !settingsJson.chat &&
+    settingsJson.koishi &&
+    typeof settingsJson.koishi === "object"
+  ) {
+    settingsJson.chat = JSON.parse(JSON.stringify(settingsJson.koishi));
+  }
+  if (options.chatConfig && typeof options.chatConfig === "object") {
+    settingsJson.chat ||= {};
+    for (const [adapterKey, adapterConfig] of Object.entries(
+      options.chatConfig,
+    )) {
       if (adapterConfig === undefined) continue;
-      settingsJson.koishi[adapterKey] = adapterConfig;
+      settingsJson.chat[adapterKey] = adapterConfig;
     }
+  }
+  if (settingsJson.koishi && typeof settingsJson.koishi === "object") {
+    delete settingsJson.koishi;
   }
 
   const authPath = path.join(options.installDir, "auth.json");
@@ -160,7 +175,7 @@ export async function persistInstallerOutputs(
       provider: options.provider,
       modelId: options.modelId,
       thinkingLevel: options.thinkingLevel,
-      koishiConfig: options.koishiConfig || {},
+      chatConfig: options.chatConfig || {},
       elevated: options.elevated,
     },
     deps,

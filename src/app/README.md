@@ -12,7 +12,7 @@ It intentionally contains only thin executable entrypoints and builtin-extension
   - daemon
   - worker
   - TUI
-  - Koishi
+  - Chat
 
 ## Non-goals
 
@@ -32,4 +32,4 @@ Instead, app provides a few very small wrappers that only do assembly:
 - `rin-daemon/daemon.ts` points the daemon at the app worker
 - `rin-daemon/worker.ts` starts the core worker with builtin extension paths
 - `rin-tui/main.ts` starts the shared TUI launcher with builtin extension paths
-- `rin-koishi/main.ts` starts the shared Koishi bridge with builtin extension paths
+- `rin-chat/main.ts` starts the shared Chat bridge with builtin extension paths

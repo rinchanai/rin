@@ -4,7 +4,7 @@ import path from "node:path";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { safeString } from "./chat-helpers.js";
 
-export type KoishiBridgeEvalPayload = {
+export type ChatBridgeEvalPayload = {
   createdAt: string;
   requestId?: string;
   currentChatKey?: string;
@@ -14,7 +14,7 @@ export type KoishiBridgeEvalPayload = {
   sessionFile?: string;
 };
 
-export type KoishiRpcCommand =
+export type ChatRpcCommand =
   | { type: "send_chat"; payload: ChatOutboxPayload }
   | {
       type: "run_chat_turn";
@@ -29,7 +29,7 @@ export type KoishiRpcCommand =
     }
   | {
       type: "bridge_eval";
-      payload: KoishiBridgeEvalPayload;
+      payload: ChatBridgeEvalPayload;
     };
 
 function parseJsonLine(buffer: string) {
@@ -40,19 +40,14 @@ function parseJsonLine(buffer: string) {
   return { line, rest: buffer.slice(idx + 1) };
 }
 
-export function koishiRpcSocketPath(agentDir: string) {
-  return path.join(
-    path.resolve(agentDir),
-    "data",
-    "koishi-sidecar",
-    "rpc.sock",
-  );
+export function chatRpcSocketPath(agentDir: string) {
+  return path.join(path.resolve(agentDir), "data", "chat-sidecar", "rpc.sock");
 }
 
 export const DEFAULT_KOISHI_RPC_TIMEOUT_MS = 30_000;
 export const KOISHI_RPC_CHAT_TURN_TIMEOUT_MS = 10 * 60_000;
 
-export function koishiRpcTimeoutMsFor(command: Record<string, any>) {
+export function chatRpcTimeoutMsFor(command: Record<string, any>) {
   const type = safeString(command?.type).trim();
   if (type === "run_chat_turn") return KOISHI_RPC_CHAT_TURN_TIMEOUT_MS;
   if (type === "bridge_eval") {
@@ -67,12 +62,12 @@ export function koishiRpcTimeoutMsFor(command: Record<string, any>) {
   return DEFAULT_KOISHI_RPC_TIMEOUT_MS;
 }
 
-export async function requestKoishiRpc(
+export async function requestChatRpc(
   agentDir: string,
   command: Record<string, any>,
-  timeoutMs = koishiRpcTimeoutMsFor(command),
+  timeoutMs = chatRpcTimeoutMsFor(command),
 ) {
-  const socketPath = koishiRpcSocketPath(agentDir);
+  const socketPath = chatRpcSocketPath(agentDir);
   return await new Promise<any>((resolve, reject) => {
     const socket = new net.Socket();
     let settled = false;
@@ -91,7 +86,7 @@ export async function requestKoishiRpc(
       () =>
         finish(
           new Error(
-            `koishi_rpc_timeout:${safeString(command?.type).trim() || "unknown"}`,
+            `chat_rpc_timeout:${safeString(command?.type).trim() || "unknown"}`,
           ),
         ),
       Math.max(1, timeoutMs),
@@ -109,11 +104,11 @@ export async function requestKoishiRpc(
         try {
           payload = JSON.parse(parsed.line);
         } catch {
-          finish(new Error("koishi_rpc_invalid_json"));
+          finish(new Error("chat_rpc_invalid_json"));
           return;
         }
         if (payload?.success === false) {
-          finish(new Error(String(payload?.error || "koishi_rpc_failed")));
+          finish(new Error(String(payload?.error || "chat_rpc_failed")));
           return;
         }
         finish(undefined, payload?.data ?? payload);
@@ -131,12 +126,12 @@ export async function requestKoishiRpc(
   });
 }
 
-export async function deliverKoishiRpcPayload(
+export async function deliverChatRpcPayload(
   agentDir: string,
   payload: ChatOutboxPayload,
   timeoutMs = DEFAULT_KOISHI_RPC_TIMEOUT_MS,
 ) {
-  return await requestKoishiRpc(
+  return await requestChatRpc(
     agentDir,
     {
       type: "send_chat",
@@ -146,15 +141,15 @@ export async function deliverKoishiRpcPayload(
   );
 }
 
-export async function evalKoishiBridgePayload(
+export async function evalChatBridgePayload(
   agentDir: string,
-  payload: KoishiBridgeEvalPayload,
-  timeoutMs = koishiRpcTimeoutMsFor({
+  payload: ChatBridgeEvalPayload,
+  timeoutMs = chatRpcTimeoutMsFor({
     type: "bridge_eval",
     payload,
   }),
 ) {
-  return await requestKoishiRpc(
+  return await requestChatRpc(
     agentDir,
     {
       type: "bridge_eval",

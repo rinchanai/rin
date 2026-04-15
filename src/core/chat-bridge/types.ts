@@ -1,4 +1,4 @@
 export type {
-  KoishiChatState as ChatBridgeState,
+  ChatState as ChatBridgeState,
   SavedAttachment as ChatBridgeAttachment,
-} from "../rin-koishi/chat-helpers.js";
+} from "../chat/chat-helpers.js";

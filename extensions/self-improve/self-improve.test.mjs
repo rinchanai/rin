@@ -79,22 +79,20 @@ test("processing describes prompt slots with content and limits", async () => {
   assert.equal(state.slot, "agent_profile");
   assert.equal(state.maxLines, 16);
   assert.equal(state.currentLines, 1);
-  assert.equal(
-    state.content,
-    "- Speak concise Chinese by default.",
-  );
+  assert.equal(state.content, "- Speak concise Chinese by default.");
 });
 
 test("processing normalizes revised full-slot content and enforces limits", async () => {
   const refined = processing.refineSelfImprovePromptSlot({
     slot: "user_profile",
-    incomingContent: "Call the user Master by default.\nAvoid markdown in Koishi bridge chats.",
+    incomingContent:
+      "Call the user Master by default.\nAvoid markdown in Chat bridge chats.",
   });
   assert.equal(
     refined.content,
     [
       "- Call the user Master by default.",
-      "- Avoid markdown in Koishi bridge chats.",
+      "- Avoid markdown in Chat bridge chats.",
     ].join("\n"),
   );
   assert.equal(refined.nextLines, 2);
@@ -102,7 +100,10 @@ test("processing normalizes revised full-slot content and enforces limits", asyn
     () =>
       processing.refineSelfImprovePromptSlot({
         slot: "agent_profile",
-        incomingContent: Array.from({ length: 17 }, (_, i) => `line ${i + 1}`).join("\n"),
+        incomingContent: Array.from(
+          { length: 17 },
+          (_, i) => `line ${i + 1}`,
+        ).join("\n"),
       }),
     /self_improve_prompt_content_too_long:agent_profile:16/,
   );

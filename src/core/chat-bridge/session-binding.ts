@@ -2,4 +2,4 @@ export {
   chatStateDir,
   chatStatePath,
   listChatStateFiles,
-} from "../rin-koishi/support.js";
+} from "../chat/support.js";

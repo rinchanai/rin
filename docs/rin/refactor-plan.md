@@ -96,7 +96,7 @@ The extension layer contains capabilities built around the core:
 
 - memory derivation (extractor / episode / onboarding)
 - web-search tool
-- Koishi tools
+- Chat tools
 - subagent
 - attention resources
 
@@ -106,7 +106,7 @@ The infrastructure layer contains support systems:
 
 - daemon
 - worker pool
-- Koishi bridge runtime
+- Chat bridge runtime
 - SearXNG sidecar
 - lock / state / process management
 
@@ -127,7 +127,7 @@ Multiple modules currently manage session lifecycle directly:
 
 - daemon worker
 - cron
-- Koishi
+- Chat
 - TUI runtime
 - subagent
 
@@ -162,7 +162,7 @@ That layer should own:
 #### Expected benefit
 
 - session becomes the real system axis
-- cron / Koishi / worker / TUI behave consistently
+- cron / Chat / worker / TUI behave consistently
 - cross-module coupling is reduced
 
 ---
@@ -219,11 +219,11 @@ Responsible for:
 
 ---
 
-### 4.3 Reduce Koishi from a heavy subsystem to a chat bridge adapter
+### 4.3 Reduce Chat from a heavy subsystem to a chat bridge adapter
 
 #### Current problem
 
-The current Koishi code handles too many concerns at once:
+The current Chat code handles too many concerns at once:
 
 - transport adapter
 - inbound persistence
@@ -234,13 +234,13 @@ The current Koishi code handles too many concerns at once:
 - typing state
 - attachment handling
 
-That makes Koishi look like a full messaging subsystem instead of a bridge.
+That makes Chat look like a full messaging subsystem instead of a bridge.
 
 #### Target
 
-Promote the system concept from `Koishi` to `Chat Bridge`.
+Promote the system concept from `Chat` to `Chat Bridge`.
 
-Koishi should be treated as one adapter/runtime, not as the top-level concept.
+Chat should be treated as one adapter/runtime, not as the top-level concept.
 
 #### Concept split
 
@@ -250,7 +250,7 @@ Split the design into three conceptual layers:
 - `chat-session-binding`
 - `chat-policy`
 
-Koishi should then focus on:
+Chat should then focus on:
 
 - transport glue
 - platform integration
@@ -258,7 +258,7 @@ Koishi should then focus on:
 
 #### Expected benefit
 
-- Koishi occupies less architectural space
+- Chat occupies less architectural space
 - policy, session binding, and platform integration stop being tangled together
 - future bridge replacement or expansion becomes much easier
 
@@ -276,7 +276,7 @@ The install system currently handles too many jobs together:
 - daemon service configuration
 - docs install
 - provider auth init
-- Koishi config
+- Chat config
 - target discovery
 - manifest maintenance
 
@@ -300,7 +300,7 @@ Responsible for:
 
 - provider auth
 - initial settings
-- Koishi configuration
+- Chat configuration
 
 #### operate
 
@@ -359,7 +359,7 @@ Unify runtime behavior so that:
 - include `extensions/*` in build output
 - point `src/app/builtin-extensions.ts` at built output paths
 - stop dynamic `.ts` loading in `extensions/memory/lib.ts`
-- stop dual `src` / `dist` lookup in `extensions/koishi-get-message/index.ts`
+- stop dual `src` / `dist` lookup in `extensions/chat-get-message/index.ts`
 - remove jiti-related logic from `src/core/rin-lib/loader.ts`
 
 #### Expected benefit
@@ -425,7 +425,7 @@ There should no longer be a hybrid state where some modules run from `dist` whil
 
 #### Applies to
 
-- `src/core/rin-koishi/service.ts`
+- `src/core/chat/service.ts`
 - `src/core/rin-web-search/service.ts`
 
 #### Shared concerns
@@ -438,7 +438,7 @@ There should no longer be a hybrid state where some modules run from `dist` whil
 #### Expected benefit
 
 - consistent sidecar lifecycle management
-- less duplicated logic inside Koishi and web-search modules
+- less duplicated logic inside Chat and web-search modules
 - new sidecars stop inheriting the same repeated patterns
 
 ---
@@ -449,7 +449,7 @@ There should no longer be a hybrid state where some modules run from `dist` whil
 
 - RPC command / response
 - cron task record
-- Koishi message record
+- Chat message record
 - sidecar state
 - memory doc metadata
 
@@ -491,7 +491,7 @@ Split into:
 - `install/publish.ts`
 - `install/bootstrap.ts`
 - `install/configure-provider.ts`
-- `install/configure-koishi.ts`
+- `install/configure-chat.ts`
 - `install/service-systemd.ts`
 - `install/service-launchd.ts`
 - `install/update-targets.ts`
@@ -510,16 +510,16 @@ Split into:
 - `memory/core/compile.ts`
 - `memory/core/actions.ts`
 
-### 6.4 `src/core/rin-koishi/main.ts`
+### 6.4 `src/core/chat/main.ts`
 
 Split into:
 
-- `rin-koishi/controller.ts`
-- `rin-koishi/inbound.ts`
-- `rin-koishi/outbound.ts`
-- `rin-koishi/attachments.ts`
-- `rin-koishi/prompt-meta.ts`
-- `rin-koishi/policy.ts`
+- `rin-chat/controller.ts`
+- `rin-chat/inbound.ts`
+- `rin-chat/outbound.ts`
+- `rin-chat/attachments.ts`
+- `rin-chat/prompt-meta.ts`
+- `rin-chat/policy.ts`
 
 ### 6.5 `src/core/rin-tui/runtime.ts`
 
@@ -535,15 +535,15 @@ Split into:
 
 ## 7. Component strategy table
 
-| Component                | Strategy  | Notes |
-| ------------------------ | --------- | ----- |
-| session                  | reinforce | make it the single core object |
-| memory store             | reinforce | keep markdown as the base, only split responsibilities |
-| memory derivation        | simplify  | move extractor / episode / onboarding out of core |
-| Koishi bridge            | simplify  | converge from a heavy subsystem into a chat bridge adapter |
-| installer / updater      | simplify  | split the all-in-one entry into staged flows |
-| search / SearXNG         | bound     | keep the solution, only manage lifecycle and repeated infrastructure |
-| jiti / source fallback   | remove    | pure runtime-boundary debt |
+| Component              | Strategy  | Notes                                                                |
+| ---------------------- | --------- | -------------------------------------------------------------------- |
+| session                | reinforce | make it the single core object                                       |
+| memory store           | reinforce | keep markdown as the base, only split responsibilities               |
+| memory derivation      | simplify  | move extractor / episode / onboarding out of core                    |
+| Chat bridge            | simplify  | converge from a heavy subsystem into a chat bridge adapter           |
+| installer / updater    | simplify  | split the all-in-one entry into staged flows                         |
+| search / SearXNG       | bound     | keep the solution, only manage lifecycle and repeated infrastructure |
+| jiti / source fallback | remove    | pure runtime-boundary debt                                           |
 
 ---
 
@@ -598,7 +598,7 @@ Reduce maintenance complexity in a visible way.
 1. Split `src/core/rin/main.ts`
 2. Split `src/core/rin-install/main.ts`
 3. Split `extensions/memory/store.ts`
-4. Split `src/core/rin-koishi/main.ts`
+4. Split `src/core/chat/main.ts`
 5. Split `src/core/rin-tui/runtime.ts`
 
 #### Result
@@ -644,7 +644,7 @@ Rin evolves from a cleaned-up codebase into a clearly designed long-term product
 ### Third batch
 
 8. Land the unified session façade
-9. Refactor Koishi into a chat bridge structure
+9. Refactor Chat into a chat bridge structure
 10. Clean up memory derivation
 
 ---
@@ -671,7 +671,7 @@ After the cleanup, Rin should meet these standards.
 
 - session is the only main object
 - memory store and intelligent derivation are separated
-- Koishi is a bridge, not a center
+- Chat is a bridge, not a center
 - installer / updater responsibilities are clear
 - search remains stable and is not over-reworked
 

@@ -9,12 +9,12 @@ import type {
   ChatOutboxPayload,
 } from "../rin-lib/chat-outbox.js";
 import { findBot, parseChatKey } from "./support.js";
-import { appendKoishiChatLog } from "./chat-log.js";
+import { appendChatLog } from "./chat-log.js";
 import {
-  findKoishiMessageByChatAndId,
-  saveKoishiMessage,
+  findChatMessageByChatAndId,
+  saveChatMessage,
 } from "./message-store.js";
-import type { KoishiChatState, SavedAttachment } from "./chat-helpers.js";
+import type { ChatState, SavedAttachment } from "./chat-helpers.js";
 import {
   ensureDir,
   extractTextFromContent,
@@ -211,7 +211,7 @@ function resolveSessionContext(
   }
   const nextReplyToMessageId = safeString(replyToMessageId).trim();
   if (!nextReplyToMessageId) return {};
-  const linked = findKoishiMessageByChatAndId(
+  const linked = findChatMessageByChatAndId(
     agentDir,
     chatKey,
     nextReplyToMessageId,
@@ -260,7 +260,7 @@ export function recordDeliveredAssistantMessages(
   const now = new Date().toISOString();
 
   for (const messageId of messageIds) {
-    saveKoishiMessage(agentDir, {
+    saveChatMessage(agentDir, {
       messageId,
       role: "assistant",
       replyToMessageId: safeString(input.replyToMessageId).trim() || undefined,
@@ -433,7 +433,7 @@ export async function sendOutboxPayload(
       replyToMessageId,
     );
     if (chatKey && text) {
-      appendKoishiChatLog(agentDir, {
+      appendChatLog(agentDir, {
         timestamp: new Date().toISOString(),
         chatKey,
         role: "assistant",
@@ -488,7 +488,7 @@ export async function sendOutboxPayload(
     .join("\n\n")
     .trim();
   if (finalLoggedText) {
-    appendKoishiChatLog(agentDir, {
+    appendChatLog(agentDir, {
       timestamp: new Date().toISOString(),
       chatKey,
       role: "assistant",
@@ -523,7 +523,7 @@ export async function attachmentToImageContent(
 }
 
 export async function restorePromptParts(
-  processing: NonNullable<KoishiChatState["processing"]>,
+  processing: NonNullable<ChatState["processing"]>,
 ) {
   const attachments = (processing.attachments || []).filter(
     (item) => item && fs.existsSync(item.path),

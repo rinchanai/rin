@@ -8,8 +8,7 @@ const rootDir = path.resolve(
   "..",
 );
 const decision = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-koishi", "decision.js"))
-    .href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "decision.js")).href
 );
 
 const identity = {
@@ -17,7 +16,7 @@ const identity = {
   persons: { owner: { trust: "OWNER" } },
 };
 
-test("koishi decision keeps slash-containing owner text routable", async () => {
+test("chat decision keeps slash-containing owner text routable", async () => {
   const result = await decision.shouldProcessText(
     {
       platform: "telegram",
@@ -34,7 +33,7 @@ test("koishi decision keeps slash-containing owner text routable", async () => {
   assert.equal(result.text, "路径 /tmp/demo.txt 怎么处理？");
 });
 
-test("koishi decision only enforces access policy, not custom slash-command guessing", async () => {
+test("chat decision only enforces access policy, not custom slash-command guessing", async () => {
   const result = await decision.shouldProcessText(
     {
       platform: "telegram",
@@ -51,7 +50,7 @@ test("koishi decision only enforces access policy, not custom slash-command gues
   assert.equal(result.text, "/new hello");
 });
 
-test("koishi decision keeps image-only owner messages routable", async () => {
+test("chat decision keeps image-only owner messages routable", async () => {
   const result = await decision.shouldProcessText(
     {
       platform: "telegram",
@@ -60,7 +59,12 @@ test("koishi decision keeps image-only owner messages routable", async () => {
       stripped: { content: "" },
       isDirect: true,
     },
-    [{ type: "img", attrs: { src: "https://example.com/demo.png", file: "demo.png" } }],
+    [
+      {
+        type: "img",
+        attrs: { src: "https://example.com/demo.png", file: "demo.png" },
+      },
+    ],
     identity,
   );
 
@@ -68,7 +72,7 @@ test("koishi decision keeps image-only owner messages routable", async () => {
   assert.equal(result.text, "");
 });
 
-test("koishi decision allows owner group messages that explicitly at the bot even when stripped.appel is missing", async () => {
+test("chat decision allows owner group messages that explicitly at the bot even when stripped.appel is missing", async () => {
   const result = await decision.shouldProcessText(
     {
       platform: "telegram",
@@ -98,7 +102,7 @@ test("koishi decision allows owner group messages that explicitly at the bot eve
   assert.equal(result.text, "滴度");
 });
 
-test("koishi decision ignores owner group messages that only at other users", async () => {
+test("chat decision ignores owner group messages that only at other users", async () => {
   const result = await decision.shouldProcessText(
     {
       platform: "telegram",

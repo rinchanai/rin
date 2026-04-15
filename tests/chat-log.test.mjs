@@ -10,17 +10,15 @@ const rootDir = path.resolve(
   "..",
 );
 const chatLog = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-koishi", "chat-log.js"))
-    .href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "chat-log.js")).href
 );
 const messageStore = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "message-store.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js"))
+    .href
 );
 
 async function withTempRoot(fn) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-koishi-chat-log-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-chat-log-"));
   try {
     await fn(dir);
   } finally {
@@ -28,9 +26,9 @@ async function withTempRoot(fn) {
   }
 }
 
-test("koishi chat log appends into unified message store and reads one day chat history", async () => {
+test("chat chat log appends into unified message store and reads one day chat history", async () => {
   await withTempRoot(async (root) => {
-    messageStore.saveKoishiMessage(root, {
+    messageStore.saveChatMessage(root, {
       messageId: "m1",
       role: "user",
       chatKey: "telegram/123:456",
@@ -46,7 +44,7 @@ test("koishi chat log appends into unified message store and reads one day chat 
       rawContent: "Good morning",
       strippedContent: "Good morning",
     });
-    chatLog.appendKoishiChatLog(root, {
+    chatLog.appendChatLog(root, {
       timestamp: "2026-04-04T12:00:00.000Z",
       chatKey: "telegram/123:456",
       role: "user",
@@ -54,7 +52,7 @@ test("koishi chat log appends into unified message store and reads one day chat 
       messageId: "m1",
       nickname: "Alice",
     });
-    messageStore.saveKoishiMessage(root, {
+    messageStore.saveChatMessage(root, {
       messageId: "m2",
       role: "assistant",
       replyToMessageId: "m1",
@@ -69,23 +67,19 @@ test("koishi chat log appends into unified message store and reads one day chat 
       strippedContent: "Good morning!",
     });
 
-    const stored = messageStore.getKoishiMessage(
-      root,
-      "telegram/123:456",
-      "m1",
-    );
+    const stored = messageStore.getChatMessage(root, "telegram/123:456", "m1");
     assert.equal(stored?.role, "user");
     assert.equal(stored?.nickname, "Alice");
     assert.equal(stored?.trust, "OWNER");
     assert.equal(stored?.chatName, "Demo Chat");
 
-    const { filePath, entries } = chatLog.readKoishiChatLog(
+    const { filePath, entries } = chatLog.readChatLog(
       root,
       "telegram/123:456",
       "2026-04-04",
     );
-    assert.match(filePath, /koishi-message-store[\\/]chat-log-view[\\/]/);
+    assert.match(filePath, /chat-message-store[\\/]chat-log-view[\\/]/);
     assert.equal(entries.length, 2);
-    assert.match(chatLog.formatKoishiChatLog(entries), /assistant: Good morning!/);
+    assert.match(chatLog.formatChatLog(entries), /assistant: Good morning!/);
   });
 });

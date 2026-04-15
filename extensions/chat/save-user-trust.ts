@@ -17,12 +17,12 @@ async function loadSupportModule() {
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-koishi", "support.js"),
-    path.join(root, "dist", "core", "rin-koishi", "support.js"),
+    path.join(root, "core", "chat", "support.js"),
+    path.join(root, "dist", "core", "chat", "support.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
-    throw new Error(`rin_koishi_support_not_found:${candidates.join(" | ")}`);
+    throw new Error(`rin_chat_support_not_found:${candidates.join(" | ")}`);
   }
   return await import(pathToFileURL(distPath).href);
 }
@@ -34,13 +34,13 @@ async function loadMessageStoreModule() {
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-koishi", "message-store.js"),
-    path.join(root, "dist", "core", "rin-koishi", "message-store.js"),
+    path.join(root, "core", "chat", "message-store.js"),
+    path.join(root, "dist", "core", "chat", "message-store.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
     throw new Error(
-      `rin_koishi_message_store_not_found:${candidates.join(" | ")}`,
+      `rin_chat_message_store_not_found:${candidates.join(" | ")}`,
     );
   }
   return await import(pathToFileURL(distPath).href);
@@ -77,8 +77,7 @@ const paramsSchema = Type.Object({
   ),
   name: Type.Optional(
     Type.String({
-      description:
-        "Optional display name hint to save with this user record.",
+      description: "Optional display name hint to save with this user record.",
     }),
   ),
 });
@@ -87,8 +86,7 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "save_chat_user_identity",
     label: "Save Chat User Identity",
-    description:
-      "Create or update saved identity info for a chat user.",
+    description: "Create or update saved identity info for a chat user.",
     promptSnippet: "Save identity info for a chat user.",
     promptGuidelines: [],
     parameters: paramsSchema,
@@ -105,8 +103,8 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
       let name = nameInput;
 
       if (messageId) {
-        const { normalizeKoishiMessageLookup } = await loadMessageStoreModule();
-        const matches = normalizeKoishiMessageLookup(
+        const { normalizeChatMessageLookup } = await loadMessageStoreModule();
+        const matches = normalizeChatMessageLookup(
           getAgentDir(),
           messageId,
           chatKey || undefined,
@@ -119,7 +117,8 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
         const target = matches[0];
         platform = safeString(target?.platform).trim();
         userId = safeString(target?.userId).trim();
-        if (!name) name = safeString(target?.nickname || target?.chatName).trim();
+        if (!name)
+          name = safeString(target?.nickname || target?.chatName).trim();
       }
 
       if (!platform || !userId) {

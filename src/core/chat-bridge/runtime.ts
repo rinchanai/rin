@@ -2,16 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { ChatMessagePart } from "../rin-lib/chat-outbox.js";
-import { readKoishiChatLog } from "../rin-koishi/chat-log.js";
-import { normalizeKoishiMessageLookup } from "../rin-koishi/message-store.js";
+import { readChatLog } from "../chat/chat-log.js";
+import { normalizeChatMessageLookup } from "../chat/message-store.js";
 import {
   findBot,
   loadIdentity,
   parseChatKey,
   setIdentityTrust,
   trustOf,
-} from "../rin-koishi/support.js";
-import { sendOutboxPayload } from "../rin-koishi/transport.js";
+} from "../chat/support.js";
+import { sendOutboxPayload } from "../chat/transport.js";
 import { serializeBridgeValue } from "./eval.js";
 
 function safeString(value: unknown) {
@@ -252,7 +252,7 @@ export function createChatBridgeRuntime(options: {
       h: options.h,
       store: {
         getMessage(messageId: string, nextChatKey?: string) {
-          return normalizeKoishiMessageLookup(
+          return normalizeChatMessageLookup(
             options.agentDir,
             safeString(messageId).trim(),
             safeString(nextChatKey).trim() || chatKey,
@@ -261,7 +261,7 @@ export function createChatBridgeRuntime(options: {
         listLog(date?: string, nextChatKey?: string) {
           const nextDate =
             safeString(date).trim() || new Date().toISOString().slice(0, 10);
-          return readKoishiChatLog(
+          return readChatLog(
             options.agentDir,
             safeString(nextChatKey).trim() || chatKey,
             nextDate,

@@ -10,13 +10,12 @@ const rootDir = path.resolve(
   "..",
 );
 const support = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-koishi", "support.js"))
-    .href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href
 );
 
 test("chat bridge adapter config materialization covers built-in official adapters", () => {
-  const config = support.buildKoishiConfigFromSettings({
-    koishi: {
+  const config = support.buildChatConfigFromSettings({
+    chat: {
       discord: { token: "discord-token" },
       qq: {
         id: "qq-app-id",
@@ -55,8 +54,8 @@ test("chat bridge adapter config materialization covers built-in official adapte
 });
 
 test("chat bridge adapter config materialization applies minimal setup defaults", () => {
-  const config = support.buildKoishiConfigFromSettings({
-    koishi: {
+  const config = support.buildChatConfigFromSettings({
+    chat: {
       qq: { id: "app-id", secret: "secret", token: "token", type: "public" },
       lark: { appId: "cli_xxx", appSecret: "secret_xxx" },
       slack: { token: "xapp-demo", botToken: "xoxb-demo" },
@@ -87,7 +86,7 @@ test("chat bridge adapter config materialization applies minimal setup defaults"
 
 test("chat bridge config materialization includes custom adapters and runtime package deps", () => {
   const settings = {
-    koishi: {
+    chat: {
       customAdapters: [
         {
           packageName: "chat-bridge-adapter-example",
@@ -111,8 +110,8 @@ test("chat bridge config materialization includes custom adapters and runtime pa
     },
   };
 
-  const config = support.buildKoishiConfigFromSettings(settings);
-  const runtimePackage = support.buildKoishiRuntimePackageJson(settings);
+  const config = support.buildChatConfigFromSettings(settings);
+  const runtimePackage = support.buildChatRuntimePackageJson(settings);
 
   assert.deepEqual(config.plugins["adapter-example"], {
     token: "demo-token",
@@ -127,8 +126,8 @@ test("chat bridge config materialization includes custom adapters and runtime pa
 });
 
 test("chat bridge runtime adapter entries use internal built-in runtime adapters", () => {
-  const entries = support.listKoishiRuntimeAdapterEntries({
-    koishi: {
+  const entries = support.listChatRuntimeAdapterEntries({
+    chat: {
       telegram: { token: "telegram-token", protocol: "polling" },
       onebot: { endpoint: "ws://127.0.0.1:3001", protocol: "ws", selfId: "42" },
       minecraft: { url: "ws://127.0.0.1:8080", selfId: "minecraft" },
@@ -151,8 +150,8 @@ test("chat bridge runtime dependency install check only triggers for custom adap
   );
   try {
     assert.equal(
-      support.shouldInstallKoishiRuntimeDependencies(dir, {
-        koishi: {
+      support.shouldInstallChatRuntimeDependencies(dir, {
+        chat: {
           telegram: { token: "telegram-token", protocol: "polling" },
         },
       }),
@@ -160,7 +159,7 @@ test("chat bridge runtime dependency install check only triggers for custom adap
     );
 
     const settings = {
-      koishi: {
+      chat: {
         telegram: { token: "telegram-token", protocol: "polling" },
         customAdapters: [
           {
@@ -173,11 +172,11 @@ test("chat bridge runtime dependency install check only triggers for custom adap
     };
 
     assert.equal(
-      support.shouldInstallKoishiRuntimeDependencies(dir, settings),
+      support.shouldInstallChatRuntimeDependencies(dir, settings),
       true,
     );
 
-    const runtimePackage = support.buildKoishiRuntimePackageJson(settings);
+    const runtimePackage = support.buildChatRuntimePackageJson(settings);
     await fs.writeFile(
       path.join(dir, "package.json"),
       `${JSON.stringify(runtimePackage, null, 2)}\n`,
@@ -191,7 +190,7 @@ test("chat bridge runtime dependency install check only triggers for custom adap
     }
 
     assert.equal(
-      support.shouldInstallKoishiRuntimeDependencies(dir, settings),
+      support.shouldInstallChatRuntimeDependencies(dir, settings),
       false,
     );
   } finally {

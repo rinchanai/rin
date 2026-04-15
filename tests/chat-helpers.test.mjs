@@ -10,13 +10,12 @@ const rootDir = path.resolve(
   "..",
 );
 const helpers = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-koishi", "chat-helpers.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "chat-helpers.js"))
+    .href
 );
 
 async function withTempDir(fn) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-koishi-test-"));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-test-"));
   try {
     await fn(dir);
   } finally {
@@ -24,7 +23,7 @@ async function withTempDir(fn) {
   }
 }
 
-test("koishi chat helpers extract chat metadata", () => {
+test("chat chat helpers extract chat metadata", () => {
   const session = {
     platform: "telegram",
     guildId: "g1",
@@ -40,7 +39,7 @@ test("koishi chat helpers extract chat metadata", () => {
   assert.equal(helpers.getChatType(session), "group");
 });
 
-test("koishi chat helpers treat explicit at-elements as mentions even when stripped.appel is missing", () => {
+test("chat chat helpers treat explicit at-elements as mentions even when stripped.appel is missing", () => {
   const session = {
     platform: "telegram",
     guildId: "g1",
@@ -58,7 +57,7 @@ test("koishi chat helpers treat explicit at-elements as mentions even when strip
   assert.equal(helpers.mentionLike(session), true);
 });
 
-test("koishi chat helpers extract reply ids and quote text from canonical koishi quote", () => {
+test("chat chat helpers extract reply ids and quote text from canonical chat quote", () => {
   const session = {
     quote: {
       messageId: "quoted-42",
@@ -74,7 +73,7 @@ test("koishi chat helpers extract reply ids and quote text from canonical koishi
   });
 });
 
-test("koishi chat helpers derive incoming text from elements", () => {
+test("chat chat helpers derive incoming text from elements", () => {
   assert.equal(
     helpers.elementsToText([
       { type: "text", attrs: { content: "看一下 /tmp/demo.log" } },
@@ -90,23 +89,26 @@ test("koishi chat helpers derive incoming text from elements", () => {
   );
   assert.equal(
     helpers.elementsToText([
-      { type: "paragraph", children: [{ type: "text", attrs: { content: "第一行" } }] },
+      {
+        type: "paragraph",
+        children: [{ type: "text", attrs: { content: "第一行" } }],
+      },
       { type: "br" },
       { type: "text", attrs: { content: "第二行" } },
     ]),
     "第一行\n\n第二行",
   );
   assert.equal(
-    helpers.elementsToText([
-      { type: "img", attrs: { file: "demo.png" } },
-    ]),
+    helpers.elementsToText([{ type: "img", attrs: { file: "demo.png" } }]),
     "",
   );
-  assert.equal(helpers.hasMediaElements([{ type: "img", attrs: { file: "demo.png" } }]), true);
+  assert.equal(
+    helpers.hasMediaElements([{ type: "img", attrs: { file: "demo.png" } }]),
+    true,
+  );
 });
 
-
-test("koishi chat helpers synthesize text elements only when upstream omitted elements", () => {
+test("chat chat helpers synthesize text elements only when upstream omitted elements", () => {
   assert.deepEqual(
     helpers.ensureSessionElements({
       stripped: { content: "看一下 /tmp/demo.log" },
@@ -115,7 +117,7 @@ test("koishi chat helpers synthesize text elements only when upstream omitted el
   );
 });
 
-test("koishi chat helpers persist outbound image parts", async () => {
+test("chat chat helpers persist outbound image parts", async () => {
   await withTempDir(async (dir) => {
     const images = [
       { data: Buffer.from("demo").toString("base64"), mimeType: "image/png" },
@@ -127,7 +129,7 @@ test("koishi chat helpers persist outbound image parts", async () => {
   });
 });
 
-test("koishi chat helpers report unresolved media placeholders clearly", async () => {
+test("chat chat helpers report unresolved media placeholders clearly", async () => {
   await withTempDir(async (dir) => {
     const result = await helpers.extractInboundAttachments(
       [{ type: "img" }],
@@ -148,7 +150,7 @@ test("koishi chat helpers report unresolved media placeholders clearly", async (
   });
 });
 
-test("koishi chat helpers save inbound media when a standard resource is present", async () => {
+test("chat chat helpers save inbound media when a standard resource is present", async () => {
   await withTempDir(async (dir) => {
     const src = `data:text/plain;base64,${Buffer.from("demo").toString("base64")}`;
     const result = await helpers.extractInboundAttachments(
@@ -162,7 +164,7 @@ test("koishi chat helpers save inbound media when a standard resource is present
   });
 });
 
-test("koishi chat helpers only auto-attach explicit file URLs, not plain paths", async () => {
+test("chat chat helpers only auto-attach explicit file URLs, not plain paths", async () => {
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, "demo.txt");
     await fs.writeFile(filePath, "demo", "utf8");

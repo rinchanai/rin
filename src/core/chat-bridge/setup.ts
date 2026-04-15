@@ -12,9 +12,9 @@ export type ChatBridgePromptApi = {
 
 export type ChatBridgeSetupResult = {
   adapterKey: string;
-  koishiDescription: string;
-  koishiDetail: string;
-  koishiConfig: any;
+  chatDescription: string;
+  chatDetail: string;
+  chatConfig: any;
 };
 
 function safeString(value: unknown) {
@@ -408,12 +408,12 @@ export async function promptChatBridgeSetup(
       )
     : true;
 
-  let koishiDescription = "disabled for now";
-  let koishiDetail = "";
-  let koishiConfig: any = null;
+  let chatDescription = "disabled for now";
+  let chatDetail = "";
+  let chatConfig: any = null;
   let adapterKey = "";
   if (!enableChatBridge) {
-    return { adapterKey, koishiDescription, koishiDetail, koishiConfig };
+    return { adapterKey, chatDescription, chatDetail, chatConfig };
   }
 
   adapterKey = String(
@@ -439,15 +439,15 @@ export async function promptChatBridgeSetup(
   if (!adapterSpec)
     throw new Error(`unsupported_chat_bridge_adapter:${adapterKey}`);
 
-  koishiDescription = adapterSpec.label;
+  chatDescription = adapterSpec.label;
   const configured = await promptChatBridgeAdapterConfig(prompt, adapterKey);
-  koishiDetail = configured.detail;
-  koishiConfig = configured.config;
+  chatDetail = configured.detail;
+  chatConfig = configured.config;
 
   return {
     adapterKey,
-    koishiDescription,
-    koishiDetail,
-    koishiConfig,
+    chatDescription,
+    chatDetail,
+    chatConfig,
   } as ChatBridgeSetupResult;
 }

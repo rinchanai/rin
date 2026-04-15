@@ -39,7 +39,7 @@ import {
   buildInstallSafetyBoundaryText,
   buildPostInstallInitExitText,
   describeInstallDirState,
-  promptKoishiSetup,
+  promptChatSetup,
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
@@ -268,7 +268,7 @@ async function applyInstalledRuntime(
   const provider = String(options.provider || "");
   const modelId = String(options.modelId || "");
   const thinkingLevel = String(options.thinkingLevel || "");
-  const koishiConfig = options.koishiConfig || null;
+  const chatConfig = options.chatConfig || null;
   const authData = options.authData || {};
   const sourceRoot =
     String(options.sourceRoot || "").trim() || repoRootFromHere();
@@ -308,7 +308,7 @@ async function applyInstalledRuntime(
       provider,
       modelId,
       thinkingLevel,
-      koishiConfig,
+      chatConfig,
       elevated: useElevatedWrite,
     },
     {
@@ -343,7 +343,7 @@ async function applyInstalledRuntime(
           provider,
           modelId,
           thinkingLevel,
-          koishiConfig,
+          chatConfig,
           authData,
           elevated: useElevatedWrite,
         },
@@ -531,8 +531,8 @@ export async function startInstaller() {
 
   const { provider, modelId, thinkingLevel, authResult } =
     await promptProviderSetup(promptApi, installDir, readJsonFile);
-  const { koishiDescription, koishiDetail, koishiConfig } =
-    await promptKoishiSetup(promptApi);
+  const { chatDescription, chatDetail, chatConfig } =
+    await promptChatSetup(promptApi);
 
   note(
     buildInstallPlanText({
@@ -543,8 +543,8 @@ export async function startInstaller() {
       modelId,
       thinkingLevel,
       authAvailable: Boolean(authResult.available),
-      koishiDescription,
-      koishiDetail,
+      chatDescription,
+      chatDetail,
     }),
     "Install choices",
   );
@@ -598,9 +598,9 @@ export async function startInstaller() {
       provider,
       modelId,
       thinkingLevel,
-      koishiDescription,
-      koishiDetail,
-      koishiConfig,
+      chatDescription,
+      chatDetail,
+      chatConfig,
       authData: authResult.authData || {},
     },
     needsElevatedWrite

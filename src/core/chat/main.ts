@@ -17,12 +17,12 @@ import {
   createChatBridgeRuntime,
 } from "../chat-bridge/runtime.js";
 import { canRunCommand } from "../chat-bridge/policy.js";
-import { enqueueKoishiPromptContext } from "../chat-bridge/prompt-context.js";
+import { enqueueChatPromptContext } from "../chat-bridge/prompt-context.js";
 import {
   chatStateDir,
   listChatStateFiles,
 } from "../chat-bridge/session-binding.js";
-import { getKoishiChatCommandRows, syncTelegramCommands } from "./boot.js";
+import { getChatCommandRows, syncTelegramCommands } from "./boot.js";
 import {
   elementsToText,
   ensureDir,
@@ -40,8 +40,8 @@ import {
   pickUserId,
   safeString,
 } from "./chat-helpers.js";
-import { KoishiChatController, loadKoishiSettings } from "./controller.js";
-import { appendKoishiChatLog } from "./chat-log.js";
+import { ChatController, loadChatSettings } from "./controller.js";
+import { appendChatLog } from "./chat-log.js";
 import { shouldProcessText } from "./decision.js";
 import {
   createChatRuntimeApp,
@@ -50,11 +50,11 @@ import {
 } from "../chat-runtime/index.js";
 import {
   composeChatKey,
-  listKoishiRuntimeAdapterEntries,
+  listChatRuntimeAdapterEntries,
   loadIdentity,
   trustOf,
 } from "./support.js";
-import { koishiRpcSocketPath } from "./rpc.js";
+import { chatRpcSocketPath } from "./rpc.js";
 import { sendOutboxPayload } from "./transport.js";
 
 function createLogger(name: string) {
@@ -67,8 +67,9 @@ function createLogger(name: string) {
   };
 }
 
-const logger = createLogger("rin-koishi");
-const RIN_KOISHI_SETTINGS_PATH_ENV = "RIN_KOISHI_SETTINGS_PATH";
+const logger = createLogger("rin-chat");
+const RIN_CHAT_SETTINGS_PATH_ENV = "RIN_CHAT_SETTINGS_PATH";
+const LEGACY_RIN_KOISHI_SETTINGS_PATH_ENV = "RIN_KOISHI_SETTINGS_PATH";
 const TYPING_POLL_INTERVAL_MS = 4000;
 
 async function buildTelegramInboundMediaDebug(session: any) {
@@ -193,33 +194,34 @@ function parseInboundCommand(
   return { name, argsText };
 }
 
-export async function startKoishi(
+export async function startChatBridge(
   options: { additionalExtensionPaths?: string[] } = {},
 ) {
   const runtime = resolveRuntimeProfile();
   const dataDir = path.join(runtime.agentDir, "data");
   const settingsPath =
-    process.env[RIN_KOISHI_SETTINGS_PATH_ENV]?.trim() ||
+    process.env[RIN_CHAT_SETTINGS_PATH_ENV]?.trim() ||
+    process.env[LEGACY_RIN_KOISHI_SETTINGS_PATH_ENV]?.trim() ||
     path.join(runtime.agentDir, "settings.json");
   applyRuntimeProfileEnvironment(runtime);
   if (process.cwd() !== runtime.cwd) process.chdir(runtime.cwd);
   ensureDir(dataDir);
 
-  const settings = loadKoishiSettings(settingsPath);
+  const settings = loadChatSettings(settingsPath);
 
   const h = createChatRuntimeH();
   const app = createChatRuntimeApp();
   const runtimeAdapters = instantiateBuiltInChatRuntimeAdapters(app, {
     dataDir,
     settings,
-    adapterEntries: listKoishiRuntimeAdapterEntries(settings),
+    adapterEntries: listChatRuntimeAdapterEntries(settings),
     logger,
   });
   if (!runtimeAdapters.length) {
     logger.warn("no runtime chat adapters configured");
   }
-  const controllers = new Map<string, KoishiChatController>();
-  const detachedControllers = new Map<string, KoishiChatController>();
+  const controllers = new Map<string, ChatController>();
+  const detachedControllers = new Map<string, ChatController>();
   const typingPollTimer = setInterval(() => {
     for (const controller of controllers.values()) {
       void controller.pollTyping().catch(() => {});
@@ -228,12 +230,12 @@ export async function startKoishi(
       void controller.pollTyping().catch(() => {});
     }
   }, TYPING_POLL_INTERVAL_MS);
-  const commandRows = getKoishiChatCommandRows();
+  const commandRows = getChatCommandRows();
   const getIdentity = () => loadIdentity(dataDir);
   const getController = (chatKey: string) => {
     let controller = controllers.get(chatKey);
     if (!controller) {
-      controller = new KoishiChatController(app, dataDir, chatKey, {
+      controller = new ChatController(app, dataDir, chatKey, {
         logger,
         h,
       });
@@ -261,7 +263,7 @@ export async function startKoishi(
       safeString(options?.chatKey).trim() || `cron:${controllerKey}`;
     let controller = detachedControllers.get(controllerKey);
     if (!controller) {
-      controller = new KoishiChatController(app, dataDir, controllerChatKey, {
+      controller = new ChatController(app, dataDir, controllerChatKey, {
         logger,
         h,
         deliveryEnabled: options?.deliveryEnabled,
@@ -333,7 +335,7 @@ export async function startKoishi(
     const text = `/${command.name}${command.argsText ? ` ${command.argsText}` : ""}`;
     await controller.runCommand(text, messageId, messageId).catch((error) => {
       logger.warn(
-        `koishi command failed chatKey=${chatKey} command=${command.name} err=${safeString((error as any)?.message || error)}`,
+        `chat command failed chatKey=${chatKey} command=${command.name} err=${safeString((error as any)?.message || error)}`,
       );
     });
   };
@@ -373,15 +375,15 @@ export async function startKoishi(
         }
       }
       logger.warn(
-        `koishi inbound media unresolved chatKey=${decision.chatKey} messageId=${messageId || "unknown"} failures=${JSON.stringify(failures)}${telegramDebug}`,
+        `chat inbound media unresolved chatKey=${decision.chatKey} messageId=${messageId || "unknown"} failures=${JSON.stringify(failures)}${telegramDebug}`,
       );
     }
     const inboundAttachmentNotice = buildInboundAttachmentNotice(failures);
     const promptBody = inboundAttachmentNotice
       ? `${decision.text}\n\n${inboundAttachmentNotice}`
       : decision.text;
-    enqueueKoishiPromptContext({
-      source: "koishi-bridge",
+    enqueueChatPromptContext({
+      source: "chat-bridge",
       sentAt: Number.isFinite(Number(session?.timestamp))
         ? Number(session.timestamp)
         : Date.now(),
@@ -416,17 +418,17 @@ export async function startKoishi(
       .catch((error) => {
         const errorMessage = safeString((error as any)?.message || error);
         const transientFailure =
-          /rin_timeout:|rin_disconnected:|rin_tui_not_connected|koishi_controller_disposed/.test(
+          /rin_timeout:|rin_disconnected:|rin_tui_not_connected|chat_controller_disposed/.test(
             errorMessage,
           );
         logger.warn(
-          `koishi turn failed chatKey=${decision.chatKey} transient=${transientFailure} err=${errorMessage}`,
+          `chat turn failed chatKey=${decision.chatKey} transient=${transientFailure} err=${errorMessage}`,
         );
         if (transientFailure) {
           setTimeout(() => {
             void controller.recoverIfNeeded().catch((recoverError) => {
               logger.warn(
-                `koishi recovery failed chatKey=${decision.chatKey} err=${safeString((recoverError as any)?.message || recoverError)}`,
+                `chat recovery failed chatKey=${decision.chatKey} err=${safeString((recoverError as any)?.message || recoverError)}`,
               );
             });
           }, 1000);
@@ -469,7 +471,7 @@ export async function startKoishi(
         const chatKey = composeChatKey(platform, getChatId(session), botId);
         const text = elementsToText(elements);
         if (chatKey && text) {
-          appendKoishiChatLog(runtime.agentDir, {
+          appendChatLog(runtime.agentDir, {
             timestamp: new Date().toISOString(),
             chatKey,
             role: "user",
@@ -482,7 +484,7 @@ export async function startKoishi(
         }
       } catch (error: any) {
         logger.warn(
-          `koishi inbound save failed err=${safeString(error?.message || error)}`,
+          `chat inbound save failed err=${safeString(error?.message || error)}`,
         );
       }
 
@@ -498,7 +500,7 @@ export async function startKoishi(
       await handleChatTurnSession(session, elements, identity);
     })().catch((error: any) => {
       logger.warn(
-        `koishi inbound handling failed err=${safeString(error?.message || error)}`,
+        `chat inbound handling failed err=${safeString(error?.message || error)}`,
       );
     });
   });
@@ -508,7 +510,7 @@ export async function startKoishi(
     void syncTelegramCommands(app, logger, commandRows);
   });
 
-  const rpcSocketPath = koishiRpcSocketPath(runtime.agentDir);
+  const rpcSocketPath = chatRpcSocketPath(runtime.agentDir);
   try {
     fs.rmSync(rpcSocketPath, { force: true });
   } catch {}
@@ -558,7 +560,7 @@ export async function startKoishi(
                 safeString(payload.controllerKey).trim() || "default";
               const deliveryEnabled = payload?.deliveryEnabled !== false;
               const affectChatBinding = payload?.affectChatBinding !== false;
-              if (!text) throw new Error("koishi_rpc_text_required");
+              if (!text) throw new Error("chat_rpc_text_required");
               const controller =
                 chatKey &&
                 controllerKey === "default" &&
@@ -663,7 +665,7 @@ export async function startKoishi(
           } catch (error: any) {
             writeLine({
               success: false,
-              error: safeString(error?.message || error) || "koishi_rpc_failed",
+              error: safeString(error?.message || error) || "chat_rpc_failed",
             });
           }
         })();
@@ -681,14 +683,14 @@ export async function startKoishi(
   });
   await syncTelegramCommands(app, logger, commandRows);
   logger.info(
-    `koishi started bots=${JSON.stringify(app.bots.map((bot: any) => ({ platform: bot.platform, selfId: bot.selfId, status: bot.status })))}`,
+    `chat bridge started bots=${JSON.stringify(app.bots.map((bot: any) => ({ platform: bot.platform, selfId: bot.selfId, status: bot.status })))}`,
   );
 
   for (const item of listChatStateFiles(path.join(dataDir, "chats"))) {
     const controller = getController(item.chatKey);
     void controller.recoverIfNeeded().catch((error) => {
       logger.warn(
-        `koishi recovery failed chatKey=${item.chatKey} err=${safeString((error as any)?.message || error)}`,
+        `chat recovery failed chatKey=${item.chatKey} err=${safeString((error as any)?.message || error)}`,
       );
     });
   }
@@ -715,7 +717,7 @@ export async function startKoishi(
 }
 
 async function main() {
-  await startKoishi();
+  await startChatBridge();
 }
 
 const isDirectEntry =
@@ -723,7 +725,7 @@ const isDirectEntry =
 
 if (isDirectEntry) {
   main().catch((error: any) => {
-    logger.error(String(error?.message || error || "rin_koishi_failed"));
+    logger.error(String(error?.message || error || "rin_chat_failed"));
     process.exit(1);
   });
 }

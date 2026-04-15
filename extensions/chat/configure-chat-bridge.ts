@@ -8,15 +8,18 @@ import {
 } from "../../src/core/chat-bridge/setup.js";
 import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 import {
-  ensureKoishiSidecar,
-  getKoishiSidecarStatus,
-  stopKoishiSidecar,
-} from "../../src/core/rin-koishi/service.js";
-import { readJsonFile, writeJsonFile } from "../../src/core/rin-koishi/support.js";
+  ensureChatSidecar,
+  getChatSidecarStatus,
+  stopChatSidecar,
+} from "../../src/core/chat/service.js";
+import { readJsonFile, writeJsonFile } from "../../src/core/chat/support.js";
 
 const CHAT_BRIDGE_COMMAND_CANCELLED = "chat_bridge_setup_cancelled";
 
-function formatSelectLabel(item: { label?: string; hint?: string }, index: number) {
+function formatSelectLabel(
+  item: { label?: string; hint?: string },
+  index: number,
+) {
   const label = String(item.label || "").trim() || `Option ${index + 1}`;
   const hint = String(item.hint || "").trim();
   return hint ? `${label} — ${hint}` : label;
@@ -44,7 +47,10 @@ function createUiPromptApi(ui: any): ChatBridgePromptApi {
           })
         : [];
       const labels = items.map((item) => item.label);
-      const choice = await ui.select(String(options?.message || "Choose:"), labels);
+      const choice = await ui.select(
+        String(options?.message || "Choose:"),
+        labels,
+      );
       if (choice === undefined) return undefined;
       const index = labels.indexOf(String(choice));
       return index >= 0 ? items[index].value : undefined;
@@ -61,8 +67,13 @@ function createUiPromptApi(ui: any): ChatBridgePromptApi {
       for (;;) {
         const raw = await ui.input(title, placeholder);
         if (raw === undefined) return undefined;
-        const text = String(raw || "").trim() || String(options?.defaultValue || "").trim();
-        const error = typeof options?.validate === "function" ? options.validate(text) : undefined;
+        const text =
+          String(raw || "").trim() ||
+          String(options?.defaultValue || "").trim();
+        const error =
+          typeof options?.validate === "function"
+            ? options.validate(text)
+            : undefined;
         if (error) {
           ui.notify(String(error), "warning");
           continue;
@@ -71,13 +82,16 @@ function createUiPromptApi(ui: any): ChatBridgePromptApi {
       }
     },
     async confirm(options: any) {
-      return await ui.confirm("Chat bridge", String(options?.message || "Confirm?"));
+      return await ui.confirm(
+        "Chat bridge",
+        String(options?.message || "Confirm?"),
+      );
     },
   };
 }
 
 async function restartChatBridgeSidecars(agentDir: string) {
-  const status = getKoishiSidecarStatus(agentDir);
+  const status = getChatSidecarStatus(agentDir);
   const instances = Array.isArray(status?.instances) ? status.instances : [];
   if (!instances.length) return { restarted: 0, pending: true };
   let restarted = 0;
@@ -85,8 +99,10 @@ async function restartChatBridgeSidecars(agentDir: string) {
     const instanceId = String(instance?.instanceId || "").trim();
     if (!instanceId) continue;
     const entryPath = String(instance?.entryPath || "").trim() || undefined;
-    await stopKoishiSidecar(agentDir, { instanceId }).catch(() => {});
-    await ensureKoishiSidecar(agentDir, { instanceId, entryPath }).catch(() => {});
+    await stopChatSidecar(agentDir, { instanceId }).catch(() => {});
+    await ensureChatSidecar(agentDir, { instanceId, entryPath }).catch(
+      () => {},
+    );
     restarted += 1;
   }
   return { restarted, pending: false };
@@ -100,7 +116,14 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
       const profile = resolveRuntimeProfile();
       const settingsPath = path.join(profile.agentDir, "settings.json");
       const settings = readJsonFile<any>(settingsPath, {});
-      settings.koishi ||= {};
+      if (
+        !settings.chat &&
+        settings.koishi &&
+        typeof settings.koishi === "object"
+      ) {
+        settings.chat = JSON.parse(JSON.stringify(settings.koishi));
+      }
+      settings.chat ||= {};
 
       let result;
       try {
@@ -114,15 +137,15 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
       }
 
       const adapterKey = String(result?.adapterKey || "").trim();
-      if (!adapterKey || !result?.koishiConfig) {
+      if (!adapterKey || !result?.chatConfig) {
         ctx.ui.notify("Chat bridge setup skipped.", "info");
         return;
       }
 
-      if (settings.koishi[adapterKey] !== undefined) {
+      if (settings.chat[adapterKey] !== undefined) {
         const overwrite = await ctx.ui.confirm(
           "Chat bridge",
-          `Replace the existing ${result.koishiDescription} configuration?`,
+          `Replace the existing ${result.chatDescription} configuration?`,
         );
         if (!overwrite) {
           ctx.ui.notify("Chat bridge setup cancelled.", "info");
@@ -130,18 +153,25 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
         }
       }
 
-      settings.koishi[adapterKey] = result.koishiConfig[adapterKey];
+      settings.chat[adapterKey] = result.chatConfig[adapterKey];
+      if (settings.koishi && typeof settings.koishi === "object") {
+        delete settings.koishi;
+      }
       writeJsonFile(settingsPath, settings);
 
       const restart = await restartChatBridgeSidecars(profile.agentDir);
       const lines = [
-        `Chat bridge updated: ${result.koishiDescription}`,
-        result.koishiDetail,
+        `Chat bridge updated: ${result.chatDescription}`,
+        result.chatDetail,
       ].filter(Boolean);
       if (restart.pending) {
-        lines.push("No active chat bridge sidecar was running. The change will apply on the next daemon start.");
+        lines.push(
+          "No active chat bridge sidecar was running. The change will apply on the next daemon start.",
+        );
       } else {
-        lines.push(`Restarted chat bridge sidecar instances: ${restart.restarted}`);
+        lines.push(
+          `Restarted chat bridge sidecar instances: ${restart.restarted}`,
+        );
       }
       ctx.ui.notify(lines.join("\n"), "info");
       return;

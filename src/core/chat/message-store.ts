@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 
-export type StoredKoishiMessage = {
+export type StoredChatMessage = {
   version: 1;
   recordKey: string;
   messageId: string;
@@ -56,16 +56,21 @@ function hashKey(value: string) {
   return createHash("sha1").update(value).digest("hex");
 }
 
-export function koishiMessageStoreDir(agentDir: string) {
-  return path.join(path.resolve(agentDir), "data", "koishi-message-store");
+export function chatMessageStoreDir(agentDir: string) {
+  const root = path.resolve(agentDir);
+  const preferred = path.join(root, "data", "chat-message-store");
+  if (fs.existsSync(preferred)) return preferred;
+  const legacy = path.join(root, "data", "koishi-message-store");
+  if (fs.existsSync(legacy)) return legacy;
+  return preferred;
 }
 
 function recordsDir(agentDir: string) {
-  return path.join(koishiMessageStoreDir(agentDir), "records");
+  return path.join(chatMessageStoreDir(agentDir), "records");
 }
 
 function indexesDir(agentDir: string) {
-  return path.join(koishiMessageStoreDir(agentDir), "indexes");
+  return path.join(chatMessageStoreDir(agentDir), "indexes");
 }
 
 function refsPath(agentDir: string, messageId: string) {
@@ -93,41 +98,38 @@ function normalizeStoredRole(value: unknown) {
     : undefined;
 }
 
-export function buildKoishiMessageRecordKey(
-  chatKey: string,
-  messageId: string,
-) {
+export function buildChatMessageRecordKey(chatKey: string, messageId: string) {
   return hashKey(`${chatKey}\n${messageId}`);
 }
 
-export function buildStoredKoishiMessage(
-  input: Omit<StoredKoishiMessage, "version" | "recordKey">,
+export function buildStoredChatMessage(
+  input: Omit<StoredChatMessage, "version" | "recordKey">,
 ) {
   const chatKey = safeString(input.chatKey).trim();
   const messageId = safeString(input.messageId).trim();
-  if (!chatKey) throw new Error("koishi_message_store_chatKey_required");
-  if (!messageId) throw new Error("koishi_message_store_messageId_required");
+  if (!chatKey) throw new Error("chat_message_store_chatKey_required");
+  if (!messageId) throw new Error("chat_message_store_messageId_required");
   return {
     ...input,
     version: 1 as const,
-    recordKey: buildKoishiMessageRecordKey(chatKey, messageId),
+    recordKey: buildChatMessageRecordKey(chatKey, messageId),
     messageId,
     role: normalizeStoredRole(input.role),
     chatKey,
   };
 }
 
-export function saveKoishiMessage(
+export function saveChatMessage(
   agentDir: string,
-  input: Omit<StoredKoishiMessage, "version" | "recordKey">,
+  input: Omit<StoredChatMessage, "version" | "recordKey">,
 ) {
-  const record = buildStoredKoishiMessage(input);
+  const record = buildStoredChatMessage(input);
   const filePath = recordPath(agentDir, record.recordKey);
   writeJsonFile(filePath, record);
 
   const refFilePath = refsPath(agentDir, record.messageId);
   const refs = readJsonFile<string[]>(refFilePath, []);
-  const relative = path.relative(koishiMessageStoreDir(agentDir), filePath);
+  const relative = path.relative(chatMessageStoreDir(agentDir), filePath);
   if (!refs.includes(relative)) {
     ensureDir(path.dirname(refFilePath));
     fs.writeFileSync(
@@ -140,48 +142,48 @@ export function saveKoishiMessage(
   return { record, filePath };
 }
 
-export function getKoishiMessagesByMessageId(
+export function getChatMessagesByMessageId(
   agentDir: string,
   messageId: string,
 ) {
   const nextMessageId = safeString(messageId).trim();
-  if (!nextMessageId) return [] as StoredKoishiMessage[];
+  if (!nextMessageId) return [] as StoredChatMessage[];
   const refFilePath = refsPath(agentDir, nextMessageId);
   const refs = readJsonFile<string[]>(refFilePath, []);
-  const storeRoot = koishiMessageStoreDir(agentDir);
+  const storeRoot = chatMessageStoreDir(agentDir);
   return refs
     .map((relativePath) =>
-      readJsonFile<StoredKoishiMessage | null>(
+      readJsonFile<StoredChatMessage | null>(
         path.join(storeRoot, relativePath),
         null,
       ),
     )
-    .filter((item): item is StoredKoishiMessage =>
+    .filter((item): item is StoredChatMessage =>
       Boolean(item && safeString(item.messageId).trim()),
     );
 }
 
-export function getKoishiMessage(
+export function getChatMessage(
   agentDir: string,
   chatKey: string,
   messageId: string,
 ) {
-  const recordKey = buildKoishiMessageRecordKey(chatKey, messageId);
-  return readJsonFile<StoredKoishiMessage | null>(
+  const recordKey = buildChatMessageRecordKey(chatKey, messageId);
+  return readJsonFile<StoredChatMessage | null>(
     recordPath(agentDir, recordKey),
     null,
   );
 }
 
-export function updateKoishiMessage(
+export function updateChatMessage(
   agentDir: string,
   chatKey: string,
   messageId: string,
-  patch: Partial<StoredKoishiMessage>,
+  patch: Partial<StoredChatMessage>,
 ) {
-  const current = getKoishiMessage(agentDir, chatKey, messageId);
+  const current = getChatMessage(agentDir, chatKey, messageId);
   if (!current) return null;
-  const next: StoredKoishiMessage = {
+  const next: StoredChatMessage = {
     ...current,
     ...patch,
     version: 1,
@@ -196,23 +198,23 @@ export function updateKoishiMessage(
   return next;
 }
 
-export function findKoishiMessageByChatAndId(
+export function findChatMessageByChatAndId(
   agentDir: string,
   chatKey: string,
   messageId: string,
 ) {
-  const direct = getKoishiMessage(agentDir, chatKey, messageId);
+  const direct = getChatMessage(agentDir, chatKey, messageId);
   if (direct) return direct;
   return (
-    getKoishiMessagesByMessageId(agentDir, messageId).find(
+    getChatMessagesByMessageId(agentDir, messageId).find(
       (item) => item.chatKey === chatKey,
     ) || null
   );
 }
 
-export function listKoishiMessages(agentDir: string) {
+export function listChatMessages(agentDir: string) {
   const root = recordsDir(agentDir);
-  const out: StoredKoishiMessage[] = [];
+  const out: StoredChatMessage[] = [];
   const visit = (dir: string) => {
     let entries: fs.Dirent[] = [];
     try {
@@ -227,7 +229,7 @@ export function listKoishiMessages(agentDir: string) {
         continue;
       }
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const item = readJsonFile<StoredKoishiMessage | null>(filePath, null);
+      const item = readJsonFile<StoredChatMessage | null>(filePath, null);
       if (item && safeString(item.messageId).trim()) out.push(item);
     }
   };
@@ -245,14 +247,14 @@ function isoDateOnly(value: string) {
   return date.toISOString().slice(0, 10);
 }
 
-export function listKoishiMessagesByChatAndDate(
+export function listChatMessagesByChatAndDate(
   agentDir: string,
   chatKey: string,
   date: string,
 ) {
   const nextChatKey = safeString(chatKey).trim();
   const nextDate = isoDateOnly(date);
-  return listKoishiMessages(agentDir)
+  return listChatMessages(agentDir)
     .filter(
       (item) =>
         item.chatKey === nextChatKey &&
@@ -266,7 +268,7 @@ export function listKoishiMessagesByChatAndDate(
     });
 }
 
-export function normalizeKoishiMessageLookup(
+export function normalizeChatMessageLookup(
   agentDir: string,
   messageId: string,
   chatKey?: string,
@@ -274,14 +276,14 @@ export function normalizeKoishiMessageLookup(
   const nextChatKey = safeString(chatKey).trim();
   const matches = nextChatKey
     ? (() => {
-        const found = findKoishiMessageByChatAndId(
+        const found = findChatMessageByChatAndId(
           agentDir,
           nextChatKey,
           messageId,
         );
         return found ? [found] : [];
       })()
-    : getKoishiMessagesByMessageId(agentDir, messageId);
+    : getChatMessagesByMessageId(agentDir, messageId);
 
   return matches.map((item) => ({
     ...item,
@@ -289,7 +291,7 @@ export function normalizeKoishiMessageLookup(
   }));
 }
 
-export function describeKoishiMessageRecord(record: StoredKoishiMessage) {
+export function describeChatMessageRecord(record: StoredChatMessage) {
   return [
     `messageId=${record.messageId}`,
     `chatKey=${record.chatKey}`,
@@ -310,7 +312,7 @@ export function describeKoishiMessageRecord(record: StoredKoishiMessage) {
     .join("\n");
 }
 
-export function summarizeKoishiMessageRecord(record: StoredKoishiMessage) {
+export function summarizeChatMessageRecord(record: StoredChatMessage) {
   return [
     `- message id: ${record.messageId}`,
     `- chatKey: ${record.chatKey}`,

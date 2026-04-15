@@ -26,13 +26,13 @@ async function loadMessageStoreModule() {
     "..",
   );
   const candidates = [
-    path.join(root, "core", "rin-koishi", "message-store.js"),
-    path.join(root, "dist", "core", "rin-koishi", "message-store.js"),
+    path.join(root, "core", "chat", "message-store.js"),
+    path.join(root, "dist", "core", "chat", "message-store.js"),
   ];
   const distPath = candidates.find((filePath) => fs.existsSync(filePath));
   if (!distPath) {
     throw new Error(
-      `rin_koishi_message_store_not_found:${candidates.join(" | ")}`,
+      `rin_chat_message_store_not_found:${candidates.join(" | ")}`,
     );
   }
   return await import(pathToFileURL(distPath).href);
@@ -103,7 +103,7 @@ function formatGetChatMessageResult(
   return text;
 }
 
-export default function koishiGetMessageExtension(pi: ExtensionAPI) {
+export default function chatGetMessageExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "get_chat_msg",
     label: "Get Chat Message",
@@ -130,29 +130,29 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
       if (!messageId) throw new Error("chat_get_message_messageId_required");
 
       const agentDir = getAgentDir();
-      const {
-        normalizeKoishiMessageLookup,
-        describeKoishiMessageRecord,
-      } = await loadMessageStoreModule();
-      const matches = normalizeKoishiMessageLookup(
-        agentDir,
-        messageId,
-        chatKey,
-      );
+      const { normalizeChatMessageLookup, describeChatMessageRecord } =
+        await loadMessageStoreModule();
+      const matches = normalizeChatMessageLookup(agentDir, messageId, chatKey);
       if (!matches.length) {
         return {
-          content: [{
-            type: "text",
-            text: `Message not found: ${messageId}${chatKey ? ` (chatKey=${chatKey})` : ""}`,
-          }],
-          details: { messageId, chatKey, matches } satisfies GetChatMessageDetails,
+          content: [
+            {
+              type: "text",
+              text: `Message not found: ${messageId}${chatKey ? ` (chatKey=${chatKey})` : ""}`,
+            },
+          ],
+          details: {
+            messageId,
+            chatKey,
+            matches,
+          } satisfies GetChatMessageDetails,
           isError: true,
         };
       }
 
       const text = matches
         .map((item: any, index: number) => {
-          const body = describeKoishiMessageRecord(item);
+          const body = describeChatMessageRecord(item);
           return matches.length > 1 ? `match ${index + 1}\n${body}` : body;
         })
         .join("\n\n");
@@ -183,7 +183,12 @@ export default function koishiGetMessageExtension(pi: ExtensionAPI) {
       const details = result.details as GetChatMessageDetails | undefined;
       if (!result.isError) {
         return new Text(
-          formatGetChatMessageResult(result, options, theme, context.showImages),
+          formatGetChatMessageResult(
+            result,
+            options,
+            theme,
+            context.showImages,
+          ),
           0,
           0,
         );

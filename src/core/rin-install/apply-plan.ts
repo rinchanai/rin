@@ -13,9 +13,9 @@ export type FinalizeInstallOptions = {
   provider?: string;
   modelId?: string;
   thinkingLevel?: string;
-  koishiDescription?: string;
-  koishiDetail?: string;
-  koishiConfig?: any;
+  chatDescription?: string;
+  chatDetail?: string;
+  chatConfig?: any;
   authData?: any;
   sourceRoot?: string;
 };

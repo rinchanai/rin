@@ -17,16 +17,21 @@ import { isPidAlive, safeString, sleep } from "../platform/process.js";
 
 const START_TIMEOUT_MS = 15_000;
 
-function koishiRootForState(stateRoot: string) {
-  return path.join(path.resolve(stateRoot), "data", "koishi-sidecar");
+function chatRootForState(stateRoot: string) {
+  const root = path.resolve(stateRoot);
+  const preferred = path.join(root, "data", "chat-sidecar");
+  if (fs.existsSync(preferred)) return preferred;
+  const legacy = path.join(root, "data", "koishi-sidecar");
+  if (fs.existsSync(legacy)) return legacy;
+  return preferred;
 }
 
 function instancesRootForState(stateRoot: string) {
-  return path.join(koishiRootForState(stateRoot), "instances");
+  return path.join(chatRootForState(stateRoot), "instances");
 }
 
 function lockPathForState(stateRoot: string) {
-  return path.join(koishiRootForState(stateRoot), "start.lock");
+  return path.join(chatRootForState(stateRoot), "start.lock");
 }
 
 function instanceRootForState(stateRoot: string, instanceId: string) {
@@ -54,7 +59,7 @@ function writeInstanceState(stateRoot: string, instanceId: string, value: any) {
   );
 }
 
-function resolveKoishiEntry(entryPath?: string) {
+function resolveChatEntry(entryPath?: string) {
   const provided = safeString(entryPath).trim();
   if (provided) return provided;
   return path.join(path.dirname(new URL(import.meta.url).pathname), "main.js");
@@ -69,12 +74,12 @@ async function ensureProcessStarted(pid: number, timeoutMs = START_TIMEOUT_MS) {
   return false;
 }
 
-async function ensureKoishiSidecar(
+async function ensureChatSidecar(
   stateRoot: string,
   options: { instanceId?: string; entryPath?: string } = {},
 ) {
   const instanceId =
-    safeString(options.instanceId).trim() || `koishi-${process.pid}`;
+    safeString(options.instanceId).trim() || `chat-${process.pid}`;
   const existing = readInstanceState(stateRoot, instanceId);
   if (existing?.pid && isPidAlive(Number(existing.pid || 0))) {
     return {
@@ -91,15 +96,15 @@ async function ensureKoishiSidecar(
         String(
           error?.message ||
             error ||
-            `koishi_lock_timeout:${lockPathForState(stateRoot)}`,
+            `chat_lock_timeout:${lockPathForState(stateRoot)}`,
         ),
       );
     },
   );
   let child: ReturnType<typeof spawn> | null = null;
   try {
-    const koishiEntry = resolveKoishiEntry(options.entryPath);
-    child = spawn(process.execPath, [koishiEntry], {
+    const chatEntry = resolveChatEntry(options.entryPath);
+    child = spawn(process.execPath, [chatEntry], {
       cwd: path.resolve(stateRoot),
       detached: true,
       stdio: "ignore",
@@ -111,7 +116,7 @@ async function ensureKoishiSidecar(
 
     writeInstanceState(stateRoot, instanceId, {
       pid: Number(child.pid || 0),
-      entryPath: koishiEntry,
+      entryPath: chatEntry,
       startedAt: new Date().toISOString(),
       ownerPid: process.pid,
     });
@@ -120,7 +125,7 @@ async function ensureKoishiSidecar(
       Number(child.pid || 0),
       START_TIMEOUT_MS,
     );
-    if (!started) throw new Error("koishi_start_timeout");
+    if (!started) throw new Error("chat_start_timeout");
     return { ok: true, instanceId, pid: Number(child.pid || 0), reused: false };
   } finally {
     try {
@@ -136,12 +141,12 @@ async function ensureKoishiSidecar(
   }
 }
 
-async function stopKoishiSidecar(
+async function stopChatSidecar(
   stateRoot: string,
   options: { instanceId?: string } = {},
 ) {
   const instanceId = safeString(options.instanceId).trim();
-  if (!instanceId) return { ok: false, error: "koishi_instance_required" };
+  if (!instanceId) return { ok: false, error: "chat_instance_required" };
   const current = readInstanceState(stateRoot, instanceId) || {};
   if (Number(current.pid || 0) > 1 && isPidAlive(current.pid)) {
     try {
@@ -157,7 +162,7 @@ async function stopKoishiSidecar(
   return { ok: true, pid: Number(current.pid || 0) };
 }
 
-async function cleanupOrphanKoishiSidecars(stateRoot: string) {
+async function cleanupOrphanChatSidecars(stateRoot: string) {
   const cleaned: Array<{ instanceId: string; pid: number; ownerPid?: number }> =
     [];
   for (const instanceId of listInstanceIds(stateRoot)) {
@@ -183,7 +188,7 @@ async function cleanupOrphanKoishiSidecars(stateRoot: string) {
   return { ok: true, cleaned };
 }
 
-function getKoishiSidecarStatus(stateRoot: string) {
+function getChatSidecarStatus(stateRoot: string) {
   const instances = listInstanceIds(stateRoot).map(
     (instanceId): SidecarStatusRow => {
       const state = (readInstanceState(stateRoot, instanceId) ||
@@ -201,14 +206,14 @@ function getKoishiSidecarStatus(stateRoot: string) {
     },
   );
   return {
-    root: koishiRootForState(stateRoot),
+    root: chatRootForState(stateRoot),
     instances,
   };
 }
 
 export {
-  cleanupOrphanKoishiSidecars,
-  ensureKoishiSidecar,
-  getKoishiSidecarStatus,
-  stopKoishiSidecar,
+  cleanupOrphanChatSidecars,
+  ensureChatSidecar,
+  getChatSidecarStatus,
+  stopChatSidecar,
 };

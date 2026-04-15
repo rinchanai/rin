@@ -6,11 +6,11 @@ import path from "node:path";
 
 const HOME_DIR = os.homedir();
 
-import { deliverKoishiRpcPayload, requestKoishiRpc } from "../rin-koishi/rpc.js";
+import { deliverChatRpcPayload, requestChatRpc } from "../chat/rpc.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
 
-export async function sendKoishiText(
+export async function sendChatText(
   agentDir: string,
   payload: {
     chatKey: string;
@@ -21,7 +21,7 @@ export async function sendKoishiText(
     sessionFile?: string;
   },
 ) {
-  await deliverKoishiRpcPayload(agentDir, {
+  await deliverChatRpcPayload(agentDir, {
     type: "text_delivery",
     createdAt: nowIso(),
     ...payload,
@@ -125,7 +125,7 @@ export async function executeCronAgentTask(
   if (task.target.kind !== "agent_prompt")
     throw new Error("cron_invalid_agent_task");
   const sessionFile = await resolveCronSessionFile(task);
-  const result = await requestKoishiRpc(options.agentDir, {
+  const result = await requestChatRpc(options.agentDir, {
     type: "run_chat_turn",
     payload: {
       chatKey: task.chatKey,
@@ -164,7 +164,7 @@ export async function executeCronTask(
       });
       task.lastResultText = text;
       if (task.chatKey && text) {
-        await sendKoishiText(options.agentDir, {
+        await sendChatText(options.agentDir, {
           chatKey: task.chatKey,
           taskId: task.id,
           runId,
@@ -175,7 +175,7 @@ export async function executeCronTask(
       const result = await executeCronAgentTask(task, options);
       task.lastResultText = result.text;
       if (task.chatKey && result.text) {
-        await sendKoishiText(options.agentDir, {
+        await sendChatText(options.agentDir, {
           chatKey: task.chatKey,
           taskId: task.id,
           runId,
