@@ -11,10 +11,6 @@ const stateUtils = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "state-utils.js"))
     .href
 );
-const reconnect = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "reconnect.js"))
-    .href
-);
 
 test("rpc state utils derive branch and apply state", () => {
   const target = {
@@ -88,15 +84,3 @@ test("rpc state utils derive branch and apply state", () => {
   );
 });
 
-test("rpc reconnect helper queues and emits status", () => {
-  const events = [];
-  const target = {
-    queuedOfflineOps: [],
-    emitEvent: (e) => events.push(e),
-    ensureReconnectLoop: () => events.push({ reconnect: true }),
-  };
-  reconnect.queueOfflineOperation(target, { mode: "prompt", message: "hi" });
-  assert.equal(target.queuedOfflineOps.length, 1);
-  assert.equal(events.length, 1);
-  assert.deepEqual(events[0], { reconnect: true });
-});

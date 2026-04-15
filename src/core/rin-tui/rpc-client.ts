@@ -53,7 +53,6 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   async connect() {
     if (this.socket && !this.socket.destroyed) return;
     if (this.connectPromise) return await this.connectPromise;
-    const wasDisconnected = !this.socket || this.socket.destroyed;
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const socket = net.createConnection(this.socketPath);
       const onError = (error: Error) => {
@@ -72,13 +71,6 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
         socket.on("close", () => this.handleDisconnect(true, socket));
         socket.on("error", () => this.handleDisconnect(true, socket));
         this.connectPromise = null;
-        if (wasDisconnected) {
-          this.emit({
-            type: "ui",
-            name: "connection_restored",
-            payload: { socketPath: this.socketPath },
-          });
-        }
         resolve();
       });
     });
