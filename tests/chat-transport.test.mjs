@@ -266,14 +266,14 @@ test("chat transport prefers internal telegram reaction calls for working reacti
     second,
   );
 
-  assert.equal(first, "🌘");
-  assert.equal(second, "🌘");
+  assert.equal(first, "👀");
+  assert.equal(second, "👀");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
     {
       chat_id: "2",
       message_id: 41,
-      reaction: [{ type: "emoji", emoji: "🌘" }],
+      reaction: [{ type: "emoji", emoji: "👀" }],
     },
     {
       chat_id: "2",

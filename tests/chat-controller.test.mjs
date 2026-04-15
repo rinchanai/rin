@@ -152,14 +152,14 @@ test("chat controller polls typing and rotating reactions while a chat turn is s
   assert.equal(controller.hasActiveTurn(), true);
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
-  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "👀"]]);
 
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [
     { chat_id: "2", action: "typing" },
     { chat_id: "2", action: "typing" },
   ]);
-  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "👀"]]);
 });
 
 test("chat controller uses a fixed Working notice policy for onebot private chats", async () => {
