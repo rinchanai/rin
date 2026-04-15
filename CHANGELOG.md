@@ -25,7 +25,7 @@ The format is intentionally simple. Keep it short, readable, and focused on mean
 - Koishi media-only inbound messages are routed without synthetic placeholder text
 - Koishi no longer posts repeated idle `Working` progress messages into chat
 - `rin update` now downloads from the active `rinchanai/rin` repository instead of the retired upstream path
-- installer/runtime helper regressions are now covered by tests for source archive selection, service path derivation, child apply-result parsing, builtin changelog and resume behavior, model command edge cases, `install.sh` bootstrap behavior, app assembly entrypoints, runtime release publishing, launcher and installed-doc output paths, local installer file-helper semantics, sidecar lifecycle handling, package/bin distribution contracts, and public README/doc link consistency
+- installer/runtime helper regressions are now covered by tests for source archive selection, service path derivation, child apply-result parsing, builtin changelog and resume behavior, model command edge cases, `install.sh` bootstrap behavior, app assembly entrypoints, runtime release publishing, launcher and installed-doc output paths, local and elevated installer file-helper semantics, sidecar lifecycle handling, package/bin distribution contracts, and public README/doc link consistency
 - stale cron task status is cleared on reruns
 
 ## Notes

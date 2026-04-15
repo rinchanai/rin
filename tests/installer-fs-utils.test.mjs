@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import nodeFs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -157,6 +158,62 @@ test("installer fs utils read and write local metadata with stable defaults", as
   assert.equal(execMode, 0o755);
 });
 
+test("installer fs utils privilege-aware readers delegate on elevated permission errors", () => {
+  const privilegedRead = fsUtils.readJsonFileWithPrivilege(
+    "/secure/install.json",
+    { ok: false },
+    {
+      pickPrivilegeCommand: () => "sudo",
+      execFileSync: (command, args, options) => {
+        assert.equal(command, "sudo");
+        assert.deepEqual(args, ["cat", "/secure/install.json"]);
+        assert.deepEqual(options, { encoding: "utf8" });
+        return '{"ok":true,"source":"privileged"}';
+      },
+    },
+  );
+  assert.deepEqual(privilegedRead, { ok: true, source: "privileged" });
+
+  assert.deepEqual(
+    fsUtils.readJsonFileWithPrivilege(
+      "/secure/bad.json",
+      { ok: false },
+      {
+        pickPrivilegeCommand: () => "sudo",
+        execFileSync: () => {
+          throw new Error("boom");
+        },
+      },
+    ),
+    { ok: false },
+  );
+
+  const readFileSync = nodeFs.readFileSync;
+  try {
+    nodeFs.readFileSync = () => {
+      const error = new Error("denied");
+      error.code = "EACCES";
+      throw error;
+    };
+    assert.deepEqual(
+      fsUtils.readInstallerJson("/secure/install.json", { ok: false }, true, {
+        readJsonFileWithPrivilege: (filePath, fallback) => {
+          assert.equal(filePath, "/secure/install.json");
+          assert.deepEqual(fallback, { ok: false });
+          return { ok: true, delegated: true };
+        },
+      }),
+      { ok: true, delegated: true },
+    );
+    assert.throws(
+      () => fsUtils.readInstallerJson("/secure/install.json", { ok: false }),
+      /denied/,
+    );
+  } finally {
+    nodeFs.readFileSync = readFileSync;
+  }
+});
+
 test("installer fs utils compute launcher targets and script", () => {
   const targets = fsUtils.launcherTargetsForInstallDir("/tmp/rin");
   assert.ok(
@@ -202,6 +259,190 @@ test("writeLaunchersForUser and appConfigDirForUser use stable per-user install 
     fsUtils.appConfigDirForUser("demo", homeForUser).includes(".config/rin"),
     true,
   );
+});
+
+test("runPrivileged and runCommandAsUser choose the correct privileged execution path", () => {
+  const privilegedCalls = [];
+  fsUtils.runPrivileged("mkdir", ["-p", "/secure/rin"], {
+    pickPrivilegeCommand: () => "sudo",
+    execFileSync: (command, args, options) => {
+      privilegedCalls.push([command, args, options]);
+      return "";
+    },
+  });
+  assert.deepEqual(privilegedCalls, [
+    ["sudo", ["mkdir", "-p", "/secure/rin"], { stdio: "inherit" }],
+  ]);
+
+  const rootCalls = [];
+  fsUtils.runCommandAsUser(
+    "demo",
+    "node",
+    ["script.js", "--flag"],
+    { RIN_MODE: "install" },
+    {
+      getuid: () => 0,
+      existsSync: (filePath) => filePath === "/usr/sbin/runuser",
+      execFileSync: (command, args, options) => {
+        rootCalls.push([command, args, options]);
+        return "";
+      },
+    },
+  );
+
+  const sudoCalls = [];
+  fsUtils.runCommandAsUser(
+    "demo",
+    "node",
+    ["script.js"],
+    { RIN_MODE: "install" },
+    {
+      getuid: () => 1000,
+      existsSync: () => false,
+      pickPrivilegeCommand: () => "sudo",
+      execFileSync: (command, args, options) => {
+        sudoCalls.push([command, args, options]);
+        return "";
+      },
+    },
+  );
+
+  const genericCalls = [];
+  fsUtils.runCommandAsUser(
+    "demo",
+    "node",
+    ["script.js"],
+    { RIN_MODE: "install" },
+    {
+      getuid: () => 1000,
+      existsSync: () => false,
+      pickPrivilegeCommand: () => "su",
+      execFileSync: (command, args, options) => {
+        genericCalls.push([command, args, options]);
+        return "";
+      },
+    },
+  );
+
+  assert.deepEqual(rootCalls[0], [
+    "/usr/sbin/runuser",
+    [
+      "-u",
+      "demo",
+      "--",
+      "sh",
+      "-lc",
+      'RIN_MODE="install" "node" "script.js" "--flag"',
+    ],
+    { stdio: "inherit" },
+  ]);
+  assert.deepEqual(sudoCalls[0], [
+    "sudo",
+    ["-u", "demo", "sh", "-lc", 'RIN_MODE="install" "node" "script.js"'],
+    { stdio: "inherit" },
+  ]);
+  assert.deepEqual(genericCalls[0], [
+    "su",
+    ["sh", "-lc", 'RIN_MODE="install" "node" "script.js"'],
+    { stdio: "inherit" },
+  ]);
+});
+
+test("installer fs utils privilege-aware writers emit the expected command sequence and cleanup temp payloads", () => {
+  const tempRoot = path.join(
+    os.tmpdir(),
+    `rin-install-write-test-${Date.now()}`,
+  );
+  const knownTempDir = path.join(tempRoot, "payload-dir");
+  const rmCalls = [];
+  const textCalls = [];
+  const jsonCalls = [];
+
+  fsUtils.writeTextFileWithPrivilege(
+    "/secure/demo.txt",
+    "hello secure world\n",
+    "demo",
+    1000,
+    0o640,
+    {
+      mkdtempSync: () => knownTempDir,
+      writeFileSync: (filePath, value, encoding) => {
+        textCalls.push(["write", filePath, value, encoding]);
+      },
+      rmSync: (filePath, options) => {
+        rmCalls.push([filePath, options]);
+      },
+      runPrivileged: (command, args) => {
+        textCalls.push([command, ...args]);
+      },
+      platform: "linux",
+    },
+  );
+
+  fsUtils.writeJsonFileWithPrivilege(
+    "/secure/demo.json",
+    { ok: true },
+    "demo",
+    1000,
+    {
+      mkdtempSync: () => knownTempDir,
+      writeFileSync: (filePath, value, encoding) => {
+        jsonCalls.push(["write", filePath, value, encoding]);
+      },
+      rmSync: (filePath, options) => {
+        rmCalls.push([filePath, options]);
+      },
+      pickPrivilegeCommand: () => "sudo",
+      execFileSync: (command, args, options) => {
+        jsonCalls.push([command, args, options]);
+        return "";
+      },
+      platform: "linux",
+    },
+  );
+
+  assert.deepEqual(textCalls, [
+    [
+      "write",
+      path.join(knownTempDir, "payload"),
+      "hello secure world\n",
+      "utf8",
+    ],
+    ["mkdir", "-p", "/secure"],
+    [
+      "install",
+      "-m",
+      "640",
+      path.join(knownTempDir, "payload"),
+      "/secure/demo.txt",
+    ],
+    ["chown", "demo:1000", "/secure/demo.txt"],
+  ]);
+  assert.deepEqual(jsonCalls, [
+    [
+      "write",
+      path.join(knownTempDir, "payload.json"),
+      '{\n  "ok": true\n}\n',
+      "utf8",
+    ],
+    ["sudo", ["mkdir", "-p", "/secure"], { stdio: "inherit" }],
+    [
+      "sudo",
+      [
+        "install",
+        "-m",
+        "600",
+        path.join(knownTempDir, "payload.json"),
+        "/secure/demo.json",
+      ],
+      { stdio: "inherit" },
+    ],
+    ["sudo", ["chown", "demo:1000", "/secure/demo.json"], { stdio: "inherit" }],
+  ]);
+  assert.deepEqual(rmCalls, [
+    [knownTempDir, { recursive: true, force: true }],
+    [knownTempDir, { recursive: true, force: true }],
+  ]);
 });
 
 test("syncTree and syncInstalledDocTree replace old payloads and ignore missing sources", async () => {

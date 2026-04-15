@@ -17,12 +17,25 @@ export function readJsonFile<T>(filePath: string, fallback: T): T {
   }
 }
 
-export function readJsonFileWithPrivilege<T>(filePath: string, fallback: T): T {
-  const privilegeCommand = pickPrivilegeCommand();
+export function readJsonFileWithPrivilege<T>(
+  filePath: string,
+  fallback: T,
+  deps: {
+    pickPrivilegeCommand?: typeof pickPrivilegeCommand;
+    execFileSync?: typeof execFileSync;
+  } = {},
+): T {
+  const privilegeCommand = (
+    deps.pickPrivilegeCommand ?? pickPrivilegeCommand
+  )();
   try {
-    const raw = execFileSync(privilegeCommand, ["cat", filePath], {
-      encoding: "utf8",
-    });
+    const raw = (deps.execFileSync ?? execFileSync)(
+      privilegeCommand,
+      ["cat", filePath],
+      {
+        encoding: "utf8",
+      },
+    );
     return JSON.parse(String(raw || "")) as T;
   } catch {
     return fallback;
@@ -33,6 +46,9 @@ export function readInstallerJson<T>(
   filePath: string,
   fallback: T,
   elevated = false,
+  deps: {
+    readJsonFileWithPrivilege?: typeof readJsonFileWithPrivilege;
+  } = {},
 ): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
@@ -40,7 +56,10 @@ export function readInstallerJson<T>(
     const code = String(error?.code || "");
     if (code === "EACCES" || code === "EPERM") {
       if (!elevated) throw error;
-      return readJsonFileWithPrivilege(filePath, fallback);
+      return (deps.readJsonFileWithPrivilege ?? readJsonFileWithPrivilege)(
+        filePath,
+        fallback,
+      );
     }
     return fallback;
   }
@@ -119,9 +138,20 @@ export function appConfigDirForUser(
   return path.join(home, ".config", "rin");
 }
 
-export function runPrivileged(command: string, args: string[]) {
-  const privilegeCommand = pickPrivilegeCommand();
-  execFileSync(privilegeCommand, [command, ...args], { stdio: "inherit" });
+export function runPrivileged(
+  command: string,
+  args: string[],
+  deps: {
+    pickPrivilegeCommand?: typeof pickPrivilegeCommand;
+    execFileSync?: typeof execFileSync;
+  } = {},
+) {
+  const privilegeCommand = (
+    deps.pickPrivilegeCommand ?? pickPrivilegeCommand
+  )();
+  (deps.execFileSync ?? execFileSync)(privilegeCommand, [command, ...args], {
+    stdio: "inherit",
+  });
 }
 
 export function runCommandAsUser(
@@ -129,6 +159,12 @@ export function runCommandAsUser(
   command: string,
   args: string[],
   extraEnv: Record<string, string> = {},
+  deps: {
+    getuid?: typeof process.getuid;
+    existsSync?: typeof fs.existsSync;
+    pickPrivilegeCommand?: typeof pickPrivilegeCommand;
+    execFileSync?: typeof execFileSync;
+  } = {},
 ) {
   const envArgs = Object.entries(extraEnv).map(
     ([key, value]) => `${key}=${JSON.stringify(value)}`,
@@ -138,27 +174,31 @@ export function runCommandAsUser(
     JSON.stringify(command),
     ...args.map((arg) => JSON.stringify(arg)),
   ].join(" ");
-  const isRoot =
-    typeof process.getuid === "function" ? process.getuid() === 0 : false;
+  const getuid = deps.getuid ?? process.getuid;
+  const existsSync = deps.existsSync ?? fs.existsSync;
+  const execFileSyncImpl = deps.execFileSync ?? execFileSync;
+  const isRoot = typeof getuid === "function" ? getuid() === 0 : false;
 
-  if (isRoot && fs.existsSync("/usr/sbin/runuser")) {
-    execFileSync(
+  if (isRoot && existsSync("/usr/sbin/runuser")) {
+    execFileSyncImpl(
       "/usr/sbin/runuser",
       ["-u", targetUser, "--", "sh", "-lc", shellCommand],
       { stdio: "inherit" },
     );
     return;
   }
-  const privilegeCommand = pickPrivilegeCommand();
+  const privilegeCommand = (
+    deps.pickPrivilegeCommand ?? pickPrivilegeCommand
+  )();
   if (privilegeCommand.endsWith("doas") || privilegeCommand.endsWith("sudo")) {
-    execFileSync(
+    execFileSyncImpl(
       privilegeCommand,
       ["-u", targetUser, "sh", "-lc", shellCommand],
       { stdio: "inherit" },
     );
     return;
   }
-  execFileSync(privilegeCommand, ["sh", "-lc", shellCommand], {
+  execFileSyncImpl(privilegeCommand, ["sh", "-lc", shellCommand], {
     stdio: "inherit",
   });
 }
@@ -169,27 +209,37 @@ export function writeTextFileWithPrivilege(
   ownerUser?: string,
   ownerGroup?: string | number,
   mode = 0o600,
+  deps: {
+    mkdtempSync?: typeof fs.mkdtempSync;
+    writeFileSync?: typeof fs.writeFileSync;
+    rmSync?: typeof fs.rmSync;
+    runPrivileged?: typeof runPrivileged;
+    platform?: NodeJS.Platform;
+  } = {},
 ) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-write-"));
+  const tempDir = (deps.mkdtempSync ?? fs.mkdtempSync)(
+    path.join(os.tmpdir(), "rin-install-write-"),
+  );
   const tempFile = path.join(tempDir, "payload");
   try {
-    fs.writeFileSync(tempFile, value, "utf8");
-    runPrivileged("mkdir", ["-p", path.dirname(filePath)]);
-    runPrivileged("install", [
+    (deps.writeFileSync ?? fs.writeFileSync)(tempFile, value, "utf8");
+    const runPrivilegedImpl = deps.runPrivileged ?? runPrivileged;
+    runPrivilegedImpl("mkdir", ["-p", path.dirname(filePath)]);
+    runPrivilegedImpl("install", [
       "-m",
       String(mode.toString(8)),
       tempFile,
       filePath,
     ]);
-    if (ownerUser && process.platform !== "win32") {
+    if (ownerUser && (deps.platform ?? process.platform) !== "win32") {
       const owner =
         ownerGroup != null && `${ownerGroup}` !== ""
           ? `${ownerUser}:${ownerGroup}`
           : ownerUser;
-      runPrivileged("chown", [owner, filePath]);
+      runPrivilegedImpl("chown", [owner, filePath]);
     }
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    (deps.rmSync ?? fs.rmSync)(tempDir, { recursive: true, force: true });
   }
 }
 
@@ -198,31 +248,52 @@ export function writeJsonFileWithPrivilege(
   value: unknown,
   ownerUser?: string,
   ownerGroup?: string | number,
+  deps: {
+    mkdtempSync?: typeof fs.mkdtempSync;
+    writeFileSync?: typeof fs.writeFileSync;
+    rmSync?: typeof fs.rmSync;
+    pickPrivilegeCommand?: typeof pickPrivilegeCommand;
+    execFileSync?: typeof execFileSync;
+    platform?: NodeJS.Platform;
+  } = {},
 ) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-write-"));
+  const tempDir = (deps.mkdtempSync ?? fs.mkdtempSync)(
+    path.join(os.tmpdir(), "rin-install-write-"),
+  );
   const tempFile = path.join(tempDir, "payload.json");
-  const privilegeCommand = pickPrivilegeCommand();
+  const privilegeCommand = (
+    deps.pickPrivilegeCommand ?? pickPrivilegeCommand
+  )();
+  const execFileSyncImpl = deps.execFileSync ?? execFileSync;
   try {
-    fs.writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    execFileSync(privilegeCommand, ["mkdir", "-p", path.dirname(filePath)], {
-      stdio: "inherit",
-    });
-    execFileSync(
+    (deps.writeFileSync ?? fs.writeFileSync)(
+      tempFile,
+      `${JSON.stringify(value, null, 2)}\n`,
+      "utf8",
+    );
+    execFileSyncImpl(
+      privilegeCommand,
+      ["mkdir", "-p", path.dirname(filePath)],
+      {
+        stdio: "inherit",
+      },
+    );
+    execFileSyncImpl(
       privilegeCommand,
       ["install", "-m", "600", tempFile, filePath],
       { stdio: "inherit" },
     );
-    if (ownerUser && process.platform !== "win32") {
+    if (ownerUser && (deps.platform ?? process.platform) !== "win32") {
       const owner =
         ownerGroup != null && `${ownerGroup}` !== ""
           ? `${ownerUser}:${ownerGroup}`
           : ownerUser;
-      execFileSync(privilegeCommand, ["chown", owner, filePath], {
+      execFileSyncImpl(privilegeCommand, ["chown", owner, filePath], {
         stdio: "inherit",
       });
     }
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    (deps.rmSync ?? fs.rmSync)(tempDir, { recursive: true, force: true });
   }
 }
 
