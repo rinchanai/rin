@@ -123,6 +123,35 @@ test("rpc interactive session keeps working status during compaction", () => {
   });
 });
 
+test("rpc interactive session watchdog restarts reconnect loop when socket is gone", async () => {
+  const client = { isConnected: () => false };
+  const session = new RpcInteractiveSession(client);
+  let reconnects = 0;
+  session.ensureReconnectLoop = () => {
+    reconnects += 1;
+  };
+
+  await session.runConnectionWatchdog();
+
+  assert.equal(reconnects, 1);
+});
+
+test("rpc interactive session watchdog resumes recovery when socket is back", async () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = false;
+  session.recoveryPending = true;
+  let restored = 0;
+  session.clearWaitingDaemonState = () => {};
+  session.handleConnectionRestored = async () => {
+    restored += 1;
+  };
+
+  await session.runConnectionWatchdog();
+
+  assert.equal(restored, 1);
+});
+
 test("rpc interactive session can terminate an attached worker without local session selectors", async () => {
   const calls = [];
   const client = {
