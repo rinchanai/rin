@@ -46,6 +46,12 @@ export async function sendTyping(app: any, chatKey: string, h: any) {
       return true;
     } catch {}
   }
+  if (typeof bot?.internal?.sendTyping === "function") {
+    try {
+      await bot.internal.sendTyping(parsed.chatId);
+      return true;
+    } catch {}
+  }
   return false;
 }
 

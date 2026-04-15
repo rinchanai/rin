@@ -1,7 +1,5 @@
 import { parseJsonl } from "../rin-lib/common.js";
-import {
-  createInterruptedToolResultPayload,
-} from "../rin-lib/interruption.js";
+import { createInterruptedToolResultPayload } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
@@ -294,7 +292,7 @@ export async function runCustomRpcMode(
       case "shutdown_session":
         await runtime.dispose();
         output(done(id, type, { shutdown: true }));
-        process.exit(0);
+        return process.exit(0);
       case "attach_session":
         return done(id, type, getSessionState(session));
       case "get_state":
@@ -408,7 +406,9 @@ export async function runCustomRpcMode(
         if (commandLine.startsWith("/")) {
           const spaceIndex = commandLine.indexOf(" ");
           const commandName =
-            spaceIndex === -1 ? commandLine.slice(1) : commandLine.slice(1, spaceIndex);
+            spaceIndex === -1
+              ? commandLine.slice(1)
+              : commandLine.slice(1, spaceIndex);
           if (session.extensionRunner?.getCommand?.(commandName)) {
             return run(
               id,

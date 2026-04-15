@@ -131,6 +131,7 @@ test("chat bridge runtime adapter entries use internal built-in runtime adapters
     koishi: {
       telegram: { token: "telegram-token", protocol: "polling" },
       onebot: { endpoint: "ws://127.0.0.1:3001", protocol: "ws", selfId: "42" },
+      minecraft: { url: "ws://127.0.0.1:8080", selfId: "minecraft" },
     },
   });
 
@@ -139,6 +140,7 @@ test("chat bridge runtime adapter entries use internal built-in runtime adapters
     [
       { key: "telegram", builtIn: true },
       { key: "onebot", builtIn: true },
+      { key: "minecraft", builtIn: true },
     ],
   );
 });

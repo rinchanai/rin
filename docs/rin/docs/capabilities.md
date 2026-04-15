@@ -71,7 +71,7 @@ Rin provides scheduled task support. As an agent, you should know that:
 
 ## Chat bridge
 
-Rin can bridge chat platforms through a framework-neutral chat bridge layer. The direct built-in runtime currently ships Telegram and OneBot first, while the retained next platform targets are QQ, Feishu / Lark, Discord, and Slack. As an agent, you should know that:
+Rin can bridge chat platforms through a framework-neutral chat bridge layer. The direct built-in runtime currently includes Telegram, OneBot, QQ, Feishu / Lark, Discord, Slack, and Minecraft / QueQiao. As an agent, you should know that:
 
 - the sender in a chat bridge conversation is not the local shell user; it is the chat-platform sender
 - the prompt may include `chatKey`, chat name, sender identity, and related context

@@ -97,6 +97,24 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
       placeholder: '{"protocol":"ws","token":"xapp-...","botToken":"xoxb-..."}',
     },
   },
+  {
+    key: "minecraft",
+    label: "Minecraft / QueQiao",
+    pluginKey: "adapter-minecraft",
+    packageName: "builtin:minecraft",
+    defaults: {
+      protocol: "ws",
+      url: "",
+      selfId: "minecraft",
+      serverName: "",
+      token: "",
+    },
+    installer: {
+      kind: "json",
+      placeholder:
+        '{"url":"ws://127.0.0.1:8080","selfId":"minecraft","serverName":"Survival","token":"..."}',
+    },
+  },
 ];
 
 const CHAT_BRIDGE_ADAPTER_SPEC_MAP = new Map(

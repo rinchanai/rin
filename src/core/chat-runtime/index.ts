@@ -5,6 +5,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import WebSocket from "ws";
 
+import {
+  DiscordAdapter,
+  LarkAdapter,
+  MinecraftAdapter,
+  QQAdapter,
+  SlackAdapter,
+} from "./extra-adapters.js";
+
 function safeString(value: unknown) {
   if (value == null) return "";
   return String(value);
@@ -1361,6 +1369,31 @@ export function instantiateBuiltInChatRuntimeAdapters(
       }
       if (entry.key === "onebot") {
         new OneBotAdapter(app, input.dataDir, entry.config, input.logger);
+        created.push({ key: entry.key, name: entry.name });
+        continue;
+      }
+      if (entry.key === "qq") {
+        new QQAdapter(app, input.dataDir, entry.config, input.logger);
+        created.push({ key: entry.key, name: entry.name });
+        continue;
+      }
+      if (entry.key === "lark") {
+        new LarkAdapter(app, input.dataDir, entry.config, input.logger);
+        created.push({ key: entry.key, name: entry.name });
+        continue;
+      }
+      if (entry.key === "discord") {
+        new DiscordAdapter(app, input.dataDir, entry.config, input.logger);
+        created.push({ key: entry.key, name: entry.name });
+        continue;
+      }
+      if (entry.key === "slack") {
+        new SlackAdapter(app, input.dataDir, entry.config, input.logger);
+        created.push({ key: entry.key, name: entry.name });
+        continue;
+      }
+      if (entry.key === "minecraft") {
+        new MinecraftAdapter(app, input.dataDir, entry.config, input.logger);
         created.push({ key: entry.key, name: entry.name });
         continue;
       }
