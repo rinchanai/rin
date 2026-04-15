@@ -174,7 +174,8 @@ function normalizeCustomKoishiAdapters(settings: any) {
       };
     })
     .filter(
-      (item) => item.enabled && item.packageName && item.pluginKey && item.config,
+      (item) =>
+        item.enabled && item.packageName && item.pluginKey && item.config,
     );
 }
 
@@ -215,11 +216,60 @@ export function buildKoishiConfigFromSettings(settings: any) {
   return config;
 }
 
+export type KoishiRuntimeAdapterEntry = {
+  key: string;
+  name: string;
+  config: Record<string, any>;
+  builtIn: boolean;
+  packageName?: string;
+};
+
+export function listKoishiRuntimeAdapterEntries(settings: any) {
+  const koishi =
+    settings && typeof settings.koishi === "object" ? settings.koishi : {};
+  const entries: KoishiRuntimeAdapterEntry[] = [];
+
+  for (const adapter of listChatBridgeAdapterSpecs()) {
+    for (const entry of normalizeAdapterEntries(
+      koishi?.[adapter.key],
+      adapter.defaults,
+      adapter.key,
+    )) {
+      entries.push({
+        key: adapter.key,
+        name: entry.name,
+        config: entry.config,
+        builtIn: true,
+      });
+    }
+  }
+
+  for (const adapter of normalizeCustomKoishiAdapters(settings)) {
+    for (const entry of normalizeAdapterEntries(
+      adapter.config,
+      adapter.defaults,
+      adapter.fallbackPrefix,
+    )) {
+      entries.push({
+        key: adapter.fallbackPrefix,
+        name: entry.name,
+        config: entry.config,
+        builtIn: false,
+        packageName: adapter.packageName,
+      });
+    }
+  }
+
+  return entries;
+}
+
 export function buildKoishiRuntimePackageJson(settings: any) {
   const dependencies: Record<string, string> = {};
+
   for (const adapter of normalizeCustomKoishiAdapters(settings)) {
     dependencies[adapter.packageName] = adapter.version;
   }
+
   const sortedDependencies = Object.fromEntries(
     Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
   );
@@ -243,6 +293,7 @@ export function shouldInstallKoishiRuntimeDependencies(
 ) {
   const runtimePackage = buildKoishiRuntimePackageJson(settings);
   const dependencies = runtimePackage.dependencies || {};
+  if (!Object.keys(dependencies).length) return false;
   const packageJsonPath = path.join(rootDir, "package.json");
   const lockPath = path.join(rootDir, "package-lock.json");
   const expectedText = `${JSON.stringify(runtimePackage, null, 2)}\n`;
@@ -250,10 +301,10 @@ export function shouldInstallKoishiRuntimeDependencies(
     ? fs.readFileSync(packageJsonPath, "utf8")
     : "";
   if (currentText !== expectedText) return true;
-  if (!Object.keys(dependencies).length) return false;
   if (!fs.existsSync(lockPath)) return true;
   return Object.keys(dependencies).some(
-    (packageName) => !fs.existsSync(dependencyInstallPath(rootDir, packageName)),
+    (packageName) =>
+      !fs.existsSync(dependencyInstallPath(rootDir, packageName)),
   );
 }
 
@@ -287,7 +338,13 @@ export function ensureKoishiRuntimeDependencies(
   try {
     execFileSync(
       "npm",
-      ["install", "--no-audit", "--no-fund", "--omit=dev"],
+      [
+        "install",
+        "--no-audit",
+        "--no-fund",
+        "--omit=dev",
+        "--legacy-peer-deps",
+      ],
       {
         cwd: rootDir,
         stdio: "pipe",
@@ -436,7 +493,8 @@ export function saveIdentity(dataDir: string, identity: any) {
 
 function trustPersonId(platform: string, userId: string, trust: string) {
   const key = `${safeString(platform).trim()}\n${safeString(userId).trim()}\n${safeString(trust).trim()}`;
-  const prefix = safeString(trust).trim().toLowerCase() === "trusted" ? "trusted" : "other";
+  const prefix =
+    safeString(trust).trim().toLowerCase() === "trusted" ? "trusted" : "other";
   return `${prefix}_${createHash("sha1").update(key).digest("hex").slice(0, 10)}`;
 }
 
@@ -484,7 +542,12 @@ export function setIdentityTrust(options: {
     trust,
   };
   if (aliasIndex >= 0) {
-    aliases[aliasIndex] = { ...aliases[aliasIndex], platform, userId, personId };
+    aliases[aliasIndex] = {
+      ...aliases[aliasIndex],
+      platform,
+      userId,
+      personId,
+    };
   } else {
     aliases.push({ platform, userId, personId });
   }
@@ -556,7 +619,8 @@ export function findBot(app: any, platform: string, botId = "") {
     (bot: any) => bot && bot.platform === nextPlatform,
   );
   if (!matches.length) return null;
-  if (!nextBotId) return platformRequiresBotId(nextPlatform) ? null : matches[0];
+  if (!nextBotId)
+    return platformRequiresBotId(nextPlatform) ? null : matches[0];
   return (
     matches.find((bot: any) => safeString(bot?.selfId).trim() === nextBotId) ||
     null

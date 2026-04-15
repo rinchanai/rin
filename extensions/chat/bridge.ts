@@ -223,7 +223,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
     description: "Run constrained bridge code against a specific live chat.",
     promptSnippet: "Run constrained bridge code against a specific live chat.",
     promptGuidelines: [
-      "Use chat_bridge for tasks such as sending messages to a specified chat, sending multimedia content, using platform features for chat management, or building complex interactive chat flows.",
+      "Use chat_bridge for tasks such as querying chat or user information, sending messages to a specified chat, sending multimedia content, using platform features for chat management, or building complex interactive chat flows.",
     ],
     parameters: paramsSchema,
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {

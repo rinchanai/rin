@@ -2,7 +2,6 @@
 import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -45,23 +44,30 @@ import { KoishiChatController, loadKoishiSettings } from "./controller.js";
 import { appendKoishiChatLog } from "./chat-log.js";
 import { shouldProcessText } from "./decision.js";
 import {
+  createChatRuntimeApp,
+  createChatRuntimeH,
+  instantiateBuiltInChatRuntimeAdapters,
+} from "../chat-runtime/index.js";
+import {
   composeChatKey,
-  ensureKoishiRuntimeDependencies,
+  listKoishiRuntimeAdapterEntries,
   loadIdentity,
-  materializeKoishiConfig,
   trustOf,
 } from "./support.js";
 import { koishiRpcSocketPath } from "./rpc.js";
 import { sendOutboxPayload } from "./transport.js";
 
-const require = createRequire(import.meta.url);
-const { Loader, Logger, h } = require("koishi") as {
-  Loader: any;
-  Logger: any;
-  h: any;
-};
+function createLogger(name: string) {
+  const prefix = `[${name}]`;
+  return {
+    debug: (...args: any[]) => console.debug(prefix, ...args),
+    info: (...args: any[]) => console.info(prefix, ...args),
+    warn: (...args: any[]) => console.warn(prefix, ...args),
+    error: (...args: any[]) => console.error(prefix, ...args),
+  };
+}
 
-const logger = new Logger("rin-koishi");
+const logger = createLogger("rin-koishi");
 const RIN_KOISHI_SETTINGS_PATH_ENV = "RIN_KOISHI_SETTINGS_PATH";
 const TYPING_POLL_INTERVAL_MS = 4000;
 
@@ -145,6 +151,48 @@ async function buildTelegramInboundMediaDebug(session: any) {
   };
 }
 
+function getCommandTargets(session: any) {
+  return new Set(
+    [
+      session?.bot?.user?.name,
+      session?.bot?.user?.username,
+      session?.bot?.username,
+      session?.bot?.name,
+      session?.username,
+      session?.selfId,
+    ]
+      .map((value) => safeString(value).trim().replace(/^@+/, "").toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+function parseInboundCommand(
+  session: any,
+  text: string,
+  commandRows: Array<{ name: string }>,
+) {
+  const input = safeString(text).trim();
+  if (!input.startsWith("/")) return null;
+  const spaceIndex = input.indexOf(" ");
+  const head = (spaceIndex >= 0 ? input.slice(0, spaceIndex) : input)
+    .slice(1)
+    .trim();
+  if (!head) return null;
+  const argsText = spaceIndex >= 0 ? input.slice(spaceIndex + 1).trim() : "";
+  const [rawName, rawTarget = ""] = head.split("@", 2);
+  const name = safeString(rawName).trim().toLowerCase();
+  if (!name) return null;
+  if (!commandRows.some((item) => safeString(item?.name).trim() === name)) {
+    return null;
+  }
+  const target = safeString(rawTarget).trim().replace(/^@+/, "").toLowerCase();
+  if (target) {
+    const targets = getCommandTargets(session);
+    if (targets.size && !targets.has(target)) return null;
+  }
+  return { name, argsText };
+}
+
 export async function startKoishi(
   options: { additionalExtensionPaths?: string[] } = {},
 ) {
@@ -153,29 +201,23 @@ export async function startKoishi(
   const settingsPath =
     process.env[RIN_KOISHI_SETTINGS_PATH_ENV]?.trim() ||
     path.join(runtime.agentDir, "settings.json");
-  const configPath = path.join(dataDir, "koishi.yml");
-
   applyRuntimeProfileEnvironment(runtime);
   if (process.cwd() !== runtime.cwd) process.chdir(runtime.cwd);
   ensureDir(dataDir);
 
   const settings = loadKoishiSettings(settingsPath);
 
-  materializeKoishiConfig(configPath, settings);
-  ensureKoishiRuntimeDependencies(dataDir, settings);
-
-  const loader = new Loader();
-  const previousCwd = process.cwd();
-  if (previousCwd !== dataDir) process.chdir(dataDir);
-  try {
-    await loader.init(configPath);
-    loader.envFiles = [];
-    await loader.readConfig(true);
-  } finally {
-    if (process.cwd() !== previousCwd) process.chdir(previousCwd);
+  const h = createChatRuntimeH();
+  const app = createChatRuntimeApp();
+  const runtimeAdapters = instantiateBuiltInChatRuntimeAdapters(app, {
+    dataDir,
+    settings,
+    adapterEntries: listKoishiRuntimeAdapterEntries(settings),
+    logger,
+  });
+  if (!runtimeAdapters.length) {
+    logger.warn("no runtime chat adapters configured");
   }
-
-  const app = await loader.createApp();
   const controllers = new Map<string, KoishiChatController>();
   const detachedControllers = new Map<string, KoishiChatController>();
   const typingPollTimer = setInterval(() => {
@@ -237,49 +279,72 @@ export async function startKoishi(
     return controller;
   };
 
-  app.middleware(async (session: any, next: () => Promise<any>) => {
-    try {
-      const elements = ensureSessionElements(session);
-      persistInboundMessage(
-        runtime.agentDir,
-        session,
-        elements,
-        getIdentity(),
-        trustOf,
-      );
-      const platform = safeString(session?.platform || "").trim();
-      const botId = safeString(
-        session?.selfId || session?.bot?.selfId || "",
-      ).trim();
-      const chatKey = composeChatKey(platform, getChatId(session), botId);
-      const text = elementsToText(elements);
-      if (chatKey && text) {
-        appendKoishiChatLog(runtime.agentDir, {
-          timestamp: new Date().toISOString(),
-          chatKey,
-          role: "user",
-          text,
-          messageId: pickMessageId(session) || undefined,
-          replyToMessageId: pickReplyToMessageId(session) || undefined,
-          userId: pickUserId(session) || undefined,
-          nickname: pickSenderNickname(session) || undefined,
-        });
-      }
-    } catch (error: any) {
-      logger.warn(
-        `koishi inbound save failed err=${safeString(error?.message || error)}`,
-      );
-    }
-    return await next();
-  }, true);
+  const handleCommandSession = async (
+    session: any,
+    command: { name: string; argsText: string },
+    identity: any,
+  ) => {
+    const platform = safeString(session?.platform || "").trim();
+    const trust = trustOf(identity, platform, pickUserId(session));
+    if (command.name !== "help" && !canRunCommand(trust, command.name)) return;
+    const chatKey = composeChatKey(
+      platform,
+      getChatId(session),
+      safeString(session?.selfId || session?.bot?.selfId || "").trim(),
+    );
+    const messageId = pickMessageId(session);
+    const replyToMessageId = pickReplyToMessageId(session);
+    if (!chatKey) return;
+    const replySession = lookupReplySession(
+      runtime.agentDir,
+      chatKey,
+      replyToMessageId,
+    );
 
-  app.middleware(async (session: any, next: () => Promise<any>) => {
-    // Let the underlying bridge runtime command middleware short-circuit command messages.
-    // This middleware only handles ordinary chat turns that continue past it.
-    const identity = getIdentity();
-    const elements = ensureSessionElements(session);
+    if (command.name === "help") {
+      const lines = commandRows.map(
+        (entry) =>
+          `/${entry.name}${entry.description ? ` — ${entry.description}` : ""}`,
+      );
+      await sendOutboxPayload(
+        app,
+        runtime.agentDir,
+        {
+          type: "text_delivery",
+          createdAt: new Date().toISOString(),
+          chatKey,
+          text: lines.join("\n"),
+          replyToMessageId: messageId || undefined,
+          sessionId: replySession?.sessionId,
+          sessionFile: replySession?.sessionFile,
+        },
+        h,
+      ).catch(() => {});
+      return;
+    }
+
+    const controller = getController(chatKey);
+    if (replySession?.sessionFile) {
+      await controller
+        .resumeSessionFile(replySession.sessionFile)
+        .catch(() => {});
+    }
+
+    const text = `/${command.name}${command.argsText ? ` ${command.argsText}` : ""}`;
+    await controller.runCommand(text, messageId, messageId).catch((error) => {
+      logger.warn(
+        `koishi command failed chatKey=${chatKey} command=${command.name} err=${safeString((error as any)?.message || error)}`,
+      );
+    });
+  };
+
+  const handleChatTurnSession = async (
+    session: any,
+    elements: any[],
+    identity: any,
+  ) => {
     const decision = await shouldProcessText(session, elements, identity);
-    if (!decision.allow) return await next();
+    if (!decision.allow) return;
     const messageId = pickMessageId(session);
     const replyToMessageId = pickReplyToMessageId(session);
     const controller = getController(decision.chatKey);
@@ -288,10 +353,11 @@ export async function startKoishi(
       decision.chatKey,
       replyToMessageId,
     );
-    if (replySession?.sessionFile)
+    if (replySession?.sessionFile) {
       await controller
         .resumeSessionFile(replySession.sessionFile)
         .catch(() => {});
+    }
     const { attachments, failures } = await extractInboundAttachments(
       elements,
       chatStateDir(dataDir, decision.chatKey),
@@ -382,72 +448,60 @@ export async function startKoishi(
         ).catch(() => {});
         void controller.clearProcessingState().catch(() => {});
       });
-    return "";
-  });
+  };
 
-  for (const item of commandRows) {
-    app
-      .command(`${item.name} [args:text]`, item.description || "", {
-        slash: true,
-      })
-      .action(async ({ session }: any, argsText: any) => {
-        const identity = getIdentity();
-        const platform = safeString(session?.platform || "").trim();
-        const trust = trustOf(identity, platform, pickUserId(session));
-        if (item.name !== "help" && !canRunCommand(trust, item.name)) return "";
-        const chatKey = composeChatKey(
-          platform,
-          getChatId(session),
-          safeString(session?.selfId || session?.bot?.selfId || "").trim(),
-        );
-        const messageId = pickMessageId(session);
-        const replyToMessageId = pickReplyToMessageId(session);
-        if (!chatKey) return "";
-        const replySession = lookupReplySession(
+  app.on("message", (session: any) => {
+    void (async () => {
+      const identity = getIdentity();
+      const elements = ensureSessionElements(session);
+      try {
+        persistInboundMessage(
           runtime.agentDir,
-          chatKey,
-          replyToMessageId,
+          session,
+          elements,
+          identity,
+          trustOf,
         );
-
-        if (item.name === "help") {
-          const lines = commandRows.map(
-            (entry) =>
-              `/${entry.name}${entry.description ? ` — ${entry.description}` : ""}`,
-          );
-          await sendOutboxPayload(
-            app,
-            runtime.agentDir,
-            {
-              type: "text_delivery",
-              createdAt: new Date().toISOString(),
-              chatKey,
-              text: lines.join("\n"),
-              replyToMessageId: messageId || undefined,
-              sessionId: replySession?.sessionId,
-              sessionFile: replySession?.sessionFile,
-            },
-            h,
-          ).catch(() => {});
-          return "";
-        }
-
-        const controller = getController(chatKey);
-        if (replySession?.sessionFile)
-          await controller
-            .resumeSessionFile(replySession.sessionFile)
-            .catch(() => {});
-
-        const text = `/${item.name}${safeString(argsText).trim() ? ` ${safeString(argsText).trim()}` : ""}`;
-        await controller
-          .runCommand(text, messageId, messageId)
-          .catch((error) => {
-            logger.warn(
-              `koishi command failed chatKey=${chatKey} command=${item.name} err=${safeString((error as any)?.message || error)}`,
-            );
+        const platform = safeString(session?.platform || "").trim();
+        const botId = safeString(
+          session?.selfId || session?.bot?.selfId || "",
+        ).trim();
+        const chatKey = composeChatKey(platform, getChatId(session), botId);
+        const text = elementsToText(elements);
+        if (chatKey && text) {
+          appendKoishiChatLog(runtime.agentDir, {
+            timestamp: new Date().toISOString(),
+            chatKey,
+            role: "user",
+            text,
+            messageId: pickMessageId(session) || undefined,
+            replyToMessageId: pickReplyToMessageId(session) || undefined,
+            userId: pickUserId(session) || undefined,
+            nickname: pickSenderNickname(session) || undefined,
           });
-        return "";
-      });
-  }
+        }
+      } catch (error: any) {
+        logger.warn(
+          `koishi inbound save failed err=${safeString(error?.message || error)}`,
+        );
+      }
+
+      const command = parseInboundCommand(
+        session,
+        elementsToText(elements),
+        commandRows,
+      );
+      if (command) {
+        await handleCommandSession(session, command, identity);
+        return;
+      }
+      await handleChatTurnSession(session, elements, identity);
+    })().catch((error: any) => {
+      logger.warn(
+        `koishi inbound handling failed err=${safeString(error?.message || error)}`,
+      );
+    });
+  });
 
   app.on("bot-status-updated", (bot: any) => {
     if (bot?.status !== 1) return;
