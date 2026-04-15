@@ -21,8 +21,8 @@ import {
   safeString,
 } from "./chat-helpers.js";
 
-const DEFAULT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
-const ONEBOT_WORKING_REACTION_FRAMES = ["👍", "🔥", "🎉", "🌹"] as const;
+const DEFAULT_WORKING_REACTION_FRAMES = ["🌘"] as const;
+const ONEBOT_WORKING_REACTION_FRAMES = ["👍"] as const;
 
 export function getWorkingReactionFrame(platform: string, index: number) {
   const frames =
@@ -72,6 +72,9 @@ export async function rotateWorkingReaction(
   const bot = findBot(app, parsed.platform, parsed.botId);
   if (!bot) return previousEmoji || "";
   const nextEmoji = getWorkingReactionFrame(parsed.platform, frameIndex);
+  if (previousEmoji && previousEmoji === nextEmoji) {
+    return previousEmoji;
+  }
 
   if (
     parsed.platform !== "onebot" &&
