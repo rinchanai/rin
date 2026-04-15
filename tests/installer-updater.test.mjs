@@ -213,6 +213,29 @@ test("installer updater surfaces override and cross-user ownership semantics in 
   assert.match(harness.outros[0], /Use rin start -u override-user/);
 });
 
+test("installer updater surfaces launcher-based discovery notes for cross-user targets", async () => {
+  const harness = createUpdaterHarness({
+    currentUser: "builder",
+    targets: [
+      {
+        targetUser: "demo",
+        installDir: "/srv/demo",
+        ownerHome: "/home/alice",
+        source: "launcher",
+      },
+    ],
+  });
+
+  await updater.startUpdater(harness.deps);
+
+  assert.match(harness.notes[0][1], /Discovered from: launcher/);
+  assert.match(
+    harness.notes[0][1],
+    /launcher metadata can point at a target runtime even when service files are absent/,
+  );
+  assert.match(harness.notes[1][1], /Daemon target user: demo/);
+});
+
 test("installer updater stops cleanly when confirmation is declined", async () => {
   const harness = createUpdaterHarness({
     confirmResult: false,

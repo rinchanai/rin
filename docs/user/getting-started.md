@@ -73,7 +73,7 @@ rin update
 
 What this does in practice:
 
-- discovers installed Rin targets from `installer.json` and managed service files
+- discovers installed Rin targets from launcher metadata, `installer.json`, and managed service files
 - prompts for a target when more than one installed runtime is present
 - downloads the current repo source archive
 - rebuilds the core runtime

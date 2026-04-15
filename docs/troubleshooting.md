@@ -28,7 +28,7 @@ Useful places:
 - Linux user service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 
-The updater uses these same sources to discover installed targets. If `rin update` shows more than one candidate, verify which launcher-owning home and install dir you actually want before proceeding.
+The updater uses these same sources to discover installed targets, including the current user's launcher metadata when it exists. If `rin update` shows more than one candidate, verify which launcher-owning home and install dir you actually want before proceeding.
 
 Also remember the installer/update split of responsibility:
 

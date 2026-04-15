@@ -34,6 +34,7 @@ Typical metadata paths:
 This metadata records the current user's default `targetUser` and `installDir`.
 It is useful only when you are operating as the same user who owns the launcher.
 It does not mean the current launcher-owning user is also the daemon target user.
+The updater can still use this metadata to discover an installed target even when managed service files are absent.
 If the current account already has no `rin` command, prefer jumping to the target install manifest workflow instead of inspecting the current account's launcher metadata.
 
 Important implications for the agent:

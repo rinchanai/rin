@@ -20,8 +20,15 @@ function createDirent(name, isDirectory = true) {
   };
 }
 
-test("installer update target discovery merges manifest systemd and launchd sources deterministically", () => {
+test("installer update target discovery prefers manifest and service sources over launcher metadata when they describe the same target", () => {
   const files = new Map([
+    [
+      "/workspace/home/alice/.config/rin/install.json",
+      JSON.stringify({
+        defaultTargetUser: "alice",
+        defaultInstallDir: "/srv/rin-alice",
+      }),
+    ],
     [
       "/workspace/home/alice/.rin/installer.json",
       JSON.stringify({ targetUser: "alice", installDir: "/srv/rin-alice" }),
@@ -110,6 +117,13 @@ test("installer update target discovery merges manifest systemd and launchd sour
 test("installer update target discovery skips duplicates and malformed records", () => {
   const files = new Map([
     [
+      "/workspace/home/demo/.config/rin/install.json",
+      JSON.stringify({
+        defaultTargetUser: " demo ",
+        defaultInstallDir: " /srv/rin-demo ",
+      }),
+    ],
+    [
       "/workspace/home/demo/.rin/installer.json",
       JSON.stringify({ targetUser: " demo ", installDir: " /srv/rin-demo " }),
     ],
@@ -160,6 +174,46 @@ test("installer update target discovery skips duplicates and malformed records",
       installDir: "/srv/rin-demo",
       ownerHome: "/workspace/home/demo",
       source: "manifest",
+    },
+  ]);
+});
+
+test("installer update target discovery reads mac launcher metadata and ignores malformed launcher defaults", () => {
+  const files = new Map([
+    [
+      "/workspace/Users/carla/Library/Application Support/rin/install.json",
+      JSON.stringify({
+        defaultTargetUser: "rinbot",
+        defaultInstallDir: " /srv/rinbot ",
+      }),
+    ],
+    [
+      "/workspace/Users/dana/Library/Application Support/rin/install.json",
+      JSON.stringify({ defaultTargetUser: "   ", defaultInstallDir: "   " }),
+    ],
+  ]);
+  const directories = new Map([
+    ["/workspace/Users", [createDirent("carla"), createDirent("dana")]],
+  ]);
+
+  const targets = updateTargets.discoverInstalledTargets({
+    roots: ["/workspace/Users"],
+    readdirSync(targetPath, options) {
+      if (options?.withFileTypes) return directories.get(targetPath) ?? [];
+      return (directories.get(targetPath) ?? []).map((entry) => entry.name);
+    },
+    readFileSync(targetPath) {
+      if (!files.has(targetPath)) throw new Error(`ENOENT: ${targetPath}`);
+      return files.get(targetPath);
+    },
+  });
+
+  assert.deepEqual(targets, [
+    {
+      targetUser: "rinbot",
+      installDir: "/srv/rinbot",
+      ownerHome: "/workspace/Users/carla",
+      source: "launcher",
     },
   ]);
 });

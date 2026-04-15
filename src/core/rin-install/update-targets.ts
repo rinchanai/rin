@@ -24,12 +24,25 @@ export type InstalledTarget = {
   targetUser: string;
   installDir: string;
   ownerHome: string;
-  source: "manifest" | "systemd" | "launchd";
+  source: "launcher" | "manifest" | "systemd" | "launchd";
 };
+
+function installedTargetSourcePriority(source: InstalledTarget["source"]) {
+  switch (source) {
+    case "manifest":
+      return 3;
+    case "systemd":
+    case "launchd":
+      return 2;
+    case "launcher":
+    default:
+      return 1;
+  }
+}
 
 export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
   const rows: InstalledTarget[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, number>();
   const readFileSync = deps.readFileSync ?? fs.readFileSync;
   const readdirSync = deps.readdirSync ?? fs.readdirSync;
   const roots =
@@ -48,8 +61,23 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
     const nextOwnerHome = String(ownerHome || "").trim();
     if (!nextTargetUser || !nextInstallDir || !nextOwnerHome) return;
     const key = `${nextTargetUser}\t${nextInstallDir}\t${nextOwnerHome}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+    const existingIndex = seen.get(key);
+    if (existingIndex != null) {
+      const existing = rows[existingIndex]!;
+      if (
+        installedTargetSourcePriority(source) <=
+        installedTargetSourcePriority(existing.source)
+      )
+        return;
+      rows[existingIndex] = {
+        targetUser: nextTargetUser,
+        installDir: nextInstallDir,
+        ownerHome: nextOwnerHome,
+        source,
+      };
+      return;
+    }
+    seen.set(key, rows.length);
     rows.push({
       targetUser: nextTargetUser,
       installDir: nextInstallDir,
@@ -60,6 +88,35 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
+    const linuxLauncherMetadataPath = path.join(
+      homeDir,
+      ".config",
+      "rin",
+      "install.json",
+    );
+    const macLauncherMetadataPath = path.join(
+      homeDir,
+      "Library",
+      "Application Support",
+      "rin",
+      "install.json",
+    );
+    const launcherMetadata = readJsonFile<any>(
+      linuxLauncherMetadataPath,
+      readJsonFile<any>(macLauncherMetadataPath, null, { readFileSync }),
+      { readFileSync },
+    );
+    if (launcherMetadata && typeof launcherMetadata === "object") {
+      add(
+        String(launcherMetadata.defaultTargetUser || userName),
+        String(
+          launcherMetadata.defaultInstallDir || path.join(homeDir, ".rin"),
+        ),
+        homeDir,
+        "launcher",
+      );
+    }
+
     const manifestPath = path.join(homeDir, ".rin", "installer.json");
     const legacyManifestPath = path.join(
       homeDir,

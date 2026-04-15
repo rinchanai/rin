@@ -82,6 +82,7 @@ For installer and distribution work, treat these as stable operator-facing contr
 - child apply-plan helpers should stay injectable enough to verify spawn env, spinner outcomes, fallback entry resolution, and temp-dir cleanup without launching a real installer child
 - installed-runtime finalization should stay injectable enough to verify runtime publish/doc sync/manifest persistence/service startup behavior without depending on the host machine's real users or service manager
 - installer prompt, confirmation, and updater copy should describe launcher-owner vs daemon-owner responsibilities honestly, especially for cross-user installs that still need elevated writes or service control
+- update-target discovery should keep launcher metadata, install manifests, and managed service files consistent as parallel operator-facing recovery surfaces, while preferring target-owned sources over launcher metadata when they describe the same install
 
 ## Update and deployment
 

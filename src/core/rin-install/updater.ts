@@ -71,6 +71,9 @@ export async function startUpdater(
       `Install dir: ${installDir}`,
       `Discovered from: ${target.source}`,
       `Owner home: ${target.ownerHome}`,
+      target.source === "launcher"
+        ? "Discovery note: launcher metadata can point at a target runtime even when service files are absent or the current shell user is different."
+        : "",
       overrideTargetUser ? `Target override: ${overrideTargetUser}` : "",
       overrideInstallDir ? `Install dir override: ${overrideInstallDir}` : "",
       "",
