@@ -34,6 +34,13 @@ function toFrontendEvent(event: any): InteractiveFrontendEvent | null {
   return { type: "ui", name: String(event.type || "event"), payload: event };
 }
 
+function extractSlashCommandName(text: string) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed.startsWith("/")) return "";
+  const spaceIndex = trimmed.indexOf(" ");
+  return spaceIndex === -1 ? trimmed.slice(1) : trimmed.slice(1, spaceIndex);
+}
+
 export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   socketPath: string;
   socket: net.Socket | null = null;
@@ -105,6 +112,27 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   }
 
   async submit(text: string) {
+    const commandName = extractSlashCommandName(text);
+    if (!commandName) {
+      await this.send({ type: "prompt", message: text });
+      return;
+    }
+
+    const builtin = BUILTIN_SLASH_COMMANDS.some(
+      (command) => command.name === commandName,
+    );
+    if (builtin) {
+      await this.send({ type: "run_command", commandLine: String(text).trim() });
+      return;
+    }
+
+    const commands = await this.getCommands().catch(() => []);
+    const matched = commands.find((command) => command.name === commandName);
+    if (matched?.category === "extension") {
+      await this.send({ type: "run_command", commandLine: String(text).trim() });
+      return;
+    }
+
     await this.send({ type: "prompt", message: text });
   }
 
@@ -145,7 +173,11 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
           ? command.description
           : undefined,
       category:
-        typeof command.category === "string" ? command.category : undefined,
+        typeof command.category === "string"
+          ? command.category
+          : typeof command.source === "string"
+            ? command.source
+            : undefined,
     }));
   }
 
