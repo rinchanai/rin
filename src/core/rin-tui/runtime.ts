@@ -150,6 +150,7 @@ export class RpcInteractiveSession {
   private additionalExtensionPaths: string[];
   private reconnecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private connectionWatchdogTimer: NodeJS.Timeout | null = null;
   private queuedOfflineOps: PendingRpcOperation[] = [];
   private activeTurn: PendingRpcOperation | null = null;
   private rpcConnected = false;
@@ -218,6 +219,7 @@ export class RpcInteractiveSession {
   async connect() {
     this.disposed = false;
     this.startupPending = true;
+    this.startConnectionWatchdog();
     this.emitFrontendStatus(true);
     this.settingsManager = await getPersistentSettingsManager();
     this.autoCompactionEnabled = Boolean(
@@ -260,6 +262,7 @@ export class RpcInteractiveSession {
     this.disposed = true;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    this.stopConnectionWatchdog();
     this.clearWaitingDaemonState();
     this.unsubscribeClient?.();
     this.unsubscribeClient = undefined;
@@ -785,6 +788,37 @@ export class RpcInteractiveSession {
     if (this.waitForDaemonHintTimer) clearTimeout(this.waitForDaemonHintTimer);
     this.waitForDaemonHintTimer = null;
     this.waitForDaemonPromise = null;
+  }
+
+  private startConnectionWatchdog() {
+    if (this.connectionWatchdogTimer) return;
+    this.connectionWatchdogTimer = setInterval(() => {
+      void this.runConnectionWatchdog().catch(() => {});
+    }, 1000);
+  }
+
+  private stopConnectionWatchdog() {
+    if (this.connectionWatchdogTimer) {
+      clearInterval(this.connectionWatchdogTimer);
+      this.connectionWatchdogTimer = null;
+    }
+  }
+
+  private async runConnectionWatchdog() {
+    if (this.disposed) return;
+    const connected = this.client.isConnected();
+    if (!connected) {
+      if (this.rpcConnected) {
+        this.handleConnectionLost();
+        return;
+      }
+      this.ensureReconnectLoop();
+      return;
+    }
+    if (!this.rpcConnected || this.recoveryPending) {
+      this.clearWaitingDaemonState();
+      await this.handleConnectionRestored();
+    }
   }
 
   private async waitForDaemonAvailable() {
