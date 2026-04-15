@@ -351,3 +351,37 @@ test("koishi transport uses bot reaction helpers for onebot working reactions", 
     },
   ]);
 });
+
+test("koishi transport skips onebot working reactions in private chats", async () => {
+  const app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "2301401877",
+        async createReaction() {
+          throw new Error("onebot_reaction_requires_group_chat");
+        },
+        async deleteReaction() {
+          throw new Error("onebot_reaction_requires_group_chat");
+        },
+      },
+    ],
+  };
+
+  const first = await transport.rotateWorkingReaction(
+    app,
+    "onebot/2301401877:private:519418441",
+    "52",
+    0,
+    "",
+  );
+  const cleared = await transport.clearWorkingReaction(
+    app,
+    "onebot/2301401877:private:519418441",
+    "52",
+    "👍",
+  );
+
+  assert.equal(first, "");
+  assert.equal(cleared, false);
+});
