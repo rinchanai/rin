@@ -238,7 +238,15 @@ export function createChatBridgeRuntime(options: {
         allowedMethods: ["sendMessage"],
       }),
       internal: createMethodFacade(bot.internal || {}, {
-        safeFields: [],
+        safeFields: [
+          "client",
+          "rest",
+          "web",
+          "socket",
+          "openapi",
+          "wsClient",
+          "ws",
+        ],
         allowedMethods: null,
       }),
       h: options.h,

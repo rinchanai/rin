@@ -96,6 +96,28 @@ test("chat bridge setup configures Feishu / Lark with websocket defaults", async
   });
 });
 
+test("chat bridge setup configures Minecraft / QueQiao with websocket defaults", async () => {
+  const result = await setup.promptChatBridgeSetup(
+    createPromptHarness({
+      confirm: [true],
+      select: ["minecraft"],
+      text: ["ws://127.0.0.1:8080", "minecraft", "Survival", "demo-token"],
+    }),
+  );
+
+  assert.equal(result.adapterKey, "minecraft");
+  assert.equal(result.koishiDescription, "Minecraft / QueQiao");
+  assert.deepEqual(result.koishiConfig, {
+    minecraft: {
+      protocol: "ws",
+      url: "ws://127.0.0.1:8080",
+      selfId: "minecraft",
+      serverName: "Survival",
+      token: "demo-token",
+    },
+  });
+});
+
 test("chat bridge setup can skip the installer yes-no gate", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({

@@ -332,6 +332,44 @@ async function promptSlackConfig(prompt: ChatBridgePromptApi) {
   };
 }
 
+async function promptMinecraftConfig(prompt: ChatBridgePromptApi) {
+  const url = await promptUrl(prompt, {
+    message: withGuide(
+      "Enter the Minecraft QueQiao WebSocket URL.",
+      "Use the WebSocket address exposed by your QueQiao bridge or Minecraft adapter.",
+    ),
+    placeholder: "ws://127.0.0.1:8080",
+    required: true,
+  });
+  const selfId = await promptOptionalText(prompt, {
+    message:
+      "Enter the Minecraft bridge self ID if you want a custom one. Leave blank to use minecraft.",
+    placeholder: "minecraft",
+  });
+  const serverName = await promptOptionalText(prompt, {
+    message:
+      "Enter the Minecraft server name if you want it shown in chat logs. Leave blank otherwise.",
+    placeholder: "Survival",
+  });
+  const token = await promptOptionalText(prompt, {
+    message:
+      "Enter the QueQiao access token if required. Leave blank otherwise.",
+    placeholder: "optional token",
+  });
+  return {
+    detail: `Chat bridge mode: ws · endpoint: ${url}`,
+    config: {
+      minecraft: compactObject({
+        protocol: "ws",
+        url,
+        selfId,
+        serverName,
+        token,
+      }),
+    },
+  };
+}
+
 async function promptChatBridgeAdapterConfig(
   prompt: ChatBridgePromptApi,
   adapterKey: string,
@@ -349,6 +387,8 @@ async function promptChatBridgeAdapterConfig(
       return await promptDiscordConfig(prompt);
     case "slack":
       return await promptSlackConfig(prompt);
+    case "minecraft":
+      return await promptMinecraftConfig(prompt);
     default:
       throw new Error(`unsupported_chat_bridge_adapter:${adapterKey}`);
   }

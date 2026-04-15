@@ -70,6 +70,7 @@ test("chat bridge eval runs constrained code with bot, internal, helpers, store,
               return { id: chatId, name: "Demo Chat" };
             },
             internal: {
+              client: { kind: "demo-client" },
               async getChat(payload) {
                 return {
                   ok: true,
@@ -111,6 +112,7 @@ return {
   botStatus: room.bot.status,
   botGetGuildType: typeof room.bot.getGuild,
   botSendMessageType: typeof room.bot.sendMessage,
+  internalClientKind: room.internal.client?.kind,
 };
 `,
       context: runtime,
@@ -127,6 +129,7 @@ return {
     assert.equal(result.value.storedText, "hello 7");
     assert.equal(result.value.botGetGuildType, "undefined");
     assert.equal(result.value.botSendMessageType, "function");
+    assert.equal(result.value.internalClientKind, "demo-client");
     assert.equal(sends.length, 1);
     assert.equal(sends[0].chatId, "2");
 

@@ -12,6 +12,18 @@ Use `chat_bridge` for tasks such as:
 - chat management actions
 - complex interactive chat flows
 
+## Built-in direct runtime adapters
+
+The built-in direct runtime currently includes:
+
+- Telegram
+- OneBot
+- QQ
+- Feishu / Lark
+- Discord
+- Slack
+- Minecraft / QueQiao
+
 ## Runtime objects
 
 The code runs as an async function body.
@@ -27,6 +39,7 @@ Available globals:
 - `internal`
   - primary platform-specific API for the current bound chat scope
   - prefer this for most chat-platform operations
+  - some platforms also expose bound official client objects such as `internal.client`, `internal.web`, `internal.openapi`, `internal.wsClient`, or `internal.ws`
 - `h`
   - message element builder
 - `store`
@@ -135,6 +148,62 @@ await scope.internal.setMessageReaction({
   reaction: [{ type: "emoji", emoji: "👍" }],
 });
 return { messageId: target.messageId, emoji: "👍" };
+```
+
+### Use Discord typing and reaction helpers
+
+```ts
+const scope = chat ?? helpers.useChat("discord/123456789012345678");
+await scope.internal.sendTyping(scope.chat.chatId);
+return await scope.internal.createReaction(
+  scope.chat.chatId,
+  "123456789012345679",
+  "🔥",
+);
+```
+
+### Use Slack Web API through `internal`
+
+```ts
+const scope = chat ?? helpers.useChat("slack/C0123456789");
+return await scope.internal.postMessage({
+  channel: scope.chat.chatId,
+  text: "hello from chat_bridge",
+});
+```
+
+### Use QQ channel or group send through `internal`
+
+```ts
+const scope = chat ?? helpers.useChat("qq/channel:1234567890");
+return await scope.internal.postMessage(
+  scope.chat.chatId.replace(/^channel:/, ""),
+  {
+    content: "hello",
+    msg_type: 0,
+  },
+);
+```
+
+### Use Lark message create through `internal`
+
+```ts
+const scope = chat ?? helpers.useChat("lark/oc_xxxxxxxxxx");
+return await scope.internal.createMessage({
+  params: { receive_id_type: "chat_id" },
+  data: {
+    receive_id: scope.chat.chatId,
+    msg_type: "text",
+    content: JSON.stringify({ text: "hello" }),
+  },
+});
+```
+
+### Use Minecraft / QueQiao bridge actions
+
+```ts
+const scope = chat ?? helpers.useChat("minecraft/Survival");
+return await scope.internal.sendRconCommand("list");
 ```
 
 ### Inspect local stored message context

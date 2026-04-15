@@ -22,7 +22,9 @@ async function waitForSocket(socketPath, timeoutMs = 5000) {
         settled = true;
         try {
           socket.destroy();
-        } catch {}
+        } catch {
+          // ignore
+        }
         resolve(value);
       };
       socket.once("connect", () => finish(true));
@@ -88,7 +90,9 @@ test("daemon exits promptly on SIGTERM even with connected rpc clients", async (
   } finally {
     try {
       child.kill("SIGKILL");
-    } catch {}
+    } catch {
+      // ignore
+    }
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });

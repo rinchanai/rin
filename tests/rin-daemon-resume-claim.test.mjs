@@ -22,7 +22,9 @@ async function waitForSocket(socketPath, timeoutMs = 5000) {
         settled = true;
         try {
           socket.destroy();
-        } catch {}
+        } catch {
+          // ignore
+        }
         resolve(value);
       };
       socket.once("connect", () => finish(true));
@@ -46,7 +48,9 @@ async function rpc(socketPath, command, timeoutMs = 5000) {
     const timer = setTimeout(() => {
       try {
         socket.destroy();
-      } catch {}
+      } catch {
+        // ignore
+      }
       reject(new Error("rpc_timeout"));
     }, timeoutMs);
     socket.on("data", (chunk) => {
@@ -63,7 +67,9 @@ async function rpc(socketPath, command, timeoutMs = 5000) {
           clearTimeout(timer);
           try {
             socket.destroy();
-          } catch {}
+          } catch {
+            // ignore
+          }
           resolve(payload);
           return;
         }
@@ -83,14 +89,21 @@ function spawnDaemon(agentDir, socketPath, workerPath) {
     [path.join(rootDir, "dist", "core", "rin-daemon", "daemon.js"), socketPath],
     {
       cwd: rootDir,
-      env: { ...process.env, RIN_DIR: agentDir, RIN_WORKER_PATH: workerPath, RIN_DAEMON_SHUTDOWN_GRACE_MS: "200" },
+      env: {
+        ...process.env,
+        RIN_DIR: agentDir,
+        RIN_WORKER_PATH: workerPath,
+        RIN_DAEMON_SHUTDOWN_GRACE_MS: "200",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
 }
 
 test("daemon auto-resumes interrupted sessions on startup without frontend help", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-daemon-resume-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-daemon-resume-"),
+  );
   const socketPath = path.join(agentDir, "daemon.sock");
   const workerPath = path.join(agentDir, "fake-worker.mjs");
   await fs.writeFile(
@@ -142,7 +155,10 @@ process.stdin.on("data", (chunk) => {
     socket.write(`${JSON.stringify({ id: "1", type: "new_session" })}\n`);
     await new Promise((resolve, reject) => {
       let buffer = "";
-      const timer = setTimeout(() => reject(new Error("payload_timeout")), 5000);
+      const timer = setTimeout(
+        () => reject(new Error("payload_timeout")),
+        5000,
+      );
       socket.on("data", (chunk) => {
         buffer += String(chunk);
         while (true) {
@@ -154,7 +170,9 @@ process.stdin.on("data", (chunk) => {
           if (!line.trim()) continue;
           const payload = JSON.parse(line);
           if (payload?.type === "response" && payload?.id === "1") {
-            socket.write(`${JSON.stringify({ id: "2", type: "prompt", message: "hello" })}\n`);
+            socket.write(
+              `${JSON.stringify({ id: "2", type: "prompt", message: "hello" })}\n`,
+            );
           }
           if (payload?.type === "agent_start") {
             clearTimeout(timer);
@@ -191,7 +209,9 @@ process.stdin.on("data", (chunk) => {
   } finally {
     try {
       daemon.kill("SIGKILL");
-    } catch {}
+    } catch {
+      // ignore
+    }
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
