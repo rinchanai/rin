@@ -26,7 +26,9 @@ const WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
 export function getWorkingReactionFrame(index: number) {
   const size = WORKING_REACTION_FRAMES.length;
   if (!size) return "🌕";
-  const nextIndex = Number.isFinite(index) ? Math.abs(Math.floor(index)) % size : 0;
+  const nextIndex = Number.isFinite(index)
+    ? Math.abs(Math.floor(index)) % size
+    : 0;
   return WORKING_REACTION_FRAMES[nextIndex] || WORKING_REACTION_FRAMES[0];
 }
 
@@ -378,7 +380,7 @@ export async function sendOutboxPayload(
         sessionId: safeString(payload.sessionId).trim() || undefined,
         sessionFile: safeString(payload.sessionFile).trim() || undefined,
       });
-      recordDeliveredAssistantMessages(agentDir, {
+      return recordDeliveredAssistantMessages(agentDir, {
         chatKey,
         deliveryResult,
         text,
@@ -388,9 +390,9 @@ export async function sendOutboxPayload(
         sessionFile: safeString(payload.sessionFile).trim() || undefined,
       });
     }
-    return;
+    return [] as string[];
   }
-  if (payload?.type !== "parts_delivery") return;
+  if (payload?.type !== "parts_delivery") return [] as string[];
   const chatKey = safeString(payload.chatKey).trim();
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
@@ -435,7 +437,7 @@ export async function sendOutboxPayload(
     });
   }
   const storedSummary = summarizeOutgoingParts(rawParts);
-  recordDeliveredAssistantMessages(agentDir, {
+  return recordDeliveredAssistantMessages(agentDir, {
     chatKey,
     deliveryResult,
     text: finalLoggedText || storedSummary || undefined,

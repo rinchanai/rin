@@ -4,6 +4,16 @@ import path from "node:path";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { safeString } from "./chat-helpers.js";
 
+export type KoishiBridgeEvalPayload = {
+  createdAt: string;
+  requestId?: string;
+  currentChatKey?: string;
+  code: string;
+  timeoutMs?: number;
+  sessionId?: string;
+  sessionFile?: string;
+};
+
 export type KoishiRpcCommand =
   | { type: "send_chat"; payload: ChatOutboxPayload }
   | {
@@ -16,6 +26,10 @@ export type KoishiRpcCommand =
         text: string;
         sessionFile?: string;
       };
+    }
+  | {
+      type: "bridge_eval";
+      payload: KoishiBridgeEvalPayload;
     };
 
 function parseJsonLine(buffer: string) {
@@ -39,9 +53,18 @@ export const DEFAULT_KOISHI_RPC_TIMEOUT_MS = 30_000;
 export const KOISHI_RPC_CHAT_TURN_TIMEOUT_MS = 10 * 60_000;
 
 export function koishiRpcTimeoutMsFor(command: Record<string, any>) {
-  return safeString(command?.type).trim() === "run_chat_turn"
-    ? KOISHI_RPC_CHAT_TURN_TIMEOUT_MS
-    : DEFAULT_KOISHI_RPC_TIMEOUT_MS;
+  const type = safeString(command?.type).trim();
+  if (type === "run_chat_turn") return KOISHI_RPC_CHAT_TURN_TIMEOUT_MS;
+  if (type === "bridge_eval") {
+    const payloadTimeout = Number(command?.payload?.timeoutMs);
+    if (Number.isFinite(payloadTimeout) && payloadTimeout > 0) {
+      return Math.max(
+        DEFAULT_KOISHI_RPC_TIMEOUT_MS,
+        Math.round(payloadTimeout) + 5_000,
+      );
+    }
+  }
+  return DEFAULT_KOISHI_RPC_TIMEOUT_MS;
 }
 
 export async function requestKoishiRpc(
@@ -117,6 +140,24 @@ export async function deliverKoishiRpcPayload(
     agentDir,
     {
       type: "send_chat",
+      payload,
+    },
+    timeoutMs,
+  );
+}
+
+export async function evalKoishiBridgePayload(
+  agentDir: string,
+  payload: KoishiBridgeEvalPayload,
+  timeoutMs = koishiRpcTimeoutMsFor({
+    type: "bridge_eval",
+    payload,
+  }),
+) {
+  return await requestKoishiRpc(
+    agentDir,
+    {
+      type: "bridge_eval",
       payload,
     },
     timeoutMs,
