@@ -80,6 +80,7 @@ For installer and distribution work, treat these as stable operator-facing contr
 - installer service helpers should keep their privilege and platform branching injectable enough to verify routing without mutating the host service manager
 - installer orchestration should delegate service-file refresh and service-manager actions through one service boundary instead of scattering duplicate restart logic across the top-level installer flow
 - child apply-plan helpers should stay injectable enough to verify spawn env, spinner outcomes, fallback entry resolution, and temp-dir cleanup without launching a real installer child
+- installed-runtime finalization should stay injectable enough to verify runtime publish/doc sync/manifest persistence/service startup behavior without depending on the host machine's real users or service manager
 - installer prompt, confirmation, and updater copy should describe launcher-owner vs daemon-owner responsibilities honestly, especially for cross-user installs that still need elevated writes or service control
 
 ## Update and deployment

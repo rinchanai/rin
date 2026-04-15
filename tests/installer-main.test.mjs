@@ -404,3 +404,198 @@ test("startInstaller surfaces cross-user service elevation even when the install
     "Publishing runtime, refreshing launchers, and reconciling managed services with elevated permissions...",
   );
 });
+
+test("applyInstalledRuntime wires runtime publishing persistence and managed service startup coherently", async () => {
+  const calls = [];
+  const result = await installerMain.applyInstalledRuntime(
+    {
+      currentUser: "builder",
+      targetUser: "demo",
+      installDir: "/srv/rin",
+      provider: "openai",
+      modelId: "gpt-5.4",
+      thinkingLevel: "high",
+      authData: { github: { type: "oauth" } },
+      koishiConfig: { onebot: { endpoint: "http://127.0.0.1:5700" } },
+      persistInstallerState: true,
+      daemonFailureCode: "daemon_not_ready",
+      sourceRoot: "/repo",
+    },
+    {
+      describeOwnership: () => ({
+        ownerMatches: true,
+        writable: true,
+        statUid: 1001,
+        statGid: 1001,
+        targetUid: 1001,
+        targetGid: 1001,
+      }),
+      shouldUseElevatedWrite: () => false,
+      findSystemUser: () => ({ name: "demo", uid: 1001, gid: 1001 }),
+      publishInstalledRuntime: (...args) => {
+        calls.push(["publish", ...args]);
+        return {
+          currentLink: "/srv/rin/app/current",
+          releaseRoot: "/srv/rin/app/releases/release-1",
+        };
+      },
+      syncInstalledDocs: (...args) => {
+        calls.push(["docs", ...args]);
+        return { rin: "/srv/rin/docs", pi: ["/srv/rin/docs/pi/README.md"] };
+      },
+      pruneInstalledReleases: (...args) => {
+        calls.push(["prune", ...args]);
+        return { removed: ["release-0"] };
+      },
+      reconcileInstallerManifest: (...args) => {
+        calls.push(["manifest", ...args]);
+        return { manifestPath: "/srv/rin/installer.json" };
+      },
+      persistInstallerOutputs: async (...args) => {
+        calls.push(["persist", ...args]);
+        return {
+          settingsPath: "/srv/rin/settings.json",
+          authPath: "/srv/rin/auth.json",
+          manifestPath: "/srv/rin/installer.json",
+          launcherPath: "/home/builder/.config/rin/install.json",
+          rinPath: "/home/builder/.local/bin/rin",
+          rinInstallPath: "/home/builder/.local/bin/rin-install",
+        };
+      },
+      installDaemonService: (...args) => {
+        calls.push(["service", ...args]);
+        return {
+          kind: "systemd",
+          label: "rin-daemon-demo.service",
+          servicePath: "/home/demo/.config/systemd/user/rin-daemon.service",
+        };
+      },
+      daemonSocketPathForUser: (...args) => {
+        calls.push(["socket-path", ...args]);
+        return "/run/user/1001/rin.sock";
+      },
+      waitForSocket: async (...args) => {
+        calls.push(["wait", ...args]);
+        return true;
+      },
+      collectDaemonFailureDetails: () => {
+        throw new Error("should_not_collect_failure_details");
+      },
+    },
+  );
+
+  assert.equal(result.currentUser, "builder");
+  assert.equal(result.targetUser, "demo");
+  assert.equal(result.installedDocsDir, "/srv/rin/docs");
+  assert.equal(
+    result.written.launcherPath,
+    "/home/builder/.config/rin/install.json",
+  );
+  assert.equal(result.installedService.label, "rin-daemon-demo.service");
+  assert.equal(result.daemonReady, true);
+  assert.deepEqual(
+    calls.map((entry) => entry[0]),
+    [
+      "publish",
+      "docs",
+      "prune",
+      "manifest",
+      "persist",
+      "service",
+      "socket-path",
+      "wait",
+    ],
+  );
+});
+
+test("applyInstalledRuntime tolerates core-only service install failures but surfaces persisted daemon startup failures with details", async () => {
+  const coreOnly = await installerMain.applyInstalledRuntime(
+    {
+      currentUser: "demo",
+      targetUser: "demo",
+      installDir: "/srv/rin",
+      persistInstallerState: false,
+      daemonFailureCode: "daemon_not_ready",
+      sourceRoot: "/repo",
+    },
+    {
+      describeOwnership: () => ({
+        ownerMatches: true,
+        writable: true,
+        statUid: 1001,
+        statGid: 1001,
+        targetUid: 1001,
+        targetGid: 1001,
+      }),
+      shouldUseElevatedWrite: () => false,
+      findSystemUser: () => ({ name: "demo", uid: 1001, gid: 1001 }),
+      publishInstalledRuntime: () => ({
+        currentLink: "/srv/rin/app/current",
+        releaseRoot: "/srv/rin/app/releases/release-1",
+      }),
+      syncInstalledDocs: () => ({ rin: "/srv/rin/docs", pi: [] }),
+      pruneInstalledReleases: () => ({ removed: [] }),
+      reconcileInstallerManifest: () => ({
+        manifestPath: "/srv/rin/installer.json",
+      }),
+      installDaemonService: () => {
+        throw new Error("service_install_failed");
+      },
+    },
+  );
+  assert.equal(coreOnly.installedService, null);
+  assert.equal(coreOnly.daemonReady, false);
+  assert.equal(coreOnly.written, undefined);
+
+  await assert.rejects(
+    () =>
+      installerMain.applyInstalledRuntime(
+        {
+          currentUser: "builder",
+          targetUser: "demo",
+          installDir: "/srv/rin",
+          persistInstallerState: true,
+          daemonFailureCode: "daemon_not_ready",
+          sourceRoot: "/repo",
+        },
+        {
+          describeOwnership: () => ({
+            ownerMatches: true,
+            writable: true,
+            statUid: 1001,
+            statGid: 1001,
+            targetUid: 1001,
+            targetGid: 1001,
+          }),
+          shouldUseElevatedWrite: () => false,
+          findSystemUser: () => ({ name: "demo", uid: 1001, gid: 1001 }),
+          publishInstalledRuntime: () => ({
+            currentLink: "/srv/rin/app/current",
+            releaseRoot: "/srv/rin/app/releases/release-1",
+          }),
+          syncInstalledDocs: () => ({ rin: "/srv/rin/docs", pi: [] }),
+          pruneInstalledReleases: () => ({ removed: [] }),
+          reconcileInstallerManifest: () => ({
+            manifestPath: "/srv/rin/installer.json",
+          }),
+          persistInstallerOutputs: async () => ({
+            settingsPath: "/srv/rin/settings.json",
+            authPath: "/srv/rin/auth.json",
+            manifestPath: "/srv/rin/installer.json",
+            launcherPath: "/home/builder/.config/rin/install.json",
+            rinPath: "/home/builder/.local/bin/rin",
+            rinInstallPath: "/home/builder/.local/bin/rin-install",
+          }),
+          installDaemonService: () => ({
+            kind: "systemd",
+            label: "rin-daemon-demo.service",
+            servicePath: "/home/demo/.config/systemd/user/rin-daemon.service",
+          }),
+          daemonSocketPathForUser: () => "/run/user/1001/rin.sock",
+          waitForSocket: async () => false,
+          collectDaemonFailureDetails: () => "status=failed\njournal=boom",
+        },
+      ),
+    /daemon_not_ready\nstatus=failed\njournal=boom/,
+  );
+});

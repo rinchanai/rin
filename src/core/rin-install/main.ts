@@ -251,55 +251,119 @@ function shouldUseElevatedWrite(
   );
 }
 
-async function applyInstalledRuntime(
+export async function applyInstalledRuntime(
   options: FinalizeInstallOptions & {
     persistInstallerState?: boolean;
     daemonFailureCode: string;
   },
+  deps: {
+    detectCurrentUser?: typeof detectCurrentUser;
+    targetHomeForUser?: typeof targetHomeForUser;
+    repoRootFromHere?: typeof repoRootFromHere;
+    describeOwnership?: typeof describeOwnership;
+    shouldUseElevatedWrite?: typeof shouldUseElevatedWrite;
+    findSystemUser?: typeof findSystemUser;
+    ensureDir?: typeof ensureDir;
+    readInstallerJson?: typeof readInstallerJson;
+    writeJsonFileWithPrivilege?: typeof writeJsonFileWithPrivilege;
+    writeJsonFile?: typeof writeJsonFile;
+    runPrivileged?: typeof runPrivileged;
+    appConfigDirForUser?: typeof appConfigDirForUser;
+    readJsonFile?: typeof readJsonFile;
+    writeLaunchersForUser?: typeof writeLaunchersForUser;
+    publishInstalledRuntime?: typeof publishInstalledRuntime;
+    syncInstalledDocs?: typeof syncInstalledDocs;
+    pruneInstalledReleases?: typeof pruneInstalledReleases;
+    reconcileInstallerManifest?: typeof reconcileInstallerManifest;
+    persistInstallerOutputs?: typeof persistInstallerOutputs;
+    installDaemonService?: typeof installDaemonService;
+    daemonSocketPathForUser?: typeof daemonSocketPathForUser;
+    waitForSocket?: typeof waitForSocket;
+    collectDaemonFailureDetails?: typeof collectDaemonFailureDetails;
+  } = {},
 ) {
+  const detectCurrentUserImpl = deps.detectCurrentUser ?? detectCurrentUser;
+  const targetHomeForUserImpl = deps.targetHomeForUser ?? targetHomeForUser;
+  const repoRootFromHereImpl = deps.repoRootFromHere ?? repoRootFromHere;
+  const describeOwnershipImpl = deps.describeOwnership ?? describeOwnership;
+  const shouldUseElevatedWriteImpl =
+    deps.shouldUseElevatedWrite ?? shouldUseElevatedWrite;
+  const findSystemUserImpl = deps.findSystemUser ?? findSystemUser;
+  const ensureDirImpl = deps.ensureDir ?? ensureDir;
+  const readInstallerJsonImpl = deps.readInstallerJson ?? readInstallerJson;
+  const writeJsonFileWithPrivilegeImpl =
+    deps.writeJsonFileWithPrivilege ?? writeJsonFileWithPrivilege;
+  const writeJsonFileImpl = deps.writeJsonFile ?? writeJsonFile;
+  const runPrivilegedImpl = deps.runPrivileged ?? runPrivileged;
+  const appConfigDirForUserImpl =
+    deps.appConfigDirForUser ?? appConfigDirForUser;
+  const readJsonFileImpl = deps.readJsonFile ?? readJsonFile;
+  const writeLaunchersForUserImpl =
+    deps.writeLaunchersForUser ?? writeLaunchersForUser;
+  const publishInstalledRuntimeImpl =
+    deps.publishInstalledRuntime ?? publishInstalledRuntime;
+  const syncInstalledDocsImpl = deps.syncInstalledDocs ?? syncInstalledDocs;
+  const pruneInstalledReleasesImpl =
+    deps.pruneInstalledReleases ?? pruneInstalledReleases;
+  const reconcileInstallerManifestImpl =
+    deps.reconcileInstallerManifest ?? reconcileInstallerManifest;
+  const persistInstallerOutputsImpl =
+    deps.persistInstallerOutputs ?? persistInstallerOutputs;
+  const installDaemonServiceImpl =
+    deps.installDaemonService ?? installDaemonService;
+  const daemonSocketPathForUserImpl =
+    deps.daemonSocketPathForUser ?? daemonSocketPathForUser;
+  const waitForSocketImpl = deps.waitForSocket ?? waitForSocket;
+  const collectDaemonFailureDetailsImpl =
+    deps.collectDaemonFailureDetails ?? collectDaemonFailureDetails;
+
   const currentUser =
-    String(options.currentUser || "").trim() || detectCurrentUser();
+    String(options.currentUser || "").trim() || detectCurrentUserImpl();
   const targetUser = String(options.targetUser || "").trim() || currentUser;
   const installDir =
     String(options.installDir || "").trim() ||
-    path.join(targetHomeForUser(targetUser), ".rin");
+    path.join(targetHomeForUserImpl(targetUser), ".rin");
   const provider = String(options.provider || "");
   const modelId = String(options.modelId || "");
   const thinkingLevel = String(options.thinkingLevel || "");
   const koishiConfig = options.koishiConfig || null;
   const authData = options.authData || {};
   const sourceRoot =
-    String(options.sourceRoot || "").trim() || repoRootFromHere();
+    String(options.sourceRoot || "").trim() || repoRootFromHereImpl();
   const persistInstallerState = Boolean(options.persistInstallerState);
 
-  const ownership = describeOwnership(targetUser, installDir);
+  const ownership = describeOwnershipImpl(targetUser, installDir);
   const installServiceNow =
     process.platform === "darwin" || process.platform === "linux";
-  const useElevatedWrite = shouldUseElevatedWrite(targetUser, ownership);
+  const useElevatedWrite = shouldUseElevatedWriteImpl(targetUser, ownership);
   const useElevatedService = installServiceNow && targetUser !== currentUser;
-  const serviceDeps = { findSystemUser, targetHomeForUser, repoRootFromHere };
+  const serviceDeps = {
+    findSystemUser: findSystemUserImpl,
+    targetHomeForUser: targetHomeForUserImpl,
+    repoRootFromHere: repoRootFromHereImpl,
+  };
 
-  const publishedRuntime = publishInstalledRuntime(
+  const publishedRuntime = publishInstalledRuntimeImpl(
     sourceRoot,
     installDir,
     targetUser,
     useElevatedWrite,
-    { findSystemUser },
+    { findSystemUser: findSystemUserImpl },
   );
-  const installedDocs = syncInstalledDocs(
+  const installedDocs = syncInstalledDocsImpl(
     sourceRoot,
     installDir,
     targetUser,
     useElevatedWrite,
-    { findSystemUser },
+    { findSystemUser: findSystemUserImpl },
   );
-  const prunedReleases = pruneInstalledReleases(
+  const prunedReleases = pruneInstalledReleasesImpl(
     installDir,
     3,
     publishedRuntime.releaseRoot,
     useElevatedWrite,
   );
-  const installerManifest = reconcileInstallerManifest(
+  const installerManifest = reconcileInstallerManifestImpl(
     {
       targetUser,
       installDir,
@@ -310,17 +374,17 @@ async function applyInstalledRuntime(
       elevated: useElevatedWrite,
     },
     {
-      findSystemUser,
-      ensureDir,
-      readInstallerJson,
-      writeJsonFileWithPrivilege,
-      writeJsonFile,
-      runPrivileged,
+      findSystemUser: findSystemUserImpl,
+      ensureDir: ensureDirImpl,
+      readInstallerJson: readInstallerJsonImpl,
+      writeJsonFileWithPrivilege: writeJsonFileWithPrivilegeImpl,
+      writeJsonFile: writeJsonFileImpl,
+      runPrivileged: runPrivilegedImpl,
     },
   );
 
   const written = persistInstallerState
-    ? await persistInstallerOutputs(
+    ? await persistInstallerOutputsImpl(
         {
           currentUser,
           targetUser,
@@ -333,17 +397,18 @@ async function applyInstalledRuntime(
           elevated: useElevatedWrite,
         },
         {
-          findSystemUser,
-          ensureDir,
-          readInstallerJson,
-          writeJsonFileWithPrivilege,
-          writeJsonFile,
-          appConfigDirForUser: (user) => appConfigDirForUser(user, homeForUser),
-          readJsonFile,
+          findSystemUser: findSystemUserImpl,
+          ensureDir: ensureDirImpl,
+          readInstallerJson: readInstallerJsonImpl,
+          writeJsonFileWithPrivilege: writeJsonFileWithPrivilegeImpl,
+          writeJsonFile: writeJsonFileImpl,
+          appConfigDirForUser: (user) =>
+            appConfigDirForUserImpl(user, homeForUser),
+          readJsonFile: readJsonFileImpl,
           writeLaunchersForUser: (user, dir) =>
-            writeLaunchersForUser(user, dir, homeForUser),
-          reconcileInstallerManifest,
-          runPrivileged,
+            writeLaunchersForUserImpl(user, dir, homeForUser),
+          reconcileInstallerManifest: reconcileInstallerManifestImpl,
+          runPrivileged: runPrivilegedImpl,
         },
       )
     : undefined;
@@ -358,7 +423,7 @@ async function applyInstalledRuntime(
   } = null;
   if (installServiceNow) {
     try {
-      installedService = installDaemonService(
+      installedService = installDaemonServiceImpl(
         targetUser,
         installDir,
         useElevatedService,
@@ -371,15 +436,15 @@ async function applyInstalledRuntime(
   }
 
   const daemonReady = installedService
-    ? await waitForSocket(
-        daemonSocketPathForUser(targetUser, serviceDeps),
+    ? await waitForSocketImpl(
+        daemonSocketPathForUserImpl(targetUser, serviceDeps),
         5000,
         targetUser,
       )
     : false;
   if (!daemonReady && installServiceNow && installedService) {
     throw new Error(
-      `${options.daemonFailureCode}\n${collectDaemonFailureDetails(targetUser, installDir, { findSystemUser, targetHomeForUser })}`,
+      `${options.daemonFailureCode}\n${collectDaemonFailureDetailsImpl(targetUser, installDir, { findSystemUser: findSystemUserImpl, targetHomeForUser: targetHomeForUserImpl })}`,
     );
   }
 
