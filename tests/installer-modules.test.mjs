@@ -84,3 +84,26 @@ test("persist reconcileInstallerManifest writes manifest with expected fields", 
     assert.equal(writes[0].value.defaultThinkingLevel, "medium");
   });
 });
+
+test("persist normalizeInstalledChatSettings migrates legacy koishi settings", async () => {
+  await withTempDir(async (dir) => {
+    const writes = [];
+    persist.normalizeInstalledChatSettings(
+      {
+        targetUser: "demo",
+        installDir: dir,
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        readInstallerJson: () => ({ koishi: { telegram: { token: "x" } } }),
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+      },
+    );
+    assert.equal(writes.length, 1);
+    assert.ok(writes[0].filePath.endsWith(path.join(dir, "settings.json")));
+    assert.deepEqual(writes[0].value.chat, { telegram: { token: "x" } });
+    assert.equal("koishi" in writes[0].value, false);
+  });
+});
