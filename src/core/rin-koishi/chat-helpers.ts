@@ -37,6 +37,7 @@ export type KoishiChatState = {
     attachments: SavedAttachment[];
     startedAt: number;
     replyToMessageId?: string;
+    incomingMessageId?: string;
   };
   pendingDelivery?: {
     type: "text_delivery";

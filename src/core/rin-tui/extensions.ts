@@ -68,7 +68,8 @@ export async function loadRpcLocalExtensions(
     },
     {
       getModel: () => target.model,
-      isIdle: () => !target.isStreaming,
+      isIdle: () =>
+        (target.getFrontendStatusEvent?.()?.phase || "idle") === "idle",
       getSignal: () => undefined,
       abort: () => {
         void target.abort().catch(() => {});

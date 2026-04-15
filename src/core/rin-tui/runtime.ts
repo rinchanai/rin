@@ -35,10 +35,6 @@ import {
   getLastAssistantText,
 } from "./session-helpers.js";
 import {
-  createInterruptedToolResultPayload,
-  DAEMON_RESTART_OR_DISCONNECT_REASON,
-} from "../rin-lib/interruption.js";
-import {
   computeSessionStats,
   getContextUsage,
   reconcilePendingQueues,
@@ -90,6 +86,13 @@ class RemoteAgent {
 }
 
 type RefreshFlags = { messages?: boolean; models?: boolean; session?: boolean };
+
+type RpcFrontendPhase =
+  | "idle"
+  | "starting"
+  | "sending"
+  | "working"
+  | "connecting";
 
 function getRuntimeProfile() {
   return resolveRuntimeProfile();
@@ -157,6 +160,10 @@ export class RpcInteractiveSession {
   private restorePromise: Promise<void> | null = null;
   private waitForDaemonPromise: Promise<void> | null = null;
   private waitForDaemonHintTimer: NodeJS.Timeout | null = null;
+  private startupPending = true;
+  private sessionOperationPending = false;
+  private recoveryPending = false;
+  private lastFrontendPhase: RpcFrontendPhase | null = null;
 
   constructor(
     public client: RinDaemonFrontendClient,
@@ -210,6 +217,8 @@ export class RpcInteractiveSession {
 
   async connect() {
     this.disposed = false;
+    this.startupPending = true;
+    this.emitFrontendStatus(true);
     this.settingsManager = await getPersistentSettingsManager();
     this.autoCompactionEnabled = Boolean(
       this.settingsManager.getCompactionEnabled?.(),
@@ -241,6 +250,9 @@ export class RpcInteractiveSession {
       await this.modelRegistry.sync().catch(() => {});
     } catch {
       this.handleConnectionLost();
+    } finally {
+      this.startupPending = false;
+      this.emitFrontendStatus(true);
     }
   }
 
@@ -251,12 +263,19 @@ export class RpcInteractiveSession {
     this.clearWaitingDaemonState();
     this.unsubscribeClient?.();
     this.unsubscribeClient = undefined;
+    this.recoveryPending = false;
     this.setRpcConnected(false);
     await this.client.disconnect();
   }
 
   subscribe(listener: (event: AgentEvent) => void) {
     this.listeners.add(listener);
+    const current = this.getFrontendStatusEvent();
+    if (current) {
+      try {
+        listener(current as AgentEvent);
+      } catch {}
+    }
     return () => this.listeners.delete(listener);
   }
 
@@ -354,15 +373,25 @@ export class RpcInteractiveSession {
   }
 
   async newSession(_options?: { parentSession?: string }) {
-    const data = await this.call("new_session");
-    await this.refreshState(REFRESH_ALL);
-    return !Boolean(data?.cancelled);
+    this.setSessionOperationPending(true);
+    try {
+      const data = await this.call("new_session");
+      await this.refreshState(REFRESH_ALL);
+      return !Boolean(data?.cancelled);
+    } finally {
+      this.setSessionOperationPending(false);
+    }
   }
 
   async switchSession(sessionPath: string, _cwdOverride?: string) {
-    const data = await this.call("switch_session", { sessionPath });
-    await this.refreshState(REFRESH_ALL);
-    return !Boolean(data?.cancelled);
+    this.setSessionOperationPending(true);
+    try {
+      const data = await this.call("switch_session", { sessionPath });
+      await this.refreshState(REFRESH_ALL);
+      return !Boolean(data?.cancelled);
+    } finally {
+      this.setSessionOperationPending(false);
+    }
   }
 
   async renameSession(sessionPath: string, name: string) {
@@ -499,7 +528,7 @@ export class RpcInteractiveSession {
   }
 
   async terminateSession() {
-    if (!this.sessionFile && !this.sessionId) return;
+    if (!this.client.isConnected()) return;
     await this.call("terminate_session");
   }
 
@@ -609,9 +638,14 @@ export class RpcInteractiveSession {
   }
 
   async importFromJsonl(inputPath: string, _cwdOverride?: string) {
-    const data = await this.call("import_jsonl", { inputPath });
-    await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
-    return !Boolean(data?.cancelled);
+    this.setSessionOperationPending(true);
+    try {
+      const data = await this.call("import_jsonl", { inputPath });
+      await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+      return !Boolean(data?.cancelled);
+    } finally {
+      this.setSessionOperationPending(false);
+    }
   }
 
   getLastAssistantText() {
@@ -660,6 +694,60 @@ export class RpcInteractiveSession {
     }
   }
 
+  private getFrontendPhase(): RpcFrontendPhase {
+    if (!this.rpcConnected || this.recoveryPending) return "connecting";
+    if (this.startupPending || this.sessionOperationPending) return "starting";
+    if (this.remoteTurnRunning) return "working";
+    if (this.activeTurn) return "sending";
+    return "idle";
+  }
+
+  getFrontendStatusEvent() {
+    const phase = this.getFrontendPhase();
+    if (phase === "idle") return null;
+    const label =
+      phase === "connecting"
+        ? "Connecting"
+        : phase === "starting"
+          ? "Starting"
+          : phase === "sending"
+            ? "Sending"
+            : "Working";
+    return {
+      type: "rpc_frontend_status",
+      phase,
+      label,
+      connected: this.rpcConnected,
+    } as any;
+  }
+
+  private emitFrontendStatus(force = false) {
+    const phase = this.getFrontendPhase();
+    if (!force && phase === this.lastFrontendPhase) return;
+    this.lastFrontendPhase = phase;
+    const event = this.getFrontendStatusEvent();
+    if (event) {
+      this.emitEvent(event as AgentEvent);
+      return;
+    }
+    this.emitEvent({ type: "rpc_frontend_status", phase: "idle" } as any);
+  }
+
+  private setSessionOperationPending(pending: boolean) {
+    this.sessionOperationPending = pending;
+    this.emitFrontendStatus(true);
+  }
+
+  private emitSessionResynced() {
+    this.emitEvent({ type: "rpc_session_resynced" } as any);
+  }
+
+  private emitLocalUserMessage(text: string) {
+    const nextText = String(text || "").trim();
+    if (!nextText) return;
+    this.emitEvent({ type: "rpc_local_user_message", text: nextText } as any);
+  }
+
   private setRpcConnected(connected: boolean) {
     this.rpcConnected = connected;
     if (!connected) {
@@ -679,6 +767,7 @@ export class RpcInteractiveSession {
       this.rpcConnected && (this.remoteTurnRunning || this.activeTurn),
     );
     if (!this.isStreaming && !this.rpcConnected) this.activeTurn = null;
+    this.emitFrontendStatus();
   }
 
   private clearWaitingDaemonState() {
@@ -723,9 +812,11 @@ export class RpcInteractiveSession {
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
     queueOfflineOperation(this as any, operation);
+    this.emitFrontendStatus(true);
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
+    if (operation.mode === "prompt") this.emitLocalUserMessage(operation.message);
     if (!this.client.isConnected()) {
       this.queueOfflineOperation(operation);
       return;
@@ -758,49 +849,22 @@ export class RpcInteractiveSession {
         await sendOperation();
         return;
       }
+      this.activeTurn = null;
+      this.syncStreamingState();
       throw error;
     }
   }
 
   private handleConnectionLost() {
-    const interruptedTurn = Boolean(
-      this.isStreaming || this.remoteTurnRunning || this.activeTurn,
-    );
+    this.recoveryPending = true;
     this.setRpcConnected(false);
-    if (interruptedTurn) {
-      this.emitInterruptedToolExecutionEnds();
-      this.emitEvent({
-        type: "agent_end",
-        messages: this.messages,
-        interrupted: true,
-        reason: DAEMON_RESTART_OR_DISCONNECT_REASON,
-      } as any);
-    }
     emitConnectionLost(this as any);
-  }
-
-  private emitInterruptedToolExecutionEnds() {
-    const lastMessage = Array.isArray(this.messages)
-      ? this.messages[this.messages.length - 1]
-      : null;
-    if (!lastMessage || lastMessage.role !== "assistant") return;
-    const toolCalls: any[] = Array.isArray(lastMessage.content)
-      ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
-      : [];
-    for (const toolCall of toolCalls) {
-      this.emitEvent({
-        type: "tool_execution_end",
-        toolCallId: String(toolCall?.id || ""),
-        toolName: String(toolCall?.name || ""),
-        result: createInterruptedToolResultPayload(),
-        isError: true,
-      } as any);
-    }
   }
 
   private ensureReconnectLoop() {
     if (this.reconnecting || this.disposed) return;
     this.reconnecting = true;
+    this.emitFrontendStatus(true);
     const tick = async () => {
       if (this.disposed) return;
       try {
@@ -827,15 +891,17 @@ export class RpcInteractiveSession {
         } else if (this.sessionId) {
           await this.call("attach_session", { sessionId: this.sessionId });
         }
-        await this.refreshState(REFRESH_SESSION).catch(() => {});
-        void this.queueRefreshState(REFRESH_MESSAGES_AND_SESSION);
+        await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
+        this.emitSessionResynced();
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {
           await this.sendOrQueue(operation);
         }
       } finally {
+        this.recoveryPending = false;
         this.reconnecting = false;
+        this.emitFrontendStatus(true);
       }
     })().finally(() => {
       this.restorePromise = null;

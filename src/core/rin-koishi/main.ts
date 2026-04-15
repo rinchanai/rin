@@ -33,11 +33,7 @@ import {
   pickUserId,
   safeString,
 } from "./chat-helpers.js";
-import {
-  KoishiChatController,
-  loadKoishiSettings,
-  normalizeKoishiIdleToolProgressConfig,
-} from "./controller.js";
+import { KoishiChatController, loadKoishiSettings } from "./controller.js";
 import { appendKoishiChatLog } from "./chat-log.js";
 import { shouldProcessText } from "./decision.js";
 import {
@@ -147,7 +143,6 @@ export async function startKoishi(
   ensureDir(dataDir);
 
   const settings = loadKoishiSettings(settingsPath);
-  const idleToolProgressConfig = normalizeKoishiIdleToolProgressConfig(settings);
 
   materializeKoishiConfig(configPath, settings);
   ensureKoishiRuntimeDependencies(dataDir, settings);
@@ -170,6 +165,9 @@ export async function startKoishi(
     for (const controller of controllers.values()) {
       void controller.pollTyping().catch(() => {});
     }
+    for (const controller of detachedControllers.values()) {
+      void controller.pollTyping().catch(() => {});
+    }
   }, TYPING_POLL_INTERVAL_MS);
   const commandRows = getKoishiChatCommandRows();
   const getIdentity = () => loadIdentity(dataDir);
@@ -179,7 +177,6 @@ export async function startKoishi(
       controller = new KoishiChatController(app, dataDir, chatKey, {
         logger,
         h,
-        idleToolProgressConfig,
       });
       controllers.set(chatKey, controller);
     }
@@ -209,7 +206,6 @@ export async function startKoishi(
         deliveryEnabled: options?.deliveryEnabled,
         affectChatBinding: options?.affectChatBinding,
         statePath,
-        idleToolProgressConfig,
       });
       detachedControllers.set(controllerKey, controller);
       return controller;
@@ -365,6 +361,7 @@ export async function startKoishi(
           },
           h,
         ).catch(() => {});
+        void controller.clearProcessingState().catch(() => {});
       });
     return "";
   });
@@ -539,6 +536,7 @@ export async function startKoishi(
   const shutdown = async () => {
     clearInterval(typingPollTimer);
     for (const controller of controllers.values()) controller.dispose();
+    for (const controller of detachedControllers.values()) controller.dispose();
     try {
       await new Promise<void>((resolve) => rpcServer.close(() => resolve()));
     } catch {}

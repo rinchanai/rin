@@ -9,11 +9,7 @@ const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
 );
-const {
-  KoishiChatController,
-  normalizeKoishiIdleToolProgressConfig,
-  summarizeKoishiToolCall,
-} = await import(
+const { KoishiChatController } = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-koishi", "controller.js"),
   ).href
@@ -51,8 +47,6 @@ async function createController(chatKey = "telegram/1:2") {
     ],
   };
   controller.connect = async () => {};
-  controller.scheduleIdleDetach = () => {};
-  controller.clearIdleDetachTimer = () => {};
   return controller;
 }
 
@@ -122,14 +116,21 @@ test("koishi controller delivers a visible command error instead of failing sile
   assert.deepEqual(deliveries, ["Chat bridge error: boom"]);
 });
 
-test("koishi controller polls telegram typing only while the controller still owns a live turn", async () => {
+test("koishi controller polls typing and rotating reactions while a chat turn is still pending", async () => {
   const controller = await createController("telegram/1:2");
   const actions = [];
+  const reactions = [];
   controller.app = {
     bots: [
       {
         platform: "telegram",
         selfId: "1",
+        async createReaction(chatId, messageId, emoji) {
+          reactions.push(["create", chatId, messageId, emoji]);
+        },
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          reactions.push(["delete", chatId, messageId, emoji, userId]);
+        },
         internal: {
           async sendChatAction(payload) {
             actions.push(payload);
@@ -143,26 +144,26 @@ test("koishi controller polls telegram typing only while the controller still ow
   assert.equal(await controller.pollTyping(), false);
   assert.deepEqual(actions, []);
 
-  controller.session = { isStreaming: false };
-  controller.state.processing = undefined;
-  controller.liveTurn = null;
-  assert.equal(await controller.pollTyping(), false);
-  assert.deepEqual(actions, []);
-
-  controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
-  controller.liveTurn = {
-    promise: Promise.resolve(),
-    resolve() {},
-    reject() {},
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
   };
+  assert.equal(controller.hasActiveTurn(), true);
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
 
-  controller.session = { isStreaming: false };
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [
     { chat_id: "2", action: "typing" },
     { chat_id: "2", action: "typing" },
+  ]);
+  assert.deepEqual(reactions, [
+    ["create", "2", "m1", "🌘"],
+    ["delete", "2", "m1", "🌘", "1"],
+    ["create", "2", "m1", "🌗"],
   ]);
 });
 
@@ -292,6 +293,30 @@ test("koishi controller reattaches saved session file before bootstrapping a det
   assert.equal(controller.state.piSessionFile, savedSessionFile);
 });
 
+test("koishi controller reattaches idle saved sessions during recovery so chat workers stay attached", async () => {
+  const controller = await createController("telegram/7:7");
+  const calls = [];
+  const savedSessionFile = path.join(controller.dataDir, "saved-chat.jsonl");
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = savedSessionFile;
+
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => undefined,
+      getSessionId: () => "",
+      getSessionName: () => "telegram/7:7",
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(`switch:${sessionPath}`);
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.deepEqual(calls, [`switch:${savedSessionFile}`]);
+});
+
 
 test("koishi controller self-heals missing saved session binding before a chat turn", async () => {
   const controller = await createController("telegram/7:8");
@@ -344,85 +369,39 @@ test("koishi controller self-heals missing saved session binding before a chat t
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
 
-test("koishi controller summarizes idle tool progress with compact tool input", () => {
-  assert.equal(
-    summarizeKoishiToolCall("bash", { command: "npm test -- --watch=false" }),
-    "bash npm test -- --watch=false",
-  );
-  assert.equal(
-    summarizeKoishiToolCall("read", {
-      path: "/tmp/demo.txt",
-      offset: 5,
-      limit: 10,
-    }),
-    "read /tmp/demo.txt:5-14",
-  );
-  assert.equal(
-    summarizeKoishiToolCall("edit", {
-      path: "/tmp/demo.txt",
-      edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }],
-    }),
-    "edit /tmp/demo.txt (2 edits)",
-  );
-});
-
-test("koishi controller idle tool progress intervals default to 60s and stay configurable", () => {
-  assert.deepEqual(normalizeKoishiIdleToolProgressConfig({}), {
-    privateIntervalMs: 60000,
-    groupIntervalMs: 60000,
-  });
-  assert.deepEqual(
-    normalizeKoishiIdleToolProgressConfig({
-      koishi: {
-        idleToolProgress: {
-          privateIntervalMs: 15000,
-          groupIntervalMs: 45000,
+test("koishi controller clears its working reaction after final delivery", async () => {
+  const controller = await createController("telegram/1:2");
+  const reactions = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          reactions.push([chatId, messageId, emoji, userId]);
         },
       },
-    }),
-    {
-      privateIntervalMs: 15000,
-      groupIntervalMs: 45000,
-    },
-  );
-});
-
-test("koishi controller emits idle tool progress only after a quiet interval", async () => {
-  const controller = await createController("telegram/1:2");
-  controller.idleToolProgressConfig = {
-    privateIntervalMs: 10000,
-    groupIntervalMs: 10000,
+    ],
   };
-  controller.lastToolCallSummary = "Working";
-  controller.session = { isStreaming: true };
-  controller.state.processing = { text: "hello", attachments: [], startedAt: Date.now() };
-  controller.liveTurn = {
-    promise: Promise.resolve(),
-    resolve() {},
-    reject() {},
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
   };
-  controller.lastVisibleProgressAt = 1000;
-  controller.lastIdleToolProgressAt = 0;
-
-  const sent = [];
-  controller.emitProgressText = async (text) => {
-    sent.push(text);
-    controller.lastVisibleProgressAt = 12000;
-    return true;
+  controller.state.pendingDelivery = {
+    type: "text_delivery",
+    chatKey: "telegram/1:2",
+    text: "done",
   };
-  controller.scheduleIdleToolProgress = () => {};
+  controller.workingReactionEmoji = "🌗";
+  controller.deliveryEnabled = false;
 
-  await controller.handleIdleToolProgressTick(9000);
-  assert.deepEqual(sent, []);
+  await controller.commitPendingDelivery(true);
 
-  await controller.handleIdleToolProgressTick(11000);
-  assert.deepEqual(sent, ["Working"]);
-
-  await controller.handleIdleToolProgressTick(19000);
-  assert.deepEqual(sent, ["Working"]);
-
-  await controller.handleIdleToolProgressTick(22050);
-  assert.deepEqual(sent, ["Working", "Working"]);
+  assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.workingReactionEmoji, "");
+  assert.deepEqual(reactions, [["2", "m1", "🌗", "1"]]);
 });
 
 test("koishi controller refreshes session messages before resolving a final chat reply", async () => {
@@ -813,8 +792,6 @@ test("koishi controller keeps cron turns off the chat mainline while preserving 
   );
   controller.app = { bots: [] };
   controller.connect = async () => {};
-  controller.scheduleIdleDetach = () => {};
-  controller.clearIdleDetachTimer = () => {};
   const setNames = [];
   controller.session = {
     isStreaming: false,

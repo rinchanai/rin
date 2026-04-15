@@ -5,7 +5,7 @@ import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
+import { readJsonFile, writeJsonFile } from "./support.js";
 import {
   KoishiChatState,
   SavedAttachment,
@@ -15,97 +15,12 @@ import {
 } from "./chat-helpers.js";
 import {
   buildPromptText,
+  clearWorkingReaction as clearWorkingReactionTick,
   restorePromptParts,
+  rotateWorkingReaction,
   sendOutboxPayload,
   sendTyping,
 } from "./transport.js";
-
-const INTERIM_PREFIX = "··· ";
-const INTERIM_MIN_INTERVAL_MS = 1500;
-const DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS = 60_000;
-const DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS = 60_000;
-const KOISHI_WORKING_PROGRESS_TEXT = "Working";
-const DEFAULT_TOOL_INPUT_PREVIEW_CHARS = 160;
-
-export type KoishiIdleToolProgressConfig = {
-  privateIntervalMs: number;
-  groupIntervalMs: number;
-};
-
-function normalizeIntervalMs(value: unknown, fallback: number) {
-  const next = Number(value);
-  if (!Number.isFinite(next) || next <= 0) return fallback;
-  return Math.max(1000, Math.floor(next));
-}
-
-function shortenPreview(value: unknown, maxChars = DEFAULT_TOOL_INPUT_PREVIEW_CHARS) {
-  const text = safeString(value).replace(/\s+/g, " ").trim();
-  if (!text) return "";
-  if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(1, maxChars - 1)).trimEnd()}…`;
-}
-
-function summarizeGenericArgs(args: any) {
-  if (args == null) return "";
-  if (typeof args === "string") return shortenPreview(args);
-  if (Array.isArray(args)) return `${args.length} item${args.length === 1 ? "" : "s"}`;
-  if (typeof args !== "object") return shortenPreview(String(args));
-  const preferredKeys = [
-    "path",
-    "file_path",
-    "command",
-    "url",
-    "q",
-    "query",
-    "text",
-    "messageId",
-    "chatKey",
-    "date",
-    "slot",
-    "name",
-    "expression",
-    "runAt",
-  ];
-  const ignoredKeys = new Set([
-    "content",
-    "oldText",
-    "newText",
-    "edits",
-    "parts",
-    "data",
-    "images",
-    "attachments",
-    "baseContent",
-    "prompt",
-    "command",
-    "text",
-  ]);
-  const parts: string[] = [];
-  for (const key of preferredKeys) {
-    const value = (args as any)?.[key];
-    if (value == null) continue;
-    const preview = shortenPreview(value, key === "command" || key === "text" ? 120 : 80);
-    if (!preview) continue;
-    parts.push(key === "path" || key === "file_path" || key === "command" || key === "url" || key === "q" || key === "query" || key === "text" ? preview : `${key}=${preview}`);
-  }
-  if (parts.length) return parts.join(", ");
-  for (const [key, value] of Object.entries(args)) {
-    if (ignoredKeys.has(key)) continue;
-    if (value == null) continue;
-    const preview = shortenPreview(
-      typeof value === "object"
-        ? Array.isArray(value)
-          ? `${value.length} item${value.length === 1 ? "" : "s"}`
-          : JSON.stringify(value)
-        : value,
-      60,
-    );
-    if (!preview) continue;
-    parts.push(`${key}=${preview}`);
-    if (parts.length >= 3) break;
-  }
-  return parts.join(", ");
-}
 
 function extractFinalTextFromTurnResult(result: any) {
   const messages = Array.isArray(result?.messages) ? result.messages : [];
@@ -116,52 +31,6 @@ function extractFinalTextFromTurnResult(result: any) {
     if (text) return text;
   }
   return "";
-}
-
-export function summarizeKoishiToolCall(toolName: string, args: any) {
-  const name = safeString(toolName).trim() || "tool";
-  if (name === "bash") {
-    const command = shortenPreview(args?.command, 120);
-    return command ? `bash ${command}` : "bash";
-  }
-  if (name === "read") {
-    const target = shortenPreview(args?.path ?? args?.file_path, 100);
-    const offset = Number.isFinite(Number(args?.offset)) ? Number(args.offset) : undefined;
-    const limit = Number.isFinite(Number(args?.limit)) ? Number(args.limit) : undefined;
-    const range =
-      offset !== undefined || limit !== undefined
-        ? `:${offset ?? 1}${limit !== undefined ? `-${(offset ?? 1) + limit - 1}` : ""}`
-        : "";
-    return target ? `read ${target}${range}` : "read";
-  }
-  if (name === "edit") {
-    const target = shortenPreview(args?.path ?? args?.file_path, 100);
-    const editCount = Array.isArray(args?.edits) ? args.edits.length : 0;
-    const suffix = editCount > 0 ? ` (${editCount} edit${editCount === 1 ? "" : "s"})` : "";
-    return target ? `edit ${target}${suffix}` : `edit${suffix}`;
-  }
-  if (name === "write") {
-    const target = shortenPreview(args?.path ?? args?.file_path, 100);
-    return target ? `write ${target}` : "write";
-  }
-  const summary = summarizeGenericArgs(args);
-  return summary ? `${name} ${summary}` : name;
-}
-
-export function normalizeKoishiIdleToolProgressConfig(settings: any): KoishiIdleToolProgressConfig {
-  const koishi = settings && typeof settings.koishi === "object" ? settings.koishi : {};
-  const idleToolProgress =
-    koishi && typeof koishi.idleToolProgress === "object" ? koishi.idleToolProgress : {};
-  return {
-    privateIntervalMs: normalizeIntervalMs(
-      idleToolProgress?.privateIntervalMs,
-      DEFAULT_PRIVATE_IDLE_TOOL_PROGRESS_INTERVAL_MS,
-    ),
-    groupIntervalMs: normalizeIntervalMs(
-      idleToolProgress?.groupIntervalMs,
-      DEFAULT_GROUP_IDLE_TOOL_PROGRESS_INTERVAL_MS,
-    ),
-  };
 }
 
 export class KoishiChatController {
@@ -181,19 +50,13 @@ export class KoishiChatController {
         reject: (error: Error) => void;
       }
     | null = null;
-  interimText = "";
-  interimSentText = "";
-  interimSentAt = 0;
   latestAssistantText = "";
   logger: any;
   h: any;
   deliveryEnabled: boolean;
   affectChatBinding: boolean;
-  idleToolProgressConfig: KoishiIdleToolProgressConfig;
-  idleToolProgressTimer: NodeJS.Timeout | null = null;
-  lastVisibleProgressAt = 0;
-  lastIdleToolProgressAt = 0;
-  lastToolCallSummary = "";
+  workingReactionEmoji = "";
+  workingReactionTick = 0;
 
   constructor(
     app: any,
@@ -205,7 +68,6 @@ export class KoishiChatController {
       deliveryEnabled?: boolean;
       affectChatBinding?: boolean;
       statePath?: string;
-      idleToolProgressConfig?: KoishiIdleToolProgressConfig;
     },
   ) {
     this.app = app;
@@ -217,9 +79,6 @@ export class KoishiChatController {
     this.statePath = deps.statePath || chatStatePath(dataDir, chatKey);
     this.state = readJsonFile<KoishiChatState>(this.statePath, { chatKey });
     this.logger = deps.logger;
-    this.idleToolProgressConfig =
-      deps.idleToolProgressConfig ||
-      normalizeKoishiIdleToolProgressConfig(undefined);
     this.h = deps.h;
     if (!this.state.chatKey) this.state.chatKey = chatKey;
   }
@@ -249,7 +108,7 @@ export class KoishiChatController {
   }
 
   dispose() {
-    this.clearIdleToolProgressTimer();
+    void this.clearWorkingReaction().catch(() => {});
     this.failLiveTurn(new Error("koishi_controller_disposed"));
     void this.session?.disconnect().catch(() => {});
     this.client = null;
@@ -259,7 +118,6 @@ export class KoishiChatController {
   handleClientEvent(event: any) {
     if (event?.type !== "ui") return;
     if (event.name === "connection_lost") {
-      this.clearIdleToolProgressTimer();
       this.failLiveTurn(new Error("rin_disconnected:rpc_turn"));
       return;
     }
@@ -273,35 +131,21 @@ export class KoishiChatController {
   handleSessionEvent(event: any) {
     switch (event?.type) {
       case "agent_start":
-        this.interimText = "";
-        this.interimSentText = "";
         this.latestAssistantText = "";
-        this.lastVisibleProgressAt = Date.now();
-        this.lastIdleToolProgressAt = 0;
-        this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
-        this.scheduleIdleToolProgress();
-        break;
-      case "message_update":
-        if (event?.message?.role !== "assistant") break;
-        {
-          const nextText = extractTextFromContent(event.message.content);
-          if (nextText) this.interimText = nextText;
-        }
-        break;
-      case "tool_execution_start":
-        this.lastToolCallSummary = KOISHI_WORKING_PROGRESS_TEXT;
-        this.scheduleIdleToolProgress();
         break;
       case "agent_end":
-        this.clearIdleToolProgressTimer();
         void this.completeLiveTurn().catch((error) => {
           this.failLiveTurn(
-            error instanceof Error ? error : new Error(String(error || "koishi_turn_failed")),
+            error instanceof Error
+              ? error
+              : new Error(String(error || "koishi_turn_failed")),
           );
         });
         break;
       case "message_end":
+      case "message_update":
       case "tool_execution_end":
+      case "tool_execution_start":
       case "compaction_start":
       case "compaction_end":
         break;
@@ -310,6 +154,12 @@ export class KoishiChatController {
 
   private saveState() {
     writeJsonFile(this.statePath, this.state);
+  }
+  async clearProcessingState() {
+    await this.clearWorkingReaction().catch(() => {});
+    delete this.state.processing;
+    delete this.state.pendingDelivery;
+    this.saveState();
   }
   private getRecoverableSessionFile() {
     const wanted = safeString(this.state.piSessionFile || "").trim();
@@ -320,77 +170,46 @@ export class KoishiChatController {
     return "";
   }
   hasActiveTurn() {
-    return Boolean(this.liveTurn || this.session?.isStreaming);
+    return Boolean(
+      this.state.processing || this.liveTurn || this.session?.isStreaming,
+    );
+  }
+  private currentIncomingMessageId() {
+    return safeString(this.state.processing?.incomingMessageId || "").trim();
+  }
+  async clearWorkingReaction() {
+    const messageId = this.currentIncomingMessageId();
+    const emoji = safeString(this.workingReactionEmoji).trim();
+    this.workingReactionEmoji = "";
+    this.workingReactionTick = 0;
+    if (!messageId || !emoji) return false;
+    return await clearWorkingReactionTick(
+      this.app,
+      this.chatKey,
+      messageId,
+      emoji,
+    );
   }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
     if (!this.hasActiveTurn()) return false;
-    await sendTyping(this.app, this.chatKey, this.h);
-    return true;
-  }
-  private idleToolProgressIntervalMs() {
-    const parsed = parseChatKey(this.chatKey);
-    const chatType =
-      parsed?.platform === "telegram"
-        ? parsed.chatId.startsWith("-")
-          ? "group"
-          : "private"
-        : parsed?.chatId.startsWith("private:")
-          ? "private"
-          : "group";
-    return chatType === "private"
-      ? this.idleToolProgressConfig.privateIntervalMs
-      : this.idleToolProgressConfig.groupIntervalMs;
-  }
-  clearIdleToolProgressTimer() {
-    if (!this.idleToolProgressTimer) return;
-    clearTimeout(this.idleToolProgressTimer);
-    this.idleToolProgressTimer = null;
-  }
-  scheduleIdleToolProgress() {
-    this.clearIdleToolProgressTimer();
-    return;
-  }
-  async emitProgressText(
-    text: string,
-    options: { force?: boolean; minIntervalMs?: number } = {},
-  ) {
-    const nextText = safeString(text).trim();
-    if (!nextText) return false;
-    const now = Date.now();
-    if (!options.force && nextText === this.interimSentText) return false;
-    if (
-      !options.force &&
-      now - this.interimSentAt < (options.minIntervalMs ?? INTERIM_MIN_INTERVAL_MS)
-    ) {
-      return false;
+    let sent = await sendTyping(this.app, this.chatKey, this.h);
+    const messageId = this.currentIncomingMessageId();
+    if (messageId) {
+      const nextEmoji = await rotateWorkingReaction(
+        this.app,
+        this.chatKey,
+        messageId,
+        this.workingReactionTick,
+        this.workingReactionEmoji,
+      );
+      if (nextEmoji) {
+        sent = true;
+        this.workingReactionEmoji = nextEmoji;
+        this.workingReactionTick += 1;
+      }
     }
-    this.interimSentText = nextText;
-    this.interimSentAt = now;
-    this.lastVisibleProgressAt = now;
-    if (!this.deliveryEnabled) return true;
-    const replyToMessageId = safeString(
-      this.state.processing?.replyToMessageId || "",
-    ).trim();
-    await sendOutboxPayload(
-      this.app,
-      this.agentDir,
-      {
-        type: "text_delivery",
-        createdAt: new Date().toISOString(),
-        chatKey: this.chatKey,
-        text: `${INTERIM_PREFIX}${nextText}`,
-        replyToMessageId: replyToMessageId || undefined,
-        sessionId: this.currentSessionId() || undefined,
-        sessionFile: this.currentSessionFile(),
-      },
-      this.h,
-    ).catch(() => {});
-    return true;
-  }
-  async handleIdleToolProgressTick(_now = Date.now()) {
-    this.idleToolProgressTimer = null;
-    return;
+    return sent;
   }
   private async runExclusiveTurn<T>(run: () => Promise<T>) {
     const previous = this.turnQueue;
@@ -500,7 +319,10 @@ export class KoishiChatController {
     if (!pending) return;
     if (!this.deliveryEnabled) {
       delete this.state.pendingDelivery;
-      if (clearProcessing) delete this.state.processing;
+      if (clearProcessing) {
+        await this.clearWorkingReaction().catch(() => {});
+        delete this.state.processing;
+      }
       this.saveState();
       return;
     }
@@ -514,7 +336,10 @@ export class KoishiChatController {
       this.h,
     );
     delete this.state.pendingDelivery;
-    if (clearProcessing) delete this.state.processing;
+    if (clearProcessing) {
+      await this.clearWorkingReaction().catch(() => {});
+      delete this.state.processing;
+    }
     this.saveState();
   }
   private markProcessedMessage(messageId?: string) {
@@ -639,6 +464,7 @@ export class KoishiChatController {
       await this.commitPendingDelivery();
       throw error;
     } finally {
+      await this.clearWorkingReaction().catch(() => {});
       delete this.state.processing;
       this.saveState();
       this.markProcessedMessage(incomingMessageId);
@@ -661,12 +487,23 @@ export class KoishiChatController {
       startedAt: Date.now(),
     });
     if (this.state.processing) {
+      const nextIncomingMessageId =
+        safeString(input.incomingMessageId || "").trim() || undefined;
+      if (
+        nextIncomingMessageId &&
+        nextIncomingMessageId !== this.state.processing.incomingMessageId
+      ) {
+        await this.clearWorkingReaction().catch(() => {});
+      }
       this.state.processing.replyToMessageId =
         safeString(input.replyToMessageId || "").trim() ||
         this.state.processing.replyToMessageId;
+      this.state.processing.incomingMessageId =
+        nextIncomingMessageId || this.state.processing.incomingMessageId;
       this.saveState();
     }
     this.markProcessedMessage(input.incomingMessageId);
+    await this.pollTyping().catch(() => {});
     await this.session.prompt(text, {
       images,
       source: "koishi-bridge",
@@ -711,9 +548,12 @@ export class KoishiChatController {
       startedAt: Date.now(),
       replyToMessageId:
         safeString(input.replyToMessageId || "").trim() || undefined,
+      incomingMessageId:
+        safeString(input.incomingMessageId || "").trim() || undefined,
     };
     this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
+    await this.pollTyping().catch(() => {});
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
     ).trim();
@@ -777,7 +617,19 @@ export class KoishiChatController {
         await this.commitPendingDelivery(true);
         return;
       }
-      if (!this.state.processing) return;
+      if (!this.state.processing) {
+        const wantedSessionFile = this.getRecoverableSessionFile();
+        if (!wantedSessionFile) return;
+        await this.connect();
+        if (!this.session) return;
+        const currentSessionFile = safeString(
+          this.session.sessionManager.getSessionFile?.() || "",
+        ).trim();
+        if (currentSessionFile !== wantedSessionFile) {
+          await this.resumeSessionFile(wantedSessionFile);
+        }
+        return;
+      }
       await this.connect();
       if (!this.session) return;
       await this.refreshSessionMessages().catch(() => {});
@@ -801,6 +653,7 @@ export class KoishiChatController {
       const shouldResumeInternally =
         safeString(lastUserText).trim() ===
         safeString(buildPromptText(pending.text, pending.attachments)).trim();
+      await this.pollTyping().catch(() => {});
       this.logger.info(`resume interrupted koishi turn chatKey=${this.chatKey}`);
       if (deliveredCompletedText && !this.session.isStreaming) {
         this.latestAssistantText = deliveredCompletedText;
@@ -817,6 +670,7 @@ export class KoishiChatController {
       if (shouldResumeInternally) {
         this.latestAssistantText = "";
         const liveTurn = this.startLiveTurn();
+        await this.pollTyping().catch(() => {});
         try {
           await this.session.resumeInterruptedTurn({
             source: "koishi-bridge",
