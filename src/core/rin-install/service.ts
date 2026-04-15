@@ -560,6 +560,7 @@ export function installDaemonService(
     existsSync?: typeof fs.existsSync;
     installLaunchdAgent?: typeof installLaunchdAgent;
     installSystemdUserService?: typeof installSystemdUserService;
+    refreshManagedServiceFiles?: typeof refreshManagedServiceFiles;
   },
 ) {
   const existsSync = deps.existsSync ?? fs.existsSync;
@@ -573,13 +574,20 @@ export function installDaemonService(
   if (
     process.platform === "linux" &&
     (existsSync("/usr/bin/systemctl") || existsSync("/bin/systemctl"))
-  )
+  ) {
+    (deps.refreshManagedServiceFiles ?? refreshManagedServiceFiles)(
+      targetUser,
+      installDir,
+      elevated,
+      deps,
+    );
     return (deps.installSystemdUserService ?? installSystemdUserService)(
       targetUser,
       installDir,
       elevated,
       deps,
     );
+  }
   throw new Error(`rin_service_install_unsupported:${process.platform}`);
 }
 

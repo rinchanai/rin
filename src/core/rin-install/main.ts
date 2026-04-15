@@ -51,8 +51,6 @@ import {
   collectDaemonFailureDetails,
   daemonSocketPathForUser,
   installDaemonService,
-  reconcileSystemdUserService,
-  refreshManagedServiceFiles,
   waitForSocket,
 } from "./service.js";
 import { startUpdater } from "./updater.js";
@@ -319,19 +317,6 @@ async function applyInstalledRuntime(
       writeJsonFile,
       runPrivileged,
     },
-  );
-  refreshManagedServiceFiles(
-    targetUser,
-    installDir,
-    useElevatedWrite,
-    serviceDeps,
-  );
-  reconcileSystemdUserService(
-    targetUser,
-    installDir,
-    "restart",
-    useElevatedWrite,
-    { findSystemUser },
   );
 
   const written = persistInstallerState

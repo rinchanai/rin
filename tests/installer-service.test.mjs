@@ -654,8 +654,18 @@ test("installer service helpers route installDaemonService through the platform-
       targetHomeForUser: () => "/home/demo",
       repoRootFromHere: () => "/repo",
       existsSync: (filePath) => filePath === "/usr/bin/systemctl",
+      refreshManagedServiceFiles: (targetUser, installDir, elevated, deps) => {
+        calls.push([
+          "refresh",
+          targetUser,
+          installDir,
+          elevated,
+          typeof deps.findSystemUser,
+        ]);
+      },
       installSystemdUserService: (targetUser, installDir, elevated, deps) => {
         calls.push([
+          "install",
           targetUser,
           installDir,
           elevated,
@@ -668,7 +678,10 @@ test("installer service helpers route installDaemonService through the platform-
       kind: "systemd",
       label: "rin-daemon-demo.service",
     });
-    assert.deepEqual(calls, [["demo", "/tmp/rin", true, "function"]]);
+    assert.deepEqual(calls, [
+      ["refresh", "demo", "/tmp/rin", true, "function"],
+      ["install", "demo", "/tmp/rin", true, "function"],
+    ]);
     return;
   }
 
