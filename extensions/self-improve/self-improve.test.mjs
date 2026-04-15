@@ -167,7 +167,6 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
       sessionFile: "/tmp/session-a.jsonl",
       trigger: "compaction-a",
       snapshotKey: "compaction:first-kept-a",
-      messages: [{ role: "user", content: [{ type: "text", text: "alpha" }] }],
     });
     await asyncJobs.enqueueMemoryMaintenanceJob({
       agentDir: root,
@@ -175,7 +174,6 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
       sessionFile: "/tmp/session-a.jsonl",
       trigger: "compaction-b",
       snapshotKey: "compaction:first-kept-b",
-      messages: [{ role: "user", content: [{ type: "text", text: "beta" }] }],
     });
 
     const queuePath = path.join(
@@ -188,8 +186,6 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
     assert.equal(queue.length, 2);
     assert.equal(queue[0].snapshotKey, "compaction:first-kept-a");
     assert.equal(queue[1].snapshotKey, "compaction:first-kept-b");
-    assert.equal(queue[0].messages[0].content[0].text, "alpha");
-    assert.equal(queue[1].messages[0].content[0].text, "beta");
   });
 });
 
