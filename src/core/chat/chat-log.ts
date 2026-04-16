@@ -98,7 +98,7 @@ function buildStoredMessageFromChatLogEntry(
     replyToMessageId: safeString(input.replyToMessageId).trim() || undefined,
     sessionId: safeString(input.sessionId).trim() || undefined,
     sessionFile: safeString(input.sessionFile).trim() || undefined,
-    processedAt: timestamp,
+    processedAt: role === "assistant" ? timestamp : undefined,
     chatKey,
     platform: parsed.platform,
     botId: parsed.botId || undefined,

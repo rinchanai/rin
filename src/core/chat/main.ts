@@ -686,16 +686,7 @@ export async function startChatBridge(
         );
       }
 
-      const command = parseInboundCommand(
-        session,
-        elementsToText(elements),
-        commandRows,
-      );
-      if (command) {
-        await handleCommandSession(session, command, identity);
-      } else {
-        await handleChatTurnSession(session, elements, identity);
-      }
+      await drainChatInbox();
     })().catch((error: any) => {
       logger.warn(
         `chat inbound handling failed err=${safeString(error?.message || error)}`,
