@@ -226,3 +226,51 @@ test("rpc interactive session can terminate an attached worker without local ses
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.type, "terminate_session");
 });
+
+test("rpc interactive session clears the busy state immediately when abort is requested", async () => {
+  let abortResolved = false;
+  let resolveAbort;
+  const client = {
+    abort: () =>
+      new Promise((resolve) => {
+        resolveAbort = () => {
+          abortResolved = true;
+          resolve();
+        };
+      }),
+  };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.activeTurn = {
+    mode: "prompt",
+    message: "hello",
+    requestTag: "tag-1",
+  };
+  session.remoteTurnRunning = true;
+  session.isCompacting = true;
+  session.isBashRunning = true;
+  session.retryAttempt = 2;
+  session.syncStreamingState();
+
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
+  seen.length = 0;
+
+  await session.abort();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(session.activeTurn, null);
+  assert.equal(session.remoteTurnRunning, false);
+  assert.equal(session.isCompacting, false);
+  assert.equal(session.isBashRunning, false);
+  assert.equal(session.retryAttempt, 0);
+  assert.equal(session.isStreaming, false);
+  assert.equal(session.getFrontendStatusEvent(), null);
+  assert.equal(abortResolved, false);
+  assert.deepEqual(seen, [{ type: "rpc_frontend_status", phase: "idle" }]);
+
+  resolveAbort();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(abortResolved, true);
+});

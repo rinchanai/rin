@@ -374,7 +374,13 @@ export class RpcInteractiveSession {
     return [...this.followUpMessages];
   }
   async abort() {
-    await this.client.abort();
+    this.activeTurn = null;
+    this.remoteTurnRunning = false;
+    this.isCompacting = false;
+    this.isBashRunning = false;
+    this.retryAttempt = 0;
+    this.syncStreamingState();
+    void this.client.abort().catch(() => {});
   }
 
   async newSession(_options?: { parentSession?: string }) {
@@ -831,10 +837,11 @@ export class RpcInteractiveSession {
       return;
     }
 
+    this.activeTurn = operation;
+    this.syncStreamingState();
+
     const sendOperation = async () => {
       await this.ensureRemoteSession();
-      this.activeTurn = operation;
-      this.syncStreamingState();
       await this.call(operation.mode, {
         message: operation.message,
         images: operation.images,
@@ -849,6 +856,8 @@ export class RpcInteractiveSession {
     } catch (error: any) {
       const message = String(error?.message || error || "");
       if (/rin_tui_not_connected|rin_disconnected/.test(message)) {
+        this.activeTurn = null;
+        this.syncStreamingState();
         this.queueOfflineOperation(operation);
         return;
       }

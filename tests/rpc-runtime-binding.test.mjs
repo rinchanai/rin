@@ -208,3 +208,67 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
   assert.equal(session.pendingMessageCount, 1);
 });
 
+test("rpc runtime marks a connected prompt as sending before remote session setup finishes", async () => {
+  const sent = [];
+  let releaseEnsureRemoteSession;
+  const session = new RpcInteractiveSession({
+    send(payload) {
+      sent.push(payload);
+      return Promise.resolve({ success: true, data: {} });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.ensureRemoteSession =
+    () =>
+      new Promise((resolve) => {
+        releaseEnsureRemoteSession = resolve;
+      });
+
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
+  seen.length = 0;
+
+  const promptPromise = session.prompt("hello", { expandPromptTemplates: false });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "sending",
+    label: "Sending",
+    connected: true,
+  });
+  assert.deepEqual(seen, [
+    { type: "rpc_local_user_message", text: "hello" },
+    {
+      type: "rpc_frontend_status",
+      phase: "sending",
+      label: "Sending",
+      connected: true,
+    },
+  ]);
+  assert.equal(sent.length, 0);
+
+  releaseEnsureRemoteSession();
+  await promptPromise;
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]?.type, "prompt");
+});
+

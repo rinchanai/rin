@@ -578,6 +578,13 @@ export class CompositeBuiltinRunner {
     );
   }
 
+  createContext() {
+    return {
+      ...(this.externalRunner?.createContext?.() || {}),
+      ...this.builtinHost.createContext(),
+    };
+  }
+
   createCommandContext() {
     return {
       ...(this.externalRunner?.createCommandContext?.() || {}),
@@ -593,7 +600,10 @@ export class CompositeBuiltinRunner {
   }
 
   getAllRegisteredTools() {
-    return this.externalRunner?.getAllRegisteredTools?.() || [];
+    return [
+      ...(this.externalRunner?.getAllRegisteredTools?.() || []),
+      ...this.builtinHost.getAllToolDefinitions(),
+    ];
   }
 
   getMessageRenderer(customType: string) {
