@@ -9,12 +9,12 @@ const rootDir = path.resolve(
 );
 const format = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "self-improve", "format.js"),
+    path.join(rootDir, "dist", "core", "self-improve", "format.js"),
   ).href
 );
 const onboarding = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "self-improve", "onboarding.js"),
+    path.join(rootDir, "dist", "core", "self-improve", "onboarding.js"),
   ).href
 );
 

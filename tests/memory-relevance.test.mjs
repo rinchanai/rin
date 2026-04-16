@@ -9,12 +9,12 @@ const rootDir = path.resolve(
 );
 const relevance = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "self-improve", "relevance.js"),
+    path.join(rootDir, "dist", "core", "self-improve", "relevance.js"),
   ).href
 );
 const compile = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "self-improve", "compile.js"),
+    path.join(rootDir, "dist", "core", "self-improve", "compile.js"),
   ).href
 );
 

@@ -16,9 +16,6 @@ const catalogModule = await import(
 
 const { listCatalogCommands, listCatalogModels, getCatalogOAuthState } =
   catalogModule;
-const { getBuiltinExtensionPaths } = await import(
-  pathToFileURL(path.join(rootDir, "dist", "app", "builtin-extensions.js")).href
-);
 
 async function createTestAgentDir() {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-catalog-"));
@@ -37,7 +34,6 @@ test("daemon catalog lists builtin and extension commands without session worker
   const commands = await listCatalogCommands({
     cwd: rootDir,
     agentDir,
-    additionalExtensionPaths: getBuiltinExtensionPaths(),
   });
   const names = new Set(commands.map((item) => item.name));
   assert.equal(names.has("settings"), true);

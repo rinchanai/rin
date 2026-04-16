@@ -5,6 +5,7 @@ import {
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { BuiltinModuleHost } from "../builtins/host.js";
 import { getBuiltinSlashCommands } from "./worker-helpers.js";
 
 async function createCatalogContext(
@@ -62,6 +63,11 @@ async function createCatalogContext(
     null,
     modelRegistry,
   );
+  const builtinHost = await BuiltinModuleHost.create({
+    cwd,
+    agentDir,
+    modelRegistry,
+  });
 
   return {
     agentDir,
@@ -69,6 +75,7 @@ async function createCatalogContext(
     modelRegistry,
     resourceLoader,
     extensionRunner,
+    builtinHost,
   };
 }
 
@@ -79,7 +86,8 @@ export async function listCatalogCommands(
     additionalExtensionPaths?: string[];
   } = {},
 ) {
-  const { resourceLoader, extensionRunner } = await createCatalogContext(options);
+  const { resourceLoader, extensionRunner, builtinHost } =
+    await createCatalogContext(options);
   const prompts = resourceLoader.getPrompts().prompts;
   const skills = resourceLoader.getSkills().skills;
   const seen = new Set<string>();
@@ -89,6 +97,12 @@ export async function listCatalogCommands(
       name: String(command?.invocationName || command?.name || "").trim(),
       description: String(command?.description || "").trim(),
       source: "extension",
+      sourceInfo: command?.sourceInfo,
+    })),
+    ...builtinHost.getRegisteredCommands().map((command: any) => ({
+      name: String(command?.invocationName || command?.name || "").trim(),
+      description: String(command?.description || "").trim(),
+      source: "builtin_module",
       sourceInfo: command?.sourceInfo,
     })),
     ...prompts.map((template: any) => ({

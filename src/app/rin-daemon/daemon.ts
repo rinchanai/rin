@@ -3,13 +3,11 @@
  * App daemon entrypoint.
  *
  * This is intentionally only an assembly wrapper:
- * it reuses the core daemon implementation, but points it at the app worker,
- * so builtin extensions are force-loaded without teaching core about app policy.
+ * it reuses the core daemon implementation and points it at the app worker.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getBuiltinExtensionPaths } from "../builtin-extensions.js";
 import { startDaemon } from "../../core/rin-daemon/daemon.js";
 import {
   cleanupOrphanChatSidecars,
@@ -73,7 +71,6 @@ async function main() {
   process.on("exit", stop);
   await startDaemon({
     workerPath,
-    additionalExtensionPaths: getBuiltinExtensionPaths(),
   });
 }
 

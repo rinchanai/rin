@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 import { startChatBridge } from "../../core/chat/main.js";
-import { getBuiltinExtensionPaths } from "../builtin-extensions.js";
 
 async function main() {
-  await startChatBridge({
-    additionalExtensionPaths: getBuiltinExtensionPaths(),
-  });
+  await startChatBridge();
 }
 
 main().catch((error: any) => {

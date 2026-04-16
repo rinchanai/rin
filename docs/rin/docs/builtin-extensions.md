@@ -1,6 +1,7 @@
-# Builtin Extensions
+# Builtin Capabilities
 
 This document describes the extra capabilities Rin gives the agent.
+These capabilities are now registered directly by Rin core rather than being force-loaded through the app layer as builtin extensions.
 
 ## Default extra capabilities
 
@@ -36,3 +37,4 @@ This document describes the extra capabilities Rin gives the agent.
 ## Usage note
 
 These capabilities are part of normal Rin behavior.
+`src/core/builtins/` now holds only the builtin registry and wiring layer. Concrete code lives directly in its owning domains such as `src/core/chat/`, `src/core/subagent/`, `src/core/memory/`, `src/core/self-improve/`, `src/core/rin-lib/`, `src/core/chat-bridge/`, and `src/core/rin-tui/`.

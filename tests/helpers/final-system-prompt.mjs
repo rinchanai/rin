@@ -16,9 +16,6 @@ const runtimeMod = await import(
 const loaderMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "loader.js")).href
 );
-const builtinExtMod = await import(
-  pathToFileURL(path.join(rootDir, "dist", "app", "builtin-extensions.js")).href
-);
 
 export async function buildFinalAppSystemPrompt(options = {}) {
   const cwd = options.cwd || rootDir;
@@ -41,7 +38,6 @@ export async function buildFinalAppSystemPrompt(options = {}) {
     const { session } = await runtimeMod.createConfiguredAgentSession({
       cwd,
       agentDir,
-      additionalExtensionPaths: builtinExtMod.getBuiltinExtensionPaths(),
       sessionManager,
     });
 
