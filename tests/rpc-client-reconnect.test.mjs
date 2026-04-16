@@ -93,18 +93,30 @@ test("rpc interactive session replays the current frontend status to new subscri
   ]);
 });
 
-test("rpc interactive session treats connected recovery as starting instead of connecting", () => {
+test("rpc interactive session stays in connecting until session recovery succeeds", async () => {
   const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
-  session.rpcConnected = true;
+  session.sessionFile = "/tmp/demo.jsonl";
   session.startupPending = false;
   session.recoveryPending = true;
+  session.rpcConnected = false;
+  session.call = async () => {
+    throw new Error("rin_timeout:switch_session");
+  };
+  session.refreshState = async () => {};
 
+  await assert.rejects(
+    session.handleConnectionRestored(),
+    /rin_timeout:switch_session/,
+  );
+
+  assert.equal(session.rpcConnected, false);
+  assert.equal(session.recoveryPending, true);
   assert.deepEqual(session.getFrontendStatusEvent(), {
     type: "rpc_frontend_status",
-    phase: "starting",
-    label: "Starting",
-    connected: true,
+    phase: "connecting",
+    label: "Connecting",
+    connected: false,
   });
 });
 
@@ -163,9 +175,10 @@ test("rpc interactive session waitForDaemonAvailable reuses the reconnect pipeli
   assert.equal(reconnects, 1);
 });
 
-test("rpc interactive session clears the working state when a worker exits mid-turn", () => {
+test("rpc interactive session keeps connecting when a worker exits mid-turn", () => {
   const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
+  session.ensureReconnectLoop = () => {};
   session.rpcConnected = true;
   session.startupPending = false;
   session.activeTurn = {
@@ -182,9 +195,19 @@ test("rpc interactive session clears the working state when a worker exits mid-t
   session.handleRpcEvent({ type: "worker_exit", code: 9, signal: null });
 
   assert.equal(session.activeTurn, null);
-  assert.equal(session.getFrontendStatusEvent(), null);
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "connecting",
+    label: "Connecting",
+    connected: false,
+  });
   assert.deepEqual(seen, [
-    { type: "rpc_frontend_status", phase: "idle" },
+    {
+      type: "rpc_frontend_status",
+      phase: "connecting",
+      label: "Connecting",
+      connected: false,
+    },
     { type: "worker_exit", code: 9, signal: null },
   ]);
 });
@@ -225,6 +248,42 @@ test("rpc interactive session can terminate an attached worker without local ses
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.type, "terminate_session");
+});
+
+test("rpc interactive session queues prompts while recovery is pending", async () => {
+  const calls = [];
+  const session = new RpcInteractiveSession({
+    isConnected: () => true,
+    send: async (payload) => {
+      calls.push(payload);
+      return { success: true, data: {} };
+    },
+  });
+  session.ensureReconnectLoop = () => Promise.resolve();
+  session.startupPending = false;
+  session.recoveryPending = true;
+  session.rpcConnected = false;
+
+  await session.prompt("hello", { expandPromptTemplates: false });
+
+  assert.equal(calls.length, 0);
+  assert.deepEqual(session.queuedOfflineOps, [
+    {
+      mode: "prompt",
+      message: "hello",
+      images: undefined,
+      streamingBehavior: undefined,
+      source: undefined,
+      requestTag: session.queuedOfflineOps[0]?.requestTag,
+    },
+  ]);
+  assert.match(String(session.queuedOfflineOps[0]?.requestTag || ""), /^rin-tui-/);
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "connecting",
+    label: "Connecting",
+    connected: false,
+  });
 });
 
 test("rpc interactive session clears the busy state immediately when abort is requested", async () => {

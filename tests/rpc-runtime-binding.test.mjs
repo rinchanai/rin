@@ -186,6 +186,8 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
   });
 
   session.sessionId = "s1";
+  session.rpcConnected = true;
+  session.startupPending = false;
   await session.prompt("hello", { streamingBehavior: "steer" });
 
   assert.equal(sent.length, 1);

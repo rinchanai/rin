@@ -48,8 +48,12 @@ export async function handleRpcSessionEvent(
     void refreshMessagesAndSession();
   }
   if (payload.type === "worker_exit") {
-    finishRemoteTurn();
-    void refreshMessagesAndSession();
+    if (typeof target.handleSessionUnavailable === "function") {
+      target.handleSessionUnavailable();
+    } else {
+      finishRemoteTurn();
+      void refreshMessagesAndSession();
+    }
   }
   if (
     payload.type === "message_end" ||
