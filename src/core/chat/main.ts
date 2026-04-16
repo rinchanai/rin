@@ -240,7 +240,7 @@ export async function startChatBridge(
   const settings = loadChatSettings(settingsPath);
 
   const h = createChatRuntimeH();
-  const app = createChatRuntimeApp();
+  const app = createChatRuntimeApp(runtime.agentDir);
   const runtimeAdapters = instantiateBuiltInChatRuntimeAdapters(app, {
     dataDir,
     settings,
@@ -659,7 +659,7 @@ export async function startChatBridge(
         ).trim();
         const chatKey = composeChatKey(platform, getChatId(session), botId);
         const messageId = pickMessageId(session);
-        if (chatKey && messageId) {
+        if (chatKey && messageId && !session?.__rinInboundQueued) {
           enqueueChatInboxItem(runtime.agentDir, {
             chatKey,
             messageId,
