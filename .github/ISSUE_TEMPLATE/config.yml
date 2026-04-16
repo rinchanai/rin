@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Rin documentation
+    url: https://github.com/rinchanai/rin/tree/main/docs/rin
+    about: Check the docs first for installation, runtime layout, and built-in capability details.
+  - name: Rin README
+    url: https://github.com/rinchanai/rin/blob/main/README.md
+    about: Start here for the quick start, core commands, and update flow.

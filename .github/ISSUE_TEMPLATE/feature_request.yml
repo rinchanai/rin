@@ -1,0 +1,69 @@
+name: Feature request
+description: Suggest an improvement or new capability for Rin.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea.
+
+        The best feature requests explain the underlying problem, who it helps, and what a good solution could look like.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues and did not find the same request.
+          required: true
+        - label: This request is about Rin itself rather than model output quality alone.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the workflow gap, pain point, or limitation.
+      placeholder: I want to...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+      description: Describe your ideal outcome or proposed solution.
+      placeholder: Rin could...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What alternatives have you considered?
+      description: Workarounds, competing approaches, or why current behavior is insufficient.
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Real-world use case
+      description: Share a concrete example of when this would help.
+      placeholder: When using Rin for...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this relate to?
+      options:
+        - Core CLI / runtime
+        - TUI / chat UX
+        - Memory
+        - Scheduled tasks
+        - Web search
+        - Chat bridge
+        - Documentation
+        - Installer / update flow
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, references, links, or related issues.
