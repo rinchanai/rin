@@ -72,6 +72,7 @@ const SESSION_SCOPED_COMMANDS = new Set([
   "get_messages",
   "run_command",
   "attach_session",
+  "select_session",
   "fork",
   "terminate_session",
   "set_model",

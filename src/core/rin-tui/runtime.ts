@@ -260,8 +260,9 @@ export class RpcInteractiveSession {
       this.setRpcConnected(true);
       await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
       await this.modelRegistry.sync().catch(() => {});
-    } catch {
+    } catch (error) {
       this.handleConnectionLost();
+      throw error;
     } finally {
       this.startupPending = false;
       this.emitFrontendStatus(true);
@@ -409,7 +410,7 @@ export class RpcInteractiveSession {
   async switchSession(sessionPath: string, _cwdOverride?: string) {
     this.setSessionOperationPending(true);
     try {
-      const data = await this.call("switch_session", { sessionPath });
+      const data = await this.call("select_session", { sessionPath });
       await this.refreshState(REFRESH_ALL);
       return !Boolean(data?.cancelled);
     } finally {
@@ -871,13 +872,6 @@ export class RpcInteractiveSession {
         this.queueOfflineOperation(operation);
         return;
       }
-      if (/rin_no_attached_session/.test(message)) {
-        this.activeTurn = null;
-        this.syncStreamingState();
-        this.handleSessionUnavailable();
-        this.queueOfflineOperation(operation);
-        return;
-      }
       this.activeTurn = null;
       this.syncStreamingState();
       throw error;
@@ -951,10 +945,11 @@ export class RpcInteractiveSession {
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
       try {
-        if (this.sessionFile) {
-          await this.call("switch_session", { sessionPath: this.sessionFile });
-        } else if (this.sessionId) {
-          await this.call("attach_session", { sessionId: this.sessionId });
+        if (this.sessionFile || this.sessionId) {
+          await this.call("select_session", {
+            sessionPath: this.sessionFile,
+            sessionId: this.sessionId || undefined,
+          });
         }
         this.setRpcConnected(true);
         this.recoveryPending = true;
@@ -1021,15 +1016,9 @@ export class RpcInteractiveSession {
   }
 
   private buildSessionCommandPayload(
-    type: string,
+    _type: string,
     payload: Record<string, unknown>,
   ) {
-    if (!isSessionScopedCommand(type)) return payload;
-    if (type === "switch_session" || type === "attach_session") return payload;
-    if (type === "new_session" || type === "detach_session") return payload;
-    if (payload.sessionFile || payload.sessionId) return payload;
-    if (this.sessionFile) return { ...payload, sessionFile: this.sessionFile };
-    if (this.sessionId) return { ...payload, sessionId: this.sessionId };
     return payload;
   }
 
@@ -1050,7 +1039,7 @@ export class RpcInteractiveSession {
       const message = String(error?.message || error || "");
       if (
         sessionScoped &&
-        /rin_tui_not_connected|rin_disconnected|rin_session_recovering|rin_no_attached_session/.test(message)
+        /rin_tui_not_connected|rin_disconnected|rin_session_recovering/.test(message)
       ) {
         this.recoveryPending = true;
         this.emitFrontendStatus(true);

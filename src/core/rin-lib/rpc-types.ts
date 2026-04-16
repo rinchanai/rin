@@ -13,6 +13,7 @@ export type RinRpcCommandType =
   | "get_oauth_state"
   | "list_sessions"
   | "attach_session"
+  | "select_session"
   | "detach_session"
   | "rename_session"
   | "daemon_status"

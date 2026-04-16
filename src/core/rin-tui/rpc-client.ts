@@ -166,7 +166,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   }
 
   async resumeSession(sessionId: string): Promise<void> {
-    await this.send({ type: "switch_session", sessionPath: sessionId });
+    await this.send({ type: "select_session", sessionPath: sessionId });
   }
 
   async listModels(): Promise<FrontendModelItem[]> {

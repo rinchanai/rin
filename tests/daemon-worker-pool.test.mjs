@@ -120,6 +120,190 @@ setInterval(() => {}, 1000);
   assert.equal(pool.getStatusSnapshot().workerCount, 0);
 });
 
+test("attached worker stays alive across detached-worker sweeps", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({
+    workerPath,
+    cwd: dir,
+    gcIdleMs: 10,
+    sweepIntervalMs: 10,
+  });
+  const worker = pool.resolveWorkerForCommand(connection, { type: "new_session" });
+  pool.requestWorker(worker, connection, { type: "get_state" }, true);
+
+  await sleep(80);
+
+  assert.equal(pool.getStatusSnapshot().workerCount, 1);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("detached idle worker exits after grace period via reaper", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({
+    workerPath,
+    cwd: dir,
+    gcIdleMs: 20,
+    sweepIntervalMs: 10,
+  });
+  const worker = pool.resolveWorkerForCommand(connection, { type: "new_session" });
+  pool.requestWorker(worker, connection, { type: "get_state" }, true);
+  pool.detachWorker(connection);
+
+  await sleep(350);
+
+  assert.equal(worker.idleSince !== null, true);
+  assert.equal(pool.getStatusSnapshot().workerCount, 0);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("remembered session selection can pull a replacement worker without an explicit switch", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  const logPath = path.join(dir, "commands.log");
+  const sessionFile = "/tmp/remembered-session.jsonl";
+  await fs.writeFile(
+    workerPath,
+    String.raw`import fs from 'node:fs';
+const logPath = ${JSON.stringify(logPath)};
+const sessionFile = ${JSON.stringify(sessionFile)};
+function log(type) {
+  fs.appendFileSync(logPath, String(type) + '\n');
+}
+process.stdin.setEncoding('utf8');
+let buffer='';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf('\n');
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    log(command.type);
+    process.stdout.write(JSON.stringify({
+      id: command.id,
+      type: 'response',
+      command: command.type,
+      success: true,
+      data: command.type === 'switch_session'
+        ? { cancelled: false, sessionFile, sessionId: 'remembered-session' }
+        : { sessionFile, sessionId: 'remembered-session', isStreaming: false, isCompacting: false },
+    }) + '\n');
+  }
+});
+setInterval(() => {}, 1000);
+`,
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  await pool.selectSession(connection, { sessionFile });
+  const firstWorker = connection.attachedWorker;
+
+  assert.equal(Boolean(firstWorker), true);
+  assert.equal(connection.sessionFile, sessionFile);
+
+  pool.detachWorker(connection);
+  pool.destroyWorker(firstWorker);
+
+  const replacement = await pool.ensureSelectedWorker(connection);
+
+  assert.equal(Boolean(replacement), true);
+  assert.notEqual(replacement, firstWorker);
+  assert.equal(connection.attachedWorker, replacement);
+  assert.equal(pool.getStatusSnapshot().workerCount, 1);
+  assert.deepEqual(
+    (await fs.readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean),
+    ["switch_session", "switch_session"],
+  );
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("selectSession lazily restores the chosen session worker", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    String.raw`process.stdin.setEncoding('utf8');
+let buffer='';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf('\n');
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    process.stdout.write(JSON.stringify({
+      id: command.id,
+      type: 'response',
+      command: command.type,
+      success: true,
+      data: command.type === 'switch_session'
+        ? { cancelled: false, sessionFile: command.sessionPath, sessionId: 'selected-session' }
+        : { sessionFile: command.sessionPath || '/tmp/selected.jsonl', sessionId: 'selected-session', isStreaming: false, isCompacting: false },
+    }) + '\n');
+  }
+});
+setInterval(() => {}, 1000);
+`,
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  const worker = await pool.selectSession(connection, {
+    sessionFile: "/tmp/selected.jsonl",
+  });
+  const sameWorker = await pool.ensureSelectedWorker(connection);
+
+  assert.equal(worker?.sessionFile, "/tmp/selected.jsonl");
+  assert.equal(connection.attachedWorker, worker);
+  assert.equal(connection.sessionFile, "/tmp/selected.jsonl");
+  assert.equal(sameWorker, worker);
+  assert.equal(pool.getStatusSnapshot().workerCount, 1);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
 test("attached session worker auto-recovers without dropping the daemon connection", async () => {
   const dir = await makeTempDir("rin-worker-pool-");
   const workerPath = path.join(dir, "worker.mjs");

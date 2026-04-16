@@ -32,7 +32,7 @@ export type WorkerHandle = {
   isStreaming: boolean;
   isCompacting: boolean;
   lastUsedAt: number;
-  releaseRequested: boolean;
+  idleSince: number | null;
   gracefulShutdownRequested: boolean;
 };
 
@@ -62,6 +62,8 @@ export class WorkerPool {
   private workerSeq = 0;
   private internalRequestSeq = 0;
   private shuttingDown = false;
+  private readonly gcIdleMs: number;
+  private readonly reaper: NodeJS.Timeout;
 
   constructor(
     private options: {
@@ -72,8 +74,19 @@ export class WorkerPool {
         worker: WorkerHandle,
       ) => void;
       gcIdleMs?: number;
+      sweepIntervalMs?: number;
     },
-  ) {}
+  ) {
+    this.gcIdleMs = Math.max(0, Number(options.gcIdleMs ?? 30_000));
+    const sweepIntervalMs = Math.max(
+      250,
+      Number(options.sweepIntervalMs ?? Math.min(this.gcIdleMs || 250, 5_000)),
+    );
+    this.reaper = setInterval(() => {
+      this.evictDetachedWorkers();
+    }, sweepIntervalMs);
+    this.reaper.unref?.();
+  }
 
   detachWorker(
     connection: ConnectionState,
@@ -165,7 +178,7 @@ export class WorkerPool {
       this.rememberSessionSelection(connection, selector);
     }
     worker.lastUsedAt = Date.now();
-    worker.releaseRequested = false;
+    worker.idleSince = null;
     if (command?.id) {
       worker.pendingResponses.set(String(command.id), {
         id: String(command.id),
@@ -184,6 +197,61 @@ export class WorkerPool {
     this.requestWorker(worker, connection, command, true);
   }
 
+  hasSelectedSession(connection: ConnectionState) {
+    const selector = this.getConnectionSelector(connection);
+    return Boolean(selector.sessionFile || selector.sessionId);
+  }
+
+  async selectSession(connection: ConnectionState, selector: SessionSelector) {
+    if (
+      connection.attachedWorker &&
+      !this.workerMatchesSelector(connection.attachedWorker, selector)
+    ) {
+      this.detachWorker(connection);
+    }
+    this.rememberSessionSelection(connection, selector);
+    return await this.ensureSelectedWorker(connection);
+  }
+
+  async ensureSelectedWorker(
+    connection: ConnectionState,
+    selector?: SessionSelector,
+  ) {
+    if (selector) {
+      this.rememberSessionSelection(connection, selector);
+    }
+    const wanted = this.getConnectionSelector(connection);
+    if (!wanted.sessionFile && !wanted.sessionId) {
+      return connection.attachedWorker;
+    }
+    if (
+      connection.attachedWorker &&
+      this.workerMatchesSelector(connection.attachedWorker, wanted)
+    ) {
+      return connection.attachedWorker;
+    }
+    const existing = this.findWorkerBySelector(wanted);
+    if (existing) {
+      this.attachWorker(connection, existing);
+      return existing;
+    }
+    if (!wanted.sessionFile) return undefined;
+
+    const worker = this.createWorker(connection);
+    this.setWorkerSessionRefs(worker, wanted);
+    this.attachWorker(connection, worker);
+    try {
+      await this.sendInternalCommand(worker, {
+        type: "switch_session",
+        sessionPath: wanted.sessionFile,
+      });
+      return worker;
+    } catch (error) {
+      this.destroyWorker(worker);
+      throw error;
+    }
+  }
+
   resolveWorkerForCommand(connection: ConnectionState, command: any) {
     const type = String(command?.type || "unknown");
     const selector = this.resolveSelector(connection, command);
@@ -192,21 +260,16 @@ export class WorkerPool {
       return this.createWorker(connection);
     }
 
-    if (type === "switch_session") {
-      const wanted =
-        selector.sessionFile ||
-        (typeof command?.sessionPath === "string" ? command.sessionPath : "");
-      const existing = this.findWorkerBySelector({ sessionFile: wanted });
-      return existing || this.createWorker(connection);
-    }
-
-    if (type === "attach_session") {
-      return this.findWorkerBySelector(selector);
-    }
-
     const selectedWorker = this.findWorkerBySelector(selector);
     if (selectedWorker) return selectedWorker;
-    if (connection.attachedWorker) return connection.attachedWorker;
+    if (
+      connection.attachedWorker &&
+      (!selector.sessionFile && !selector.sessionId
+        ? true
+        : this.workerMatchesSelector(connection.attachedWorker, selector))
+    ) {
+      return connection.attachedWorker;
+    }
     if (isSessionScopedCommand(type)) return undefined;
     return undefined;
   }
@@ -224,13 +287,14 @@ export class WorkerPool {
         isStreaming: worker.isStreaming,
         isCompacting: worker.isCompacting,
         lastUsedAt: worker.lastUsedAt,
-        releaseRequested: worker.releaseRequested,
+        idleSince: worker.idleSince,
         role: "session",
       })),
     };
   }
 
   destroyAll() {
+    clearInterval(this.reaper);
     for (const worker of Array.from(this.workers)) {
       this.destroyWorker(worker);
     }
@@ -375,7 +439,7 @@ export class WorkerPool {
       isStreaming: false,
       isCompacting: false,
       lastUsedAt: Date.now(),
-      releaseRequested: false,
+      idleSince: null,
       gracefulShutdownRequested: false,
     };
     this.workers.add(worker);
@@ -487,7 +551,7 @@ export class WorkerPool {
     connection.attachedWorker = worker;
     worker.connections.add(connection);
     worker.lastUsedAt = Date.now();
-    worker.releaseRequested = false;
+    worker.idleSince = null;
     if (worker.sessionFile || worker.sessionId) {
       this.rememberSessionSelection(connection, {
         sessionFile: worker.sessionFile,
@@ -499,22 +563,20 @@ export class WorkerPool {
   private maybeReleaseWorker(worker: WorkerHandle) {
     if (!this.workers.has(worker)) return;
     if (worker.gracefulShutdownRequested) return;
-    if (!this.shuttingDown && worker.connections.size > 0) {
-      worker.releaseRequested = false;
+    if (worker.connections.size > 0) {
+      worker.idleSince = null;
       return;
     }
-    if (worker.pendingResponses.size > 0) {
+    if (worker.pendingResponses.size > 0 || worker.isStreaming || worker.isCompacting) {
+      worker.idleSince = null;
       return;
     }
-    if (worker.isStreaming || worker.isCompacting) {
-      return;
-    }
-    if (this.shuttingDown || worker.releaseRequested) {
+    if (this.shuttingDown || this.gcIdleMs === 0) {
       this.destroyWorker(worker);
       return;
     }
-    const gcIdleMs = Math.max(0, Number(this.options.gcIdleMs ?? 15 * 60_000));
-    if (Date.now() - worker.lastUsedAt >= gcIdleMs) {
+    worker.idleSince ??= Date.now();
+    if (Date.now() - worker.idleSince >= this.gcIdleMs) {
       this.destroyWorker(worker);
     }
   }
@@ -574,6 +636,16 @@ export class WorkerPool {
       return this.workersBySessionId.get(selector.sessionId);
     }
     return undefined;
+  }
+
+  private workerMatchesSelector(worker: WorkerHandle, selector: SessionSelector) {
+    if (selector.sessionFile && worker.sessionFile === selector.sessionFile) {
+      return true;
+    }
+    if (selector.sessionId && worker.sessionId === selector.sessionId) {
+      return true;
+    }
+    return false;
   }
 
   private deleteWorkerSessionRefs(worker: WorkerHandle) {
