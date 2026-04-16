@@ -13,7 +13,7 @@ export function buildSessionRecallSummaryPrompt(sessionPath: string): string {
   ].join("\n\n");
 }
 
-export function normalizeSessionSummaryForName(
+export function normalizeSessionSummaryText(
   summary: string,
   max = 180,
 ): string {

@@ -458,7 +458,7 @@ test("memory transcripts ignore transient in-memory sessions without a session f
   });
 });
 
-test("search_memory uses the stored session name instead of live summarization", async () => {
+test("search_memory uses the stored transcript session summary instead of live summarization", async () => {
   await withTempRoot(async (root) => {
     const sessionFile = await writeSessionFile(root, "summary-session.jsonl", [
       {
@@ -473,7 +473,7 @@ test("search_memory uses the stored session name instead of live summarization",
         id: "name1",
         parentId: null,
         timestamp: "2026-04-08T09:01:00.000Z",
-        name: "telegram/1:2 — Fixed memory recall hang and cached session summaries.",
+        name: "telegram/1:2",
       },
       {
         type: "message",
@@ -502,13 +502,26 @@ test("search_memory uses the stored session name instead of live summarization",
       },
       root,
     );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:10:00.000Z",
+        sessionId: "summary-session",
+        sessionFile,
+        role: "sessionSummary",
+        customType: "session_summary",
+        text: "Fixed memory recall hang and cached transcript summaries.",
+        display: false,
+      },
+      root,
+    );
 
     const rows = await transcripts.searchTranscriptArchive(
       "session resume hang",
       { limit: 8 },
       root,
     );
-    assert.equal(rows[0].summary, "telegram/1:2 — Fixed memory recall hang and cached session summaries.");
+    assert.equal(rows[0].summary, "Fixed memory recall hang and cached transcript summaries.");
+    assert.equal(rows[0].name, "telegram/1:2");
 
     const result = await memoryExtensionModule.executeSearchMemory(
       { query: "session resume hang", limit: 8 },
@@ -517,12 +530,13 @@ test("search_memory uses the stored session name instead of live summarization",
     );
     assert.match(
       result.details.userText,
-      /telegram\/1:2 — Fixed memory recall hang and cached session summaries/,
+      /Fixed memory recall hang and cached transcript summaries/,
     );
+    assert.doesNotMatch(result.details.userText, /L\d+ sessionSummary/);
   });
 });
 
-test("search_memory falls back to the first user message when no stored session name exists", async () => {
+test("search_memory falls back to the first user message when no stored session summary exists", async () => {
   await withTempRoot(async (root) => {
     const sessionFile = await writeSessionFile(root, "fallback-session.jsonl", [
       {
@@ -565,7 +579,8 @@ test("search_memory falls back to the first user message when no stored session 
       { limit: 8 },
       root,
     );
-    assert.equal(rows[0].summary, "Need help debugging the outbound chat routing bug");
+    assert.equal(rows[0].summary, undefined);
+    assert.equal(rows[0].name, "Need help debugging the outbound chat routing bug");
   });
 });
 

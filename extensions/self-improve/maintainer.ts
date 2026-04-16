@@ -9,14 +9,13 @@ import { loadRinSessionManagerModule } from "../../src/core/rin-lib/loader.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
 import { openBoundSession } from "../../src/core/session/factory.js";
 import {
-  extractChatKeyFromSessionName,
-  findChatKeyBySessionFile,
-  formatChatSessionName,
-} from "../../src/core/session/names.js";
-import {
   buildSessionRecallSummaryPrompt,
-  normalizeSessionSummaryForName,
+  normalizeSessionSummaryText,
 } from "../../src/core/session/summary.js";
+import {
+  appendTranscriptArchiveEntry,
+  loadTranscriptSessionEntries,
+} from "../memory/transcripts.js";
 import { resolveAgentDir } from "./lib.js";
 
 type ExtensionCtxLike = {
@@ -94,36 +93,64 @@ async function runForkedSessionPrompt(options: {
   }
 }
 
-async function applySessionSummaryName(options: {
+function isSessionSummaryEntry(entry: { role?: string; customType?: string }) {
+  return (
+    safeString(entry.role || "").trim() === "sessionSummary" ||
+    safeString(entry.customType || "").trim() === "session_summary"
+  );
+}
+
+async function storeSessionSummaryInTranscriptArchive(options: {
   agentDir: string;
   sessionFile: string;
   summary: string;
 }) {
   const agentDir = path.resolve(safeString(options.agentDir).trim());
   const sessionFile = path.resolve(safeString(options.sessionFile).trim());
-  const summary = normalizeSessionSummaryForName(options.summary);
+  const summary = normalizeSessionSummaryText(options.summary);
   if (!sessionFile || !summary) {
     return { skipped: "empty-summary" };
   }
 
   const { SessionManager } = await loadRinSessionManagerModule();
   const sessionManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
-  const currentName = safeString(sessionManager.getSessionName?.() || "").trim();
-  const chatKey =
-    extractChatKeyFromSessionName(currentName) ||
-    findChatKeyBySessionFile(agentDir, sessionFile);
-  const nextName = chatKey ? formatChatSessionName(chatKey, summary) : summary;
-  if (!nextName || nextName === currentName) {
+  const sessionId = safeString(sessionManager.getSessionId?.() || "").trim();
+  const existingEntries = await loadTranscriptSessionEntries(
+    {
+      sessionId: sessionId || undefined,
+      sessionFile,
+    },
+    agentDir,
+  ).catch(() => []);
+  const currentSummary = normalizeSessionSummaryText(
+    [...existingEntries]
+      .reverse()
+      .find((entry) => isSessionSummaryEntry(entry))?.text || "",
+  );
+  if (currentSummary && currentSummary === summary) {
     return {
-      skipped: nextName ? "unchanged" : "empty-name",
-      sessionName: currentName || undefined,
+      skipped: "unchanged",
+      sessionId: sessionId || undefined,
+      sessionSummary: currentSummary,
     };
   }
 
-  sessionManager.appendSessionInfo(nextName);
+  await appendTranscriptArchiveEntry(
+    {
+      timestamp: new Date().toISOString(),
+      sessionId,
+      sessionFile,
+      role: "sessionSummary",
+      customType: "session_summary",
+      text: summary,
+      display: false,
+    },
+    agentDir,
+  );
   return {
     skipped: "",
-    sessionName: nextName,
+    sessionId: sessionId || undefined,
+    sessionSummary: summary,
   };
 }
 
@@ -196,7 +223,7 @@ export async function maintainSessionSummary(
     leafId: safeString(opts.leafId || "").trim() || undefined,
     prompt: buildSessionRecallSummaryPrompt(sessionFile),
   });
-  const applied = await applySessionSummaryName({
+  const applied = await storeSessionSummaryInTranscriptArchive({
     agentDir,
     sessionFile,
     summary: output,
