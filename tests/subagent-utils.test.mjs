@@ -28,18 +28,7 @@ const subagentService = await import(
     path.join(rootDir, "dist", "src", "core", "subagent", "service.js"),
   ).href
 );
-const { SessionManager } = await import(
-  pathToFileURL(
-    path.join(
-      rootDir,
-      "third_party",
-      "pi-coding-agent",
-      "dist",
-      "core",
-      "session-manager.js",
-    ),
-  ).href,
-);
+const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 
 test("subagent model utils normalize and sort model refs", () => {
   assert.equal(modelUtils.normalizeModelRef("@openai/gpt-5"), "openai/gpt-5");
