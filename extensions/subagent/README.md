@@ -10,8 +10,8 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
 - subagent runs can also use saved sessions:
   - `session.mode: "persist"` creates a new saved session
   - `session.mode: "resume"` continues an existing saved session
-  - `session.mode: "fork"` branches from an existing saved session, but uses an ephemeral in-memory fork by default
-  - `session.keep: true` preserves a forked worker session so it can be resumed later
+  - `session.mode: "fork"` branches from an existing saved session and persists by default
+  - `session.keep: false` makes a forked worker session ephemeral instead of saving it
 - each task can specify:
   - `prompt`
   - `model` (exact `provider/model`)
@@ -65,18 +65,6 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
 }
 ```
 
-### Fork a saved session ephemerally
-
-```json
-{
-  "prompt": "Take the previous auth review in a different direction.",
-  "session": {
-    "mode": "fork",
-    "ref": "<session-id-or-path>"
-  }
-}
-```
-
 ### Fork a saved session and keep it for resume later
 
 ```json
@@ -85,8 +73,20 @@ A simplified builtin extension based on the upstream pi example at `examples/ext
   "session": {
     "mode": "fork",
     "ref": "<session-id-or-path>",
-    "keep": true,
     "name": "auth-review-alt"
+  }
+}
+```
+
+### Fork a saved session ephemerally
+
+```json
+{
+  "prompt": "Take the previous auth review in a throwaway direction.",
+  "session": {
+    "mode": "fork",
+    "ref": "<session-id-or-path>",
+    "keep": false
   }
 }
 ```

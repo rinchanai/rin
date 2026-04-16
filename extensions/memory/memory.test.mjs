@@ -536,6 +536,61 @@ test("search_memory uses the stored transcript session summary instead of live s
   });
 });
 
+test("search_memory stored session summaries are display-only and do not affect retrieval", async () => {
+  await withTempRoot(async (root) => {
+    const sessionFile = await writeSessionFile(root, "display-only-summary-session.jsonl", [
+      {
+        type: "session",
+        version: 3,
+        id: "display-only-summary-session",
+        timestamp: "2026-04-08T09:00:00.000Z",
+        cwd: "/tmp/project",
+      },
+      {
+        type: "message",
+        id: "msg1",
+        parentId: null,
+        timestamp: "2026-04-08T09:02:00.000Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Need help checking a runtime regression" }],
+        },
+      },
+    ]);
+
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "display-only-summary-session",
+        sessionFile,
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Verified the transport path and identified the regression boundary.",
+          },
+        ],
+      },
+      root,
+    );
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:10:00.000Z",
+        sessionId: "display-only-summary-session",
+        sessionFile,
+        role: "sessionSummary",
+        customType: "session_summary",
+        text: "zebra only appears in the stored display summary",
+        display: false,
+      },
+      root,
+    );
+
+    const rows = await transcripts.searchTranscriptArchive("zebra", { limit: 8 }, root);
+    assert.equal(rows.length, 0);
+  });
+});
+
 test("search_memory falls back to the first user message when no stored session summary exists", async () => {
   await withTempRoot(async (root) => {
     const sessionFile = await writeSessionFile(root, "fallback-session.jsonl", [
