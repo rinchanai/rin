@@ -48,6 +48,28 @@ test("rpc client ignores stale socket disconnect after reconnect", () => {
   assert.equal(seen[0]?.name, "connection_lost");
 });
 
+test("rpc interactive session startup fails when the daemon is unavailable", async () => {
+  const client = {
+    isConnected: () => false,
+    connect: async () => {
+      throw new Error("daemon_down");
+    },
+    subscribe: () => () => {},
+    disconnect: async () => {},
+  };
+  const session = new RpcInteractiveSession(client);
+  session.ensureReconnectLoop = async () => {};
+
+  await assert.rejects(session.connect(), /daemon_down/);
+  assert.equal(session.rpcConnected, false);
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "connecting",
+    label: "Connecting",
+    connected: false,
+  });
+});
+
 test("rpc interactive session switches to connecting state instead of emitting a fake turn end on disconnect", () => {
   const client = { isConnected: () => false };
   const session = new RpcInteractiveSession(client);
@@ -101,13 +123,13 @@ test("rpc interactive session stays in connecting until session recovery succeed
   session.recoveryPending = true;
   session.rpcConnected = false;
   session.call = async () => {
-    throw new Error("rin_timeout:switch_session");
+    throw new Error("rin_timeout:select_session");
   };
   session.refreshState = async () => {};
 
   await assert.rejects(
     session.handleConnectionRestored(),
-    /rin_timeout:switch_session/,
+    /rin_timeout:select_session/,
   );
 
   assert.equal(session.rpcConnected, false);

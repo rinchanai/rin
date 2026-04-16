@@ -105,6 +105,112 @@ async function makeTempDir(prefix) {
   return await fs.mkdtemp(path.join(root, prefix));
 }
 
+test("daemon attaches a selected session without a frontend switch_session round-trip", async () => {
+  const agentDir = await makeTempDir("rin-daemon-select-");
+  const socketPath = path.join(agentDir, "daemon.sock");
+  const workerPath = path.join(agentDir, "fake-worker.mjs");
+  const logPath = path.join(agentDir, "commands.log");
+  const sessionFile = "/tmp/selected-session.jsonl";
+  await fs.writeFile(
+    workerPath,
+    `
+import fs from "node:fs";
+import process from "node:process";
+const logPath = ${JSON.stringify(logPath)};
+const sessionFile = ${JSON.stringify(sessionFile)};
+function send(payload) { process.stdout.write(JSON.stringify(payload) + "\\n"); }
+function log(type) { fs.appendFileSync(logPath, type + "\\n"); }
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf("\\n");
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    log(command.type);
+    if (command.type === "switch_session") {
+      send({ type: "response", id: command.id, command: command.type, success: true, data: { cancelled: false, sessionFile, sessionId: "selected-session" } });
+      continue;
+    }
+    if (command.type === "get_state") {
+      send({ type: "response", id: command.id, command: command.type, success: true, data: { sessionFile, sessionId: "selected-session", isStreaming: false, isCompacting: false } });
+      continue;
+    }
+    send({ type: "response", id: command.id, command: command.type, success: true, data: {} });
+  }
+});
+`,
+  );
+
+  const daemon = spawnDaemon(agentDir, socketPath, workerPath);
+  try {
+    await waitForSocket(socketPath);
+    const socket = net.createConnection(socketPath);
+    await new Promise((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+
+    let buffer = "";
+    const waitForResponse = (wantedId) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`payload_timeout:${wantedId}`)), 5000);
+        const onData = (chunk) => {
+          buffer += String(chunk);
+          while (true) {
+            const idx = buffer.indexOf("\n");
+            if (idx < 0) break;
+            let line = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 1);
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (!line.trim()) continue;
+            const payload = JSON.parse(line);
+            if (payload?.type === "response" && payload?.id === wantedId) {
+              clearTimeout(timer);
+              socket.off("data", onData);
+              resolve(payload);
+              return;
+            }
+          }
+        };
+        socket.on("data", onData);
+        socket.once("error", (error) => {
+          clearTimeout(timer);
+          socket.off("data", onData);
+          reject(error);
+        });
+      });
+
+    socket.write(
+      `${JSON.stringify({ id: "1", type: "select_session", sessionPath: sessionFile })}\n`,
+    );
+    const selected = await waitForResponse("1");
+    socket.write(`${JSON.stringify({ id: "2", type: "get_state" })}\n`);
+    const state = await waitForResponse("2");
+
+    assert.equal(selected.success, true);
+    assert.equal(state.success, true);
+    assert.equal(state.data?.sessionFile, sessionFile);
+    assert.deepEqual(
+      (await fs.readFile(logPath, "utf8")).trim().split("\n").filter(Boolean),
+      ["switch_session", "get_state"],
+    );
+
+    socket.destroy();
+  } finally {
+    try {
+      daemon.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("daemon auto-resumes interrupted sessions on startup without frontend help", async () => {
   const agentDir = await makeTempDir("rin-daemon-resume-");
   const socketPath = path.join(agentDir, "daemon.sock");

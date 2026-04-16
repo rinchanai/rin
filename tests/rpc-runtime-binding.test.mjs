@@ -198,7 +198,6 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
     },
     {
       type: "prompt",
-      sessionId: "s1",
       message: "hello",
       images: undefined,
       streamingBehavior: "steer",
@@ -208,6 +207,68 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
   );
   assert.deepEqual(session.getSteeringMessages(), ["hello"]);
   assert.equal(session.pendingMessageCount, 1);
+});
+
+test("rpc runtime resumes a session through select_session", async () => {
+  const sent = [];
+  const session = new RpcInteractiveSession({
+    send(payload) {
+      sent.push(payload);
+      if (payload.type === "get_state") {
+        return Promise.resolve({
+          success: true,
+          data: {
+            sessionId: "s2",
+            sessionFile: "/tmp/s2.jsonl",
+            thinkingLevel: "medium",
+            steeringMode: "all",
+            followUpMode: "one-at-a-time",
+            autoCompactionEnabled: false,
+            isStreaming: false,
+            isCompacting: false,
+            pendingMessageCount: 0,
+          },
+        });
+      }
+      if (payload.type === "get_messages") {
+        return Promise.resolve({ success: true, data: { messages: [] } });
+      }
+      if (payload.type === "get_session_entries") {
+        return Promise.resolve({ success: true, data: { entries: [] } });
+      }
+      if (payload.type === "get_session_tree") {
+        return Promise.resolve({ success: true, data: { tree: [], leafId: null } });
+      }
+      if (payload.type === "get_available_models") {
+        return Promise.resolve({ success: true, data: { models: [] } });
+      }
+      return Promise.resolve({ success: true, data: { cancelled: false } });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  session.rpcConnected = true;
+  session.startupPending = false;
+
+  const completed = await session.switchSession("/tmp/s2.jsonl");
+
+  assert.equal(completed, true);
+  assert.equal(sent[0]?.type, "select_session");
+  assert.equal(sent[0]?.sessionPath, "/tmp/s2.jsonl");
 });
 
 test("rpc runtime marks a connected prompt as sending before remote session setup finishes", async () => {

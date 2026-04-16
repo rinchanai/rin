@@ -12,7 +12,11 @@ import {
 import type { RinRpcCommandType } from "../rin-lib/rpc-types.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { getChatSidecarStatus } from "../chat/service.js";
-import { emptySessionState, response } from "../rin-lib/rpc.js";
+import {
+  emptySessionState,
+  isSessionScopedCommand,
+  response,
+} from "../rin-lib/rpc.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
@@ -99,7 +103,8 @@ export async function startDaemon(
   const workerPool = new WorkerPool({
     workerPath,
     cwd: runtime.cwd,
-    gcIdleMs: Number(process.env.RIN_WORKER_GC_IDLE_MS || 15 * 60_000),
+    gcIdleMs: Number(process.env.RIN_WORKER_GC_IDLE_MS || 30_000),
+    sweepIntervalMs: Number(process.env.RIN_WORKER_GC_SWEEP_MS || 5_000),
     onWorkerSpawn: (requester, worker) => {
       if (requester)
         writeLine(requester.socket, {
@@ -123,11 +128,24 @@ export async function startDaemon(
     ensureDir(path.dirname(candidate));
   }
 
-  const hasSessionSelector = (command: any) =>
-    Boolean(
-      (typeof command?.sessionFile === "string" && command.sessionFile) ||
-      (typeof command?.sessionId === "string" && command.sessionId),
-    );
+  const getSessionSelector = (command: any) => ({
+    sessionFile:
+      typeof command?.sessionFile === "string" && command.sessionFile
+        ? command.sessionFile
+        : typeof command?.sessionPath === "string" && command.sessionPath
+          ? command.sessionPath
+          : undefined,
+    sessionId:
+      typeof command?.sessionId === "string" && command.sessionId
+        ? command.sessionId
+        : undefined,
+  });
+  const hasSessionSelector = (command: any) => {
+    const selector = getSessionSelector(command);
+    return Boolean(selector.sessionFile || selector.sessionId);
+  };
+  const hasSelectedSession = (connection: ConnectionState) =>
+    workerPool.hasSelectedSession(connection);
 
   const selfHandleCommand = async (
     connection: ConnectionState,
@@ -138,11 +156,13 @@ export async function startDaemon(
       | RinRpcCommandType
       | "unknown";
     const selectorPresent = hasSessionSelector(command);
+    const selectedSessionPresent = hasSelectedSession(connection);
 
     if (
       type === "get_state" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(
         connection.socket,
@@ -153,7 +173,8 @@ export async function startDaemon(
     if (
       type === "get_messages" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(connection.socket, response(id, type, true, { messages: [] }));
       return true;
@@ -161,7 +182,8 @@ export async function startDaemon(
     if (
       type === "get_session_entries" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(connection.socket, response(id, type, true, { entries: [] }));
       return true;
@@ -169,7 +191,8 @@ export async function startDaemon(
     if (
       type === "get_session_tree" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(
         connection.socket,
@@ -180,7 +203,8 @@ export async function startDaemon(
     if (
       type === "get_commands" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(
         connection.socket,
@@ -197,7 +221,8 @@ export async function startDaemon(
     if (
       type === "get_available_models" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(
         connection.socket,
@@ -214,7 +239,8 @@ export async function startDaemon(
     if (
       type === "get_oauth_state" &&
       !connection.attachedWorker &&
-      !selectorPresent
+      !selectorPresent &&
+      !selectedSessionPresent
     ) {
       writeLine(
         connection.socket,
@@ -231,7 +257,7 @@ export async function startDaemon(
       );
       return true;
     }
-    if (type === "new_session" || type === "switch_session") {
+    if (type === "new_session") {
       const worker = workerPool.resolveWorkerForCommand(connection, command);
       if (!worker) {
         writeLine(
@@ -241,6 +267,31 @@ export async function startDaemon(
         return true;
       }
       workerPool.forwardToWorker(connection, worker, command);
+      workerPool.evictDetachedWorkers();
+      return true;
+    }
+    if (
+      type === "select_session" ||
+      type === "switch_session" ||
+      type === "attach_session"
+    ) {
+      const selector = getSessionSelector(command);
+      if (!selector.sessionFile && !selector.sessionId) {
+        writeLine(
+          connection.socket,
+          response(id, type, false, "rin_no_attached_session"),
+        );
+        return true;
+      }
+      const worker = await workerPool.selectSession(connection, selector);
+      if (!worker) {
+        writeLine(
+          connection.socket,
+          response(id, type, false, "rin_no_attached_session"),
+        );
+        return true;
+      }
+      writeLine(connection.socket, response(id, type, true, { cancelled: false }));
       workerPool.evictDetachedWorkers();
       return true;
     }
@@ -401,10 +452,20 @@ export async function startDaemon(
               return;
             }
 
-            const worker = workerPool.resolveWorkerForCommand(
+            let worker = workerPool.resolveWorkerForCommand(
               connection,
               command,
             );
+            if (
+              !worker &&
+              isSessionScopedCommand(String(command?.type || "unknown")) &&
+              (hasSessionSelector(command) || hasSelectedSession(connection))
+            ) {
+              worker = await workerPool.ensureSelectedWorker(
+                connection,
+                getSessionSelector(command),
+              );
+            }
             if (!worker) {
               writeLine(
                 socket,

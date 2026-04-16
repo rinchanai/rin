@@ -57,7 +57,7 @@ test("rpc restore reattaches once and avoids duplicate restore work", async () =
   await Promise.all([p1, p2]);
 
   assert.equal(
-    calls.filter((item) => item.type === "switch_session").length,
+    calls.filter((item) => item.type === "select_session").length,
     1,
   );
   assert.equal(
@@ -102,7 +102,7 @@ test("rpc restore flushes queued offline ops after reattach", async () => {
   await RpcInteractiveSession.prototype.handleConnectionRestored.call(target);
 
   assert.equal(
-    calls.filter((item) => item.type === "switch_session").length,
+    calls.filter((item) => item.type === "select_session").length,
     1,
   );
   assert.deepEqual(sent, [

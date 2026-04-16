@@ -54,6 +54,65 @@ test("loader stop clears render interval", () => {
   assert.ok(renders >= 1);
 });
 
+test("rpc session selector loads sessions through the daemon instead of local SessionManager", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let listed = 0;
+  let renamed = [];
+  let selector;
+  const instance = {
+    session: {
+      getFrontendStatusEvent() {
+        return {
+          type: "rpc_frontend_status",
+          phase: "idle",
+          label: "Idle",
+          connected: true,
+        };
+      },
+      async listSessions() {
+        listed += 1;
+        return [
+          {
+            id: "/tmp/demo.jsonl",
+            title: "demo",
+            subtitle: "2026-04-16T00:00:00.000Z",
+            isActive: true,
+          },
+        ];
+      },
+      async renameSession(path, name) {
+        renamed.push([path, name]);
+      },
+    },
+    sessionManager: {
+      getSessionFile: () => "/tmp/demo.jsonl",
+      getCwd: () => "/tmp",
+      getSessionDir: () => "/tmp/.sessions",
+    },
+    keybindings: {},
+    ui: { requestRender() {} },
+    showSelector(factory) {
+      selector = factory(() => {}).component;
+      return selector;
+    },
+    handleResumeSession: async () => {},
+    shutdown: async () => {},
+  };
+
+  codingAgentModule.InteractiveMode.prototype.showSessionSelector.call(instance);
+
+  const sessions = await selector.currentSessionsLoader();
+  await selector.renameSession("/tmp/demo.jsonl", "renamed");
+
+  assert.equal(listed > 0, true);
+  assert.equal(sessions[0].path, "/tmp/demo.jsonl");
+  assert.equal(sessions[0].name, undefined);
+  assert.equal(sessions[0].firstMessage, "demo");
+  assert.equal(sessions[0].modified instanceof Date, true);
+  assert.deepEqual(renamed, [["/tmp/demo.jsonl", "renamed"]]);
+});
+
 test("rpc compaction end restores transport loader instead of leaving status empty", async () => {
   await overrides.applyRinTuiOverrides();
 
