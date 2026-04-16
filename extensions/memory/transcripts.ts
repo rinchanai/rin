@@ -363,6 +363,25 @@ function timestampValue(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isSessionSummaryEntry(entry: TranscriptArchiveEntry) {
+  return (
+    safeString(entry.role || "").trim() === "sessionSummary" ||
+    safeString(entry.customType || "").trim() === "session_summary"
+  );
+}
+
+function contentTranscriptEntries(entries: TranscriptArchiveEntry[]) {
+  const filtered = entries.filter((entry) => !isSessionSummaryEntry(entry));
+  return filtered.length ? filtered : entries;
+}
+
+function latestStoredSessionSummary(entries: TranscriptArchiveEntry[]) {
+  const entry = [...entries]
+    .filter((item) => isSessionSummaryEntry(item))
+    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))[0];
+  return normalizeSessionNameDetail(entry?.text || "", 180);
+}
+
 function transcriptPreviewText(entry: TranscriptArchiveEntry) {
   const label = entry.toolName
     ? `[${entry.role}:${entry.toolName}]`
@@ -464,15 +483,17 @@ function presentSessionResult(
     messages?: TranscriptResultMessage[];
   } = {},
 ): TranscriptSessionResult {
-  const previewEntry = chooseSessionPreviewEntry(entries);
-  const latestEntry = [...entries].sort(
+  const displayEntries = contentTranscriptEntries(entries);
+  const previewEntry = chooseSessionPreviewEntry(displayEntries);
+  const latestEntry = [...displayEntries].sort(
     (a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp),
   )[0];
-  const preview = buildSessionPreview(entries);
+  const preview = buildSessionPreview(displayEntries);
   const sessionName = resolveSessionDisplayName(
     safeString(previewEntry?.sessionFile || "").trim(),
     preview,
   );
+  const storedSummary = latestStoredSessionSummary(entries);
   return {
     sourceType: "session",
     id:
@@ -490,12 +511,14 @@ function presentSessionResult(
     timestamp: latestEntry?.timestamp || previewEntry.timestamp,
     description: trimText(preview, 160),
     preview,
-    summary: sessionName || undefined,
+    summary: storedSummary || undefined,
     hitCount: extra.hitCount,
     messages:
       extra.messages && extra.messages.length
         ? extra.messages
-        : chooseSessionMessageEntries(entries).map((entry) => buildResultMessage(entry)),
+        : chooseSessionMessageEntries(displayEntries).map((entry) =>
+            buildResultMessage(entry),
+          ),
   };
 }
 
@@ -1172,7 +1195,7 @@ function aggregateSearchResults(
         line_number: row.line_number,
         archive_path: row.archive_path,
       });
-      if (entry) {
+      if (entry && !isSessionSummaryEntry(entry)) {
         bucket.messages.push(buildResultMessage(entry));
       }
     }
