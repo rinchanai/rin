@@ -39,7 +39,6 @@ test("publishInstalledRuntime rebuilds vendored coding-agent dist when missing",
     "export {};",
     "utf8",
   );
-  await fs.mkdir(path.join(tempRoot, "extensions"), { recursive: true });
   await fs.writeFile(path.join(tempRoot, "package.json"), "{\n}\n", "utf8");
   await fs.copyFile(
     path.join(rootDir, "tsconfig.base.json"),
