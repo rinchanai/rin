@@ -38,6 +38,7 @@ export type ChatState = {
     startedAt: number;
     replyToMessageId?: string;
     incomingMessageId?: string;
+    acceptedAt?: string;
     workingNoticeSent?: boolean;
   };
   pendingDelivery?: {

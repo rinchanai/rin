@@ -12,6 +12,7 @@ export type StoredChatMessage = {
   replyToMessageId?: string;
   sessionId?: string;
   sessionFile?: string;
+  acceptedAt?: string;
   processedAt?: string;
   chatKey: string;
   platform: string;

@@ -175,6 +175,7 @@ export class ChatController {
       payload.event === "complete"
     ) {
       this.markTurnPulse();
+      this.markAcceptedMessage(this.currentIncomingMessageId());
     }
     if (payload.event === "error") {
       this.failLiveTurn(new Error(String(payload.error || "rpc_turn_failed")));
@@ -186,6 +187,7 @@ export class ChatController {
       case "agent_start":
         this.latestAssistantText = "";
         this.markTurnPulse();
+        this.markAcceptedMessage(this.currentIncomingMessageId());
         break;
       case "agent_end":
         this.markTurnPulse();
@@ -204,6 +206,7 @@ export class ChatController {
       case "compaction_start":
       case "compaction_end":
         this.markTurnPulse();
+        this.markAcceptedMessage(this.currentIncomingMessageId());
         break;
     }
   }
@@ -455,17 +458,34 @@ export class ChatController {
     }
     this.saveState();
   }
+  private markAcceptedMessage(messageId?: string) {
+    const nextMessageId = safeString(messageId || "").trim();
+    if (!nextMessageId) return;
+    const acceptedAt = new Date().toISOString();
+    const sessionId = this.currentSessionId() || undefined;
+    const sessionFile = this.currentSessionFile();
+    if (!sessionId && !sessionFile) return;
+    markProcessedChatMessage(this.agentDir, this.chatKey, nextMessageId, {
+      sessionId,
+      sessionFile,
+      acceptedAt,
+    });
+    if (
+      this.state.processing &&
+      safeString(this.state.processing.incomingMessageId || "").trim() ===
+        nextMessageId
+    ) {
+      this.state.processing.acceptedAt = acceptedAt;
+      this.saveState();
+    }
+  }
   private markProcessedMessage(messageId?: string) {
     const nextMessageId = safeString(messageId || "").trim();
     if (!nextMessageId) return;
     markProcessedChatMessage(this.agentDir, this.chatKey, nextMessageId, {
       sessionId: this.currentSessionId() || undefined,
-      sessionFile:
-        safeString(
-          this.session?.sessionManager?.getSessionFile?.() ||
-            this.state.piSessionFile ||
-            "",
-        ).trim() || undefined,
+      sessionFile: this.currentSessionFile(),
+      acceptedAt: new Date().toISOString(),
       processedAt: new Date().toISOString(),
     });
   }
@@ -539,7 +559,6 @@ export class ChatController {
     if (!skipSessionRecovery) {
       await this.ensureSessionReady();
     }
-    this.markProcessedMessage(incomingMessageId);
     try {
       const data: any = await this.session.runCommand(commandLine);
       this.state.piSessionFile =
@@ -550,6 +569,7 @@ export class ChatController {
         ).trim() || undefined;
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
+      this.markProcessedMessage(incomingMessageId);
       this.latestAssistantText = text;
       this.state.pendingDelivery = this.buildAssistantDelivery({
         text,
@@ -578,7 +598,6 @@ export class ChatController {
       await this.clearWorkingReaction().catch(() => {});
       delete this.state.processing;
       this.saveState();
-      this.markProcessedMessage(incomingMessageId);
     }
   }
   private async runSteerNow(input: {
@@ -615,13 +634,13 @@ export class ChatController {
         nextIncomingMessageId || this.state.processing.incomingMessageId;
       this.saveState();
     }
-    this.markProcessedMessage(input.incomingMessageId);
     await this.pollTyping().catch(() => {});
     await this.session.prompt(text, {
       images,
       source: "chat-bridge",
       streamingBehavior: "steer",
     });
+    this.markProcessedMessage(input.incomingMessageId);
     return {
       steered: true,
       sessionId: this.currentSessionId() || undefined,
@@ -689,7 +708,6 @@ export class ChatController {
       workingNoticeSent: false,
     };
     this.saveState();
-    this.markProcessedMessage(input.incomingMessageId);
     await this.pollTyping().catch(() => {});
     const replyToMessageId = safeString(
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
