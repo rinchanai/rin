@@ -14,10 +14,6 @@ import {
   safeString,
 } from "./chat-helpers.js";
 import {
-  formatChatSessionName,
-  normalizeSessionNameDetail,
-} from "../session/names.js";
-import {
   buildPromptText,
   clearWorkingReaction as clearWorkingReactionTick,
   restorePromptParts,
@@ -390,34 +386,6 @@ export class ChatController {
   private shouldAffectChatBinding() {
     return this.affectChatBinding;
   }
-  private currentSessionName() {
-    return safeString(
-      this.session?.sessionManager?.getSessionName?.() || "",
-    ).trim();
-  }
-  private firstUserSessionLabel() {
-    const messages = Array.isArray(this.session?.messages)
-      ? this.session.messages
-      : [];
-    const firstUser = messages.find((message: any) => message?.role === "user");
-    return normalizeSessionNameDetail(
-      extractTextFromContent((firstUser as any)?.content),
-      120,
-    );
-  }
-  private async ensureChatSessionDisplayName(fallbackText?: string) {
-    if (!this.shouldAffectChatBinding()) return;
-    if (!this.session?.setSessionName) return;
-    const currentName = this.currentSessionName();
-    if (currentName && currentName !== this.chatKey) return;
-    const detail =
-      this.firstUserSessionLabel() ||
-      normalizeSessionNameDetail(fallbackText || "", 120);
-    if (!detail) return;
-    const nextName = formatChatSessionName(this.chatKey, detail);
-    if (!nextName || nextName === currentName) return;
-    await this.session.setSessionName(nextName);
-  }
   currentSessionId() {
     return safeString(
       this.session?.sessionManager?.getSessionId?.() || "",
@@ -567,7 +535,6 @@ export class ChatController {
             this.state.piSessionFile ||
             "",
         ).trim() || undefined;
-      await this.ensureChatSessionDisplayName(commandLine);
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
       this.latestAssistantText = text;
@@ -744,7 +711,6 @@ export class ChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    await this.ensureChatSessionDisplayName(input.text);
     this.state.pendingDelivery = this.buildAssistantDelivery({
       text: this.latestAssistantText,
       replyToMessageId: replyToMessageId || undefined,

@@ -82,7 +82,7 @@ test("chat controller uses RpcInteractiveSession session bootstrap before first 
   await controller.runCommand("/session");
 
   assert.deepEqual(calls, ["ensureSessionReady", "runCommand:/session"]);
-  assert.deepEqual(namedSessions, ["telegram/1:2 — /session"]);
+  assert.deepEqual(namedSessions, []);
   assert.deepEqual(deliveries, ["Session stats"]);
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
@@ -248,7 +248,7 @@ test("chat controller uses RpcInteractiveSession prompt path for chat turns", as
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
 });
 
-test("chat controller upgrades bare chatKey names to chatKey plus readable text", async () => {
+test("chat controller does not rename sessions based on chatKey", async () => {
   const controller = await createController("telegram/9:11");
   const namedSessions = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -288,7 +288,7 @@ test("chat controller upgrades bare chatKey names to chatKey plus readable text"
 
   await controller.runTurn({ text: "hello world from chat", attachments: [] }, "prompt");
 
-  assert.deepEqual(namedSessions, ["telegram/9:11 — hello world from chat"]);
+  assert.deepEqual(namedSessions, []);
 });
 
 test("chat controller resolves final output from session lifecycle for prompt turns", async () => {
