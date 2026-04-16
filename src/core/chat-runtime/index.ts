@@ -5,6 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import WebSocket from "ws";
 
+import { enqueueChatInboxItem } from "../chat/inbox.js";
+import { composeChatKey } from "../chat/support.js";
 import {
   DiscordAdapter,
   LarkAdapter,
@@ -262,6 +264,42 @@ function emitBotStatus(app: ChatRuntimeApp, bot: any, status: number) {
 export class ChatRuntimeApp extends EventEmitter {
   bots: any[] = [];
   private readonly adapters = new Set<any>();
+  readonly agentDir?: string;
+
+  constructor(agentDir?: string) {
+    super();
+    this.agentDir = agentDir ? path.resolve(agentDir) : undefined;
+  }
+
+  private persistInboundSession(session: any) {
+    const nextAgentDir = safeString(this.agentDir).trim();
+    const platform = safeString(session?.platform).trim();
+    const botId = safeString(session?.selfId || session?.bot?.selfId).trim();
+    const channelId = safeString(session?.channelId).trim();
+    const messageId = safeString(session?.messageId).trim();
+    if (!nextAgentDir || !platform || !botId || !channelId || !messageId) {
+      return;
+    }
+    const chatKey = composeChatKey(platform, channelId, botId);
+    if (!chatKey) return;
+    const elements = Array.isArray(session?.elements) ? session.elements : [];
+    enqueueChatInboxItem(nextAgentDir, {
+      chatKey,
+      messageId,
+      session,
+      elements,
+    });
+    if (session && typeof session === "object") {
+      session.__rinInboundQueued = true;
+    }
+  }
+
+  emit(eventName: string | symbol, ...args: any[]): boolean {
+    if (eventName === "message" && args.length > 0) {
+      this.persistInboundSession(args[0]);
+    }
+    return super.emit(eventName, ...args);
+  }
 
   register(adapter: any, bot: any) {
     if (bot) this.bots.push(bot);
@@ -291,6 +329,7 @@ class TelegramAdapter {
   private readonly config: Record<string, any>;
   private readonly logger: any;
   private readonly cacheDir: string;
+  private readonly cursorPath: string;
   private pollAbort: AbortController | null = null;
   private running = false;
   private pollPromise: Promise<void> | null = null;
@@ -307,6 +346,10 @@ class TelegramAdapter {
     this.config = config;
     this.logger = createLogger("chat-runtime:telegram", logger);
     this.cacheDir = path.join(dataDir, "chat-runtime-cache", "telegram");
+    const cursorKey =
+      safeString(config?.token).trim().split(":")[0]?.replace(/[^A-Za-z0-9._-]+/g, "_") ||
+      "default";
+    this.cursorPath = path.join(dataDir, "chat-runtime-state", "telegram", cursorKey, "cursor.json");
     ensureDir(this.cacheDir);
     this.bot = {
       platform: "telegram",
@@ -380,7 +423,29 @@ class TelegramAdapter {
     return `https://api.telegram.org/file/bot${safeString(this.config?.token).trim()}/${filePath}`;
   }
 
+  private loadCursor() {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.cursorPath, "utf8"));
+      const nextOffset = Number(raw?.nextOffset);
+      if (Number.isFinite(nextOffset) && nextOffset > 0) {
+        this.nextOffset = nextOffset;
+      }
+    } catch {}
+  }
+
+  private saveCursor() {
+    try {
+      ensureDir(path.dirname(this.cursorPath));
+      fs.writeFileSync(
+        this.cursorPath,
+        `${JSON.stringify({ nextOffset: this.nextOffset }, null, 2)}\n`,
+        "utf8",
+      );
+    } catch {}
+  }
+
   private async bootstrap() {
+    this.loadCursor();
     try {
       await this.callApi("deleteWebhook", { drop_pending_updates: false });
     } catch {}
@@ -454,8 +519,11 @@ class TelegramAdapter {
         );
         for (const update of Array.isArray(updates) ? updates : []) {
           const updateId = Number(update?.update_id);
-          if (Number.isFinite(updateId)) this.nextOffset = updateId + 1;
           await this.handleUpdate(update);
+          if (Number.isFinite(updateId)) {
+            this.nextOffset = Math.max(this.nextOffset, updateId + 1);
+            this.saveCursor();
+          }
         }
       } catch (error: any) {
         if (!this.running) break;
@@ -1438,8 +1506,8 @@ class OneBotAdapter {
   }
 }
 
-export function createChatRuntimeApp() {
-  return new ChatRuntimeApp();
+export function createChatRuntimeApp(agentDir?: string) {
+  return new ChatRuntimeApp(agentDir);
 }
 
 export function createChatRuntimeH() {

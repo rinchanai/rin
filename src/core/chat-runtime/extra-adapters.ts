@@ -698,9 +698,6 @@ export class SlackAdapter {
 
   private async handleSlackEvent(envelope: any) {
     const ack = envelope?.ack;
-    if (typeof ack === "function") {
-      await ack();
-    }
     if (safeString(envelope?.type).trim() !== "events_api") return;
     const eventType = safeString(envelope?.body?.event?.type || "").trim();
     if (eventType !== "message") return;
@@ -808,6 +805,9 @@ export class SlackAdapter {
         ? { messageId: safeString(event.thread_ts).trim() }
         : undefined,
     });
+    if (typeof ack === "function") {
+      await ack();
+    }
   }
 }
 
