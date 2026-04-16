@@ -149,6 +149,8 @@ test("chat controller polls typing and rotating reactions while a chat turn is s
     startedAt: Date.now(),
     incomingMessageId: "m1",
   };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
   assert.equal(controller.hasActiveTurn(), true);
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
@@ -186,6 +188,8 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
     incomingMessageId: "m1",
     workingNoticeSent: false,
   };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
 
   assert.equal(await controller.pollTyping(), true);
   assert.equal(await controller.pollTyping(), false);
@@ -544,6 +548,19 @@ test("chat controller rejects the owned turn on connection loss", async () => {
   assert.equal(controller.liveTurn, null);
 });
 
+test("chat controller rejects the owned turn on worker exit", async () => {
+  const controller = await createController("telegram/1:2");
+  controller.session = { isStreaming: true };
+  const liveTurn = controller.startLiveTurn("tag-worker-exit");
+  controller.handleClientEvent({
+    type: "ui",
+    name: "worker_exit",
+    payload: { code: 9, signal: null },
+  });
+  await assert.rejects(liveTurn.promise, /rin_worker_exit:code=9:signal=null/);
+  assert.equal(controller.liveTurn, null);
+});
+
 test("chat controller steers an active chat turn instead of queueing a replacement", async () => {
   const controller = await createController("telegram/1:2");
   const calls = [];
@@ -564,11 +581,8 @@ test("chat controller steers an active chat turn instead of queueing a replaceme
     startedAt: Date.now(),
     replyToMessageId: "old",
   };
-  controller.liveTurn = {
-    promise: new Promise(() => {}),
-    resolve() {},
-    reject() {},
-  };
+  const liveTurn = controller.startLiveTurn("tag-steer");
+  liveTurn.promise.catch(() => {});
   controller.commitPendingDelivery = async function (clearProcessing = false) {
     calls.push("deliver");
     delete this.state.pendingDelivery;
@@ -612,8 +626,9 @@ test("chat controller still steers when the attached session is streaming withou
     replyToMessageId: "old",
   };
   controller.liveTurn = null;
+  controller.lastTurnPulseAt = Date.now();
 
-  assert.equal(controller.hasActiveTurn(), true);
+  assert.equal(controller.hasActiveTurn(), false);
 
   const result = await controller.runTurn(
     {

@@ -146,6 +146,7 @@ function assertMutableTask(task: CronTaskRecord | undefined) {
 
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>();
+  private activeExecutions = new Map<string, { startedAt: number }>();
   private timer: NodeJS.Timeout | null = null;
   private dispatching = false;
 
@@ -174,14 +175,14 @@ export class CronScheduler {
     return Array.from(this.tasks.values())
       .filter((task) => options.includeBuiltIn || !task.builtIn)
       .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
-      .map((task) => JSON.parse(JSON.stringify(task)));
+      .map((task) => JSON.parse(JSON.stringify(this.snapshotTask(task))));
   }
 
   getTask(taskId: string, options: { includeBuiltIn?: boolean } = {}) {
     const task = this.tasks.get(taskId);
     if (!task) return undefined;
     if (!options.includeBuiltIn && task.builtIn) return undefined;
-    return JSON.parse(JSON.stringify(task));
+    return JSON.parse(JSON.stringify(this.snapshotTask(task)));
   }
 
   upsertTask(
@@ -429,10 +430,17 @@ export class CronScheduler {
     this.save();
   }
 
+  private snapshotTask(task: CronTaskRecord) {
+    return {
+      ...task,
+      running: this.activeExecutions.has(task.id),
+    };
+  }
+
   private save() {
     writeJsonAtomic(
       cronTasksPath(this.options.agentDir),
-      Array.from(this.tasks.values()),
+      Array.from(this.tasks.values()).map((task) => this.snapshotTask(task)),
     );
   }
 
@@ -451,7 +459,7 @@ export class CronScheduler {
         .filter(
           (task) =>
             task.enabled &&
-            !task.running &&
+            !this.activeExecutions.has(task.id) &&
             !task.completedAt &&
             task.nextRunAt &&
             Date.parse(task.nextRunAt) <= now,
@@ -462,6 +470,7 @@ export class CronScheduler {
             Date.parse(String(b.nextRunAt || b.createdAt)),
         );
       for (const task of due) {
+        this.activeExecutions.set(task.id, { startedAt: Date.now() });
         task.running = true;
         task.lastStartedAt = nowIso();
         task.runCount += 1;
@@ -483,10 +492,15 @@ export class CronScheduler {
   }
 
   private async executeTask(task: CronTaskRecord) {
-    await executeCronTask(task, this.options);
-    if (!task.completedAt && task.trigger.kind !== "interval") {
-      task.nextRunAt = computeNextRunAt(task, Date.now());
+    try {
+      await executeCronTask(task, this.options);
+      if (!task.completedAt && task.trigger.kind !== "interval") {
+        task.nextRunAt = computeNextRunAt(task, Date.now());
+      }
+    } finally {
+      this.activeExecutions.delete(task.id);
+      task.running = false;
+      this.save();
     }
-    this.save();
   }
 }
