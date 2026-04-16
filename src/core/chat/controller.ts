@@ -14,6 +14,10 @@ import {
   safeString,
 } from "./chat-helpers.js";
 import {
+  formatChatSessionName,
+  normalizeSessionNameDetail,
+} from "../session/names.js";
+import {
   buildPromptText,
   clearWorkingReaction as clearWorkingReactionTick,
   restorePromptParts,
@@ -106,11 +110,6 @@ export class ChatController {
     const wantedSessionFile = this.getRecoverableSessionFile();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
-      if (
-        this.shouldAffectChatBinding() &&
-        !session.sessionManager.getSessionName?.()
-      )
-        await session.setSessionName(this.chatKey);
     }
   }
 
@@ -391,6 +390,34 @@ export class ChatController {
   private shouldAffectChatBinding() {
     return this.affectChatBinding;
   }
+  private currentSessionName() {
+    return safeString(
+      this.session?.sessionManager?.getSessionName?.() || "",
+    ).trim();
+  }
+  private firstUserSessionLabel() {
+    const messages = Array.isArray(this.session?.messages)
+      ? this.session.messages
+      : [];
+    const firstUser = messages.find((message: any) => message?.role === "user");
+    return normalizeSessionNameDetail(
+      extractTextFromContent(firstUser?.content),
+      120,
+    );
+  }
+  private async ensureChatSessionDisplayName(fallbackText?: string) {
+    if (!this.shouldAffectChatBinding()) return;
+    if (!this.session?.setSessionName) return;
+    const currentName = this.currentSessionName();
+    if (currentName && currentName !== this.chatKey) return;
+    const detail =
+      this.firstUserSessionLabel() ||
+      normalizeSessionNameDetail(fallbackText || "", 120);
+    if (!detail) return;
+    const nextName = formatChatSessionName(this.chatKey, detail);
+    if (!nextName || nextName === currentName) return;
+    await this.session.setSessionName(nextName);
+  }
   currentSessionId() {
     return safeString(
       this.session?.sessionManager?.getSessionId?.() || "",
@@ -486,11 +513,6 @@ export class ChatController {
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
     if (before !== wanted) await this.session.switchSession(wanted);
-    if (
-      this.shouldAffectChatBinding() &&
-      !this.session.sessionManager.getSessionName?.()
-    )
-      await this.session.setSessionName(this.chatKey);
     this.state.piSessionFile =
       safeString(
         this.session.sessionManager.getSessionFile?.() ||
@@ -525,11 +547,6 @@ export class ChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
-    if (
-      this.shouldAffectChatBinding() &&
-      !this.session.sessionManager.getSessionName?.()
-    )
-      await this.session.setSessionName(this.chatKey);
     this.saveState();
     return result;
   }
@@ -550,11 +567,7 @@ export class ChatController {
             this.state.piSessionFile ||
             "",
         ).trim() || undefined;
-      if (
-        this.shouldAffectChatBinding() &&
-        !this.session.sessionManager.getSessionName?.()
-      )
-        await this.session.setSessionName(this.chatKey);
+      await this.ensureChatSessionDisplayName(commandLine);
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
       this.latestAssistantText = text;
@@ -731,6 +744,7 @@ export class ChatController {
           this.state.piSessionFile ||
           "",
       ).trim() || undefined;
+    await this.ensureChatSessionDisplayName(input.text);
     this.state.pendingDelivery = this.buildAssistantDelivery({
       text: this.latestAssistantText,
       replyToMessageId: replyToMessageId || undefined,

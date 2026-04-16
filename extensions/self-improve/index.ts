@@ -4,9 +4,9 @@ import { Type } from "@sinclair/typebox";
 
 import {
   enqueueMemoryMaintenanceJob,
+  enqueueSessionSummaryJob,
   spawnQueuedMemoryWorker,
 } from "./async-jobs.js";
-import { createSelfImproveReviewSnapshot } from "./maintainer.js";
 import {
   buildOnboardingPrompt,
   compileSelfImprovePrompt,
@@ -76,16 +76,30 @@ async function processSelfImproveReview(
   if (!sessionFile || !agentDir) {
     return;
   }
-  const snapshotSessionFile =
-    (await createSelfImproveReviewSnapshot({
-      sessionFile,
-      leafId: String(opts.leafId || "").trim(),
-    })) || sessionFile;
   await enqueueMemoryMaintenanceJob({
     agentDir,
-    sessionFile: snapshotSessionFile,
+    sessionFile,
+    leafId: String(opts.leafId || "").trim() || undefined,
     trigger: opts.trigger,
     snapshotKey: opts.snapshotKey,
+  });
+  spawnQueuedMemoryWorker(agentDir);
+}
+
+async function processSessionSummaryUpdate(
+  ctx: any,
+  opts: { sessionFile?: string; leafId?: string; trigger: string },
+) {
+  const sessionFile = String(opts.sessionFile || "").trim();
+  const agentDir = String(ctx?.agentDir || "").trim();
+  if (!sessionFile || !agentDir) {
+    return;
+  }
+  await enqueueSessionSummaryJob({
+    agentDir,
+    sessionFile,
+    leafId: String(opts.leafId || "").trim() || undefined,
+    trigger: opts.trigger,
   });
   spawnQueuedMemoryWorker(agentDir);
 }
@@ -325,6 +339,11 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       sessionFile: meta.sessionFile,
       leafId: meta.leafId,
       trigger: "extension:session_shutdown_self_improve_review",
+    });
+    await processSessionSummaryUpdate(ctx, {
+      sessionFile: meta.sessionFile,
+      leafId: meta.leafId,
+      trigger: "extension:session_shutdown_session_summary",
     });
     if (meta.sessionId) reviewStateBySession.delete(meta.sessionId);
   });

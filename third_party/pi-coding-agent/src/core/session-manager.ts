@@ -1312,8 +1312,15 @@ export class SessionManager {
 	 * @param sourcePath Path to the source session file
 	 * @param targetCwd Target working directory (where the new session will be stored)
 	 * @param sessionDir Optional session directory. If omitted, uses default for targetCwd.
+	 * @param options.persist When false, create an in-memory fork that is not written to disk.
+	 * @param options.leafId When provided, fork only the path from root to that leaf.
 	 */
-	static forkFrom(sourcePath: string, targetCwd: string, sessionDir?: string): SessionManager {
+	static forkFrom(
+		sourcePath: string,
+		targetCwd: string,
+		sessionDir?: string,
+		options: { persist?: boolean; leafId?: string } = {},
+	): SessionManager {
 		const sourceEntries = loadEntriesFromFile(sourcePath);
 		if (sourceEntries.length === 0) {
 			throw new Error(`Cannot fork: source session file is empty or invalid: ${sourcePath}`);
@@ -1324,18 +1331,11 @@ export class SessionManager {
 			throw new Error(`Cannot fork: source session has no header: ${sourcePath}`);
 		}
 
+		const persist = options.persist !== false;
+		const leafId = options.leafId?.trim() || undefined;
 		const dir = sessionDir ?? getDefaultSessionDir(targetCwd);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
-
-		// Create new session file with new ID but forked content
 		const newSessionId = createSessionId();
 		const timestamp = new Date().toISOString();
-		const fileTimestamp = timestamp.replace(/[:.]/g, "-");
-		const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
-
-		// Write new header pointing to source as parent, with updated cwd
 		const newHeader: SessionHeader = {
 			type: "session",
 			version: CURRENT_SESSION_VERSION,
@@ -1344,16 +1344,68 @@ export class SessionManager {
 			cwd: targetCwd,
 			parentSession: sourcePath,
 		};
-		appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
 
-		// Copy all non-header entries from source
-		for (const entry of sourceEntries) {
-			if (entry.type !== "session") {
-				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+		let forkEntries: SessionEntry[];
+		if (leafId) {
+			const sourceManager = SessionManager.open(sourcePath, resolve(sourcePath, ".."));
+			const branch = sourceManager.getBranch(leafId);
+			if (branch.length === 0) {
+				throw new Error(`Cannot fork: leaf ${leafId} not found in ${sourcePath}`);
 			}
+
+			const pathWithoutLabels = branch.filter((entry) => entry.type !== "label");
+			const pathEntryIds = new Set(pathWithoutLabels.map((entry) => entry.id));
+			const labelsToWrite: Array<{ targetId: string; label: string; timestamp: string }> = [];
+			for (const [targetId, label] of sourceManager.labelsById) {
+				if (pathEntryIds.has(targetId)) {
+					labelsToWrite.push({
+						targetId,
+						label,
+						timestamp: sourceManager.labelTimestampsById.get(targetId)!,
+					});
+				}
+			}
+
+			let parentId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
+			const labelEntries: LabelEntry[] = [];
+			for (const { targetId, label, timestamp: labelTimestamp } of labelsToWrite) {
+				const labelEntry: LabelEntry = {
+					type: "label",
+					id: generateId(new Set([...pathEntryIds, ...labelEntries.map((entry) => entry.id)])),
+					parentId,
+					timestamp: labelTimestamp,
+					targetId,
+					label,
+				};
+				labelEntries.push(labelEntry);
+				parentId = labelEntry.id;
+			}
+
+			forkEntries = [...pathWithoutLabels, ...labelEntries];
+		} else {
+			forkEntries = sourceEntries.filter((entry): entry is SessionEntry => entry.type !== "session");
 		}
 
-		return new SessionManager(targetCwd, dir, newSessionFile, true);
+		if (persist) {
+			if (!existsSync(dir)) {
+				mkdirSync(dir, { recursive: true });
+			}
+			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
+			const newSessionFile = join(dir, `${fileTimestamp}_${newSessionId}.jsonl`);
+			appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
+			for (const entry of forkEntries) {
+				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+			}
+			return new SessionManager(targetCwd, dir, newSessionFile, true);
+		}
+
+		const manager = new SessionManager(targetCwd, dir, undefined, false);
+		manager.fileEntries = [newHeader, ...forkEntries];
+		manager.sessionId = newSessionId;
+		manager.sessionFile = undefined;
+		manager.flushed = false;
+		manager._buildIndex();
+		return manager;
 	}
 
 	/**

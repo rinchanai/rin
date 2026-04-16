@@ -4,15 +4,20 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { maintainMemory } from "./maintainer.js";
+import {
+  maintainMemory,
+  maintainSessionSummary,
+} from "./maintainer.js";
 import { safeString } from "./core/utils.js";
 
-export type MemoryMaintenanceJob = {
+export type MaintenanceJob = {
   id: string;
+  kind: "self_improve_review" | "session_summary";
   createdAt: string;
   updatedAt: string;
   agentDir: string;
   sessionFile: string;
+  leafId?: string;
   trigger: string;
   snapshotKey?: string;
   additionalExtensionPaths?: string[];
@@ -44,7 +49,7 @@ async function writeJsonAtomic(filePath: string, value: unknown) {
   await fs.rename(tempPath, filePath);
 }
 
-async function loadQueue(agentDir: string): Promise<MemoryMaintenanceJob[]> {
+async function loadQueue(agentDir: string): Promise<MaintenanceJob[]> {
   try {
     const raw = await fs.readFile(queuePath(agentDir), "utf8");
     const parsed = JSON.parse(raw);
@@ -56,16 +61,14 @@ async function loadQueue(agentDir: string): Promise<MemoryMaintenanceJob[]> {
   }
 }
 
-async function saveQueue(agentDir: string, jobs: MemoryMaintenanceJob[]) {
+async function saveQueue(agentDir: string, jobs: MaintenanceJob[]) {
   await ensureStateDir(agentDir);
   await writeJsonAtomic(queuePath(agentDir), jobs);
 }
 
-function sameJob(
-  a: Partial<MemoryMaintenanceJob>,
-  b: Partial<MemoryMaintenanceJob>,
-) {
+function sameJob(a: Partial<MaintenanceJob>, b: Partial<MaintenanceJob>) {
   const sameBase =
+    safeString(a.kind).trim() === safeString(b.kind).trim() &&
     safeString(a.agentDir).trim() === safeString(b.agentDir).trim() &&
     safeString(a.sessionFile).trim() === safeString(b.sessionFile).trim();
   if (!sameBase) return false;
@@ -77,25 +80,32 @@ function sameJob(
   return true;
 }
 
-export async function enqueueMemoryMaintenanceJob(
-  input: Omit<MemoryMaintenanceJob, "id" | "createdAt" | "updatedAt">,
+async function enqueueMaintenanceJob(
+  input: Omit<MaintenanceJob, "id" | "createdAt" | "updatedAt">,
 ) {
   const agentDir = path.resolve(safeString(input.agentDir).trim());
   const sessionFile = path.resolve(safeString(input.sessionFile).trim());
+  const kind =
+    safeString(input.kind).trim() === "session_summary"
+      ? "session_summary"
+      : "self_improve_review";
   const trigger =
-    safeString(input.trigger).trim() || "extension:memory_maintainer";
+    safeString(input.trigger).trim() || `extension:${kind}`;
   const snapshotKey = safeString(input.snapshotKey).trim();
+  const leafId = safeString(input.leafId).trim();
   if (!agentDir || !sessionFile)
-    throw new Error("memory_job_invalid_input");
+    throw new Error("maintenance_job_invalid_input");
 
   const jobs = await loadQueue(agentDir);
   const existing = jobs.find((job) =>
-    sameJob(job, { agentDir, sessionFile, snapshotKey }),
+    sameJob(job, { kind, agentDir, sessionFile, snapshotKey }),
   );
   const updatedAt = nowIso();
   if (existing) {
     existing.updatedAt = updatedAt;
+    existing.kind = kind;
     existing.trigger = trigger;
+    existing.leafId = leafId || undefined;
     existing.snapshotKey = snapshotKey || undefined;
     existing.additionalExtensionPaths = Array.isArray(
       input.additionalExtensionPaths,
@@ -106,11 +116,13 @@ export async function enqueueMemoryMaintenanceJob(
       : undefined;
   } else {
     jobs.push({
-      id: `memory_job_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      id: `maintenance_job_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      kind,
       createdAt: updatedAt,
       updatedAt,
       agentDir,
       sessionFile,
+      leafId: leafId || undefined,
       trigger,
       snapshotKey: snapshotKey || undefined,
       additionalExtensionPaths: Array.isArray(input.additionalExtensionPaths)
@@ -121,6 +133,24 @@ export async function enqueueMemoryMaintenanceJob(
     });
   }
   await saveQueue(agentDir, jobs);
+}
+
+export async function enqueueMemoryMaintenanceJob(
+  input: Omit<MaintenanceJob, "id" | "createdAt" | "updatedAt" | "kind">,
+) {
+  await enqueueMaintenanceJob({
+    ...input,
+    kind: "self_improve_review",
+  });
+}
+
+export async function enqueueSessionSummaryJob(
+  input: Omit<MaintenanceJob, "id" | "createdAt" | "updatedAt" | "kind">,
+) {
+  await enqueueMaintenanceJob({
+    ...input,
+    kind: "session_summary",
+  });
 }
 
 function processExists(pid: number) {
@@ -175,25 +205,37 @@ async function releaseWorkerLock(
   } catch {}
 }
 
-async function removeMatchingJobs(
-  agentDir: string,
-  target: MemoryMaintenanceJob,
-) {
+async function removeMatchingJobs(agentDir: string, target: MaintenanceJob) {
   const jobs = await loadQueue(agentDir);
   const remaining = jobs.filter((job) => !sameJob(job, target));
   await saveQueue(agentDir, remaining);
 }
 
-async function processJob(job: MemoryMaintenanceJob) {
+async function processJob(job: MaintenanceJob) {
   const agentDir = path.resolve(safeString(job.agentDir).trim());
   const sessionFile = path.resolve(safeString(job.sessionFile).trim());
+  const leafId = safeString(job.leafId).trim() || undefined;
   if (!agentDir || !sessionFile) {
-    throw new Error("memory_job_invalid_payload");
+    throw new Error("maintenance_job_invalid_payload");
+  }
+  if (job.kind === "session_summary") {
+    await maintainSessionSummary(
+      {} as any,
+      {
+        agentDir,
+        sessionFile,
+        leafId,
+        trigger: job.trigger,
+      },
+    );
+    return;
   }
   await maintainMemory(
     {} as any,
     {
+      agentDir,
       sessionFile,
+      leafId,
       trigger: job.trigger,
       additionalExtensionPaths: job.additionalExtensionPaths,
     },

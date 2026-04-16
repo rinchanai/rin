@@ -299,7 +299,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		streamFn: async (model, context, options) => {
 			const auth = await modelRegistry.getApiKeyAndHeaders(model);
 			if (!auth.ok) {
-				throw new Error(auth.error);
+				throw new Error("error" in auth ? auth.error : "Authentication failed");
 			}
 			return streamSimple(model, context, {
 				...options,
