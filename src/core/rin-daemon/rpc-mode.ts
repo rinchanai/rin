@@ -10,6 +10,8 @@ import {
   writeJsonLine,
 } from "./worker-helpers.js";
 
+const TURN_HEARTBEAT_INTERVAL_MS = 2_000;
+
 function interruptedToolResultMessage(toolCall: any) {
   const result = createInterruptedToolResultPayload();
   return {
@@ -116,6 +118,15 @@ export async function runCustomRpcMode(
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
     const promise = (async () => {
       emitTurnEvent("start", requestTag);
+      const heartbeatTimer = requestTag
+        ? setInterval(() => {
+            const session = getSession();
+            emitTurnEvent("heartbeat", requestTag, {
+              sessionFile: session.sessionFile,
+              sessionId: session.sessionId,
+            });
+          }, TURN_HEARTBEAT_INTERVAL_MS)
+        : null;
       try {
         await task();
         const session = getSession();
@@ -131,6 +142,7 @@ export async function runCustomRpcMode(
         });
         throw error;
       } finally {
+        if (heartbeatTimer) clearInterval(heartbeatTimer);
         if (activeTurnPromise === promise) activeTurnPromise = null;
       }
     })();

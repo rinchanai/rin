@@ -22,6 +22,9 @@ import {
   sendTyping,
 } from "./transport.js";
 
+const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 15_000;
+const TURN_RECOVERY_COOLDOWN_MS = 5_000;
+
 function extractFinalTextFromTurnResult(result: any) {
   const messages = Array.isArray(result?.messages) ? result.messages : [];
   for (const message of messages) {
@@ -44,11 +47,14 @@ export class ChatController {
   session: RpcInteractiveSession | null = null;
   turnQueue: Promise<void> = Promise.resolve();
   liveTurn: {
+    requestTag?: string;
     promise: Promise<any>;
     resolve: (value: any) => void;
     reject: (error: Error) => void;
   } | null = null;
   latestAssistantText = "";
+  lastTurnPulseAt = 0;
+  lastRecoveryAttemptAt = 0;
   logger: any;
   h: any;
   deliveryEnabled: boolean;
@@ -116,14 +122,56 @@ export class ChatController {
     this.session = null;
   }
 
+  private createTurnRequestTag() {
+    return `chat_turn_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private markTurnPulse() {
+    this.lastTurnPulseAt = Date.now();
+  }
+
+  private clearTurnPulse() {
+    this.lastTurnPulseAt = 0;
+  }
+
+  private matchesLiveTurnRequestTag(requestTag: unknown) {
+    const current = safeString(this.liveTurn?.requestTag || "").trim();
+    const incoming = safeString(requestTag).trim();
+    if (!current || !incoming) return true;
+    return current === incoming;
+  }
+
+  private isTurnStale() {
+    if (!this.liveTurn) return false;
+    if (!this.lastTurnPulseAt) return false;
+    return Date.now() - this.lastTurnPulseAt > TURN_HEARTBEAT_INTERVAL_GRACE_MS;
+  }
+
   handleClientEvent(event: any) {
     if (event?.type !== "ui") return;
     if (event.name === "connection_lost") {
       this.failLiveTurn(new Error("rin_disconnected:rpc_turn"));
       return;
     }
+    if (event.name === "worker_exit") {
+      const payload: any = event.payload || {};
+      this.failLiveTurn(
+        new Error(
+          `rin_worker_exit:code=${String(payload.code ?? "null")}:signal=${String(payload.signal ?? "null")}`,
+        ),
+      );
+      return;
+    }
     const payload: any = event.payload;
     if (payload?.type !== "rpc_turn_event") return;
+    if (!this.matchesLiveTurnRequestTag(payload.requestTag)) return;
+    if (
+      payload.event === "start" ||
+      payload.event === "heartbeat" ||
+      payload.event === "complete"
+    ) {
+      this.markTurnPulse();
+    }
     if (payload.event === "error") {
       this.failLiveTurn(new Error(String(payload.error || "rpc_turn_failed")));
     }
@@ -133,8 +181,10 @@ export class ChatController {
     switch (event?.type) {
       case "agent_start":
         this.latestAssistantText = "";
+        this.markTurnPulse();
         break;
       case "agent_end":
+        this.markTurnPulse();
         void this.completeLiveTurn().catch((error) => {
           this.failLiveTurn(
             error instanceof Error
@@ -149,6 +199,7 @@ export class ChatController {
       case "tool_execution_start":
       case "compaction_start":
       case "compaction_end":
+        this.markTurnPulse();
         break;
     }
   }
@@ -171,9 +222,7 @@ export class ChatController {
     return "";
   }
   hasActiveTurn() {
-    return Boolean(
-      this.state.processing || this.liveTurn || this.session?.isStreaming,
-    );
+    return Boolean(this.liveTurn) && !this.isTurnStale();
   }
   private currentIncomingMessageId() {
     return safeString(this.state.processing?.incomingMessageId || "").trim();
@@ -277,31 +326,36 @@ export class ChatController {
       release();
     }
   }
-  private startLiveTurn() {
+  private startLiveTurn(requestTag?: string) {
     if (this.liveTurn) throw new Error("chat_turn_already_running");
     let resolve!: (value: any) => void;
     let reject!: (error: Error) => void;
     const liveTurn = {
+      requestTag,
       promise: new Promise<any>((nextResolve, nextReject) => {
         resolve = nextResolve;
         reject = nextReject;
       }),
       resolve: (value: any) => {
         if (this.liveTurn === liveTurn) this.liveTurn = null;
+        this.clearTurnPulse();
         resolve(value);
       },
       reject: (error: Error) => {
         if (this.liveTurn === liveTurn) this.liveTurn = null;
+        this.clearTurnPulse();
         reject(error);
       },
     };
     this.liveTurn = liveTurn;
+    this.markTurnPulse();
     return liveTurn;
   }
   private failLiveTurn(error: Error) {
     if (!this.liveTurn) return;
     const liveTurn = this.liveTurn;
     this.liveTurn = null;
+    this.clearTurnPulse();
     liveTurn.reject(error);
   }
   private async refreshSessionMessages() {
@@ -580,6 +634,24 @@ export class ChatController {
       sessionFile: this.currentSessionFile(),
     };
   }
+  async housekeep() {
+    if (this.isTurnStale()) {
+      this.logger.warn(
+        `chat turn heartbeat stale chatKey=${this.chatKey} ageMs=${Date.now() - this.lastTurnPulseAt}`,
+      );
+      this.failLiveTurn(new Error("chat_turn_stale"));
+    }
+    if (!this.hasActiveTurn()) {
+      await this.clearWorkingReaction().catch(() => {});
+    }
+    if (this.hasActiveTurn()) return;
+    if (!this.state.processing && !this.state.pendingDelivery) return;
+    if (Date.now() - this.lastRecoveryAttemptAt < TURN_RECOVERY_COOLDOWN_MS) {
+      return;
+    }
+    this.lastRecoveryAttemptAt = Date.now();
+    await this.recoverIfNeeded();
+  }
   private async runTurnNow(
     input: {
       text: string;
@@ -624,12 +696,14 @@ export class ChatController {
       this.state.processing?.replyToMessageId || input.replyToMessageId || "",
     ).trim();
     this.latestAssistantText = "";
-    const liveTurn = this.startLiveTurn();
+    const requestTag = this.createTurnRequestTag();
+    const liveTurn = this.startLiveTurn(requestTag);
     try {
       await this.session.prompt(text, {
         images,
         source: "chat-bridge",
         streamingBehavior: mode === "steer" ? "steer" : undefined,
+        requestTag,
       });
     } catch (error: any) {
       this.failLiveTurn(
@@ -747,11 +821,13 @@ export class ChatController {
       }
       if (shouldResumeInternally) {
         this.latestAssistantText = "";
-        const liveTurn = this.startLiveTurn();
+        const requestTag = this.createTurnRequestTag();
+        const liveTurn = this.startLiveTurn(requestTag);
         await this.pollTyping().catch(() => {});
         try {
           await this.session.resumeInterruptedTurn({
             source: "chat-bridge",
+            requestTag,
           });
         } catch (error: any) {
           this.failLiveTurn(

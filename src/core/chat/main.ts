@@ -224,9 +224,19 @@ export async function startChatBridge(
   const detachedControllers = new Map<string, ChatController>();
   const typingPollTimer = setInterval(() => {
     for (const controller of controllers.values()) {
+      void controller.housekeep().catch((error: any) => {
+        logger.warn(
+          `chat housekeeping failed chatKey=${controller.chatKey} err=${safeString(error?.message || error)}`,
+        );
+      });
       void controller.pollTyping().catch(() => {});
     }
     for (const controller of detachedControllers.values()) {
+      void controller.housekeep().catch((error: any) => {
+        logger.warn(
+          `chat housekeeping failed chatKey=${controller.chatKey} err=${safeString(error?.message || error)}`,
+        );
+      });
       void controller.pollTyping().catch(() => {});
     }
   }, TYPING_POLL_INTERVAL_MS);
@@ -418,7 +428,7 @@ export async function startChatBridge(
       .catch((error) => {
         const errorMessage = safeString((error as any)?.message || error);
         const transientFailure =
-          /rin_timeout:|rin_disconnected:|rin_tui_not_connected|chat_controller_disposed/.test(
+          /rin_timeout:|rin_disconnected:|rin_tui_not_connected|chat_controller_disposed|rin_worker_exit:|chat_turn_stale/.test(
             errorMessage,
           );
         logger.warn(

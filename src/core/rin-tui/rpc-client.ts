@@ -20,11 +20,7 @@ function toFrontendEvent(event: any): InteractiveFrontendEvent | null {
   }
 
   if (event.type === "worker_exit") {
-    return {
-      type: "status",
-      level: "error",
-      text: `worker exited: code=${String(event.code)} signal=${String(event.signal)}`,
-    };
+    return { type: "ui", name: "worker_exit", payload: event };
   }
 
   if (event.type === "response") {
