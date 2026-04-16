@@ -233,8 +233,12 @@ export async function applyRinTuiOverrides() {
 
       if (event?.type === "rpc_session_resynced") {
         this.__rinLocalUserEchoQueue = [];
+        if (typeof this.handleRuntimeSessionChange === "function") {
+          await this.handleRuntimeSessionChange();
+        }
         this.renderCurrentSessionState();
         syncRpcTransportLoader(this);
+        this.ui.requestRender();
         return;
       }
 

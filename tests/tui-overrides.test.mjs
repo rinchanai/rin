@@ -113,6 +113,50 @@ test("rpc session selector loads sessions through the daemon instead of local Se
   assert.deepEqual(renamed, [["/tmp/demo.jsonl", "renamed"]]);
 });
 
+test("rpc session resync rebinds runtime state and rerenders history", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let runtimeChanges = 0;
+  let renders = 0;
+  let historyRenders = 0;
+  const ui = { requestRender() { renders += 1; } };
+  const instance = {
+    isInitialized: true,
+    ui,
+    session: {
+      getFrontendStatusEvent() {
+        return null;
+      },
+    },
+    handleRuntimeSessionChange: async () => {
+      runtimeChanges += 1;
+    },
+    renderCurrentSessionState() {
+      historyRenders += 1;
+    },
+    statusContainer: {
+      clear() {},
+      addChild() {},
+    },
+    chatContainer: { clear() {}, addChild() {}, removeChild() {} },
+    defaultEditor: { onEscape() {} },
+    footer: { invalidate() {} },
+    flushCompactionQueue() {},
+    showError() {},
+    showStatus() {},
+    autoCompactionLoader: { stop() {} },
+  };
+
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    { type: "rpc_session_resynced" },
+  );
+
+  assert.equal(runtimeChanges, 1);
+  assert.equal(historyRenders, 1);
+  assert.ok(renders >= 1);
+});
+
 test("rpc compaction end restores transport loader instead of leaving status empty", async () => {
   await overrides.applyRinTuiOverrides();
 
