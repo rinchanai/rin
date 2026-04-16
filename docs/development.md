@@ -84,6 +84,7 @@ For installer and distribution work, treat these as stable operator-facing contr
 - installer prompt, confirmation, and updater copy should describe launcher-owner vs daemon-owner responsibilities honestly, especially for cross-user installs that still need elevated writes or service control
 - update-target discovery should keep launcher metadata, install manifests, and managed service files consistent as parallel operator-facing recovery surfaces, while preferring target-owned sources over launcher metadata when they describe the same install
 - installer path knowledge such as launcher metadata locations and manifest paths should stay centralized instead of being re-derived in multiple installer/runtime modules
+- installer metadata semantics such as launcher/manifest read order, whitespace handling, and default target resolution should also live in one helper layer instead of being re-implemented by persist, updater discovery, and CLI/runtime loaders separately
 
 ## Update and deployment
 

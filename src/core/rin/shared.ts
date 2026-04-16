@@ -15,6 +15,7 @@ import {
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
+import { readLauncherMetadataFromHome } from "../rin-install/metadata.js";
 import { launcherMetadataPathForHome } from "../rin-install/paths.js";
 
 export type ParsedArgs = {
@@ -66,15 +67,20 @@ export function installConfigPath() {
 }
 
 export function loadInstallConfig() {
-  const filePath = installConfigPath();
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as {
-      defaultTargetUser?: string;
-      defaultInstallDir?: string;
-    };
-  } catch {
-    return {};
-  }
+  return readLauncherMetadataFromHome(
+    os.homedir(),
+    (filePath, fallback) => {
+      try {
+        return JSON.parse(fs.readFileSync(filePath, "utf8")) as typeof fallback;
+      } catch {
+        return fallback;
+      }
+    },
+    {},
+  ) as {
+    defaultTargetUser?: string;
+    defaultInstallDir?: string;
+  };
 }
 
 async function canConnectSocket(socketPath: string) {

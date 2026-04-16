@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { nextLauncherMetadata } from "./metadata.js";
 import { installerManifestPathsForInstallDir } from "./paths.js";
 
 export function reconcileInstallerManifest(
@@ -145,11 +146,14 @@ export async function persistInstallerOutputs(
     deps.appConfigDirForUser(options.currentUser),
     "install.json",
   );
-  const launcherJson = deps.readJsonFile<any>(launcherPath, {});
-  launcherJson.defaultTargetUser = options.targetUser;
-  launcherJson.defaultInstallDir = options.installDir;
-  launcherJson.updatedAt = new Date().toISOString();
-  launcherJson.installedBy = options.currentUser;
+  const launcherJson = nextLauncherMetadata(
+    deps.readJsonFile<any>(launcherPath, {}),
+    {
+      currentUser: options.currentUser,
+      targetUser: options.targetUser,
+      installDir: options.installDir,
+    },
+  );
 
   const { manifestPath } = deps.reconcileInstallerManifest(
     {

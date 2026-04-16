@@ -136,12 +136,16 @@ test("installer update target discovery skips duplicates and malformed records",
       "[Service]\nEnvironment=RIN_DIR=   \n",
     ],
     [
+      "/workspace/home/bad/.rin/installer.json",
+      JSON.stringify({ targetUser: "bad", installDir: "   " }),
+    ],
+    [
       "/workspace/Users/demo/Library/LaunchAgents/com.rin.daemon.demo.plist",
       "<plist><key>RIN_DIR</key><string>   </string></plist>",
     ],
   ]);
   const directories = new Map([
-    ["/workspace/home", [createDirent("demo")]],
+    ["/workspace/home", [createDirent("demo"), createDirent("bad")]],
     ["/workspace/Users", [createDirent("demo")]],
     [
       "/workspace/home/demo/.config/systemd/user",

@@ -2,10 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
-  defaultInstallDirForHome,
-  installerManifestPathsForHome,
-  launcherMetadataCandidatePathsForHome,
-} from "./paths.js";
+  installedTargetFromLauncherMetadata,
+  installedTargetFromManifest,
+  readInstallerManifestFromHome,
+  readLauncherMetadataFromHome,
+} from "./metadata.js";
+import { defaultInstallDirForHome } from "./paths.js";
 
 type UpdateTargetDiscoveryDeps = {
   roots?: string[];
@@ -94,36 +96,31 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    const [linuxLauncherMetadataPath, macLauncherMetadataPath] =
-      launcherMetadataCandidatePathsForHome(homeDir);
-    const launcherMetadata = readJsonFile<any>(
-      linuxLauncherMetadataPath,
-      readJsonFile<any>(macLauncherMetadataPath, null, { readFileSync }),
-      { readFileSync },
+    const readHomeJson = <T>(filePath: string, fallback: T) =>
+      readJsonFile<T>(filePath, fallback, { readFileSync });
+    const launcherTarget = installedTargetFromLauncherMetadata(
+      readLauncherMetadataFromHome(homeDir, readHomeJson, null),
+      userName,
+      homeDir,
     );
-    if (launcherMetadata && typeof launcherMetadata === "object") {
+    if (launcherTarget) {
       add(
-        String(launcherMetadata.defaultTargetUser || userName),
-        String(
-          launcherMetadata.defaultInstallDir ||
-            defaultInstallDirForHome(homeDir),
-        ),
+        launcherTarget.targetUser,
+        launcherTarget.installDir,
         homeDir,
         "launcher",
       );
     }
 
-    const [manifestPath, legacyManifestPath] =
-      installerManifestPathsForHome(homeDir);
-    const manifest = readJsonFile<any>(
-      manifestPath,
-      readJsonFile<any>(legacyManifestPath, null, { readFileSync }),
-      { readFileSync },
+    const manifestTarget = installedTargetFromManifest(
+      readInstallerManifestFromHome(homeDir, readHomeJson, null),
+      userName,
+      homeDir,
     );
-    if (manifest && typeof manifest === "object") {
+    if (manifestTarget) {
       add(
-        String(manifest.targetUser || userName),
-        String(manifest.installDir || defaultInstallDirForHome(homeDir)),
+        manifestTarget.targetUser,
+        manifestTarget.installDir,
         homeDir,
         "manifest",
       );
