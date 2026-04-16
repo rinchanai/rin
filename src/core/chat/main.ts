@@ -21,6 +21,7 @@ import { enqueueChatPromptContext } from "../chat-bridge/prompt-context.js";
 import {
   chatStateDir,
   listChatStateFiles,
+  listDetachedControllerStateFiles,
 } from "../chat-bridge/session-binding.js";
 import { getChatCommandRows, syncTelegramCommands } from "./boot.js";
 import {
@@ -701,6 +702,18 @@ export async function startChatBridge(
     void controller.recoverIfNeeded().catch((error) => {
       logger.warn(
         `chat recovery failed chatKey=${item.chatKey} err=${safeString((error as any)?.message || error)}`,
+      );
+    });
+  }
+  for (const item of listDetachedControllerStateFiles(path.join(dataDir, "cron-turns"))) {
+    const controller = getDetachedController(item.controllerKey, {
+      chatKey: item.chatKey,
+      deliveryEnabled: false,
+      affectChatBinding: false,
+    });
+    void controller.recoverIfNeeded().catch((error) => {
+      logger.warn(
+        `detached chat recovery failed controllerKey=${item.controllerKey} err=${safeString((error as any)?.message || error)}`,
       );
     });
   }

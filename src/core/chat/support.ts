@@ -456,6 +456,32 @@ export function listChatStateFiles(chatsRoot: string) {
   return out;
 }
 
+export function listDetachedControllerStateFiles(cronTurnsRoot: string) {
+  const out: Array<{
+    controllerKey: string;
+    statePath: string;
+    chatKey: string;
+  }> = [];
+  try {
+    const entries = fs
+      .readdirSync(cronTurnsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    for (const controllerKey of entries) {
+      const statePath = path.join(cronTurnsRoot, controllerKey, "state.json");
+      if (!fs.existsSync(statePath)) continue;
+      const state = readJsonFile<any>(statePath, {}) || {};
+      out.push({
+        controllerKey,
+        statePath,
+        chatKey: safeString(state.chatKey).trim() || `cron:${controllerKey}`,
+      });
+    }
+  } catch {}
+  return out;
+}
+
 export function identityPath(dataDir: string) {
   return path.join(dataDir, "identity.json");
 }
