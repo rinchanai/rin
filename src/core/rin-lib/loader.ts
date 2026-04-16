@@ -1,74 +1,38 @@
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import * as PiCodingAgent from "@mariozechner/pi-coding-agent";
 
-function resolveRepoRoot() {
-  const startDir = path.dirname(fileURLToPath(import.meta.url));
-  let current = startDir;
-  for (let i = 0; i < 8; i += 1) {
-    const candidate = path.join(current, "third_party", "pi-coding-agent");
-    if (fs.existsSync(path.join(candidate, "dist", "index.js"))) {
-      return current;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return path.resolve(startDir, "..", "..", "..");
-}
-
-const repoRoot = resolveRepoRoot();
-const codingAgentRoot = path.join(repoRoot, "third_party", "pi-coding-agent");
-const codingAgentDistRoot = path.join(codingAgentRoot, "dist");
-
-function requireDistModule(relativePath: string) {
-  const filePath = path.join(codingAgentDistRoot, relativePath);
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`rin_missing_vendor_dist:${relativePath}`);
-  }
-  return filePath;
-}
-
-async function importDistModule(relativePath: string) {
-  return await import(pathToFileURL(requireDistModule(relativePath)).href);
-}
+import * as Changelog from "./changelog.js";
 
 export async function loadRinCodingAgent() {
-  return await importDistModule("index.js");
+  return PiCodingAgent;
 }
 
 export async function loadRinSessionManagerModule() {
-  return await importDistModule(path.join("core", "session-manager.js"));
+  return { SessionManager: PiCodingAgent.SessionManager };
 }
 
 export async function loadRinInteractiveModeModule() {
-  return await importDistModule(
-    path.join("modes", "interactive", "interactive-mode.js"),
-  );
+  return { InteractiveMode: PiCodingAgent.InteractiveMode };
 }
 
 export async function loadRinInteractiveFooterModule() {
-  return await importDistModule(
-    path.join("modes", "interactive", "components", "footer.js"),
-  );
+  return { FooterComponent: PiCodingAgent.FooterComponent };
 }
 
 export async function loadRinInteractiveThemeModule() {
-  return await importDistModule(
-    path.join("modes", "interactive", "theme", "theme.js"),
-  );
+  return {
+    theme: PiCodingAgent.Theme,
+    initTheme: PiCodingAgent.initTheme,
+  };
 }
 
 export async function loadRinSessionSelectorModule() {
-  return await importDistModule(
-    path.join("modes", "interactive", "components", "session-selector.js"),
-  );
+  return { SessionSelectorComponent: PiCodingAgent.SessionSelectorComponent };
 }
 
 export async function loadRinChangelogModule() {
-  return await importDistModule(path.join("utils", "changelog.js"));
+  return Changelog;
 }
 
 export function resolveRinCodingAgentDistDir() {
-  return codingAgentDistRoot;
+  return undefined;
 }

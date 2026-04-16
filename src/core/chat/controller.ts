@@ -819,7 +819,9 @@ export class ChatController {
       const currentLastUser = [...messages]
         .reverse()
         .find((message: any) => message?.role === "user");
-      const lastUserText = extractTextFromContent(currentLastUser?.content);
+      const lastUserText = extractTextFromContent(
+        (currentLastUser as any)?.content,
+      );
       const pending = this.state.processing;
       const shouldResumeInternally =
         safeString(lastUserText).trim() ===

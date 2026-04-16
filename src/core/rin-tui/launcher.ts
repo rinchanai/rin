@@ -1,4 +1,5 @@
-import { loadRinInteractiveModeModule } from "../rin-lib/loader.js";
+import { InteractiveMode } from "@mariozechner/pi-coding-agent";
+
 import {
   applyRuntimeProfileEnvironment,
   createConfiguredAgentSession,
@@ -64,15 +65,10 @@ export async function startTui(
     mode === "rpc"
       ? new RpcInteractiveSession(client!, options.additionalExtensionPaths)
       : null;
-  const interactiveModeModulePromise = loadRinInteractiveModeModule();
   const overridesPromise = applyRinTuiOverrides();
   const rpcReadyPromise = rpcSession ? rpcSession.connect() : Promise.resolve();
 
-  const [{ InteractiveMode }] = await Promise.all([
-    interactiveModeModulePromise as Promise<any>,
-    overridesPromise,
-    rpcReadyPromise,
-  ]);
+  await Promise.all([overridesPromise, rpcReadyPromise]);
   profile.mark("interactive-mode-and-rpc-ready");
 
   if (mode === "std") {

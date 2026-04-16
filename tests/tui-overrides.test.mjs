@@ -11,7 +11,7 @@ const rootDir = path.resolve(
 const overrides = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-tui", "upstream-overrides.js"),
-  ).href
+  ).href,
 );
 const loaderModule = await import(
   pathToFileURL(
@@ -24,42 +24,15 @@ const loaderModule = await import(
       "components",
       "loader.js",
     ),
-  ).href
+  ).href,
 );
-const themeModule = await import(
-  pathToFileURL(
-    path.join(
-      rootDir,
-      "third_party",
-      "pi-coding-agent",
-      "dist",
-      "modes",
-      "interactive",
-      "theme",
-      "theme.js",
-    ),
-  ).href
-);
+const codingAgentModule = await import("@mariozechner/pi-coding-agent");
 
 test("terminal title override shows only session name", async () => {
   await overrides.applyRinTuiOverrides();
 
-  const interactiveModeModule = await import(
-    pathToFileURL(
-      path.join(
-        rootDir,
-        "third_party",
-        "pi-coding-agent",
-        "dist",
-        "modes",
-        "interactive",
-        "interactive-mode.js",
-      ),
-    ).href
-  );
-
   let title;
-  interactiveModeModule.InteractiveMode.prototype.updateTerminalTitle.call({
+  codingAgentModule.InteractiveMode.prototype.updateTerminalTitle.call({
     sessionManager: { getSessionName: () => "demo" },
     ui: { terminal: { setTitle(value) { title = value; } } },
   });
@@ -82,22 +55,7 @@ test("loader stop clears render interval", () => {
 });
 
 test("rpc compaction end restores transport loader instead of leaving status empty", async () => {
-  themeModule.initTheme("dark");
   await overrides.applyRinTuiOverrides();
-
-  const interactiveModeModule = await import(
-    pathToFileURL(
-      path.join(
-        rootDir,
-        "third_party",
-        "pi-coding-agent",
-        "dist",
-        "modes",
-        "interactive",
-        "interactive-mode.js",
-      ),
-    ).href
-  );
 
   let renders = 0;
   const ui = { requestRender() { renders += 1; } };
@@ -136,7 +94,7 @@ test("rpc compaction end restores transport loader instead of leaving status emp
     autoCompactionLoader: { stop() {} },
   };
 
-  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
     instance,
     { type: "compaction_end", aborted: false, willRetry: false },
   );
@@ -147,22 +105,7 @@ test("rpc compaction end restores transport loader instead of leaving status emp
 });
 
 test("rpc agent end does not leave a stale working loader after the turn is done", async () => {
-  themeModule.initTheme("dark");
   await overrides.applyRinTuiOverrides();
-
-  const interactiveModeModule = await import(
-    pathToFileURL(
-      path.join(
-        rootDir,
-        "third_party",
-        "pi-coding-agent",
-        "dist",
-        "modes",
-        "interactive",
-        "interactive-mode.js",
-      ),
-    ).href
-  );
 
   const ui = { requestRender() {} };
   const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
@@ -185,7 +128,7 @@ test("rpc agent end does not leave a stale working loader after the turn is done
     loadingAnimation: existingLoader,
   };
 
-  await interactiveModeModule.InteractiveMode.prototype.handleEvent.call(
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
     instance,
     { type: "agent_end" },
   );

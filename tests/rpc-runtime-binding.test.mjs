@@ -188,7 +188,12 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
   session.sessionId = "s1";
   await session.prompt("hello", { streamingBehavior: "steer" });
 
-  assert.deepEqual(sent, [
+  assert.equal(sent.length, 1);
+  assert.deepEqual(
+    {
+      ...sent[0],
+      requestTag: typeof sent[0]?.requestTag === "string" ? "<auto>" : sent[0]?.requestTag,
+    },
     {
       type: "prompt",
       sessionId: "s1",
@@ -196,9 +201,9 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
       images: undefined,
       streamingBehavior: "steer",
       source: undefined,
-      requestTag: undefined,
+      requestTag: "<auto>",
     },
-  ]);
+  );
   assert.deepEqual(session.getSteeringMessages(), ["hello"]);
   assert.equal(session.pendingMessageCount, 1);
 });

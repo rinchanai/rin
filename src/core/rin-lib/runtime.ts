@@ -1,6 +1,5 @@
 import os from "node:os";
 import path from "node:path";
-import { createRequire } from "node:module";
 
 import { isContextOverflow } from "@mariozechner/pi-ai";
 
@@ -13,25 +12,13 @@ import {
   writeCompactionContinuationMarker,
 } from "./compaction-continuation.js";
 
-const require = createRequire(import.meta.url);
-
-function loadPiBuildSystemPrompt() {
-  const candidates = [
-    "../../../third_party/pi-coding-agent/dist/core/system-prompt.js",
-    "../../../../third_party/pi-coding-agent/dist/core/system-prompt.js",
-  ];
-  for (const candidate of candidates) {
-    try {
-      const mod = require(candidate);
-      if (typeof mod?.buildSystemPrompt === "function") {
-        return mod.buildSystemPrompt as (...args: any[]) => string;
-      }
-    } catch {}
-  }
-  throw new Error("pi_build_system_prompt_not_found");
-}
-
-const buildSystemPrompt = loadPiBuildSystemPrompt();
+const DEFAULT_PI_GUIDELINES = [
+  "Be concise in your responses",
+  "Show file paths clearly when working with files",
+  "Do not stop after one action if the user's request obviously requires multiple concrete steps",
+  "When modifying files, prefer targeted edits and preserve existing style unless asked otherwise",
+  "When using bash, explain meaningful findings instead of pasting excessive raw output",
+];
 
 function escapeXml(text: string) {
   return text
@@ -109,23 +96,6 @@ export function getManagedSkillPaths(agentDir: string): string[] {
   ];
 }
 
-function extractPiGuidelinesBlock(prompt: string) {
-  const text = String(prompt || "");
-  const startMarker = "Guidelines:\n";
-  const endMarker = "\n\nPi documentation";
-  const start = text.indexOf(startMarker);
-  if (start < 0) return [] as string[];
-  const afterStart = start + startMarker.length;
-  const end = text.indexOf(endMarker, afterStart);
-  const block = end >= 0 ? text.slice(afterStart, end) : text.slice(afterStart);
-  return block
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("- "))
-    .map((line) => line.slice(2).trim())
-    .filter(Boolean);
-}
-
 function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const validToolNames = toolNames.filter((name) =>
     session._toolRegistry.has(name),
@@ -159,16 +129,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
 
   const hasRead = validToolNames.includes("read");
 
-  const piGuidelines = extractPiGuidelinesBlock(
-    buildSystemPrompt({
-      selectedTools: validToolNames,
-      toolSnippets,
-      promptGuidelines,
-      skills: [],
-      contextFiles: [],
-    }),
-  );
-  for (const guideline of piGuidelines) {
+  for (const guideline of [...DEFAULT_PI_GUIDELINES, ...promptGuidelines]) {
     addGuideline(guideline);
   }
 
