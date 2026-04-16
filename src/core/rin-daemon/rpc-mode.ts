@@ -480,18 +480,21 @@ export async function runCustomRpcMode(
         return run(
           id,
           type,
-          () =>
-            runtime
-              .newSession(
-                command.parentSession
-                  ? { parentSession: command.parentSession }
-                  : undefined,
-              )
-              .then(async (value: any) => {
-                await bindCurrentSession();
-                return value;
-              }),
-          (value) => ({ cancelled: Boolean(value?.cancelled) }),
+          async () => {
+            const value = await runtime.newSession(
+              command.parentSession
+                ? { parentSession: command.parentSession }
+                : undefined,
+            );
+            await bindCurrentSession();
+            const rebound = getSession();
+            return {
+              cancelled: Boolean(value?.cancelled),
+              sessionFile: rebound?.sessionFile,
+              sessionId: rebound?.sessionId,
+            };
+          },
+          (value) => value,
         );
       case "switch_session":
         return run(
