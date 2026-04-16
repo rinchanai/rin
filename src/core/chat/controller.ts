@@ -401,7 +401,7 @@ export class ChatController {
       : [];
     const firstUser = messages.find((message: any) => message?.role === "user");
     return normalizeSessionNameDetail(
-      extractTextFromContent(firstUser?.content),
+      extractTextFromContent((firstUser as any)?.content),
       120,
     );
   }
