@@ -94,12 +94,17 @@ function wait(ms = 0) {
 }
 
 function isTransientChatRuntimeError(error: unknown) {
-  return TRANSIENT_CHAT_RUNTIME_ERROR_RE.test(safeString((error as any)?.message || error));
+  return TRANSIENT_CHAT_RUNTIME_ERROR_RE.test(
+    safeString((error as any)?.message || error),
+  );
 }
 
 function computeChatInboxRetryDelay(attemptCount: number) {
   const attempt = Math.max(0, Number(attemptCount || 0));
-  return Math.min(CHAT_INBOX_RETRY_MAX_MS, CHAT_INBOX_RETRY_MIN_MS * 2 ** attempt);
+  return Math.min(
+    CHAT_INBOX_RETRY_MAX_MS,
+    CHAT_INBOX_RETRY_MIN_MS * 2 ** attempt,
+  );
 }
 
 async function buildTelegramInboundMediaDebug(session: any) {
@@ -330,16 +335,16 @@ export async function startChatBridge(
   const hasInboundBeenAccepted = (
     chatKey: string,
     messageId: string,
-    controller?: ChatController,
+    _controller?: ChatController,
   ) => {
     const nextChatKey = safeString(chatKey).trim();
     const nextMessageId = safeString(messageId).trim();
     if (!nextChatKey || !nextMessageId) return false;
-    if (controller?.state.processing?.incomingMessageId === nextMessageId) {
-      return true;
-    }
     const stored = getChatMessage(runtime.agentDir, nextChatKey, nextMessageId);
-    return Boolean(safeString(stored?.processedAt || "").trim());
+    return Boolean(
+      safeString(stored?.acceptedAt || "").trim() ||
+      safeString(stored?.processedAt || "").trim(),
+    );
   };
   const waitForInboundAcceptance = async (
     chatKey: string,
@@ -556,7 +561,8 @@ export async function startChatBridge(
       });
       return { accepted: true, retry: false };
     }
-    let failure: { transientFailure: boolean; errorMessage: string } | null = null;
+    let failure: { transientFailure: boolean; errorMessage: string } | null =
+      null;
     void turnPromise.catch(async (error) => {
       failure = await handleTurnFailure(error);
     });
@@ -594,14 +600,18 @@ export async function startChatBridge(
         completeChatInboxFile(claimedPath);
         continue;
       }
-      const nextAttemptAt = Date.parse(safeString(envelope.nextAttemptAt || "").trim());
+      const nextAttemptAt = Date.parse(
+        safeString(envelope.nextAttemptAt || "").trim(),
+      );
       if (Number.isFinite(nextAttemptAt) && nextAttemptAt > Date.now()) {
         restoreChatInboxFile(runtime.agentDir, claimedPath, envelope);
         continue;
       }
       try {
         const queuedSession = restoreQueuedSession(envelope.session);
-        const queuedElements = Array.isArray(envelope.elements) ? envelope.elements : [];
+        const queuedElements = Array.isArray(envelope.elements)
+          ? envelope.elements
+          : [];
         if (
           envelope.chatKey &&
           envelope.messageId &&
@@ -618,16 +628,23 @@ export async function startChatBridge(
         );
         const result = command
           ? await handleCommandSession(queuedSession, command, identity)
-          : await handleChatTurnSession(queuedSession, queuedElements, identity, {
-              queued: true,
-            });
+          : await handleChatTurnSession(
+              queuedSession,
+              queuedElements,
+              identity,
+              {
+                queued: true,
+              },
+            );
         if (result?.accepted || result?.retry === false) {
           completeChatInboxFile(claimedPath);
           continue;
         }
         requeueChatInboxFile(runtime.agentDir, claimedPath, envelope, {
           delayMs: computeChatInboxRetryDelay(envelope.attemptCount + 1),
-          error: safeString(result?.errorMessage || "chat_inbound_retry_needed"),
+          error: safeString(
+            result?.errorMessage || "chat_inbound_retry_needed",
+          ),
         });
       } catch (error) {
         logger.warn(
@@ -891,7 +908,9 @@ export async function startChatBridge(
       );
     });
   }
-  for (const item of listDetachedControllerStateFiles(path.join(dataDir, "cron-turns"))) {
+  for (const item of listDetachedControllerStateFiles(
+    path.join(dataDir, "cron-turns"),
+  )) {
     const controller = getDetachedController(item.controllerKey, {
       chatKey: item.chatKey,
       deliveryEnabled: false,
