@@ -175,7 +175,7 @@ test("rpc interactive session waitForDaemonAvailable reuses the reconnect pipeli
   assert.equal(reconnects, 1);
 });
 
-test("rpc interactive session keeps connecting when a worker exits mid-turn", () => {
+test("rpc interactive session keeps the daemon connection while a worker exits mid-turn", () => {
   const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
   session.ensureReconnectLoop = () => {};
@@ -199,14 +199,14 @@ test("rpc interactive session keeps connecting when a worker exits mid-turn", ()
     type: "rpc_frontend_status",
     phase: "connecting",
     label: "Connecting",
-    connected: false,
+    connected: true,
   });
   assert.deepEqual(seen, [
     {
       type: "rpc_frontend_status",
       phase: "connecting",
       label: "Connecting",
-      connected: false,
+      connected: true,
     },
     { type: "worker_exit", code: 9, signal: null },
   ]);
@@ -262,7 +262,7 @@ test("rpc interactive session queues prompts while recovery is pending", async (
   session.ensureReconnectLoop = () => Promise.resolve();
   session.startupPending = false;
   session.recoveryPending = true;
-  session.rpcConnected = false;
+  session.rpcConnected = true;
 
   await session.prompt("hello", { expandPromptTemplates: false });
 
@@ -282,8 +282,66 @@ test("rpc interactive session queues prompts while recovery is pending", async (
     type: "rpc_frontend_status",
     phase: "connecting",
     label: "Connecting",
-    connected: false,
+    connected: true,
   });
+});
+
+test("rpc interactive session finishes daemon-side session recovery without dropping transport", async () => {
+  const calls = [];
+  const session = new RpcInteractiveSession({
+    isConnected: () => true,
+    send: async (payload) => {
+      calls.push(payload);
+      switch (payload.type) {
+        case "get_state":
+          return {
+            success: true,
+            data: {
+              sessionId: "s1",
+              sessionFile: "/tmp/s1.jsonl",
+              thinkingLevel: "medium",
+              steeringMode: "all",
+              followUpMode: "one-at-a-time",
+              autoCompactionEnabled: false,
+              isStreaming: false,
+              isCompacting: false,
+              pendingMessageCount: 0,
+            },
+          };
+        case "get_messages":
+          return { success: true, data: { messages: [] } };
+        case "get_session_entries":
+          return { success: true, data: { entries: [] } };
+        case "get_session_tree":
+          return { success: true, data: { tree: [], leafId: null } };
+        default:
+          return { success: true, data: {} };
+      }
+    },
+  });
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.recoveryPending = true;
+  session.queuedOfflineOps = [
+    {
+      mode: "prompt",
+      message: "hello",
+      requestTag: "tag-1",
+    },
+  ];
+
+  session.handleSessionRecovered();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(session.recoveryPending, false);
+  assert.equal(session.queuedOfflineOps.length, 0);
+  assert.deepEqual(calls.map((payload) => payload.type), [
+    "get_state",
+    "get_messages",
+    "get_session_entries",
+    "get_session_tree",
+    "prompt",
+  ]);
 });
 
 test("rpc interactive session clears the busy state immediately when abort is requested", async () => {

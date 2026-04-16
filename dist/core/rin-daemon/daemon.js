@@ -152,16 +152,12 @@ export async function startDaemon(options = {}) {
             return true;
         }
         if (type === "new_session" || type === "switch_session") {
-            const previousWorker = connection.attachedWorker;
             const worker = workerPool.resolveWorkerForCommand(connection, command);
             if (!worker) {
                 writeLine(connection.socket, response(id, type, false, "rin_no_attached_session"));
                 return true;
             }
             workerPool.forwardToWorker(connection, worker, command);
-            if (previousWorker && previousWorker !== worker) {
-                workerPool.terminateWorkerGracefully(previousWorker);
-            }
             workerPool.evictDetachedWorkers();
             return true;
         }
@@ -171,6 +167,9 @@ export async function startDaemon(options = {}) {
             if (!target) {
                 writeLine(connection.socket, response(id, type, false, "rin_no_attached_session"));
                 return true;
+            }
+            if (target === connection.attachedWorker) {
+                workerPool.detachWorker(connection, { clearSelection: true });
             }
             workerPool.terminateWorkerGracefully(target);
             writeLine(connection.socket, response(id, type, true, { terminated: true }));
@@ -183,7 +182,7 @@ export async function startDaemon(options = {}) {
             return true;
         }
         if (type === "detach_session") {
-            workerPool.detachWorker(connection);
+            workerPool.detachWorker(connection, { clearSelection: true });
             writeLine(connection.socket, response(id, type, true, emptySessionState()));
             return true;
         }

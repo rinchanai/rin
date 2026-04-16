@@ -21,6 +21,16 @@ export async function handleRpcSessionEvent(
       target.emitFrontendStatus(true);
     }
   };
+  if (payload.type === "session_recovering") {
+    target.handleSessionUnavailable?.();
+    target.emitEvent(payload);
+    return;
+  }
+  if (payload.type === "session_recovered") {
+    target.handleSessionRecovered?.();
+    target.emitEvent(payload);
+    return;
+  }
   if (payload.type === "agent_start") setRemoteTurnRunning(true);
   if (
     payload.type === "rpc_turn_event" &&

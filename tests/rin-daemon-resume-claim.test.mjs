@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
@@ -100,10 +99,14 @@ function spawnDaemon(agentDir, socketPath, workerPath) {
   );
 }
 
+async function makeTempDir(prefix) {
+  const root = process.env.RIN_TEST_TMPDIR || "/home/rin/tmp";
+  await fs.mkdir(root, { recursive: true });
+  return await fs.mkdtemp(path.join(root, prefix));
+}
+
 test("daemon auto-resumes interrupted sessions on startup without frontend help", async () => {
-  const agentDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "rin-daemon-resume-"),
-  );
+  const agentDir = await makeTempDir("rin-daemon-resume-");
   const socketPath = path.join(agentDir, "daemon.sock");
   const workerPath = path.join(agentDir, "fake-worker.mjs");
   await fs.writeFile(

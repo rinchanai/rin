@@ -62,6 +62,18 @@ const REFRESH_SESSION = { session: true } as const;
 const REFRESH_MESSAGES_AND_SESSION = { messages: true, session: true } as const;
 const REFRESH_ALL = { messages: true, models: true, session: true } as const;
 
+async function completeRpcRecovery(target: any) {
+  await target.refreshState(REFRESH_MESSAGES_AND_SESSION);
+  target.recoveryPending = false;
+  target.emitSessionResynced();
+  target.emitFrontendStatus(true);
+  const queued = [...target.queuedOfflineOps];
+  target.queuedOfflineOps = [];
+  for (const operation of queued) {
+    await target.sendOrQueue(operation);
+  }
+}
+
 class RemoteAgent {
   constructor(private client: RinDaemonFrontendClient) {}
 
@@ -706,14 +718,10 @@ export class RpcInteractiveSession {
   }
 
   private getFrontendPhase(): RpcFrontendPhase {
-    if (!this.rpcConnected) return "connecting";
+    if (!this.rpcConnected || this.recoveryPending) return "connecting";
     if (this.remoteTurnRunning || this.isCompacting) return "working";
     if (this.activeTurn) return "sending";
-    if (
-      this.startupPending ||
-      this.sessionOperationPending ||
-      this.recoveryPending
-    ) {
+    if (this.startupPending || this.sessionOperationPending) {
       return "starting";
     }
     return "idle";
@@ -826,7 +834,9 @@ export class RpcInteractiveSession {
 
   private queueOfflineOperation(operation: PendingRpcOperation) {
     this.queuedOfflineOps.push(operation);
-    void this.ensureReconnectLoop();
+    if (!this.client.isConnected() || !this.rpcConnected) {
+      void this.ensureReconnectLoop();
+    }
     this.emitFrontendStatus(true);
   }
 
@@ -874,15 +884,28 @@ export class RpcInteractiveSession {
     }
   }
 
-  handleSessionUnavailable() {
+  handleSessionUnavailable(options?: { transportClosed?: boolean }) {
     if (this.disposed) return;
     this.recoveryPending = true;
-    this.setRpcConnected(false);
-    void this.ensureReconnectLoop();
+    this.activeTurn = null;
+    this.remoteTurnRunning = false;
+    this.isCompacting = false;
+    this.isBashRunning = false;
+    if (options?.transportClosed) {
+      this.setRpcConnected(false);
+      void this.ensureReconnectLoop();
+      return;
+    }
+    this.syncStreamingState();
+  }
+
+  handleSessionRecovered() {
+    if (this.disposed || !this.recoveryPending) return;
+    void completeRpcRecovery(this).catch(() => {});
   }
 
   private handleConnectionLost() {
-    this.handleSessionUnavailable();
+    this.handleSessionUnavailable({ transportClosed: true });
   }
 
   private ensureReconnectLoop() {
@@ -896,7 +919,7 @@ export class RpcInteractiveSession {
           if (!this.client.isConnected()) {
             await this.client.connect();
           }
-          if (!this.rpcConnected || this.recoveryPending) {
+          if (!this.rpcConnected) {
             await this.handleConnectionRestored();
           }
           if (this.client.isConnected() && this.rpcConnected && !this.recoveryPending) {
@@ -933,16 +956,9 @@ export class RpcInteractiveSession {
         } else if (this.sessionId) {
           await this.call("attach_session", { sessionId: this.sessionId });
         }
-        await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
         this.setRpcConnected(true);
-        this.recoveryPending = false;
-        this.emitSessionResynced();
-        this.emitFrontendStatus(true);
-        const queued = [...this.queuedOfflineOps];
-        this.queuedOfflineOps = [];
-        for (const operation of queued) {
-          await this.sendOrQueue(operation);
-        }
+        this.recoveryPending = true;
+        await completeRpcRecovery(this);
       } catch (error) {
         this.setRpcConnected(false);
         this.recoveryPending = true;
@@ -1034,8 +1050,10 @@ export class RpcInteractiveSession {
       const message = String(error?.message || error || "");
       if (
         sessionScoped &&
-        /rin_tui_not_connected|rin_disconnected/.test(message)
+        /rin_tui_not_connected|rin_disconnected|rin_session_recovering|rin_no_attached_session/.test(message)
       ) {
+        this.recoveryPending = true;
+        this.emitFrontendStatus(true);
         await this.waitForDaemonAvailable();
         response = await send();
       } else {
