@@ -38,3 +38,29 @@ test("composite builtin runner exposes a merged createContext", () => {
   assert.equal(typeof context.abort, "function");
   assert.equal(typeof context.isIdle, "function");
 });
+
+test("composite builtin runner returns wrapped builtin tools for registry refresh", () => {
+  const builtinHost = new BuiltinModuleHost(
+    "/tmp/rin-cwd",
+    "/tmp/rin-agent",
+    { name: "session-manager" },
+    { name: "model-registry" },
+  );
+  builtinHost.toolMap.set("search_memory", {
+    definition: { name: "search_memory", description: "Search memory" },
+    sourcePath: "/tmp/builtin/search-memory.ts",
+  });
+  const runner = new CompositeBuiltinRunner(undefined, builtinHost);
+
+  const tools = runner.getAllRegisteredTools();
+
+  assert.deepEqual(tools, [
+    {
+      definition: { name: "search_memory", description: "Search memory" },
+      sourceInfo: {
+        source: "builtin_module",
+        path: "/tmp/builtin/search-memory.ts",
+      },
+    },
+  ]);
+});
