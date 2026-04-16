@@ -455,7 +455,13 @@ export class BuiltinModuleHost {
   }
 
   getAllRegisteredTools() {
-    return [];
+    return Array.from(this.toolMap.values()).map((entry) => ({
+      definition: entry.definition,
+      sourceInfo: {
+        source: "builtin_module",
+        path: entry.sourcePath,
+      },
+    }));
   }
 
   getMessageRenderer() {
@@ -602,7 +608,7 @@ export class CompositeBuiltinRunner {
   getAllRegisteredTools() {
     return [
       ...(this.externalRunner?.getAllRegisteredTools?.() || []),
-      ...this.builtinHost.getAllToolDefinitions(),
+      ...this.builtinHost.getAllRegisteredTools(),
     ];
   }
 
