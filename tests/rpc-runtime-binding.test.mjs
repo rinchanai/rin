@@ -271,6 +271,55 @@ test("rpc runtime resumes a session through select_session", async () => {
   assert.equal(sent[0]?.sessionPath, "/tmp/s2.jsonl");
 });
 
+test("rpc runtime rebuilds session context from entries when messages are stale", () => {
+  const session = new RpcInteractiveSession({
+    send() {
+      return Promise.resolve({ success: true, data: {} });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  session.messages = [];
+  session.thinkingLevel = "medium";
+  session.model = { provider: "demo", id: "demo-model" };
+  session.entries = [
+    {
+      id: "m1",
+      type: "message",
+      message: { role: "user", content: "hello" },
+    },
+    {
+      id: "m2",
+      parentId: "m1",
+      type: "message",
+      message: { role: "assistant", content: "world" },
+    },
+  ];
+  session.entryById = new Map(session.entries.map((entry) => [entry.id, entry]));
+  session.leafId = "m2";
+
+  const context = session.sessionManager.buildSessionContext();
+
+  assert.deepEqual(context.messages, [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "world" },
+  ]);
+});
+
 test("rpc runtime marks a connected prompt as sending before remote session setup finishes", async () => {
   const sent = [];
   let releaseEnsureRemoteSession;
