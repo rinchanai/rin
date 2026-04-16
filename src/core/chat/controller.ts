@@ -541,6 +541,7 @@ export class ChatController {
     await this.connect();
     if (!this.session) throw new Error("chat_session_not_connected");
     await this.ensureSessionReady();
+    this.markProcessedMessage(incomingMessageId);
     try {
       const data: any = await this.session.runCommand(commandLine);
       this.state.piSessionFile =
