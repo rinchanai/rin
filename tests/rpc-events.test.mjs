@@ -174,3 +174,48 @@ test("rpc session events delegate worker exit recovery to the runtime when avail
     { type: "worker_exit", code: 9, signal: null },
   ]);
 });
+
+test("rpc session recovery events are delegated without fake turn termination", async () => {
+  const seen = [];
+  let refreshMessages = 0;
+  let refreshMessagesAndSession = 0;
+  const target = {
+    handleSessionUnavailable() {
+      seen.push({ type: "session_unavailable" });
+    },
+    handleSessionRecovered() {
+      seen.push({ type: "session_recovered_hook" });
+    },
+    emitEvent: (event) => seen.push(event),
+  };
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "session_recovering", sessionFile: "/tmp/demo.jsonl" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "session_recovered", sessionFile: "/tmp/demo.jsonl" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+
+  assert.equal(refreshMessages, 0);
+  assert.equal(refreshMessagesAndSession, 0);
+  assert.deepEqual(seen, [
+    { type: "session_unavailable" },
+    { type: "session_recovering", sessionFile: "/tmp/demo.jsonl" },
+    { type: "session_recovered_hook" },
+    { type: "session_recovered", sessionFile: "/tmp/demo.jsonl" },
+  ]);
+});

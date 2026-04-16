@@ -8,6 +8,16 @@ export type ConnectionState = {
   socket: net.Socket;
   clientBuffer: string;
   attachedWorker?: WorkerHandle;
+  sessionFile?: string;
+  sessionId?: string;
+};
+
+type PendingResponse = {
+  id: string;
+  commandType: string;
+  connection?: ConnectionState;
+  resolve?: (payload: any) => void;
+  reject?: (error: Error) => void;
 };
 
 export type WorkerHandle = {
@@ -16,7 +26,7 @@ export type WorkerHandle = {
   stdoutBuffer: { buffer: string };
   stderrBuffer: { buffer: string };
   connections: Set<ConnectionState>;
-  pendingResponses: Map<string, ConnectionState>;
+  pendingResponses: Map<string, PendingResponse>;
   sessionFile?: string;
   sessionId?: string;
   isStreaming: boolean;
@@ -35,11 +45,22 @@ function writeLine(socket: net.Socket, payload: unknown) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
 }
 
+function responseError(commandId: string, commandType: string, error: string) {
+  return {
+    id: commandId,
+    type: "response",
+    command: commandType,
+    success: false,
+    error,
+  };
+}
+
 export class WorkerPool {
   private workers = new Set<WorkerHandle>();
   private workersBySessionFile = new Map<string, WorkerHandle>();
   private workersBySessionId = new Map<string, WorkerHandle>();
   private workerSeq = 0;
+  private internalRequestSeq = 0;
   private shuttingDown = false;
 
   constructor(
@@ -54,20 +75,30 @@ export class WorkerPool {
     },
   ) {}
 
-  detachWorker(connection: ConnectionState) {
+  detachWorker(
+    connection: ConnectionState,
+    options: { clearSelection?: boolean } = {},
+  ) {
     const worker = connection.attachedWorker;
-    if (!worker) return;
-    worker.connections.delete(connection);
-    connection.attachedWorker = undefined;
-    worker.lastUsedAt = Date.now();
-    this.maybeReleaseWorker(worker);
+    if (worker) {
+      worker.connections.delete(connection);
+      connection.attachedWorker = undefined;
+      worker.lastUsedAt = Date.now();
+      this.maybeReleaseWorker(worker);
+    }
+    if (options.clearSelection) {
+      connection.sessionFile = undefined;
+      connection.sessionId = undefined;
+    }
   }
 
   terminateWorkerGracefully(worker: WorkerHandle) {
     if (!this.workers.has(worker) || worker.gracefulShutdownRequested) return;
     worker.gracefulShutdownRequested = true;
     try {
-      worker.child.stdin.write(`${JSON.stringify({ type: "shutdown_session" })}\n`);
+      worker.child.stdin.write(
+        `${JSON.stringify({ type: "shutdown_session" })}\n`,
+      );
     } catch {
       this.destroyWorker(worker);
     }
@@ -75,11 +106,13 @@ export class WorkerPool {
 
   destroyWorker(worker: WorkerHandle) {
     if (!this.workers.has(worker)) return;
+    worker.gracefulShutdownRequested = true;
     this.workers.delete(worker);
     this.deleteWorkerSessionRefs(worker);
     for (const connection of Array.from(worker.connections)) {
-      if (connection.attachedWorker === worker)
+      if (connection.attachedWorker === worker) {
         connection.attachedWorker = undefined;
+      }
       worker.connections.delete(connection);
       writeLine(connection.socket, {
         type: "worker_exit",
@@ -87,6 +120,19 @@ export class WorkerPool {
         signal: "SIGTERM",
       });
     }
+    for (const pending of Array.from(worker.pendingResponses.values())) {
+      if (pending.reject) {
+        pending.reject(new Error("rin_worker_exit"));
+        continue;
+      }
+      if (pending.connection) {
+        writeLine(
+          pending.connection.socket,
+          responseError(pending.id, pending.commandType, "rin_worker_exit"),
+        );
+      }
+    }
+    worker.pendingResponses.clear();
     try {
       worker.child.stdin.end();
     } catch {}
@@ -114,10 +160,19 @@ export class WorkerPool {
     attach: boolean,
   ) {
     if (attach) this.attachWorker(connection, worker);
+    const selector = this.getSessionSelector(command);
+    if (selector.sessionFile || selector.sessionId) {
+      this.rememberSessionSelection(connection, selector);
+    }
     worker.lastUsedAt = Date.now();
     worker.releaseRequested = false;
-    if (command?.id)
-      worker.pendingResponses.set(String(command.id), connection);
+    if (command?.id) {
+      worker.pendingResponses.set(String(command.id), {
+        id: String(command.id),
+        commandType: String(command?.type || "unknown"),
+        connection,
+      });
+    }
     worker.child.stdin.write(`${JSON.stringify(command)}\n`);
   }
 
@@ -131,7 +186,7 @@ export class WorkerPool {
 
   resolveWorkerForCommand(connection: ConnectionState, command: any) {
     const type = String(command?.type || "unknown");
-    const selector = this.getSessionSelector(command);
+    const selector = this.resolveSelector(connection, command);
 
     if (type === "new_session") {
       return this.createWorker(connection);
@@ -185,8 +240,9 @@ export class WorkerPool {
     this.shuttingDown = true;
     for (const worker of Array.from(this.workers)) {
       for (const connection of Array.from(worker.connections)) {
-        if (connection.attachedWorker === worker)
+        if (connection.attachedWorker === worker) {
           connection.attachedWorker = undefined;
+        }
         worker.connections.delete(connection);
       }
       this.maybeReleaseWorker(worker);
@@ -335,8 +391,9 @@ export class WorkerPool {
           payload = JSON.parse(line);
         } catch {
           for (const connection of worker.connections) {
-            if (!connection.socket.destroyed)
+            if (!connection.socket.destroyed) {
               connection.socket.write(`${line}\n`);
+            }
           }
           return;
         }
@@ -348,9 +405,16 @@ export class WorkerPool {
           payload.id &&
           worker.pendingResponses.has(String(payload.id))
         ) {
-          const connection = worker.pendingResponses.get(String(payload.id))!;
+          const pending = worker.pendingResponses.get(String(payload.id))!;
           worker.pendingResponses.delete(String(payload.id));
-          writeLine(connection.socket, payload);
+          if (pending.connection && (worker.sessionFile || worker.sessionId)) {
+            this.rememberSessionSelection(pending.connection, {
+              sessionFile: worker.sessionFile,
+              sessionId: worker.sessionId,
+            });
+          }
+          if (pending.resolve) pending.resolve(payload);
+          if (pending.connection) writeLine(pending.connection.socket, payload);
           this.maybeReleaseWorker(worker);
           return;
         }
@@ -370,26 +434,48 @@ export class WorkerPool {
     });
 
     child.on("exit", (code, signal) => {
+      const liveConnections = new Set<ConnectionState>(worker.connections);
+      for (const pending of worker.pendingResponses.values()) {
+        if (pending.connection) liveConnections.add(pending.connection);
+      }
+      const selector = {
+        sessionFile: worker.sessionFile,
+        sessionId: worker.sessionId,
+      };
+      const shouldRecover = this.shouldRecoverWorker(worker, liveConnections);
       this.deleteWorkerSessionRefs(worker);
       this.workers.delete(worker);
       for (const connection of Array.from(worker.connections)) {
-        if (connection.attachedWorker === worker)
+        if (connection.attachedWorker === worker) {
           connection.attachedWorker = undefined;
-        writeLine(connection.socket, {
-          type: "worker_exit",
-          code: code ?? null,
-          signal: signal ?? null,
-        });
-      }
-      for (const connection of new Set(worker.pendingResponses.values())) {
-        writeLine(connection.socket, {
-          type: "worker_exit",
-          code: code ?? null,
-          signal: signal ?? null,
-        });
+        }
       }
       worker.connections.clear();
+      const pending = Array.from(worker.pendingResponses.values());
       worker.pendingResponses.clear();
+      if (shouldRecover) {
+        this.recoverWorker(selector, worker, liveConnections, pending);
+        return;
+      }
+      for (const connection of liveConnections) {
+        writeLine(connection.socket, {
+          type: "worker_exit",
+          code: code ?? null,
+          signal: signal ?? null,
+        });
+      }
+      for (const entry of pending) {
+        if (entry.reject) {
+          entry.reject(new Error("rin_worker_exit"));
+          continue;
+        }
+        if (entry.connection) {
+          writeLine(
+            entry.connection.socket,
+            responseError(entry.id, entry.commandType, "rin_worker_exit"),
+          );
+        }
+      }
     });
 
     return worker;
@@ -402,6 +488,12 @@ export class WorkerPool {
     worker.connections.add(connection);
     worker.lastUsedAt = Date.now();
     worker.releaseRequested = false;
+    if (worker.sessionFile || worker.sessionId) {
+      this.rememberSessionSelection(connection, {
+        sessionFile: worker.sessionFile,
+        sessionId: worker.sessionId,
+      });
+    }
   }
 
   private maybeReleaseWorker(worker: WorkerHandle) {
@@ -439,6 +531,36 @@ export class WorkerPool {
         ? command.sessionId
         : undefined;
     return { sessionFile, sessionId };
+  }
+
+  private getConnectionSelector(connection: ConnectionState): SessionSelector {
+    return {
+      sessionFile:
+        typeof connection.sessionFile === "string" && connection.sessionFile
+          ? connection.sessionFile
+          : undefined,
+      sessionId:
+        typeof connection.sessionId === "string" && connection.sessionId
+          ? connection.sessionId
+          : undefined,
+    };
+  }
+
+  private resolveSelector(connection: ConnectionState, command: any): SessionSelector {
+    const commandSelector = this.getSessionSelector(command);
+    const connectionSelector = this.getConnectionSelector(connection);
+    return {
+      sessionFile: commandSelector.sessionFile || connectionSelector.sessionFile,
+      sessionId: commandSelector.sessionId || connectionSelector.sessionId,
+    };
+  }
+
+  private rememberSessionSelection(
+    connection: ConnectionState,
+    selector: SessionSelector,
+  ) {
+    if (selector.sessionFile !== undefined) connection.sessionFile = selector.sessionFile;
+    if (selector.sessionId !== undefined) connection.sessionId = selector.sessionId;
   }
 
   private findWorkerBySelector(selector: SessionSelector) {
@@ -488,8 +610,104 @@ export class WorkerPool {
     }
     worker.sessionFile = next.sessionFile;
     worker.sessionId = next.sessionId;
-    if (worker.sessionFile)
+    if (worker.sessionFile) {
       this.workersBySessionFile.set(worker.sessionFile, worker);
+    }
     if (worker.sessionId) this.workersBySessionId.set(worker.sessionId, worker);
+    for (const connection of worker.connections) {
+      this.rememberSessionSelection(connection, next);
+    }
+  }
+
+  private shouldRecoverWorker(
+    worker: WorkerHandle,
+    liveConnections: Set<ConnectionState>,
+  ) {
+    if (this.shuttingDown || worker.gracefulShutdownRequested) return false;
+    return Boolean(worker.sessionFile && liveConnections.size > 0);
+  }
+
+  private recoverWorker(
+    selector: SessionSelector,
+    worker: WorkerHandle,
+    liveConnections: Set<ConnectionState>,
+    pending: PendingResponse[],
+  ) {
+    const resumeTurn = Boolean(worker.isStreaming || worker.isCompacting);
+    for (const connection of liveConnections) {
+      this.rememberSessionSelection(connection, selector);
+      writeLine(connection.socket, {
+        type: "session_recovering",
+        sessionFile: selector.sessionFile,
+        sessionId: selector.sessionId,
+        resumeTurn,
+      });
+    }
+    for (const entry of pending) {
+      if (entry.reject) {
+        entry.reject(new Error("rin_session_recovering"));
+        continue;
+      }
+      if (entry.connection) {
+        writeLine(
+          entry.connection.socket,
+          responseError(
+            entry.id,
+            entry.commandType,
+            "rin_session_recovering",
+          ),
+        );
+      }
+    }
+    if (!selector.sessionFile) return;
+
+    const replacement = this.createWorker();
+    this.setWorkerSessionRefs(replacement, selector);
+    for (const connection of liveConnections) {
+      this.attachWorker(connection, replacement);
+    }
+
+    void (async () => {
+      try {
+        await this.sendInternalCommand(replacement, {
+          type: "switch_session",
+          sessionPath: selector.sessionFile,
+        });
+        if (resumeTurn) {
+          await this.sendInternalCommand(replacement, {
+            type: "resume_interrupted_turn",
+            source: "worker-exit",
+          });
+        }
+        for (const connection of liveConnections) {
+          writeLine(connection.socket, {
+            type: "session_recovered",
+            sessionFile: selector.sessionFile,
+            sessionId: selector.sessionId,
+            resumed: resumeTurn,
+          });
+        }
+      } catch {
+        this.destroyWorker(replacement);
+      }
+    })().catch(() => {});
+  }
+
+  private async sendInternalCommand(worker: WorkerHandle, command: any) {
+    const id = `rin_internal_${++this.internalRequestSeq}`;
+    return await new Promise<any>((resolve, reject) => {
+      worker.pendingResponses.set(id, {
+        id,
+        commandType: String(command?.type || "unknown"),
+        resolve,
+        reject,
+      });
+      try {
+        worker.child.stdin.write(`${JSON.stringify({ ...command, id })}\n`);
+      } catch (error: any) {
+        worker.pendingResponses.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
   }
 }
