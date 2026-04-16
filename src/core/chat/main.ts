@@ -43,6 +43,15 @@ import {
 } from "./chat-helpers.js";
 import { ChatController, loadChatSettings } from "./controller.js";
 import { appendChatLog } from "./chat-log.js";
+import {
+  claimChatInboxFile,
+  completeChatInboxFile,
+  enqueueChatInboxItem,
+  listPendingChatInboxFiles,
+  readChatInboxItem,
+  requeueChatInboxFile,
+  restoreChatInboxFile,
+} from "./inbox.js";
 import { shouldProcessText } from "./decision.js";
 import {
   createChatRuntimeApp,
@@ -56,6 +65,7 @@ import {
   trustOf,
 } from "./support.js";
 import { chatRpcSocketPath } from "./rpc.js";
+import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 
 function createLogger(name: string) {
@@ -72,6 +82,25 @@ const logger = createLogger("rin-chat");
 const RIN_CHAT_SETTINGS_PATH_ENV = "RIN_CHAT_SETTINGS_PATH";
 const LEGACY_RIN_KOISHI_SETTINGS_PATH_ENV = "RIN_KOISHI_SETTINGS_PATH";
 const TYPING_POLL_INTERVAL_MS = 4000;
+const CHAT_INBOX_POLL_INTERVAL_MS = 3000;
+const CHAT_INBOX_ACCEPT_TIMEOUT_MS = 5000;
+const CHAT_INBOX_RETRY_MIN_MS = 2000;
+const CHAT_INBOX_RETRY_MAX_MS = 60_000;
+const TRANSIENT_CHAT_RUNTIME_ERROR_RE =
+  /rin_timeout:|rin_disconnected:|rin_tui_not_connected|chat_controller_disposed|rin_worker_exit:|chat_turn_stale/;
+
+function wait(ms = 0) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTransientChatRuntimeError(error: unknown) {
+  return TRANSIENT_CHAT_RUNTIME_ERROR_RE.test(safeString((error as any)?.message || error));
+}
+
+function computeChatInboxRetryDelay(attemptCount: number) {
+  const attempt = Math.max(0, Number(attemptCount || 0));
+  return Math.min(CHAT_INBOX_RETRY_MAX_MS, CHAT_INBOX_RETRY_MIN_MS * 2 ** attempt);
+}
 
 async function buildTelegramInboundMediaDebug(session: any) {
   const update = session?.telegram;
@@ -223,6 +252,7 @@ export async function startChatBridge(
   }
   const controllers = new Map<string, ChatController>();
   const detachedControllers = new Map<string, ChatController>();
+  let inboxPollTimer: NodeJS.Timeout | null = null;
   const typingPollTimer = setInterval(() => {
     for (const controller of controllers.values()) {
       void controller.housekeep().catch((error: any) => {
@@ -291,6 +321,55 @@ export async function startChatBridge(
     }
     return controller;
   };
+  const findRuntimeBot = (platform: string, selfId: string) =>
+    (Array.isArray(app.bots) ? app.bots : []).find(
+      (bot: any) =>
+        safeString(bot?.platform).trim() === safeString(platform).trim() &&
+        safeString(bot?.selfId).trim() === safeString(selfId).trim(),
+    );
+  const hasInboundBeenAccepted = (
+    chatKey: string,
+    messageId: string,
+    controller?: ChatController,
+  ) => {
+    const nextChatKey = safeString(chatKey).trim();
+    const nextMessageId = safeString(messageId).trim();
+    if (!nextChatKey || !nextMessageId) return false;
+    if (controller?.state.processing?.incomingMessageId === nextMessageId) {
+      return true;
+    }
+    const stored = getChatMessage(runtime.agentDir, nextChatKey, nextMessageId);
+    return Boolean(safeString(stored?.processedAt || "").trim());
+  };
+  const waitForInboundAcceptance = async (
+    chatKey: string,
+    messageId: string,
+    controller?: ChatController,
+    timeoutMs = CHAT_INBOX_ACCEPT_TIMEOUT_MS,
+  ) => {
+    const nextChatKey = safeString(chatKey).trim();
+    const nextMessageId = safeString(messageId).trim();
+    if (!nextChatKey || !nextMessageId) return true;
+    const deadline = Date.now() + Math.max(250, timeoutMs);
+    while (Date.now() < deadline) {
+      if (hasInboundBeenAccepted(nextChatKey, nextMessageId, controller)) {
+        return true;
+      }
+      await wait(250);
+    }
+    return hasInboundBeenAccepted(nextChatKey, nextMessageId, controller);
+  };
+  const restoreQueuedSession = (payload: any) => {
+    const session =
+      payload && typeof payload === "object"
+        ? JSON.parse(JSON.stringify(payload))
+        : {};
+    const platform = safeString(session?.platform || "").trim();
+    const selfId = safeString(session?.selfId || "").trim();
+    const bot = findRuntimeBot(platform, selfId);
+    if (bot) session.bot = bot;
+    return session;
+  };
 
   const handleCommandSession = async (
     session: any,
@@ -299,7 +378,9 @@ export async function startChatBridge(
   ) => {
     const platform = safeString(session?.platform || "").trim();
     const trust = trustOf(identity, platform, pickUserId(session));
-    if (command.name !== "help" && !canRunCommand(trust, command.name)) return;
+    if (command.name !== "help" && !canRunCommand(trust, command.name)) {
+      return { accepted: true, retry: false };
+    }
     const chatKey = composeChatKey(
       platform,
       getChatId(session),
@@ -307,7 +388,7 @@ export async function startChatBridge(
     );
     const messageId = pickMessageId(session);
     const replyToMessageId = pickReplyToMessageId(session);
-    if (!chatKey) return;
+    if (!chatKey) return { accepted: true, retry: false };
     const replySession = lookupReplySession(
       runtime.agentDir,
       chatKey,
@@ -333,7 +414,7 @@ export async function startChatBridge(
         },
         h,
       ).catch(() => {});
-      return;
+      return { accepted: true, retry: false };
     }
 
     const controller = getController(chatKey);
@@ -344,20 +425,29 @@ export async function startChatBridge(
     }
 
     const text = `/${command.name}${command.argsText ? ` ${command.argsText}` : ""}`;
-    await controller.runCommand(text, messageId, messageId).catch((error) => {
+    try {
+      await controller.runCommand(text, messageId, messageId);
+      return { accepted: true, retry: false };
+    } catch (error) {
       logger.warn(
         `chat command failed chatKey=${chatKey} command=${command.name} err=${safeString((error as any)?.message || error)}`,
       );
-    });
+      return {
+        accepted: false,
+        retry: isTransientChatRuntimeError(error),
+        errorMessage: safeString((error as any)?.message || error),
+      };
+    }
   };
 
   const handleChatTurnSession = async (
     session: any,
     elements: any[],
     identity: any,
+    options?: { queued?: boolean },
   ) => {
     const decision = await shouldProcessText(session, elements, identity);
-    if (!decision.allow) return;
+    if (!decision.allow) return { accepted: true, retry: false };
     const messageId = pickMessageId(session);
     const replyToMessageId = pickReplyToMessageId(session);
     const controller = getController(decision.chatKey);
@@ -416,26 +506,14 @@ export async function startChatBridge(
         .map((item) => ({ name: item.name, path: item.path })),
     });
     const mode = controller.hasActiveTurn() ? "steer" : "prompt";
-    void controller
-      .runTurn(
-        {
-          text: promptBody,
-          attachments,
-          replyToMessageId: messageId,
-          incomingMessageId: messageId,
-        },
-        mode,
-      )
-      .catch((error) => {
-        const errorMessage = safeString((error as any)?.message || error);
-        const transientFailure =
-          /rin_timeout:|rin_disconnected:|rin_tui_not_connected|chat_controller_disposed|rin_worker_exit:|chat_turn_stale/.test(
-            errorMessage,
-          );
-        logger.warn(
-          `chat turn failed chatKey=${decision.chatKey} transient=${transientFailure} err=${errorMessage}`,
-        );
-        if (transientFailure) {
+    const handleTurnFailure = async (error: any) => {
+      const errorMessage = safeString((error as any)?.message || error);
+      const transientFailure = isTransientChatRuntimeError(errorMessage);
+      logger.warn(
+        `chat turn failed chatKey=${decision.chatKey} transient=${transientFailure} err=${errorMessage}`,
+      );
+      if (transientFailure) {
+        if (!options?.queued) {
           setTimeout(() => {
             void controller.recoverIfNeeded().catch((recoverError) => {
               logger.warn(
@@ -443,24 +521,124 @@ export async function startChatBridge(
               );
             });
           }, 1000);
-          return;
         }
-        void sendOutboxPayload(
-          app,
-          runtime.agentDir,
-          {
-            type: "text_delivery",
-            createdAt: new Date().toISOString(),
-            chatKey: decision.chatKey,
-            text: `Chat bridge error: ${errorMessage || "chat_bridge_turn_failed"}`,
-            replyToMessageId: messageId || undefined,
-            sessionId: replySession?.sessionId,
-            sessionFile: replySession?.sessionFile,
-          },
-          h,
-        ).catch(() => {});
-        void controller.clearProcessingState().catch(() => {});
+        return { transientFailure, errorMessage };
+      }
+      void sendOutboxPayload(
+        app,
+        runtime.agentDir,
+        {
+          type: "text_delivery",
+          createdAt: new Date().toISOString(),
+          chatKey: decision.chatKey,
+          text: `Chat bridge error: ${errorMessage || "chat_bridge_turn_failed"}`,
+          replyToMessageId: messageId || undefined,
+          sessionId: replySession?.sessionId,
+          sessionFile: replySession?.sessionFile,
+        },
+        h,
+      ).catch(() => {});
+      void controller.clearProcessingState().catch(() => {});
+      return { transientFailure, errorMessage };
+    };
+    const turnPromise = controller.runTurn(
+      {
+        text: promptBody,
+        attachments,
+        replyToMessageId: messageId,
+        incomingMessageId: messageId,
+      },
+      mode,
+    );
+    if (!options?.queued) {
+      void turnPromise.catch((error) => {
+        void handleTurnFailure(error);
       });
+      return { accepted: true, retry: false };
+    }
+    let failure: { transientFailure: boolean; errorMessage: string } | null = null;
+    void turnPromise.catch(async (error) => {
+      failure = await handleTurnFailure(error);
+    });
+    const accepted = await waitForInboundAcceptance(
+      decision.chatKey,
+      messageId,
+      controller,
+    );
+    if (accepted) return { accepted: true, retry: false };
+    if (failure) {
+      return {
+        accepted: false,
+        retry: failure.transientFailure,
+        errorMessage: failure.errorMessage,
+      };
+    }
+    return {
+      accepted: false,
+      retry: true,
+      errorMessage: "chat_turn_not_accepted",
+    };
+  };
+
+  const drainChatInbox = async () => {
+    for (const filePath of listPendingChatInboxFiles(runtime.agentDir)) {
+      let claimedPath = "";
+      try {
+        claimedPath = claimChatInboxFile(runtime.agentDir, filePath);
+      } catch {
+        continue;
+      }
+      if (!claimedPath) continue;
+      const envelope = readChatInboxItem(claimedPath);
+      if (!envelope) {
+        completeChatInboxFile(claimedPath);
+        continue;
+      }
+      const nextAttemptAt = Date.parse(safeString(envelope.nextAttemptAt || "").trim());
+      if (Number.isFinite(nextAttemptAt) && nextAttemptAt > Date.now()) {
+        restoreChatInboxFile(runtime.agentDir, claimedPath, envelope);
+        continue;
+      }
+      try {
+        const queuedSession = restoreQueuedSession(envelope.session);
+        const queuedElements = Array.isArray(envelope.elements) ? envelope.elements : [];
+        if (
+          envelope.chatKey &&
+          envelope.messageId &&
+          hasInboundBeenAccepted(envelope.chatKey, envelope.messageId)
+        ) {
+          completeChatInboxFile(claimedPath);
+          continue;
+        }
+        const identity = getIdentity();
+        const command = parseInboundCommand(
+          queuedSession,
+          elementsToText(queuedElements),
+          commandRows,
+        );
+        const result = command
+          ? await handleCommandSession(queuedSession, command, identity)
+          : await handleChatTurnSession(queuedSession, queuedElements, identity, {
+              queued: true,
+            });
+        if (result?.accepted || result?.retry === false) {
+          completeChatInboxFile(claimedPath);
+          continue;
+        }
+        requeueChatInboxFile(runtime.agentDir, claimedPath, envelope, {
+          delayMs: computeChatInboxRetryDelay(envelope.attemptCount + 1),
+          error: safeString(result?.errorMessage || "chat_inbound_retry_needed"),
+        });
+      } catch (error) {
+        logger.warn(
+          `chat inbox drain failed file=${claimedPath} err=${safeString((error as any)?.message || error)}`,
+        );
+        requeueChatInboxFile(runtime.agentDir, claimedPath, envelope, {
+          delayMs: computeChatInboxRetryDelay(envelope.attemptCount + 1),
+          error: safeString((error as any)?.message || error),
+        });
+      }
+    }
   };
 
   app.on("message", (session: any) => {
@@ -480,6 +658,15 @@ export async function startChatBridge(
           session?.selfId || session?.bot?.selfId || "",
         ).trim();
         const chatKey = composeChatKey(platform, getChatId(session), botId);
+        const messageId = pickMessageId(session);
+        if (chatKey && messageId) {
+          enqueueChatInboxItem(runtime.agentDir, {
+            chatKey,
+            messageId,
+            session,
+            elements,
+          });
+        }
         const text = elementsToText(elements);
         if (chatKey && text) {
           appendChatLog(runtime.agentDir, {
@@ -506,15 +693,23 @@ export async function startChatBridge(
       );
       if (command) {
         await handleCommandSession(session, command, identity);
-        return;
+      } else {
+        await handleChatTurnSession(session, elements, identity);
       }
-      await handleChatTurnSession(session, elements, identity);
     })().catch((error: any) => {
       logger.warn(
         `chat inbound handling failed err=${safeString(error?.message || error)}`,
       );
     });
   });
+
+  inboxPollTimer = setInterval(() => {
+    void drainChatInbox().catch((error: any) => {
+      logger.warn(
+        `chat inbox polling failed err=${safeString(error?.message || error)}`,
+      );
+    });
+  }, CHAT_INBOX_POLL_INTERVAL_MS);
 
   app.on("bot-status-updated", (bot: any) => {
     if (bot?.status !== 1) return;
@@ -717,9 +912,15 @@ export async function startChatBridge(
       );
     });
   }
+  void drainChatInbox().catch((error: any) => {
+    logger.warn(
+      `chat inbox startup drain failed err=${safeString(error?.message || error)}`,
+    );
+  });
 
   const shutdown = async () => {
     clearInterval(typingPollTimer);
+    if (inboxPollTimer) clearInterval(inboxPollTimer);
     for (const controller of controllers.values()) controller.dispose();
     for (const controller of detachedControllers.values()) controller.dispose();
     try {
