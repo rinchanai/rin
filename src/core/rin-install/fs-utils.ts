@@ -4,6 +4,7 @@ import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 
 import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
+import { appConfigDirForUser as installAppConfigDirForUser } from "./paths.js";
 
 export function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
@@ -132,10 +133,7 @@ export function appConfigDirForUser(
   userName: string,
   homeForUser: (user: string) => string,
 ) {
-  const home = homeForUser(userName);
-  if (process.platform === "darwin")
-    return path.join(home, "Library", "Application Support", "rin");
-  return path.join(home, ".config", "rin");
+  return installAppConfigDirForUser(userName, homeForUser);
 }
 
 export function runPrivileged(

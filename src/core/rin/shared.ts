@@ -15,6 +15,7 @@ import {
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
+import { launcherMetadataPathForHome } from "../rin-install/paths.js";
 
 export type ParsedArgs = {
   command: "" | "update" | "start" | "stop" | "restart" | "doctor" | "usage";
@@ -60,14 +61,8 @@ export function runCommand(command: string, args: string[], options: any = {}) {
   });
 }
 
-function appConfigDir() {
-  if (process.platform === "darwin")
-    return path.join(os.homedir(), "Library", "Application Support", "rin");
-  return path.join(os.homedir(), ".config", "rin");
-}
-
 export function installConfigPath() {
-  return path.join(appConfigDir(), "install.json");
+  return launcherMetadataPathForHome(os.homedir());
 }
 
 export function loadInstallConfig() {

@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  defaultInstallDirForHome,
+  installerManifestPathsForHome,
+  launcherMetadataCandidatePathsForHome,
+} from "./paths.js";
+
 type UpdateTargetDiscoveryDeps = {
   roots?: string[];
   readdirSync?: typeof fs.readdirSync;
@@ -88,19 +94,8 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    const linuxLauncherMetadataPath = path.join(
-      homeDir,
-      ".config",
-      "rin",
-      "install.json",
-    );
-    const macLauncherMetadataPath = path.join(
-      homeDir,
-      "Library",
-      "Application Support",
-      "rin",
-      "install.json",
-    );
+    const [linuxLauncherMetadataPath, macLauncherMetadataPath] =
+      launcherMetadataCandidatePathsForHome(homeDir);
     const launcherMetadata = readJsonFile<any>(
       linuxLauncherMetadataPath,
       readJsonFile<any>(macLauncherMetadataPath, null, { readFileSync }),
@@ -110,20 +105,16 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
       add(
         String(launcherMetadata.defaultTargetUser || userName),
         String(
-          launcherMetadata.defaultInstallDir || path.join(homeDir, ".rin"),
+          launcherMetadata.defaultInstallDir ||
+            defaultInstallDirForHome(homeDir),
         ),
         homeDir,
         "launcher",
       );
     }
 
-    const manifestPath = path.join(homeDir, ".rin", "installer.json");
-    const legacyManifestPath = path.join(
-      homeDir,
-      ".rin",
-      "config",
-      "installer.json",
-    );
+    const [manifestPath, legacyManifestPath] =
+      installerManifestPathsForHome(homeDir);
     const manifest = readJsonFile<any>(
       manifestPath,
       readJsonFile<any>(legacyManifestPath, null, { readFileSync }),
@@ -132,7 +123,7 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
     if (manifest && typeof manifest === "object") {
       add(
         String(manifest.targetUser || userName),
-        String(manifest.installDir || path.join(homeDir, ".rin")),
+        String(manifest.installDir || defaultInstallDirForHome(homeDir)),
         homeDir,
         "manifest",
       );
@@ -147,7 +138,7 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
         const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
         add(
           userName,
-          match ? match[1].trim() : path.join(homeDir, ".rin"),
+          match ? match[1].trim() : defaultInstallDirForHome(homeDir),
           homeDir,
           "systemd",
         );
@@ -165,7 +156,7 @@ export function discoverInstalledTargets(deps: UpdateTargetDiscoveryDeps = {}) {
         );
         add(
           userName,
-          match ? match[1].trim() : path.join(homeDir, ".rin"),
+          match ? match[1].trim() : defaultInstallDirForHome(homeDir),
           homeDir,
           "launchd",
         );

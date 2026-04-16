@@ -54,6 +54,18 @@ test("shared source archive url follows the active repository", () => {
   assert.equal(shared.sourceArchiveUrl(), shared.DEFAULT_SOURCE_ARCHIVE_URL);
 });
 
+test("shared install config path follows the platform launcher metadata location", () => {
+  const configPath = shared.installConfigPath();
+  assert.ok(configPath.endsWith("install.json"));
+  if (process.platform === "darwin") {
+    assert.ok(
+      configPath.includes(path.join("Library", "Application Support", "rin")),
+    );
+    return;
+  }
+  assert.ok(configPath.includes(path.join(".config", "rin")));
+});
+
 test("tmux socket args target the caller-owned hidden socket", () => {
   assert.deepEqual(launch.buildTmuxSocketArgs("demo"), ["-L", "rin-demo"]);
 });
