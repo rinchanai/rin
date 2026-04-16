@@ -11,6 +11,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 
 import { BUILTIN_MODULE_ORDER } from "../builtins/registry.js";
+import { listBoundSessions } from "../session/factory.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import {
   createConfiguredAgentSession,
@@ -113,7 +114,10 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   });
 
   const { SessionManager } = await loadSessionManagerModule();
-  const sessions = await SessionManager.listAll();
+  const sessions = await listBoundSessions({
+    cwd: HOME_DIR,
+    SessionManager,
+  });
   const normalizedWanted = wanted.toLowerCase();
   const normalizedDirectPath = directMatchPath
     ? path.resolve(directMatchPath).toLowerCase()

@@ -7,7 +7,8 @@ import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "..
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { getChatSidecarStatus } from "../chat/service.js";
 import { emptySessionState, isSessionScopedCommand, response, } from "../rin-lib/rpc.js";
-import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
+import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
+import { listBoundSessions } from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
@@ -60,6 +61,7 @@ export async function startDaemon(options = {}) {
         process.env.RIN_WORKER_PATH ||
         path.join(path.dirname(new URL(import.meta.url).pathname), "worker.js");
     const runtime = resolveRuntimeProfile();
+    applyRuntimeProfileEnvironment(runtime);
     const sessionManagerModulePromise = loadRinSessionManagerModule();
     const restartState = loadRestartState(runtime.agentDir);
     const workerPool = new WorkerPool({
@@ -216,7 +218,11 @@ export async function startDaemon(options = {}) {
         }
         if (type === "list_sessions") {
             const { SessionManager } = await sessionManagerModulePromise;
-            const sessions = await SessionManager.listAll();
+            const sessions = await listBoundSessions({
+                cwd: runtime.cwd,
+                agentDir: runtime.agentDir,
+                SessionManager,
+            });
             writeLine(connection.socket, response(id, type, true, { sessions }));
             return true;
         }

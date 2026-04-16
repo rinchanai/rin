@@ -1,5 +1,6 @@
 import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import { loadRinChangelogModule } from "../rin-lib/loader.js";
+import { listBoundSessions } from "../session/factory.js";
 
 export function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -180,7 +181,11 @@ export async function runBuiltinCommand(
       };
     }
     case "resume": {
-      const sessions = await deps.SessionManager.listAll();
+      const sessions = await listBoundSessions({
+        cwd: session.sessionManager.getCwd(),
+        sessionDir: session.sessionManager.getSessionDir(),
+        SessionManager: deps.SessionManager,
+      });
       if (!argsText) {
         const lines = sessions.slice(0, 20).map((item: any) => {
           const label =
