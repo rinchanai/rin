@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
 const HOME_DIR = os.homedir();
 
@@ -9,7 +10,7 @@ import type {
   ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 
-import { getBuiltinExtensionPaths } from "../../app/builtin-extensions.js";
+import { BUILTIN_MODULE_ORDER } from "../builtins/registry.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import {
   createConfiguredAgentSession,
@@ -56,22 +57,12 @@ function normalizeDisabledExtensions(values: unknown): string[] {
   )];
 }
 
-function getExtensionNameFromPath(entry: string): string {
-  const normalized = entry.split(path.sep).join("/");
-  const match = normalized.match(/\/extensions\/([^/]+)\/index\.(?:ts|js)$/);
-  return String(match?.[1] || "").trim().toLowerCase();
-}
-
-export function resolveSubagentExtensionPaths(
+export function resolveSubagentDisabledBuiltinModules(
   disabledExtensions: string[] = [],
 ): string[] {
   const blocked = new Set(normalizeDisabledExtensions(disabledExtensions));
   blocked.add("subagent");
-  return getBuiltinExtensionPaths().filter((entry) => {
-    const extensionName = getExtensionNameFromPath(entry);
-    if (!extensionName) return true;
-    return !blocked.has(extensionName);
-  });
+  return BUILTIN_MODULE_ORDER.filter((name) => blocked.has(name));
 }
 
 function normalizeSessionConfig(
@@ -162,6 +153,45 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   );
 }
 
+export function forkSessionManagerCompat(
+  SessionManager: any,
+  sourcePath: string,
+  targetCwd: string,
+  sessionDir?: string,
+  options: { persist?: boolean; leafId?: string } = {},
+) {
+  if (typeof SessionManager?.forkFrom === "function" && SessionManager.forkFrom.length >= 4) {
+    return SessionManager.forkFrom(sourcePath, targetCwd, sessionDir, options);
+  }
+  if (options.persist !== false) {
+    return SessionManager.forkFrom(sourcePath, targetCwd, sessionDir);
+  }
+
+  const sourceManager = SessionManager.open(sourcePath, sessionDir, undefined);
+  const sourceHeader = sourceManager.getHeader?.() || {};
+  const forkEntries = options.leafId
+    ? sourceManager.getBranch(options.leafId)
+    : sourceManager.getEntries();
+  const manager = new SessionManager(targetCwd, sessionDir || "", undefined, false);
+  manager.fileEntries = [
+    {
+      ...sourceHeader,
+      type: "session",
+      version: Number(sourceHeader?.version || 3),
+      id: randomUUID(),
+      timestamp: new Date().toISOString(),
+      cwd: targetCwd,
+      parentSession: sourcePath,
+    },
+    ...forkEntries,
+  ];
+  manager.sessionId = manager.fileEntries[0].id;
+  manager.sessionFile = undefined;
+  manager.flushed = false;
+  manager._buildIndex?.();
+  return manager;
+}
+
 async function createManagedSession(task: SubagentTask) {
   const cwd = HOME_DIR;
   const sessionConfig = normalizeSessionConfig(task.session);
@@ -183,16 +213,22 @@ async function createManagedSession(task: SubagentTask) {
     );
   } else {
     const source = await resolveSessionReference(sessionConfig.ref || "");
-    sessionManager = SessionManager.forkFrom(source.path, cwd, sessionDir, {
-      persist: sessionConfig.keep !== false,
-    });
+    sessionManager = forkSessionManagerCompat(
+      SessionManager,
+      source.path,
+      cwd,
+      sessionDir,
+      {
+        persist: sessionConfig.keep !== false,
+      },
+    );
   }
 
   const created = await withSessionCreationLock(async () => {
     return await createConfiguredAgentSession({
       cwd: sessionManager.getCwd?.() || cwd,
       agentDir: profile.agentDir,
-      additionalExtensionPaths: resolveSubagentExtensionPaths(
+      disabledBuiltinModules: resolveSubagentDisabledBuiltinModules(
         task.disabledExtensions,
       ),
       sessionManager,

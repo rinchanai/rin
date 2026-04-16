@@ -26,7 +26,7 @@ See `docs/capabilities.md` for agent-facing behavior.
 
 ### Builtin capabilities
 
-Rin force-loads additional builtin extensions such as web search, fetch, memory, subagent, scheduled tasks, and chat bridge helpers.
+Rin registers additional builtin capabilities such as web search, fetch, memory, subagent, scheduled tasks, and chat bridge helpers directly in core.
 Do not reason from upstream pi defaults alone.
 See `docs/builtin-extensions.md` and `docs/capabilities.md`.
 

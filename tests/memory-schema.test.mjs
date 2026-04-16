@@ -11,9 +11,7 @@ const schema = await import(
   pathToFileURL(
     path.join(
       rootDir,
-      "dist",
-      "extensions",
-      "self-improve",
+      "dist", "core", "self-improve",
       "core",
       "schema.js",
     ),

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { BuiltinModuleHost } from "../builtins/host.js";
 import { getBuiltinSlashCommands } from "./worker-helpers.js";
 async function createCatalogContext(options = {}) {
     const codingAgentModule = await loadRinCodingAgent();
@@ -25,16 +26,22 @@ async function createCatalogContext(options = {}) {
     const eventBus = createEventBus();
     const loadedExtensions = await discoverAndLoadExtensions(options.additionalExtensionPaths ?? [], cwd, agentDir, eventBus);
     const extensionRunner = new ExtensionRunner(loadedExtensions.extensions, loadedExtensions.runtime, cwd, null, modelRegistry);
+    const builtinHost = await BuiltinModuleHost.create({
+        cwd,
+        agentDir,
+        modelRegistry,
+    });
     return {
         agentDir,
         authStorage,
         modelRegistry,
         resourceLoader,
         extensionRunner,
+        builtinHost,
     };
 }
 export async function listCatalogCommands(options = {}) {
-    const { resourceLoader, extensionRunner } = await createCatalogContext(options);
+    const { resourceLoader, extensionRunner, builtinHost } = await createCatalogContext(options);
     const prompts = resourceLoader.getPrompts().prompts;
     const skills = resourceLoader.getSkills().skills;
     const seen = new Set();
@@ -44,6 +51,12 @@ export async function listCatalogCommands(options = {}) {
             name: String(command?.invocationName || command?.name || "").trim(),
             description: String(command?.description || "").trim(),
             source: "extension",
+            sourceInfo: command?.sourceInfo,
+        })),
+        ...builtinHost.getRegisteredCommands().map((command) => ({
+            name: String(command?.invocationName || command?.name || "").trim(),
+            description: String(command?.description || "").trim(),
+            source: "builtin_module",
             sourceInfo: command?.sourceInfo,
         })),
         ...prompts.map((template) => ({

@@ -11,6 +11,7 @@ import {
   getCompactionContinuationMarkerPath,
   writeCompactionContinuationMarker,
 } from "./compaction-continuation.js";
+import { attachBuiltinModulesToSession } from "../builtins/session.js";
 
 const DEFAULT_PI_GUIDELINES = [
   "Be concise in your responses",
@@ -63,7 +64,7 @@ function buildRinDocsBlock(agentDir: string) {
     `- Additional Pi docs: ${path.join(piRoot, "docs")}`,
     "- Read documentation whenever the task needs details about the runtime this agent is currently running in, including operations, configuration, behavior, capabilities, layout, or other agent-operated details.",
     "- Rin is built on top of Pi. Use Pi docs as the base reference, then apply Rin docs as overrides or additions where Rin differs.",
-    `- Topic map: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin extensions (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi examples (${path.join(piRoot, "examples")}: extensions, custom tools, SDK), extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)`,
+    `- Topic map: Rin overrides (docs/pi-overrides.md), runtime layout (docs/runtime-layout.md), builtin capabilities (docs/builtin-extensions.md), capabilities (docs/capabilities.md); Pi examples (${path.join(piRoot, "examples")}: extensions, custom tools, SDK), extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md)`,
   ].join("\n");
 }
 
@@ -521,6 +522,7 @@ export async function createConfiguredAgentSession(
     agentDir?: string;
     additionalExtensionPaths?: string[];
     additionalSkillPaths?: string[];
+    disabledBuiltinModules?: string[];
     sessionManager?: any;
     modelRef?: string;
     thinkingLevel?: any;
@@ -596,7 +598,41 @@ export async function createConfiguredAgentSession(
       sessionStartEvent,
       model: resolvedModel,
       thinkingLevel: options.thinkingLevel,
+      customTools: [],
     });
+
+    await attachBuiltinModulesToSession(result.session, {
+      cwd: runtimeCwd,
+      agentDir: runtimeAgentDir,
+      disabledNames: options.disabledBuiltinModules ?? [],
+      reason: String(sessionStartEvent?.reason || "startup") as
+        | "startup"
+        | "reload"
+        | "new"
+        | "resume"
+        | "fork",
+      previousSessionFile: String(sessionStartEvent?.previousSessionFile || "") || undefined,
+    });
+
+    const builtinHost = result.session?._extensionRunner?.builtinHost;
+    const builtinTools = builtinHost?.getAllToolDefinitions?.() || [];
+    if (builtinTools.length > 0) {
+      const existingTools = Array.isArray(result.session._customTools)
+        ? result.session._customTools
+        : [];
+      const nextTools = [
+        ...builtinTools,
+        ...existingTools.filter(
+          (tool: any) =>
+            !builtinTools.some(
+              (builtinTool: any) =>
+                String(builtinTool?.name || "") === String(tool?.name || ""),
+            ),
+        ),
+      ];
+      result.session._customTools = nextTools;
+      result.session._refreshToolRegistry?.();
+    }
 
     applyRinPromptBuilder(result.session);
     applyDisableEndTurnThresholdCompaction(result.session);

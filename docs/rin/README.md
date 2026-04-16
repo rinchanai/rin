@@ -22,7 +22,7 @@ Rin docs sit above upstream pi docs for Rin-operated behavior.
 ## Topic entrypoints
 
 - `docs/runtime-layout.md`: runtime layout, stable paths, launcher ownership, and which paths are safe to reference
-- `docs/builtin-extensions.md`: builtin extensions and default extra capabilities provided by Rin
+- `docs/builtin-extensions.md`: builtin capabilities and default extra capabilities provided by Rin core
 - `docs/capabilities.md`: compact agent-facing behavior and conventions for Rin features
 
 ## Reading order

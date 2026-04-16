@@ -10,22 +10,22 @@ const rootDir = path.resolve(
 );
 const modelUtils = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "subagent", "model-utils.js"),
+    path.join(rootDir, "dist", "core", "subagent", "builtin", "model-utils.js"),
   ).href
 );
 const formatUtils = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "subagent", "format-utils.js"),
+    path.join(rootDir, "dist", "core", "subagent", "builtin", "format-utils.js"),
   ).href
 );
 const subagentIndex = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "extensions", "subagent", "index.js"),
+    path.join(rootDir, "dist", "core", "subagent", "builtin", "index.js"),
   ).href
 );
 const subagentService = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "src", "core", "subagent", "service.js"),
+    path.join(rootDir, "dist", "core", "subagent", "service.js"),
   ).href
 );
 const { SessionManager } = await import("@mariozechner/pi-coding-agent");
@@ -95,21 +95,12 @@ test("subagent task preferences are construction-time only", async () => {
   });
 });
 
-test("subagent service can hide builtin extensions from worker runtime", () => {
-  const paths = subagentService.resolveSubagentExtensionPaths(["memory"]);
-  const normalized = paths.map((entry) => entry.replaceAll("\\", "/"));
-  assert.equal(
-    normalized.some((entry) => entry.endsWith("/extensions/memory/index.js")),
-    false,
-  );
-  assert.equal(
-    normalized.some((entry) => entry.endsWith("/extensions/subagent/index.js")),
-    false,
-  );
-  assert.equal(
-    normalized.some((entry) => entry.endsWith("/extensions/rules/index.js")),
-    true,
-  );
+test("subagent service can hide builtin modules from worker runtime", () => {
+  const disabled =
+    subagentService.resolveSubagentDisabledBuiltinModules(["memory"]);
+  assert.equal(disabled.includes("memory"), true);
+  assert.equal(disabled.includes("subagent"), true);
+  assert.equal(disabled.includes("rules"), false);
 });
 
 test("run_subagent exposes disabledExtensions in both single and task modes", () => {
@@ -149,9 +140,13 @@ test("session manager can create ephemeral forks without writing a session file"
       model: "demo",
     });
 
-    const fork = SessionManager.forkFrom(source.getSessionFile(), tempRoot, sessionDir, {
-      persist: false,
-    });
+    const fork = subagentService.forkSessionManagerCompat(
+      SessionManager,
+      source.getSessionFile(),
+      tempRoot,
+      sessionDir,
+      { persist: false },
+    );
     assert.equal(fork.isPersisted(), false);
     assert.equal(fork.getSessionFile(), undefined);
     assert.equal(fork.getEntries().length, source.getEntries().length);
