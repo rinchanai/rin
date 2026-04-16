@@ -1,27 +1,26 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { DefaultResourceLoader } from "../../third_party/pi-coding-agent/src/core/resource-loader.js";
+import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
-import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
   type TruncationResult,
   truncateHead,
-} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+} from "@mariozechner/pi-coding-agent";
 import {
   getTextOutput,
   invalidArgText,
   replaceTabs,
   shortenPath,
   str,
-} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
+} from "../../src/core/pi/render-utils.js";
 
 function normalizeInputPath(input: string): string {
   return input.trim();

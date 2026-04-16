@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -26,19 +26,17 @@ import {
   summarizeTaskResult,
 } from "./format-utils.js";
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
-import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
-import { truncateToVisualLines } from "../../third_party/pi-coding-agent/src/modes/interactive/components/visual-truncate.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
   type TruncationResult,
   truncateHead,
-} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+} from "@mariozechner/pi-coding-agent";
 import {
   getTextOutput,
   replaceTabs,
-} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
+} from "../../src/core/pi/render-utils.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
 

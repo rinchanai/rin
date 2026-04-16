@@ -4,21 +4,18 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
-import { truncateToVisualLines } from "../../third_party/pi-coding-agent/src/modes/interactive/components/visual-truncate.js";
-import { theme } from "../../third_party/pi-coding-agent/src/modes/interactive/theme/theme.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
   type TruncationResult,
   truncateTail,
-} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
-import { getTextOutput } from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
+} from "@mariozechner/pi-coding-agent";
+import { getTextOutput } from "../../src/core/pi/render-utils.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
@@ -99,6 +96,7 @@ function previewCode(value: unknown) {
 
 function formatChatBridgeCall(
   args: { code?: string; timeout?: number } | undefined,
+  theme: any,
 ): string {
   const preview = previewCode(args?.code);
   const timeout = args?.timeout as number | undefined;
@@ -123,6 +121,7 @@ function rebuildChatBridgeResultRenderComponent(
   showImages: boolean,
   startedAt: number | undefined,
   endedAt: number | undefined,
+  theme: any,
 ): void {
   const state = component.state;
   component.clear();
@@ -278,7 +277,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
         } satisfies ChatBridgeDetails,
       };
     },
-    renderCall(args, _theme, context) {
+    renderCall(args, theme, context) {
       const state = context.state as ChatBridgeRenderState;
       if (context.executionStarted && state.startedAt === undefined) {
         state.startedAt = Date.now();
@@ -286,10 +285,10 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       }
       const text =
         (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      text.setText(formatChatBridgeCall(args as any));
+      text.setText(formatChatBridgeCall(args as any, theme));
       return text;
     },
-    renderResult(result, options, _theme, context) {
+    renderResult(result, options, theme, context) {
       const state = context.state as ChatBridgeRenderState;
       if (
         state.startedAt !== undefined &&
@@ -316,6 +315,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
         context.showImages,
         state.startedAt,
         state.endedAt,
+        theme,
       );
       component.invalidate();
       return component;

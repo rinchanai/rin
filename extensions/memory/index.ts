@@ -1,20 +1,19 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
   type TruncationResult,
   truncateHead,
-} from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+} from "@mariozechner/pi-coding-agent";
 import {
   getTextOutput,
   replaceTabs,
-} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
+} from "../../src/core/pi/render-utils.js";
 
 import {
   appendTranscriptArchiveEntry,
