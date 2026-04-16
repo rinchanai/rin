@@ -1,0 +1,102 @@
+name: Bug report
+description: Report a reproducible problem in Rin.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        Before submitting, please search existing issues and confirm the problem still happens on the latest Rin version.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-flight checklist
+      options:
+        - label: I searched existing issues and did not find a matching report.
+          required: true
+        - label: I updated to the latest Rin version I can reproduce on.
+          required: true
+        - label: I included clear reproduction steps and the relevant logs/output below.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Rin version
+      description: "Paste the output of `rin --version` if available."
+      placeholder: 0.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Install method
+      description: How are you running Rin?
+      options:
+        - install.sh
+        - rin update / installed runtime
+        - Repository checkout / development build
+        - Docker / container
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system
+      description: Include version if relevant.
+      placeholder: Ubuntu 24.04 / macOS 15 / Windows 11 / ...
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you were trying to do.
+      placeholder: Rin failed when I...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide a minimal, reliable reproduction.
+      placeholder: |
+        1. Run `rin ...`
+        2. Open ...
+        3. Do ...
+        4. See error ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: Rin should...
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: Instead, Rin...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`rin doctor` output"
+      description: Paste the relevant output if available.
+      render: shell
+      placeholder: "Paste `rin doctor` output here"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or terminal output
+      description: Include anything that helps diagnose the problem.
+      render: shell
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add links, related issues, config details, or anything else that might help.
