@@ -3,6 +3,7 @@ import type {
   AgentMessage,
   ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
+import { buildSessionContext } from "@mariozechner/pi-coding-agent";
 
 import {
   getRuntimeSessionDir,
@@ -212,13 +213,18 @@ export class RpcInteractiveSession {
       getEntry: (id: string) => this.entryById.get(id),
       getLabel: (id: string) => this.labelsById.get(id),
       getBranch: (fromId?: string) => this.getBranch(fromId),
-      buildSessionContext: () => ({
-        messages: this.messages,
-        thinkingLevel: this.thinkingLevel,
-        model: this.model
-          ? { provider: this.model.provider, modelId: this.model.id }
-          : null,
-      }),
+      buildSessionContext: () => {
+        if (this.entries.length > 0) {
+          return buildSessionContext(this.entries, this.leafId, this.entryById as any);
+        }
+        return {
+          messages: this.messages,
+          thinkingLevel: this.thinkingLevel,
+          model: this.model
+            ? { provider: this.model.provider, modelId: this.model.id }
+            : null,
+        };
+      },
       getEntries: () => [...this.entries],
       getSessionName: () => this.sessionName,
       getTree: () => [...this.tree],
