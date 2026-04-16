@@ -14,6 +14,7 @@ export async function startWorker(
   });
   await runCustomRpcMode(runtime, {
     SessionManager: sessionManagerModule.SessionManager,
+    reuseFreshSessionForInitialNewSession: true,
   });
 }
 

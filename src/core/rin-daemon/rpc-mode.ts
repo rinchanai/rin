@@ -76,9 +76,26 @@ async function resumeInterruptedTurnIfNeeded(session: any) {
   });
 }
 
+function canReuseCurrentSessionForNewSessionCommand(
+  session: any,
+  command: any,
+) {
+  if (!session || session.isStreaming || session.isCompacting) return false;
+  if (String(command?.parentSession || "").trim()) return false;
+  const entryCount = Array.isArray(session.sessionManager?.getEntries?.())
+    ? session.sessionManager.getEntries().length
+    : undefined;
+  if (typeof entryCount === "number") return entryCount === 0;
+  const messageCount = Array.isArray(session.messages) ? session.messages.length : undefined;
+  return typeof messageCount === "number" ? messageCount === 0 : false;
+}
+
 export async function runCustomRpcMode(
   runtimeOrSession: any,
-  deps: { SessionManager: any },
+  deps: {
+    SessionManager: any;
+    reuseFreshSessionForInitialNewSession?: boolean;
+  },
 ) {
   const { SessionManager } = deps;
   const runtime =
@@ -107,6 +124,9 @@ export async function runCustomRpcMode(
   };
   let activeTurnPromise: Promise<void> | null = null;
   let interruptQueue = Promise.resolve();
+  let initialFreshSessionReusable =
+    deps.reuseFreshSessionForInitialNewSession === true &&
+    canReuseCurrentSessionForNewSessionCommand(getSession(), {});
   const emitTurnEvent = (
     event: string,
     requestTag: string,
@@ -276,6 +296,8 @@ export async function runCustomRpcMode(
     const session = getSession();
     const id = command?.id;
     const type = String(command?.type || "unknown");
+    const usingInitialFreshSession = initialFreshSessionReusable;
+    initialFreshSessionReusable = false;
     switch (type) {
       case "prompt":
         startTurnTask(String(command.requestTag || ""), async () => {
@@ -444,6 +466,16 @@ export async function runCustomRpcMode(
         );
       }
       case "new_session":
+        if (
+          usingInitialFreshSession &&
+          canReuseCurrentSessionForNewSessionCommand(session, command)
+        ) {
+          return done(id, type, {
+            cancelled: false,
+            sessionFile: session.sessionFile,
+            sessionId: session.sessionId,
+          });
+        }
         return run(
           id,
           type,

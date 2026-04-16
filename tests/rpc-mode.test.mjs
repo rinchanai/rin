@@ -107,6 +107,109 @@ test("rpc mode routes steer through session.steer", { concurrency: false }, asyn
   }
 });
 
+test("rpc mode reuses an already-fresh worker session for the first new_session command", { concurrency: false }, async () => {
+  const stdinOn = process.stdin.on;
+  const stdoutWrite = process.stdout.write;
+  const handlers = new Map();
+  const lines = [];
+  let newSessionCalls = 0;
+
+  process.stdin.on = function (event, handler) {
+    handlers.set(event, handler);
+    return this;
+  };
+  process.stdout.write = function (chunk) {
+    lines.push(String(chunk));
+    return true;
+  };
+
+  try {
+    const session = {
+      isStreaming: false,
+      isCompacting: false,
+      sessionFile: "/tmp/fresh-session.jsonl",
+      sessionId: "fresh-session-id",
+      agent: { waitForIdle: async () => {} },
+      bindExtensions: async () => {},
+      subscribe: () => () => {},
+      prompt: async () => {},
+      sendCustomMessage: async () => {},
+      steer: async () => {},
+      followUp: async () => {},
+      abort: async () => {},
+      modelRegistry: { getAvailable: async () => [] },
+      sessionManager: {
+        getEntries: () => [],
+        getTree: () => [],
+        getLeafId: () => null,
+        getCwd: () => process.cwd(),
+        getSessionDir: () => process.cwd(),
+      },
+      messages: [],
+      getSessionStats: () => ({}),
+      getUserMessagesForForking: () => [],
+      getLastAssistantText: () => "",
+      setThinkingLevel: () => {},
+      cycleThinkingLevel: () => undefined,
+      setSteeringMode: () => {},
+      setFollowUpMode: () => {},
+      compact: async () => {},
+      setAutoCompactionEnabled: () => {},
+      setAutoRetryEnabled: () => {},
+      abortRetry: () => {},
+      executeBash: async () => {},
+      abortBash: async () => {},
+      fork: async () => ({ cancelled: false, selectedText: "" }),
+      navigateTree: async () => ({ cancelled: false }),
+      exportToHtml: async () => "",
+      exportToJsonl: () => "",
+      importFromJsonl: async () => ({ cancelled: false }),
+      setModel: async () => {},
+      reload: async () => {},
+      setSessionName: () => {},
+    };
+    const runtime = {
+      session,
+      async newSession() {
+        newSessionCalls += 1;
+        return { cancelled: false };
+      },
+      async switchSession() {
+        throw new Error("unexpected");
+      },
+      async fork() {
+        throw new Error("unexpected");
+      },
+      async importFromJsonl() {
+        throw new Error("unexpected");
+      },
+    };
+
+    void runCustomRpcMode(runtime, {
+      SessionManager: {
+        listAll: async () => [],
+        list: async () => [],
+        open: () => ({ appendSessionInfo() {} }),
+      },
+      builtinSlashCommands: [],
+      reuseFreshSessionForInitialNewSession: true,
+    });
+    await wait(0);
+
+    const onData = handlers.get("data");
+    assert.equal(typeof onData, "function");
+    onData(Buffer.from(`${JSON.stringify({ id: "3", type: "new_session" })}\n`));
+    await wait(20);
+
+    assert.equal(newSessionCalls, 0);
+    assert.ok(lines.join("").includes('"id":"3"'));
+    assert.ok(lines.join("").includes('"sessionFile":"/tmp/fresh-session.jsonl"'));
+  } finally {
+    process.stdin.on = stdinOn;
+    process.stdout.write = stdoutWrite;
+  }
+});
+
 test("rpc mode rebinds to runtime.session after session replacement", { concurrency: false }, async () => {
   const stdinOn = process.stdin.on;
   const stdoutWrite = process.stdout.write;

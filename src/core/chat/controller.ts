@@ -36,6 +36,14 @@ function extractFinalTextFromTurnResult(result: any) {
   return "";
 }
 
+function commandNameFromCommandLine(commandLine: string) {
+  const trimmed = safeString(commandLine).trim();
+  if (!trimmed.startsWith("/")) return "";
+  const commandPart = trimmed.slice(1).trim();
+  if (!commandPart) return "";
+  return safeString(commandPart.split(/\s+/, 1)[0]).trim();
+}
+
 export class ChatController {
   app: any;
   chatKey: string;
@@ -87,7 +95,7 @@ export class ChatController {
     if (!this.state.chatKey) this.state.chatKey = chatKey;
   }
 
-  async connect() {
+  async connect(options: { restoreSession?: boolean } = {}) {
     if (this.session && this.client) return;
     const client = new RinDaemonFrontendClient();
     const session = new RpcInteractiveSession(client);
@@ -103,6 +111,7 @@ export class ChatController {
       this.handleSessionEvent(event);
     });
 
+    if (options.restoreSession === false) return;
     const wantedSessionFile = this.getRecoverableSessionFile();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
@@ -523,9 +532,13 @@ export class ChatController {
     replyToMessageId = "",
     incomingMessageId = "",
   ) {
-    await this.connect();
+    const commandName = commandNameFromCommandLine(commandLine);
+    const skipSessionRecovery = commandName === "new";
+    await this.connect({ restoreSession: !skipSessionRecovery });
     if (!this.session) throw new Error("chat_session_not_connected");
-    await this.ensureSessionReady();
+    if (!skipSessionRecovery) {
+      await this.ensureSessionReady();
+    }
     this.markProcessedMessage(incomingMessageId);
     try {
       const data: any = await this.session.runCommand(commandLine);

@@ -46,6 +46,7 @@ async function createController(chatKey = "telegram/1:2") {
     ],
   };
   controller.connect = async () => {};
+  controller.saveState = () => {};
   return controller;
 }
 
@@ -85,6 +86,42 @@ test("chat controller uses RpcInteractiveSession session bootstrap before first 
   assert.deepEqual(namedSessions, []);
   assert.deepEqual(deliveries, ["Session stats"]);
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
+});
+
+test("chat controller skips session recovery bootstrap for /new", async () => {
+  const controller = await createController();
+  const calls = [];
+  const deliveries = [];
+  controller.commitPendingDelivery = async function () {
+    deliveries.push(this.state.pendingDelivery?.text || "");
+    delete this.state.pendingDelivery;
+    this.saveState();
+  };
+
+  controller.connect = async function (options = {}) {
+    calls.push(`connect:${String(options.restoreSession)}`);
+    this.session = {
+      sessionManager: {
+        getSessionFile: () => "/tmp/new-chat.jsonl",
+        getSessionId: () => "session-2",
+        getSessionName: () => this.chatKey,
+      },
+      ensureSessionReady: async () => {
+        calls.push("ensureSessionReady");
+        return { sessionFile: "/tmp/new-chat.jsonl", sessionId: "session-2" };
+      },
+      runCommand: async (commandLine) => {
+        calls.push(`runCommand:${commandLine}`);
+        return { handled: true, text: "Started a new session." };
+      },
+    };
+  };
+
+  await controller.runCommand("/new");
+
+  assert.deepEqual(calls, ["connect:false", "runCommand:/new"]);
+  assert.deepEqual(deliveries, ["Started a new session."]);
+  assert.equal(controller.state.piSessionFile, "/tmp/new-chat.jsonl");
 });
 
 test("chat controller delivers a visible command error instead of failing silently", async () => {
