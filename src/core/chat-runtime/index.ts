@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import WebSocket from "ws";
 
 import { enqueueChatInboxItem } from "../chat/inbox.js";
+import { getChatId, pickMessageId } from "../chat/chat-helpers.js";
 import { composeChatKey } from "../chat/support.js";
 import {
   DiscordAdapter,
@@ -275,12 +276,12 @@ export class ChatRuntimeApp extends EventEmitter {
     const nextAgentDir = safeString(this.agentDir).trim();
     const platform = safeString(session?.platform).trim();
     const botId = safeString(session?.selfId || session?.bot?.selfId).trim();
-    const channelId = safeString(session?.channelId).trim();
-    const messageId = safeString(session?.messageId).trim();
-    if (!nextAgentDir || !platform || !botId || !channelId || !messageId) {
+    const chatId = getChatId(session);
+    const messageId = pickMessageId(session);
+    if (!nextAgentDir || !platform || !botId || !chatId || !messageId) {
       return;
     }
-    const chatKey = composeChatKey(platform, channelId, botId);
+    const chatKey = composeChatKey(platform, chatId, botId);
     if (!chatKey) return;
     const elements = Array.isArray(session?.elements) ? session.elements : [];
     enqueueChatInboxItem(nextAgentDir, {
