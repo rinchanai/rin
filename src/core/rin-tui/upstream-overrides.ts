@@ -1,14 +1,18 @@
+import {
+  FooterComponent,
+  InteractiveMode,
+  SessionManager,
+  SessionSelectorComponent,
+} from "@mariozechner/pi-coding-agent";
 import { Loader, truncateToWidth } from "@mariozechner/pi-tui";
 
-import {
-  loadRinInteractiveFooterModule,
-  loadRinInteractiveModeModule,
-  loadRinInteractiveThemeModule,
-  loadRinSessionManagerModule,
-  loadRinSessionSelectorModule,
-} from "../rin-lib/loader.js";
-
 let applied = false;
+const ANSI_DIM = "\u001b[2m";
+const ANSI_RESET = "\u001b[0m";
+
+function dim(text: string) {
+  return `${ANSI_DIM}${text}${ANSI_RESET}`;
+}
 
 function extractUserTextFromEvent(event: any) {
   const message = event?.message;
@@ -22,7 +26,7 @@ function extractUserTextFromEvent(event: any) {
     .trim();
 }
 
-function ensureTransportLoader(instance: any, theme: any, label?: string) {
+function ensureTransportLoader(instance: any, label?: string) {
   if (!label) {
     if (instance.loadingAnimation) {
       instance.loadingAnimation.stop();
@@ -36,8 +40,8 @@ function ensureTransportLoader(instance: any, theme: any, label?: string) {
     instance.statusContainer.clear();
     instance.loadingAnimation = new Loader(
       instance.ui,
-      (spinner) => theme.fg("accent", spinner),
-      (text) => theme.fg("muted", text),
+      (spinner) => spinner,
+      (text) => dim(text),
       label,
     );
     instance.statusContainer.addChild(instance.loadingAnimation);
@@ -51,12 +55,11 @@ function isRpcTransportControlled(instance: any) {
   return typeof instance?.session?.getFrontendStatusEvent === "function";
 }
 
-function syncRpcTransportLoader(instance: any, theme: any) {
+function syncRpcTransportLoader(instance: any) {
   if (!isRpcTransportControlled(instance)) return;
   const status = instance.session.getFrontendStatusEvent?.();
   ensureTransportLoader(
     instance,
-    theme,
     !status || status.phase === "idle"
       ? undefined
       : `${String(status.label || "Working")}...`,
@@ -67,23 +70,12 @@ export async function applyRinTuiOverrides() {
   if (applied) return;
   applied = true;
 
-  const [
-    { FooterComponent },
-    { InteractiveMode },
-    { theme },
-    { SessionManager },
-    { SessionSelectorComponent },
-  ] = (await Promise.all([
-    loadRinInteractiveFooterModule(),
-    loadRinInteractiveModeModule(),
-    loadRinInteractiveThemeModule(),
-    loadRinSessionManagerModule(),
-    loadRinSessionSelectorModule(),
-  ])) as any;
+  const footerProto: any = FooterComponent?.prototype as any;
+  const interactiveModeProto: any = InteractiveMode?.prototype as any;
 
-  const originalRender = FooterComponent?.prototype?.render;
+  const originalRender = footerProto?.render;
   if (typeof originalRender === "function") {
-    FooterComponent.prototype.render = function renderWithoutCwd(
+    footerProto.render = function renderWithoutCwd(
       width: number,
     ) {
       const lines = originalRender.call(this, width);
@@ -94,13 +86,7 @@ export async function applyRinTuiOverrides() {
       const nextLines = [];
 
       if (sessionName) {
-        nextLines.push(
-          truncateToWidth(
-            theme.fg("dim", sessionName),
-            width,
-            theme.fg("dim", "..."),
-          ),
-        );
+        nextLines.push(truncateToWidth(dim(sessionName), width, dim("...")));
       }
       if (statsLine) nextLines.push(statsLine);
       for (const line of lines.slice(2)) {
@@ -110,10 +96,9 @@ export async function applyRinTuiOverrides() {
     };
   }
 
-  const originalUpdateTerminalTitle =
-    InteractiveMode?.prototype?.updateTerminalTitle;
+  const originalUpdateTerminalTitle = interactiveModeProto?.updateTerminalTitle;
   if (typeof originalUpdateTerminalTitle === "function") {
-    InteractiveMode.prototype.updateTerminalTitle =
+    interactiveModeProto.updateTerminalTitle =
       function updateTerminalTitleWithoutCwd() {
         const sessionName = this?.sessionManager?.getSessionName?.();
         this?.ui?.terminal?.setTitle?.(
@@ -122,10 +107,9 @@ export async function applyRinTuiOverrides() {
       };
   }
 
-  const originalShowSessionSelector =
-    InteractiveMode?.prototype?.showSessionSelector;
+  const originalShowSessionSelector = interactiveModeProto?.showSessionSelector;
   if (typeof originalShowSessionSelector === "function") {
-    InteractiveMode.prototype.showSessionSelector =
+    interactiveModeProto.showSessionSelector =
       function showSessionSelectorFromRootSessionDir() {
         this.showSelector((done: any) => {
           const loadSessions = (onProgress?: any) =>
@@ -169,9 +153,9 @@ export async function applyRinTuiOverrides() {
       };
   }
 
-  const originalHandleEvent = InteractiveMode?.prototype?.handleEvent;
+  const originalHandleEvent = interactiveModeProto?.handleEvent;
   if (typeof originalHandleEvent === "function") {
-    InteractiveMode.prototype.handleEvent = async function handleEventWithRpcStates(
+    interactiveModeProto.handleEvent = async function handleEventWithRpcStates(
       event: any,
     ) {
       if (!this.__rinLocalUserEchoQueue) this.__rinLocalUserEchoQueue = [];
@@ -180,7 +164,12 @@ export async function applyRinTuiOverrides() {
       }
 
       if (event?.type === "rpc_frontend_status") {
-        ensureTransportLoader(this, theme, event.phase === "idle" ? undefined : `${String(event.label || "Working")}...`);
+        ensureTransportLoader(
+          this,
+          event.phase === "idle"
+            ? undefined
+            : `${String(event.label || "Working")}...`,
+        );
         return;
       }
 
@@ -201,7 +190,7 @@ export async function applyRinTuiOverrides() {
       if (event?.type === "rpc_session_resynced") {
         this.__rinLocalUserEchoQueue = [];
         this.renderCurrentSessionState();
-        syncRpcTransportLoader(this, theme);
+        syncRpcTransportLoader(this);
         return;
       }
 
@@ -225,7 +214,7 @@ export async function applyRinTuiOverrides() {
       await originalHandleEvent.call(this, event);
 
       if (shouldReapplyRpcTransport) {
-        syncRpcTransportLoader(this, theme);
+        syncRpcTransportLoader(this);
       }
     };
   }
