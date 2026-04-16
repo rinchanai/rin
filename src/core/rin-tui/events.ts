@@ -12,12 +12,22 @@ export async function handleRpcSessionEvent(
       target.isStreaming = running;
     }
   };
+  const finishRemoteTurn = () => {
+    target.activeTurn = null;
+    setRemoteTurnRunning(false);
+  };
   const emitFrontendStatus = () => {
     if (typeof target.emitFrontendStatus === "function") {
       target.emitFrontendStatus(true);
     }
   };
   if (payload.type === "agent_start") setRemoteTurnRunning(true);
+  if (
+    payload.type === "rpc_turn_event" &&
+    (payload.event === "start" || payload.event === "heartbeat")
+  ) {
+    setRemoteTurnRunning(true);
+  }
   if (payload.type === "compaction_start") target.isCompacting = true;
   if (payload.type === "compaction_end") {
     target.isCompacting = false;
@@ -27,8 +37,18 @@ export async function handleRpcSessionEvent(
     target.retryAttempt = Number(payload.attempt || 1);
   if (payload.type === "auto_retry_end") target.retryAttempt = 0;
   if (payload.type === "agent_end") {
-    setRemoteTurnRunning(false);
-    target.activeTurn = null;
+    finishRemoteTurn();
+    void refreshMessagesAndSession();
+  }
+  if (
+    payload.type === "rpc_turn_event" &&
+    (payload.event === "complete" || payload.event === "error")
+  ) {
+    finishRemoteTurn();
+    void refreshMessagesAndSession();
+  }
+  if (payload.type === "worker_exit") {
+    finishRemoteTurn();
     void refreshMessagesAndSession();
   }
   if (

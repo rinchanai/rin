@@ -163,6 +163,52 @@ test("rpc interactive session waitForDaemonAvailable reuses the reconnect pipeli
   assert.equal(reconnects, 1);
 });
 
+test("rpc interactive session clears the working state when a worker exits mid-turn", () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.activeTurn = {
+    mode: "prompt",
+    message: "search memory",
+    requestTag: "tag-1",
+  };
+  session.setRemoteTurnRunning(true);
+
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
+  seen.length = 0;
+
+  session.handleRpcEvent({ type: "worker_exit", code: 9, signal: null });
+
+  assert.equal(session.activeTurn, null);
+  assert.equal(session.getFrontendStatusEvent(), null);
+  assert.deepEqual(seen, [
+    { type: "rpc_frontend_status", phase: "idle" },
+    { type: "worker_exit", code: 9, signal: null },
+  ]);
+});
+
+test("rpc interactive session attaches a request tag to prompt turns by default", async () => {
+  const calls = [];
+  const client = {
+    isConnected: () => true,
+    send: async (payload) => {
+      calls.push(payload);
+      return { success: true, data: {} };
+    },
+  };
+  const session = new RpcInteractiveSession(client);
+  session.ensureRemoteSession = async () => {};
+  session.rpcConnected = true;
+
+  await session.prompt("hello", { expandPromptTemplates: false });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.type, "prompt");
+  assert.match(String(calls[0]?.requestTag || ""), /^rin-tui-/);
+});
+
 test("rpc interactive session can terminate an attached worker without local session selectors", async () => {
   const calls = [];
   const client = {
