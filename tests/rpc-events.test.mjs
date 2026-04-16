@@ -144,3 +144,33 @@ test("rpc session events do not refresh whole state on every stream update", asy
     { type: "rpc_turn_event", event: "complete", requestTag: "tag-1" },
   ]);
 });
+
+test("rpc session events delegate worker exit recovery to the runtime when available", async () => {
+  const seen = [];
+  let refreshMessages = 0;
+  let refreshMessagesAndSession = 0;
+  const target = {
+    handleSessionUnavailable() {
+      seen.push({ type: "session_unavailable" });
+    },
+    emitEvent: (event) => seen.push(event),
+  };
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "worker_exit", code: 9, signal: null },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+
+  assert.equal(refreshMessages, 0);
+  assert.equal(refreshMessagesAndSession, 0);
+  assert.deepEqual(seen, [
+    { type: "session_unavailable" },
+    { type: "worker_exit", code: 9, signal: null },
+  ]);
+});

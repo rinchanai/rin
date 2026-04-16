@@ -832,7 +832,7 @@ export class RpcInteractiveSession {
 
   private async sendOrQueue(operation: PendingRpcOperation) {
     if (operation.mode === "prompt") this.emitLocalUserMessage(operation.message);
-    if (!this.client.isConnected()) {
+    if (!this.client.isConnected() || !this.rpcConnected || this.recoveryPending) {
       this.queueOfflineOperation(operation);
       return;
     }
@@ -861,10 +861,11 @@ export class RpcInteractiveSession {
         this.queueOfflineOperation(operation);
         return;
       }
-      if (/rin_no_attached_session/.test(message) && this.sessionFile) {
-        await this.call("switch_session", { sessionPath: this.sessionFile });
-        await this.refreshState(REFRESH_ALL);
-        await sendOperation();
+      if (/rin_no_attached_session/.test(message)) {
+        this.activeTurn = null;
+        this.syncStreamingState();
+        this.handleSessionUnavailable();
+        this.queueOfflineOperation(operation);
         return;
       }
       this.activeTurn = null;
@@ -873,11 +874,15 @@ export class RpcInteractiveSession {
     }
   }
 
-  private handleConnectionLost() {
+  handleSessionUnavailable() {
     if (this.disposed) return;
     this.recoveryPending = true;
     this.setRpcConnected(false);
     void this.ensureReconnectLoop();
+  }
+
+  private handleConnectionLost() {
+    this.handleSessionUnavailable();
   }
 
   private ensureReconnectLoop() {
@@ -922,27 +927,26 @@ export class RpcInteractiveSession {
     this.restorePromise = (async () => {
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
-      this.setRpcConnected(true);
       try {
         if (this.sessionFile) {
           await this.call("switch_session", { sessionPath: this.sessionFile });
         } else if (this.sessionId) {
           await this.call("attach_session", { sessionId: this.sessionId });
         }
-        await this.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
-        this.emitSessionResynced();
+        await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
+        this.setRpcConnected(true);
         this.recoveryPending = false;
-        this.reconnecting = false;
+        this.emitSessionResynced();
         this.emitFrontendStatus(true);
         const queued = [...this.queuedOfflineOps];
         this.queuedOfflineOps = [];
         for (const operation of queued) {
           await this.sendOrQueue(operation);
         }
-      } finally {
-        this.recoveryPending = false;
-        this.reconnecting = false;
-        this.emitFrontendStatus(true);
+      } catch (error) {
+        this.setRpcConnected(false);
+        this.recoveryPending = true;
+        throw error;
       }
     })().finally(() => {
       this.restorePromise = null;
