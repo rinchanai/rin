@@ -561,6 +561,44 @@ test("chat controller rejects the owned turn on worker exit", async () => {
   assert.equal(controller.liveTurn, null);
 });
 
+test("chat controller keeps a quiet long-running turn alive while the session still reports streaming", async () => {
+  const controller = await createController("telegram/1:2");
+  let refreshCalls = 0;
+  let recoverCalls = 0;
+  controller.session = {
+    isStreaming: true,
+    isCompacting: false,
+    refreshState: async () => {
+      refreshCalls += 1;
+      controller.session.isStreaming = true;
+    },
+    sessionManager: {
+      getSessionFile: () => "/tmp/quiet-stream.jsonl",
+      getSessionId: () => "session-quiet-stream",
+      getSessionName: () => "telegram/1:2",
+    },
+  };
+  controller.recoverIfNeeded = async () => {
+    recoverCalls += 1;
+  };
+  const liveTurn = controller.startLiveTurn("tag-quiet-stream");
+  liveTurn.promise.catch(() => {});
+  controller.lastTurnPulseAt = Date.now() - 120_000;
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
+  };
+
+  await controller.housekeep();
+
+  assert.equal(refreshCalls, 1);
+  assert.equal(recoverCalls, 0);
+  assert.equal(controller.liveTurn, liveTurn);
+  assert.equal(controller.hasActiveTurn(), true);
+});
+
 test("chat controller steers an active chat turn instead of queueing a replacement", async () => {
   const controller = await createController("telegram/1:2");
   const calls = [];
