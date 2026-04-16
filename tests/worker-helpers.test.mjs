@@ -66,12 +66,12 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
   };
 
   const resultAbort = await workerHelpers.runBuiltinCommand(runtime, "/abort", {
-    SessionManager: { listAll: async () => [] },
+    SessionManager: { list: async () => [] },
   });
   assert.equal(resultAbort.handled, true);
 
   const resultNew = await workerHelpers.runBuiltinCommand(runtime, "/new", {
-    SessionManager: { listAll: async () => [] },
+    SessionManager: { list: async () => [] },
   });
   assert.equal(resultNew.handled, true);
 
@@ -80,7 +80,7 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
     "/resume abc",
     {
       SessionManager: {
-        listAll: async () => [{ id: "abc", path: "/tmp/sessions/abc.jsonl" }],
+        list: async () => [{ id: "abc", path: "/tmp/sessions/abc.jsonl" }],
       },
     },
   );

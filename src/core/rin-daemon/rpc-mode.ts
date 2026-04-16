@@ -1,6 +1,7 @@
 import { parseJsonl } from "../rin-lib/common.js";
 import { createInterruptedToolResultPayload } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
+import { listBoundSessions } from "../session/factory.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
   getOAuthState,
@@ -517,7 +518,7 @@ export async function runCustomRpcMode(
           (value) => ({ text: value.selectedText, cancelled: value.cancelled }),
         );
       case "list_sessions": {
-        const sessions = await SessionManager.listAll();
+        const sessions = await listBoundSessions({ SessionManager });
         return done(id, type, { sessions });
       }
       case "set_model": {
