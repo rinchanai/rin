@@ -230,9 +230,6 @@ test("rpc runtime resumes a session through select_session", async () => {
           },
         });
       }
-      if (payload.type === "get_messages") {
-        return Promise.resolve({ success: true, data: { messages: [] } });
-      }
       if (payload.type === "get_session_entries") {
         return Promise.resolve({ success: true, data: { entries: [] } });
       }
