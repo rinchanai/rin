@@ -11,7 +11,7 @@ import {
 async function loadMemoryTranscriptsModule() {
   return await import(
     pathToFileURL(
-      path.join(repoRootFromHere(), "dist", "extensions", "memory", "transcripts.js"),
+      path.join(repoRootFromHere(), "dist", "core", "memory", "transcripts.js"),
     ).href
   );
 }

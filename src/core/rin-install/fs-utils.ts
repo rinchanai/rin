@@ -414,7 +414,6 @@ export function publishInstalledRuntime(
       "dist",
       "node_modules",
       "third_party",
-      "extensions",
       "package.json",
     ]) {
       runPrivileged("rm", ["-rf", path.join(releaseRoot, name)]);
@@ -453,7 +452,6 @@ export function publishInstalledRuntime(
     "dist",
     "node_modules",
     "third_party",
-    "extensions",
     "package.json",
   ])
     syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name));
