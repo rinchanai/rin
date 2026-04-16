@@ -46,3 +46,27 @@ test("chat runtime persists inbound sessions before emitting message events", as
   assert.equal(stored.chatKey, "telegram/1:2");
   assert.equal(stored.messageId, "m1");
 });
+
+test("chat runtime derives the durable chat key from normalized chat identity", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
+  const app = runtime.createChatRuntimeApp(agentDir);
+
+  const session = {
+    platform: "onebot",
+    selfId: "1",
+    userId: "42",
+    messageId: "m2",
+    isDirect: true,
+    content: "hello",
+    stripped: { content: "hello" },
+    elements: [{ type: "text", attrs: { content: "hello" } }],
+  };
+
+  app.emit("message", session);
+  const files = inbox.listPendingChatInboxFiles(agentDir);
+  const stored = inbox.readChatInboxItem(files[0]);
+
+  assert.equal(files.length, 1);
+  assert.equal(stored.chatKey, "onebot/1:private:42");
+  assert.equal(stored.messageId, "m2");
+});
