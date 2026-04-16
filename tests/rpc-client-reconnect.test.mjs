@@ -330,8 +330,6 @@ test("rpc interactive session finishes daemon-side session recovery without drop
               pendingMessageCount: 0,
             },
           };
-        case "get_messages":
-          return { success: true, data: { messages: [] } };
         case "get_session_entries":
           return { success: true, data: { entries: [] } };
         case "get_session_tree":
@@ -359,7 +357,6 @@ test("rpc interactive session finishes daemon-side session recovery without drop
   assert.equal(session.queuedOfflineOps.length, 0);
   assert.deepEqual(calls.map((payload) => payload.type), [
     "get_state",
-    "get_messages",
     "get_session_entries",
     "get_session_tree",
     "prompt",

@@ -44,7 +44,6 @@ import {
   reconcilePendingQueues,
 } from "./stats.js";
 import {
-  applyRpcMessages,
   applyRpcSessionState,
   applyRpcSessionTree,
   getSessionBranch,
@@ -213,18 +212,8 @@ export class RpcInteractiveSession {
       getEntry: (id: string) => this.entryById.get(id),
       getLabel: (id: string) => this.labelsById.get(id),
       getBranch: (fromId?: string) => this.getBranch(fromId),
-      buildSessionContext: () => {
-        if (this.entries.length > 0) {
-          return buildSessionContext(this.entries, this.leafId, this.entryById as any);
-        }
-        return {
-          messages: this.messages,
-          thinkingLevel: this.thinkingLevel,
-          model: this.model
-            ? { provider: this.model.provider, modelId: this.model.id }
-            : null,
-        };
-      },
+      buildSessionContext: () =>
+        buildSessionContext(this.entries, this.leafId, this.entryById as any),
       getEntries: () => [...this.entries],
       getSessionName: () => this.sessionName,
       getTree: () => [...this.tree],
@@ -1063,10 +1052,10 @@ export class RpcInteractiveSession {
 
   private async refreshState(flags: RefreshFlags = {}) {
     this.applyState(await this.call("get_state"));
+    const shouldRefreshSessionData = Boolean(flags.messages || flags.session);
     await Promise.all([
       flags.models ? this.modelRegistry.sync() : Promise.resolve(),
-      flags.messages ? this.refreshMessages() : Promise.resolve(),
-      flags.session ? this.refreshSessionData() : Promise.resolve(),
+      shouldRefreshSessionData ? this.refreshSessionData() : Promise.resolve(),
     ]);
     this.reconcilePendingQueues(this.pendingMessageCount);
     this.lastSessionStats = this.computeSessionStats();
@@ -1102,9 +1091,10 @@ export class RpcInteractiveSession {
     this.syncStreamingState();
   }
 
-  private async refreshMessages() {
-    const data = await this.call("get_messages");
-    applyRpcMessages(this as any, data);
+  private syncDerivedMessages() {
+    const context = buildSessionContext(this.entries, this.leafId, this.entryById as any);
+    this.messages = Array.isArray(context?.messages) ? context.messages : [];
+    this.state.messages = this.messages;
   }
 
   private async refreshSessionData() {
@@ -1113,6 +1103,7 @@ export class RpcInteractiveSession {
       this.call("get_session_tree"),
     ]);
     applyRpcSessionTree(this as any, entriesData, treeData);
+    this.syncDerivedMessages();
   }
 
   private getBranch(fromId?: string) {
