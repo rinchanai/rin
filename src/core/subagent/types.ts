@@ -16,6 +16,7 @@ export type SubagentSessionConfig = {
   mode?: SubagentSessionMode;
   ref?: string;
   name?: string;
+  keep?: boolean;
 };
 
 export type SubagentTask = {

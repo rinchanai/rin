@@ -10,6 +10,10 @@ import {
   trimText,
   uniqueStrings,
 } from "./utils.js";
+import {
+  normalizeSessionNameDetail,
+  readFirstUserMessageFromSessionFile,
+} from "../../src/core/session/names.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -108,6 +112,36 @@ export function resolveTranscriptRoot(rootOverride = ""): string {
 
 function resolveTranscriptSearchDbPath(rootOverride = ""): string {
   return path.join(resolveMemoryRoot(rootOverride), "search.db");
+}
+
+function resolveSessionDisplayName(
+  sessionFile: string,
+  fallbackPreview: string,
+): string {
+  const normalizedSessionFile = path.resolve(safeString(sessionFile).trim());
+  if (!normalizedSessionFile) {
+    return normalizeSessionNameDetail(fallbackPreview, 180);
+  }
+
+  let currentName = "";
+  try {
+    if (fssync.existsSync(normalizedSessionFile)) {
+      const raw = fssync.readFileSync(normalizedSessionFile, "utf8");
+      for (const line of raw.split(/\r?\n/g)) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const entry = JSON.parse(trimmed) as any;
+        if (entry?.type !== "session_info") continue;
+        currentName = normalizeSessionNameDetail(entry?.name || "", 180);
+      }
+    }
+  } catch {}
+
+  return (
+    currentName ||
+    readFirstUserMessageFromSessionFile(normalizedSessionFile) ||
+    normalizeSessionNameDetail(fallbackPreview, 180)
+  );
 }
 
 function transcriptSessionBasename(input: Record<string, unknown>): string {
@@ -224,6 +258,9 @@ export async function appendTranscriptArchiveEntry(
 ) {
   const role = safeString(input.role || "").trim();
   if (!role) return;
+  const rawSessionFile = safeString(input.sessionFile || "").trim();
+  if (!rawSessionFile) return;
+  const sessionFile = path.resolve(rawSessionFile);
   const text = extractTranscriptText(input);
   if (!text) return;
   const entry: TranscriptArchiveEntry = {
@@ -241,7 +278,7 @@ export async function appendTranscriptArchiveEntry(
       ).slice(0, 16),
     timestamp: safeString(input.timestamp || new Date().toISOString()).trim(),
     sessionId: safeString(input.sessionId || "").trim(),
-    sessionFile: safeString(input.sessionFile || "").trim(),
+    sessionFile,
     role,
     text,
     content: input.content,
@@ -432,13 +469,17 @@ function presentSessionResult(
     (a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp),
   )[0];
   const preview = buildSessionPreview(entries);
+  const sessionName = resolveSessionDisplayName(
+    safeString(previewEntry?.sessionFile || "").trim(),
+    preview,
+  );
   return {
     sourceType: "session",
     id:
       safeString(
         previewEntry?.sessionId || previewEntry?.sessionFile || previewEntry?.id,
       ).trim() || previewEntry.id,
-    name: "session",
+    name: sessionName || "session",
     role: previewEntry.role,
     score,
     path:
@@ -449,6 +490,7 @@ function presentSessionResult(
     timestamp: latestEntry?.timestamp || previewEntry.timestamp,
     description: trimText(preview, 160),
     preview,
+    summary: sessionName || undefined,
     hitCount: extra.hitCount,
     messages:
       extra.messages && extra.messages.length
@@ -967,14 +1009,17 @@ export async function loadRecentTranscriptSessions(
       `,
       )
       .all(limit) as Array<{ session_key: string; latest_timestamp_ms: number }>;
-    return sessionRows.map((row, index) => {
-      const entries = loadSessionEntriesByKey(db, row.session_key);
-      return presentSessionResult(
-        entries,
-        Math.max(1, limit - index),
-        rootOverride,
-      );
-    });
+    return sessionRows
+      .map((row, index) => {
+        const entries = loadSessionEntriesByKey(db, row.session_key);
+        const result = presentSessionResult(
+          entries,
+          Math.max(1, limit - index),
+          rootOverride,
+        );
+        return safeString(result?.sessionFile || "").trim() ? result : null;
+      })
+      .filter((item): item is TranscriptSessionResult => Boolean(item));
   });
 }
 
@@ -1149,13 +1194,16 @@ function aggregateSearchResults(
     })
     .slice(0, limit);
 
-  return rankedSessions.map((bucket) => {
-    const entries = loadSessionEntriesByKey(db, bucket.sessionKey);
-    return presentSessionResult(entries, bucket.score, rootOverride, {
-      hitCount: bucket.hitCount,
-      messages: bucket.messages,
-    });
-  });
+  return rankedSessions
+    .map((bucket) => {
+      const entries = loadSessionEntriesByKey(db, bucket.sessionKey);
+      const result = presentSessionResult(entries, bucket.score, rootOverride, {
+        hitCount: bucket.hitCount,
+        messages: bucket.messages,
+      });
+      return safeString(result?.sessionFile || "").trim() ? result : null;
+    })
+    .filter((item): item is TranscriptSessionResult => Boolean(item));
 }
 
 export async function searchTranscriptArchive(

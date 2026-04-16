@@ -159,6 +159,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
       if (!prompt) {
         return {
           content: [{ type: "text", text: "" }],
+          details: {},
         };
       }
 
@@ -177,7 +178,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
 
       return {
         content: [{ type: "text", text: outputText }],
-        details: Object.keys(details).length > 0 ? details : undefined,
+        details,
       };
     },
     renderCall(args, theme, context) {

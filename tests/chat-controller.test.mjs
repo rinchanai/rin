@@ -82,7 +82,7 @@ test("chat controller uses RpcInteractiveSession session bootstrap before first 
   await controller.runCommand("/session");
 
   assert.deepEqual(calls, ["ensureSessionReady", "runCommand:/session"]);
-  assert.deepEqual(namedSessions, ["telegram/1:2", "telegram/1:2"]);
+  assert.deepEqual(namedSessions, ["telegram/1:2 — /session"]);
   assert.deepEqual(deliveries, ["Session stats"]);
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
@@ -246,6 +246,49 @@ test("chat controller uses RpcInteractiveSession prompt path for chat turns", as
     "deliver:final-text",
   ]);
   assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
+});
+
+test("chat controller upgrades bare chatKey names to chatKey plus readable text", async () => {
+  const controller = await createController("telegram/9:11");
+  const namedSessions = [];
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello world from chat" }] },
+      { role: "assistant", content: [{ type: "text", text: "final text" }] },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/turn-chat.jsonl",
+      getSessionId: () => "session-turn",
+      getSessionName: () => "telegram/9:11",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/turn-chat.jsonl",
+      sessionId: "session-turn",
+    }),
+    prompt: async () => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async (name) => {
+      namedSessions.push(name);
+    },
+    switchSession: async () => {},
+  };
+
+  await controller.runTurn({ text: "hello world from chat", attachments: [] }, "prompt");
+
+  assert.deepEqual(namedSessions, ["telegram/9:11 — hello world from chat"]);
 });
 
 test("chat controller resolves final output from session lifecycle for prompt turns", async () => {

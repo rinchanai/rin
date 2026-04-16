@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -26,6 +27,18 @@ const subagentService = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "src", "core", "subagent", "service.js"),
   ).href
+);
+const { SessionManager } = await import(
+  pathToFileURL(
+    path.join(
+      rootDir,
+      "third_party",
+      "pi-coding-agent",
+      "dist",
+      "core",
+      "session-manager.js",
+    ),
+  ).href,
 );
 
 test("subagent model utils normalize and sort model refs", () => {
@@ -127,4 +140,33 @@ test("run_subagent exposes disabledExtensions in both single and task modes", ()
     runTool.parameters.properties.tasks.items.properties.disabledExtensions.type,
     "array",
   );
+  assert.equal(runTool.parameters.properties.session.properties.keep.type, "boolean");
+  assert.equal(
+    runTool.parameters.properties.tasks.items.properties.session.properties.keep.type,
+    "boolean",
+  );
+});
+
+test("session manager can create ephemeral forks without writing a session file", async () => {
+  const tempRoot = await fs.promises.mkdtemp(path.join(process.cwd(), "tmp-subagent-fork-"));
+  try {
+    const sessionDir = path.join(tempRoot, "sessions");
+    const source = SessionManager.create(tempRoot, sessionDir);
+    source.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] });
+    source.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "world" }],
+      provider: "test",
+      model: "demo",
+    });
+
+    const fork = SessionManager.forkFrom(source.getSessionFile(), tempRoot, sessionDir, {
+      persist: false,
+    });
+    assert.equal(fork.isPersisted(), false);
+    assert.equal(fork.getSessionFile(), undefined);
+    assert.equal(fork.getEntries().length, source.getEntries().length);
+  } finally {
+    await fs.promises.rm(tempRoot, { recursive: true, force: true });
+  }
 });

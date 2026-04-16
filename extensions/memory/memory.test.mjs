@@ -29,6 +29,17 @@ async function withTempRoot(fn) {
   }
 }
 
+async function writeSessionFile(root, name, entries) {
+  const filePath = path.join(root, "sessions", name);
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(
+    filePath,
+    `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+    "utf8",
+  );
+  return filePath;
+}
+
 test("memory transcripts archive entries under memory/transcripts", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
@@ -426,13 +437,61 @@ test("memory transcript session loads can bypass search.db when result path is k
   });
 });
 
-test("memory summarization subagent hides the memory extension", async () => {
+test("memory transcripts ignore transient in-memory sessions without a session file", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
       {
         timestamp: "2026-04-08T09:09:09.000Z",
-        sessionId: "session-summary",
-        sessionFile: "/tmp/session-summary.jsonl",
+        sessionId: "session-transient",
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "This should not be archived because the session is ephemeral.",
+          },
+        ],
+      },
+      root,
+    );
+    const results = await transcripts.loadRecentTranscriptSessions({ limit: 8 }, root);
+    assert.equal(results.length, 0);
+  });
+});
+
+test("search_memory uses the stored session name instead of live summarization", async () => {
+  await withTempRoot(async (root) => {
+    const sessionFile = await writeSessionFile(root, "summary-session.jsonl", [
+      {
+        type: "session",
+        version: 3,
+        id: "summary-session",
+        timestamp: "2026-04-08T09:00:00.000Z",
+        cwd: "/tmp/project",
+      },
+      {
+        type: "session_info",
+        id: "name1",
+        parentId: null,
+        timestamp: "2026-04-08T09:01:00.000Z",
+        name: "telegram/1:2 — Fixed memory recall hang and cached session summaries.",
+      },
+      {
+        type: "message",
+        id: "msg1",
+        parentId: "name1",
+        timestamp: "2026-04-08T09:02:00.000Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Can you fix the memory recall hang?" }],
+        },
+      },
+    ]);
+
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "summary-session",
+        sessionFile,
         role: "assistant",
         content: [
           {
@@ -443,222 +502,70 @@ test("memory summarization subagent hides the memory extension", async () => {
       },
       root,
     );
+
     const rows = await transcripts.searchTranscriptArchive(
       "session resume hang",
       { limit: 8 },
       root,
     );
-    const calls = [];
-    const summarized =
-      await memoryExtensionModule.maybeSummarizeTranscriptMatches(
-        rows,
-        "session resume hang",
-        { agentDir: root, model: { provider: "test", id: "demo" } },
-        "medium",
-        async (options) => {
-          calls.push(options);
-          return {
-            ok: true,
-            results: [{ output: "Summarized recall sentence." }],
-          };
+    assert.equal(rows[0].summary, "telegram/1:2 — Fixed memory recall hang and cached session summaries.");
+
+    const result = await memoryExtensionModule.executeSearchMemory(
+      { query: "session resume hang", limit: 8 },
+      { agentDir: root, model: { provider: "test", id: "demo" } },
+      "medium",
+    );
+    assert.match(
+      result.details.userText,
+      /telegram\/1:2 — Fixed memory recall hang and cached session summaries/,
+    );
+  });
+});
+
+test("search_memory falls back to the first user message when no stored session name exists", async () => {
+  await withTempRoot(async (root) => {
+    const sessionFile = await writeSessionFile(root, "fallback-session.jsonl", [
+      {
+        type: "session",
+        version: 3,
+        id: "fallback-session",
+        timestamp: "2026-04-08T09:00:00.000Z",
+        cwd: "/tmp/project",
+      },
+      {
+        type: "message",
+        id: "msg1",
+        parentId: null,
+        timestamp: "2026-04-08T09:02:00.000Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Need help debugging the outbound chat routing bug" }],
         },
-      );
+      },
+    ]);
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].params.tasks.length, 1);
-    assert.deepEqual(calls[0].params.tasks[0].disabledExtensions, ["memory"]);
-    assert.equal(calls[0].params.tasks[0].model, "test/demo");
-    assert.equal(calls[0].params.tasks[0].thinkingLevel, "low");
-    assert.equal(calls[0].ctx.agentDir, root);
-    assert.equal(summarized[0].summary, "Summarized recall sentence.");
-  });
-});
-
-test("search_memory summarization falls back to runtime agent dir and low thinking", async () => {
-  await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
       {
         timestamp: "2026-04-08T09:09:09.000Z",
-        sessionId: "session-runtime",
-        sessionFile: "/tmp/session-runtime.jsonl",
+        sessionId: "fallback-session",
+        sessionFile,
         role: "assistant",
         content: [
           {
             type: "text",
-            text: "Verified runtime fallback for memory summarization.",
+            text: "Verified the affected bridge path and confirmed outbound send recovery.",
           },
         ],
       },
       root,
     );
+
     const rows = await transcripts.searchTranscriptArchive(
-      "runtime fallback memory summarization",
+      "outbound send recovery",
       { limit: 8 },
       root,
     );
-
-    const previousRinDir = process.env.RIN_DIR;
-    const previousPiDir = process.env.PI_CODING_AGENT_DIR;
-    process.env.RIN_DIR = root;
-    process.env.PI_CODING_AGENT_DIR = root;
-
-    try {
-      const calls = [];
-      const summarized =
-        await memoryExtensionModule.maybeSummarizeTranscriptMatches(
-          rows,
-          "runtime fallback memory summarization",
-          { model: { provider: "test", id: "demo" } },
-          "high",
-          async (options) => {
-            calls.push(options);
-            return {
-              ok: true,
-              results: [{ output: "Runtime fallback summary." }],
-            };
-          },
-        );
-
-      assert.equal(calls.length, 1);
-      assert.equal(calls[0].ctx.agentDir, root);
-      assert.equal(calls[0].params.tasks[0].thinkingLevel, "low");
-      assert.equal(summarized[0].summary, "Runtime fallback summary.");
-    } finally {
-      if (previousRinDir === undefined) delete process.env.RIN_DIR;
-      else process.env.RIN_DIR = previousRinDir;
-      if (previousPiDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-      else process.env.PI_CODING_AGENT_DIR = previousPiDir;
-    }
-  });
-});
-
-test("search_memory forwards abort signal into summarization subagents", async () => {
-  await withTempRoot(async (root) => {
-    await transcripts.appendTranscriptArchiveEntry(
-      {
-        timestamp: "2026-04-08T09:09:09.000Z",
-        sessionId: "session-abort",
-        sessionFile: "/tmp/session-abort.jsonl",
-        role: "assistant",
-        content: [
-          {
-            type: "text",
-            text: "Tracked an abort propagation bug in search_memory.",
-          },
-        ],
-      },
-      root,
-    );
-    const rows = await transcripts.searchTranscriptArchive(
-      "abort propagation bug",
-      { limit: 8 },
-      root,
-    );
-    const controller = new AbortController();
-    const calls = [];
-    await assert.rejects(
-      () =>
-        memoryExtensionModule.maybeSummarizeTranscriptMatches(
-          rows,
-          "abort propagation bug",
-          { agentDir: root, model: { provider: "test", id: "demo" } },
-          "medium",
-          async (options) => {
-            calls.push(options);
-            controller.abort();
-            return {
-              ok: true,
-              results: [{ output: "should never be used" }],
-            };
-          },
-          controller.signal,
-        ),
-      /search_memory_aborted/,
-    );
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].signal, controller.signal);
-  });
-});
-
-test("search_memory fails instead of silently degrading to raw transcript results", async () => {
-  await withTempRoot(async (root) => {
-    await transcripts.appendTranscriptArchiveEntry(
-      {
-        timestamp: "2026-04-08T09:09:09.000Z",
-        sessionId: "session-tool",
-        sessionFile: "/tmp/session-tool.jsonl",
-        role: "assistant",
-        content: [
-          {
-            type: "text",
-            text: "Fixed search_memory hang by removing nested subagent recall.",
-          },
-        ],
-      },
-      root,
-    );
-    const rows = await transcripts.searchTranscriptArchive(
-      "nested subagent recall",
-      { limit: 8 },
-      root,
-    );
-    await assert.rejects(
-      () =>
-        memoryExtensionModule.maybeSummarizeTranscriptMatches(
-          rows,
-          "nested subagent recall",
-          { agentDir: root, model: { provider: "test", id: "demo" } },
-          "medium",
-          async () => ({ ok: false, error: "summary worker unavailable" }),
-        ),
-      /summary worker unavailable/,
-    );
-  });
-});
-
-test("search_memory summarization forwards progress snapshots", async () => {
-  await withTempRoot(async (root) => {
-    await transcripts.appendTranscriptArchiveEntry(
-      {
-        timestamp: "2026-04-08T09:09:09.000Z",
-        sessionId: "session-progress",
-        sessionFile: "/tmp/session-progress.jsonl",
-        role: "assistant",
-        content: [
-          {
-            type: "text",
-            text: "Added visible progress updates while search_memory is summarizing.",
-          },
-        ],
-      },
-      root,
-    );
-    const rows = await transcripts.searchTranscriptArchive(
-      "visible progress updates",
-      { limit: 8 },
-      root,
-    );
-    const snapshots = [];
-    const summarized =
-      await memoryExtensionModule.maybeSummarizeTranscriptMatches(
-        rows,
-        "visible progress updates",
-        { agentDir: root, model: { provider: "test", id: "demo" } },
-        "medium",
-        async (options) => {
-          options.onProgress?.([{ status: "running" }]);
-          options.onProgress?.([{ status: "done" }]);
-          return {
-            ok: true,
-            results: [{ exitCode: 0, output: "Progress summary." }],
-          };
-        },
-        undefined,
-        (results) => snapshots.push(results.map((result) => result.status)),
-      );
-
-    assert.deepEqual(snapshots, [["running"], ["done"]]);
-    assert.equal(summarized[0].summary, "Progress summary.");
+    assert.equal(rows[0].summary, "Need help debugging the outbound chat routing bug");
   });
 });
 

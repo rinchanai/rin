@@ -332,7 +332,7 @@ export class AgentSession {
 	}> {
 		const result = await this._modelRegistry.getApiKeyAndHeaders(model);
 		if (!result.ok) {
-			throw new Error(result.error);
+			throw new Error("error" in result ? result.error : "Authentication failed");
 		}
 		if (result.apiKey) {
 			return { apiKey: result.apiKey, headers: result.headers };

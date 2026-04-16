@@ -9,13 +9,16 @@ export async function openBoundSession(options: {
   agentDir: string;
   additionalExtensionPaths?: string[];
   sessionFile?: string;
+  sessionManager?: any;
   thinkingLevel?: any;
 }) {
   const { SessionManager } = await loadRinSessionManagerModule();
   const sessionDir = getRuntimeSessionDir(options.cwd, options.agentDir);
-  const sessionManager = options.sessionFile
-    ? SessionManager.open(options.sessionFile, sessionDir)
-    : SessionManager.create(options.cwd, sessionDir);
+  const sessionManager =
+    options.sessionManager ||
+    (options.sessionFile
+      ? SessionManager.open(options.sessionFile, sessionDir)
+      : SessionManager.create(options.cwd, sessionDir));
   return await createConfiguredAgentSession({
     cwd: options.cwd,
     agentDir: options.agentDir,

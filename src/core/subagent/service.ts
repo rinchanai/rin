@@ -76,17 +76,24 @@ export function resolveSubagentExtensionPaths(
 
 function normalizeSessionConfig(
   session: SubagentSessionConfig | undefined,
-): Required<Pick<SubagentSessionConfig, "mode">> & SubagentSessionConfig {
+): Required<Pick<SubagentSessionConfig, "mode" | "keep">> &
+  SubagentSessionConfig {
   const mode = (session?.mode || "memory") as SubagentSessionMode;
   return {
     mode,
     ref: String(session?.ref || "").trim() || undefined,
     name: String(session?.name || "").trim() || undefined,
+    keep: Boolean(session?.keep),
   };
 }
 
-function isPersistedMode(mode: SubagentSessionMode): boolean {
-  return mode !== "memory";
+function isPersistedMode(
+  session: Pick<SubagentSessionConfig, "mode" | "keep">,
+): boolean {
+  const mode = (session?.mode || "memory") as SubagentSessionMode;
+  if (mode === "memory") return false;
+  if (mode === "fork") return Boolean(session?.keep);
+  return true;
 }
 
 async function loadSessionManagerModule() {
@@ -176,7 +183,9 @@ async function createManagedSession(task: SubagentTask) {
     );
   } else {
     const source = await resolveSessionReference(sessionConfig.ref || "");
-    sessionManager = SessionManager.forkFrom(source.path, cwd, sessionDir);
+    sessionManager = SessionManager.forkFrom(source.path, cwd, sessionDir, {
+      persist: sessionConfig.keep,
+    });
   }
 
   const created = await withSessionCreationLock(async () => {
@@ -301,6 +310,9 @@ function validateTasks(
     ) {
       return `Session ref is only valid with session.mode \`resume\` or \`fork\`.`;
     }
+    if (sessionConfig.keep && sessionConfig.mode !== "fork") {
+      return "session.keep is only valid with session.mode `fork`. Use session.mode `persist` to create a saved worker session.";
+    }
   }
   return undefined;
 }
@@ -390,7 +402,7 @@ function makePendingResult(
     },
     messages: [] as Message[],
     sessionMode: sessionConfig.mode,
-    sessionPersisted: isPersistedMode(sessionConfig.mode),
+    sessionPersisted: isPersistedMode(sessionConfig),
   };
 }
 
@@ -482,7 +494,7 @@ export async function runSubagentTask(
     },
     messages,
     sessionMode: sessionConfig.mode,
-    sessionPersisted: isPersistedMode(sessionConfig.mode),
+    sessionPersisted: isPersistedMode(sessionConfig),
   };
 
   let session: any;

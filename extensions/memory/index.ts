@@ -21,9 +21,6 @@ import {
   loadRecentTranscriptSessions,
   searchTranscriptArchive,
 } from "./transcripts.js";
-import { executeSubagentRun } from "../../src/core/subagent/service.js";
-import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
-import { resolveRuntimeProfile } from "../../src/core/rin-lib/runtime.js";
 
 const MEMORY_RESULT_PREVIEW_LINES = 10;
 
@@ -97,7 +94,9 @@ function trimSnippet(value: string, max = 220): string {
 }
 
 function resultSnippet(item: any): string {
-  return trimSnippet(String(item?.summary || "").trim());
+  return trimSnippet(
+    String(item?.summary || item?.name || item?.description || "").trim(),
+  );
 }
 
 function resultLocation(item: any): string {
@@ -172,24 +171,6 @@ function buildSearchMemorySearchStatusText(mode: "search" | "recent", query: str
   return `Searching archived sessions for ${JSON.stringify(query)}...`;
 }
 
-function buildSearchMemorySummarizationStatusText(
-  mode: "search" | "recent",
-  total: number,
-  results?: any[],
-): string {
-  const sessionLabel = total === 1 ? "session" : "sessions";
-  if (!Array.isArray(results) || !results.length) {
-    if (mode === "recent") return `Loaded ${total} recent ${sessionLabel}. Summarizing...`;
-    return `Found ${total} matching ${sessionLabel}. Summarizing...`;
-  }
-
-  const done = results.filter((result) => result?.status === "done").length;
-  const failed = results.filter((result) => result?.status === "error").length;
-  const running = results.filter((result) => result?.status === "running").length;
-  const pending = results.filter((result) => result?.status === "pending").length;
-  return `Summarizing ${total} ${sessionLabel}: ${done} done, ${failed} failed, ${running} running, ${pending} pending`;
-}
-
 function emitSearchMemoryUpdate(
   onUpdate: ((value: { content: Array<{ type: "text"; text: string }>; details: MemoryToolDetails }) => void) | undefined,
   userText: string,
@@ -249,125 +230,15 @@ function formatMemoryResult(
   return text;
 }
 
-function buildRecallPrompt(_query: string, row: any): string {
-  const sessionPath = String(row?.sessionFile || row?.path || "").trim();
-  return [
-    "Read the session file and summarize the session in no more than three sentences.",
-    `Include the absolute session path: ${sessionPath || "(unknown)"}`,
-    "Do not output anything other than that summary.",
-  ].join("\n\n");
-}
-
-function resolveSearchMemoryAgentDir(ctx: any): string {
-  const explicit = String(ctx?.agentDir || "").trim();
-  if (explicit) return explicit;
-  return String(resolveRuntimeProfile().agentDir || "").trim();
-}
-
 function throwIfAborted(signal?: AbortSignal) {
   if (!signal?.aborted) return;
   throw new Error("search_memory_aborted");
 }
 
-export async function maybeSummarizeTranscriptMatches(
-  results: any[],
-  _query: string,
-  ctx: any,
-  currentThinkingLevel: ThinkingLevel,
-  runSubagent = executeSubagentRun,
-  signal?: AbortSignal,
-  onProgress?: (results: any[]) => void,
-) {
-  throwIfAborted(signal);
-  const rows = Array.isArray(results) ? results : [];
-  if (!rows.length) return rows;
-  const agentDir = resolveSearchMemoryAgentDir(ctx);
-  if (!agentDir) {
-    throw new Error("search_memory requires an available agent directory for transcript summarization.");
-  }
-
-  const modelRef = ctx?.model
-    ? `${String(ctx.model.provider || "")}/${String(ctx.model.id || "")}`
-    : "";
-  if (!modelRef) {
-    throw new Error("search_memory summarization requires an active model.");
-  }
-
-  const tasks: any[] = [];
-  const taskRows: any[] = [];
-  for (const row of rows) {
-    const sessionPath = String(row?.sessionFile || row?.path || "").trim();
-    throwIfAborted(signal);
-    if (!sessionPath) continue;
-    tasks.push({
-      prompt: buildRecallPrompt(_query, row),
-      model: modelRef,
-      thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
-      disabledExtensions: ["memory"],
-    });
-    taskRows.push(row);
-  }
-
-  if (!tasks.length) return rows;
-
-  throwIfAborted(signal);
-  const run = await runSubagent({
-    params: { tasks },
-    ctx: {
-      ...ctx,
-      agentDir,
-    },
-    currentThinkingLevel,
-    signal,
-    onProgress(results: any[]) {
-      onProgress?.(results);
-    },
-  });
-  throwIfAborted(signal);
-  if (!run.ok) {
-    throw new Error(
-      String(("error" in run && run.error) || "search_memory summarization failed."),
-    );
-  }
-  if (!Array.isArray(run.results)) {
-    throw new Error("search_memory summarization returned no results.");
-  }
-
-  const summaryBySession = new Map();
-  run.results.forEach((result: any, index: number) => {
-    const row = taskRows[index];
-    if (!row) return;
-    if (Number(result?.exitCode || 0) !== 0) {
-      throw new Error(
-        String(result?.errorMessage || `search_memory summarization failed for result ${index + 1}.`),
-      );
-    }
-    const summary = String(result?.output || "").trim();
-    if (!summary) {
-      throw new Error(`search_memory summarization returned empty output for result ${index + 1}.`);
-    }
-    const key = String(row?.sessionFile || row?.sessionId || row?.path || "").trim();
-    if (!key) return;
-    summaryBySession.set(key, summary);
-  });
-
-  return rows.map((row) => {
-    const key = String(row?.sessionFile || row?.sessionId || row?.path || "").trim();
-    const summary = summaryBySession.get(key);
-    if (!summary) {
-      throw new Error("search_memory summarization did not produce a summary for every result.");
-    }
-    return {
-      ...row,
-      summary,
-    };
-  });
-}
-
 export async function executeSearchMemory(
   params: any,
   ctx: any,
-  currentThinkingLevel: ThinkingLevel,
+  _currentThinkingLevel: ThinkingLevel,
   signal?: AbortSignal,
   onUpdate?: (value: { content: Array<{ type: "text"; text: string }>; details: MemoryToolDetails }) => void,
 ) {
@@ -378,41 +249,18 @@ export async function executeSearchMemory(
       ...(params || {}),
       limit: Number.isFinite(Number(params?.limit)) ? Number(params.limit) : 8,
     };
-    const rootOverride = resolveSearchMemoryAgentDir(ctx);
+    const rootOverride = String(ctx?.agentDir || "").trim();
 
     emitSearchMemoryUpdate(onUpdate, buildSearchMemorySearchStatusText(mode, query), {
       phase: mode,
     });
 
-    const rawResults = query
+    throwIfAborted(signal);
+    const results = query
       ? await searchTranscriptArchive(query, normalizedParams, rootOverride)
       : await loadRecentTranscriptSessions(normalizedParams, rootOverride);
+    throwIfAborted(signal);
 
-    if (rawResults.length > 0) {
-      emitSearchMemoryUpdate(onUpdate, buildSearchMemorySummarizationStatusText(mode, rawResults.length), {
-        phase: "summarize",
-        totalResults: rawResults.length,
-      });
-    }
-
-    const results = await maybeSummarizeTranscriptMatches(
-      rawResults,
-      query,
-      ctx,
-      currentThinkingLevel,
-      executeSubagentRun,
-      signal,
-      (progressResults) => {
-        emitSearchMemoryUpdate(
-          onUpdate,
-          buildSearchMemorySummarizationStatusText(mode, rawResults.length, progressResults),
-          {
-            phase: "summarize",
-            totalResults: rawResults.length,
-          },
-        );
-      },
-    );
     const response = {
       mode,
       query,

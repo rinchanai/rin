@@ -155,8 +155,38 @@ test("queued memory maintenance jobs deduplicate by session file", async () => {
     );
     const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
     assert.equal(queue.length, 1);
+    assert.equal(queue[0].kind, "self_improve_review");
     assert.equal(queue[0].trigger, "second");
     assert.equal(queue[0].sessionFile, path.resolve("/tmp/session-a.jsonl"));
+  });
+});
+
+
+test("session summary jobs stay distinct from self-improve review jobs", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "review",
+    });
+    await asyncJobs.enqueueSessionSummaryJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "summary",
+    });
+
+    const queuePath = path.join(
+      root,
+      "self_improve",
+      "state",
+      "maintenance-queue.json",
+    );
+    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    assert.equal(queue.length, 2);
+    assert.deepEqual(
+      queue.map((item) => item.kind),
+      ["self_improve_review", "session_summary"],
+    );
   });
 });
 

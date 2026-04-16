@@ -57,7 +57,7 @@ const SessionModeSchema = StringEnum(
   [...VALID_SESSION_MODES] as SubagentSessionMode[],
   {
     description:
-      "Worker session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session.",
+      "Worker session mode: memory for ephemeral context, persist for a new saved session, resume to continue a saved session, fork to branch from a saved session. Fork sessions are ephemeral by default unless session.keep is true.",
   },
 );
 
@@ -74,6 +74,12 @@ const SessionSchema = Type.Optional(
       Type.String({
         description:
           "Optional display name for the worker session. Useful for new persisted sessions and renaming resumed or forked sessions.",
+      }),
+    ),
+    keep: Type.Optional(
+      Type.Boolean({
+        description:
+          "When session.mode is `fork`, keep the forked worker session after the run instead of using an ephemeral in-memory fork. Defaults to false.",
       }),
     ),
   }),

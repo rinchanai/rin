@@ -6,8 +6,17 @@ import type { Model } from "@mariozechner/pi-ai";
 const HOME_DIR = os.homedir();
 
 import { loadRinSessionManagerModule } from "../../src/core/rin-lib/loader.js";
-import { openBoundSession } from "../../src/core/session/factory.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../../src/core/rin-lib/memory-task-config.js";
+import { openBoundSession } from "../../src/core/session/factory.js";
+import {
+  extractChatKeyFromSessionName,
+  findChatKeyBySessionFile,
+  formatChatSessionName,
+} from "../../src/core/session/names.js";
+import {
+  buildSessionRecallSummaryPrompt,
+  normalizeSessionSummaryForName,
+} from "../../src/core/session/summary.js";
 import { resolveAgentDir } from "./lib.js";
 
 type ExtensionCtxLike = {
@@ -31,55 +40,50 @@ function buildSelfImproveReviewPrompt(_trigger: string): string {
   return prompt.join(" ");
 }
 
-export async function createSelfImproveReviewSnapshot(options: {
+async function createForkedSessionManager(options: {
   sessionFile: string;
   leafId?: string;
 }) {
   const sessionFile = path.resolve(safeString(options.sessionFile).trim());
-  if (!sessionFile) return "";
+  if (!sessionFile) throw new Error("session_file_required");
+  const leafId = safeString(options.leafId).trim() || undefined;
   const { SessionManager } = await loadRinSessionManagerModule();
-  const sessionDir = path.dirname(sessionFile);
-  const sourceManager = SessionManager.open(sessionFile, sessionDir);
-  const leafId =
-    safeString(options.leafId || "").trim() ||
-    safeString(sourceManager.getLeafId?.() || "").trim();
-  if (!leafId) return "";
-  return safeString(sourceManager.createBranchedSession(leafId) || "").trim();
+  const sourceManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
+  const cwd = safeString(sourceManager.getCwd?.() || "").trim() || HOME_DIR;
+  return {
+    cwd,
+    sessionManager: SessionManager.forkFrom(sessionFile, cwd, undefined, {
+      persist: false,
+      leafId,
+    }),
+  };
 }
 
-async function runForkedSessionSelfImproveReview(options: {
+async function runForkedSessionPrompt(options: {
   agentDir: string;
   sessionFile: string;
-  trigger?: string;
+  leafId?: string;
+  prompt: string;
   additionalExtensionPaths?: string[];
 }) {
+  const fork = await createForkedSessionManager({
+    sessionFile: options.sessionFile,
+    leafId: options.leafId,
+  });
   const { session, runtime } = await openBoundSession({
-    cwd: HOME_DIR,
+    cwd: fork.cwd,
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
-    sessionFile: options.sessionFile,
+    sessionManager: fork.sessionManager,
     thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
   });
   try {
-    const forkTargets = session.getUserMessagesForForking?.() || [];
-    const latest = forkTargets[forkTargets.length - 1];
-    if (latest?.entryId) {
-      const result = await runtime.fork(latest.entryId);
-      if (result?.cancelled) return { skipped: "fork-cancelled" };
-    }
-
-    await session.prompt(buildSelfImproveReviewPrompt(safeString(options.trigger).trim()), {
+    await session.prompt(options.prompt, {
       expandPromptTemplates: false,
       source: "extension",
     });
     await session.agent.waitForIdle();
-    const finalText = safeString(session.getLastAssistantText?.() || "").trim();
-    return {
-      skipped: "",
-      forked: Boolean(latest?.entryId),
-      saved: true,
-      output: finalText,
-    };
+    return safeString(session.getLastAssistantText?.() || "").trim();
   } finally {
     try {
       await session.abort();
@@ -90,10 +94,67 @@ async function runForkedSessionSelfImproveReview(options: {
   }
 }
 
+async function applySessionSummaryName(options: {
+  agentDir: string;
+  sessionFile: string;
+  summary: string;
+}) {
+  const agentDir = path.resolve(safeString(options.agentDir).trim());
+  const sessionFile = path.resolve(safeString(options.sessionFile).trim());
+  const summary = normalizeSessionSummaryForName(options.summary);
+  if (!sessionFile || !summary) {
+    return { skipped: "empty-summary" };
+  }
+
+  const { SessionManager } = await loadRinSessionManagerModule();
+  const sessionManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
+  const currentName = safeString(sessionManager.getSessionName?.() || "").trim();
+  const chatKey =
+    extractChatKeyFromSessionName(currentName) ||
+    findChatKeyBySessionFile(agentDir, sessionFile);
+  const nextName = chatKey ? formatChatSessionName(chatKey, summary) : summary;
+  if (!nextName || nextName === currentName) {
+    return {
+      skipped: nextName ? "unchanged" : "empty-name",
+      sessionName: currentName || undefined,
+    };
+  }
+
+  sessionManager.appendSessionInfo(nextName);
+  return {
+    skipped: "",
+    sessionName: nextName,
+  };
+}
+
+async function runForkedSessionSelfImproveReview(options: {
+  agentDir: string;
+  sessionFile: string;
+  leafId?: string;
+  trigger?: string;
+  additionalExtensionPaths?: string[];
+}) {
+  const finalText = await runForkedSessionPrompt({
+    agentDir: options.agentDir,
+    sessionFile: options.sessionFile,
+    leafId: options.leafId,
+    prompt: buildSelfImproveReviewPrompt(safeString(options.trigger).trim()),
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  });
+  return {
+    skipped: "",
+    forked: true,
+    saved: true,
+    output: finalText,
+  };
+}
+
 export async function maintainMemory(
   _ctx: ExtensionCtxLike & { sessionManager?: any },
   opts: {
+    agentDir?: string;
     sessionFile?: string;
+    leafId?: string;
     trigger?: string;
     additionalExtensionPaths?: string[];
   } = {},
@@ -101,8 +162,9 @@ export async function maintainMemory(
   const sessionFile = safeString(opts.sessionFile || "").trim();
   if (!sessionFile) return { skipped: "no-session-file" };
   const extracted = await runForkedSessionSelfImproveReview({
-    agentDir: resolveAgentDir(),
+    agentDir: safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir(),
     sessionFile,
+    leafId: safeString(opts.leafId || "").trim() || undefined,
     trigger: safeString(opts.trigger || "extension:self_improve_review").trim(),
     additionalExtensionPaths: opts.additionalExtensionPaths,
   });
@@ -110,6 +172,41 @@ export async function maintainMemory(
     ...extracted,
     mode: "session",
     sessionFile,
+    leafId: safeString(opts.leafId || "").trim() || undefined,
     trigger: safeString(opts.trigger || "extension:self_improve_review").trim(),
+  };
+}
+
+export async function maintainSessionSummary(
+  _ctx: ExtensionCtxLike & { sessionManager?: any },
+  opts: {
+    agentDir?: string;
+    sessionFile?: string;
+    leafId?: string;
+    trigger?: string;
+  } = {},
+) {
+  const sessionFile = safeString(opts.sessionFile || "").trim();
+  if (!sessionFile) return { skipped: "no-session-file" };
+  const agentDir =
+    safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir();
+  const output = await runForkedSessionPrompt({
+    agentDir,
+    sessionFile,
+    leafId: safeString(opts.leafId || "").trim() || undefined,
+    prompt: buildSessionRecallSummaryPrompt(sessionFile),
+  });
+  const applied = await applySessionSummaryName({
+    agentDir,
+    sessionFile,
+    summary: output,
+  });
+  return {
+    ...applied,
+    mode: "session",
+    sessionFile,
+    leafId: safeString(opts.leafId || "").trim() || undefined,
+    trigger: safeString(opts.trigger || "extension:session_summary").trim(),
+    output,
   };
 }
