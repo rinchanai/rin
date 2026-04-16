@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -8,12 +8,11 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { keyHint } from "../../third_party/pi-coding-agent/src/modes/interactive/components/keybinding-hints.js";
 import {
   getTextOutput,
   replaceTabs,
-} from "../../third_party/pi-coding-agent/src/core/tools/render-utils.js";
-import type { TruncationResult } from "../../third_party/pi-coding-agent/src/core/tools/truncate.js";
+} from "../../src/core/pi/render-utils.js";
+import type { TruncationResult } from "@mariozechner/pi-coding-agent";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "Rin fetch/1.0";
