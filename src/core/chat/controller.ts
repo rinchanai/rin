@@ -22,7 +22,7 @@ import {
   sendTyping,
 } from "./transport.js";
 
-const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 15_000;
+const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
 
 function extractFinalTextFromTurnResult(result: any) {
@@ -637,10 +637,15 @@ export class ChatController {
   }
   async housekeep() {
     if (this.isTurnStale()) {
-      this.logger.warn(
-        `chat turn heartbeat stale chatKey=${this.chatKey} ageMs=${Date.now() - this.lastTurnPulseAt}`,
-      );
-      this.failLiveTurn(new Error("chat_turn_stale"));
+      await this.refreshSessionMessages().catch(() => {});
+      if (this.session?.isStreaming || this.session?.isCompacting) {
+        this.markTurnPulse();
+      } else {
+        this.logger.warn(
+          `chat turn heartbeat stale chatKey=${this.chatKey} ageMs=${Date.now() - this.lastTurnPulseAt}`,
+        );
+        this.failLiveTurn(new Error("chat_turn_stale"));
+      }
     }
     if (!this.hasActiveTurn()) {
       await this.clearWorkingReaction().catch(() => {});
