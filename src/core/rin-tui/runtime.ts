@@ -168,6 +168,7 @@ export class RpcInteractiveSession {
   private sessionOperationPending = false;
   private recoveryPending = false;
   private lastFrontendPhase: RpcFrontendPhase | null = null;
+  private nextRequestTagId = 0;
 
   constructor(
     public client: RinDaemonFrontendClient,
@@ -310,7 +311,7 @@ export class RpcInteractiveSession {
       images: options?.images,
       streamingBehavior: options?.streamingBehavior,
       source: options?.source,
-      requestTag: options?.requestTag,
+      requestTag: this.ensureRequestTag(options?.requestTag),
     });
   }
 
@@ -321,7 +322,7 @@ export class RpcInteractiveSession {
     await this.ensureRemoteSession();
     await this.call("resume_interrupted_turn", {
       source: options?.source,
-      requestTag: options?.requestTag,
+      requestTag: this.ensureRequestTag(options?.requestTag),
     });
   }
 
@@ -336,7 +337,7 @@ export class RpcInteractiveSession {
       message,
       images,
       source: options?.source,
-      requestTag: options?.requestTag,
+      requestTag: this.ensureRequestTag(options?.requestTag),
     });
   }
 
@@ -351,7 +352,7 @@ export class RpcInteractiveSession {
       message,
       images,
       source: options?.source,
-      requestTag: options?.requestTag,
+      requestTag: this.ensureRequestTag(options?.requestTag),
     });
   }
 
@@ -778,6 +779,13 @@ export class RpcInteractiveSession {
     );
     if (!this.isStreaming && !this.rpcConnected) this.activeTurn = null;
     this.emitFrontendStatus();
+  }
+
+  private ensureRequestTag(requestTag?: string) {
+    const next = String(requestTag || "").trim();
+    if (next) return next;
+    this.nextRequestTagId += 1;
+    return `rin-tui-${Date.now()}-${this.nextRequestTagId}`;
   }
 
   private clearWaitingDaemonState() {

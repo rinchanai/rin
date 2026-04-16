@@ -63,6 +63,20 @@ test("rpc session events do not refresh whole state on every stream update", asy
 
   await events.handleRpcSessionEvent(
     target,
+    { type: "rpc_turn_event", event: "heartbeat", requestTag: "tag-1" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isStreaming, true);
+  assert.equal(target.remoteTurnRunning, true);
+  assert.equal(target.activeTurn?.mode, "prompt");
+
+  await events.handleRpcSessionEvent(
+    target,
     { type: "compaction_start", reason: "threshold" },
     async () => {
       refreshMessages += 1;
@@ -87,7 +101,7 @@ test("rpc session events do not refresh whole state on every stream update", asy
 
   await events.handleRpcSessionEvent(
     target,
-    { type: "agent_end" },
+    { type: "worker_exit", code: 9, signal: null },
     async () => {
       refreshMessages += 1;
     },
@@ -99,13 +113,34 @@ test("rpc session events do not refresh whole state on every stream update", asy
   assert.equal(target.remoteTurnRunning, false);
   assert.equal(target.activeTurn, null);
   assert.equal(refreshMessagesAndSession, 2);
+
+  target.activeTurn = { mode: "prompt" };
+  target.remoteTurnRunning = true;
+  target.isStreaming = true;
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "rpc_turn_event", event: "complete", requestTag: "tag-1" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isStreaming, false);
+  assert.equal(target.remoteTurnRunning, false);
+  assert.equal(target.activeTurn, null);
+  assert.equal(refreshMessagesAndSession, 3);
   assert.deepEqual(seen, [
     { type: "message_update", message: { role: "assistant" } },
     { type: "message_end", message: { role: "assistant" } },
+    { type: "rpc_turn_event", event: "heartbeat", requestTag: "tag-1" },
     { type: "compaction_start", reason: "threshold" },
     { type: "frontend_status_refresh", force: true, compacting: true },
     { type: "compaction_end", reason: "threshold", aborted: false },
     { type: "frontend_status_refresh", force: true, compacting: false },
-    { type: "agent_end" },
+    { type: "worker_exit", code: 9, signal: null },
+    { type: "rpc_turn_event", event: "complete", requestTag: "tag-1" },
   ]);
 });
