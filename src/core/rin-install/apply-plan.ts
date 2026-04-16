@@ -30,55 +30,58 @@ export async function runFinalizeInstallPlanInChild(
   const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-"));
   const resultPath = path.join(resultDir, "result.json");
   const errorPath = path.join(resultDir, "error.txt");
-  const child = spawn(
-    process.execPath,
-    [process.argv[1] || fileURLToPath(import.meta.url)],
-    {
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        RIN_INSTALL_APPLY_PLAN: JSON.stringify(options),
-        RIN_INSTALL_APPLY_RESULT: resultPath,
-        RIN_INSTALL_APPLY_ERROR: errorPath,
-      },
-    },
-  );
-
-  const waitSpinner = spinner();
-  waitSpinner.start(message);
-
-  const exitCode = await new Promise<number>((resolve, reject) => {
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (signal) reject(new Error(`rin_installer_child_terminated:${signal}`));
-      else resolve(code ?? 1);
-    });
-  }).catch((error) => {
-    waitSpinner.stop("Install step failed.");
-    throw error;
-  });
-
-  if (exitCode !== 0) {
-    waitSpinner.stop("Install step failed.");
-    let errorMessage = "rin_installer_apply_failed";
-    try {
-      errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
-    } catch {}
-    throw new Error(errorMessage);
-  }
-
-  let parsed: any = null;
   try {
-    parsed = JSON.parse(fs.readFileSync(resultPath, "utf8"));
-  } catch {
-    waitSpinner.stop("Install step failed.");
-    throw new Error("rin_installer_apply_result_missing");
+    const child = spawn(
+      process.execPath,
+      [process.argv[1] || fileURLToPath(import.meta.url)],
+      {
+        stdio: "ignore",
+        env: {
+          ...process.env,
+          RIN_INSTALL_APPLY_PLAN: JSON.stringify(options),
+          RIN_INSTALL_APPLY_RESULT: resultPath,
+          RIN_INSTALL_APPLY_ERROR: errorPath,
+        },
+      },
+    );
+
+    const waitSpinner = spinner();
+    waitSpinner.start(message);
+
+    const exitCode = await new Promise<number>((resolve, reject) => {
+      child.on("error", reject);
+      child.on("exit", (code, signal) => {
+        if (signal)
+          reject(new Error(`rin_installer_child_terminated:${signal}`));
+        else resolve(code ?? 1);
+      });
+    }).catch((error) => {
+      waitSpinner.stop("Install step failed.");
+      throw error;
+    });
+
+    if (exitCode !== 0) {
+      waitSpinner.stop("Install step failed.");
+      let errorMessage = "rin_installer_apply_failed";
+      try {
+        errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
+      } catch {}
+      throw new Error(errorMessage);
+    }
+
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+    } catch {
+      waitSpinner.stop("Install step failed.");
+      throw new Error("rin_installer_apply_result_missing");
+    }
+
+    waitSpinner.stop("Install step complete.");
+    return parsed;
   } finally {
     try {
       fs.rmSync(resultDir, { recursive: true, force: true });
     } catch {}
   }
-
-  waitSpinner.stop("Install step complete.");
-  return parsed;
 }

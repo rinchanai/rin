@@ -111,7 +111,8 @@ run_step "Building installer" npm run build
 say "[rin-install] Launching installer..."
 
 if [ -r /dev/tty ]; then
-  exec node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+  node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+  exit $?
 fi
 
-exec node dist/app/rin-install/main.js
+node dist/app/rin-install/main.js

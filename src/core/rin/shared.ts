@@ -303,6 +303,44 @@ function updateWorkRoot() {
   return dir;
 }
 
+export function cleanupStaleUpdateWorkDirs(
+  workRoot: string,
+  options: {
+    keepPaths?: string[];
+    nowMs?: number;
+    staleAfterMs?: number;
+  } = {},
+) {
+  const keepPaths = new Set(
+    (options.keepPaths || []).map((item) => path.resolve(item)),
+  );
+  const nowMs = Number.isFinite(options.nowMs) ? Number(options.nowMs) : Date.now();
+  const staleAfterMs = Number.isFinite(options.staleAfterMs)
+    ? Math.max(0, Number(options.staleAfterMs))
+    : 12 * 60 * 60 * 1000;
+  const removed: string[] = [];
+  let entries: fs.Dirent[] = [];
+  try {
+    entries = fs.readdirSync(workRoot, { withFileTypes: true });
+  } catch {
+    return removed;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (!entry.name.startsWith("work-")) continue;
+    const fullPath = path.join(workRoot, entry.name);
+    if (keepPaths.has(path.resolve(fullPath))) continue;
+    try {
+      const stat = fs.statSync(fullPath);
+      const touchedAt = Number(stat.mtimeMs || 0);
+      if (nowMs - touchedAt < staleAfterMs) continue;
+      fs.rmSync(fullPath, { recursive: true, force: true });
+      removed.push(fullPath);
+    } catch {}
+  }
+  return removed;
+}
+
 export function resolveInstallDirForTarget(parsed: ParsedArgs) {
   const target = readPasswdUser(parsed.targetUser);
   return parsed.installDir || path.join(target?.home || os.homedir(), ".rin");
@@ -395,7 +433,9 @@ export async function runUpdate(parsed: ParsedArgs) {
         : "";
   const tar = requireTool("tar", ["/usr/bin/tar", "/bin/tar"]);
   const npm = requireTool("npm", ["/usr/bin/npm", "/bin/npm"]);
-  const tempRoot = fs.mkdtempSync(path.join(updateWorkRoot(), "work-"));
+  const workRoot = updateWorkRoot();
+  cleanupStaleUpdateWorkDirs(workRoot);
+  const tempRoot = fs.mkdtempSync(path.join(workRoot, "work-"));
   const tmpDir = path.join(tempRoot, "tmp");
   const archivePath = path.join(tempRoot, "rin.tar.gz");
   const sourceRoot = path.join(tempRoot, "src");

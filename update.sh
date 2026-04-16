@@ -111,7 +111,8 @@ run_step "Building updater" npm run build
 say "[rin-update] Launching updater..."
 
 if [ -r /dev/tty ]; then
-  exec env RIN_INSTALL_MODE=update node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+  env RIN_INSTALL_MODE=update node dist/app/rin-install/main.js </dev/tty >/dev/tty 2>&1
+  exit $?
 fi
 
-exec env RIN_INSTALL_MODE=update node dist/app/rin-install/main.js
+env RIN_INSTALL_MODE=update node dist/app/rin-install/main.js
