@@ -1055,11 +1055,6 @@ function addCandidateScore(
   candidates.set(rowKey, Math.max(candidates.get(rowKey) || 0, score));
 }
 
-function summaryExclusionSql(alias = ""): string {
-  const prefix = alias ? `${alias}.` : "";
-  return `NOT (${prefix}role = 'sessionSummary' OR ${prefix}custom_type = 'session_summary')`;
-}
-
 function queryExactCandidates(
   db: Database,
   rawQuery: string,
@@ -1072,16 +1067,13 @@ function queryExactCandidates(
       `
       SELECT row_key, text, preview, tool_name, session_id, session_file, custom_type
       FROM entries
-      WHERE ${summaryExclusionSql("entries")}
-        AND (
-          lower(text) LIKE lower(?) ESCAPE '\\'
-          OR lower(preview) LIKE lower(?) ESCAPE '\\'
-          OR lower(role) LIKE lower(?) ESCAPE '\\'
-          OR lower(tool_name) LIKE lower(?) ESCAPE '\\'
-          OR lower(custom_type) LIKE lower(?) ESCAPE '\\'
-          OR lower(session_id) LIKE lower(?) ESCAPE '\\'
-          OR lower(session_file) LIKE lower(?) ESCAPE '\\'
-        )
+      WHERE lower(text) LIKE lower(?) ESCAPE '\\'
+         OR lower(preview) LIKE lower(?) ESCAPE '\\'
+         OR lower(role) LIKE lower(?) ESCAPE '\\'
+         OR lower(tool_name) LIKE lower(?) ESCAPE '\\'
+         OR lower(custom_type) LIKE lower(?) ESCAPE '\\'
+         OR lower(session_id) LIKE lower(?) ESCAPE '\\'
+         OR lower(session_file) LIKE lower(?) ESCAPE '\\'
       ORDER BY timestamp_ms DESC
       LIMIT ?
     `,
@@ -1130,7 +1122,6 @@ function queryFtsCandidates(
       SELECT row_key
       FROM ${tableName}
       WHERE ${tableName} MATCH ?
-        AND ${summaryExclusionSql(tableName)}
       ORDER BY bm25(${tableName})
       LIMIT ?
     `,
@@ -1157,7 +1148,6 @@ function aggregateSearchResults(
              timestamp, timestamp_ms, line_number, role, preview, entry_json
       FROM entries
       WHERE row_key IN (${placeholders})
-        AND ${summaryExclusionSql("entries")}
     `,
     )
     .all(...candidates.keys()) as Array<{

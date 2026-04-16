@@ -536,7 +536,7 @@ test("search_memory uses the stored transcript session summary instead of live s
   });
 });
 
-test("search_memory stored session summaries are display-only and do not affect retrieval", async () => {
+test("search_memory can retrieve sessions by stored session summary text", async () => {
   await withTempRoot(async (root) => {
     const sessionFile = await writeSessionFile(root, "display-only-summary-session.jsonl", [
       {
@@ -587,7 +587,8 @@ test("search_memory stored session summaries are display-only and do not affect 
     );
 
     const rows = await transcripts.searchTranscriptArchive("zebra", { limit: 8 }, root);
-    assert.equal(rows.length, 0);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].summary, "zebra only appears in the stored display summary");
   });
 });
 
