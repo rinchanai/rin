@@ -66,6 +66,7 @@ test("cron scheduler can seed and preserve dedicated session files", async () =>
       seeded.dedicatedSessionFile,
       path.resolve("/tmp/seeded-session.jsonl"),
     );
+    assert.equal(seeded.dedicatedSessionPersistent, true);
     assert.equal(seeded.session.sessionFile, undefined);
 
     const updated = scheduler.upsertTask({
@@ -78,7 +79,46 @@ test("cron scheduler can seed and preserve dedicated session files", async () =>
       updated.dedicatedSessionFile,
       path.resolve("/tmp/seeded-session.jsonl"),
     );
+    assert.equal(updated.dedicatedSessionPersistent, true);
   } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("cron scheduler drops legacy dedicated session files during load migration", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
+  await fs.mkdir(path.dirname(tasksFile), { recursive: true });
+  await fs.writeFile(
+    tasksFile,
+    JSON.stringify(
+      [
+        {
+          id: "cron_legacy_dedicated",
+          createdAt: "2026-04-17T00:00:00.000Z",
+          updatedAt: "2026-04-17T00:00:00.000Z",
+          enabled: true,
+          trigger: { kind: "interval", intervalMs: 60_000 },
+          session: { mode: "dedicated" },
+          target: { kind: "agent_prompt", prompt: "hello" },
+          dedicatedSessionFile: "/tmp/legacy-dedicated.jsonl",
+          runCount: 0,
+          running: false,
+        },
+      ],
+      null,
+      2,
+    ),
+  );
+  const scheduler = new cronMod.CronScheduler({ agentDir });
+  try {
+    scheduler.start();
+    const task = scheduler.getTask("cron_legacy_dedicated");
+    assert.ok(task);
+    assert.equal(task.dedicatedSessionPersistent, false);
+    assert.equal(task.dedicatedSessionFile, undefined);
+  } finally {
+    scheduler.stop();
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
@@ -145,6 +185,7 @@ test("cron seeded dedicated agent task preserves its bound session", async () =>
     chatKey: "telegram/demo:1",
     session: { mode: "dedicated" },
     dedicatedSessionFile: "/tmp/seeded-session.jsonl",
+    dedicatedSessionPersistent: true,
     target: { kind: "agent_prompt", prompt: "hello" },
   };
   const calls = [];
