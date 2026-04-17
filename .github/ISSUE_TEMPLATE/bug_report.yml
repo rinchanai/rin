@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a reproducible problem in Rin.
+description: Report a bug in Rin.
 title: "[Bug]: "
 body:
   - type: markdown
@@ -7,60 +7,52 @@ body:
       value: |
         Thanks for taking the time to report a bug.
 
-        Before submitting, please search existing issues and confirm the problem still happens on the latest Rin version.
+        A short, reproducible report is usually the fastest to triage.
   - type: checkboxes
     id: checks
     attributes:
-      label: Pre-flight checklist
+      label: Before you submit
       options:
         - label: I searched existing issues and did not find a matching report.
           required: true
-        - label: I updated to the latest Rin version I can reproduce on.
-          required: true
-        - label: I included clear reproduction steps and the relevant logs/output below.
+        - label: I can reproduce this on the latest Rin version available to me.
           required: true
   - type: input
     id: version
     attributes:
       label: Rin version
-      description: "Paste the output of `rin --version` if available."
+      description: Paste the output of `rin --version`.
       placeholder: 0.0.0
     validations:
       required: true
-  - type: dropdown
-    id: install_method
+  - type: textarea
+    id: environment
     attributes:
-      label: Install method
-      description: How are you running Rin?
-      options:
-        - install.sh
-        - rin update / installed runtime
-        - Repository checkout / development build
-        - Docker / container
-        - Other
-    validations:
-      required: true
-  - type: input
-    id: platform
-    attributes:
-      label: Operating system
-      description: Include version if relevant.
-      placeholder: Ubuntu 24.04 / macOS 15 / Windows 11 / ...
+      label: Environment
+      description: Include OS, install method, and shell/terminal if relevant.
+      placeholder: |
+        macOS 15 / install.sh / zsh
+        or
+        Ubuntu 24.04 / repo checkout / tmux
     validations:
       required: true
   - type: textarea
     id: description
     attributes:
-      label: What happened?
-      description: Describe the problem and what you were trying to do.
-      placeholder: Rin failed when I...
+      label: Describe the bug
+      description: Tell us what happened and what you expected to happen instead.
+      placeholder: |
+        I ran `rin ...` and ...
+
+        Expected:
+        Actual:
     validations:
       required: true
   - type: textarea
-    id: steps
+    id: reproduction
     attributes:
       label: Steps to reproduce
-      description: Provide a minimal, reliable reproduction.
+      description: Share the smallest set of commands or steps that reproduces the issue.
       placeholder: |
         1. Run `rin ...`
         2. Open ...
@@ -69,34 +61,8 @@ body:
     validations:
       required: true
   - type: textarea
-    id: expected
-    attributes:
-      label: Expected behavior
-      placeholder: Rin should...
-    validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual behavior
-      placeholder: Instead, Rin...
-    validations:
-      required: true
-  - type: textarea
-    id: doctor
-    attributes:
-      label: "`rin doctor` output"
-      description: Paste the relevant output if available.
-      render: shell
-      placeholder: "Paste `rin doctor` output here"
-  - type: textarea
     id: logs
     attributes:
-      label: Logs, screenshots, or terminal output
-      description: Include anything that helps diagnose the problem.
+      label: Logs and additional context
+      description: Paste `rin doctor`, terminal output, screenshots, or anything else that may help.
       render: shell
-  - type: textarea
-    id: context
-    attributes:
-      label: Additional context
-      description: Add links, related issues, config details, or anything else that might help.
