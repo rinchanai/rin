@@ -162,6 +162,71 @@ test("queued memory maintenance jobs deduplicate by session file", async () => {
   });
 });
 
+test("queued maintenance jobs use core self-improve trigger names by default", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-a.jsonl",
+    });
+    await asyncJobs.enqueueSessionSummaryJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-b.jsonl",
+    });
+
+    const queuePath = path.join(
+      root,
+      "self_improve",
+      "state",
+      "maintenance-queue.json",
+    );
+    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    assert.equal(queue[0].trigger, "self_improve:review");
+    assert.equal(queue[1].trigger, "session_summary:review");
+  });
+});
+
+test("queued maintenance drops invalid session jobs into history instead of blocking the queue", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      sessionFile: path.join(root, "missing-session.jsonl"),
+      trigger: "self_improve:periodic_review",
+      snapshotKey: "review:8",
+    });
+
+    const result = await asyncJobs.processQueuedMemoryJobs(root);
+    assert.equal(result.failed, 1);
+    assert.equal(result.processed, 0);
+
+    const queuePath = path.join(
+      root,
+      "self_improve",
+      "state",
+      "maintenance-queue.json",
+    );
+    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    assert.equal(queue.length, 0);
+
+    const historyPath = path.join(
+      root,
+      "self_improve",
+      "state",
+      "maintenance-history.jsonl",
+    );
+    const history = (await fs.readFile(historyPath, "utf8"))
+      .trim()
+      .split(/\r?\n/g)
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.equal(history.length, 1);
+    assert.equal(history[0].status, "failed");
+    assert.equal(history[0].trigger, "self_improve:periodic_review");
+    assert.match(
+      String(history[0].error || ""),
+      /maintenance_job_missing_session_file:/,
+    );
+  });
+});
 
 test("session summary jobs stay distinct from self-improve review jobs", async () => {
   await withTempRoot(async (root) => {
