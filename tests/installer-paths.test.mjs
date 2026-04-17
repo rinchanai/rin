@@ -142,6 +142,14 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     pathsMod.launcherMetadataPathForHome(macHome, "darwin"),
     path.join(macHome, "Library", "Application Support", "rin", "install.json"),
   );
+  const alternateLauncherMetadataPath = pathsMod.launcherMetadataPathForHome(
+    linuxHome,
+    process.platform === "darwin" ? "linux" : "darwin",
+  );
+  assert.deepEqual(pathsMod.launcherMetadataCandidatesForHome(linuxHome), [
+    pathsMod.launcherMetadataPathForHome(linuxHome),
+    alternateLauncherMetadataPath,
+  ]);
   assert.equal(
     pathsMod.launchAgentPlistPathForHome(macHome, "com.rin.daemon.demo"),
     path.join(macHome, "Library", "LaunchAgents", "com.rin.daemon.demo.plist"),
