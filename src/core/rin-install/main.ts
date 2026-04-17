@@ -56,6 +56,7 @@ import {
   refreshManagedServiceFiles,
   waitForSocket,
 } from "./service.js";
+import { releaseInfoFromEnv } from "../rin-lib/release.js";
 import { startUpdater } from "./updater.js";
 
 function runCommand(command: string, args: string[], options: any = {}) {
@@ -273,6 +274,7 @@ async function applyInstalledRuntime(
   const authData = options.authData || {};
   const sourceRoot =
     String(options.sourceRoot || "").trim() || repoRootFromHere();
+  const release = options.release || releaseInfoFromEnv();
   const persistInstallerState = Boolean(options.persistInstallerState);
 
   const ownership = describeOwnership(targetUser, installDir);
@@ -310,6 +312,7 @@ async function applyInstalledRuntime(
       modelId,
       thinkingLevel,
       chatConfig,
+      release,
       elevated: useElevatedWrite,
     },
     {
@@ -346,6 +349,7 @@ async function applyInstalledRuntime(
           thinkingLevel,
           chatConfig,
           authData,
+          release,
           elevated: useElevatedWrite,
         },
         {
@@ -442,6 +446,15 @@ export async function finalizeCoreUpdate(options: {
   targetUser: string;
   installDir: string;
   sourceRoot?: string;
+  release?: {
+    channel: "stable" | "beta" | "git";
+    version?: string;
+    branch?: string;
+    ref?: string;
+    sourceLabel?: string;
+    archiveUrl?: string;
+    installedAt?: string;
+  };
 }) {
   const result = await applyInstalledRuntime({
     ...options,
@@ -506,6 +519,7 @@ export async function startInstaller() {
       detectCurrentUser,
       repoRootFromHere,
       ensureNotCancelled,
+      release: releaseInfoFromEnv(),
     });
     return;
   }
@@ -615,6 +629,7 @@ export async function startInstaller() {
       chatDetail,
       chatConfig,
       authData: authResult.authData || {},
+      release: releaseInfoFromEnv(),
     },
     needsElevatedWrite
       ? "Publishing runtime and writing configuration with elevated permissions..."

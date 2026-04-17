@@ -18,6 +18,15 @@ export type FinalizeInstallOptions = {
   chatConfig?: any;
   authData?: any;
   sourceRoot?: string;
+  release?: {
+    channel: "stable" | "beta" | "git";
+    version?: string;
+    branch?: string;
+    ref?: string;
+    sourceLabel?: string;
+    archiveUrl?: string;
+    installedAt?: string;
+  };
 };
 
 export async function runFinalizeInstallPlanInChild(
