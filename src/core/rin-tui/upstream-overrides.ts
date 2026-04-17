@@ -55,15 +55,37 @@ function isRpcTransportControlled(instance: any) {
   return typeof instance?.session?.getFrontendStatusEvent === "function";
 }
 
-function syncRpcTransportLoader(instance: any) {
-  if (!isRpcTransportControlled(instance)) return;
-  const status = instance.session.getFrontendStatusEvent?.();
-  ensureTransportLoader(
-    instance,
-    !status || status.phase === "idle"
+function getTransportLoaderLabel(instance: any) {
+  if (isRpcTransportControlled(instance)) {
+    const status = instance.session.getFrontendStatusEvent?.();
+    return !status || status.phase === "idle"
       ? undefined
-      : `${String(status.label || "Working")}...`,
-  );
+      : `${String(status.label || "Working")}...`;
+  }
+
+  if (instance?.session?.isStreaming || instance?.session?.isCompacting) {
+    return "Working...";
+  }
+
+  return undefined;
+}
+
+function syncTransportLoader(instance: any) {
+  ensureTransportLoader(instance, getTransportLoaderLabel(instance));
+}
+
+function shouldReapplyTransportLoader(instance: any, event: any) {
+  if (isRpcTransportControlled(instance)) {
+    return (
+      event?.type === "agent_end" ||
+      event?.type === "compaction_start" ||
+      event?.type === "compaction_end" ||
+      event?.type === "auto_retry_start" ||
+      event?.type === "auto_retry_end"
+    );
+  }
+
+  return event?.type === "compaction_end";
 }
 
 function normalizeRemoteSession(session: any) {
@@ -237,7 +259,7 @@ export async function applyRinTuiOverrides() {
           await this.handleRuntimeSessionChange();
         }
         this.renderCurrentSessionState();
-        syncRpcTransportLoader(this);
+        syncTransportLoader(this);
         this.ui.requestRender();
         return;
       }
@@ -251,18 +273,15 @@ export async function applyRinTuiOverrides() {
         }
       }
 
-      const shouldReapplyRpcTransport =
-        isRpcTransportControlled(this) &&
-        (event?.type === "agent_end" ||
-          event?.type === "compaction_start" ||
-          event?.type === "compaction_end" ||
-          event?.type === "auto_retry_start" ||
-          event?.type === "auto_retry_end");
+      const shouldReapplyRpcTransport = shouldReapplyTransportLoader(
+        this,
+        event,
+      );
 
       await originalHandleEvent.call(this, event);
 
       if (shouldReapplyRpcTransport) {
-        syncRpcTransportLoader(this);
+        syncTransportLoader(this);
       }
     };
   }
