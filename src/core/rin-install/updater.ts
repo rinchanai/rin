@@ -1,5 +1,6 @@
 import { confirm, intro, note, outro, select } from "@clack/prompts";
 
+import { buildLauncherCommand } from "./launcher-hints.js";
 import { discoverInstalledTargets } from "./update-targets.js";
 import {
   runFinalizeInstallPlanInChild,
@@ -100,8 +101,6 @@ export async function startUpdater(deps: {
     daemonReady,
     serviceHint,
   } = result;
-  const userSuffix = currentUser === targetUser ? "" : ` -u ${targetUser}`;
-
   note(
     [
       `Written: ${written.launcherPath}`,
@@ -125,8 +124,8 @@ export async function startUpdater(deps: {
       `Daemon started now: ${daemonReady ? "yes" : "no"}`,
       "",
       "Recommended next commands:",
-      `- doctor: rin doctor${userSuffix}`,
-      `- open Rin: rin${userSuffix}`,
+      `- doctor: ${buildLauncherCommand("doctor")}`,
+      `- open Rin: ${buildLauncherCommand()}`,
       "- if RPC mode fails, try `rin --std` only as a troubleshooting fallback",
     ]
       .filter(Boolean)
@@ -135,6 +134,6 @@ export async function startUpdater(deps: {
   );
 
   outro(
-    `Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with rin${userSuffix}.` : `Use rin start${userSuffix} if you need to start the daemon manually.`}`,
+    `Updater refreshed ${targetUser} at ${installDir}. ${daemonReady ? `Open with ${buildLauncherCommand()}.` : `Use ${buildLauncherCommand("start")} if you need to start the daemon manually.`}`,
   );
 }

@@ -12,6 +12,11 @@ const interactive = await import(
     path.join(rootDir, "dist", "core", "rin-install", "interactive.js"),
   ).href
 );
+const launcherHints = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-install", "launcher-hints.js"),
+  ).href
+);
 
 test("installer interactive helpers describe dir state and plan text", () => {
   const existing = interactive.describeInstallDirState("/tmp/demo", {
@@ -56,8 +61,15 @@ test("installer interactive helpers describe dir state and plan text", () => {
     currentUser: "alice",
     targetUser: "bob",
   });
-  assert.ok(initExit.includes("open Rin: rin -u bob"));
+  assert.ok(initExit.includes("open Rin: rin"));
+  assert.ok(!initExit.includes("-u bob"));
   assert.ok(initExit.includes("/init"));
+});
+
+test("launcher hints keep post-install commands on the saved user-scoped launcher", () => {
+  assert.equal(launcherHints.buildLauncherCommand(), "rin");
+  assert.equal(launcherHints.buildLauncherCommand("doctor"), "rin doctor");
+  assert.equal(launcherHints.buildLauncherCommand("start"), "rin start");
 });
 
 test("installer interactive helpers compute final requirements", () => {
@@ -98,7 +110,9 @@ test("promptProviderSetup always requires choosing a provider", async () => {
       throw new Error("text prompt should not be used in this test");
     },
     async confirm() {
-      throw new Error("provider setup must not allow skipping provider selection");
+      throw new Error(
+        "provider setup must not allow skipping provider selection",
+      );
     },
   };
 
@@ -139,7 +153,9 @@ test("promptProviderSetup always requires choosing a provider", async () => {
     "Choose a model.",
     "Choose the default thinking level.",
   ]);
-  assert.deepEqual(authCalls, [{ provider: "openai", installDir: "/tmp/demo" }]);
+  assert.deepEqual(authCalls, [
+    { provider: "openai", installDir: "/tmp/demo" },
+  ]);
   assert.equal(result.provider, "openai");
   assert.equal(result.modelId, "gpt-5");
   assert.equal(result.thinkingLevel, "medium");

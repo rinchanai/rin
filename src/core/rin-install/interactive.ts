@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { promptChatBridgeSetup } from "../chat-bridge/setup.js";
+import { buildLauncherCommand } from "./launcher-hints.js";
 import {
   configureProviderAuth,
   computeAvailableThinkingLevels,
@@ -298,20 +299,16 @@ export function buildInstallPlanText(options: {
     .join("\n");
 }
 
-export function buildPostInstallInitExitText(options: {
+export function buildPostInstallInitExitText(_options: {
   currentUser: string;
   targetUser: string;
 }) {
-  const userSuffix =
-    options.currentUser === options.targetUser
-      ? ""
-      : ` -u ${options.targetUser}`;
   return [
     "Initialization TUI exited.",
     "",
     "Next time:",
-    `- open Rin: rin${userSuffix}`,
-    `- check daemon state if needed: rin doctor${userSuffix}`,
+    `- open Rin: ${buildLauncherCommand()}`,
+    `- check daemon state if needed: ${buildLauncherCommand("doctor")}`,
     "- restart onboarding from inside Rin with `/init`",
   ].join("\n");
 }
