@@ -11,6 +11,7 @@ const HOME_DIR = os.homedir();
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../rin-lib/memory-task-config.js";
 import { openBoundSession } from "../session/factory.js";
+import { forkSessionManagerCompat } from "../session/fork.js";
 import {
   buildSessionRecallSummaryPrompt,
   normalizeSessionSummaryText,
@@ -117,10 +118,16 @@ async function createForkedSessionManager(options: {
   const cwd = safeString(sourceManager.getCwd?.() || "").trim() || HOME_DIR;
   return {
     cwd,
-    sessionManager: (SessionManager as any).forkFrom(sessionFile, cwd, undefined, {
-      persist: false,
-      leafId,
-    }),
+    sessionManager: forkSessionManagerCompat(
+      SessionManager as any,
+      sessionFile,
+      cwd,
+      undefined,
+      {
+        persist: false,
+        leafId,
+      },
+    ),
   };
 }
 
