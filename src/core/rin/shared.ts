@@ -17,6 +17,7 @@ import {
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
 import {
   defaultInstallDirForHome,
+  installerLocatorCandidatesForHome,
   launcherMetadataPathForHome,
 } from "../rin-install/paths.js";
 
@@ -38,6 +39,11 @@ export type ParsedArgs = {
   passthrough: string[];
   explicitUser: boolean;
   hasSavedInstall: boolean;
+};
+
+type InstallConfig = {
+  defaultTargetUser?: string;
+  defaultInstallDir?: string;
 };
 
 export function safeString(value: unknown) {
@@ -69,16 +75,43 @@ export function installConfigPath() {
   return launcherMetadataPathForHome(os.homedir());
 }
 
-export function loadInstallConfig() {
-  const filePath = installConfigPath();
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as {
-      defaultTargetUser?: string;
-      defaultInstallDir?: string;
+function normalizeInstallConfig(home: string, raw: any): InstallConfig | null {
+  if (!raw || typeof raw !== "object") return null;
+  const defaultTargetUser = safeString(raw.defaultTargetUser).trim();
+  const defaultInstallDir = safeString(raw.defaultInstallDir).trim();
+  if (defaultTargetUser || defaultInstallDir) {
+    return {
+      defaultTargetUser,
+      defaultInstallDir,
     };
-  } catch {
-    return {};
   }
+  const targetUser = safeString(raw.targetUser).trim();
+  const installDir = safeString(raw.installDir).trim();
+  if (!targetUser && !installDir) return null;
+  return {
+    defaultTargetUser: targetUser,
+    defaultInstallDir: installDir || defaultInstallDirForHome(home),
+  };
+}
+
+export function loadInstallConfigForHome(home = os.homedir()): InstallConfig {
+  for (const filePath of [
+    launcherMetadataPathForHome(home),
+    ...installerLocatorCandidatesForHome(home),
+  ]) {
+    try {
+      const normalized = normalizeInstallConfig(
+        home,
+        JSON.parse(fs.readFileSync(filePath, "utf8")),
+      );
+      if (normalized) return normalized;
+    } catch {}
+  }
+  return {};
+}
+
+export function loadInstallConfig() {
+  return loadInstallConfigForHome(os.homedir());
 }
 
 async function canConnectSocket(socketPath: string) {

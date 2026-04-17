@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,6 +57,39 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
     shared.resolveInstallDirForTarget({ ...parsed, installDir: "" }),
     installPaths.defaultInstallDirForHome(os.homedir()),
   );
+});
+
+test("shared loadInstallConfigForHome recovers defaults from installer manifests", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "rin-shared-home-"));
+  try {
+    await fs.mkdir(path.join(home, ".rin"), { recursive: true });
+    await fs.writeFile(
+      path.join(home, ".rin", "installer.json"),
+      JSON.stringify({ targetUser: "demo" }),
+      "utf8",
+    );
+    assert.deepEqual(shared.loadInstallConfigForHome(home), {
+      defaultTargetUser: "demo",
+      defaultInstallDir: installPaths.defaultInstallDirForHome(home),
+    });
+
+    await fs.rm(path.join(home, ".rin", "installer.json"), { force: true });
+    await fs.mkdir(path.join(home, ".rin", "config"), { recursive: true });
+    await fs.writeFile(
+      path.join(home, ".rin", "config", "installer.json"),
+      JSON.stringify({
+        targetUser: "demo",
+        installDir: "/srv/rin-demo",
+      }),
+      "utf8",
+    );
+    assert.deepEqual(shared.loadInstallConfigForHome(home), {
+      defaultTargetUser: "demo",
+      defaultInstallDir: "/srv/rin-demo",
+    });
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
 });
 
 test("tmux socket args target the caller-owned hidden socket", () => {
