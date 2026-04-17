@@ -100,9 +100,10 @@ node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
 Typical places to recover `<installDir>`:
 
 - target manifest: `<installDir>/installer.json`
+- target-home locator manifest: `<targetHome>/.rin/installer.json`
 - Linux service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS service: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
-- common target-home default: `<targetHome>/.rin/`
+- common target-home default directory: `<targetHome>/.rin/`
 
 This is the canonical update path for the installed runtime.
 It refreshes the core runtime and installed docs.

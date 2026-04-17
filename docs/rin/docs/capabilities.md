@@ -30,7 +30,7 @@ Instead, jump straight to the target install manifest workflow:
    - inspect managed service files for `RIN_DIR`
    - Linux: `~/.config/systemd/user/rin-daemon*.service`
    - macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
-   - if you already know the target home, also probe the common default `<targetHome>/.rin/`
+   - if you already know the target home, also probe the stable locator manifest at `<targetHome>/.rin/installer.json`
 2. open the target install manifest:
    - `<installDir>/installer.json`
    - this file records `targetUser` and `installDir`

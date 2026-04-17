@@ -57,6 +57,7 @@ Besides launchers, Rin exposes install ownership through stable metadata and man
 Useful locations:
 
 - `<installDir>/installer.json`: install manifest written into the target runtime directory
+- `<targetHome>/.rin/installer.json`: stable locator manifest under the target home; for custom install dirs it points to the real `installDir`
 - Linux user service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 
