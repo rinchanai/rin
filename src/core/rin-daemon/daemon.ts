@@ -401,7 +401,7 @@ export async function startDaemon(
       const task = cronScheduler.getTask(String(command.taskId || "").trim());
       writeLine(
         connection.socket,
-        response(id, type, Boolean(task), task || "cron_task_not_found"),
+        response(id, type, Boolean(task), task ? { task } : "cron_task_not_found"),
       );
       return true;
     }

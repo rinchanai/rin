@@ -85,7 +85,7 @@ test("cron scheduler can seed and preserve dedicated session files", async () =>
   }
 });
 
-test("cron scheduler drops legacy dedicated session files during load migration", async () => {
+test("cron scheduler drops unmarked dedicated session files on load", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
   const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
   await fs.mkdir(path.dirname(tasksFile), { recursive: true });
@@ -115,7 +115,7 @@ test("cron scheduler drops legacy dedicated session files during load migration"
     scheduler.start();
     const task = scheduler.getTask("cron_legacy_dedicated");
     assert.ok(task);
-    assert.equal(task.dedicatedSessionPersistent, false);
+    assert.equal(task.dedicatedSessionPersistent, undefined);
     assert.equal(task.dedicatedSessionFile, undefined);
   } finally {
     scheduler.stop();

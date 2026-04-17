@@ -264,10 +264,9 @@ export class CronScheduler {
           : undefined,
     };
     const dedicatedSessionPersistent =
-      session.mode === "dedicated"
-        ? explicitSessionFile
-          ? true
-          : existing?.dedicatedSessionPersistent === true
+      session.mode === "dedicated" &&
+      (Boolean(explicitSessionFile) || existing?.dedicatedSessionPersistent === true)
+        ? true
         : undefined;
     const dedicatedSessionFile =
       session.mode === "dedicated" && dedicatedSessionPersistent
@@ -441,12 +440,12 @@ export class CronScheduler {
       if (!row || typeof row !== "object" || !row.id) continue;
       row.running = false;
       row.lastError = row.lastError ? safeString(row.lastError) : undefined;
-      row.dedicatedSessionPersistent = row.dedicatedSessionPersistent === true;
-      if (
-        (row.session as any)?.mode !== "dedicated" ||
-        row.dedicatedSessionPersistent !== true
-      ) {
-        row.dedicatedSessionFile = undefined;
+      const dedicatedSessionPersistent = row.dedicatedSessionPersistent === true;
+      if ((row.session as any)?.mode === "dedicated" && dedicatedSessionPersistent) {
+        row.dedicatedSessionPersistent = true;
+      } else {
+        delete row.dedicatedSessionFile;
+        delete row.dedicatedSessionPersistent;
       }
       row.nextRunAt = row.completedAt
         ? undefined

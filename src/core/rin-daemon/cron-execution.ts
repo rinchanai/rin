@@ -194,8 +194,8 @@ export async function executeCronAgentTask(
       task.dedicatedSessionFile = nextSessionFile;
       task.dedicatedSessionPersistent = true;
     } else {
-      task.dedicatedSessionFile = undefined;
-      task.dedicatedSessionPersistent = false;
+      delete task.dedicatedSessionFile;
+      delete task.dedicatedSessionPersistent;
     }
   }
   if (ephemeralDedicated) {
