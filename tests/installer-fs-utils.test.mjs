@@ -11,7 +11,7 @@ const rootDir = path.resolve(
 const fsUtils = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-install", "fs-utils.js"),
-  ).href,
+  ).href
 );
 const tempBaseDir = "/home/rin/tmp";
 
@@ -27,7 +27,9 @@ test("installer fs utils compute launcher targets and script", () => {
 
 test("syncInstalledDocs copies upstream mirrors into installed doc locations", async () => {
   const tempRoot = await fs.mkdtemp(path.join(tempBaseDir, "rin-install-src-"));
-  const installDir = await fs.mkdtemp(path.join(tempBaseDir, "rin-install-dst-"));
+  const installDir = await fs.mkdtemp(
+    path.join(tempBaseDir, "rin-install-dst-"),
+  );
 
   await fs.mkdir(path.join(tempRoot, "docs", "rin"), { recursive: true });
   await fs.writeFile(
@@ -35,7 +37,9 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
     "# Rin docs\n",
     "utf8",
   );
-  await fs.mkdir(path.join(tempRoot, "upstream", "pi", "docs"), { recursive: true });
+  await fs.mkdir(path.join(tempRoot, "upstream", "pi", "docs"), {
+    recursive: true,
+  });
   await fs.mkdir(path.join(tempRoot, "upstream", "pi", "examples"), {
     recursive: true,
   });
@@ -64,17 +68,11 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
     "{}\n",
     "utf8",
   );
-  await fs.mkdir(
-    path.join(tempRoot, "upstream", "skill-creator"),
-    { recursive: true },
-  );
+  await fs.mkdir(path.join(tempRoot, "upstream", "skill-creator"), {
+    recursive: true,
+  });
   await fs.writeFile(
-    path.join(
-      tempRoot,
-      "upstream",
-      "skill-creator",
-      "SKILL.md",
-    ),
+    path.join(tempRoot, "upstream", "skill-creator", "SKILL.md"),
     "# Skill\n",
     "utf8",
   );
@@ -94,7 +92,14 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
   await fs.access(path.join(installDir, "docs", "pi", "examples", "README.md"));
   await fs.access(path.join(installDir, "docs", "pi", "_upstream.json"));
   await fs.access(
-    path.join(installDir, "docs", "rin", "builtin-skills", "skill-creator", "SKILL.md"),
+    path.join(
+      installDir,
+      "docs",
+      "rin",
+      "builtin-skills",
+      "skill-creator",
+      "SKILL.md",
+    ),
   );
 });
 
@@ -125,7 +130,9 @@ test("publishInstalledRuntime no longer requires vendored pi-coding-agent source
     { findSystemUser: () => null },
   );
 
-  await fs.access(path.join(published.releaseRoot, "dist", "app", "rin", "main.js"));
+  await fs.access(
+    path.join(published.releaseRoot, "dist", "app", "rin", "main.js"),
+  );
   await fs.access(path.join(published.releaseRoot, "package.json"));
   await assert.rejects(
     fs.access(path.join(published.releaseRoot, "third_party")),

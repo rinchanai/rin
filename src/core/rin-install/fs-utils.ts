@@ -4,6 +4,11 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
+import {
+  currentRuntimeRoot,
+  installedAppEntryCandidates,
+  installedReleaseRoot,
+} from "./paths.js";
 
 export function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });
@@ -73,21 +78,8 @@ export function launcherScript(candidates: string[]) {
 
 export function launcherTargetsForInstallDir(installDir: string) {
   return {
-    rin: [
-      path.join(installDir, "app", "current", "dist", "app", "rin", "main.js"),
-      path.join(installDir, "app", "current", "dist", "index.js"),
-    ],
-    rinInstall: [
-      path.join(
-        installDir,
-        "app",
-        "current",
-        "dist",
-        "app",
-        "rin-install",
-        "main.js",
-      ),
-    ],
+    rin: installedAppEntryCandidates(installDir, "rin"),
+    rinInstall: installedAppEntryCandidates(installDir, "rin-install"),
   };
 }
 
@@ -282,7 +274,13 @@ export function syncInstalledDocs(
   const piDocRoot = path.join(sourceRoot, "upstream", "pi");
   const piInstallRoot = path.join(installDir, "docs", "pi");
   const installedPiDocs: string[] = [];
-  for (const name of ["README.md", "CHANGELOG.md", "docs", "examples", "_upstream.json"]) {
+  for (const name of [
+    "README.md",
+    "CHANGELOG.md",
+    "docs",
+    "examples",
+    "_upstream.json",
+  ]) {
     const synced = syncInstalledDocTree(
       path.join(piDocRoot, name),
       path.join(piInstallRoot, name),
@@ -306,18 +304,14 @@ export function publishInstalledRuntime(
   elevated = false,
   deps: { findSystemUser: (user: string) => any },
 ) {
-  const releaseRoot = path.join(installDir, "app", "releases", releaseIdNow());
-  const currentLink = path.join(installDir, "app", "current");
+  const releaseRoot = installedReleaseRoot(installDir, releaseIdNow());
+  const currentLink = currentRuntimeRoot(installDir);
   const currentTmpLink = `${currentLink}.tmp`;
   if (elevated) {
     const target = deps.findSystemUser(targetUser) as any;
     const targetGroup = target?.name ? String(target?.gid ?? "") : "";
     runPrivileged("mkdir", ["-p", releaseRoot]);
-    for (const name of [
-      "dist",
-      "node_modules",
-      "package.json",
-    ]) {
+    for (const name of ["dist", "node_modules", "package.json"]) {
       runPrivileged("rm", ["-rf", path.join(releaseRoot, name)]);
       runPrivileged("cp", [
         "-a",
@@ -350,11 +344,7 @@ export function publishInstalledRuntime(
     return { releaseRoot, currentLink };
   }
   ensureDir(path.dirname(releaseRoot));
-  for (const name of [
-    "dist",
-    "node_modules",
-    "package.json",
-  ])
+  for (const name of ["dist", "node_modules", "package.json"])
     syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name));
   try {
     fs.rmSync(currentTmpLink, { recursive: true, force: true });

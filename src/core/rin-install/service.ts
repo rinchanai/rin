@@ -12,36 +12,19 @@ import {
   writeTextFile,
   writeTextFileWithPrivilege,
 } from "./fs-utils.js";
+import { installedAppEntryCandidates, sourceAppEntryPath } from "./paths.js";
 
 export function resolveDaemonEntryForInstall(
   installDir: string,
   repoRootFromHere: () => string,
 ) {
-  const currentStyle = path.join(
+  for (const candidate of installedAppEntryCandidates(
     installDir,
-    "app",
-    "current",
-    "dist",
-    "app",
     "rin-daemon",
-    "daemon.js",
-  );
-  if (fs.existsSync(currentStyle)) return currentStyle;
-  const legacyStyle = path.join(
-    installDir,
-    "app",
-    "current",
-    "dist",
-    "daemon.js",
-  );
-  if (fs.existsSync(legacyStyle)) return legacyStyle;
-  return path.join(
-    repoRootFromHere(),
-    "dist",
-    "app",
-    "rin-daemon",
-    "daemon.js",
-  );
+  )) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return sourceAppEntryPath(repoRootFromHere(), "rin-daemon");
 }
 
 export function buildLaunchdPlist(
