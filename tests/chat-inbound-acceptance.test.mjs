@@ -90,7 +90,7 @@ test("chat controller does not accept an inbound prompt before the turn actually
       sessionFile: "/tmp/acceptance-chat.jsonl",
       sessionId: "session-acceptance",
     }),
-    prompt: async () => {
+    prompt: async (_message, options = {}) => {
       const beforeStart = getChatMessage(
         controller.agentDir,
         chatKey,
@@ -117,6 +117,18 @@ test("chat controller does not accept an inbound prompt before the turn actually
       ];
       controller.session.isStreaming = false;
       controller.handleSessionEvent({ type: "agent_end" });
+      controller.handleClientEvent({
+        type: "ui",
+        payload: {
+          type: "rpc_turn_event",
+          event: "complete",
+          requestTag: options.requestTag,
+          finalText: "accepted final",
+          result: { messages: [{ type: "text", text: "accepted final" }] },
+          sessionId: "session-acceptance",
+          sessionFile: "/tmp/acceptance-chat.jsonl",
+        },
+      });
     },
     setSessionName: async () => {},
     switchSession: async () => {},
@@ -162,7 +174,7 @@ test("reply session lookup can continue from an accepted inbound message before 
       sessionFile: "/tmp/reply-session.jsonl",
       sessionId: "session-reply",
     }),
-    prompt: async () => {
+    prompt: async (_message, options = {}) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       const linked = lookupReplySession(
@@ -184,6 +196,18 @@ test("reply session lookup can continue from an accepted inbound message before 
       ];
       controller.session.isStreaming = false;
       controller.handleSessionEvent({ type: "agent_end" });
+      controller.handleClientEvent({
+        type: "ui",
+        payload: {
+          type: "rpc_turn_event",
+          event: "complete",
+          requestTag: options.requestTag,
+          finalText: "continued",
+          result: { messages: [{ type: "text", text: "continued" }] },
+          sessionId: "session-reply",
+          sessionFile: "/tmp/reply-session.jsonl",
+        },
+      });
     },
     setSessionName: async () => {},
     switchSession: async () => {},

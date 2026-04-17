@@ -41,10 +41,11 @@ test("chat runtime persists inbound sessions before emitting message events", as
 
   assert.equal(delivered, true);
   assert.deepEqual(seen, ["m1"]);
-  assert.equal(session.__rinInboundQueued, true);
   assert.equal(files.length, 1);
   assert.equal(stored.chatKey, "telegram/1:2");
   assert.equal(stored.messageId, "m1");
+  assert.equal(stored.routing?.text, "hello");
+  assert.equal(stored.routing?.isDirect, true);
 });
 
 test("chat runtime derives the durable chat key from normalized chat identity", async () => {
@@ -69,6 +70,8 @@ test("chat runtime derives the durable chat key from normalized chat identity", 
   assert.equal(files.length, 1);
   assert.equal(stored.chatKey, "onebot/1:private:42");
   assert.equal(stored.messageId, "m2");
+  assert.equal(stored.routing?.chatType, "private");
+  assert.equal(stored.routing?.userId, "42");
 });
 
 test("telegram runtime advances the poll cursor only after the update is handled", async () => {

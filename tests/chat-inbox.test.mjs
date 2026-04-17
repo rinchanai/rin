@@ -44,6 +44,79 @@ test("chat inbox enqueues a durable inbound envelope keyed by chat and message i
   assert.deepEqual(loaded.elements, elements);
 });
 
+test("chat inbox preserves normalized mention routing hints needed for queued group turns", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-inbox-"));
+  const session = {
+    platform: "telegram",
+    selfId: "1",
+    guildId: "g1",
+    channelId: "-100123",
+    userId: "owner-1",
+    messageId: "m-mention",
+    timestamp: Date.now(),
+    content: "@rin hello",
+    stripped: { content: "hello", appel: true },
+  };
+  const elements = [{ type: "text", attrs: { content: "hello" } }];
+
+  inbox.enqueueChatInboxItem(agentDir, {
+    chatKey: "telegram/1:-100123",
+    messageId: "m-mention",
+    session,
+    elements,
+  });
+  const [filePath] = inbox.listPendingChatInboxFiles(agentDir);
+  const loaded = inbox.readChatInboxItem(filePath);
+  const restored = inbox.restoreChatInboxSession({
+    ...loaded,
+    session: {
+      ...loaded.session,
+      stripped: { content: loaded.session?.stripped?.content },
+    },
+  });
+
+  assert.equal(loaded.routing?.mentionLike, true);
+  assert.equal(loaded.routing?.chatType, "group");
+  assert.equal(loaded.session?.stripped?.content, "hello");
+  assert.equal(loaded.session?.stripped?.appel, undefined);
+  assert.equal(restored.stripped?.appel, true);
+});
+
+test("chat inbox restores stranded processing envelopes back to pending on startup", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-inbox-"));
+  const session = {
+    platform: "telegram",
+    selfId: "1",
+    channelId: "2",
+    userId: "3",
+    messageId: "m-processing",
+    timestamp: Date.now(),
+    content: "hello again",
+    stripped: { content: "hello again" },
+  };
+  const elements = [{ type: "text", attrs: { content: "hello again" } }];
+
+  inbox.enqueueChatInboxItem(agentDir, {
+    chatKey: "telegram/1:2",
+    messageId: "m-processing",
+    session,
+    elements,
+  });
+  const [pendingPath] = inbox.listPendingChatInboxFiles(agentDir);
+  const claimedPath = inbox.claimChatInboxFile(agentDir, pendingPath);
+  assert.equal(inbox.listPendingChatInboxFiles(agentDir).length, 0);
+  assert.equal(inbox.listProcessingChatInboxFiles(agentDir).length, 1);
+
+  const restored = inbox.restoreProcessingChatInboxFiles(agentDir);
+  assert.equal(restored.length, 1);
+  assert.equal(inbox.listProcessingChatInboxFiles(agentDir).length, 0);
+  const [restoredPath] = inbox.listPendingChatInboxFiles(agentDir);
+  const restoredItem = inbox.readChatInboxItem(restoredPath);
+  assert.equal(restoredItem.messageId, "m-processing");
+  assert.ok(restoredPath.endsWith(`${restoredItem.itemId}.json`));
+  assert.ok(claimedPath.endsWith(`${restoredItem.itemId}.json`));
+});
+
 test("chat inbox can claim, restore, and reschedule a queued envelope", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-inbox-"));
   const session = {

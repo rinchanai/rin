@@ -290,9 +290,6 @@ export class ChatRuntimeApp extends EventEmitter {
       session,
       elements,
     });
-    if (session && typeof session === "object") {
-      session.__rinInboundQueued = true;
-    }
   }
 
   emit(eventName: string | symbol, ...args: any[]): boolean {
