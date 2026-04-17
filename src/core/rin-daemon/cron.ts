@@ -73,6 +73,7 @@ export type CronTaskRecord = {
   session: CronTaskSessionBinding;
   target: CronTaskTarget;
   dedicatedSessionFile?: string;
+  dedicatedSessionPersistent?: boolean;
   nextRunAt?: string;
   lastStartedAt?: string;
   lastFinishedAt?: string;
@@ -262,8 +263,14 @@ export class CronScheduler {
             )
           : undefined,
     };
-    const dedicatedSessionFile =
+    const dedicatedSessionPersistent =
       session.mode === "dedicated"
+        ? explicitSessionFile
+          ? true
+          : existing?.dedicatedSessionPersistent === true
+        : undefined;
+    const dedicatedSessionFile =
+      session.mode === "dedicated" && dedicatedSessionPersistent
         ? explicitSessionFile
           ? path.resolve(HOME_DIR, explicitSessionFile)
           : existing?.dedicatedSessionFile
@@ -328,6 +335,7 @@ export class CronScheduler {
         session: normalizedSession,
         target: normalizedTarget,
         dedicatedSessionFile,
+        dedicatedSessionPersistent,
         nextRunAt: existing?.nextRunAt,
         lastStartedAt: existing?.lastStartedAt,
         lastFinishedAt: existing?.lastFinishedAt,
@@ -360,6 +368,7 @@ export class CronScheduler {
       session: normalizedSession,
       target: normalizedTarget,
       dedicatedSessionFile,
+      dedicatedSessionPersistent,
       nextRunAt,
       lastStartedAt: existing?.lastStartedAt,
       lastFinishedAt: existing?.lastFinishedAt,
@@ -432,6 +441,13 @@ export class CronScheduler {
       if (!row || typeof row !== "object" || !row.id) continue;
       row.running = false;
       row.lastError = row.lastError ? safeString(row.lastError) : undefined;
+      row.dedicatedSessionPersistent = row.dedicatedSessionPersistent === true;
+      if (
+        (row.session as any)?.mode !== "dedicated" ||
+        row.dedicatedSessionPersistent !== true
+      ) {
+        row.dedicatedSessionFile = undefined;
+      }
       row.nextRunAt = row.completedAt
         ? undefined
         : row.nextRunAt || computeNextRunAt(row, Date.now());

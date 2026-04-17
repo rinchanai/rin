@@ -165,7 +165,7 @@ export async function executeCronAgentTask(
     throw new Error("cron_chat_unavailable");
   }
   const seededDedicatedSessionFile =
-    task.session.mode === "dedicated"
+    task.session.mode === "dedicated" && task.dedicatedSessionPersistent === true
       ? String(task.dedicatedSessionFile || "").trim() || undefined
       : undefined;
   const ephemeralDedicated =
@@ -192,8 +192,10 @@ export async function executeCronAgentTask(
   if (task.session.mode === "dedicated") {
     if (seededDedicatedSessionFile && nextSessionFile) {
       task.dedicatedSessionFile = nextSessionFile;
+      task.dedicatedSessionPersistent = true;
     } else {
       task.dedicatedSessionFile = undefined;
+      task.dedicatedSessionPersistent = false;
     }
   }
   if (ephemeralDedicated) {
