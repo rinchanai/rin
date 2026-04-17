@@ -74,10 +74,11 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
     assert.match(
       spec.service,
       new RegExp(
-        `^ExecStart=${process.execPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} ${currentDaemon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        `^ExecStart=/usr/bin/env node ${currentDaemon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
         "m",
       ),
     );
+    assert.match(spec.service, /^Environment=PATH=.+$/m);
 
     assert.equal(plist.label, "com.rin.daemon.demo.user-test");
     assert.ok(
@@ -89,8 +90,10 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
         ),
       ),
     );
-    assert.ok(plist.plist.includes(`<string>${process.execPath}</string>`));
+    assert.ok(plist.plist.includes(`<string>/usr/bin/env</string>`));
+    assert.ok(plist.plist.includes(`<string>node</string>`));
     assert.ok(plist.plist.includes(`<string>${currentDaemon}</string>`));
+    assert.ok(plist.plist.includes(`<key>PATH</key>`));
     assert.ok(plist.plist.includes(`<string>${installDir}</string>`));
   });
 });

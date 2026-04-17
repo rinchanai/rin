@@ -69,14 +69,46 @@ export function writeExecutable(filePath: string, content: string) {
   writeTextFile(filePath, content, 0o755);
 }
 
+const COMMON_RUNTIME_BIN_DIRS = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  "/usr/bin",
+  "/bin",
+  "/usr/sbin",
+  "/sbin",
+];
+
+export function installedRuntimePathValue() {
+  const seen = new Set<string>();
+  const dirs: string[] = [];
+  for (const dir of [
+    ...String(process.env.PATH || "").split(path.delimiter),
+    ...COMMON_RUNTIME_BIN_DIRS,
+  ]) {
+    const next = String(dir || "").trim();
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
+    dirs.push(next);
+  }
+  return dirs.join(path.delimiter);
+}
+
+export function installedRuntimeNodeCommandArgs() {
+  return [fs.existsSync("/usr/bin/env") ? "/usr/bin/env" : "env", "node"];
+}
+
 export function launcherScript(candidates: string[]) {
+  const runtimePath = installedRuntimePathValue();
+  const nodeCommand = installedRuntimeNodeCommandArgs()
+    .map((entry) => shellQuote(entry))
+    .join(" ");
   const checks = candidates
     .map(
       (candidate) =>
-        `if [ -f ${shellQuote(candidate)} ]; then exec ${shellQuote(process.execPath)} ${shellQuote(candidate)} "$@"; fi`,
+        `if [ -f ${shellQuote(candidate)} ]; then exec ${nodeCommand} ${shellQuote(candidate)} "$@"; fi`,
     )
     .join("\n");
-  return `#!/usr/bin/env sh\n${checks}\necho "rin: installed runtime entry not found" >&2\nexit 1\n`;
+  return `#!/usr/bin/env sh\nPATH=${shellQuote(runtimePath)}\nexport PATH\n${checks}\necho "rin: installed runtime entry not found" >&2\nexit 1\n`;
 }
 
 export function launcherTargetsForInstallDir(installDir: string) {
