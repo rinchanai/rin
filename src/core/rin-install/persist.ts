@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { installerManifestPath, legacyInstallerManifestPath } from "./paths.js";
+
 export function reconcileInstallerManifest(
   options: {
     targetUser: string;
@@ -34,12 +36,8 @@ export function reconcileInstallerManifest(
   const ownerGroup = target?.gid;
   if (!options.elevated) deps.ensureDir(options.installDir);
 
-  const manifestPath = path.join(options.installDir, "installer.json");
-  const legacyManifestPath = path.join(
-    options.installDir,
-    "config",
-    "installer.json",
-  );
+  const manifestPath = installerManifestPath(options.installDir);
+  const legacyManifestPath = legacyInstallerManifestPath(options.installDir);
   const manifestJson = deps.readInstallerJson<any>(
     manifestPath,
     deps.readInstallerJson<any>(

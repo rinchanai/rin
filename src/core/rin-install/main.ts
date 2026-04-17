@@ -43,6 +43,7 @@ import {
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
+import { defaultInstallDirForHome } from "./paths.js";
 import {
   normalizeInstalledChatSettings,
   persistInstallerOutputs,
@@ -265,7 +266,7 @@ async function applyInstalledRuntime(
   const targetUser = String(options.targetUser || "").trim() || currentUser;
   const installDir =
     String(options.installDir || "").trim() ||
-    path.join(targetHomeForUser(targetUser), ".rin");
+    defaultInstallDirForHome(targetHomeForUser(targetUser));
   const provider = String(options.provider || "");
   const modelId = String(options.modelId || "");
   const thinkingLevel = String(options.thinkingLevel || "");
