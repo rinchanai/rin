@@ -77,3 +77,100 @@ test("installer interactive helpers compute final requirements", () => {
     local.some((line) => line.includes("skip daemon service installation")),
   );
 });
+
+test("promptProviderSetup always requires choosing a provider", async () => {
+  const selectCalls = [];
+  const authCalls = [];
+  const prompt = {
+    ensureNotCancelled(value) {
+      return value;
+    },
+    async select(options) {
+      selectCalls.push(options.message);
+      if (options.message === "Choose a provider to authenticate and use.")
+        return "openai";
+      if (options.message === "Choose a model.") return "gpt-5";
+      if (options.message === "Choose the default thinking level.")
+        return "medium";
+      throw new Error(`unexpected select prompt: ${options.message}`);
+    },
+    async text() {
+      throw new Error("text prompt should not be used in this test");
+    },
+    async confirm() {
+      throw new Error("provider setup must not allow skipping provider selection");
+    },
+  };
+
+  const result = await interactive.promptProviderSetup(
+    prompt,
+    "/tmp/demo",
+    () => ({}),
+    {
+      async loadModelChoices() {
+        return [
+          {
+            provider: "openai",
+            id: "gpt-5",
+            reasoning: true,
+            available: false,
+          },
+          {
+            provider: "openai",
+            id: "gpt-4.1",
+            reasoning: false,
+            available: false,
+          },
+        ];
+      },
+      async configureProviderAuth(provider, installDir) {
+        authCalls.push({ provider, installDir });
+        return {
+          available: true,
+          authKind: "api_key",
+          authData: { openai: { type: "api_key", key: "demo" } },
+        };
+      },
+    },
+  );
+
+  assert.deepEqual(selectCalls, [
+    "Choose a provider to authenticate and use.",
+    "Choose a model.",
+    "Choose the default thinking level.",
+  ]);
+  assert.deepEqual(authCalls, [{ provider: "openai", installDir: "/tmp/demo" }]);
+  assert.equal(result.provider, "openai");
+  assert.equal(result.modelId, "gpt-5");
+  assert.equal(result.thinkingLevel, "medium");
+  assert.equal(result.authResult.available, true);
+});
+
+test("promptProviderSetup fails when no models are available", async () => {
+  await assert.rejects(
+    interactive.promptProviderSetup(
+      {
+        ensureNotCancelled(value) {
+          return value;
+        },
+        async select() {
+          throw new Error("select should not be reached without models");
+        },
+        async text() {
+          throw new Error("text should not be reached without models");
+        },
+        async confirm() {
+          throw new Error("confirm should not be reached without models");
+        },
+      },
+      "/tmp/demo",
+      () => ({}),
+      {
+        async loadModelChoices() {
+          return [];
+        },
+      },
+    ),
+    /rin_installer_no_models_available/,
+  );
+});
