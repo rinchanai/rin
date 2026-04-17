@@ -8,7 +8,11 @@ import {
   appConfigDirForHome,
   currentRuntimeRoot,
   installedAppEntryCandidates,
+  installedBuiltinSkillRoot,
+  installedPiDocsRoot,
   installedReleaseRoot,
+  installedReleasesRoot,
+  installedRinDocsRoot,
   launcherMetadataPathForHome,
   launcherPathForHome,
 } from "./paths.js";
@@ -294,20 +298,20 @@ export function syncInstalledDocs(
 ) {
   const installedRinDocsDir = syncInstalledDocTree(
     path.join(sourceRoot, "docs", "rin"),
-    path.join(installDir, "docs", "rin"),
+    installedRinDocsRoot(installDir),
     targetUser,
     elevated,
     deps,
   );
   syncInstalledDocTree(
     path.join(sourceRoot, "upstream", "skill-creator"),
-    path.join(installDir, "docs", "rin", "builtin-skills", "skill-creator"),
+    installedBuiltinSkillRoot(installDir, "skill-creator"),
     targetUser,
     elevated,
     deps,
   );
   const piDocRoot = path.join(sourceRoot, "upstream", "pi");
-  const piInstallRoot = path.join(installDir, "docs", "pi");
+  const piInstallRoot = installedPiDocsRoot(installDir);
   const installedPiDocs: string[] = [];
   for (const name of [
     "README.md",
@@ -396,7 +400,7 @@ export function listInstalledReleaseNames(
   installDir: string,
   elevated = false,
 ) {
-  const releasesDir = path.join(installDir, "app", "releases");
+  const releasesDir = installedReleasesRoot(installDir);
   if (!elevated) {
     try {
       return fs
@@ -432,7 +436,7 @@ export function pruneInstalledReleases(
   currentReleaseRoot: string,
   elevated = false,
 ) {
-  const releasesDir = path.join(installDir, "app", "releases");
+  const releasesDir = installedReleasesRoot(installDir);
   const currentReleaseName = path.basename(currentReleaseRoot);
   const names = listInstalledReleaseNames(installDir, elevated).sort((a, b) =>
     b.localeCompare(a),
