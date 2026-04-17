@@ -18,7 +18,7 @@ test("chat boot exposes the dedicated chat command registry", () => {
   assert.equal(rows[0].name, "help");
   assert.deepEqual(
     rows.map((row) => row.name),
-    ["help", "abort", "new", "compact", "reload", "session", "resume", "model"],
+    ["help", "abort", "new", "compact", "reload", "status", "session", "resume", "model"],
   );
   assert.ok(!rows.some((row) => row.name === "init"));
 });
@@ -59,6 +59,7 @@ test("chat boot clears common telegram scopes before syncing default commands", 
       command: "reload",
       description: "Reload extensions, prompts, skills, and themes",
     },
+    { command: "status", description: "Show current chat processing status" },
     { command: "session", description: "Show current session status" },
     { command: "resume", description: "Resume a previous session" },
     { command: "model", description: "Show or change the current model" },
@@ -91,6 +92,7 @@ test("chat boot clears common telegram scopes before syncing default commands", 
           command: "reload",
           description: "Reload extensions, prompts, skills, and themes",
         },
+        { command: "status", description: "Show current chat processing status" },
         { command: "session", description: "Show current session status" },
         { command: "resume", description: "Resume a previous session" },
         { command: "model", description: "Show or change the current model" },

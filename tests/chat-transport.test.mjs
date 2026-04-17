@@ -266,14 +266,19 @@ test("chat transport prefers internal telegram reaction calls for working reacti
     second,
   );
 
-  assert.equal(first, "👀");
-  assert.equal(second, "👀");
+  assert.equal(first, "🌘");
+  assert.equal(second, "🌗");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
     {
       chat_id: "2",
       message_id: 41,
-      reaction: [{ type: "emoji", emoji: "👀" }],
+      reaction: [{ type: "emoji", emoji: "🌘" }],
+    },
+    {
+      chat_id: "2",
+      message_id: 41,
+      reaction: [{ type: "emoji", emoji: "🌗" }],
     },
     {
       chat_id: "2",
@@ -321,16 +326,24 @@ test("chat transport uses bot reaction helpers for onebot working reactions", as
     second,
   );
 
-  assert.equal(first, "👀");
-  assert.equal(second, "👀");
+  assert.equal(first, "🌘");
+  assert.equal(second, "🌗");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
-    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "👀" },
+    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🌘" },
     {
       kind: "delete",
       chatId: "1067390680",
       messageId: "52",
-      emoji: "👀",
+      emoji: "🌘",
+      userId: "2301401877",
+    },
+    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🌗" },
+    {
+      kind: "delete",
+      chatId: "1067390680",
+      messageId: "52",
+      emoji: "🌗",
       userId: "2301401877",
     },
   ]);
@@ -363,7 +376,7 @@ test("chat transport skips onebot working reactions in private chats", async () 
     app,
     "onebot/2301401877:private:519418441",
     "52",
-    "👀",
+    "🌘",
   );
 
   assert.equal(first, "");

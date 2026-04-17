@@ -12,7 +12,8 @@ const policy = await import(
     .href
 );
 
-test("chat policy allows trusted users to abort and start new chat sessions", () => {
+test("chat policy allows trusted users to check status, abort, and start new chat sessions", () => {
+  assert.equal(policy.canRunCommand("TRUSTED", "status"), true);
   assert.equal(policy.canRunCommand("TRUSTED", "new"), true);
   assert.equal(policy.canRunCommand("TRUSTED", "abort"), true);
 });

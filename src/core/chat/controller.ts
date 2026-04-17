@@ -24,6 +24,7 @@ import {
 
 const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
+const WORKING_REACTION_FRAME_INTERVAL_MS = 30_000;
 const INTERIM_PREFIX = "··· ";
 
 function extractFinalTextFromTurnResult(result: any) {
@@ -49,6 +50,25 @@ function isAgentAlreadyProcessingError(error: unknown) {
   return safeString((error as any)?.message || error).includes(
     "Agent is already processing.",
   );
+}
+
+function formatElapsedSince(startedAt: number) {
+  const elapsedMs = Math.max(0, Date.now() - startedAt);
+  const totalSeconds = Math.floor(elapsedMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes <= 0) return `${seconds}s`;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  const remainMinutes = minutes % 60;
+  return `${hours}h ${remainMinutes}m`;
+}
+
+function summarizePromptText(text: string, limit = 80) {
+  const value = safeString(text).replace(/\s+/g, " ").trim();
+  if (!value) return "";
+  if (value.length <= limit) return value;
+  return `${value.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
 }
 
 export class ChatController {
@@ -79,6 +99,7 @@ export class ChatController {
   affectChatBinding: boolean;
   workingReactionEmoji = "";
   workingReactionTick = 0;
+  lastWorkingReactionAt = 0;
 
   constructor(
     app: any,
@@ -276,6 +297,7 @@ export class ChatController {
     const emoji = safeString(this.workingReactionEmoji).trim();
     this.workingReactionEmoji = "";
     this.workingReactionTick = 0;
+    this.lastWorkingReactionAt = 0;
     if (!messageId || !emoji) return false;
     return await clearWorkingReactionTick(
       this.app,
@@ -328,6 +350,64 @@ export class ChatController {
     this.saveState();
     return true;
   }
+  private shouldRefreshWorkingReaction() {
+    return (
+      !safeString(this.workingReactionEmoji).trim() ||
+      Date.now() - this.lastWorkingReactionAt >= WORKING_REACTION_FRAME_INTERVAL_MS
+    );
+  }
+  private currentStatusLabel() {
+    if (this.hasActiveTurn()) return "working";
+    if (this.state.pendingDelivery) return "delivering";
+    if (this.state.processing) return "recovering";
+    return "idle";
+  }
+  private buildStatusText() {
+    const lines = [`Status: ${this.currentStatusLabel()}`, `Chat: ${this.chatKey}`];
+    const policy = this.getWorkingIndicatorPolicy();
+    const indicators = [
+      policy.typing ? "typing" : "",
+      policy.reaction ? "reaction" : "",
+      policy.notice ? "notice" : "",
+    ].filter(Boolean);
+    lines.push(`Indicators: ${indicators.join(", ") || "none"}`);
+
+    const sessionId = this.currentSessionId();
+    const sessionFile = this.currentSessionFile();
+    if (sessionId) lines.push(`Session: ${sessionId}`);
+    else if (sessionFile) lines.push(`Session file: ${sessionFile}`);
+
+    const processing = this.state.processing;
+    if (processing?.startedAt) {
+      lines.push(`Since: ${formatElapsedSince(processing.startedAt)}`);
+    }
+    const replyToMessageId = this.currentReplyToMessageId();
+    if (replyToMessageId) lines.push(`Reply target: ${replyToMessageId}`);
+    const promptPreview = summarizePromptText(processing?.text || "");
+    if (promptPreview) lines.push(`Prompt: ${promptPreview}`);
+    return lines.join("\n");
+  }
+  private async runLocalStatusCommand(replyToMessageId = "", incomingMessageId = "") {
+    const text = this.buildStatusText();
+    this.markProcessedMessage(incomingMessageId);
+    this.latestAssistantText = text;
+    if (!this.deliveryEnabled) return { handled: true, text, local: true };
+    await sendOutboxPayload(
+      this.app,
+      this.agentDir,
+      {
+        type: "text_delivery",
+        chatKey: this.chatKey,
+        text,
+        replyToMessageId: safeString(replyToMessageId).trim() || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+        createdAt: new Date().toISOString(),
+      },
+      this.h,
+    );
+    return { handled: true, text, local: true };
+  }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
     if (!this.hasActiveTurn()) return false;
@@ -337,18 +417,22 @@ export class ChatController {
       sent = (await sendTyping(this.app, this.chatKey, this.h)) || sent;
     }
     const messageId = this.currentIncomingMessageId();
-    if (policy.reaction && messageId) {
+    if (policy.reaction && messageId && this.shouldRefreshWorkingReaction()) {
+      const previousEmoji = this.workingReactionEmoji;
       const nextEmoji = await rotateWorkingReaction(
         this.app,
         this.chatKey,
         messageId,
         this.workingReactionTick,
-        this.workingReactionEmoji,
+        previousEmoji,
       );
       if (nextEmoji) {
         sent = true;
         this.workingReactionEmoji = nextEmoji;
-        this.workingReactionTick += 1;
+        this.lastWorkingReactionAt = Date.now();
+        if (nextEmoji !== previousEmoji) {
+          this.workingReactionTick += 1;
+        }
       }
     }
     if (policy.notice) {
@@ -643,6 +727,9 @@ export class ChatController {
     incomingMessageId = "",
   ) {
     const commandName = commandNameFromCommandLine(commandLine);
+    if (commandName === "status") {
+      return await this.runLocalStatusCommand(replyToMessageId, incomingMessageId);
+    }
     const skipSessionRecovery = commandName === "new";
     await this.connect({ restoreSession: !skipSessionRecovery });
     if (!this.session) throw new Error("chat_session_not_connected");
