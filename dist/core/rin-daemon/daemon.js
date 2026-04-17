@@ -5,7 +5,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "../rin-lib/common.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
-import { getChatSidecarStatus } from "../chat/service.js";
 import { emptySessionState, isSessionScopedCommand, response, } from "../rin-lib/rpc.js";
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
 import { listBoundSessions } from "../session/factory.js";
@@ -81,6 +80,7 @@ export async function startDaemon(options = {}) {
     const cronScheduler = new CronScheduler({
         agentDir: runtime.agentDir,
         additionalExtensionPaths: options.additionalExtensionPaths,
+        chat: options.chat,
     });
     cronScheduler.start();
     for (const candidate of [socketPath, bridgeSocketPath]) {
@@ -244,12 +244,13 @@ export async function startDaemon(options = {}) {
             return true;
         }
         if (type === "daemon_status") {
+            const extraStatus = await options.getExtraStatus?.();
             writeLine(connection.socket, response(id, type, true, {
                 socketPath,
                 ...workerPool.getStatusSnapshot(),
                 taskCount: cronScheduler.listTasks().length,
                 webSearch: getSearxngSidecarStatus(runtime.agentDir),
-                chat: getChatSidecarStatus(runtime.agentDir),
+                ...(extraStatus && typeof extraStatus === "object" ? extraStatus : {}),
             }));
             return true;
         }
@@ -285,6 +286,14 @@ export async function startDaemon(options = {}) {
         if (type === "cron_resume_task") {
             const task = cronScheduler.resumeTask(String(command.taskId || "").trim());
             writeLine(connection.socket, response(id, type, true, { task }));
+            return true;
+        }
+        const localResult = await options.handleLocalCommand?.(command);
+        if (localResult) {
+            const success = localResult.success !== false;
+            writeLine(connection.socket, response(id, type, success, success
+                ? localResult.data
+                : String(localResult.error || "daemon_command_failed")));
             return true;
         }
         return false;
@@ -403,6 +412,7 @@ export async function startDaemon(options = {}) {
         }
         restartState.pendingResume = await workerPool.shutdown(shutdownGraceMs);
         saveRestartState(runtime.agentDir, restartState);
+        await Promise.resolve(options.onShutdown?.()).catch(() => { });
         process.exit(0);
     };
     process.on("SIGINT", shutdown);

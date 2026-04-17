@@ -6,12 +6,17 @@ import path from "node:path";
 
 const HOME_DIR = os.homedir();
 
-import { deliverChatRpcPayload, requestChatRpc } from "../chat/rpc.js";
+import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
 
+type CronChatCapability = {
+  send?: (payload: ChatOutboxPayload) => Promise<any>;
+  runTurn?: (payload: any) => Promise<any>;
+};
+
 export async function sendChatText(
-  agentDir: string,
+  options: { chat?: CronChatCapability },
   payload: {
     chatKey: string;
     taskId: string;
@@ -21,7 +26,10 @@ export async function sendChatText(
     sessionFile?: string;
   },
 ) {
-  await deliverChatRpcPayload(agentDir, {
+  if (typeof options.chat?.send !== "function") {
+    throw new Error("cron_chat_unavailable");
+  }
+  await options.chat.send({
     type: "text_delivery",
     createdAt: nowIso(),
     ...payload,
@@ -120,21 +128,22 @@ export async function executeCronAgentTask(
   options: {
     agentDir: string;
     additionalExtensionPaths?: string[];
+    chat?: CronChatCapability;
   },
 ) {
   if (task.target.kind !== "agent_prompt")
     throw new Error("cron_invalid_agent_task");
+  if (typeof options.chat?.runTurn !== "function") {
+    throw new Error("cron_chat_unavailable");
+  }
   const sessionFile = await resolveCronSessionFile(task);
-  const result = await requestChatRpc(options.agentDir, {
-    type: "run_chat_turn",
-    payload: {
-      chatKey: task.chatKey,
-      controllerKey: task.id,
-      deliveryEnabled: false,
-      affectChatBinding: false,
-      text: task.target.prompt,
-      sessionFile,
-    },
+  const result = await options.chat.runTurn({
+    chatKey: task.chatKey,
+    controllerKey: task.id,
+    deliveryEnabled: false,
+    affectChatBinding: false,
+    text: task.target.prompt,
+    sessionFile,
   });
   const finalText = summarizeText(result?.finalText, 4000);
   if (!finalText) throw new Error("cron_final_assistant_text_missing");
@@ -154,6 +163,7 @@ export async function executeCronTask(
   options: {
     agentDir: string;
     additionalExtensionPaths?: string[];
+    chat?: CronChatCapability;
   },
 ) {
   const runId = cronTaskRunId(task);
@@ -164,7 +174,7 @@ export async function executeCronTask(
       });
       task.lastResultText = text;
       if (task.chatKey && text) {
-        await sendChatText(options.agentDir, {
+        await sendChatText(options, {
           chatKey: task.chatKey,
           taskId: task.id,
           runId,
@@ -175,11 +185,13 @@ export async function executeCronTask(
       const result = await executeCronAgentTask(task, options);
       task.lastResultText = result.text;
       if (task.chatKey && result.text) {
-        await sendChatText(options.agentDir, {
+        await sendChatText(options, {
           chatKey: task.chatKey,
           taskId: task.id,
           runId,
           text: result.text,
+          sessionId: result.sessionId,
+          sessionFile: result.sessionFile,
         }).catch(() => {});
       }
     }

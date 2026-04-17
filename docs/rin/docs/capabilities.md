@@ -111,7 +111,7 @@ Notes for the agent:
 - `version` is optional and defaults to `latest`
 - `pluginKey` is the internal adapter key for that package
 - `config` can be a single config object, an array of named instances, or a keyed object map just like other adapter config blocks
-- after editing `settings.json`, restart Rin or let the chat bridge sidecar restart; Rin will materialize the custom runtime package and install any missing custom adapter dependencies automatically before loading the bridge config
+- after editing `settings.json`, restart Rin; Rin will materialize the custom runtime package and install any missing custom adapter dependencies automatically before loading the bridge config
 - treat custom adapters as trusted-code execution because they run as third-party Node.js code under the Rin user account
 
 ## Web search

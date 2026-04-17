@@ -154,6 +154,10 @@ export class CronScheduler {
     private options: {
       agentDir: string;
       additionalExtensionPaths?: string[];
+      chat?: {
+        send?: (payload: any) => Promise<any>;
+        runTurn?: (payload: any) => Promise<any>;
+      };
     },
   ) {}
 

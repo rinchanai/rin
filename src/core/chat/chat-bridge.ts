@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { getAgentDir, keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -15,13 +15,10 @@ import {
   truncateTail,
 } from "@mariozechner/pi-coding-agent";
 import { getTextOutput } from "../pi/render-utils.js";
+import { requestDaemonCommand } from "../rin-daemon/client.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
-
-async function loadChatRpcModule() {
-  return await import("./rpc.js");
-}
 
 function safeString(value: unknown) {
   if (value == null) return "";
@@ -219,27 +216,36 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       const requestId =
         safeString(toolCallId).trim() ||
         `chat_bridge_${Date.now().toString(36)}`;
-      const agentDir = getAgentDir();
       const currentChatKey = parseChatKey(
         ctx.sessionManager?.getSessionName?.() || "",
       );
-      const { evalChatBridgePayload } = await loadChatRpcModule();
-      const result = await evalChatBridgePayload(agentDir, {
-        createdAt: new Date().toISOString(),
-        requestId,
-        currentChatKey,
-        code,
-        timeoutMs:
-          Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
-            ? Math.round(timeoutSeconds * 1000)
-            : undefined,
-        sessionId:
-          safeString(ctx.sessionManager?.getSessionId?.() || "").trim() ||
-          undefined,
-        sessionFile:
-          safeString(ctx.sessionManager?.getSessionFile?.() || "").trim() ||
-          undefined,
-      });
+      const result = await requestDaemonCommand(
+        {
+          type: "chat_bridge_eval",
+          payload: {
+            createdAt: new Date().toISOString(),
+            requestId,
+            currentChatKey,
+            code,
+            timeoutMs:
+              Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+                ? Math.round(timeoutSeconds * 1000)
+                : undefined,
+            sessionId:
+              safeString(ctx.sessionManager?.getSessionId?.() || "").trim() ||
+              undefined,
+            sessionFile:
+              safeString(ctx.sessionManager?.getSessionFile?.() || "").trim() ||
+              undefined,
+          },
+        },
+        {
+          timeoutMs:
+            Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
+              ? Math.max(30_000, Math.round(timeoutSeconds * 1000) + 5_000)
+              : 30_000,
+        },
+      );
 
       const rawOutput = safeString(result?.text).trim() || "undefined";
       const truncation = truncateTail(rawOutput);

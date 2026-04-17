@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-import net from "node:net";
-import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -65,9 +63,9 @@ import {
   loadIdentity,
   trustOf,
 } from "./support.js";
-import { chatRpcSocketPath } from "./rpc.js";
 import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
+import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 
 function createLogger(name: string) {
   const prefix = `[${name}]`;
@@ -225,9 +223,48 @@ function parseInboundCommand(
   return { name, argsText };
 }
 
+export type ChatBridgeTurnPayload = {
+  chatKey?: string;
+  controllerKey?: string;
+  deliveryEnabled?: boolean;
+  affectChatBinding?: boolean;
+  text: string;
+  sessionFile?: string;
+};
+
+export type ChatBridgeEvalPayload = {
+  createdAt: string;
+  requestId?: string;
+  currentChatKey?: string;
+  code: string;
+  timeoutMs?: number;
+  sessionId?: string;
+  sessionFile?: string;
+};
+
+export type ChatBridgeStatus = {
+  ready: boolean;
+  startedAt: string;
+  settingsPath: string;
+  adapterCount: number;
+  botCount: number;
+  controllerCount: number;
+  detachedControllerCount: number;
+};
+
+export type ChatBridgeHandle = {
+  app: any;
+  options: { additionalExtensionPaths?: string[]; hosted?: boolean };
+  stop: () => Promise<void>;
+  getStatus: () => ChatBridgeStatus;
+  send: (payload: ChatOutboxPayload) => Promise<{ delivered: true }>;
+  runTurn: (payload: ChatBridgeTurnPayload) => Promise<any>;
+  evalBridge: (payload: ChatBridgeEvalPayload) => Promise<any>;
+};
+
 export async function startChatBridge(
-  options: { additionalExtensionPaths?: string[] } = {},
-) {
+  options: { additionalExtensionPaths?: string[]; hosted?: boolean } = {},
+): Promise<ChatBridgeHandle> {
   const runtime = resolveRuntimeProfile();
   const dataDir = path.join(runtime.agentDir, "data");
   const settingsPath =
@@ -654,177 +691,105 @@ export async function startChatBridge(
     void syncTelegramCommands(app, logger, commandRows);
   });
 
-  const rpcSocketPath = chatRpcSocketPath(runtime.agentDir);
-  try {
-    fs.rmSync(rpcSocketPath, { force: true });
-  } catch {}
-  ensureDir(path.dirname(rpcSocketPath));
-  const rpcServer = net.createServer((socket) => {
-    let buffer = "";
-    const writeLine = (payload: unknown) => {
-      if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
-    };
-    socket.setEncoding("utf8");
-    socket.on("data", (chunk) => {
-      buffer += String(chunk);
-      while (true) {
-        const idx = buffer.indexOf("\n");
-        if (idx < 0) break;
-        let line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (!line.trim()) continue;
-        void (async () => {
-          let command: any;
-          try {
-            command = JSON.parse(line);
-          } catch {
-            writeLine({ success: false, error: "invalid_json" });
-            return;
-          }
-          try {
-            const type = safeString(command?.type).trim();
-            if (type === "send_chat") {
-              await sendOutboxPayload(
-                app,
-                runtime.agentDir,
-                command?.payload,
-                h,
-              );
-              writeLine({ success: true, data: { delivered: true } });
-              return;
-            }
-            if (type === "run_chat_turn") {
-              const payload = command?.payload || {};
-              const chatKey = safeString(payload.chatKey).trim();
-              const text = safeString(payload.text).trim();
-              const sessionFile =
-                safeString(payload.sessionFile).trim() || undefined;
-              const controllerKey =
-                safeString(payload.controllerKey).trim() || "default";
-              const deliveryEnabled = payload?.deliveryEnabled !== false;
-              const affectChatBinding = payload?.affectChatBinding !== false;
-              if (!text) throw new Error("chat_rpc_text_required");
-              const controller =
-                chatKey &&
-                controllerKey === "default" &&
-                deliveryEnabled &&
-                affectChatBinding
-                  ? getController(chatKey)
-                  : getDetachedController(controllerKey, {
-                      chatKey,
-                      deliveryEnabled,
-                      affectChatBinding,
-                    });
-              const result = await controller.runTurn(
-                {
-                  text,
-                  attachments: [],
-                  sessionFile,
-                },
-                "prompt",
-              );
-              writeLine({ success: true, data: result || { delivered: true } });
-              return;
-            }
-            if (type === "bridge_eval") {
-              const payload = command?.payload || {};
-              const startedAt = Date.now();
-              const currentChatKey =
-                safeString(payload.currentChatKey).trim() || undefined;
-              const requestId =
-                safeString(payload.requestId).trim() || undefined;
-              const code = safeString(payload.code);
-              const runtimeContext = createChatBridgeRuntime({
-                app,
-                agentDir: runtime.agentDir,
-                dataDir,
-                currentChatKey,
-                h,
-                requestId,
-                sessionId: safeString(payload.sessionId).trim() || undefined,
-                sessionFile:
-                  safeString(payload.sessionFile).trim() || undefined,
-              });
-              let auditPath = "";
-              try {
-                const result = await executeChatBridgeCode({
-                  code,
-                  context: runtimeContext,
-                  timeoutMs: payload.timeoutMs,
-                  filename: `${currentChatKey || "chat"}:${requestId || "bridge"}.ts`,
-                });
-                auditPath = appendChatBridgeAudit(runtime.agentDir, {
-                  timestamp: new Date().toISOString(),
-                  ok: true,
-                  currentChatKey,
-                  requestId,
-                  sessionId: safeString(payload.sessionId).trim() || undefined,
-                  sessionFile:
-                    safeString(payload.sessionFile).trim() || undefined,
-                  timeoutMs: result.timeoutMs,
-                  durationMs: Date.now() - startedAt,
-                  code,
-                  result: result.value,
-                });
-                writeLine({
-                  success: true,
-                  data: {
-                    ok: true,
-                    currentChatKey,
-                    requestId,
-                    timeoutMs: result.timeoutMs,
-                    durationMs: Date.now() - startedAt,
-                    auditPath,
-                    value: result.value,
-                    text: renderChatBridgeResult(result.value),
-                  },
-                });
-                return;
-              } catch (error: any) {
-                auditPath = appendChatBridgeAudit(runtime.agentDir, {
-                  timestamp: new Date().toISOString(),
-                  ok: false,
-                  currentChatKey,
-                  requestId,
-                  sessionId: safeString(payload.sessionId).trim() || undefined,
-                  sessionFile:
-                    safeString(payload.sessionFile).trim() || undefined,
-                  durationMs: Date.now() - startedAt,
-                  code,
-                  error: safeString(
-                    error?.stack || error?.message || error,
-                  ).trim(),
-                });
-                throw new Error(
-                  `${safeString(error?.message || error).trim() || "chat_bridge_failed"}${auditPath ? `\naudit=${auditPath}` : ""}`,
-                );
-              }
-            }
-            writeLine({
-              success: false,
-              error: "unsupported_server_request",
-            });
-            return;
-          } catch (error: any) {
-            writeLine({
-              success: false,
-              error: safeString(error?.message || error) || "chat_rpc_failed",
-            });
-          }
-        })();
-      }
+  const startedAt = new Date().toISOString();
+  const send = async (payload: ChatOutboxPayload) => {
+    await sendOutboxPayload(app, runtime.agentDir, payload, h);
+    return { delivered: true as const };
+  };
+  const runTurn = async (payload: ChatBridgeTurnPayload) => {
+    const chatKey = safeString(payload?.chatKey).trim();
+    const text = safeString(payload?.text).trim();
+    const sessionFile = safeString(payload?.sessionFile).trim() || undefined;
+    const controllerKey =
+      safeString(payload?.controllerKey).trim() || "default";
+    const deliveryEnabled = payload?.deliveryEnabled !== false;
+    const affectChatBinding = payload?.affectChatBinding !== false;
+    if (!text) throw new Error("chat_text_required");
+    const controller =
+      chatKey &&
+      controllerKey === "default" &&
+      deliveryEnabled &&
+      affectChatBinding
+        ? getController(chatKey)
+        : getDetachedController(controllerKey, {
+            chatKey,
+            deliveryEnabled,
+            affectChatBinding,
+          });
+    return await controller.runTurn(
+      {
+        text,
+        attachments: [],
+        sessionFile,
+      },
+      "prompt",
+    );
+  };
+  const evalBridge = async (payload: ChatBridgeEvalPayload) => {
+    const startedAtMs = Date.now();
+    const currentChatKey =
+      safeString(payload?.currentChatKey).trim() || undefined;
+    const requestId = safeString(payload?.requestId).trim() || undefined;
+    const code = safeString(payload?.code);
+    const runtimeContext = createChatBridgeRuntime({
+      app,
+      agentDir: runtime.agentDir,
+      dataDir,
+      currentChatKey,
+      h,
+      requestId,
+      sessionId: safeString(payload?.sessionId).trim() || undefined,
+      sessionFile: safeString(payload?.sessionFile).trim() || undefined,
     });
-  });
+    let auditPath = "";
+    try {
+      const result = await executeChatBridgeCode({
+        code,
+        context: runtimeContext,
+        timeoutMs: payload?.timeoutMs,
+        filename: `${currentChatKey || "chat"}:${requestId || "bridge"}.ts`,
+      });
+      auditPath = appendChatBridgeAudit(runtime.agentDir, {
+        timestamp: new Date().toISOString(),
+        ok: true,
+        currentChatKey,
+        requestId,
+        sessionId: safeString(payload?.sessionId).trim() || undefined,
+        sessionFile: safeString(payload?.sessionFile).trim() || undefined,
+        timeoutMs: result.timeoutMs,
+        durationMs: Date.now() - startedAtMs,
+        code,
+        result: result.value,
+      });
+      return {
+        ok: true,
+        currentChatKey,
+        requestId,
+        timeoutMs: result.timeoutMs,
+        durationMs: Date.now() - startedAtMs,
+        auditPath,
+        value: result.value,
+        text: renderChatBridgeResult(result.value),
+      };
+    } catch (error: any) {
+      auditPath = appendChatBridgeAudit(runtime.agentDir, {
+        timestamp: new Date().toISOString(),
+        ok: false,
+        currentChatKey,
+        requestId,
+        sessionId: safeString(payload?.sessionId).trim() || undefined,
+        sessionFile: safeString(payload?.sessionFile).trim() || undefined,
+        durationMs: Date.now() - startedAtMs,
+        code,
+        error: safeString(error?.stack || error?.message || error).trim(),
+      });
+      throw new Error(
+        `${safeString(error?.message || error).trim() || "chat_bridge_failed"}${auditPath ? `\naudit=${auditPath}` : ""}`,
+      );
+    }
+  };
 
   await app.start();
-  await new Promise<void>((resolve, reject) => {
-    rpcServer.once("error", reject);
-    rpcServer.listen(rpcSocketPath, () => {
-      rpcServer.off("error", reject);
-      resolve();
-    });
-  });
   await syncTelegramCommands(app, logger, commandRows);
   logger.info(
     `chat bridge started bots=${JSON.stringify(app.bots.map((bot: any) => ({ platform: bot.platform, selfId: bot.selfId, status: bot.status })))}`,
@@ -865,26 +830,41 @@ export async function startChatBridge(
     );
   });
 
-  const shutdown = async () => {
-    clearInterval(typingPollTimer);
-    if (inboxPollTimer) clearInterval(inboxPollTimer);
-    for (const controller of controllers.values()) controller.dispose();
-    for (const controller of detachedControllers.values()) controller.dispose();
-    try {
-      await new Promise<void>((resolve) => rpcServer.close(() => resolve()));
-    } catch {}
-    try {
-      fs.rmSync(rpcSocketPath, { force: true });
-    } catch {}
-    try {
-      await app.stop();
-    } catch {}
-    process.exit(0);
+  let stoppingPromise: Promise<void> | null = null;
+  const stop = async () => {
+    if (stoppingPromise) return await stoppingPromise;
+    stoppingPromise = (async () => {
+      clearInterval(typingPollTimer);
+      if (inboxPollTimer) clearInterval(inboxPollTimer);
+      for (const controller of controllers.values()) controller.dispose();
+      for (const controller of detachedControllers.values()) controller.dispose();
+      try {
+        await app.stop();
+      } catch {}
+    })();
+    return await stoppingPromise;
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  const getStatus = (): ChatBridgeStatus => ({
+    ready: true,
+    startedAt,
+    settingsPath,
+    adapterCount: runtimeAdapters.length,
+    botCount: Array.isArray(app.bots) ? app.bots.length : 0,
+    controllerCount: controllers.size,
+    detachedControllerCount: detachedControllers.size,
+  });
 
-  return { app, options };
+  if (!options.hosted) {
+    const handleSignal = (code = 0) => {
+      void stop().finally(() => {
+        process.exit(code);
+      });
+    };
+    process.on("SIGINT", () => handleSignal(0));
+    process.on("SIGTERM", () => handleSignal(0));
+  }
+
+  return { app, options, stop, getStatus, send, runTurn, evalBridge };
 }
 
 async function main() {

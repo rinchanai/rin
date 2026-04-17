@@ -11,7 +11,6 @@ import {
 } from "../rin-lib/common.js";
 import type { RinRpcCommandType } from "../rin-lib/rpc-types.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
-import { getChatSidecarStatus } from "../chat/service.js";
 import {
   emptySessionState,
   isSessionScopedCommand,
@@ -90,6 +89,28 @@ export async function startDaemon(
     socketPath?: string;
     workerPath?: string;
     additionalExtensionPaths?: string[];
+    chat?: {
+      send?: (payload: any) => Promise<any>;
+      runTurn?: (payload: any) => Promise<any>;
+    };
+    getExtraStatus?:
+      | (() => Promise<Record<string, unknown> | undefined>)
+      | (() => Record<string, unknown> | undefined);
+    handleLocalCommand?: (command: any) => Promise<
+      | {
+          success?: boolean;
+          data?: unknown;
+          error?: string;
+        }
+      | undefined
+    >
+      | {
+          success?: boolean;
+          data?: unknown;
+          error?: string;
+        }
+      | undefined;
+    onShutdown?: () => Promise<void> | void;
   } = {},
 ) {
   const socketPath =
@@ -123,6 +144,7 @@ export async function startDaemon(
   const cronScheduler = new CronScheduler({
     agentDir: runtime.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
+    chat: options.chat,
   });
   cronScheduler.start();
 
@@ -355,6 +377,7 @@ export async function startDaemon(
       return true;
     }
     if (type === "daemon_status") {
+      const extraStatus = await options.getExtraStatus?.();
       writeLine(
         connection.socket,
         response(id, type, true, {
@@ -362,7 +385,7 @@ export async function startDaemon(
           ...workerPool.getStatusSnapshot(),
           taskCount: cronScheduler.listTasks().length,
           webSearch: getSearxngSidecarStatus(runtime.agentDir),
-          chat: getChatSidecarStatus(runtime.agentDir),
+          ...(extraStatus && typeof extraStatus === "object" ? extraStatus : {}),
         }),
       );
       return true;
@@ -416,6 +439,22 @@ export async function startDaemon(
         String(command.taskId || "").trim(),
       );
       writeLine(connection.socket, response(id, type, true, { task }));
+      return true;
+    }
+    const localResult = await options.handleLocalCommand?.(command);
+    if (localResult) {
+      const success = localResult.success !== false;
+      writeLine(
+        connection.socket,
+        response(
+          id,
+          type,
+          success,
+          success
+            ? localResult.data
+            : String(localResult.error || "daemon_command_failed"),
+        ),
+      );
       return true;
     }
     return false;
@@ -571,6 +610,7 @@ export async function startDaemon(
     }
     restartState.pendingResume = await workerPool.shutdown(shutdownGraceMs);
     saveRestartState(runtime.agentDir, restartState);
+    await Promise.resolve(options.onShutdown?.()).catch(() => {});
     process.exit(0);
   };
 
