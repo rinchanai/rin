@@ -15,6 +15,11 @@ import {
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
+import {
+  loadReleaseManifestForNetwork,
+  resolveReleaseRequest,
+  type ReleaseChannel,
+} from "../rin-lib/release.js";
 
 export type ParsedArgs = {
   command:
@@ -34,11 +39,34 @@ export type ParsedArgs = {
   passthrough: string[];
   explicitUser: boolean;
   hasSavedInstall: boolean;
+  releaseChannel: ReleaseChannel;
+  releaseBranch: string;
+  releaseVersion: string;
 };
 
 export function safeString(value: unknown) {
   if (value == null) return "";
   return String(value);
+}
+
+function resolveReleaseSelection(options: any) {
+  const stable = Boolean(options.stable);
+  const beta = Boolean(options.beta);
+  const git = Boolean(options.git);
+  const requested = [stable, beta, git].filter(Boolean).length;
+  if (requested > 1) {
+    throw new Error("rin_release_channel_conflict");
+  }
+  const releaseChannel: ReleaseChannel = beta ? "beta" : git ? "git" : "stable";
+  const releaseBranch = safeString(options.branch).trim();
+  const releaseVersion = safeString(options.version).trim();
+  if (releaseBranch && releaseVersion) {
+    throw new Error("rin_release_branch_and_version_conflict");
+  }
+  if (releaseChannel === "stable" && releaseBranch) {
+    throw new Error("rin_stable_branch_not_supported");
+  }
+  return { releaseChannel, releaseBranch, releaseVersion };
 }
 
 export function repoRootFromHere() {
@@ -384,7 +412,18 @@ export function collectTuiPassthroughArgs(argv: string[]) {
       i += 1;
       continue;
     }
-    if (arg === "--std" || arg === "--tmux-list") continue;
+    if (arg === "--branch" || arg === "--version") {
+      i += 1;
+      continue;
+    }
+    if (
+      arg === "--std" ||
+      arg === "--tmux-list" ||
+      arg === "--stable" ||
+      arg === "--beta" ||
+      arg === "--git"
+    )
+      continue;
     passthrough.push(arg);
   }
   return passthrough;
@@ -397,6 +436,8 @@ export function resolveParsedArgs(
 ): ParsedArgs {
   const installConfig = loadInstallConfig();
   const targetUser = safeString(options.user).trim();
+  const { releaseChannel, releaseBranch, releaseVersion } =
+    resolveReleaseSelection(options);
   return {
     command,
     targetUser:
@@ -413,6 +454,9 @@ export function resolveParsedArgs(
       safeString(installConfig.defaultTargetUser).trim() ||
       safeString(installConfig.defaultInstallDir).trim(),
     ),
+    releaseChannel,
+    releaseBranch,
+    releaseVersion,
   };
 }
 
@@ -449,19 +493,23 @@ export async function runUpdate(parsed: ParsedArgs) {
   try {
     fs.mkdirSync(sourceRoot, { recursive: true });
     fs.mkdirSync(tmpDir, { recursive: true });
+
+    const manifest = await loadReleaseManifestForNetwork();
+    const resolvedRelease = resolveReleaseRequest(manifest, {
+      channel: parsed.releaseChannel,
+      branch: parsed.releaseBranch,
+      version: parsed.releaseVersion,
+    });
+
     if (curl) {
       runCommandSync(curl, [
         "-fsSL",
-        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+        resolvedRelease.archiveUrl,
         "-o",
         archivePath,
       ]);
     } else if (wget) {
-      runCommandSync(wget, [
-        "-qO",
-        archivePath,
-        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
-      ]);
+      runCommandSync(wget, ["-qO", archivePath, resolvedRelease.archiveUrl]);
     } else {
       throw new Error("rin_missing_required_tool:curl_or_wget");
     }
@@ -487,6 +535,9 @@ export async function runUpdate(parsed: ParsedArgs) {
     runCommandSync(npm, ["run", "build"], { cwd: sourceRoot, env: buildEnv });
 
     console.log(
+      `rin update: source = ${resolvedRelease.sourceLabel} (${resolvedRelease.archiveUrl})`,
+    );
+    console.log(
       "rin update: updating core runtime only (CLI launcher and installer are unchanged)",
     );
     const result = await finalizeCoreUpdate({
@@ -494,6 +545,15 @@ export async function runUpdate(parsed: ParsedArgs) {
       targetUser: parsed.targetUser,
       installDir,
       sourceRoot,
+      release: {
+        channel: resolvedRelease.channel,
+        version: resolvedRelease.version,
+        branch: resolvedRelease.branch,
+        ref: resolvedRelease.ref,
+        sourceLabel: resolvedRelease.sourceLabel,
+        archiveUrl: resolvedRelease.archiveUrl,
+        installedAt: new Date().toISOString(),
+      },
     });
     console.log(`rin update complete: ${result.publishedRuntime.releaseRoot}`);
     if (result.installedDocsDir)

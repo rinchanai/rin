@@ -9,6 +9,15 @@ export function reconcileInstallerManifest(
     modelId?: string;
     thinkingLevel?: string;
     chatConfig?: any;
+    release?: {
+      channel?: string;
+      version?: string;
+      branch?: string;
+      ref?: string;
+      sourceLabel?: string;
+      archiveUrl?: string;
+      installedAt?: string;
+    };
     elevated?: boolean;
   },
   deps: {
@@ -56,6 +65,19 @@ export function reconcileInstallerManifest(
   if (options.thinkingLevel)
     manifestJson.defaultThinkingLevel = options.thinkingLevel;
   if (options.chatConfig) manifestJson.chat = options.chatConfig;
+  if (options.release && typeof options.release === "object") {
+    manifestJson.release = {
+      channel: String(options.release.channel || "stable").trim() || "stable",
+      version: String(options.release.version || "").trim(),
+      branch: String(options.release.branch || "").trim(),
+      ref: String(options.release.ref || "").trim(),
+      sourceLabel: String(options.release.sourceLabel || "").trim(),
+      archiveUrl: String(options.release.archiveUrl || "").trim(),
+      installedAt:
+        String(options.release.installedAt || "").trim() ||
+        new Date().toISOString(),
+    };
+  }
   if (manifestJson.koishi && typeof manifestJson.koishi === "object") {
     delete manifestJson.koishi;
   }
@@ -145,6 +167,15 @@ export async function persistInstallerOutputs(
     thinkingLevel: string;
     chatConfig: any;
     authData: any;
+    release?: {
+      channel?: string;
+      version?: string;
+      branch?: string;
+      ref?: string;
+      sourceLabel?: string;
+      archiveUrl?: string;
+      installedAt?: string;
+    };
     elevated?: boolean;
   },
   deps: {
@@ -230,6 +261,7 @@ export async function persistInstallerOutputs(
       modelId: options.modelId,
       thinkingLevel: options.thinkingLevel,
       chatConfig: options.chatConfig || {},
+      release: options.release,
       elevated: options.elevated,
     },
     deps,

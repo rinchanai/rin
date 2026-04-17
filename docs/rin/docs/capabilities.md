@@ -21,6 +21,13 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
 4. if `installDir` or `targetUser` is unknown, discover them first from Rin install metadata or managed service files
 
+Release-channel default:
+
+- plain `rin update` targets the stable release channel
+- use `rin update --beta` or `rin update --git` only when the user explicitly wants a non-stable channel
+- beta also supports `--branch <release/x.y>` or `--version <x.y.z-beta.n>`
+- git also supports `--branch <name>` or `--version <tag-or-commit>`
+
 When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
 
 In that case, do not keep reasoning about the current account's launcher metadata.

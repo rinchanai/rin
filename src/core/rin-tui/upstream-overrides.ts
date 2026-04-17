@@ -6,6 +6,16 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Loader, truncateToWidth } from "@mariozechner/pi-tui";
 
+import {
+  getChangelogPath,
+  getNewerChangelogEntries,
+  parseChangelog,
+} from "../rin-lib/changelog.js";
+import {
+  loadReleaseManifestForNetwork,
+  readInstalledReleaseInfo,
+} from "../rin-lib/release.js";
+
 let applied = false;
 const ANSI_DIM = "\u001b[2m";
 const ANSI_RESET = "\u001b[0m";
@@ -85,6 +95,55 @@ function normalizeRemoteSession(session: any) {
   };
 }
 
+async function checkForStableRinUpdate() {
+  if (process.env.PI_SKIP_VERSION_CHECK || process.env.PI_OFFLINE) {
+    return undefined;
+  }
+  const current = readInstalledReleaseInfo();
+  const currentVersion = String(current?.version || "").trim();
+  if (!currentVersion) return undefined;
+  try {
+    const manifest = await loadReleaseManifestForNetwork();
+    const latestVersion = String(manifest?.stable?.version || "").trim();
+    if (!latestVersion || latestVersion === currentVersion) return undefined;
+    return latestVersion;
+  } catch {
+    return undefined;
+  }
+}
+
+function getRinStartupChangelog(instance: any) {
+  if (instance?.session?.state?.messages?.length > 0) {
+    return undefined;
+  }
+  const current = readInstalledReleaseInfo();
+  const currentVersion = String(current?.version || "").trim();
+  if (!currentVersion) return undefined;
+  const lastVersion = String(instance?.settingsManager?.getLastChangelogVersion?.() || "").trim();
+  const entries = parseChangelog(getChangelogPath());
+  if (!lastVersion) {
+    instance?.settingsManager?.setLastChangelogVersion?.(currentVersion);
+    return undefined;
+  }
+  const newEntries = getNewerChangelogEntries(entries as any, lastVersion, currentVersion);
+  instance?.settingsManager?.setLastChangelogVersion?.(currentVersion);
+  if (!newEntries.length) return undefined;
+  return newEntries.map((entry: any) => String(entry?.content || "").trim()).filter(Boolean).join("\n\n");
+}
+
+function buildStayOnChannelHint() {
+  const current = readInstalledReleaseInfo();
+  if (!current || current.channel === "stable") return "";
+  if (current.channel === "beta") {
+    return current.branch && current.branch !== "stable"
+      ? `Use ${dim(`rin update --beta --branch ${current.branch}`)} to stay on beta.`
+      : `Use ${dim("rin update --beta")} to stay on beta.`;
+  }
+  return current.branch && current.branch !== "main"
+    ? `Use ${dim(`rin update --git --branch ${current.branch}`)} to stay on git.`
+    : `Use ${dim("rin update --git")} to stay on git.`;
+}
+
 function createSessionSelectorLoaders(instance: any) {
   if (!isRpcTransportControlled(instance)) {
     const loadSessions = (onProgress?: any) =>
@@ -125,6 +184,39 @@ export async function applyRinTuiOverrides() {
 
   const footerProto: any = FooterComponent?.prototype as any;
   const interactiveModeProto: any = InteractiveMode?.prototype as any;
+
+  if (typeof interactiveModeProto?.checkForNewVersion === "function") {
+    interactiveModeProto.checkForNewVersion = async function checkForRinStableUpdate() {
+      return await checkForStableRinUpdate();
+    };
+  }
+
+  if (typeof interactiveModeProto?.showNewVersionNotification === "function") {
+    interactiveModeProto.showNewVersionNotification =
+      function showRinNewVersionNotification(newVersion: string) {
+        const stayOnChannelHint = buildStayOnChannelHint();
+        const lines = [
+          `New stable Rin version ${newVersion} is available. Run rin update.`,
+          "Use /changelog inside Rin to review what's new.",
+          stayOnChannelHint,
+        ].filter(Boolean);
+        if (typeof this.showWarning === "function") {
+          this.showWarning(lines.join(" "));
+        }
+      };
+  }
+
+  if (typeof interactiveModeProto?.getChangelogForDisplay === "function") {
+    interactiveModeProto.getChangelogForDisplay = function getRinChangelogForDisplay() {
+      return getRinStartupChangelog(this);
+    };
+  }
+
+  if (typeof interactiveModeProto?.reportInstallTelemetry === "function") {
+    interactiveModeProto.reportInstallTelemetry = function reportRinInstallTelemetry() {
+      return undefined;
+    };
+  }
 
   const originalRender = footerProto?.render;
   if (typeof originalRender === "function") {
