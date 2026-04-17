@@ -26,10 +26,11 @@ export function applyRpcSessionState(
   target.steeringMode = state?.steeringMode ?? target.steeringMode;
   target.followUpMode = state?.followUpMode ?? target.followUpMode;
   target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
+  const turnActive = Boolean(state?.turnActive ?? state?.isStreaming);
   if (typeof (target as any).setRemoteTurnRunning === "function") {
-    (target as any).setRemoteTurnRunning(Boolean(state?.isStreaming));
+    (target as any).setRemoteTurnRunning(turnActive);
   } else {
-    target.isStreaming = Boolean(state?.isStreaming);
+    target.isStreaming = turnActive;
   }
   target.isCompacting = Boolean(state?.isCompacting);
   target.pendingMessageCount = Number(state?.pendingMessageCount || 0);
