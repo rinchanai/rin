@@ -908,7 +908,7 @@ export class RpcInteractiveSession {
           if (!this.client.isConnected()) {
             await this.client.connect();
           }
-          if (!this.rpcConnected) {
+          if (!this.rpcConnected || (this.recoveryPending && !this.restorePromise)) {
             await this.handleConnectionRestored();
           }
           if (this.client.isConnected() && this.rpcConnected && !this.recoveryPending) {

@@ -197,6 +197,30 @@ test("rpc interactive session waitForDaemonAvailable reuses the reconnect pipeli
   assert.equal(reconnects, 1);
 });
 
+test("rpc interactive session reconnect loop re-runs restore while stuck in recovery without a fresh disconnect", async () => {
+  const client = {
+    isConnected: () => true,
+    connect: async () => {},
+  };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.recoveryPending = true;
+  session.restorePromise = null;
+  let restoreCalls = 0;
+  session.handleConnectionRestored = async () => {
+    restoreCalls += 1;
+    session.rpcConnected = true;
+    session.recoveryPending = false;
+  };
+
+  await session.ensureReconnectLoop();
+
+  assert.equal(restoreCalls, 1);
+  assert.equal(session.reconnecting, false);
+  assert.deepEqual(session.getFrontendStatusEvent(), null);
+});
+
 test("rpc interactive session keeps the daemon connection while a worker exits mid-turn", () => {
   const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
