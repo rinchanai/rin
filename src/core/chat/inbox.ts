@@ -3,6 +3,16 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { writeJsonAtomic } from "../platform/fs.js";
+import {
+  directLike,
+  elementsToText,
+  getChatType,
+  mentionLike,
+  pickChatName,
+  pickReplyToMessageId,
+  pickSenderNickname,
+  pickUserId,
+} from "./chat-helpers.js";
 import { readJsonFile } from "./support.js";
 
 function safeString(value: unknown) {
@@ -14,6 +24,17 @@ function hashKey(value: string) {
   return createHash("sha1").update(value).digest("hex");
 }
 
+export type ChatInboxItemRouting = {
+  chatType: "private" | "group";
+  isDirect: boolean;
+  mentionLike: boolean;
+  text?: string;
+  userId?: string;
+  nickname?: string;
+  chatName?: string;
+  replyToMessageId?: string;
+};
+
 export type ChatInboxItem = {
   version: 1;
   itemId: string;
@@ -24,6 +45,7 @@ export type ChatInboxItem = {
   attemptCount: number;
   nextAttemptAt?: string;
   lastError?: string;
+  routing: ChatInboxItemRouting;
   session: Record<string, unknown>;
   elements: any[];
 };
@@ -61,9 +83,10 @@ function serializeSession(session: any) {
     content: safeString(session?.content).trim() || undefined,
     stripped:
       session?.stripped && typeof session.stripped === "object"
-        ? { content: safeString(session.stripped.content).trim() || undefined }
+        ? {
+            content: safeString(session.stripped.content).trim() || undefined,
+          }
         : undefined,
-    isDirect: Boolean(session?.isDirect),
     username: safeString(session?.username).trim() || undefined,
     author:
       session?.author && typeof session.author === "object"
@@ -88,6 +111,19 @@ function serializeSession(session: any) {
   };
 }
 
+function buildChatInboxRouting(session: any, elements: any[]): ChatInboxItemRouting {
+  return {
+    chatType: getChatType(session),
+    isDirect: directLike(session),
+    mentionLike: mentionLike(session),
+    text: elementsToText(elements) || undefined,
+    userId: pickUserId(session) || undefined,
+    nickname: pickSenderNickname(session) || undefined,
+    chatName: pickChatName(session) || undefined,
+    replyToMessageId: pickReplyToMessageId(session) || undefined,
+  };
+}
+
 export function buildChatInboxItem(input: {
   chatKey: string;
   messageId: string;
@@ -107,6 +143,7 @@ export function buildChatInboxItem(input: {
     createdAt: now,
     updatedAt: now,
     attemptCount: 0,
+    routing: buildChatInboxRouting(input.session, input.elements),
     session: serializeSession(input.session),
     elements: Array.isArray(input.elements)
       ? JSON.parse(JSON.stringify(input.elements))
@@ -124,20 +161,81 @@ export function enqueueChatInboxItem(
   return { item, filePath };
 }
 
-export function listPendingChatInboxFiles(agentDir: string) {
+function listInboxFiles(dir: string) {
   try {
     return fs
-      .readdirSync(pendingDir(agentDir))
+      .readdirSync(dir)
       .filter((name) => name.endsWith(".json"))
       .sort()
-      .map((name) => path.join(pendingDir(agentDir), name));
+      .map((name) => path.join(dir, name));
   } catch {
     return [] as string[];
   }
 }
 
+export function listPendingChatInboxFiles(agentDir: string) {
+  return listInboxFiles(pendingDir(agentDir));
+}
+
+export function listProcessingChatInboxFiles(agentDir: string) {
+  return listInboxFiles(processingDir(agentDir));
+}
+
 export function readChatInboxItem(filePath: string) {
   return readJsonFile<ChatInboxItem | null>(filePath, null);
+}
+
+export function restoreChatInboxSession(item: ChatInboxItem, bot?: any) {
+  const session =
+    item?.session && typeof item.session === "object"
+      ? JSON.parse(JSON.stringify(item.session))
+      : {};
+  const routing =
+    item?.routing && typeof item.routing === "object" ? item.routing : null;
+  if (bot) session.bot = bot;
+  if (routing) {
+    session.isDirect = Boolean(routing.isDirect);
+    session.userId = safeString(session.userId || routing.userId).trim() || undefined;
+    if (routing.text) {
+      session.stripped = {
+        ...(session?.stripped && typeof session.stripped === "object"
+          ? session.stripped
+          : {}),
+        content: safeString(session?.stripped?.content || routing.text).trim() || undefined,
+        appel: Boolean(routing.mentionLike) || undefined,
+      };
+    } else if (routing.mentionLike) {
+      session.stripped = {
+        ...(session?.stripped && typeof session.stripped === "object"
+          ? session.stripped
+          : {}),
+        appel: true,
+      };
+    }
+    if (routing.replyToMessageId) {
+      session.quote = {
+        ...(session?.quote && typeof session.quote === "object"
+          ? session.quote
+          : {}),
+        messageId:
+          safeString(session?.quote?.messageId || routing.replyToMessageId).trim() ||
+          undefined,
+      };
+    }
+    if (routing.nickname) {
+      session.author = {
+        ...(session?.author && typeof session.author === "object"
+          ? session.author
+          : {}),
+        name: safeString(session?.author?.name || routing.nickname).trim() || undefined,
+      };
+    }
+    if (routing.chatName) {
+      session.channelName =
+        safeString(session?.channelName || routing.chatName).trim() || undefined;
+    }
+  }
+  return session;
 }
 
 export function claimChatInboxFile(agentDir: string, filePath: string) {
@@ -204,4 +302,18 @@ export function failChatInboxFile(
   writeJsonAtomic(targetPath, next);
   completeChatInboxFile(filePath);
   return { item: next, filePath: targetPath };
+}
+
+export function restoreProcessingChatInboxFiles(agentDir: string) {
+  const restored: Array<{ itemId: string; filePath: string }> = [];
+  for (const filePath of listProcessingChatInboxFiles(agentDir)) {
+    const item = readChatInboxItem(filePath);
+    if (!item) {
+      completeChatInboxFile(filePath);
+      continue;
+    }
+    const next = restoreChatInboxFile(agentDir, filePath, item);
+    restored.push({ itemId: item.itemId, filePath: next.filePath });
+  }
+  return restored;
 }
