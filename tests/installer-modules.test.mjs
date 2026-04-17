@@ -18,6 +18,11 @@ const persist = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "persist.js"))
     .href
 );
+const installRecord = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-install", "install-record.js"),
+  ).href
+);
 
 async function withTempDir(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-installer-test-"));
@@ -53,6 +58,38 @@ test("provider-auth computes available thinking levels deterministically", () =>
     }),
     ["off"],
   );
+});
+
+test("install-record normalizes launcher metadata and installer manifests", () => {
+  assert.deepEqual(
+    installRecord.normalizeInstallRecord("/home/demo", {
+      defaultTargetUser: "launcher-demo",
+      defaultInstallDir: "/srv/rin-demo",
+    }),
+    {
+      defaultTargetUser: "launcher-demo",
+      defaultInstallDir: "/srv/rin-demo",
+    },
+  );
+  assert.deepEqual(
+    installRecord.normalizeInstallRecord("/home/demo", {
+      targetUser: "manifest-demo",
+    }),
+    {
+      defaultTargetUser: "manifest-demo",
+      defaultInstallDir: "/home/demo/.rin",
+    },
+  );
+  assert.deepEqual(
+    installRecord.resolveInstallRecordTarget("/home/demo", "fallback-user", {
+      defaultInstallDir: "/srv/rin-demo",
+    }),
+    {
+      targetUser: "fallback-user",
+      installDir: "/srv/rin-demo",
+    },
+  );
+  assert.equal(installRecord.normalizeInstallRecord("/home/demo", null), null);
 });
 
 test("persist reconcileInstallerManifest writes primary and locator manifests for custom install dirs", async () => {
