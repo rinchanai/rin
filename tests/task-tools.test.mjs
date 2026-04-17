@@ -11,7 +11,7 @@ const taskIndex = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "task", "index.js")).href,
 );
 
-test("save_task exposes in-place update id and dedicated session seeding", () => {
+test("save_task exposes in-place update id and dedicated default read-and-burn semantics", () => {
   const tools = [];
   taskIndex.default({
     registerTool(tool) {
@@ -29,6 +29,12 @@ test("save_task exposes in-place update id and dedicated session seeding", () =>
     String(
       saveTool.parameters.properties.session.properties.sessionFile.description || "",
     ),
-    /seed or resume the dedicated session explicitly/,
+    /read-and-burn by default/,
+  );
+  assert.match(
+    String(
+      saveTool.parameters.properties.session.properties.sessionFile.description || "",
+    ),
+    /seed or resume a persistent dedicated session explicitly/,
   );
 });
