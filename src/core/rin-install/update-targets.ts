@@ -5,6 +5,8 @@ import {
   defaultInstallDirForHome,
   installerManifestPath,
   legacyInstallerManifestPath,
+  launchAgentsDirForHome,
+  systemdUserUnitDirForHome,
 } from "./paths.js";
 
 function readJsonFile<T>(filePath: string, fallback: T): T {
@@ -73,7 +75,7 @@ export function discoverInstalledTargets(homeRoots = ["/home", "/Users"]) {
       );
     }
 
-    const systemdDir = path.join(homeDir, ".config", "systemd", "user");
+    const systemdDir = systemdUserUnitDirForHome(homeDir);
     try {
       for (const entry of fs.readdirSync(systemdDir)) {
         if (!/^rin-daemon(?:-.+)?\.service$/.test(entry)) continue;
@@ -86,7 +88,7 @@ export function discoverInstalledTargets(homeRoots = ["/home", "/Users"]) {
       }
     } catch {}
 
-    const launchAgentsDir = path.join(homeDir, "Library", "LaunchAgents");
+    const launchAgentsDir = launchAgentsDirForHome(homeDir);
     try {
       for (const entry of fs.readdirSync(launchAgentsDir)) {
         if (!/^com\.rin\.daemon\..+\.plist$/.test(entry)) continue;

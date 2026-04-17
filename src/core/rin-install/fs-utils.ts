@@ -5,9 +5,12 @@ import { execFileSync } from "node:child_process";
 
 import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
 import {
+  appConfigDirForHome,
   currentRuntimeRoot,
   installedAppEntryCandidates,
   installedReleaseRoot,
+  launcherMetadataPathForHome,
+  launcherPathForHome,
 } from "./paths.js";
 
 export function ensureDir(dir: string) {
@@ -88,27 +91,27 @@ export function writeLaunchersForUser(
   installDir: string,
   homeForUser: (user: string) => string,
 ) {
-  const binDir = path.join(homeForUser(userName), ".local", "bin");
+  const home = homeForUser(userName);
   const targets = launcherTargetsForInstallDir(installDir);
-  writeExecutable(path.join(binDir, "rin"), launcherScript(targets.rin));
-  writeExecutable(
-    path.join(binDir, "rin-install"),
-    launcherScript(targets.rinInstall),
-  );
-  return {
-    rinPath: path.join(binDir, "rin"),
-    rinInstallPath: path.join(binDir, "rin-install"),
-  };
+  const rinPath = launcherPathForHome(home, "rin");
+  const rinInstallPath = launcherPathForHome(home, "rin-install");
+  writeExecutable(rinPath, launcherScript(targets.rin));
+  writeExecutable(rinInstallPath, launcherScript(targets.rinInstall));
+  return { rinPath, rinInstallPath };
 }
 
 export function appConfigDirForUser(
   userName: string,
   homeForUser: (user: string) => string,
 ) {
-  const home = homeForUser(userName);
-  if (process.platform === "darwin")
-    return path.join(home, "Library", "Application Support", "rin");
-  return path.join(home, ".config", "rin");
+  return appConfigDirForHome(homeForUser(userName));
+}
+
+export function launcherMetadataPathForUser(
+  userName: string,
+  homeForUser: (user: string) => string,
+) {
+  return launcherMetadataPathForHome(homeForUser(userName));
 }
 
 export function runPrivileged(command: string, args: string[]) {

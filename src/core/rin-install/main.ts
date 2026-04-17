@@ -21,7 +21,7 @@ import {
   type FinalizeInstallOptions,
 } from "./apply-plan.js";
 import {
-  appConfigDirForUser,
+  launcherMetadataPathForUser,
   ensureDir,
   publishInstalledRuntime,
   pruneInstalledReleases,
@@ -43,7 +43,7 @@ import {
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
-import { defaultInstallDirForHome } from "./paths.js";
+import { defaultHomeForUser, defaultInstallDirForHome } from "./paths.js";
 import {
   normalizeInstalledChatSettings,
   persistInstallerOutputs,
@@ -179,10 +179,7 @@ function findSystemUser(targetUser: string) {
 
 function homeForUser(targetUser: string) {
   const matched = findSystemUser(targetUser);
-  return (
-    matched?.home ||
-    path.join(process.platform === "darwin" ? "/Users" : "/home", targetUser)
-  );
+  return matched?.home || defaultHomeForUser(targetUser);
 }
 
 function targetHomeForUser(targetUser: string) {
@@ -355,7 +352,8 @@ async function applyInstalledRuntime(
           readInstallerJson,
           writeJsonFileWithPrivilege,
           writeJsonFile,
-          appConfigDirForUser: (user) => appConfigDirForUser(user, homeForUser),
+          launcherMetadataPathForUser: (user) =>
+            launcherMetadataPathForUser(user, homeForUser),
           readJsonFile,
           writeLaunchersForUser: (user, dir) =>
             writeLaunchersForUser(user, dir, homeForUser),

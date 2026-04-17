@@ -2,8 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  defaultHomeForUser,
+  installAuthPath,
   installerLocatorPathForHome,
   installerManifestPath,
+  installSettingsPath,
   legacyInstallerLocatorPathForHome,
   legacyInstallerManifestPath,
 } from "./paths.js";
@@ -39,9 +42,7 @@ export function reconcileInstallerManifest(
   const target = deps.findSystemUser(options.targetUser) as any;
   const ownerUser = target?.name || options.targetUser;
   const ownerGroup = target?.gid;
-  const ownerHome =
-    target?.home ||
-    path.join(process.platform === "darwin" ? "/Users" : "/home", ownerUser);
+  const ownerHome = target?.home || defaultHomeForUser(ownerUser);
   if (!options.elevated) deps.ensureDir(options.installDir);
 
   const manifestPath = installerManifestPath(options.installDir);
@@ -143,7 +144,7 @@ export function normalizeInstalledChatSettings(
   const target = deps.findSystemUser(options.targetUser) as any;
   const ownerUser = target?.name || options.targetUser;
   const ownerGroup = target?.gid;
-  const settingsPath = path.join(options.installDir, "settings.json");
+  const settingsPath = installSettingsPath(options.installDir);
   const settingsJson = deps.readInstallerJson<any>(
     settingsPath,
     {},
@@ -199,7 +200,7 @@ export async function persistInstallerOutputs(
       ownerGroup?: string | number,
     ) => void;
     writeJsonFile: (filePath: string, value: unknown) => void;
-    appConfigDirForUser: (userName: string) => string;
+    launcherMetadataPathForUser: (userName: string) => string;
     readJsonFile: <T>(filePath: string, fallback: T) => T;
     writeLaunchersForUser: (userName: string, installDir: string) => any;
     reconcileInstallerManifest: typeof reconcileInstallerManifest;
@@ -211,7 +212,7 @@ export async function persistInstallerOutputs(
   const ownerGroup = target?.gid;
   if (!options.elevated) deps.ensureDir(options.installDir);
 
-  const settingsPath = path.join(options.installDir, "settings.json");
+  const settingsPath = installSettingsPath(options.installDir);
   const settingsJson = deps.readInstallerJson<any>(
     settingsPath,
     {},
@@ -241,7 +242,7 @@ export async function persistInstallerOutputs(
     delete settingsJson.koishi;
   }
 
-  const authPath = path.join(options.installDir, "auth.json");
+  const authPath = installAuthPath(options.installDir);
   const authJson = deps.readInstallerJson<any>(
     authPath,
     {},
@@ -249,10 +250,7 @@ export async function persistInstallerOutputs(
   );
   const nextAuthJson = { ...authJson, ...(options.authData || {}) };
 
-  const launcherPath = path.join(
-    deps.appConfigDirForUser(options.currentUser),
-    "install.json",
-  );
+  const launcherPath = deps.launcherMetadataPathForUser(options.currentUser);
   const launcherJson = deps.readJsonFile<any>(launcherPath, {});
   launcherJson.defaultTargetUser = options.targetUser;
   launcherJson.defaultInstallDir = options.installDir;
