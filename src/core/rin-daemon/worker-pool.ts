@@ -382,8 +382,11 @@ export class WorkerPool {
               : undefined,
         });
       }
-      if (payload.command === "get_state") {
-        worker.isStreaming = Boolean(data.isStreaming);
+      if (
+        payload.command === "get_state" ||
+        payload.command === "attach_session"
+      ) {
+        worker.isStreaming = Boolean(data.turnActive ?? data.isStreaming);
         worker.isCompacting = Boolean(data.isCompacting);
         this.maybeReleaseWorker(worker);
         return;

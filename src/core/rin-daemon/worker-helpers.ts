@@ -6,12 +6,16 @@ export function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
 
-export function getSessionState(session: any) {
+export function getSessionState(
+  session: any,
+  options: { turnActive?: boolean } = {},
+) {
   return {
     model: session.model,
     thinkingLevel: session.thinkingLevel,
     isStreaming: session.isStreaming,
     isCompacting: session.isCompacting,
+    turnActive: Boolean(options.turnActive),
     steeringMode: session.steeringMode,
     followUpMode: session.followUpMode,
     sessionFile: session.sessionFile,

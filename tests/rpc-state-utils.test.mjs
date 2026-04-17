@@ -57,6 +57,14 @@ test("rpc state utils derive branch and apply state", () => {
   assert.equal(target.thinkingLevel, "low");
   assert.equal(target.isStreaming, true);
 
+  stateUtils.applyRpcSessionState(target, {
+    sessionId: "s1",
+    sessionFile: "/tmp/x",
+    isStreaming: false,
+    turnActive: true,
+  });
+  assert.equal(target.isStreaming, true);
+
   let remoteStreaming = false;
   stateUtils.applyRpcSessionState(
     {
@@ -68,7 +76,8 @@ test("rpc state utils derive branch and apply state", () => {
     {
       sessionId: "s2",
       sessionFile: "/tmp/y",
-      isStreaming: true,
+      isStreaming: false,
+      turnActive: true,
     },
   );
   assert.equal(remoteStreaming, true);
