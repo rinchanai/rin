@@ -75,13 +75,14 @@ test("installer path helpers centralize installed and source entrypoints", () =>
   );
 });
 
-test("installer path helpers centralize home, config, service, doc, and log locations", () => {
+test("installer path helpers centralize home, manifest, config, service, doc, and log locations", () => {
   const linuxHome = "/home/demo";
   const macHome = "/Users/demo";
   const installDir = "/srv/rin-demo";
 
   assert.equal(pathsMod.defaultHomeRoot("linux"), "/home");
   assert.equal(pathsMod.defaultHomeRoot("darwin"), "/Users");
+  assert.deepEqual(pathsMod.installDiscoveryHomeRoots(), ["/home", "/Users"]);
   assert.equal(pathsMod.defaultHomeForUser("demo", "linux"), linuxHome);
   assert.equal(pathsMod.defaultHomeForUser("demo", "darwin"), macHome);
   assert.equal(
@@ -111,6 +112,19 @@ test("installer path helpers centralize home, config, service, doc, and log loca
   assert.equal(
     pathsMod.installedPiDocsRoot(installDir),
     path.join(installDir, "docs", "pi"),
+  );
+  assert.deepEqual(pathsMod.installerLocatorCandidatesForHome(linuxHome), [
+    path.join(linuxHome, ".rin", "installer.json"),
+    path.join(linuxHome, ".rin", "config", "installer.json"),
+  ]);
+  assert.deepEqual(
+    pathsMod.installerRecoveryManifestCandidates(installDir, linuxHome),
+    [
+      path.join(installDir, "installer.json"),
+      path.join(linuxHome, ".rin", "installer.json"),
+      path.join(installDir, "config", "installer.json"),
+      path.join(linuxHome, ".rin", "config", "installer.json"),
+    ],
   );
   assert.equal(
     pathsMod.localBinDirForHome(linuxHome),

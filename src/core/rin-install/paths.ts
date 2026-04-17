@@ -12,6 +12,10 @@ export function defaultHomeRoot(platform = process.platform) {
   return platform === "darwin" ? "/Users" : "/home";
 }
 
+export function installDiscoveryHomeRoots() {
+  return [...new Set([defaultHomeRoot("linux"), defaultHomeRoot("darwin")])];
+}
+
 export function defaultHomeForUser(user: string, platform = process.platform) {
   return path.join(defaultHomeRoot(platform), user);
 }
@@ -125,6 +129,25 @@ export function installerLocatorPathForHome(home: string) {
 
 export function legacyInstallerLocatorPathForHome(home: string) {
   return legacyInstallerManifestPath(defaultInstallDirForHome(home));
+}
+
+export function installerLocatorCandidatesForHome(home: string) {
+  return [
+    installerLocatorPathForHome(home),
+    legacyInstallerLocatorPathForHome(home),
+  ];
+}
+
+export function installerRecoveryManifestCandidates(
+  installDir: string,
+  home: string,
+) {
+  return [
+    installerManifestPath(installDir),
+    installerLocatorPathForHome(home),
+    legacyInstallerManifestPath(installDir),
+    legacyInstallerLocatorPathForHome(home),
+  ];
 }
 
 export function localBinDirForHome(home: string) {
