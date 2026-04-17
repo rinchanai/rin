@@ -14,6 +14,9 @@ export function applyRpcSessionState(
     sessionFile?: string;
     sessionName?: string;
     state: any;
+    activeTurn?: unknown;
+    preserveWorkingAfterCompaction?: boolean;
+    setRemoteTurnRunning?: (running: boolean) => void;
   },
   state: any,
 ) {
@@ -26,10 +29,17 @@ export function applyRpcSessionState(
   target.steeringMode = state?.steeringMode ?? target.steeringMode;
   target.followUpMode = state?.followUpMode ?? target.followUpMode;
   target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
-  if (typeof (target as any).setRemoteTurnRunning === "function") {
-    (target as any).setRemoteTurnRunning(Boolean(state?.isStreaming));
+  const nextRemoteTurnRunning =
+    Boolean(state?.isStreaming) ||
+    Boolean(
+      target.preserveWorkingAfterCompaction &&
+        target.activeTurn &&
+        !state?.isCompacting,
+    );
+  if (typeof target.setRemoteTurnRunning === "function") {
+    target.setRemoteTurnRunning(nextRemoteTurnRunning);
   } else {
-    target.isStreaming = Boolean(state?.isStreaming);
+    target.isStreaming = nextRemoteTurnRunning;
   }
   target.isCompacting = Boolean(state?.isCompacting);
   target.pendingMessageCount = Number(state?.pendingMessageCount || 0);
