@@ -87,7 +87,9 @@ function canReuseCurrentSessionForNewSessionCommand(
     ? session.sessionManager.getEntries().length
     : undefined;
   if (typeof entryCount === "number") return entryCount === 0;
-  const messageCount = Array.isArray(session.messages) ? session.messages.length : undefined;
+  const messageCount = Array.isArray(session.messages)
+    ? session.messages.length
+    : undefined;
   return typeof messageCount === "number" ? messageCount === 0 : false;
 }
 
@@ -136,6 +138,16 @@ export async function runCustomRpcMode(
     if (!requestTag) return;
     output({ type: "rpc_turn_event", event, requestTag, ...payload });
   };
+  const extractFinalTextFromTurnResult = (result: any) => {
+    const messages = Array.isArray(result?.messages) ? result.messages : [];
+    for (const message of messages) {
+      if (!message || typeof message !== "object") continue;
+      if (String((message as any).type || "").trim() !== "text") continue;
+      const text = String((message as any).text || "").trim();
+      if (text) return text;
+    }
+    return "";
+  };
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
     const promise = (async () => {
       emitTurnEvent("start", requestTag);
@@ -152,10 +164,14 @@ export async function runCustomRpcMode(
         await task();
         const session = getSession();
         await session.agent.waitForIdle();
+        const result = buildTurnResultFromMessages(session.messages || []);
+        const finalText = extractFinalTextFromTurnResult(result);
+        if (!finalText) throw new Error("rpc_turn_final_output_missing");
         emitTurnEvent("complete", requestTag, {
           sessionFile: session.sessionFile,
           sessionId: session.sessionId,
-          result: buildTurnResultFromMessages(session.messages || []),
+          finalText,
+          result,
         });
       } catch (error: any) {
         emitTurnEvent("error", requestTag, {

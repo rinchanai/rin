@@ -24,6 +24,7 @@ import {
 
 const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
+const INTERIM_PREFIX = "··· ";
 
 function extractFinalTextFromTurnResult(result: any) {
   const messages = Array.isArray(result?.messages) ? result.messages : [];
@@ -61,6 +62,9 @@ export class ChatController {
     reject: (error: Error) => void;
   } | null = null;
   latestAssistantText = "";
+  pendingCompletedAssistantText = "";
+  deliveredInterimTexts = new Set<string>();
+  interimDeliveryQueue: Promise<void> = Promise.resolve();
   lastTurnPulseAt = 0;
   lastRecoveryAttemptAt = 0;
   logger: any;
@@ -177,6 +181,21 @@ export class ChatController {
       this.markTurnPulse();
       this.markAcceptedMessage(this.currentIncomingMessageId());
     }
+    if (payload.event === "complete") {
+      const finalText = safeString(payload.finalText).trim();
+      if (!finalText) {
+        this.failLiveTurn(new Error("rpc_turn_final_output_missing"));
+        return;
+      }
+      if (finalText) this.latestAssistantText = finalText;
+      this.liveTurn?.resolve({
+        finalText,
+        result: payload.result,
+        sessionId: safeString(payload.sessionId).trim() || undefined,
+        sessionFile: safeString(payload.sessionFile).trim() || undefined,
+      });
+      return;
+    }
     if (payload.event === "error") {
       this.failLiveTurn(new Error(String(payload.error || "rpc_turn_failed")));
     }
@@ -185,28 +204,35 @@ export class ChatController {
   handleSessionEvent(event: any) {
     switch (event?.type) {
       case "agent_start":
+        this.resetTurnTextTracking();
         this.latestAssistantText = "";
         this.markTurnPulse();
         this.markAcceptedMessage(this.currentIncomingMessageId());
         break;
       case "agent_end":
         this.markTurnPulse();
-        void this.completeLiveTurn().catch((error) => {
-          this.failLiveTurn(
-            error instanceof Error
-              ? error
-              : new Error(String(error || "chat_turn_failed")),
-          );
-        });
         break;
       case "message_end":
+        this.markTurnPulse();
+        if (event?.message?.role === "assistant") {
+          void this.handleAssistantMessageEnd(event.message).catch(() => {});
+          break;
+        }
+        this.promotePendingAssistantMessageToInterim();
+        break;
       case "message_update":
+        this.markTurnPulse();
+        if (event?.message?.role === "assistant") {
+          this.promotePendingAssistantMessageToInterim();
+        }
+        break;
       case "tool_execution_end":
       case "tool_execution_start":
       case "compaction_start":
       case "compaction_end":
         this.markTurnPulse();
         this.markAcceptedMessage(this.currentIncomingMessageId());
+        this.promotePendingAssistantMessageToInterim();
         break;
     }
   }
@@ -376,6 +402,18 @@ export class ChatController {
       await session.refreshMessages();
     }
   }
+  private resetTurnTextTracking() {
+    this.pendingCompletedAssistantText = "";
+    this.deliveredInterimTexts.clear();
+    this.interimDeliveryQueue = Promise.resolve();
+  }
+  private currentReplyToMessageId() {
+    return safeString(
+      this.state.processing?.replyToMessageId ||
+        this.state.processing?.incomingMessageId ||
+        "",
+    ).trim();
+  }
   private collectFinalAssistantText() {
     const messages = Array.isArray(this.session?.messages)
       ? this.session.messages
@@ -384,16 +422,57 @@ export class ChatController {
       buildTurnResultFromMessages(messages),
     );
   }
-  private async completeLiveTurn() {
-    if (!this.liveTurn) return;
-    await this.refreshSessionMessages().catch(() => {});
-    const finalText = this.collectFinalAssistantText();
-    if (finalText) this.latestAssistantText = finalText;
-    this.liveTurn.resolve({
-      finalText,
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile: this.currentSessionFile(),
-    });
+  private queueInterimDelivery(run: () => Promise<void>) {
+    const queued = this.interimDeliveryQueue.then(run, run);
+    this.interimDeliveryQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  }
+  private async waitForInterimDeliveries() {
+    await this.interimDeliveryQueue;
+  }
+  private async flushPendingAssistantInterim() {
+    const text = safeString(this.pendingCompletedAssistantText).trim();
+    this.pendingCompletedAssistantText = "";
+    if (!text) return false;
+    if (this.deliveredInterimTexts.has(text)) return false;
+    this.deliveredInterimTexts.add(text);
+    if (!this.deliveryEnabled) return true;
+    const replyToMessageId = this.currentReplyToMessageId();
+    await sendOutboxPayload(
+      this.app,
+      this.agentDir,
+      {
+        type: "text_delivery",
+        createdAt: new Date().toISOString(),
+        chatKey: this.chatKey,
+        text: `${INTERIM_PREFIX}${text}`,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      },
+      this.h,
+    ).catch(() => {});
+    return true;
+  }
+  private promotePendingAssistantMessageToInterim() {
+    if (!safeString(this.pendingCompletedAssistantText).trim()) return;
+    void this.queueInterimDelivery(async () => {
+      await this.flushPendingAssistantInterim();
+    }).catch(() => {});
+  }
+  private async handleAssistantMessageEnd(message: any) {
+    const text = safeString(extractTextFromContent(message?.content)).trim();
+    if (!text) return;
+    if (safeString(this.pendingCompletedAssistantText).trim()) {
+      await this.queueInterimDelivery(async () => {
+        await this.flushPendingAssistantInterim();
+      });
+    }
+    this.pendingCompletedAssistantText = text;
+    this.latestAssistantText = text;
   }
   private shouldAffectChatBinding() {
     return this.affectChatBinding;
@@ -731,9 +810,10 @@ export class ChatController {
       throw error;
     }
     const completion = await liveTurn.promise;
-    this.latestAssistantText = this.collectFinalAssistantText();
-    if (!safeString(this.latestAssistantText || "").trim()) {
-      throw new Error("final_assistant_text_missing");
+    await this.waitForInterimDeliveries();
+    this.latestAssistantText = safeString(completion?.finalText).trim();
+    if (!this.latestAssistantText) {
+      throw new Error("rpc_turn_final_output_missing");
     }
     this.state.piSessionFile =
       safeString(
@@ -857,9 +937,10 @@ export class ChatController {
           throw error;
         }
         const completion = await liveTurn.promise;
-        this.latestAssistantText = this.collectFinalAssistantText();
-        if (!safeString(this.latestAssistantText || "").trim()) {
-          throw new Error("final_assistant_text_missing");
+        await this.waitForInterimDeliveries();
+        this.latestAssistantText = safeString(completion?.finalText).trim();
+        if (!this.latestAssistantText) {
+          throw new Error("rpc_turn_final_output_missing");
         }
         this.state.piSessionFile =
           safeString(

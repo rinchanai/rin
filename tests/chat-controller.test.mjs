@@ -50,6 +50,23 @@ async function createController(chatKey = "telegram/1:2") {
   return controller;
 }
 
+function emitRpcTurnComplete(controller, options, finalText, result) {
+  controller.handleClientEvent({
+    type: "ui",
+    payload: {
+      type: "rpc_turn_event",
+      event: "complete",
+      requestTag: options?.requestTag,
+      finalText,
+      result: result || {
+        messages: [{ type: "text", text: finalText }],
+      },
+      sessionId: controller.session?.sessionManager?.getSessionId?.(),
+      sessionFile: controller.session?.sessionManager?.getSessionFile?.(),
+    },
+  });
+}
+
 test("chat controller uses RpcInteractiveSession session bootstrap before first command on a fresh chat", async () => {
   const controller = await createController();
   const calls = [];
@@ -204,17 +221,14 @@ test("chat controller polls typing and rotating reactions while a chat turn is s
 test("chat controller uses a fixed Working notice policy for onebot private chats", async () => {
   const controller = await createController("onebot/1:private:2");
   const deliveries = [];
-  controller.app = {
-    bots: [
-      {
-        platform: "onebot",
-        selfId: "1",
-        async sendMessage(chatId, content) {
-          deliveries.push({ chatId, content });
-          return ["working-msg-1"];
-        },
-      },
-    ],
+  controller.sendWorkingNotice = async function () {
+    if (this.state.processing?.workingNoticeSent) return false;
+    deliveries.push({
+      replyToMessageId: this.state.processing?.incomingMessageId,
+      text: "Working……",
+    });
+    if (this.state.processing) this.state.processing.workingNoticeSent = true;
+    return true;
   };
 
   controller.session = { isStreaming: false };
@@ -231,10 +245,201 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
   assert.equal(await controller.pollTyping(), true);
   assert.equal(await controller.pollTyping(), false);
   assert.equal(controller.state.processing.workingNoticeSent, true);
-  assert.equal(deliveries.length, 1);
-  assert.equal(deliveries[0].chatId, "private:2");
-  assert.equal(deliveries[0].content[0].attrs.id, "m1");
-  assert.equal(deliveries[0].content[1].attrs.content, "Working……");
+  assert.deepEqual(deliveries, [{ replyToMessageId: "m1", text: "Working……" }]);
+});
+
+test("chat controller forwards completed mid-turn assistant messages as prefixed interim replies", async () => {
+  const controller = await createController("telegram/1:2");
+  const deliveries = [];
+  controller.flushPendingAssistantInterim = async function () {
+    const text = String(this.pendingCompletedAssistantText || "").trim();
+    this.pendingCompletedAssistantText = "";
+    if (!text) return false;
+    deliveries.push({
+      replyToMessageId: this.currentReplyToMessageId(),
+      text: `··· ${text}`,
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      replyToMessageId: this.state.pendingDelivery?.replyToMessageId,
+      text: this.state.pendingDelivery?.text || "",
+    });
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/interim-chat.jsonl",
+      getSessionId: () => "session-interim",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/interim-chat.jsonl",
+      sessionId: "session-interim",
+    }),
+    prompt: async (_message, options) => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      controller.handleSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "我先查一下" }],
+        },
+      });
+      controller.handleSessionEvent({
+        type: "tool_execution_start",
+        toolName: "read",
+      });
+      queueMicrotask(() => {
+        controller.handleSessionEvent({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "最终答复" }],
+          },
+        });
+        controller.session.messages = [
+          { role: "user", content: [{ type: "text", text: "hello" }] },
+          { role: "assistant", content: [{ type: "text", text: "最终答复" }] },
+        ];
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "最终答复");
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  await controller.runTurn(
+    {
+      text: "hello",
+      attachments: [],
+      replyToMessageId: "42",
+      incomingMessageId: "42",
+    },
+    "prompt",
+  );
+
+  assert.deepEqual(deliveries, [
+    { replyToMessageId: "42", text: "··· 我先查一下" },
+    { replyToMessageId: "42", text: "最终答复" },
+  ]);
+});
+
+test("chat controller does not misclassify a lone final assistant message as interim", async () => {
+  const controller = await createController("telegram/1:2");
+  const deliveries = [];
+  controller.flushPendingAssistantInterim = async function () {
+    const text = String(this.pendingCompletedAssistantText || "").trim();
+    this.pendingCompletedAssistantText = "";
+    if (!text) return false;
+    deliveries.push({
+      replyToMessageId: this.currentReplyToMessageId(),
+      text: `··· ${text}`,
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      replyToMessageId: this.state.pendingDelivery?.replyToMessageId,
+      text: this.state.pendingDelivery?.text || "",
+    });
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/final-only-chat.jsonl",
+      getSessionId: () => "session-final-only",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/final-only-chat.jsonl",
+      sessionId: "session-final-only",
+    }),
+    prompt: async (_message, options) => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      controller.handleSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "最终答复" }],
+        },
+      });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "最终答复");
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  await controller.runTurn(
+    {
+      text: "hello",
+      attachments: [],
+      replyToMessageId: "42",
+      incomingMessageId: "42",
+    },
+    "prompt",
+  );
+
+  assert.deepEqual(deliveries, [{ replyToMessageId: "42", text: "最终答复" }]);
+});
+
+test("chat controller uses rpc completion text as the canonical final reply", async () => {
+  const controller = await createController("telegram/1:2");
+  const delivered = [];
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push(controller.latestAssistantText);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/rpc-fallback-chat.jsonl",
+      getSessionId: () => "session-rpc-fallback",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/rpc-fallback-chat.jsonl",
+      sessionId: "session-rpc-fallback",
+    }),
+    prompt: async (_message, options) => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "rpc final text");
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
+
+  assert.deepEqual(delivered, ["rpc final text"]);
 });
 
 test("chat controller uses RpcInteractiveSession prompt path for chat turns", async () => {
@@ -268,6 +473,7 @@ test("chat controller uses RpcInteractiveSession prompt path for chat turns", as
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "prompt final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -297,7 +503,10 @@ test("chat controller does not rename sessions based on chatKey", async () => {
   controller.session = {
     isStreaming: false,
     messages: [
-      { role: "user", content: [{ type: "text", text: "hello world from chat" }] },
+      {
+        role: "user",
+        content: [{ type: "text", text: "hello world from chat" }],
+      },
       { role: "assistant", content: [{ type: "text", text: "final text" }] },
     ],
     sessionManager: {
@@ -309,11 +518,12 @@ test("chat controller does not rename sessions based on chatKey", async () => {
       sessionFile: "/tmp/turn-chat.jsonl",
       sessionId: "session-turn",
     }),
-    prompt: async () => {
+    prompt: async (_message, options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -323,12 +533,15 @@ test("chat controller does not rename sessions based on chatKey", async () => {
     switchSession: async () => {},
   };
 
-  await controller.runTurn({ text: "hello world from chat", attachments: [] }, "prompt");
+  await controller.runTurn(
+    { text: "hello world from chat", attachments: [] },
+    "prompt",
+  );
 
   assert.deepEqual(namedSessions, []);
 });
 
-test("chat controller resolves final output from session lifecycle for prompt turns", async () => {
+test("chat controller resolves final output from rpc completion for prompt turns", async () => {
   const controller = await createController("telegram/9:10");
   const delivered = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -350,7 +563,7 @@ test("chat controller resolves final output from session lifecycle for prompt tu
       sessionFile: "/tmp/fallback-chat.jsonl",
       sessionId: "session-fallback",
     }),
-    prompt: async () => {
+    prompt: async (_message, options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
@@ -362,6 +575,7 @@ test("chat controller resolves final output from session lifecycle for prompt tu
           },
         ];
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "prompt final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -462,12 +676,13 @@ test("chat controller self-heals missing saved session binding before a chat tur
         sessionId: "session-fresh",
       };
     },
-    prompt: async () => {
+    prompt: async (_message, options) => {
       calls.push("prompt");
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "fresh session final");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -519,7 +734,7 @@ test("chat controller clears its working reaction after final delivery", async (
   assert.deepEqual(reactions, [["2", "m1", "🌗", "1"]]);
 });
 
-test("chat controller refreshes session messages before resolving a final chat reply", async () => {
+test("chat controller does not need session refresh to resolve a final chat reply", async () => {
   const controller = await createController("telegram/1:4");
   const delivered = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -541,19 +756,14 @@ test("chat controller refreshes session messages before resolving a final chat r
       sessionId: "session-refresh",
     }),
     refreshState: async () => {
-      controller.session.messages = [
-        { role: "user", content: [{ type: "text", text: "hello" }] },
-        {
-          role: "assistant",
-          content: [{ type: "text", text: "refreshed final text" }],
-        },
-      ];
+      throw new Error("should not refresh session state for final output");
     },
-    prompt: async () => {
+    prompt: async (_message, options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "rpc final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -563,10 +773,10 @@ test("chat controller refreshes session messages before resolving a final chat r
 
   await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
 
-  assert.deepEqual(delivered, ["refreshed final text"]);
+  assert.deepEqual(delivered, ["rpc final text"]);
 });
 
-test("chat controller takes final chat text from session lifecycle instead of rpc completion payload", async () => {
+test("chat controller takes final chat text from rpc completion payload even when session history differs", async () => {
   const controller = await createController("telegram/1:3");
   const delivered = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
@@ -587,17 +797,9 @@ test("chat controller takes final chat text from session lifecycle instead of rp
       sessionFile: "/tmp/session-lifecycle.jsonl",
       sessionId: "session-lifecycle",
     }),
-    prompt: async () => {
+    prompt: async (_message, options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
-      controller.handleClientEvent({
-        type: "ui",
-        payload: {
-          type: "rpc_turn_event",
-          event: "complete",
-          result: { messages: [{ type: "text", text: "rpc final text" }] },
-        },
-      });
       queueMicrotask(() => {
         controller.session.messages = [
           { role: "user", content: [{ type: "text", text: "hello" }] },
@@ -607,6 +809,7 @@ test("chat controller takes final chat text from session lifecycle instead of rp
           },
         ];
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "rpc final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -616,7 +819,7 @@ test("chat controller takes final chat text from session lifecycle instead of rp
 
   await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
 
-  assert.deepEqual(delivered, ["session final text"]);
+  assert.deepEqual(delivered, ["rpc final text"]);
 });
 
 test("chat controller rejects the owned turn on connection loss", async () => {
@@ -785,7 +988,7 @@ test("chat controller serializes chat turns instead of replacing the active one"
       sessionFile: "/tmp/serial-chat.jsonl",
       sessionId: "session-serial",
     }),
-    prompt: async (message) => {
+    prompt: async (message, options) => {
       order.push(`prompt:${message}`);
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
@@ -800,6 +1003,7 @@ test("chat controller serializes chat turns instead of replacing the active one"
               },
             ];
             controller.session.isStreaming = false;
+            emitRpcTurnComplete(controller, options, "first done");
             controller.handleSessionEvent({ type: "agent_end" });
             resolve();
           };
@@ -811,6 +1015,7 @@ test("chat controller serializes chat turns instead of replacing the active one"
         { role: "assistant", content: [{ type: "text", text: "second done" }] },
       ];
       controller.session.isStreaming = false;
+      emitRpcTurnComplete(controller, options, "second done");
       controller.handleSessionEvent({ type: "agent_end" });
     },
     setSessionName: async () => {},
@@ -921,11 +1126,12 @@ test("chat controller retries persisted final reply delivery on recovery", async
       sessionFile: "/tmp/recover-chat.jsonl",
       sessionId: "session-recover",
     }),
-    prompt: async () => {
+    prompt: async (_message, options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
@@ -933,7 +1139,6 @@ test("chat controller retries persisted final reply delivery on recovery", async
     switchSession: async () => {},
   };
 
-  const originalCommitPendingDelivery = controller.commitPendingDelivery;
   controller.commitPendingDelivery = async () => {};
   await controller.runTurn(
     { text: "hello", attachments: [], replyToMessageId: "42" },
@@ -943,11 +1148,16 @@ test("chat controller retries persisted final reply delivery on recovery", async
   assert.equal(controller.state.pendingDelivery?.text, "final text");
   assert.equal(sends.length, 0);
 
-  controller.commitPendingDelivery = originalCommitPendingDelivery;
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    sends.push({ text: this.state.pendingDelivery?.text || "" });
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
   await controller.recoverIfNeeded();
 
   assert.equal(controller.state.pendingDelivery, undefined);
-  assert.equal(sends.length, 1);
+  assert.deepEqual(sends, [{ text: "final text" }]);
 });
 
 test("chat controller keeps cron turns off the chat mainline while preserving the real delivery chatKey", async () => {
@@ -977,6 +1187,7 @@ test("chat controller keeps cron turns off the chat mainline while preserving th
   );
   controller.app = { bots: [] };
   controller.connect = async () => {};
+  controller.saveState = () => {};
   const setNames = [];
   controller.session = {
     isStreaming: false,
@@ -993,11 +1204,12 @@ test("chat controller keeps cron turns off the chat mainline while preserving th
       sessionFile: "/tmp/cron-detached.jsonl",
       sessionId: "session-detached",
     }),
-    prompt: async () => {
+    prompt: async (_message, options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
       queueMicrotask(() => {
         controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "final text");
         controller.handleSessionEvent({ type: "agent_end" });
       });
     },
