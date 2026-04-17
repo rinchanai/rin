@@ -212,14 +212,64 @@ test("chat controller polls typing and rotating reactions while a chat turn is s
   assert.equal(controller.hasActiveTurn(), true);
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
-  assert.deepEqual(reactions, [["create", "2", "m1", "👀"]]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
 
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [
     { chat_id: "2", action: "typing" },
     { chat_id: "2", action: "typing" },
   ]);
-  assert.deepEqual(reactions, [["create", "2", "m1", "👀"]]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
+});
+
+test("chat controller rotates reaction-only working indicators at a 30s cadence", async () => {
+  const controller = await createController("onebot/2301401877:1067390680");
+  const reactions = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "2301401877",
+        async createReaction(chatId, messageId, emoji) {
+          reactions.push(["create", chatId, messageId, emoji]);
+        },
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          reactions.push(["delete", chatId, messageId, emoji, userId]);
+        },
+      },
+    ],
+  };
+
+  controller.session = { isStreaming: false };
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: 1000,
+    incomingMessageId: "m1",
+  };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
+
+  const realNow = Date.now;
+  try {
+    Date.now = () => 1000;
+    assert.equal(await controller.pollTyping(), true);
+    assert.deepEqual(reactions, [["create", "1067390680", "m1", "🌘"]]);
+
+    Date.now = () => 20_000;
+    assert.equal(await controller.pollTyping(), false);
+    assert.deepEqual(reactions, [["create", "1067390680", "m1", "🌘"]]);
+
+    Date.now = () => 31_500;
+    assert.equal(await controller.pollTyping(), true);
+    assert.deepEqual(reactions, [
+      ["create", "1067390680", "m1", "🌘"],
+      ["delete", "1067390680", "m1", "🌘", "2301401877"],
+      ["create", "1067390680", "m1", "🌗"],
+    ]);
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("chat controller uses a fixed Working notice policy for onebot private chats", async () => {
@@ -703,6 +753,42 @@ test("chat controller self-heals missing saved session binding before a chat tur
   assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
 });
 
+test("chat controller serves /status locally without disturbing an active turn", async () => {
+  const controller = await createController("onebot/1:private:2");
+  const sends = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "1",
+        async sendMessage(chatId, content) {
+          sends.push({ chatId, content });
+          return ["m-status"];
+        },
+      },
+    ],
+  };
+  controller.state.processing = {
+    text: "please check the logs and keep going",
+    attachments: [],
+    startedAt: Date.now() - 12_000,
+    incomingMessageId: "m1",
+  };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
+
+  const result = await controller.runCommand("/status", "m1", "m1");
+
+  assert.equal(result.handled, true);
+  assert.match(result.text, /^Status: working/m);
+  assert.match(result.text, /^Indicators: notice$/m);
+  assert.match(result.text, /^Prompt: please check the logs and keep going$/m);
+  assert.equal(controller.state.processing?.incomingMessageId, "m1");
+  assert.equal(controller.hasActiveTurn(), true);
+  assert.equal(controller.workingReactionEmoji, "");
+  assert.equal(sends.length, 1);
+});
+
 test("chat controller clears its working reaction after final delivery", async () => {
   const controller = await createController("telegram/1:2");
   const reactions = [];
@@ -729,6 +815,7 @@ test("chat controller clears its working reaction after final delivery", async (
     text: "done",
   };
   controller.workingReactionEmoji = "🌗";
+  controller.lastWorkingReactionAt = Date.now();
   controller.deliveryEnabled = false;
 
   await controller.commitPendingDelivery(true);
