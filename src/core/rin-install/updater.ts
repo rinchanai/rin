@@ -10,6 +10,15 @@ export async function startUpdater(deps: {
   detectCurrentUser: () => string;
   repoRootFromHere: () => string;
   ensureNotCancelled: <T>(value: T | symbol) => T;
+  release?: {
+    channel: "stable" | "beta" | "git";
+    version?: string;
+    branch?: string;
+    ref?: string;
+    sourceLabel?: string;
+    archiveUrl?: string;
+    installedAt?: string;
+  };
 }) {
   const currentUser = deps.detectCurrentUser();
   intro("Rin Updater");
@@ -56,6 +65,9 @@ export async function startUpdater(deps: {
       `Install dir: ${installDir}`,
       `Discovered from: ${target.source}`,
       `Owner home: ${target.ownerHome}`,
+      deps.release?.sourceLabel
+        ? `Requested source: ${deps.release.sourceLabel}`
+        : "Requested source: stable latest",
       "",
       "Updater policy:",
       "- publish a new runtime release into the existing install dir",
@@ -84,6 +96,7 @@ export async function startUpdater(deps: {
       targetUser,
       installDir,
       sourceRoot: deps.repoRootFromHere(),
+      ...(deps.release ? { release: deps.release } : {}),
     } satisfies FinalizeInstallOptions,
     "Publishing runtime and refreshing the installed target...",
     {
