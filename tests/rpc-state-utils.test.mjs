@@ -73,6 +73,25 @@ test("rpc state utils derive branch and apply state", () => {
   );
   assert.equal(remoteStreaming, true);
 
+  remoteStreaming = false;
+  stateUtils.applyRpcSessionState(
+    {
+      ...target,
+      activeTurn: { mode: "prompt" },
+      preserveWorkingAfterCompaction: true,
+      setRemoteTurnRunning(value) {
+        remoteStreaming = value;
+      },
+    },
+    {
+      sessionId: "s3",
+      sessionFile: "/tmp/z",
+      isStreaming: false,
+      isCompacting: false,
+    },
+  );
+  assert.equal(remoteStreaming, true);
+
   const entryById = new Map([
     ["1", { id: "1" }],
     ["2", { id: "2", parentId: "1" }],

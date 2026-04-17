@@ -86,6 +86,9 @@ test("rpc session events do not refresh whole state on every stream update", asy
     },
   );
   assert.equal(target.isCompacting, true);
+  assert.equal(target.preserveWorkingAfterCompaction, true);
+  target.remoteTurnRunning = false;
+  target.isStreaming = false;
 
   await events.handleRpcSessionEvent(
     target,
@@ -98,6 +101,8 @@ test("rpc session events do not refresh whole state on every stream update", asy
     },
   );
   assert.equal(target.isCompacting, false);
+  assert.equal(target.remoteTurnRunning, true);
+  assert.equal(target.isStreaming, true);
 
   await events.handleRpcSessionEvent(
     target,

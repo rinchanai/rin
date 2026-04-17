@@ -31,22 +31,35 @@ export async function handleRpcSessionEvent(
     target.emitEvent(payload);
     return;
   }
-  if (payload.type === "agent_start") setRemoteTurnRunning(true);
+  if (payload.type === "agent_start") {
+    target.preserveWorkingAfterCompaction = false;
+    setRemoteTurnRunning(true);
+  }
   if (
     payload.type === "rpc_turn_event" &&
     (payload.event === "start" || payload.event === "heartbeat")
   ) {
+    target.preserveWorkingAfterCompaction = false;
     setRemoteTurnRunning(true);
   }
-  if (payload.type === "compaction_start") target.isCompacting = true;
+  if (payload.type === "compaction_start") {
+    target.isCompacting = true;
+    target.preserveWorkingAfterCompaction = Boolean(
+      target.remoteTurnRunning || target.isStreaming || target.activeTurn,
+    );
+  }
   if (payload.type === "compaction_end") {
     target.isCompacting = false;
+    if (target.preserveWorkingAfterCompaction && target.activeTurn) {
+      setRemoteTurnRunning(true);
+    }
     void refreshMessagesAndSession();
   }
   if (payload.type === "auto_retry_start")
     target.retryAttempt = Number(payload.attempt || 1);
   if (payload.type === "auto_retry_end") target.retryAttempt = 0;
   if (payload.type === "agent_end") {
+    target.preserveWorkingAfterCompaction = false;
     finishRemoteTurn();
     void refreshMessagesAndSession();
   }
@@ -54,10 +67,12 @@ export async function handleRpcSessionEvent(
     payload.type === "rpc_turn_event" &&
     (payload.event === "complete" || payload.event === "error")
   ) {
+    target.preserveWorkingAfterCompaction = false;
     finishRemoteTurn();
     void refreshMessagesAndSession();
   }
   if (payload.type === "worker_exit") {
+    target.preserveWorkingAfterCompaction = false;
     if (typeof target.handleSessionUnavailable === "function") {
       target.handleSessionUnavailable();
     } else {
