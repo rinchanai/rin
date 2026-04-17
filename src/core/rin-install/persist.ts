@@ -6,6 +6,7 @@ import {
   installAuthPath,
   installerLocatorPathForHome,
   installerManifestPath,
+  installerRecoveryManifestCandidates,
   installSettingsPath,
   legacyInstallerLocatorPathForHome,
   legacyInstallerManifestPath,
@@ -50,23 +51,21 @@ export function reconcileInstallerManifest(
   const locatorManifestPath = installerLocatorPathForHome(ownerHome);
   const legacyLocatorManifestPath =
     legacyInstallerLocatorPathForHome(ownerHome);
-  const manifestJson = deps.readInstallerJson<any>(
-    manifestPath,
-    deps.readInstallerJson<any>(
-      locatorManifestPath,
-      deps.readInstallerJson<any>(
-        legacyManifestPath,
-        deps.readInstallerJson<any>(
-          legacyLocatorManifestPath,
-          {},
-          Boolean(options.elevated),
-        ),
-        Boolean(options.elevated),
-      ),
+  let manifestJson: any = {};
+  for (const filePath of installerRecoveryManifestCandidates(
+    options.installDir,
+    ownerHome,
+  )) {
+    const current = deps.readInstallerJson<any>(
+      filePath,
+      null,
       Boolean(options.elevated),
-    ),
-    Boolean(options.elevated),
-  );
+    );
+    if (current && typeof current === "object") {
+      manifestJson = current;
+      break;
+    }
+  }
   manifestJson.targetUser = options.targetUser;
   manifestJson.installDir = options.installDir;
   if (options.provider) manifestJson.defaultProvider = options.provider;

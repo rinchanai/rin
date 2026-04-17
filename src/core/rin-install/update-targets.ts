@@ -3,8 +3,8 @@ import path from "node:path";
 
 import {
   defaultInstallDirForHome,
-  installerManifestPath,
-  legacyInstallerManifestPath,
+  installDiscoveryHomeRoots,
+  installerLocatorCandidatesForHome,
   launchAgentsDirForHome,
   systemdUserUnitDirForHome,
 } from "./paths.js";
@@ -34,7 +34,9 @@ export type InstalledTarget = {
   source: "manifest" | "systemd" | "launchd";
 };
 
-export function discoverInstalledTargets(homeRoots = ["/home", "/Users"]) {
+export function discoverInstalledTargets(
+  homeRoots = installDiscoveryHomeRoots(),
+) {
   const rows: InstalledTarget[] = [];
   const seen = new Set<string>();
 
@@ -62,10 +64,11 @@ export function discoverInstalledTargets(homeRoots = ["/home", "/Users"]) {
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
     const defaultInstallDir = defaultInstallDirForHome(homeDir);
-    const manifest = readJsonFile<any>(
-      installerManifestPath(defaultInstallDir),
-      readJsonFile<any>(legacyInstallerManifestPath(defaultInstallDir), null),
-    );
+    let manifest: any = null;
+    for (const filePath of installerLocatorCandidatesForHome(homeDir)) {
+      manifest = readJsonFile<any>(filePath, null);
+      if (manifest && typeof manifest === "object") break;
+    }
     if (manifest && typeof manifest === "object") {
       add(
         String(manifest.targetUser || userName),

@@ -64,6 +64,28 @@ Useful locations:
 These files are the main way to recover `installDir` and `targetUser` when the current account does not have a working `rin` command.
 Service files expose the runtime directory through `RIN_DIR`, and once `installDir` is known the next stop should be `<installDir>/installer.json`.
 
+## Installed update recovery path
+
+Keep `rin update` as the canonical workflow when the current account already has a working launcher.
+
+If `rin` is missing on the current account, treat that as a launcher-placement clue rather than as evidence that Rin is not installed.
+In that case, prefer this recovery order:
+
+1. find `installDir` from a managed service file or a known target home
+2. open `<installDir>/installer.json` to confirm `targetUser`
+3. invoke the stable installed runtime entry directly:
+   - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
+
+Typical places to recover `installDir`:
+
+- `<targetHome>/.rin/installer.json`
+- Linux: `~/.config/systemd/user/rin-daemon*.service`
+- macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
+- default target-home install directory: `<targetHome>/.rin/`
+
+This keeps installed-runtime maintenance separate from repo-checkout maintenance.
+Do not treat rerunning `install.sh`, ad-hoc rebuilds, or repo-local `git pull` workflows as the normal way to update an already installed Rin runtime.
+
 ## `app/current/`
 
 `app/current/` is the stable entrypoint for the currently active runtime.

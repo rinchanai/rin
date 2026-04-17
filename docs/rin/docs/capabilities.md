@@ -17,27 +17,15 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
 
 1. try `rin update`
 2. if `rin` is missing, try `~/.local/bin/rin update`
-3. if no launcher exists for the current account, try the installed runtime entry directly:
+3. if no launcher exists for the current account, recover the real target install from the installed metadata described in `~/.rin/docs/rin/docs/runtime-layout.md`
+4. then invoke the stable installed runtime entry directly:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
-4. if `installDir` or `targetUser` is unknown, discover them first from Rin install metadata or managed service files
 
 When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
+Do not keep reasoning about the current account's launcher metadata.
+Instead, switch to install recovery through the target manifest or managed service files.
 
-In that case, do not keep reasoning about the current account's launcher metadata.
-Instead, jump straight to the target install manifest workflow:
-
-1. find `installDir` for the real target install:
-   - inspect managed service files for `RIN_DIR`
-   - Linux: `~/.config/systemd/user/rin-daemon*.service`
-   - macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
-   - if you already know the target home, also probe the stable locator manifest at `<targetHome>/.rin/installer.json`
-2. open the target install manifest:
-   - `<installDir>/installer.json`
-   - this file records `targetUser` and `installDir`
-3. invoke the stable runtime entry directly:
-   - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
-
-In short: no `rin` on the current account usually means “wrong user for the launcher”, so the recovery path is service file → target install dir → `installer.json` → `app/current/.../main.js update`.
+In short: no `rin` on the current account usually means “wrong user for the launcher”, so the recovery path is service file or locator manifest → target install dir → `installer.json` → `app/current/.../main.js update`.
 
 Important implications:
 
