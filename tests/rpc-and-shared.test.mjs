@@ -17,6 +17,10 @@ const shared = await import(
 const launch = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "launch.js")).href
 );
+const installPaths = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "paths.js"))
+    .href
+);
 
 test("rpc helpers build success and failure envelopes", () => {
   assert.deepEqual(rpc.ok("1", "get_state", { ok: true }), {
@@ -44,6 +48,14 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.equal(parsed.targetUser, "demo");
   assert.equal(parsed.std, true);
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
+  assert.equal(
+    shared.installConfigPath(),
+    installPaths.launcherMetadataPathForHome(os.homedir()),
+  );
+  assert.equal(
+    shared.resolveInstallDirForTarget({ ...parsed, installDir: "" }),
+    installPaths.defaultInstallDirForHome(os.homedir()),
+  );
 });
 
 test("tmux socket args target the caller-owned hidden socket", () => {
@@ -52,13 +64,10 @@ test("tmux socket args target the caller-owned hidden socket", () => {
 
 test("tui runtime env targets the target user's direct daemon socket", () => {
   const currentUser = os.userInfo().username;
-  const env = launch.buildTuiRuntimeEnv(
-    currentUser,
-    "THE_cattail",
-    `/home/${currentUser}/.rin`,
-  );
-  assert.equal(env.RIN_DIR, `/home/${currentUser}/.rin`);
-  assert.equal(env.PI_CODING_AGENT_DIR, `/home/${currentUser}/.rin`);
+  const installDir = installPaths.defaultInstallDirForHome(os.homedir());
+  const env = launch.buildTuiRuntimeEnv(currentUser, "THE_cattail", installDir);
+  assert.equal(env.RIN_DIR, installDir);
+  assert.equal(env.PI_CODING_AGENT_DIR, installDir);
   assert.equal(env.RIN_INVOKING_SYSTEM_USER, "THE_cattail");
   assert.ok(String(env.RIN_DAEMON_SOCKET_PATH || "").includes("rin-daemon"));
   assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));
@@ -74,4 +83,3 @@ test("tmux list targets hidden Rin sessions", () => {
     "#S",
   ]);
 });
-

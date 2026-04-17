@@ -15,6 +15,10 @@ import {
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
+import {
+  defaultInstallDirForHome,
+  launcherMetadataPathForHome,
+} from "../rin-install/paths.js";
 
 export type ParsedArgs = {
   command:
@@ -61,14 +65,8 @@ export function runCommand(command: string, args: string[], options: any = {}) {
   });
 }
 
-function appConfigDir() {
-  if (process.platform === "darwin")
-    return path.join(os.homedir(), "Library", "Application Support", "rin");
-  return path.join(os.homedir(), ".config", "rin");
-}
-
 export function installConfigPath() {
-  return path.join(appConfigDir(), "install.json");
+  return launcherMetadataPathForHome(os.homedir());
 }
 
 export function loadInstallConfig() {
@@ -314,7 +312,9 @@ export function cleanupStaleUpdateWorkDirs(
   const keepPaths = new Set(
     (options.keepPaths || []).map((item) => path.resolve(item)),
   );
-  const nowMs = Number.isFinite(options.nowMs) ? Number(options.nowMs) : Date.now();
+  const nowMs = Number.isFinite(options.nowMs)
+    ? Number(options.nowMs)
+    : Date.now();
   const staleAfterMs = Number.isFinite(options.staleAfterMs)
     ? Math.max(0, Number(options.staleAfterMs))
     : 12 * 60 * 60 * 1000;
@@ -343,7 +343,9 @@ export function cleanupStaleUpdateWorkDirs(
 
 export function resolveInstallDirForTarget(parsed: ParsedArgs) {
   const target = readPasswdUser(parsed.targetUser);
-  return parsed.installDir || path.join(target?.home || os.homedir(), ".rin");
+  return (
+    parsed.installDir || defaultInstallDirForHome(target?.home || os.homedir())
+  );
 }
 
 function daemonControlContext(parsed: ParsedArgs) {
