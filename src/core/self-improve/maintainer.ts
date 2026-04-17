@@ -26,12 +26,13 @@ function safeString(value: unknown): string {
   return typeof value === "string" ? value : String(value || "");
 }
 
-function buildSelfImproveReviewPrompt(_trigger: string): string {
+export function buildSelfImproveReviewPrompt(_trigger: string): string {
   const prompt = [
     "Review the conversation and derive durable conclusions that should still matter across sessions.",
     "Save compact stable baselines with save_prompts.",
     "Save reusable workflows, operating playbooks, complex task procedures, troubleshooting methods, and similar durable methods as self improve skills.",
-    "Refine existing prompt slots and skills instead of creating duplicates, and remove stale or overly specific lines when needed.",
+    "If the session taught you a reusable procedure, troubleshooting sequence, checklist, command recipe, or integration pattern, create or update the matching skill even if the user did not ask.",
+    "Prefer refining existing prompt slots and skills instead of creating duplicates, and remove stale or overly specific lines when needed.",
     "If an existing skill is missing steps, outdated, incomplete, or wrong, update it.",
     "Do not save summaries, progress, temporary state, or weak session-specific patterns.",
   ];
@@ -47,14 +48,22 @@ async function createForkedSessionManager(options: {
   if (!sessionFile) throw new Error("session_file_required");
   const leafId = safeString(options.leafId).trim() || undefined;
   const { SessionManager } = await loadRinSessionManagerModule();
-  const sourceManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
+  const sourceManager = SessionManager.open(
+    sessionFile,
+    path.dirname(sessionFile),
+  );
   const cwd = safeString(sourceManager.getCwd?.() || "").trim() || HOME_DIR;
   return {
     cwd,
-    sessionManager: (SessionManager as any).forkFrom(sessionFile, cwd, undefined, {
-      persist: false,
-      leafId,
-    }),
+    sessionManager: (SessionManager as any).forkFrom(
+      sessionFile,
+      cwd,
+      undefined,
+      {
+        persist: false,
+        leafId,
+      },
+    ),
   };
 }
 
@@ -113,7 +122,10 @@ async function storeSessionSummaryInTranscriptArchive(options: {
   }
 
   const { SessionManager } = await loadRinSessionManagerModule();
-  const sessionManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
+  const sessionManager = SessionManager.open(
+    sessionFile,
+    path.dirname(sessionFile),
+  );
   const sessionId = safeString(sessionManager.getSessionId?.() || "").trim();
   const existingEntries = await loadTranscriptSessionEntries(
     {
@@ -123,9 +135,8 @@ async function storeSessionSummaryInTranscriptArchive(options: {
     agentDir,
   ).catch(() => []);
   const currentSummary = normalizeSessionSummaryText(
-    [...existingEntries]
-      .reverse()
-      .find((entry) => isSessionSummaryEntry(entry))?.text || "",
+    [...existingEntries].reverse().find((entry) => isSessionSummaryEntry(entry))
+      ?.text || "",
   );
   if (currentSummary && currentSummary === summary) {
     return {
@@ -189,7 +200,9 @@ export async function maintainMemory(
   const sessionFile = safeString(opts.sessionFile || "").trim();
   if (!sessionFile) return { skipped: "no-session-file" };
   const extracted = await runForkedSessionSelfImproveReview({
-    agentDir: safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir(),
+    agentDir:
+      safeString(opts.agentDir || resolveAgentDir()).trim() ||
+      resolveAgentDir(),
     sessionFile,
     leafId: safeString(opts.leafId || "").trim() || undefined,
     trigger: safeString(opts.trigger || "extension:self_improve_review").trim(),

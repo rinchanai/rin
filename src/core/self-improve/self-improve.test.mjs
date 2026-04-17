@@ -12,19 +12,16 @@ const rootDir = path.resolve(
   "..",
 );
 const lib = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "lib.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "lib.js"))
+    .href
 );
 const store = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "store.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "store.js"))
+    .href
 );
 const memoryDocs = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "docs.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "docs.js"))
+    .href
 );
 const asyncJobs = await import(
   pathToFileURL(
@@ -34,6 +31,11 @@ const asyncJobs = await import(
 const processing = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "self-improve", "processing.js"),
+  ).href
+);
+const maintainer = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "self-improve", "maintainer.js"),
   ).href
 );
 
@@ -69,6 +71,25 @@ test("buildOnboardingPrompt keeps init instructions hidden and language-first", 
       agentIndex > languageIndex &&
       ownerIndex > agentIndex &&
       styleIndex > ownerIndex,
+  );
+});
+
+test("self-improve review prompt pushes reusable procedural knowledge into skills", () => {
+  const prompt = maintainer.buildSelfImproveReviewPrompt(
+    "extension:self_improve_review",
+  );
+  assert.ok(
+    prompt.includes("Save compact stable baselines with save_prompts."),
+  );
+  assert.ok(
+    prompt.includes(
+      "If the session taught you a reusable procedure, troubleshooting sequence, checklist, command recipe, or integration pattern, create or update the matching skill even if the user did not ask.",
+    ),
+  );
+  assert.ok(
+    prompt.includes(
+      "Prefer refining existing prompt slots and skills instead of creating duplicates",
+    ),
   );
 });
 
@@ -161,7 +182,6 @@ test("queued memory maintenance jobs deduplicate by session file", async () => {
     assert.equal(queue[0].sessionFile, path.resolve("/tmp/session-a.jsonl"));
   });
 });
-
 
 test("session summary jobs stay distinct from self-improve review jobs", async () => {
   await withTempRoot(async (root) => {

@@ -136,7 +136,9 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
 
   const skillGuidanceBlock = [
     "Self improve skills guidance:",
-    `- Save reusable procedures, workflows, checklists, and playbooks as skills under ${managedSkillPaths[0]} instead of save_prompts content`,
+    `- Save reusable procedures, workflows, checklists, troubleshooting methods, and playbooks as skills under ${managedSkillPaths[0]} instead of save_prompts content`,
+    "- When you discover or refine a reusable method during the task, create or update the matching skill before finishing even if the user did not ask",
+    "- Prefer updating an existing skill over creating a near-duplicate, and keep one skill per topic",
     "- If a prompt slot accumulates extensive detail on a single topic, extract it into a self improve skill and leave only a compact reference in save_prompts",
     "- When creating or substantially revising a skill, use the skill-creator skill if it is available",
   ].join("\n");
@@ -193,9 +195,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   return prompt.trimEnd();
 }
 
-const LAZY_SYSTEM_PROMPT_STATE_KEY = Symbol.for(
-  "rin.lazySystemPromptState",
-);
+const LAZY_SYSTEM_PROMPT_STATE_KEY = Symbol.for("rin.lazySystemPromptState");
 
 function getSessionActiveToolNames(session: any): string[] {
   try {
@@ -232,10 +232,14 @@ export function ensureSessionBaseSystemPrompt(session: any): string {
   if (!session || typeof session !== "object") return "";
   const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
   if (!state || typeof state.compute !== "function") {
-    return String(session._baseSystemPrompt || session.agent?.state?.systemPrompt || "");
+    return String(
+      session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
+    );
   }
   if (state.materialized) {
-    return String(session._baseSystemPrompt || session.agent?.state?.systemPrompt || "");
+    return String(
+      session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
+    );
   }
   const next = state.compute(getSessionActiveToolNames(session));
   state.materialized = true;
@@ -318,7 +322,11 @@ function mutateMessageArray(target: any[], source: any[]) {
   for (const item of Array.isArray(source) ? source : []) target.push(item);
 }
 
-function buildMidTurnLlmContext(session: any, systemPrompt: string, tools: any[]) {
+function buildMidTurnLlmContext(
+  session: any,
+  systemPrompt: string,
+  tools: any[],
+) {
   const rawMessages = Array.isArray(session?.agent?.state?.messages)
     ? session.agent.state.messages
     : [];
@@ -611,7 +619,8 @@ export async function createConfiguredAgentSession(
         | "new"
         | "resume"
         | "fork",
-      previousSessionFile: String(sessionStartEvent?.previousSessionFile || "") || undefined,
+      previousSessionFile:
+        String(sessionStartEvent?.previousSessionFile || "") || undefined,
     });
 
     const builtinHost = result.session?._extensionRunner?.builtinHost;

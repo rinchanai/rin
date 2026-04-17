@@ -14,7 +14,7 @@ const rootDir = path.resolve(
 );
 const runtimeMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
-    .href,
+    .href
 );
 
 test("createConfiguredAgentSession keeps system prompt empty until first turn", async () => {
@@ -60,6 +60,11 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
       "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn",
     ),
   );
+  assert.ok(
+    baseSystemPrompt.includes(
+      "When you discover or refine a reusable method during the task, create or update the matching skill before finishing even if the user did not ask",
+    ),
+  );
 });
 
 test("buildFinalAppSystemPrompt injects a continuation prompt after automatic compaction", async () => {
@@ -100,9 +105,7 @@ test("buildFinalAppSystemPrompt injects a continuation prompt after automatic co
     undefined,
     baseSystemPrompt,
   );
-  const secondPrompt = String(
-    afterConsume?.systemPrompt || baseSystemPrompt,
-  );
+  const secondPrompt = String(afterConsume?.systemPrompt || baseSystemPrompt);
   assert.equal(
     secondPrompt.includes(
       "Context compacted; treat this as a routine internal checkpoint.",
