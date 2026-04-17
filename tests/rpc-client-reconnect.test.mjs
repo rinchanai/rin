@@ -332,9 +332,13 @@ test("rpc interactive session queues prompts while recovery is pending", async (
   });
 });
 
-test("rpc interactive session exits connecting after get_state succeeds and refreshes details in background", async () => {
+test("rpc interactive session exits connecting after get_state succeeds and delays resync until history refresh finishes", async () => {
   const calls = [];
   const refreshes = [];
+  let releaseRefresh;
+  const refreshGate = new Promise((resolve) => {
+    releaseRefresh = resolve;
+  });
   const session = new RpcInteractiveSession({
     isConnected: () => true,
     send: async (payload) => {
@@ -358,8 +362,13 @@ test("rpc interactive session exits connecting after get_state succeeds and refr
       return { success: true, data: {} };
     },
   });
-  session.queueRefreshState = async (flags) => {
+  let resyncs = 0;
+  session.emitSessionResynced = () => {
+    resyncs += 1;
+  };
+  session.refreshState = async (flags) => {
     refreshes.push(flags);
+    await refreshGate;
   };
   session.rpcConnected = true;
   session.startupPending = false;
@@ -369,6 +378,7 @@ test("rpc interactive session exits connecting after get_state succeeds and refr
   await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.equal(session.recoveryPending, false);
+  assert.equal(resyncs, 0);
   assert.deepEqual(session.getFrontendStatusEvent(), {
     type: "rpc_frontend_status",
     phase: "working",
@@ -377,11 +387,19 @@ test("rpc interactive session exits connecting after get_state succeeds and refr
   });
   assert.deepEqual(calls.map((payload) => payload.type), ["get_state"]);
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
+
+  releaseRefresh();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(resyncs, 1);
 });
 
 test("rpc interactive session finishes daemon-side session recovery without dropping transport", async () => {
   const calls = [];
   const refreshes = [];
+  let releaseRefresh;
+  const refreshGate = new Promise((resolve) => {
+    releaseRefresh = resolve;
+  });
   const session = new RpcInteractiveSession({
     isConnected: () => true,
     send: async (payload) => {
@@ -407,8 +425,13 @@ test("rpc interactive session finishes daemon-side session recovery without drop
       }
     },
   });
-  session.queueRefreshState = async (flags) => {
+  let resyncs = 0;
+  session.emitSessionResynced = () => {
+    resyncs += 1;
+  };
+  session.refreshState = async (flags) => {
     refreshes.push(flags);
+    await refreshGate;
   };
   session.rpcConnected = true;
   session.startupPending = false;
@@ -425,9 +448,14 @@ test("rpc interactive session finishes daemon-side session recovery without drop
   await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.equal(session.recoveryPending, false);
+  assert.equal(resyncs, 0);
   assert.equal(session.queuedOfflineOps.length, 0);
   assert.deepEqual(calls.map((payload) => payload.type), ["get_state", "prompt"]);
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
+
+  releaseRefresh();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(resyncs, 1);
 });
 
 test("rpc interactive session clears the busy state immediately when abort is requested", async () => {

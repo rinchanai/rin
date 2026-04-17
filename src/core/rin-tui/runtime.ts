@@ -71,19 +71,23 @@ async function completeRpcRecovery(target: any) {
     await target.refreshState(REFRESH_MESSAGES_AND_SESSION);
   }
   target.recoveryPending = false;
-  target.emitSessionResynced();
+  if (!canApplyLightweightState) {
+    target.emitSessionResynced();
+  }
   target.emitFrontendStatus(true);
   const queued = [...target.queuedOfflineOps];
   target.queuedOfflineOps = [];
   for (const operation of queued) {
     await target.sendOrQueue(operation);
   }
-  if (canApplyLightweightState) {
-    if (typeof target.queueRefreshState === "function") {
-      void target.queueRefreshState(REFRESH_MESSAGES_AND_SESSION);
-    } else if (typeof target.refreshState === "function") {
-      void target.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
-    }
+  if (canApplyLightweightState && typeof target.refreshState === "function") {
+    void target
+      .refreshState(REFRESH_MESSAGES_AND_SESSION)
+      .then(() => {
+        target.emitSessionResynced();
+        target.emitFrontendStatus(true);
+      })
+      .catch(() => {});
   }
 }
 
