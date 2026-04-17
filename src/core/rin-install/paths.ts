@@ -11,3 +11,11 @@ export function installerManifestPath(installDir: string) {
 export function legacyInstallerManifestPath(installDir: string) {
   return path.join(installDir, "config", "installer.json");
 }
+
+export function installerLocatorPathForHome(home: string) {
+  return installerManifestPath(defaultInstallDirForHome(home));
+}
+
+export function legacyInstallerLocatorPathForHome(home: string) {
+  return legacyInstallerManifestPath(defaultInstallDirForHome(home));
+}

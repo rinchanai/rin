@@ -638,6 +638,10 @@ export async function startInstaller() {
       `Written: ${written.settingsPath}`,
       `Written: ${written.authPath}`,
       `Written: ${written.manifestPath}`,
+      written.locatorManifestPath &&
+      written.locatorManifestPath !== written.manifestPath
+        ? `Written: ${written.locatorManifestPath}`
+        : "",
       `Written: ${written.launcherPath}`,
       `Written: ${written.rinPath}`,
       `Written: ${written.rinInstallPath}`,

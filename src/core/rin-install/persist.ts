@@ -1,7 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { installerManifestPath, legacyInstallerManifestPath } from "./paths.js";
+import {
+  installerLocatorPathForHome,
+  installerManifestPath,
+  legacyInstallerLocatorPathForHome,
+  legacyInstallerManifestPath,
+} from "./paths.js";
 
 export function reconcileInstallerManifest(
   options: {
@@ -34,15 +39,29 @@ export function reconcileInstallerManifest(
   const target = deps.findSystemUser(options.targetUser) as any;
   const ownerUser = target?.name || options.targetUser;
   const ownerGroup = target?.gid;
+  const ownerHome =
+    target?.home ||
+    path.join(process.platform === "darwin" ? "/Users" : "/home", ownerUser);
   if (!options.elevated) deps.ensureDir(options.installDir);
 
   const manifestPath = installerManifestPath(options.installDir);
   const legacyManifestPath = legacyInstallerManifestPath(options.installDir);
+  const locatorManifestPath = installerLocatorPathForHome(ownerHome);
+  const legacyLocatorManifestPath =
+    legacyInstallerLocatorPathForHome(ownerHome);
   const manifestJson = deps.readInstallerJson<any>(
     manifestPath,
     deps.readInstallerJson<any>(
-      legacyManifestPath,
-      {},
+      locatorManifestPath,
+      deps.readInstallerJson<any>(
+        legacyManifestPath,
+        deps.readInstallerJson<any>(
+          legacyLocatorManifestPath,
+          {},
+          Boolean(options.elevated),
+        ),
+        Boolean(options.elevated),
+      ),
       Boolean(options.elevated),
     ),
     Boolean(options.elevated),
@@ -59,24 +78,44 @@ export function reconcileInstallerManifest(
   }
   manifestJson.updatedAt = new Date().toISOString();
 
+  const manifestPaths = Array.from(
+    new Set([manifestPath, locatorManifestPath]),
+  );
+  const legacyManifestPaths = Array.from(
+    new Set([legacyManifestPath, legacyLocatorManifestPath]),
+  );
+
   if (options.elevated) {
-    deps.writeJsonFileWithPrivilege(
-      manifestPath,
-      manifestJson,
-      ownerUser,
-      ownerGroup,
-    );
-    try {
-      deps.runPrivileged("rm", ["-f", legacyManifestPath]);
-    } catch {}
+    for (const filePath of manifestPaths) {
+      deps.writeJsonFileWithPrivilege(
+        filePath,
+        manifestJson,
+        ownerUser,
+        ownerGroup,
+      );
+    }
+    for (const filePath of legacyManifestPaths) {
+      try {
+        deps.runPrivileged("rm", ["-f", filePath]);
+      } catch {}
+    }
   } else {
-    deps.writeJsonFile(manifestPath, manifestJson);
-    try {
-      fs.rmSync(legacyManifestPath, { force: true });
-    } catch {}
+    for (const filePath of manifestPaths) {
+      deps.writeJsonFile(filePath, manifestJson);
+    }
+    for (const filePath of legacyManifestPaths) {
+      try {
+        fs.rmSync(filePath, { force: true });
+      } catch {}
+    }
   }
 
-  return { manifestPath, legacyManifestPath };
+  return {
+    manifestPath,
+    locatorManifestPath,
+    legacyManifestPath,
+    legacyLocatorManifestPath,
+  };
 }
 
 export function normalizeInstalledChatSettings(
@@ -220,7 +259,7 @@ export async function persistInstallerOutputs(
   launcherJson.updatedAt = new Date().toISOString();
   launcherJson.installedBy = options.currentUser;
 
-  const { manifestPath } = deps.reconcileInstallerManifest(
+  const { manifestPath, locatorManifestPath } = deps.reconcileInstallerManifest(
     {
       targetUser: options.targetUser,
       installDir: options.installDir,
@@ -256,5 +295,12 @@ export async function persistInstallerOutputs(
     options.installDir,
   );
 
-  return { settingsPath, authPath, launcherPath, manifestPath, ...launchers };
+  return {
+    settingsPath,
+    authPath,
+    launcherPath,
+    manifestPath,
+    locatorManifestPath,
+    ...launchers,
+  };
 }

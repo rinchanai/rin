@@ -55,13 +55,15 @@ test("provider-auth computes available thinking levels deterministically", () =>
   );
 });
 
-test("persist reconcileInstallerManifest writes manifest with expected fields", async () => {
+test("persist reconcileInstallerManifest writes primary and locator manifests for custom install dirs", async () => {
   await withTempDir(async (dir) => {
+    const installDir = path.join(dir, "srv", "rin-demo");
+    const ownerHome = path.join(dir, "home", "demo");
     const writes = [];
     const result = persist.reconcileInstallerManifest(
       {
         targetUser: "demo",
-        installDir: dir,
+        installDir,
         provider: "openai",
         modelId: "gpt",
         thinkingLevel: "medium",
@@ -69,7 +71,7 @@ test("persist reconcileInstallerManifest writes manifest with expected fields", 
         elevated: false,
       },
       {
-        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
         ensureDir: async () => {},
         readInstallerJson: (_filePath, fallback) => fallback,
         writeJsonFileWithPrivilege: () => {},
@@ -77,11 +79,45 @@ test("persist reconcileInstallerManifest writes manifest with expected fields", 
         runPrivileged: () => {},
       },
     );
-    assert.ok(result.manifestPath.endsWith(path.join(dir, "installer.json")));
-    assert.equal(writes.length, 1);
+    assert.equal(result.manifestPath, path.join(installDir, "installer.json"));
+    assert.equal(
+      result.locatorManifestPath,
+      path.join(ownerHome, ".rin", "installer.json"),
+    );
+    assert.equal(writes.length, 2);
+    assert.deepEqual(
+      writes.map((entry) => entry.filePath).sort(),
+      [result.manifestPath, result.locatorManifestPath].sort(),
+    );
     assert.equal(writes[0].value.defaultProvider, "openai");
     assert.equal(writes[0].value.defaultModel, "gpt");
     assert.equal(writes[0].value.defaultThinkingLevel, "medium");
+  });
+});
+
+test("persist reconcileInstallerManifest avoids duplicate writes for default install dirs", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const installDir = path.join(ownerHome, ".rin");
+    const writes = [];
+    const result = persist.reconcileInstallerManifest(
+      {
+        targetUser: "demo",
+        installDir,
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: async () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        runPrivileged: () => {},
+      },
+    );
+    assert.equal(result.manifestPath, result.locatorManifestPath);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].filePath, path.join(installDir, "installer.json"));
   });
 });
 
