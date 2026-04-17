@@ -4,6 +4,7 @@ import {
   dropLegacyChatSettings,
   normalizeStoredChatSettings,
 } from "../chat/settings.js";
+import { normalizeLanguageTag } from "../language.js";
 import { isNonArrayObject, loadFirstValidCandidate } from "./candidate-loader.js";
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 import {
@@ -132,6 +133,7 @@ export function reconcileInstallerManifest(
     provider?: string;
     modelId?: string;
     thinkingLevel?: string;
+    language?: string;
     chatConfig?: any;
     release?: InstalledReleaseInfo;
     elevated?: boolean;
@@ -182,6 +184,8 @@ export function reconcileInstallerManifest(
   if (options.modelId) manifestJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     manifestJson.defaultThinkingLevel = options.thinkingLevel;
+  const language = String(options.language || "").trim();
+  if (language) manifestJson.language = normalizeLanguageTag(language, "en");
   const normalizedRelease = normalizeInstalledReleaseInfo(options.release);
   if (normalizedRelease) {
     manifestJson.release = {
@@ -272,6 +276,7 @@ export async function persistInstallerOutputs(
     provider: string;
     modelId: string;
     thinkingLevel: string;
+    language?: string;
     chatConfig: any;
     authData: any;
     release?: InstalledReleaseInfo;
@@ -314,6 +319,8 @@ export async function persistInstallerOutputs(
   if (options.modelId) settingsJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     settingsJson.defaultThinkingLevel = options.thinkingLevel;
+  const language = String(options.language || "").trim();
+  if (language) settingsJson.language = normalizeLanguageTag(language, "en");
 
   const authPath = installAuthPath(options.installDir);
   const authJson = normalizeInstallerRecord(
@@ -340,6 +347,7 @@ export async function persistInstallerOutputs(
       provider: options.provider,
       modelId: options.modelId,
       thinkingLevel: options.thinkingLevel,
+      language,
       chatConfig: normalizeChatConfigRoot(options.chatConfig) || {},
       release: options.release,
       elevated: options.elevated,

@@ -12,6 +12,10 @@ const interactive = await import(
     path.join(rootDir, "dist", "core", "rin-install", "interactive.js"),
   ).href
 );
+const installerI18n = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "i18n.js"))
+    .href
+);
 
 test("installer interactive helpers describe dir state and plan text", () => {
   const existing = interactive.describeInstallDirState("/tmp/demo", {
@@ -76,6 +80,22 @@ test("installer interactive helpers compute final requirements", () => {
   assert.ok(
     local.some((line) => line.includes("skip daemon service installation")),
   );
+});
+
+test("promptInstallerLanguage supports custom BCP 47 tags", async () => {
+  const result = await installerI18n.promptInstallerLanguage({
+    ensureNotCancelled(value) {
+      return value;
+    },
+    async select() {
+      return "custom";
+    },
+    async text() {
+      return "zh-Hans-CN";
+    },
+  });
+
+  assert.equal(result, "zh-Hans-CN");
 });
 
 test("promptProviderSetup always requires choosing a provider", async () => {

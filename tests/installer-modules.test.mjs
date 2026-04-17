@@ -330,6 +330,40 @@ test("persist reconcileInstallerManifest avoids duplicate writes for default ins
   });
 });
 
+test("persist reconcileInstallerManifest stores configured language in installer manifest", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const installDir = path.join(ownerHome, ".rin");
+    const writes = [];
+    const result = persist.reconcileInstallerManifest(
+      {
+        targetUser: "demo",
+        installDir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        language: "zh-CN",
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: async () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        runPrivileged: () => {},
+      },
+    );
+
+    assert.equal(result.manifestPath, result.locatorManifestPath);
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].value.defaultProvider, "openai");
+    assert.equal(writes[0].value.defaultModel, "gpt");
+    assert.equal(writes[0].value.defaultThinkingLevel, "medium");
+    assert.equal(writes[0].value.language, "zh-CN");
+  });
+});
+
 test("persist reconcileInstallerManifest preserves normalized legacy chat config when new chat config is malformed", async () => {
   await withTempDir(async (dir) => {
     const installDir = path.join(dir, "srv", "rin-demo");
@@ -363,6 +397,51 @@ test("persist reconcileInstallerManifest preserves normalized legacy chat config
       assert.equal("koishi" in entry.value, false);
       assert.equal(entry.value.defaultProvider, "openai");
     }
+  });
+});
+
+test("persistInstallerOutputs stores configured language in settings", async () => {
+  await withTempDir(async (dir) => {
+    const writes = [];
+    const launchWrites = [];
+    const result = await persist.persistInstallerOutputs(
+      {
+        currentUser: "alice",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        language: "zh-CN",
+        chatConfig: {},
+        authData: {},
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        ensureDir: async () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        launcherMetadataPathForUser: () => path.join(dir, "launcher.json"),
+        readJsonFile: (_filePath, fallback) => fallback,
+        writeLaunchersForUser: () => {
+          launchWrites.push(true);
+          return {
+            rinPath: path.join(dir, "rin"),
+            rinInstallPath: path.join(dir, "rin-install"),
+          };
+        },
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    assert.equal(result.settingsPath.endsWith(path.join(dir, "settings.json")), true);
+    assert.equal(launchWrites.length, 1);
+    const settingsWrite = writes.find((entry) => entry.filePath === result.settingsPath);
+    assert.ok(settingsWrite);
+    assert.equal(settingsWrite.value.language, "zh-CN");
   });
 });
 

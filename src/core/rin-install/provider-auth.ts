@@ -2,6 +2,7 @@ import { spinner, text } from "@clack/prompts";
 
 import { computeAvailableThinkingLevels } from "../model-thinking-levels.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { createInstallerI18n, type InstallerI18n } from "./i18n.js";
 import { installAuthPath } from "./paths.js";
 
 export { computeAvailableThinkingLevels };
@@ -53,8 +54,10 @@ export async function configureProviderAuth(
   deps: {
     readJsonFile: <T>(filePath: string, fallback: T) => T;
     ensureNotCancelled: <T>(value: T | symbol) => T;
+    i18n?: InstallerI18n;
   },
 ) {
+  const i18n = deps.i18n || createInstallerI18n();
   const authStorage = await createInstallerAuthStorage(
     installDir,
     deps.readJsonFile,
@@ -77,24 +80,23 @@ export async function configureProviderAuth(
   if (oauthProvider) {
     const loginSpinner = spinner();
     let lastAuthUrl = "";
-    loginSpinner.start(`Starting ${oauthProvider.name || provider} login...`);
+    loginSpinner.start(i18n.startingLogin(oauthProvider.name || provider));
     try {
       await authStorage.login(provider, {
         onAuth(info: { url: string; instructions?: string }) {
           lastAuthUrl = String(info?.url || "");
           loginSpinner.stop(
-            `Open this URL to continue login:\n${lastAuthUrl}${info?.instructions ? `\n${info.instructions}` : ""}`,
+            i18n.openUrlToContinueLogin(lastAuthUrl, info?.instructions),
           );
         },
         async onPrompt(prompt: { message: string; placeholder?: string }) {
           return String(
             deps.ensureNotCancelled(
               await text({
-                message: prompt.message || "Enter login value.",
+                message: prompt.message || i18n.enterLoginValueMessage,
                 placeholder: prompt.placeholder,
                 validate(value) {
-                  if (!String(value || "").trim())
-                    return "A value is required.";
+                  if (!String(value || "").trim()) return i18n.valueRequired;
                 },
               }),
             ),
@@ -102,20 +104,17 @@ export async function configureProviderAuth(
         },
         onProgress(message: string) {
           loginSpinner.message(
-            message || `Waiting for ${oauthProvider.name || provider} login...`,
+            message || i18n.waitingForLogin(oauthProvider.name || provider),
           );
         },
         async onManualCodeInput() {
           return String(
             deps.ensureNotCancelled(
               await text({
-                message: "Paste the redirect URL or code from the browser.",
-                placeholder: lastAuthUrl
-                  ? "paste the final redirect URL or device code"
-                  : "paste the code",
+                message: i18n.manualCodeInputMessage,
+                placeholder: i18n.manualCodePlaceholder(lastAuthUrl),
                 validate(value) {
-                  if (!String(value || "").trim())
-                    return "A value is required.";
+                  if (!String(value || "").trim()) return i18n.valueRequired;
                 },
               }),
             ),
@@ -123,14 +122,14 @@ export async function configureProviderAuth(
         },
         signal: AbortSignal.timeout(10 * 60 * 1000),
       });
-      loginSpinner.stop(`${oauthProvider.name || provider} login complete.`);
+      loginSpinner.stop(i18n.loginComplete(oauthProvider.name || provider));
       return {
         available: true,
         authKind: "oauth",
         authData: authStorage.getAll?.() || {},
       };
     } catch (error: any) {
-      loginSpinner.stop(`Login failed for ${oauthProvider.name || provider}.`);
+      loginSpinner.stop(i18n.loginFailed(oauthProvider.name || provider));
       throw error;
     }
   }
@@ -138,10 +137,10 @@ export async function configureProviderAuth(
   const token = String(
     deps.ensureNotCancelled(
       await text({
-        message: `Enter the API key or token for ${provider}.`,
+        message: i18n.enterApiKeyMessage(provider),
         placeholder: "token",
         validate(value) {
-          if (!String(value || "").trim()) return "A token is required.";
+          if (!String(value || "").trim()) return i18n.tokenRequired;
         },
       }),
     ),

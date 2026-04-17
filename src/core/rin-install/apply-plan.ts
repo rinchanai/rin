@@ -4,7 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-import { isCancel, note, spinner } from "@clack/prompts";
+import { spinner } from "@clack/prompts";
+
+import { createInstallerI18n, type InstallerI18n } from "./i18n.js";
 
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 
@@ -15,6 +17,7 @@ export type FinalizeInstallOptions = {
   provider?: string;
   modelId?: string;
   thinkingLevel?: string;
+  language?: string;
   chatDescription?: string;
   chatDetail?: string;
   chatConfig?: any;
@@ -28,11 +31,13 @@ export async function runFinalizeInstallPlanInChild(
   message: string,
   deps: {
     ensureNotCancelled: <T>(value: T | symbol) => T;
+    i18n?: InstallerI18n;
   },
 ) {
   const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-"));
   const resultPath = path.join(resultDir, "result.json");
   const errorPath = path.join(resultDir, "error.txt");
+  const i18n = deps.i18n || createInstallerI18n(options.language || "en");
   try {
     const child = spawn(
       process.execPath,
@@ -59,12 +64,12 @@ export async function runFinalizeInstallPlanInChild(
         else resolve(code ?? 1);
       });
     }).catch((error) => {
-      waitSpinner.stop("Install step failed.");
+      waitSpinner.stop(i18n.installStepFailed);
       throw error;
     });
 
     if (exitCode !== 0) {
-      waitSpinner.stop("Install step failed.");
+      waitSpinner.stop(i18n.installStepFailed);
       let errorMessage = "rin_installer_apply_failed";
       try {
         errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
@@ -76,11 +81,11 @@ export async function runFinalizeInstallPlanInChild(
     try {
       parsed = JSON.parse(fs.readFileSync(resultPath, "utf8"));
     } catch {
-      waitSpinner.stop("Install step failed.");
+      waitSpinner.stop(i18n.installStepFailed);
       throw new Error("rin_installer_apply_result_missing");
     }
 
-    waitSpinner.stop("Install step complete.");
+    waitSpinner.stop(i18n.installStepComplete);
     return parsed;
   } finally {
     try {

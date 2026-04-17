@@ -28,6 +28,7 @@ import {
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
+import { createInstallerI18n, promptInstallerLanguage } from "./i18n.js";
 import { detectCurrentUser, repoRootFromHere, runCommand } from "./common.js";
 import { finalizeInstallPlan } from "./finalize.js";
 import { releaseInfoFromEnv } from "../rin-lib/release.js";
@@ -40,7 +41,8 @@ import { startUpdater } from "./updater.js";
 
 function ensureNotCancelled<T>(value: T | symbol): T {
   if (isCancel(value)) {
-    cancel("Installer cancelled.");
+    const i18n = createInstallerI18n(process.env.RIN_INSTALL_LANGUAGE || "en");
+    cancel(i18n.installerCancelled);
     process.exit(1);
   }
   return value as T;
@@ -111,10 +113,18 @@ export async function startInstaller() {
     return;
   }
 
+  const selectedLanguage = await promptInstallerLanguage({
+    ensureNotCancelled,
+    select,
+    text,
+  });
+  process.env.RIN_INSTALL_LANGUAGE = selectedLanguage;
+  const i18n = createInstallerI18n(selectedLanguage);
+
   const currentUser = detectCurrentUser();
   const allUsers = listSystemUsers();
-  intro("Rin Installer");
-  note(buildInstallSafetyBoundaryText(), "Safety boundary");
+  intro(i18n.introTitle);
+  note(buildInstallSafetyBoundaryText(i18n), i18n.safetyBoundaryTitle);
 
   const promptApi = { ensureNotCancelled, select, text, confirm };
   const target = await promptTargetInstall(
@@ -122,17 +132,17 @@ export async function startInstaller() {
     currentUser,
     allUsers,
     targetHomeForUser,
+    i18n,
   );
   if (target.cancelled) {
     note(
-      [
-        "No eligible existing users were found on this system.",
-        `Detected current user: ${currentUser}`,
-        `Visible users: ${allUsers.map((entry) => entry.name).join(", ") || "none"}`,
-      ].join("\n"),
-      "Target user",
+      i18n.noEligibleUsersText(
+        currentUser,
+        allUsers.map((entry) => entry.name),
+      ),
+      i18n.targetUserTitle,
     );
-    outro("Nothing installed.");
+    outro(i18n.nothingInstalled);
     return;
   }
 
@@ -140,67 +150,64 @@ export async function startInstaller() {
   const installDirNote = describeInstallDirState(
     installDir,
     summarizeDirState(installDir),
+    i18n,
   );
   note(installDirNote.text, installDirNote.title);
 
   const { provider, modelId, thinkingLevel, authResult } =
-    await promptProviderSetup(promptApi, installDir, readJsonFile);
-  const { chatDescription, chatDetail, chatConfig } =
-    await promptChatSetup(promptApi);
+    await promptProviderSetup(promptApi, installDir, readJsonFile, {}, i18n);
+  const { chatDescription, chatDetail, chatConfig } = await promptChatSetup(
+    promptApi,
+    i18n,
+  );
 
   note(
-    buildInstallPlanText({
-      currentUser,
-      targetUser,
-      installDir,
-      provider,
-      modelId,
-      thinkingLevel,
-      authAvailable: Boolean(authResult.available),
-      chatDescription,
-      chatDetail,
-    }),
-    "Install choices",
+    buildInstallPlanText(
+      {
+        currentUser,
+        targetUser,
+        installDir,
+        provider,
+        modelId,
+        thinkingLevel,
+        authAvailable: Boolean(authResult.available),
+        chatDescription,
+        chatDetail,
+        language: selectedLanguage,
+      },
+      i18n,
+    ),
+    i18n.installChoicesTitle,
   );
 
   const ownership = describeOwnership(targetUser, installDir);
   if (!ownership.ownerMatches && ownership.targetUid >= 0) {
-    note(
-      [
-        `Target dir owner uid/gid: ${ownership.statUid}:${ownership.statGid}`,
-        `Target user uid/gid: ${ownership.targetUid}:${ownership.targetGid}`,
-        "This directory is not currently owned by the selected target user.",
-        "The installer will still write config if it can, but you may want to fix ownership before switching fully.",
-      ].join("\n"),
-      "Ownership check",
-    );
+    note(i18n.ownershipMismatchText(ownership), i18n.ownershipCheckTitle);
   }
-  if (!ownership.writable)
-    note(
-      "The selected install directory is not writable by the current installer process.",
-      "Ownership check",
-    );
+  if (!ownership.writable) {
+    note(i18n.ownershipNotWritableText, i18n.ownershipCheckTitle);
+  }
 
   const installServiceNow =
     process.platform === "darwin" || process.platform === "linux";
   const needsElevatedWrite = !ownership.writable;
   const needsElevatedService = installServiceNow && targetUser !== currentUser;
-  const finalRequirements = buildFinalRequirements({
-    installServiceNow,
-    needsElevatedWrite,
-    needsElevatedService,
-  });
+  const finalRequirements = buildFinalRequirements(
+    {
+      installServiceNow,
+      needsElevatedWrite,
+      needsElevatedService,
+    },
+    i18n,
+  );
   const shouldProceed = ensureNotCancelled(
     await confirm({
-      message: [
-        "Finalize installation now?",
-        ...finalRequirements.map((item) => `- ${item}`),
-      ].join("\n"),
+      message: i18n.finalizeInstallationMessage(finalRequirements),
       initialValue: true,
     }),
   );
   if (!shouldProceed) {
-    outro("Installer finished without writing changes.");
+    outro(i18n.installerFinishedWithoutWritingChanges);
     return;
   }
 
@@ -212,6 +219,7 @@ export async function startInstaller() {
       provider,
       modelId,
       thinkingLevel,
+      language: selectedLanguage,
       chatDescription,
       chatDetail,
       chatConfig,
@@ -219,9 +227,9 @@ export async function startInstaller() {
       release: releaseInfoFromEnv(),
     },
     needsElevatedWrite
-      ? "Publishing runtime and writing configuration with elevated permissions..."
-      : "Publishing runtime and writing configuration...",
-    { ensureNotCancelled },
+      ? i18n.publishingRuntimeMessageElevated
+      : i18n.publishingRuntimeMessage,
+    { ensureNotCancelled, i18n },
   );
   const {
     written,
@@ -235,53 +243,46 @@ export async function startInstaller() {
 
   note(
     [
-      `Target install dir: ${installDir}`,
-      `Written: ${written.settingsPath}`,
-      `Written: ${written.authPath}`,
-      `Written: ${written.manifestPath}`,
+      `${i18n.targetInstallDirLabel}: ${installDir}`,
+      `${i18n.writtenPathLabel}: ${written.settingsPath}`,
+      `${i18n.writtenPathLabel}: ${written.authPath}`,
+      `${i18n.writtenPathLabel}: ${written.manifestPath}`,
       written.locatorManifestPath &&
       written.locatorManifestPath !== written.manifestPath
-        ? `Written: ${written.locatorManifestPath}`
+        ? `${i18n.writtenPathLabel}: ${written.locatorManifestPath}`
         : "",
-      `Written: ${written.launcherPath}`,
-      `Written: ${written.rinPath}`,
-      `Written: ${written.rinInstallPath}`,
-      `Written: ${publishedRuntime.currentLink}`,
-      `Written: ${publishedRuntime.releaseRoot}`,
-      installedDocsDir ? `Written: ${installedDocsDir}` : "",
+      `${i18n.writtenPathLabel}: ${written.launcherPath}`,
+      `${i18n.writtenPathLabel}: ${written.rinPath}`,
+      `${i18n.writtenPathLabel}: ${written.rinInstallPath}`,
+      `${i18n.writtenPathLabel}: ${publishedRuntime.currentLink}`,
+      `${i18n.writtenPathLabel}: ${publishedRuntime.releaseRoot}`,
+      installedDocsDir ? `${i18n.writtenPathLabel}: ${installedDocsDir}` : "",
       ...(Array.isArray(installedDocs?.pi)
-        ? installedDocs.pi.map((item: string) => `Written: ${item}`)
+        ? installedDocs.pi.map((item: string) => `${i18n.writtenPathLabel}: ${item}`)
         : []),
-      installedService ? `Written: ${installedService.servicePath}` : "",
       installedService
-        ? `${installedService.kind} label: ${installedService.label}`
+        ? `${i18n.writtenPathLabel}: ${installedService.servicePath}`
+        : "",
+      installedService
+        ? `${installedService.kind} ${i18n.serviceLabelLabel}: ${installedService.label}`
         : "",
     ].join("\n"),
-    "Written paths",
+    i18n.writtenPathsTitle,
   );
 
-  const userSuffix = currentUser === targetUser ? "" : ` -u ${targetUser}`;
   if (daemonReady) {
-    note(
-      [
-        "Installation is done. Rin will now open an initialization TUI.",
-        "You can exit it anytime; the installer will print the next-step reminder afterwards.",
-      ].join("\n"),
-      "Launching init",
-    );
+    note(i18n.launchingInitText, i18n.launchingInitTitle);
     await launchInstallerInitTui({
       rinPath: written.rinPath,
       sourceRoot: repoRootFromHere(),
     });
     note(
-      buildPostInstallInitExitText({ currentUser, targetUser }),
-      "After init",
+      buildPostInstallInitExitText({ currentUser, targetUser }, i18n),
+      i18n.afterInitTitle,
     );
   }
 
-  outro(
-    `Installer wrote config for ${targetUser}.${installedService ? ` (${installedService.kind} service installed).` : ""}`,
-  );
+  outro(i18n.outroInstalled(targetUser, installedService?.kind));
 }
 
 async function main() {

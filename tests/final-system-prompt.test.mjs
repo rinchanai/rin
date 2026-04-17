@@ -62,6 +62,27 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
   );
 });
 
+test("buildFinalAppSystemPrompt injects configured language from settings", async () => {
+  const cwd = fs.mkdtempSync(path.join(rootDir, ".tmp-rin-lang-prompt-cwd-"));
+  const agentDir = fs.mkdtempSync(
+    path.join(rootDir, ".tmp-rin-lang-prompt-agent-"),
+  );
+  fs.writeFileSync(
+    path.join(agentDir, "settings.json"),
+    JSON.stringify({ language: "zh-CN" }, null, 2),
+    "utf8",
+  );
+
+  const { baseSystemPrompt, finalSystemPrompt } = await buildFinalAppSystemPrompt({
+    cwd,
+    agentDir,
+  });
+
+  assert.ok(baseSystemPrompt.includes("Configured runtime defaults:"));
+  assert.ok(baseSystemPrompt.includes("Preferred language: zh-CN"));
+  assert.ok(finalSystemPrompt.includes("Preferred language: zh-CN"));
+});
+
 test("buildFinalAppSystemPrompt injects a continuation prompt after automatic compaction", async () => {
   const { session, baseSystemPrompt } = await buildFinalAppSystemPrompt();
   runtimeMod.writeCompactionContinuationMarker(session, {
@@ -112,9 +133,9 @@ test("buildFinalAppSystemPrompt injects a continuation prompt after automatic co
 });
 
 test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "rin-final-prompt-cwd-"));
+  const cwd = fs.mkdtempSync(path.join(rootDir, ".tmp-rin-final-prompt-cwd-"));
   const agentDir = fs.mkdtempSync(
-    path.join(os.tmpdir(), "rin-final-prompt-agent-"),
+    path.join(rootDir, ".tmp-rin-final-prompt-agent-"),
   );
   fs.writeFileSync(
     path.join(cwd, "AGENTS.md"),

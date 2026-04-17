@@ -4,6 +4,10 @@ import path from "node:path";
 import { isContextOverflow } from "@mariozechner/pi-ai";
 
 import { estimateContextTokens } from "../rin-tui/session-helpers.js";
+import {
+  buildConfiguredLanguageSystemPrompt,
+  readConfiguredLanguageFromSettings,
+} from "../language.js";
 import { loadRinCodingAgent } from "./loader.js";
 import {
   clearCompactionContinuationMarker,
@@ -161,6 +165,9 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const loadedContextFiles =
     session._resourceLoader.getAgentsFiles().agentsFiles;
   const docsBlock = buildRinDocsBlock(promptAgentDir);
+  const configuredLanguageBlock = buildConfiguredLanguageSystemPrompt(
+    readConfiguredLanguageFromSettings(promptAgentDir),
+  );
 
   let prompt = String(loaderSystemPrompt || "").trim();
   if (!prompt) {
@@ -176,9 +183,12 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
       skillGuidanceBlock,
       "",
       docsBlock,
+      configuredLanguageBlock ? `\n${configuredLanguageBlock}` : "",
     ].join("\n");
   } else {
-    prompt = [prompt, docsBlock].filter(Boolean).join("\n\n");
+    prompt = [prompt, docsBlock, configuredLanguageBlock]
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   if (appendSystemPrompt) prompt += `\n\n${appendSystemPrompt}`;
