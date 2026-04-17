@@ -8,6 +8,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
+  buildUserFacingTextResult,
   getToolResultUserText,
   prepareTruncatedAgentUserText,
   renderTextToolResult,
@@ -45,6 +46,14 @@ function formatGetChatMessageResult(
   return renderTextToolResult(result, options, theme, showImages, {
     truncation: result.details?.truncation as TruncationResult | undefined,
   });
+}
+
+function stripRequestedMessageFields(text: string, messageId: string, chatKey?: string) {
+  const filtered = text
+    .split("\n")
+    .filter((line) => line !== `messageId=${messageId}`)
+    .filter((line) => !(chatKey && line === `chatKey=${chatKey}`));
+  return filtered.length ? filtered.join("\n") : text;
 }
 
 export default function chatGetMessageExtension(pi: ExtensionAPI) {
@@ -100,7 +109,17 @@ export default function chatGetMessageExtension(pi: ExtensionAPI) {
           return matches.length > 1 ? `match ${index + 1}\n${body}` : body;
         })
         .join("\n\n");
-      const truncated = prepareTruncatedAgentUserText(text, text);
+      const userText = matches
+        .map((item: any, index: number) => {
+          const body = stripRequestedMessageFields(
+            describeChatMessageRecord(item),
+            messageId,
+            chatKey,
+          );
+          return matches.length > 1 ? `match ${index + 1}\n${body}` : body;
+        })
+        .join("\n\n");
+      const truncated = prepareTruncatedAgentUserText(text, userText);
 
       return {
         content: [{ type: "text", text: truncated.outputText }],
@@ -117,9 +136,13 @@ export default function chatGetMessageExtension(pi: ExtensionAPI) {
     renderResult(result: any, options, theme, context) {
       const details = result.details as GetChatMessageDetails | undefined;
       if (!result.isError) {
+        const userResult = buildUserFacingTextResult(result, context.showImages, {
+          userText: details?.userText,
+          details: { truncation: details?.truncation },
+        });
         return new Text(
           formatGetChatMessageResult(
-            result,
+            userResult,
             options,
             theme,
             context.showImages,

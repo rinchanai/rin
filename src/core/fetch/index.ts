@@ -17,7 +17,8 @@ import {
   normalizeRawText,
 } from "./text-utils.js";
 import {
-  prepareTruncatedText,
+  buildUserFacingTextResult,
+  prepareTruncatedAgentUserText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 
@@ -41,6 +42,7 @@ type FetchDetails = {
   charset?: string;
   bytes: number;
   title?: string;
+  userText?: string;
   fullOutputPath?: string;
   truncation?: TruncationResult;
 };
@@ -57,6 +59,18 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
     `MIME: ${details.mimeType}`,
     `Bytes: ${details.bytes}`,
   ];
+  if (details.title) lines.push(`Title: ${details.title}`);
+  lines.push("", bodyText || "(empty response body)");
+  return lines.join("\n");
+}
+
+function formatUserTextResponse(details: FetchDetails, bodyText: string) {
+  const lines = [
+    details.finalUrl !== details.url ? `Final URL: ${details.finalUrl}` : "",
+    `Status: ${details.status} ${details.statusText}`.trim(),
+    `MIME: ${details.mimeType}`,
+    `Bytes: ${details.bytes}`,
+  ].filter(Boolean);
   if (details.title) lines.push(`Title: ${details.title}`);
   lines.push("", bodyText || "(empty response body)");
   return lines.join("\n");
@@ -177,15 +191,17 @@ function formatFailedFetch(
 }
 
 async function buildFetchOutputText(details: FetchDetails, bodyText: string) {
-  const fullText = formatTextResponse(details, bodyText);
-  const truncated = prepareTruncatedText(fullText, {
+  const agentText = formatTextResponse(details, bodyText);
+  const userText = formatUserTextResponse(details, bodyText);
+  const truncated = prepareTruncatedAgentUserText(agentText, userText, {
     maxLines: DEFAULT_MAX_LINES,
     maxBytes: DEFAULT_MAX_BYTES,
   });
 
-  if (truncated.truncation) {
-    details.truncation = truncated.truncation;
-    details.fullOutputPath = await writeFetchFullOutput(fullText).catch(
+  details.userText = truncated.userPreviewText;
+  details.truncation = truncated.userTruncation;
+  if (truncated.truncation || truncated.userTruncation) {
+    details.fullOutputPath = await writeFetchFullOutput(agentText).catch(
       () => undefined,
     );
   }
@@ -234,9 +250,17 @@ export default function fetchExtension(pi: ExtensionAPI) {
     renderResult(result, options, theme, context) {
       const text =
         (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const details = (result.details as FetchDetails | undefined) || undefined;
+      const userResult = buildUserFacingTextResult(result as any, context.showImages, {
+        userText: details?.userText,
+        details: {
+          truncation: details?.truncation,
+          fullOutputPath: details?.fullOutputPath,
+        },
+      });
       text.setText(
         formatFetchResult(
-          result as any,
+          userResult as any,
           options as any,
           theme,
           context.showImages,

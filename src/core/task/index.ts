@@ -8,7 +8,7 @@ import { Type } from "@sinclair/typebox";
 
 import { normalizeChatKey } from "../chat/support.js";
 import {
-  getToolResultUserText,
+  buildUserFacingTextResult,
   prepareTruncatedAgentUserText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
@@ -445,8 +445,11 @@ function renderTaskResult(
       0,
     );
   }
+  const userResult = buildUserFacingTextResult(result, context.showImages, {
+    userText: details?.userText,
+  });
   return new Text(
-    getToolResultUserText(result, context.showImages, details?.userText),
+    renderTextToolResult(userResult, options, theme, context.showImages),
     0,
     0,
   );

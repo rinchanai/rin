@@ -8,7 +8,8 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  prepareTruncatedText,
+  buildUserFacingTextResult,
+  prepareTruncatedAgentUserText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 import { safeString } from "../text-utils.js";
@@ -24,6 +25,7 @@ type ListChatLogDetails = {
   filePath: string;
   count: number;
   entries: any[];
+  userText?: string;
   truncation?: TruncationResult;
 };
 
@@ -46,6 +48,13 @@ function formatListChatLogResult(
   return renderTextToolResult(result, options, theme, showImages, {
     truncation: result.details?.truncation as TruncationResult | undefined,
   });
+}
+
+function formatUserListChatLogText(filePath: string, entries: any[], body: string) {
+  if (!entries.length) {
+    return `No chat log found\npath=${filePath}`;
+  }
+  return [`path=${filePath}`, `count=${entries.length}`, "", body].join("\n");
 }
 
 export default function chatListChatLogExtension(pi: ExtensionAPI) {
@@ -76,17 +85,19 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
       const agentDir = getAgentDir();
       const { readChatLog, formatChatLog } = await loadChatLogModule();
       const { filePath, entries } = readChatLog(agentDir, chatKey, date);
-      const text = entries.length
+      const body = entries.length ? formatChatLog(entries) : "";
+      const agentText = entries.length
         ? [
             `chatKey=${chatKey}`,
             `date=${date}`,
             `path=${filePath}`,
             `count=${entries.length}`,
             "",
-            formatChatLog(entries),
+            body,
           ].join("\n")
         : `No chat log found\nchatKey=${chatKey}\ndate=${date}\npath=${filePath}`;
-      const truncated = prepareTruncatedText(text);
+      const userText = formatUserListChatLogText(filePath, entries, body);
+      const truncated = prepareTruncatedAgentUserText(agentText, userText);
       return {
         content: [{ type: "text", text: truncated.outputText }],
         details: {
@@ -95,7 +106,8 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
           filePath,
           count: entries.length,
           entries,
-          truncation: truncated.truncation,
+          userText: truncated.userPreviewText,
+          truncation: truncated.userTruncation,
         } satisfies ListChatLogDetails,
         isError: false,
       };
@@ -104,8 +116,13 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
       return new Text(formatListChatLogCall(args, theme), 0, 0);
     },
     renderResult(result, options, theme, context) {
+      const details = result.details as ListChatLogDetails | undefined;
+      const userResult = buildUserFacingTextResult(result, context.showImages, {
+        userText: details?.userText,
+        details: { truncation: details?.truncation },
+      });
       return new Text(
-        formatListChatLogResult(result, options, theme, context.showImages),
+        formatListChatLogResult(userResult, options, theme, context.showImages),
         0,
         0,
       );
