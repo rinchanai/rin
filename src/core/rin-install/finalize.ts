@@ -50,6 +50,7 @@ async function applyInstalledRuntime(
   const provider = String(options.provider || "");
   const modelId = String(options.modelId || "");
   const thinkingLevel = String(options.thinkingLevel || "");
+  const language = String(options.language || "").trim();
   const chatConfig = options.chatConfig || null;
   const authData = options.authData || {};
   const sourceRoot =
@@ -91,6 +92,7 @@ async function applyInstalledRuntime(
       provider,
       modelId,
       thinkingLevel,
+      language,
       chatConfig,
       release,
       elevated: useElevatedWrite,
@@ -127,6 +129,7 @@ async function applyInstalledRuntime(
           provider,
           modelId,
           thinkingLevel,
+          language,
           chatConfig,
           authData,
           release,
