@@ -7,6 +7,8 @@ import { execFileSync } from "node:child_process";
 import { pickPrivilegeCommand } from "../rin-lib/system.js";
 import {
   ensureDir,
+  installedRuntimeNodeCommandArgs,
+  installedRuntimePathValue,
   runCommandAsUser,
   runPrivileged,
   writeTextFile,
@@ -50,7 +52,11 @@ export function buildLaunchdPlist(
   const stdoutPath = daemonStdoutLogPath(installDir);
   const stderrPath = daemonStderrLogPath(installDir);
   const plistPath = launchAgentPlistPathForHome(targetHome, label);
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n  <dict>\n    <key>Label</key>\n    <string>${label}</string>\n    <key>ProgramArguments</key>\n    <array>\n      <string>${process.execPath}</string>\n      <string>${daemonEntry}</string>\n    </array>\n    <key>EnvironmentVariables</key>\n    <dict>\n      <key>RIN_DIR</key>\n      <string>${installDir}</string>\n    </dict>\n    <key>WorkingDirectory</key>\n    <string>${targetHome}</string>\n    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>StandardOutPath</key>\n    <string>${stdoutPath}</string>\n    <key>StandardErrorPath</key>\n    <string>${stderrPath}</string>\n  </dict>\n</plist>\n`;
+  const runtimePath = installedRuntimePathValue();
+  const programArguments = [...installedRuntimeNodeCommandArgs(), daemonEntry]
+    .map((entry) => `      <string>${entry}</string>`)
+    .join("\n");
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n  <dict>\n    <key>Label</key>\n    <string>${label}</string>\n    <key>ProgramArguments</key>\n    <array>\n${programArguments}\n    </array>\n    <key>EnvironmentVariables</key>\n    <dict>\n      <key>PATH</key>\n      <string>${runtimePath}</string>\n      <key>RIN_DIR</key>\n      <string>${installDir}</string>\n    </dict>\n    <key>WorkingDirectory</key>\n    <string>${targetHome}</string>\n    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>StandardOutPath</key>\n    <string>${stdoutPath}</string>\n    <key>StandardErrorPath</key>\n    <string>${stderrPath}</string>\n  </dict>\n</plist>\n`;
   return { label, plistPath, plist, stdoutPath, stderrPath };
 }
 
@@ -131,7 +137,11 @@ export function buildSystemdUserService(
   const targetHome = targetHomeForUser(targetUser);
   const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-")}.service`;
   const unitPath = systemdUserUnitPathForHome(targetHome, unitName);
-  const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=RIN_DIR=${installDir}\nExecStart=${process.execPath} ${daemonEntry}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
+  const runtimePath = installedRuntimePathValue();
+  const execStart = [...installedRuntimeNodeCommandArgs(), daemonEntry].join(
+    " ",
+  );
+  const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=PATH=${runtimePath}\nEnvironment=RIN_DIR=${installDir}\nExecStart=${execStart}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
   return {
     kind: "systemd" as const,
     label: unitName,
