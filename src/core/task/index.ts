@@ -201,6 +201,11 @@ function buildTexts(action: string, data: any, params: any) {
 }
 
 const taskSchema = Type.Object({
+  id: Type.Optional(
+    Type.String({
+      description: "Existing task id to update in place. Omit to create a new task.",
+    }),
+  ),
   name: Type.Optional(
     Type.String({ description: "Human-friendly task name." }),
   ),
