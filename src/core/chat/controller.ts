@@ -45,6 +45,12 @@ function commandNameFromCommandLine(commandLine: string) {
   return safeString(commandPart.split(/\s+/, 1)[0]).trim();
 }
 
+function isAgentAlreadyProcessingError(error: unknown) {
+  return safeString((error as any)?.message || error).includes(
+    "Agent is already processing.",
+  );
+}
+
 export class ChatController {
   app: any;
   chatKey: string;
@@ -802,6 +808,11 @@ export class ChatController {
         requestTag,
       });
     } catch (error: any) {
+      if (mode !== "steer" && isAgentAlreadyProcessingError(error)) {
+        if (this.liveTurn === liveTurn) this.liveTurn = null;
+        this.clearTurnPulse();
+        return await this.runSteerNow(input);
+      }
       this.failLiveTurn(
         error instanceof Error
           ? error

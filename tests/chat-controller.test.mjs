@@ -966,6 +966,50 @@ test("chat controller still steers when the attached session is streaming withou
   assert.equal(result?.steered, true);
 });
 
+test("chat controller falls back to steer when prompt hits already-processing during reconnect recovery", async () => {
+  const controller = await createController("telegram/1:2");
+  const calls = [];
+  controller.session = {
+    isStreaming: true,
+    sessionManager: {
+      getSessionFile: () => "/tmp/recover-chat.jsonl",
+      getSessionId: () => "session-recovering",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/recover-chat.jsonl",
+      sessionId: "session-recovering",
+    }),
+    prompt: async (message, options) => {
+      calls.push(`prompt:${message}:${options?.streamingBehavior || "none"}`);
+      if (!options?.streamingBehavior) {
+        throw new Error(
+          "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+        );
+      }
+      return undefined;
+    },
+  };
+
+  const result = await controller.runTurn(
+    {
+      text: "interrupt after restart",
+      attachments: [],
+      replyToMessageId: "m-reply",
+      incomingMessageId: "m-inbound",
+    },
+    "prompt",
+  );
+
+  assert.deepEqual(calls, [
+    "prompt:interrupt after restart:none",
+    "prompt:interrupt after restart:steer",
+  ]);
+  assert.equal(result?.steered, true);
+  assert.equal(controller.state.processing?.replyToMessageId, "m-reply");
+  assert.equal(controller.state.processing?.incomingMessageId, "m-inbound");
+});
+
 test("chat controller serializes chat turns instead of replacing the active one", async () => {
   const controller = await createController("telegram/1:2");
   const order = [];
