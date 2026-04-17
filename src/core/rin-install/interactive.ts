@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { promptChatBridgeSetup } from "../chat-bridge/setup.js";
+import { defaultInstallDirForHome } from "./paths.js";
 import {
   configureProviderAuth,
   computeAvailableThinkingLevels,
@@ -87,7 +88,7 @@ export async function promptTargetInstall(
     );
   }
 
-  const defaultDir = path.join(targetHomeForUser(targetUser), ".rin");
+  const defaultDir = defaultInstallDirForHome(targetHomeForUser(targetUser));
   const installDir = String(
     prompt.ensureNotCancelled(
       await prompt.text({

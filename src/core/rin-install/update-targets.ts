@@ -1,12 +1,28 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  defaultInstallDirForHome,
+  installerManifestPath,
+  legacyInstallerManifestPath,
+} from "./paths.js";
+
 function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
   } catch {
     return fallback;
   }
+}
+
+function installDirFromSystemdUnit(text: string) {
+  const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
+  return String(match?.[1] || "").trim();
+}
+
+function installDirFromLaunchdPlist(text: string) {
+  const match = text.match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/);
+  return String(match?.[1] || "").trim();
 }
 
 export type InstalledTarget = {
@@ -16,7 +32,7 @@ export type InstalledTarget = {
   source: "manifest" | "systemd" | "launchd";
 };
 
-export function discoverInstalledTargets() {
+export function discoverInstalledTargets(homeRoots = ["/home", "/Users"]) {
   const rows: InstalledTarget[] = [];
   const seen = new Set<string>();
 
@@ -43,21 +59,15 @@ export function discoverInstalledTargets() {
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    const manifestPath = path.join(homeDir, ".rin", "installer.json");
-    const legacyManifestPath = path.join(
-      homeDir,
-      ".rin",
-      "config",
-      "installer.json",
-    );
+    const defaultInstallDir = defaultInstallDirForHome(homeDir);
     const manifest = readJsonFile<any>(
-      manifestPath,
-      readJsonFile<any>(legacyManifestPath, null),
+      installerManifestPath(defaultInstallDir),
+      readJsonFile<any>(legacyInstallerManifestPath(defaultInstallDir), null),
     );
     if (manifest && typeof manifest === "object") {
       add(
         String(manifest.targetUser || userName),
-        String(manifest.installDir || path.join(homeDir, ".rin")),
+        String(manifest.installDir || defaultInstallDir),
         homeDir,
         "manifest",
       );
@@ -68,14 +78,11 @@ export function discoverInstalledTargets() {
       for (const entry of fs.readdirSync(systemdDir)) {
         if (!/^rin-daemon(?:-.+)?\.service$/.test(entry)) continue;
         const filePath = path.join(systemdDir, entry);
-        const text = fs.readFileSync(filePath, "utf8");
-        const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
-        add(
-          userName,
-          match ? match[1].trim() : path.join(homeDir, ".rin"),
-          homeDir,
-          "systemd",
+        const installDir = installDirFromSystemdUnit(
+          fs.readFileSync(filePath, "utf8"),
         );
+        if (!installDir) continue;
+        add(userName, installDir, homeDir, "systemd");
       }
     } catch {}
 
@@ -84,21 +91,16 @@ export function discoverInstalledTargets() {
       for (const entry of fs.readdirSync(launchAgentsDir)) {
         if (!/^com\.rin\.daemon\..+\.plist$/.test(entry)) continue;
         const filePath = path.join(launchAgentsDir, entry);
-        const text = fs.readFileSync(filePath, "utf8");
-        const match = text.match(
-          /<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/,
+        const installDir = installDirFromLaunchdPlist(
+          fs.readFileSync(filePath, "utf8"),
         );
-        add(
-          userName,
-          match ? match[1].trim() : path.join(homeDir, ".rin"),
-          homeDir,
-          "launchd",
-        );
+        if (!installDir) continue;
+        add(userName, installDir, homeDir, "launchd");
       }
     } catch {}
   };
 
-  for (const root of ["/home", "/Users"]) {
+  for (const root of homeRoots) {
     try {
       for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
         if (!entry.isDirectory()) continue;
