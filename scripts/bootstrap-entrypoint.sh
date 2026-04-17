@@ -125,6 +125,7 @@ fetch() {
   exit 1
 }
 
+INSTALLER_ENTRY='dist/app/rin-install/main.js'
 ARCHIVE_URL="$REPO_URL/archive/refs/heads/main.tar.gz"
 : >"$LOGFILE"
 run_step "$FETCH_LABEL" fetch "$ARCHIVE_URL" "$ARCHIVE"
@@ -147,8 +148,8 @@ run_step "$BUILD_LABEL" npm run build
 say "[$PREFIX] $LAUNCH_LABEL"
 
 if has_tty; then
-  sh -lc "${NODE_ENV_PREFIX}node dist/app/rin-install/main.js" </dev/tty >/dev/tty 2>&1
+  sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY" </dev/tty >/dev/tty 2>&1
   exit $?
 fi
 
-sh -lc "${NODE_ENV_PREFIX}node dist/app/rin-install/main.js"
+sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY"

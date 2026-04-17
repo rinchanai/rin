@@ -74,3 +74,60 @@ test("installer path helpers centralize installed and source entrypoints", () =>
     path.join(repoRoot, "dist", "app", "rin-daemon", "daemon.js"),
   );
 });
+
+test("installer path helpers centralize home, config, service, and log locations", () => {
+  const linuxHome = "/home/demo";
+  const macHome = "/Users/demo";
+  const installDir = "/srv/rin-demo";
+
+  assert.equal(pathsMod.defaultHomeRoot("linux"), "/home");
+  assert.equal(pathsMod.defaultHomeRoot("darwin"), "/Users");
+  assert.equal(pathsMod.defaultHomeForUser("demo", "linux"), linuxHome);
+  assert.equal(pathsMod.defaultHomeForUser("demo", "darwin"), macHome);
+  assert.equal(
+    pathsMod.installSettingsPath(installDir),
+    path.join(installDir, "settings.json"),
+  );
+  assert.equal(
+    pathsMod.installAuthPath(installDir),
+    path.join(installDir, "auth.json"),
+  );
+  assert.equal(
+    pathsMod.localBinDirForHome(linuxHome),
+    path.join(linuxHome, ".local", "bin"),
+  );
+  assert.equal(
+    pathsMod.launcherPathForHome(linuxHome, "rin"),
+    path.join(linuxHome, ".local", "bin", "rin"),
+  );
+  assert.equal(
+    pathsMod.launcherMetadataPathForHome(linuxHome, "linux"),
+    path.join(linuxHome, ".config", "rin", "install.json"),
+  );
+  assert.equal(
+    pathsMod.launcherMetadataPathForHome(macHome, "darwin"),
+    path.join(macHome, "Library", "Application Support", "rin", "install.json"),
+  );
+  assert.equal(
+    pathsMod.launchAgentPlistPathForHome(macHome, "com.rin.daemon.demo"),
+    path.join(macHome, "Library", "LaunchAgents", "com.rin.daemon.demo.plist"),
+  );
+  assert.equal(
+    pathsMod.systemdUserUnitPathForHome(linuxHome, "rin-daemon-demo.service"),
+    path.join(
+      linuxHome,
+      ".config",
+      "systemd",
+      "user",
+      "rin-daemon-demo.service",
+    ),
+  );
+  assert.equal(
+    pathsMod.daemonStdoutLogPath(installDir),
+    path.join(installDir, "data", "logs", "daemon.stdout.log"),
+  );
+  assert.equal(
+    pathsMod.daemonStderrLogPath(installDir),
+    path.join(installDir, "data", "logs", "daemon.stderr.log"),
+  );
+});

@@ -1,8 +1,7 @@
-import path from "node:path";
-
 import { spinner, text } from "@clack/prompts";
 
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
+import { installAuthPath } from "./paths.js";
 
 export function computeAvailableThinkingLevels(model: {
   provider: string;
@@ -53,7 +52,7 @@ export async function createInstallerAuthStorage(
 ) {
   const codingAgentModule = await loadRinCodingAgent();
   const { AuthStorage } = codingAgentModule as any;
-  const authPath = path.join(installDir, "auth.json");
+  const authPath = installAuthPath(installDir);
   const existing = readJsonFile<any>(authPath, {});
   return AuthStorage.inMemory(existing);
 }

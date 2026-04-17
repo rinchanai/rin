@@ -12,7 +12,15 @@ import {
   writeTextFile,
   writeTextFileWithPrivilege,
 } from "./fs-utils.js";
-import { installedAppEntryCandidates, sourceAppEntryPath } from "./paths.js";
+import {
+  daemonStderrLogPath,
+  daemonStdoutLogPath,
+  installedAppEntryCandidates,
+  launchAgentPlistPathForHome,
+  sourceAppEntryPath,
+  systemdUserUnitDirForHome,
+  systemdUserUnitPathForHome,
+} from "./paths.js";
 
 export function resolveDaemonEntryForInstall(
   installDir: string,
@@ -39,14 +47,9 @@ export function buildLaunchdPlist(
     installDir,
     repoRootFromHere,
   );
-  const stdoutPath = path.join(installDir, "data", "logs", "daemon.stdout.log");
-  const stderrPath = path.join(installDir, "data", "logs", "daemon.stderr.log");
-  const plistPath = path.join(
-    targetHome,
-    "Library",
-    "LaunchAgents",
-    `${label}.plist`,
-  );
+  const stdoutPath = daemonStdoutLogPath(installDir);
+  const stderrPath = daemonStderrLogPath(installDir);
+  const plistPath = launchAgentPlistPathForHome(targetHome, label);
   const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n  <dict>\n    <key>Label</key>\n    <string>${label}</string>\n    <key>ProgramArguments</key>\n    <array>\n      <string>${process.execPath}</string>\n      <string>${daemonEntry}</string>\n    </array>\n    <key>EnvironmentVariables</key>\n    <dict>\n      <key>RIN_DIR</key>\n      <string>${installDir}</string>\n    </dict>\n    <key>WorkingDirectory</key>\n    <string>${targetHome}</string>\n    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>StandardOutPath</key>\n    <string>${stdoutPath}</string>\n    <key>StandardErrorPath</key>\n    <string>${stderrPath}</string>\n  </dict>\n</plist>\n`;
   return { label, plistPath, plist, stdoutPath, stderrPath };
 }
@@ -127,13 +130,7 @@ export function buildSystemdUserService(
   );
   const targetHome = targetHomeForUser(targetUser);
   const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-")}.service`;
-  const unitPath = path.join(
-    targetHome,
-    ".config",
-    "systemd",
-    "user",
-    unitName,
-  );
+  const unitPath = systemdUserUnitPathForHome(targetHome, unitName);
   const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=RIN_DIR=${installDir}\nExecStart=${process.execPath} ${daemonEntry}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
   return {
     kind: "systemd" as const,
@@ -224,7 +221,7 @@ export function refreshManagedServiceFiles(
 ) {
   if (process.platform !== "linux") return;
   const targetHome = deps.targetHomeForUser(targetUser);
-  const unitDir = path.join(targetHome, ".config", "systemd", "user");
+  const unitDir = systemdUserUnitDirForHome(targetHome);
   const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-")}.service`;
   const candidateFiles = [
     path.join(unitDir, unitName),
