@@ -332,8 +332,56 @@ test("rpc interactive session queues prompts while recovery is pending", async (
   });
 });
 
+test("rpc interactive session exits connecting after get_state succeeds and refreshes details in background", async () => {
+  const calls = [];
+  const refreshes = [];
+  const session = new RpcInteractiveSession({
+    isConnected: () => true,
+    send: async (payload) => {
+      calls.push(payload);
+      if (payload.type === "get_state") {
+        return {
+          success: true,
+          data: {
+            sessionId: "s1",
+            sessionFile: "/tmp/s1.jsonl",
+            thinkingLevel: "medium",
+            steeringMode: "all",
+            followUpMode: "one-at-a-time",
+            autoCompactionEnabled: false,
+            isStreaming: true,
+            isCompacting: false,
+            pendingMessageCount: 0,
+          },
+        };
+      }
+      return { success: true, data: {} };
+    },
+  });
+  session.queueRefreshState = async (flags) => {
+    refreshes.push(flags);
+  };
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.recoveryPending = true;
+
+  session.handleSessionRecovered();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.equal(session.recoveryPending, false);
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "working",
+    label: "Working",
+    connected: true,
+  });
+  assert.deepEqual(calls.map((payload) => payload.type), ["get_state"]);
+  assert.deepEqual(refreshes, [{ messages: true, session: true }]);
+});
+
 test("rpc interactive session finishes daemon-side session recovery without dropping transport", async () => {
   const calls = [];
+  const refreshes = [];
   const session = new RpcInteractiveSession({
     isConnected: () => true,
     send: async (payload) => {
@@ -354,15 +402,14 @@ test("rpc interactive session finishes daemon-side session recovery without drop
               pendingMessageCount: 0,
             },
           };
-        case "get_session_entries":
-          return { success: true, data: { entries: [] } };
-        case "get_session_tree":
-          return { success: true, data: { tree: [], leafId: null } };
         default:
           return { success: true, data: {} };
       }
     },
   });
+  session.queueRefreshState = async (flags) => {
+    refreshes.push(flags);
+  };
   session.rpcConnected = true;
   session.startupPending = false;
   session.recoveryPending = true;
@@ -379,12 +426,8 @@ test("rpc interactive session finishes daemon-side session recovery without drop
 
   assert.equal(session.recoveryPending, false);
   assert.equal(session.queuedOfflineOps.length, 0);
-  assert.deepEqual(calls.map((payload) => payload.type), [
-    "get_state",
-    "get_session_entries",
-    "get_session_tree",
-    "prompt",
-  ]);
+  assert.deepEqual(calls.map((payload) => payload.type), ["get_state", "prompt"]);
+  assert.deepEqual(refreshes, [{ messages: true, session: true }]);
 });
 
 test("rpc interactive session clears the busy state immediately when abort is requested", async () => {

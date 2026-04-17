@@ -63,7 +63,13 @@ const REFRESH_MESSAGES_AND_SESSION = { messages: true, session: true } as const;
 const REFRESH_ALL = { messages: true, models: true, session: true } as const;
 
 async function completeRpcRecovery(target: any) {
-  await target.refreshState(REFRESH_MESSAGES_AND_SESSION);
+  const canApplyLightweightState =
+    typeof target.call === "function" && typeof target.applyState === "function";
+  if (canApplyLightweightState) {
+    target.applyState(await target.call("get_state"));
+  } else {
+    await target.refreshState(REFRESH_MESSAGES_AND_SESSION);
+  }
   target.recoveryPending = false;
   target.emitSessionResynced();
   target.emitFrontendStatus(true);
@@ -71,6 +77,13 @@ async function completeRpcRecovery(target: any) {
   target.queuedOfflineOps = [];
   for (const operation of queued) {
     await target.sendOrQueue(operation);
+  }
+  if (canApplyLightweightState) {
+    if (typeof target.queueRefreshState === "function") {
+      void target.queueRefreshState(REFRESH_MESSAGES_AND_SESSION);
+    } else if (typeof target.refreshState === "function") {
+      void target.refreshState(REFRESH_MESSAGES_AND_SESSION).catch(() => {});
+    }
   }
 }
 
