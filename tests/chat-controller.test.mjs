@@ -13,6 +13,10 @@ const { ChatController } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js"))
     .href
 );
+const { getChatMessage, saveChatMessage } = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js"))
+    .href
+);
 
 async function createController(chatKey = "telegram/1:2") {
   const tempDir = await fs.mkdtemp(
@@ -1093,11 +1097,23 @@ test("chat controller serializes chat turns instead of replacing the active one"
 test("chat controller delivers completed assistant text during recovery when processing state is stale", async () => {
   const controller = await createController("telegram/1:2");
   const delivered = [];
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/1:2",
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-recover-stale",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
   controller.state.processing = {
     text: "hello",
     attachments: [],
     startedAt: Date.now(),
     replyToMessageId: "42",
+    incomingMessageId: "m-recover-stale",
   };
   controller.commitPendingDelivery = async function (clearProcessing = false) {
     if (controller.latestAssistantText) {
@@ -1123,7 +1139,13 @@ test("chat controller delivers completed assistant text during recovery when pro
 
   await controller.recoverIfNeeded();
 
+  const stored = getChatMessage(
+    controller.agentDir,
+    "telegram/1:2",
+    "m-recover-stale",
+  );
   assert.equal(controller.state.processing, undefined);
+  assert.ok(stored?.processedAt);
   assert.deepEqual(delivered, [
     { text: "final from recovery", replyToMessageId: "42" },
   ]);
@@ -1132,6 +1154,17 @@ test("chat controller delivers completed assistant text during recovery when pro
 test("chat controller retries persisted final reply delivery on recovery", async () => {
   const controller = await createController("telegram/1:2");
   const sends = [];
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/1:2",
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-recover-delivery",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
   controller.app = {
     bots: [
       {
@@ -1185,7 +1218,12 @@ test("chat controller retries persisted final reply delivery on recovery", async
 
   controller.commitPendingDelivery = async () => {};
   await controller.runTurn(
-    { text: "hello", attachments: [], replyToMessageId: "42" },
+    {
+      text: "hello",
+      attachments: [],
+      replyToMessageId: "42",
+      incomingMessageId: "m-recover-delivery",
+    },
     "prompt",
   );
 
@@ -1200,7 +1238,13 @@ test("chat controller retries persisted final reply delivery on recovery", async
   };
   await controller.recoverIfNeeded();
 
+  const stored = getChatMessage(
+    controller.agentDir,
+    "telegram/1:2",
+    "m-recover-delivery",
+  );
   assert.equal(controller.state.pendingDelivery, undefined);
+  assert.ok(stored?.processedAt);
   assert.deepEqual(sends, [{ text: "final text" }]);
 });
 

@@ -66,6 +66,7 @@ import {
   trustOf,
 } from "./support.js";
 import { chatRpcSocketPath } from "./rpc.js";
+import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 
 function createLogger(name: string) {
@@ -327,6 +328,17 @@ export async function startChatBridge(
         safeString(bot?.platform).trim() === safeString(platform).trim() &&
         safeString(bot?.selfId).trim() === safeString(selfId).trim(),
     );
+  const isInboundMessageProcessed = (chatKey: string, messageId: string) => {
+    const nextChatKey = safeString(chatKey).trim();
+    const nextMessageId = safeString(messageId).trim();
+    if (!nextChatKey || !nextMessageId) return false;
+    return Boolean(
+      safeString(
+        getChatMessage(runtime.agentDir, nextChatKey, nextMessageId)?.processedAt ||
+          "",
+      ).trim(),
+    );
+  };
   const handleCommandSession = async (
     session: any,
     command: { name: string; argsText: string },
@@ -570,6 +582,15 @@ export async function startChatBridge(
       );
       if (Number.isFinite(nextAttemptAt) && nextAttemptAt > Date.now()) {
         restoreChatInboxFile(runtime.agentDir, claimedPath, envelope);
+        continue;
+      }
+      const controller = envelope.chatKey ? getController(envelope.chatKey) : null;
+      if (controller?.claimsInboundMessage(envelope.messageId)) {
+        completeChatInboxFile(claimedPath);
+        continue;
+      }
+      if (isInboundMessageProcessed(envelope.chatKey, envelope.messageId)) {
+        completeChatInboxFile(claimedPath);
         continue;
       }
       dispatchClaimedInboxItem(claimedPath, envelope);

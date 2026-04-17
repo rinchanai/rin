@@ -266,6 +266,11 @@ export class ChatController {
   private currentIncomingMessageId() {
     return safeString(this.state.processing?.incomingMessageId || "").trim();
   }
+  claimsInboundMessage(messageId?: string) {
+    const nextMessageId = safeString(messageId || "").trim();
+    if (!nextMessageId) return false;
+    return this.currentIncomingMessageId() === nextMessageId;
+  }
   async clearWorkingReaction() {
     const messageId = this.currentIncomingMessageId();
     const emoji = safeString(this.workingReactionEmoji).trim();
@@ -870,6 +875,7 @@ export class ChatController {
   async recoverIfNeeded() {
     await this.runExclusiveTurn(async () => {
       if (this.state.pendingDelivery) {
+        this.markProcessedMessage(this.currentIncomingMessageId());
         await this.commitPendingDelivery(true);
         return;
       }
@@ -926,6 +932,7 @@ export class ChatController {
           sessionFile: this.currentSessionFile(),
         });
         this.saveState();
+        this.markProcessedMessage(pending.incomingMessageId);
         await this.commitPendingDelivery(true);
         return;
       }
@@ -974,6 +981,7 @@ export class ChatController {
             ).trim() || undefined,
         });
         this.saveState();
+        this.markProcessedMessage(pending.incomingMessageId);
         await this.commitPendingDelivery(true);
         return;
       }
