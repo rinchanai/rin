@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
+import fssync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -14,6 +17,7 @@ import {
 } from "../session/summary.js";
 import {
   appendTranscriptArchiveEntry,
+  getTranscriptArchivePath,
   loadTranscriptSessionEntries,
 } from "../memory/transcripts.js";
 import { resolveAgentDir } from "./lib.js";
@@ -22,8 +26,70 @@ type ExtensionCtxLike = {
   model?: Model<any> | null;
 };
 
+type MaintenanceChangedFile = {
+  path: string;
+  change: "created" | "updated" | "deleted";
+};
+
 function safeString(value: unknown): string {
   return typeof value === "string" ? value : String(value || "");
+}
+
+async function collectManagedFiles(dir: string): Promise<string[]> {
+  if (!fssync.existsSync(dir)) return [];
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectManagedFiles(fullPath)));
+      continue;
+    }
+    files.push(fullPath);
+  }
+  return files;
+}
+
+async function captureManagedArtifactSnapshot(agentDir: string) {
+  const root = path.resolve(agentDir);
+  const paths = [
+    ...(await collectManagedFiles(path.join(root, "self_improve", "prompts"))),
+    ...(await collectManagedFiles(path.join(root, "self_improve", "skills"))),
+  ].sort();
+  const snapshot = new Map<string, string>();
+  for (const filePath of paths) {
+    const relativePath = path.relative(root, filePath) || filePath;
+    const buffer = await fs.readFile(filePath);
+    snapshot.set(
+      filePath,
+      `${relativePath}:${createHash("sha1").update(buffer).digest("hex")}`,
+    );
+  }
+  return snapshot;
+}
+
+function diffManagedArtifactSnapshots(
+  before: Map<string, string>,
+  after: Map<string, string>,
+): MaintenanceChangedFile[] {
+  const changed: MaintenanceChangedFile[] = [];
+  const allPaths = new Set([...before.keys(), ...after.keys()]);
+  for (const filePath of [...allPaths].sort()) {
+    const beforeHash = before.get(filePath);
+    const afterHash = after.get(filePath);
+    if (!beforeHash && afterHash) {
+      changed.push({ path: filePath, change: "created" });
+      continue;
+    }
+    if (beforeHash && !afterHash) {
+      changed.push({ path: filePath, change: "deleted" });
+      continue;
+    }
+    if (beforeHash !== afterHash) {
+      changed.push({ path: filePath, change: "updated" });
+    }
+  }
+  return changed;
 }
 
 function buildSelfImproveReviewPrompt(_trigger: string): string {
@@ -127,17 +193,27 @@ async function storeSessionSummaryInTranscriptArchive(options: {
       .reverse()
       .find((entry) => isSessionSummaryEntry(entry))?.text || "",
   );
+  const timestamp = new Date().toISOString();
+  const archivePath = getTranscriptArchivePath(
+    {
+      timestamp,
+      sessionId,
+      sessionFile,
+    },
+    agentDir,
+  );
   if (currentSummary && currentSummary === summary) {
     return {
       skipped: "unchanged",
       sessionId: sessionId || undefined,
       sessionSummary: currentSummary,
+      changedFiles: [] as MaintenanceChangedFile[],
     };
   }
 
   await appendTranscriptArchiveEntry(
     {
-      timestamp: new Date().toISOString(),
+      timestamp,
       sessionId,
       sessionFile,
       role: "sessionSummary",
@@ -151,6 +227,12 @@ async function storeSessionSummaryInTranscriptArchive(options: {
     skipped: "",
     sessionId: sessionId || undefined,
     sessionSummary: summary,
+    changedFiles: [
+      {
+        path: archivePath,
+        change: currentSummary ? "updated" : "created",
+      },
+    ] as MaintenanceChangedFile[],
   };
 }
 
@@ -161,6 +243,7 @@ async function runForkedSessionSelfImproveReview(options: {
   trigger?: string;
   additionalExtensionPaths?: string[];
 }) {
+  const before = await captureManagedArtifactSnapshot(options.agentDir);
   const finalText = await runForkedSessionPrompt({
     agentDir: options.agentDir,
     sessionFile: options.sessionFile,
@@ -168,11 +251,13 @@ async function runForkedSessionSelfImproveReview(options: {
     prompt: buildSelfImproveReviewPrompt(safeString(options.trigger).trim()),
     additionalExtensionPaths: options.additionalExtensionPaths,
   });
+  const after = await captureManagedArtifactSnapshot(options.agentDir);
   return {
     skipped: "",
     forked: true,
     saved: true,
     output: finalText,
+    changedFiles: diffManagedArtifactSnapshots(before, after),
   };
 }
 
@@ -192,7 +277,7 @@ export async function maintainMemory(
     agentDir: safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir(),
     sessionFile,
     leafId: safeString(opts.leafId || "").trim() || undefined,
-    trigger: safeString(opts.trigger || "extension:self_improve_review").trim(),
+    trigger: safeString(opts.trigger || "self_improve:review").trim(),
     additionalExtensionPaths: opts.additionalExtensionPaths,
   });
   return {
@@ -200,7 +285,7 @@ export async function maintainMemory(
     mode: "session",
     sessionFile,
     leafId: safeString(opts.leafId || "").trim() || undefined,
-    trigger: safeString(opts.trigger || "extension:self_improve_review").trim(),
+    trigger: safeString(opts.trigger || "self_improve:review").trim(),
   };
 }
 
@@ -233,7 +318,7 @@ export async function maintainSessionSummary(
     mode: "session",
     sessionFile,
     leafId: safeString(opts.leafId || "").trim() || undefined,
-    trigger: safeString(opts.trigger || "extension:session_summary").trim(),
+    trigger: safeString(opts.trigger || "session_summary:review").trim(),
     output,
   };
 }

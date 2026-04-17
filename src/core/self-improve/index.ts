@@ -315,7 +315,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       await processSelfImproveReview(ctx, {
         sessionFile: meta.sessionFile,
         leafId: meta.leafId,
-        trigger: "extension:periodic_self_improve_review",
+        trigger: "self_improve:periodic_review",
         snapshotKey: `review:${state.userTurns}`,
       });
       state.lastQueuedTurn = state.userTurns;
@@ -328,7 +328,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     await processSelfImproveReview(ctx, {
       sessionFile: meta.sessionFile,
       leafId: meta.leafId,
-      trigger: "extension:session_compaction_self_improve_review",
+      trigger: "self_improve:session_compaction_review",
       snapshotKey: `compact:${meta.leafId || meta.sessionFile}`,
     });
   });
@@ -338,12 +338,12 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     await processSelfImproveReview(ctx, {
       sessionFile: meta.sessionFile,
       leafId: meta.leafId,
-      trigger: "extension:session_shutdown_self_improve_review",
+      trigger: "self_improve:session_shutdown_review",
     });
     await processSessionSummaryUpdate(ctx, {
       sessionFile: meta.sessionFile,
       leafId: meta.leafId,
-      trigger: "extension:session_shutdown_session_summary",
+      trigger: "session_summary:session_shutdown",
     });
     if (meta.sessionId) reviewStateBySession.delete(meta.sessionId);
   });
