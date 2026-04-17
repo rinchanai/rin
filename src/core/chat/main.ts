@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -228,6 +229,7 @@ export type ChatBridgeTurnPayload = {
   controllerKey?: string;
   deliveryEnabled?: boolean;
   affectChatBinding?: boolean;
+  disposeAfterTurn?: boolean;
   text: string;
   sessionFile?: string;
 };
@@ -704,26 +706,50 @@ export async function startChatBridge(
       safeString(payload?.controllerKey).trim() || "default";
     const deliveryEnabled = payload?.deliveryEnabled !== false;
     const affectChatBinding = payload?.affectChatBinding !== false;
+    const disposeAfterTurn = payload?.disposeAfterTurn === true;
     if (!text) throw new Error("chat_text_required");
-    const controller =
-      chatKey &&
-      controllerKey === "default" &&
-      deliveryEnabled &&
-      affectChatBinding
-        ? getController(chatKey)
-        : getDetachedController(controllerKey, {
-            chatKey,
-            deliveryEnabled,
-            affectChatBinding,
-          });
-    return await controller.runTurn(
-      {
-        text,
-        attachments: [],
-        sessionFile,
-      },
-      "prompt",
-    );
+    const useBoundController =
+      Boolean(
+        chatKey &&
+          controllerKey === "default" &&
+          deliveryEnabled &&
+          affectChatBinding,
+      );
+    const controller = useBoundController
+      ? getController(chatKey)
+      : getDetachedController(controllerKey, {
+          chatKey,
+          deliveryEnabled,
+          affectChatBinding,
+        });
+    try {
+      return await controller.runTurn(
+        {
+          text,
+          attachments: [],
+          sessionFile,
+        },
+        "prompt",
+      );
+    } finally {
+      if (!useBoundController && disposeAfterTurn) {
+        controller.dispose();
+        detachedControllers.delete(controllerKey);
+        try {
+          fs.rmSync(
+            path.join(
+              dataDir,
+              "cron-turns",
+              controllerKey.replace(/[^A-Za-z0-9._:-]+/g, "_"),
+            ),
+            {
+              recursive: true,
+              force: true,
+            },
+          );
+        } catch {}
+      }
+    }
   };
   const evalBridge = async (payload: ChatBridgeEvalPayload) => {
     const startedAtMs = Date.now();

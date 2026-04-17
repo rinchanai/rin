@@ -83,6 +83,104 @@ test("cron scheduler can seed and preserve dedicated session files", async () =>
   }
 });
 
+test("cron dedicated agent task defaults to read-and-burn sessions", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const ephemeralSessionFile = path.join(agentDir, "ephemeral-session.jsonl");
+  const controllerStateDir = path.join(
+    agentDir,
+    "data",
+    "cron-turns",
+    "cron_ephemeral:run-1",
+  );
+  await fs.mkdir(controllerStateDir, { recursive: true });
+  await fs.writeFile(ephemeralSessionFile, "demo\n");
+  await fs.writeFile(path.join(controllerStateDir, "state.json"), "{}\n");
+  const task = {
+    id: "cron_ephemeral",
+    chatKey: "telegram/demo:1",
+    session: { mode: "dedicated" },
+    target: { kind: "agent_prompt", prompt: "hello" },
+  };
+  const calls = [];
+  try {
+    const result = await execMod.executeCronAgentTask(task, {
+      agentDir,
+      runId: "run-1",
+      chat: {
+        runTurn: async (payload) => {
+          calls.push(payload);
+          return {
+            finalText: "done",
+            sessionId: "s1",
+            sessionFile: ephemeralSessionFile,
+          };
+        },
+      },
+    });
+    assert.equal(result.text, "done");
+    assert.equal(result.sessionFile, undefined);
+    assert.equal(task.dedicatedSessionFile, undefined);
+    assert.deepEqual(calls, [
+      {
+        chatKey: "telegram/demo:1",
+        controllerKey: "cron_ephemeral:run-1",
+        deliveryEnabled: false,
+        affectChatBinding: false,
+        disposeAfterTurn: true,
+        text: "hello",
+        sessionFile: undefined,
+      },
+    ]);
+    assert.equal(await fs.stat(ephemeralSessionFile).catch(() => null), null);
+    assert.equal(await fs.stat(controllerStateDir).catch(() => null), null);
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("cron seeded dedicated agent task preserves its bound session", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const task = {
+    id: "cron_seeded",
+    chatKey: "telegram/demo:1",
+    session: { mode: "dedicated" },
+    dedicatedSessionFile: "/tmp/seeded-session.jsonl",
+    target: { kind: "agent_prompt", prompt: "hello" },
+  };
+  const calls = [];
+  try {
+    const result = await execMod.executeCronAgentTask(task, {
+      agentDir,
+      runId: "run-1",
+      chat: {
+        runTurn: async (payload) => {
+          calls.push(payload);
+          return {
+            finalText: "done",
+            sessionId: "s1",
+            sessionFile: "/tmp/seeded-session-next.jsonl",
+          };
+        },
+      },
+    });
+    assert.equal(result.sessionFile, "/tmp/seeded-session-next.jsonl");
+    assert.equal(task.dedicatedSessionFile, "/tmp/seeded-session-next.jsonl");
+    assert.deepEqual(calls, [
+      {
+        chatKey: "telegram/demo:1",
+        controllerKey: "cron_seeded",
+        deliveryEnabled: false,
+        affectChatBinding: false,
+        disposeAfterTurn: false,
+        text: "hello",
+        sessionFile: "/tmp/seeded-session.jsonl",
+      },
+    ]);
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("cron execution shell task returns summarized success body", async () => {
   const text = await execMod.executeCronShellTask(
     {

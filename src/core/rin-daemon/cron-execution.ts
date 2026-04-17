@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -123,12 +123,40 @@ export async function executeCronShellTask(
   });
 }
 
+function cronDetachedControllerStateDir(agentDir: string, controllerKey: string) {
+  return path.join(
+    agentDir,
+    "data",
+    "cron-turns",
+    String(controllerKey || "").replace(/[^A-Za-z0-9._:-]+/g, "_"),
+  );
+}
+
+function cleanupCronEphemeralArtifacts(
+  agentDir: string,
+  controllerKey: string,
+  sessionFile?: string,
+) {
+  if (sessionFile) {
+    try {
+      rmSync(sessionFile, { force: true });
+    } catch {}
+  }
+  try {
+    rmSync(cronDetachedControllerStateDir(agentDir, controllerKey), {
+      recursive: true,
+      force: true,
+    });
+  } catch {}
+}
+
 export async function executeCronAgentTask(
   task: CronTaskRecord,
   options: {
     agentDir: string;
     additionalExtensionPaths?: string[];
     chat?: CronChatCapability;
+    runId?: string;
   },
 ) {
   if (task.target.kind !== "agent_prompt")
@@ -136,25 +164,45 @@ export async function executeCronAgentTask(
   if (typeof options.chat?.runTurn !== "function") {
     throw new Error("cron_chat_unavailable");
   }
-  const sessionFile = await resolveCronSessionFile(task);
+  const seededDedicatedSessionFile =
+    task.session.mode === "dedicated"
+      ? String(task.dedicatedSessionFile || "").trim() || undefined
+      : undefined;
+  const ephemeralDedicated =
+    task.session.mode === "dedicated" && !seededDedicatedSessionFile;
+  const controllerKey =
+    ephemeralDedicated && options.runId
+      ? `${task.id}:${options.runId}`
+      : task.id;
+  const sessionFile = ephemeralDedicated
+    ? undefined
+    : await resolveCronSessionFile(task);
   const result = await options.chat.runTurn({
     chatKey: task.chatKey,
-    controllerKey: task.id,
+    controllerKey,
     deliveryEnabled: false,
     affectChatBinding: false,
+    disposeAfterTurn: ephemeralDedicated,
     text: task.target.prompt,
     sessionFile,
   });
   const finalText = summarizeText(result?.finalText, 4000);
   if (!finalText) throw new Error("cron_final_assistant_text_missing");
   const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
-  if (task.session.mode === "dedicated" && nextSessionFile) {
-    task.dedicatedSessionFile = nextSessionFile;
+  if (task.session.mode === "dedicated") {
+    if (seededDedicatedSessionFile && nextSessionFile) {
+      task.dedicatedSessionFile = nextSessionFile;
+    } else {
+      task.dedicatedSessionFile = undefined;
+    }
+  }
+  if (ephemeralDedicated) {
+    cleanupCronEphemeralArtifacts(options.agentDir, controllerKey, nextSessionFile);
   }
   return {
     text: finalText,
     sessionId: String(result?.sessionId || "").trim() || undefined,
-    sessionFile: nextSessionFile,
+    sessionFile: ephemeralDedicated ? undefined : nextSessionFile,
   };
 }
 
@@ -182,7 +230,7 @@ export async function executeCronTask(
         }).catch(() => {});
       }
     } else {
-      const result = await executeCronAgentTask(task, options);
+      const result = await executeCronAgentTask(task, { ...options, runId });
       task.lastResultText = result.text;
       if (task.chatKey && result.text) {
         await sendChatText(options, {
