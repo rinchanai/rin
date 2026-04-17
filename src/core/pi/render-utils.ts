@@ -190,6 +190,96 @@ export function buildUserFacingTextResult(
   };
 }
 
+function styleValue(value: string, theme: any) {
+  const leading = value.match(/^\s*/)?.[0] ?? "";
+  const body = value.slice(leading.length);
+  if (!body) return value;
+  if (/^https?:\/\//i.test(body)) return `${leading}${theme.fg("accent", body)}`;
+  if (/^(~|\/|\.\.\/|\.\/)[^\s]*$/.test(body) || /^[A-Za-z]:[\\/]/.test(body)) {
+    return `${leading}${theme.fg("accent", body)}`;
+  }
+  if (/^(ok|success|saved|written|applied|done)$/i.test(body)) {
+    return `${leading}${theme.fg("success", body)}`;
+  }
+  if (/^(error|failed|not found)/i.test(body)) {
+    return `${leading}${theme.fg("error", body)}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}(?:[tT ][^\s]+)?$/.test(body)) {
+    return `${leading}${theme.fg("muted", body)}`;
+  }
+  return `${leading}${theme.fg("toolOutput", body)}`;
+}
+
+export function styleToolOutputLine(line: string, theme: any) {
+  if (!line) return "";
+  const trimmed = line.trim();
+  if (!trimmed) return "";
+
+  if (/^\[(First line exceeds|Truncated:|Showing )/i.test(trimmed)) {
+    return theme.fg("warning", line);
+  }
+  if (/^(No |\(no output\)$)/.test(trimmed)) {
+    return theme.fg("muted", line);
+  }
+  if (/^(Error:|Web search failed:|Fetch failed:|Message not found:)/.test(trimmed)) {
+    return theme.fg("error", line);
+  }
+
+  const indexedHeader = line.match(/^(\d+\.\s+)(.+?)(\s+\|\s+.+)?$/);
+  if (indexedHeader && !/^https?:\/\//i.test(trimmed)) {
+    const [, prefix, title, suffix = ""] = indexedHeader;
+    return [
+      theme.fg("toolTitle", prefix),
+      theme.fg("toolOutput", theme.bold(title)),
+      suffix ? theme.fg("muted", suffix) : "",
+    ].join("");
+  }
+
+  const commandSummary = line.match(/^([a-z_]+)(\s+)(\d+)$/i);
+  if (commandSummary) {
+    const [, label, spacing, count] = commandSummary;
+    return [
+      theme.fg("toolTitle", theme.bold(label)),
+      spacing,
+      theme.fg("success", count),
+    ].join("");
+  }
+
+  if (/^match\s+\d+$/i.test(trimmed)) {
+    return theme.fg("toolTitle", theme.bold(line));
+  }
+
+  const keyValue = line.match(/^([A-Za-z][A-Za-z0-9_-]*)(=)(.*)$/);
+  if (keyValue) {
+    const [, key, separator, value] = keyValue;
+    return [
+      theme.fg("muted", key),
+      theme.fg("dim", separator),
+      styleValue(value, theme),
+    ].join("");
+  }
+
+  const labelValue = line.match(/^([A-Za-z][A-Za-z0-9_ -]{0,40}:)(\s*)(.*)$/);
+  if (labelValue) {
+    const [, label, spacing, value] = labelValue;
+    return [
+      theme.fg("toolTitle", theme.bold(label)),
+      spacing,
+      styleValue(value, theme),
+    ].join("");
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return theme.fg("accent", line);
+  }
+
+  if (/^[-*]\s+/.test(line)) {
+    return `${theme.fg("toolTitle", line.slice(0, 2))}${theme.fg("toolOutput", line.slice(2))}`;
+  }
+
+  return theme.fg("toolOutput", line);
+}
+
 export function invalidArgText(theme: any) {
   return theme.fg("error", "[invalid arg]");
 }
@@ -307,7 +397,7 @@ export function rebuildExpandableTextResultComponent(
   if (output) {
     const styledOutput = output
       .split("\n")
-      .map((line) => theme.fg("toolOutput", line))
+      .map((line) => styleToolOutputLine(line, theme))
       .join("\n");
 
     if (config.expanded) {
@@ -385,7 +475,7 @@ export function renderTextToolResult(
 
   let text = "";
   if (displayLines.length > 0) {
-    text = `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
+    text = `\n${displayLines.map((line) => styleToolOutputLine(line, theme)).join("\n")}`;
     if (remaining > 0) {
       text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
     }
