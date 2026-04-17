@@ -44,6 +44,29 @@ export function installedReleaseRoot(installDir: string, releaseId: string) {
   return path.join(installedReleasesRoot(installDir), releaseId);
 }
 
+export function installedDocsRoot(installDir: string) {
+  return path.join(installDir, "docs");
+}
+
+export function installedRinDocsRoot(installDir: string) {
+  return path.join(installedDocsRoot(installDir), "rin");
+}
+
+export function installedBuiltinSkillsRoot(installDir: string) {
+  return path.join(installedRinDocsRoot(installDir), "builtin-skills");
+}
+
+export function installedBuiltinSkillRoot(
+  installDir: string,
+  skillName: string,
+) {
+  return path.join(installedBuiltinSkillsRoot(installDir), skillName);
+}
+
+export function installedPiDocsRoot(installDir: string) {
+  return path.join(installedDocsRoot(installDir), "pi");
+}
+
 export function currentInstalledAppEntryPath(
   installDir: string,
   app: InstalledAppKey,

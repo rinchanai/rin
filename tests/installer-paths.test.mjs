@@ -75,7 +75,7 @@ test("installer path helpers centralize installed and source entrypoints", () =>
   );
 });
 
-test("installer path helpers centralize home, config, service, and log locations", () => {
+test("installer path helpers centralize home, config, service, doc, and log locations", () => {
   const linuxHome = "/home/demo";
   const macHome = "/Users/demo";
   const installDir = "/srv/rin-demo";
@@ -91,6 +91,26 @@ test("installer path helpers centralize home, config, service, and log locations
   assert.equal(
     pathsMod.installAuthPath(installDir),
     path.join(installDir, "auth.json"),
+  );
+  assert.equal(
+    pathsMod.installedDocsRoot(installDir),
+    path.join(installDir, "docs"),
+  );
+  assert.equal(
+    pathsMod.installedRinDocsRoot(installDir),
+    path.join(installDir, "docs", "rin"),
+  );
+  assert.equal(
+    pathsMod.installedBuiltinSkillsRoot(installDir),
+    path.join(installDir, "docs", "rin", "builtin-skills"),
+  );
+  assert.equal(
+    pathsMod.installedBuiltinSkillRoot(installDir, "skill-creator"),
+    path.join(installDir, "docs", "rin", "builtin-skills", "skill-creator"),
+  );
+  assert.equal(
+    pathsMod.installedPiDocsRoot(installDir),
+    path.join(installDir, "docs", "pi"),
   );
   assert.equal(
     pathsMod.localBinDirForHome(linuxHome),
