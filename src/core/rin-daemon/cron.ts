@@ -246,6 +246,7 @@ export class CronScheduler {
     if (session.mode !== "current" && session.mode !== "dedicated") {
       throw new Error(`cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`);
     }
+    const explicitSessionFile = safeString(session.sessionFile).trim();
     const normalizedSession: CronTaskSessionBinding = {
       mode: session.mode,
       sessionFile:
@@ -261,6 +262,12 @@ export class CronScheduler {
             )
           : undefined,
     };
+    const dedicatedSessionFile =
+      session.mode === "dedicated"
+        ? explicitSessionFile
+          ? path.resolve(HOME_DIR, explicitSessionFile)
+          : existing?.dedicatedSessionFile
+        : undefined;
 
     const target = input.target ?? existing?.target;
     if (!target) throw new Error("cron_target_required");
@@ -320,7 +327,7 @@ export class CronScheduler {
         termination,
         session: normalizedSession,
         target: normalizedTarget,
-        dedicatedSessionFile: existing?.dedicatedSessionFile,
+        dedicatedSessionFile,
         nextRunAt: existing?.nextRunAt,
         lastStartedAt: existing?.lastStartedAt,
         lastFinishedAt: existing?.lastFinishedAt,
@@ -352,7 +359,7 @@ export class CronScheduler {
       termination,
       session: normalizedSession,
       target: normalizedTarget,
-      dedicatedSessionFile: existing?.dedicatedSessionFile,
+      dedicatedSessionFile,
       nextRunAt,
       lastStartedAt: existing?.lastStartedAt,
       lastFinishedAt: existing?.lastFinishedAt,

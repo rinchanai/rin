@@ -269,7 +269,7 @@ const taskSchema = Type.Object({
       sessionFile: Type.Optional(
         Type.String({
           description:
-            "Optional override when mode=current. Ignored for mode=dedicated.",
+            "Optional session path override. When mode=current, bind to that current session. When mode=dedicated, seed or resume the dedicated session explicitly.",
         }),
       ),
     }),

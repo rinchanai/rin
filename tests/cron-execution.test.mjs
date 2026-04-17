@@ -52,6 +52,37 @@ test("cron scheduler rejects removed specific session mode", () => {
   );
 });
 
+test("cron scheduler can seed and preserve dedicated session files", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const scheduler = new cronMod.CronScheduler({ agentDir });
+  try {
+    const seeded = scheduler.upsertTask({
+      id: "cron_seeded_dedicated",
+      trigger: { kind: "interval", intervalMs: 60_000 },
+      session: { mode: "dedicated", sessionFile: "/tmp/seeded-session.jsonl" },
+      target: { kind: "agent_prompt", prompt: "hello" },
+    });
+    assert.equal(
+      seeded.dedicatedSessionFile,
+      path.resolve("/tmp/seeded-session.jsonl"),
+    );
+    assert.equal(seeded.session.sessionFile, undefined);
+
+    const updated = scheduler.upsertTask({
+      id: "cron_seeded_dedicated",
+      trigger: { kind: "interval", intervalMs: 60_000 },
+      session: { mode: "dedicated" },
+      target: { kind: "agent_prompt", prompt: "hello again" },
+    });
+    assert.equal(
+      updated.dedicatedSessionFile,
+      path.resolve("/tmp/seeded-session.jsonl"),
+    );
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("cron execution shell task returns summarized success body", async () => {
   const text = await execMod.executeCronShellTask(
     {
