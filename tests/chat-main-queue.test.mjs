@@ -219,3 +219,107 @@ test("chat main does not retry a queued prompt while the controller is already h
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
+
+test("chat main does not replay a restored processing envelope after controller recovery already owns it", async () => {
+  const tempRoot = "/home/rin/tmp";
+  await fs.mkdir(tempRoot, { recursive: true });
+  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
+  try {
+    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
+
+    const script = `
+      import fs from "node:fs";
+      import path from "node:path";
+      import { pathToFileURL } from "node:url";
+
+      const rootDir = process.env.RIN_REPO_ROOT;
+      const agentDir = process.env.RIN_DIR;
+      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
+      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
+      const inboxMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "inbox.js")).href);
+      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
+      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
+      const dataDir = path.join(agentDir, "data");
+      const chatKey = "telegram/1:2";
+      const statePath = supportMod.chatStatePath(dataDir, chatKey);
+
+      const session = {
+        platform: "telegram",
+        selfId: "1",
+        channelId: "2",
+        userId: "owner-1",
+        messageId: "m-restart",
+        isDirect: true,
+        content: "hello after restart",
+        stripped: { content: "hello after restart" },
+        elements: [{ type: "text", attrs: { content: "hello after restart" } }],
+      };
+      const queued = inboxMod.enqueueChatInboxItem(agentDir, {
+        chatKey,
+        messageId: "m-restart",
+        session,
+        elements: session.elements,
+      });
+      inboxMod.claimChatInboxFile(agentDir, queued.filePath);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({
+        chatKey,
+        piSessionFile: "/tmp/restart-chat.jsonl",
+        processing: {
+          text: "hello after restart",
+          attachments: [],
+          startedAt: Date.now(),
+          incomingMessageId: "m-restart",
+          replyToMessageId: "m-restart",
+        },
+      }, null, 2) + "\\n", "utf8");
+
+      let recoverCalls = 0;
+      let runTurnCalls = 0;
+      controllerMod.ChatController.prototype.recoverIfNeeded = async function () {
+        recoverCalls += 1;
+        storeMod.saveChatMessage(this.agentDir, {
+          chatKey: this.chatKey,
+          platform: "telegram",
+          botId: "1",
+          chatId: "2",
+          chatType: "private",
+          messageId: "m-restart",
+          role: "user",
+          receivedAt: new Date().toISOString(),
+          text: "hello after restart",
+          acceptedAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          sessionFile: "/tmp/restart-chat.jsonl",
+          sessionId: "restart-session",
+        });
+        delete this.state.processing;
+        this.saveState();
+      };
+      controllerMod.ChatController.prototype.runTurn = async function () {
+        runTurnCalls += 1;
+        return { retry: false };
+      };
+
+      await mainMod.startChatBridge();
+      await new Promise((resolve) => setTimeout(resolve, 3500));
+
+      if (recoverCalls < 1 || runTurnCalls !== 0) {
+        throw new Error(JSON.stringify({ recoverCalls, runTurnCalls }));
+      }
+      process.exit(0);
+    `;
+
+    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        RIN_REPO_ROOT: rootDir,
+        RIN_DIR: agentDir,
+      },
+      timeout: 15000,
+    });
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
