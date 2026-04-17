@@ -150,23 +150,19 @@ export async function promptProviderSetup(
   prompt: PromptApi,
   installDir: string,
   readJsonFile: <T>(filePath: string, fallback: T) => T,
+  deps: {
+    loadModelChoices?: typeof loadModelChoices;
+    configureProviderAuth?: typeof configureProviderAuth;
+  } = {},
 ) {
-  const shouldConfigureProvider = prompt.ensureNotCancelled(
-    await prompt.confirm({
-      message: "Configure a provider now?",
-      initialValue: true,
-    }),
-  );
-
   let provider = "";
   let modelId = "";
   let thinkingLevel = "";
-  let authResult: any = { available: false, authKind: "skipped", authData: {} };
+  let authResult: any = { available: false, authKind: "pending", authData: {} };
 
-  if (!shouldConfigureProvider)
-    return { provider, modelId, thinkingLevel, authResult };
-
-  const models = await loadModelChoices();
+  const loadChoices = deps.loadModelChoices || loadModelChoices;
+  const configureAuth = deps.configureProviderAuth || configureProviderAuth;
+  const models = await loadChoices();
   const providerNames = [
     ...new Set(models.map((model) => model.provider).filter(Boolean)),
   ];
@@ -194,7 +190,7 @@ export async function promptProviderSetup(
     ),
   );
 
-  authResult = await configureProviderAuth(String(provider), installDir, {
+  authResult = await configureAuth(String(provider), installDir, {
     readJsonFile,
     ensureNotCancelled: prompt.ensureNotCancelled,
   });
