@@ -59,7 +59,7 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   );
 });
 
-test("shared loadInstallConfigForHome recovers defaults from installer manifests", async () => {
+test("shared loadInstallConfigForHome prefers launcher metadata and recovers installer manifests", async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "rin-shared-home-"));
   try {
     await fs.mkdir(path.join(home, ".rin"), { recursive: true });
@@ -73,6 +73,23 @@ test("shared loadInstallConfigForHome recovers defaults from installer manifests
       defaultInstallDir: installPaths.defaultInstallDirForHome(home),
     });
 
+    await fs.mkdir(path.join(home, ".config", "rin"), { recursive: true });
+    await fs.writeFile(
+      path.join(home, ".config", "rin", "install.json"),
+      JSON.stringify({
+        defaultTargetUser: "launcher-demo",
+        defaultInstallDir: "/srv/launcher-demo",
+      }),
+      "utf8",
+    );
+    assert.deepEqual(shared.loadInstallConfigForHome(home), {
+      defaultTargetUser: "launcher-demo",
+      defaultInstallDir: "/srv/launcher-demo",
+    });
+
+    await fs.rm(path.join(home, ".config", "rin", "install.json"), {
+      force: true,
+    });
     await fs.rm(path.join(home, ".rin", "installer.json"), { force: true });
     await fs.mkdir(path.join(home, ".rin", "config"), { recursive: true });
     await fs.writeFile(

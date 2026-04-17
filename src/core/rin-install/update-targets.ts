@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { resolveInstallRecordTarget } from "./install-record.js";
 import {
-  defaultInstallDirForHome,
   installDiscoveryHomeRoots,
   installerLocatorCandidatesForHome,
   launchAgentsDirForHome,
+  launcherMetadataPathForHome,
   systemdUserUnitDirForHome,
 } from "./paths.js";
 
@@ -31,7 +32,7 @@ export type InstalledTarget = {
   targetUser: string;
   installDir: string;
   ownerHome: string;
-  source: "manifest" | "systemd" | "launchd";
+  source: "manifest" | "systemd" | "launchd" | "launcher";
 };
 
 export function discoverInstalledTargets(
@@ -63,19 +64,20 @@ export function discoverInstalledTargets(
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    const defaultInstallDir = defaultInstallDirForHome(homeDir);
-    let manifest: any = null;
     for (const filePath of installerLocatorCandidatesForHome(homeDir)) {
-      manifest = readJsonFile<any>(filePath, null);
-      if (manifest && typeof manifest === "object") break;
-    }
-    if (manifest && typeof manifest === "object") {
+      const manifestTarget = resolveInstallRecordTarget(
+        homeDir,
+        userName,
+        readJsonFile<any>(filePath, null),
+      );
+      if (!manifestTarget) continue;
       add(
-        String(manifest.targetUser || userName),
-        String(manifest.installDir || defaultInstallDir),
+        manifestTarget.targetUser,
+        manifestTarget.installDir,
         homeDir,
         "manifest",
       );
+      break;
     }
 
     const systemdDir = systemdUserUnitDirForHome(homeDir);
@@ -103,6 +105,20 @@ export function discoverInstalledTargets(
         add(userName, installDir, homeDir, "launchd");
       }
     } catch {}
+
+    const launcherTarget = resolveInstallRecordTarget(
+      homeDir,
+      userName,
+      readJsonFile<any>(launcherMetadataPathForHome(homeDir), null),
+    );
+    if (launcherTarget) {
+      add(
+        launcherTarget.targetUser,
+        launcherTarget.installDir,
+        homeDir,
+        "launcher",
+      );
+    }
   };
 
   for (const root of homeRoots) {

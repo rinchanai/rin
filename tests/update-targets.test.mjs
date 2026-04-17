@@ -33,6 +33,7 @@ test("discoverInstalledTargets scans manifest, systemd, and launchd homes determ
     const carolHome = path.join(usersRoot, "carol");
     const danaHome = path.join(homeRoot, "dana");
     const eveHome = path.join(homeRoot, "eve");
+    const frankHome = path.join(homeRoot, "frank");
 
     await fs.mkdir(path.join(aliceHome, ".rin"), { recursive: true });
     await fs.writeFile(
@@ -105,6 +106,18 @@ test("discoverInstalledTargets scans manifest, systemd, and launchd homes determ
       "utf8",
     );
 
+    await fs.mkdir(path.join(frankHome, ".config", "rin"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(frankHome, ".config", "rin", "install.json"),
+      JSON.stringify({
+        defaultTargetUser: "frank-daemon",
+        defaultInstallDir: "/opt/rin-frank",
+      }),
+      "utf8",
+    );
+
     const discovered = updateTargets.discoverInstalledTargets([
       homeRoot,
       usersRoot,
@@ -140,6 +153,12 @@ test("discoverInstalledTargets scans manifest, systemd, and launchd homes determ
         installDir: "/opt/rin-eve",
         ownerHome: eveHome,
         source: "manifest",
+      },
+      {
+        targetUser: "frank-daemon",
+        installDir: "/opt/rin-frank",
+        ownerHome: frankHome,
+        source: "launcher",
       },
     ]);
   });

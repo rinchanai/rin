@@ -15,6 +15,7 @@ import {
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
+import { normalizeInstallRecord } from "../rin-install/install-record.js";
 import {
   defaultInstallDirForHome,
   installerLocatorCandidatesForHome,
@@ -75,32 +76,13 @@ export function installConfigPath() {
   return launcherMetadataPathForHome(os.homedir());
 }
 
-function normalizeInstallConfig(home: string, raw: any): InstallConfig | null {
-  if (!raw || typeof raw !== "object") return null;
-  const defaultTargetUser = safeString(raw.defaultTargetUser).trim();
-  const defaultInstallDir = safeString(raw.defaultInstallDir).trim();
-  if (defaultTargetUser || defaultInstallDir) {
-    return {
-      defaultTargetUser,
-      defaultInstallDir,
-    };
-  }
-  const targetUser = safeString(raw.targetUser).trim();
-  const installDir = safeString(raw.installDir).trim();
-  if (!targetUser && !installDir) return null;
-  return {
-    defaultTargetUser: targetUser,
-    defaultInstallDir: installDir || defaultInstallDirForHome(home),
-  };
-}
-
 export function loadInstallConfigForHome(home = os.homedir()): InstallConfig {
   for (const filePath of [
     launcherMetadataPathForHome(home),
     ...installerLocatorCandidatesForHome(home),
   ]) {
     try {
-      const normalized = normalizeInstallConfig(
+      const normalized = normalizeInstallRecord(
         home,
         JSON.parse(fs.readFileSync(filePath, "utf8")),
       );
