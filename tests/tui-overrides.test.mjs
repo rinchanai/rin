@@ -207,6 +207,50 @@ test("rpc compaction end restores transport loader instead of leaving status emp
   assert.ok(renders >= 1);
 });
 
+test("std compaction end restores working loader when the session is still streaming", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let renders = 0;
+  const ui = { requestRender() { renders += 1; } };
+  const instance = {
+    isInitialized: true,
+    ui,
+    session: {
+      isStreaming: true,
+      isCompacting: false,
+    },
+    statusContainer: {
+      child: null,
+      clear() {
+        this.child = null;
+      },
+      addChild(child) {
+        this.child = child;
+      },
+    },
+    chatContainer: {
+      clear() {},
+      addChild() {},
+      removeChild() {},
+    },
+    defaultEditor: { onEscape() {} },
+    footer: { invalidate() {} },
+    flushCompactionQueue() {},
+    showError() {},
+    showStatus() {},
+    autoCompactionLoader: { stop() {} },
+  };
+
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    { type: "compaction_end", aborted: false, willRetry: false },
+  );
+
+  assert.equal(instance.loadingAnimation?.message, "Working...");
+  instance.loadingAnimation?.stop?.();
+  assert.ok(renders >= 1);
+});
+
 test("rpc agent end does not leave a stale working loader after the turn is done", async () => {
   await overrides.applyRinTuiOverrides();
 
