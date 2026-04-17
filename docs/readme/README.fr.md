@@ -1,6 +1,8 @@
-[English](README.md) | [Chinese](README.zh-CN.md) | [Japanese](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md)
+[English](../../README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md) | [Plus de langues](README.md)
 
 # Rin
+
+> Remarque : cette traduction est fournie pour plus de confort. La version de référence est le README anglais (`../../README.md`), qui peut être mise à jour plus tôt.
 
 Un assistant IA local, centré sur le terminal, capable de discuter, modifier des fichiers, mémoriser des informations, chercher sur le web et exécuter des tâches planifiées.
 
@@ -99,10 +101,10 @@ En temps normal, utilisez `rin`.
 
 Pour aller plus loin, commencez ici :
 
-- [`docs/rin/README.md`](docs/rin/README.md)
-- [`docs/rin/capabilities.md`](docs/rin/capabilities.md)
-- [`docs/rin/runtime-layout.md`](docs/rin/runtime-layout.md)
-- [`docs/rin/builtin-extensions.md`](docs/rin/builtin-extensions.md)
+- [`docs/rin/README.md`](../rin/README.md)
+- [`docs/rin/docs/capabilities.md`](../rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](../rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](../rin/docs/builtin-extensions.md)
 
 ## Version courte
 
