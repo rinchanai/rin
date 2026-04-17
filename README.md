@@ -1,36 +1,33 @@
-[English](README.md) | [Chinese](README.zh-CN.md) | [Japanese](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md)
+Language / 语言: [English](README.md) · [简体中文](docs/readme/README.zh-CN.md) · [日本語](docs/readme/README.ja.md) · [Español](docs/readme/README.es.md) · [Français](docs/readme/README.fr.md) · [More languages](docs/readme/README.md)
 
 # Rin
 
-A terminal-first local AI assistant that can chat, edit files, remember things, search the web, and run scheduled tasks.
+Rin is a daemon-style local AI assistant built on Pi.
+It is terminal-first, keeps a small customizable core, and ships with a practical default toolset.
 
-## What Rin is
-
-Rin is for people who want more than a one-shot coding agent.
-
-It is a local assistant you can keep around in your terminal for day-to-day work:
-
-- ask questions in plain language
-- inspect and modify files
-- keep useful long-term memory
-- set reminders and recurring tasks
-- look up fresh information on the web
-- bridge the same assistant into chat platforms through a chat bridge
-
-The goal is simple: make the agent feel like a tool you can actually live with, not just a shell around a model.
+> [!WARNING]
+> Rin is still a work in progress.
+> Expect rough edges, unstable behavior, and occasional breaking changes.
+> Agentic workflows can also consume noticeable model tokens and cost depending on how you use them.
 
 ## Why Rin
 
-Rin focuses on a few basics:
+- Built on Pi and shaped into a daemon agent you can keep around for daily work.
+- Small core by design: easier to understand, customize, and maintain.
+- Practical built-ins for file work, memory, scheduled tasks, web search, and chat bridging.
+- One product entrypoint: `rin`.
+- KISS-first direction instead of a sprawling extension-first surface.
 
-- terminal-first workflow
-- built-in memory, not just stateless chats
-- built-in scheduled tasks
-- built-in web search for time-sensitive questions
-- built-in chat bridge support
-- one product entrypoint: `rin`
+## What Rin is good for
 
-If you want an assistant that stays useful over time, Rin is designed for that.
+Rin is for people who want a local assistant they can actually keep using.
+
+- Ask in plain language.
+- Inspect and modify files.
+- Keep useful long-term memory.
+- Run reminders and recurring tasks.
+- Look up fresh information on the web.
+- Bridge the same assistant into chat platforms.
 
 ## Quick start
 
@@ -58,7 +55,7 @@ If you already have the repo locally, the bundled `install.sh` wrapper runs the 
 ./install.sh --git deadbeef
 ```
 
-Then open Rin:
+Open Rin:
 
 ```bash
 rin
@@ -70,32 +67,16 @@ Check health if needed:
 rin doctor
 ```
 
-The installer will warn you about security boundaries and possible extra token usage. That can include initialization, memory processing, summarization, subagents, scheduled tasks, and web search.
+## Built in today
 
-## What you can ask Rin to do
+Rin includes a focused default stack:
 
-Once Rin is open, you can just talk to it.
-
-Examples:
-
-- `Look through this directory and tell me what matters.`
-- `Rewrite this README.`
-- `Clean up this config file.`
-- `Remember that I prefer short answers.`
-- `Remind me tomorrow afternoon to check the logs.`
-- `Check the latest official docs for this tool.`
-- `Watch this folder every hour and tell me if something changes.`
-
-## Core commands
-
-```bash
-rin            # open Rin
-rin doctor     # inspect health and configuration
-rin start      # start the daemon
-rin stop       # stop the daemon
-rin restart    # restart the daemon
-rin update     # update the installed Rin core runtime
-```
+- file and shell tools
+- long-term memory
+- scheduled tasks and reminders
+- live web search
+- chat bridge support
+- subagents for delegated work
 
 ## Updating Rin
 
@@ -135,21 +116,16 @@ Important release-channel rule:
 
 Avoid treating repo-local workflows like `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the default way to update an already installed Rin.
 
-## Key built-in capabilities
+## Core commands
 
-Rin comes with a few things wired in by default:
-
-- long-term memory
-- scheduled tasks and reminders
-- live web search
-- chat bridge coverage for Telegram, OneBot, Discord, Kook, QQ, Lark, Mail, WeChat Official, WeCom, DingTalk, Matrix, WhatsApp, LINE, Slack, and Zulip
-- subagents for delegated work
-
-## When to use `rin --std`
-
-Normally, use `rin`.
-
-`rin --std` is mainly a troubleshooting fallback when the default RPC mode has problems and you need a foreground session to recover or debug.
+```bash
+rin            # open Rin
+rin doctor     # inspect health and configuration
+rin start      # start the daemon
+rin stop       # stop the daemon
+rin restart    # restart the daemon
+rin update     # update the installed Rin core runtime
+```
 
 ## Testing
 
@@ -163,7 +139,7 @@ The placement and design rules for new tests live in [`tests/README.md`](tests/R
 
 ## Docs
 
-If you want more detail, start here:
+Start here:
 
 - [`docs/rin/README.md`](docs/rin/README.md)
 - [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
@@ -188,8 +164,10 @@ npm run sync:pi-docs
 npm run sync:skill-creator
 ```
 
-## Short version
+## Project status
 
-Install it, run `rin`, and ask for what you need.
+Rin is actively evolving.
+The current direction is a cleaner core, stronger daemon reliability, and better day-to-day usefulness without losing simplicity.
 
-That is the main idea.
+If you want a fully settled surface, it is still early.
+If you want a small, understandable, hackable daemon agent that is already useful, that is what Rin is trying to be.
