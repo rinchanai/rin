@@ -89,6 +89,33 @@ test("install-record normalizes launcher metadata and installer manifests", () =
       installDir: "/srv/rin-demo",
     },
   );
+  assert.deepEqual(
+    installRecord.loadInstallRecordFromCandidates(
+      "/home/demo",
+      ["missing", "manifest"],
+      (filePath) =>
+        filePath === "manifest" ? { targetUser: "candidate-demo" } : null,
+    ),
+    {
+      defaultTargetUser: "candidate-demo",
+      defaultInstallDir: "/home/demo/.rin",
+    },
+  );
+  assert.deepEqual(
+    installRecord.resolveInstallRecordTargetFromCandidates(
+      "/home/demo",
+      "fallback-user",
+      ["missing", "launcher"],
+      (filePath) =>
+        filePath === "launcher"
+          ? { defaultInstallDir: "/srv/rin-demo" }
+          : null,
+    ),
+    {
+      targetUser: "fallback-user",
+      installDir: "/srv/rin-demo",
+    },
+  );
   assert.equal(installRecord.normalizeInstallRecord("/home/demo", null), null);
 });
 

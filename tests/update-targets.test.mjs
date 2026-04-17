@@ -24,7 +24,7 @@ async function withTempDir(fn) {
   }
 }
 
-test("discoverInstalledTargets scans manifest, systemd, and launchd homes deterministically", async () => {
+test("discoverInstalledTargets scans manifest, launcher, systemd, and launchd homes deterministically", async () => {
   await withTempDir(async (dir) => {
     const homeRoot = path.join(dir, "home");
     const usersRoot = path.join(dir, "Users");
@@ -34,6 +34,7 @@ test("discoverInstalledTargets scans manifest, systemd, and launchd homes determ
     const danaHome = path.join(homeRoot, "dana");
     const eveHome = path.join(homeRoot, "eve");
     const frankHome = path.join(homeRoot, "frank");
+    const graceHome = path.join(usersRoot, "grace");
 
     await fs.mkdir(path.join(aliceHome, ".rin"), { recursive: true });
     await fs.writeFile(
@@ -118,6 +119,27 @@ test("discoverInstalledTargets scans manifest, systemd, and launchd homes determ
       "utf8",
     );
 
+    await fs.mkdir(
+      path.join(graceHome, "Library", "Application Support", "rin"),
+      {
+        recursive: true,
+      },
+    );
+    await fs.writeFile(
+      path.join(
+        graceHome,
+        "Library",
+        "Application Support",
+        "rin",
+        "install.json",
+      ),
+      JSON.stringify({
+        defaultTargetUser: "grace-daemon",
+        defaultInstallDir: "/Users/grace/.rin-managed",
+      }),
+      "utf8",
+    );
+
     const discovered = updateTargets.discoverInstalledTargets([
       homeRoot,
       usersRoot,
@@ -158,6 +180,12 @@ test("discoverInstalledTargets scans manifest, systemd, and launchd homes determ
         targetUser: "frank-daemon",
         installDir: "/opt/rin-frank",
         ownerHome: frankHome,
+        source: "launcher",
+      },
+      {
+        targetUser: "grace-daemon",
+        installDir: "/Users/grace/.rin-managed",
+        ownerHome: graceHome,
         source: "launcher",
       },
     ]);

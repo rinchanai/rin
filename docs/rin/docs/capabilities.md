@@ -22,10 +22,10 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
 
 When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
-Do not keep reasoning about the current account's launcher metadata.
-Instead, switch to install recovery through the target manifest or managed service files.
+Prefer install recovery through the target manifest or managed service files.
+If those are unavailable but you are clearly operating as the launcher-owning account, the current account's launcher metadata is a valid last fallback for recovering `targetUser` and `installDir`.
 
-In short: no `rin` on the current account usually means “wrong user for the launcher”, so the recovery path is service file or locator manifest → target install dir → `installer.json` → `app/current/.../main.js update`.
+In short: no `rin` on the current account usually means “wrong user for the launcher”, so the normal recovery path is service file or locator manifest → target install dir → `installer.json` → `app/current/.../main.js update`, with launcher metadata only as a same-user fallback.
 
 Important implications:
 

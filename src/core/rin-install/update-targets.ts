@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { resolveInstallRecordTarget } from "./install-record.js";
+import { resolveInstallRecordTargetFromCandidates } from "./install-record.js";
 import {
   installDiscoveryHomeRoots,
   installerLocatorCandidatesForHome,
   launchAgentsDirForHome,
-  launcherMetadataPathForHome,
+  launcherMetadataCandidatesForHome,
   systemdUserUnitDirForHome,
 } from "./paths.js";
 
@@ -64,20 +64,19 @@ export function discoverInstalledTargets(
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    for (const filePath of installerLocatorCandidatesForHome(homeDir)) {
-      const manifestTarget = resolveInstallRecordTarget(
-        homeDir,
-        userName,
-        readJsonFile<any>(filePath, null),
-      );
-      if (!manifestTarget) continue;
+    const manifestTarget = resolveInstallRecordTargetFromCandidates(
+      homeDir,
+      userName,
+      installerLocatorCandidatesForHome(homeDir),
+      (filePath) => readJsonFile<any>(filePath, null),
+    );
+    if (manifestTarget) {
       add(
         manifestTarget.targetUser,
         manifestTarget.installDir,
         homeDir,
         "manifest",
       );
-      break;
     }
 
     const systemdDir = systemdUserUnitDirForHome(homeDir);
@@ -106,10 +105,11 @@ export function discoverInstalledTargets(
       }
     } catch {}
 
-    const launcherTarget = resolveInstallRecordTarget(
+    const launcherTarget = resolveInstallRecordTargetFromCandidates(
       homeDir,
       userName,
-      readJsonFile<any>(launcherMetadataPathForHome(homeDir), null),
+      launcherMetadataCandidatesForHome(homeDir),
+      (filePath) => readJsonFile<any>(filePath, null),
     );
     if (launcherTarget) {
       add(

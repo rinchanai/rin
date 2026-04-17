@@ -59,7 +59,7 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   );
 });
 
-test("shared loadInstallConfigForHome prefers launcher metadata and recovers installer manifests", async () => {
+test("shared loadInstallConfigForHome prefers launcher metadata candidates and recovers installer manifests", async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "rin-shared-home-"));
   try {
     await fs.mkdir(path.join(home, ".rin"), { recursive: true });
@@ -90,6 +90,26 @@ test("shared loadInstallConfigForHome prefers launcher metadata and recovers ins
     await fs.rm(path.join(home, ".config", "rin", "install.json"), {
       force: true,
     });
+    await fs.mkdir(path.join(home, "Library", "Application Support", "rin"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(home, "Library", "Application Support", "rin", "install.json"),
+      JSON.stringify({
+        defaultTargetUser: "mac-launcher-demo",
+        defaultInstallDir: "/srv/mac-launcher-demo",
+      }),
+      "utf8",
+    );
+    assert.deepEqual(shared.loadInstallConfigForHome(home), {
+      defaultTargetUser: "mac-launcher-demo",
+      defaultInstallDir: "/srv/mac-launcher-demo",
+    });
+
+    await fs.rm(
+      path.join(home, "Library", "Application Support", "rin", "install.json"),
+      { force: true },
+    );
     await fs.rm(path.join(home, ".rin", "installer.json"), { force: true });
     await fs.mkdir(path.join(home, ".rin", "config"), { recursive: true });
     await fs.writeFile(

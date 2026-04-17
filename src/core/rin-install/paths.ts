@@ -172,6 +172,15 @@ export function launcherMetadataPathForHome(
   return path.join(appConfigDirForHome(home, platform), "install.json");
 }
 
+export function launcherMetadataCandidatesForHome(home: string) {
+  const primary = launcherMetadataPathForHome(home);
+  const secondary = launcherMetadataPathForHome(
+    home,
+    process.platform === "darwin" ? "linux" : "darwin",
+  );
+  return Array.from(new Set([primary, secondary]));
+}
+
 export function launchAgentsDirForHome(home: string) {
   return path.join(home, "Library", "LaunchAgents");
 }
