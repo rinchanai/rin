@@ -7,11 +7,6 @@ import {
   type ChatBridgePromptApi,
 } from "../chat-bridge/setup.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
-import {
-  ensureChatSidecar,
-  getChatSidecarStatus,
-  stopChatSidecar,
-} from "./service.js";
 import { readJsonFile, writeJsonFile } from "./support.js";
 
 const CHAT_BRIDGE_COMMAND_CANCELLED = "chat_bridge_setup_cancelled";
@@ -90,24 +85,6 @@ function createUiPromptApi(ui: any): ChatBridgePromptApi {
   };
 }
 
-async function restartChatBridgeSidecars(agentDir: string) {
-  const status = getChatSidecarStatus(agentDir);
-  const instances = Array.isArray(status?.instances) ? status.instances : [];
-  if (!instances.length) return { restarted: 0, pending: true };
-  let restarted = 0;
-  for (const instance of instances) {
-    const instanceId = String(instance?.instanceId || "").trim();
-    if (!instanceId) continue;
-    const entryPath = String(instance?.entryPath || "").trim() || undefined;
-    await stopChatSidecar(agentDir, { instanceId }).catch(() => {});
-    await ensureChatSidecar(agentDir, { instanceId, entryPath }).catch(
-      () => {},
-    );
-    restarted += 1;
-  }
-  return { restarted, pending: false };
-}
-
 export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
   pi.registerCommand("chat", {
     description: "Configure an official chat bridge adapter.",
@@ -159,20 +136,11 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
       }
       writeJsonFile(settingsPath, settings);
 
-      const restart = await restartChatBridgeSidecars(profile.agentDir);
       const lines = [
         `Chat bridge updated: ${result.chatDescription}`,
         result.chatDetail,
+        "Restart Rin to apply the updated chat configuration.",
       ].filter(Boolean);
-      if (restart.pending) {
-        lines.push(
-          "No active chat bridge sidecar was running. The change will apply on the next daemon start.",
-        );
-      } else {
-        lines.push(
-          `Restarted chat bridge sidecar instances: ${restart.restarted}`,
-        );
-      }
       ctx.ui.notify(lines.join("\n"), "info");
       return;
     },

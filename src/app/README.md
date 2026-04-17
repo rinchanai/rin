@@ -26,9 +26,8 @@ Those belong in `src/core/`.
 Because `core` must remain independently runnable.
 The app build still provides a few very small wrappers that only do product assembly:
 
-- `rin-daemon/daemon.ts` points the daemon at the app worker
+- `rin-daemon/daemon.ts` points the daemon at the app worker and assembles product-only capabilities
 - `rin-daemon/worker.ts` starts the shared core worker
 - `rin-tui/main.ts` starts the shared TUI launcher
-- `rin-chat/main.ts` starts the shared Chat bridge
 
 Builtin Rin capabilities are now owned and registered from `src/core/`.

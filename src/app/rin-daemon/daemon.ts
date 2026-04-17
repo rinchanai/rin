@@ -8,12 +8,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { startChatBridge } from "../../core/chat/main.js";
 import { startDaemon } from "../../core/rin-daemon/daemon.js";
-import {
-  cleanupOrphanChatSidecars,
-  ensureChatSidecar,
-  stopChatSidecar,
-} from "../../core/chat/service.js";
 import { resolveRuntimeProfile } from "../../core/rin-lib/runtime.js";
 import {
   cleanupOrphanSearxngSidecars,
@@ -25,53 +21,50 @@ async function main() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const ext = path.extname(fileURLToPath(import.meta.url)) || ".js";
   const workerPath = path.join(here, `worker${ext}`);
-  const chatEntryPath = path.join(here, "..", "rin-chat", `main${ext}`);
   const runtime = resolveRuntimeProfile();
-  const sidecars = [
-    {
-      instanceId: `daemon-${process.pid}`,
-      cleanup: () => cleanupOrphanSearxngSidecars(runtime.agentDir),
-      ensure: (instanceId: string) =>
-        ensureSearxngSidecar(runtime.agentDir, { instanceId }),
-      stop: (instanceId: string) =>
-        stopSearxngSidecar(runtime.agentDir, { instanceId }),
-    },
-    {
-      instanceId: `daemon-${process.pid}`,
-      cleanup: () => cleanupOrphanChatSidecars(runtime.agentDir),
-      ensure: (instanceId: string) =>
-        ensureChatSidecar(runtime.agentDir, {
-          instanceId,
-          entryPath: chatEntryPath,
-        }),
-      stop: (instanceId: string) =>
-        stopChatSidecar(runtime.agentDir, { instanceId }),
-    },
-  ];
+  const instanceId = `daemon-${process.pid}`;
 
-  const ensureSidecars = async () => {
-    for (const sidecar of sidecars) {
-      await sidecar.cleanup().catch(() => {});
-      await sidecar.ensure(sidecar.instanceId).catch(() => {});
-    }
+  const ensureWebSearch = async () => {
+    await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {});
+    await ensureSearxngSidecar(runtime.agentDir, { instanceId }).catch(() => {});
   };
+  void ensureWebSearch();
 
-  await ensureSidecars();
+  const chatBridge = await startChatBridge({ hosted: true });
+
   const sidecarHealthTimer = setInterval(() => {
-    void ensureSidecars();
+    void ensureWebSearch();
   }, 10_000);
-  const stop = () => {
+  const stopServices = async () => {
     clearInterval(sidecarHealthTimer);
-    for (const sidecar of sidecars) {
-      void sidecar.stop(sidecar.instanceId).catch(() => {});
-    }
+    await chatBridge.stop().catch(() => {});
+    await stopSearxngSidecar(runtime.agentDir, { instanceId }).catch(() => {});
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
-  process.on("exit", stop);
-  await startDaemon({
-    workerPath,
-  });
+
+  try {
+    await startDaemon({
+      workerPath,
+      chat: {
+        send: async (payload) => await chatBridge.send(payload),
+        runTurn: async (payload) => await chatBridge.runTurn(payload),
+      },
+      getExtraStatus: () => ({
+        chat: chatBridge.getStatus(),
+      }),
+      handleLocalCommand: async (command) => {
+        const type = String(command?.type || "").trim();
+        if (type !== "chat_bridge_eval") return undefined;
+        return {
+          success: true,
+          data: await chatBridge.evalBridge(command?.payload || {}),
+        };
+      },
+      onShutdown: stopServices,
+    });
+  } catch (error) {
+    await stopServices().catch(() => {});
+    throw error;
+  }
 }
 
 main().catch((error: any) => {

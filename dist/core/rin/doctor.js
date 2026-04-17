@@ -20,12 +20,7 @@ export async function runDoctor(parsed) {
         : []) {
         lines.push(`webSearchInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} port=${String(instance.port || "")} baseUrl=${instance.baseUrl || ""}`);
     }
-    lines.push(`chatBridgeInstanceCount=${String(Array.isArray(chatStatus?.instances) ? chatStatus.instances.length : 0)}`);
-    for (const instance of Array.isArray(chatStatus?.instances)
-        ? chatStatus.instances
-        : []) {
-        lines.push(`chatBridgeInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} entry=${instance.entryPath || ""}`);
-    }
+    lines.push(`chatBridgeReady=${chatStatus?.ready ? "yes" : "no"}`, `chatBridgeAdapterCount=${String(chatStatus?.adapterCount ?? 0)}`, `chatBridgeBotCount=${String(chatStatus?.botCount ?? 0)}`, `chatBridgeControllerCount=${String(chatStatus?.controllerCount ?? 0)}`, `chatBridgeDetachedControllerCount=${String(chatStatus?.detachedControllerCount ?? 0)}`);
     if (daemonStatus) {
         lines.push(`daemonWorkerCount=${String(daemonStatus.workerCount ?? 0)}`);
         const workerLines = Array.isArray(daemonStatus.workers)
