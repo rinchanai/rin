@@ -1,5 +1,5 @@
 import { parseJsonl } from "../rin-lib/common.js";
-import { createInterruptedToolResultPayload } from "../rin-lib/interruption.js";
+import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { listBoundSessions } from "../session/factory.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
@@ -12,19 +12,6 @@ import {
 } from "./worker-helpers.js";
 
 const TURN_HEARTBEAT_INTERVAL_MS = 2_000;
-
-function interruptedToolResultMessage(toolCall: any) {
-  const result = createInterruptedToolResultPayload();
-  return {
-    role: "toolResult",
-    toolCallId: String(toolCall?.id || ""),
-    toolName: String(toolCall?.name || ""),
-    content: result.content,
-    details: result.details,
-    isError: true,
-    timestamp: Date.now(),
-  } as any;
-}
 
 function appendInterruptedToolResults(
   session: any,
@@ -41,7 +28,7 @@ function appendInterruptedToolResults(
   if (!toolCalls.length) return false;
 
   for (const toolCall of toolCalls) {
-    const message = interruptedToolResultMessage(toolCall);
+    const message = createInterruptedToolResultMessage(toolCall);
     session.agent.state.messages.push(message);
     if (options.persistToSession !== false) {
       session.sessionManager.appendMessage(message);

@@ -134,6 +134,21 @@ If you want more detail, start here:
 - [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
 - [`docs/rin/docs/runtime-layout.md`](docs/rin/docs/runtime-layout.md)
 - [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
+- [`upstream/pi/README.md`](upstream/pi/README.md) for the tracked upstream Pi mirror used by Rin
+- [`upstream/skill-creator/SKILL.md`](upstream/skill-creator/SKILL.md) for the tracked upstream builtin skill mirror used by Rin
+
+Refresh the mirrored upstream assets when needed:
+
+```bash
+npm run sync:upstreams
+```
+
+You can also refresh one mirror at a time:
+
+```bash
+npm run sync:pi-docs
+npm run sync:skill-creator
+```
 
 ## Short version
 

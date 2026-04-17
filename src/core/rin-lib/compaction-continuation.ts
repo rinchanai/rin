@@ -10,7 +10,17 @@ export type CompactionContinuationMarker = {
   assistantPreview?: string;
 };
 
-const CONTINUATION_MARKER_DIR = join(tmpdir(), "rin-compaction-continuation");
+const CONTINUATION_MARKER_ROOT = [
+  process.env.RIN_TMP_DIR,
+  "/home/rin/tmp",
+  tmpdir(),
+]
+  .map((value) => String(value || "").trim())
+  .find(Boolean) as string;
+const CONTINUATION_MARKER_DIR = join(
+  CONTINUATION_MARKER_ROOT,
+  "rin-compaction-continuation",
+);
 
 function readSessionIdentity(source: any): string {
   const sessionManager = source?.sessionManager || source;

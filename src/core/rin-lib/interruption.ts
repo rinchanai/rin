@@ -18,3 +18,17 @@ export function createInterruptedToolResultPayload() {
     },
   };
 }
+
+export function createInterruptedToolResultMessage(toolCall: any) {
+  const result = createInterruptedToolResultPayload();
+  return {
+    role: "toolResult",
+    toolCallId: String(toolCall?.id || ""),
+    toolName: String(toolCall?.name || ""),
+    content: result.content,
+    details: result.details,
+    isError: true,
+    timestamp: Date.now(),
+  } as any;
+}
+

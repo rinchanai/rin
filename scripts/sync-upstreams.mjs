@@ -1,0 +1,157 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const packageJsonPath = path.join(repoRoot, "package.json");
+const preferredTempRoot = [process.env.RIN_TMP_DIR, "/home/rin/tmp", os.tmpdir()]
+  .map((value) => String(value || "").trim())
+  .find(Boolean);
+
+function readJson(filePath, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeVersion(value) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?/);
+  return match ? match[0] : raw;
+}
+
+function parseArgs(argv) {
+  const positional = [];
+  const options = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const current = argv[i];
+    if (!current.startsWith("--")) {
+      positional.push(current);
+      continue;
+    }
+    const key = current.slice(2);
+    const next = argv[i + 1];
+    if (!next || next.startsWith("--")) {
+      options[key] = true;
+      continue;
+    }
+    options[key] = next;
+    i += 1;
+  }
+  return { positional, options };
+}
+
+function runGit(args, cwd, stdio = ["ignore", "pipe", "inherit"]) {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio,
+  }).trim();
+}
+
+function replacePath(sourcePath, destPath) {
+  fs.rmSync(destPath, { recursive: true, force: true });
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  fs.cpSync(sourcePath, destPath, { recursive: true });
+}
+
+const packageJson = readJson(packageJsonPath, {});
+const piPackageVersion = normalizeVersion(
+  packageJson?.dependencies?.["@mariozechner/pi-coding-agent"],
+);
+if (!piPackageVersion) {
+  throw new Error("Unable to determine @mariozechner/pi-coding-agent version from package.json");
+}
+
+const mirrors = {
+  pi: {
+    repo: "https://github.com/badlogic/pi-mono.git",
+    sourceSubdir: "packages/coding-agent",
+    defaultRef: `v${piPackageVersion}`,
+    destRoot: path.join(repoRoot, "upstream", "pi"),
+    packageName: "@mariozechner/pi-coding-agent",
+    packageVersion: piPackageVersion,
+    paths: ["README.md", "CHANGELOG.md", "docs", "examples"],
+  },
+  "skill-creator": {
+    repo: "https://github.com/anthropics/skills.git",
+    sourceSubdir: "skills/skill-creator",
+    defaultRef: "main",
+    destRoot: path.join(repoRoot, "upstream", "skill-creator"),
+    paths: null,
+  },
+};
+
+function syncMirror(name, options = {}) {
+  const mirror = mirrors[name];
+  if (!mirror) throw new Error(`Unknown upstream mirror: ${name}`);
+
+  const upstreamMetaPath = path.join(mirror.destRoot, "_upstream.json");
+  const existingMeta = readJson(upstreamMetaPath, {});
+  const repo = String(options.repo || existingMeta.repo || mirror.repo).trim();
+  const sourceSubdir = String(
+    options.sourceSubdir || existingMeta.sourceSubdir || mirror.sourceSubdir,
+  ).trim();
+  const ref = String(options.ref || existingMeta.ref || mirror.defaultRef).trim();
+  const tempRoot = fs.mkdtempSync(path.join(preferredTempRoot, `rin-sync-${name}-`));
+  const cloneDir = path.join(tempRoot, "upstream");
+
+  try {
+    execFileSync(
+      "git",
+      ["clone", "--depth", "1", "--branch", ref, "--filter=blob:none", "--sparse", repo, cloneDir],
+      { stdio: "inherit" },
+    );
+    execFileSync("git", ["sparse-checkout", "set", sourceSubdir], {
+      cwd: cloneDir,
+      stdio: "inherit",
+    });
+
+    const resolvedCommit = runGit(["rev-parse", "HEAD"], cloneDir);
+    if (Array.isArray(mirror.paths)) {
+      fs.mkdirSync(mirror.destRoot, { recursive: true });
+      for (const relativePath of mirror.paths) {
+        replacePath(
+          path.join(cloneDir, sourceSubdir, relativePath),
+          path.join(mirror.destRoot, relativePath),
+        );
+      }
+    } else {
+      replacePath(path.join(cloneDir, sourceSubdir), mirror.destRoot);
+    }
+
+    const nextMeta = {
+      repo,
+      sourceSubdir,
+      ref,
+      resolvedCommit,
+      syncedAt: new Date().toISOString(),
+      syncMethod: "git sparse-checkout",
+    };
+    if (mirror.packageName) nextMeta.packageName = mirror.packageName;
+    if (mirror.packageVersion) nextMeta.packageVersion = mirror.packageVersion;
+    if (Array.isArray(mirror.paths)) nextMeta.paths = mirror.paths;
+    fs.writeFileSync(upstreamMetaPath, `${JSON.stringify(nextMeta, null, 2)}\n`, "utf8");
+
+    process.stdout.write(
+      [
+        `Synced ${name} from ${repo}`,
+        `ref=${ref}`,
+        `commit=${resolvedCommit}`,
+        `dest=${mirror.destRoot}`,
+      ].join("\n") + "\n",
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+const { positional, options } = parseArgs(process.argv.slice(2));
+const targets = positional.length ? positional : Object.keys(mirrors);
+for (const target of targets) {
+  syncMirror(target, options);
+}
