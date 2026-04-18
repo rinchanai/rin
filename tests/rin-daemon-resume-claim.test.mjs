@@ -105,6 +105,207 @@ async function makeTempDir(prefix) {
   return await fs.mkdtemp(path.join(root, prefix));
 }
 
+test("daemon serves empty session and catalog commands locally without spawning a worker", async () => {
+  const agentDir = await makeTempDir("rin-daemon-local-");
+  const socketPath = path.join(agentDir, "daemon.sock");
+  const workerPath = path.join(agentDir, "fake-worker.mjs");
+  const logPath = path.join(agentDir, "commands.log");
+  await fs.writeFile(
+    workerPath,
+    `
+import fs from "node:fs";
+import process from "node:process";
+const logPath = ${JSON.stringify(logPath)};
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf("\\n");
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    fs.appendFileSync(logPath, command.type + "\\n");
+    process.stdout.write(JSON.stringify({ type: "response", id: command.id, command: command.type, success: true, data: {} }) + "\\n");
+  }
+});
+`,
+  );
+
+  const daemon = spawnDaemon(agentDir, socketPath, workerPath);
+  try {
+    await waitForSocket(socketPath);
+
+    const state = await rpc(socketPath, { id: "1", type: "get_state" });
+    const messages = await rpc(socketPath, { id: "2", type: "get_messages" });
+    const entries = await rpc(socketPath, {
+      id: "3",
+      type: "get_session_entries",
+    });
+    const tree = await rpc(socketPath, { id: "4", type: "get_session_tree" });
+    const commands = await rpc(socketPath, { id: "5", type: "get_commands" });
+    const models = await rpc(socketPath, {
+      id: "6",
+      type: "get_available_models",
+    });
+    const oauth = await rpc(socketPath, { id: "7", type: "get_oauth_state" });
+
+    assert.equal(state.success, true);
+    assert.equal(state.data?.sessionId, "");
+    assert.equal(state.data?.model, null);
+    assert.equal(state.data?.messageCount, 0);
+    assert.equal(messages.success, true);
+    assert.deepEqual(messages.data, { messages: [] });
+    assert.equal(entries.success, true);
+    assert.deepEqual(entries.data, { entries: [] });
+    assert.equal(tree.success, true);
+    assert.deepEqual(tree.data, { tree: [], leafId: null });
+    assert.equal(commands.success, true);
+    assert.equal(Array.isArray(commands.data?.commands), true);
+    assert.equal(models.success, true);
+    assert.equal(Array.isArray(models.data?.models), true);
+    assert.equal(oauth.success, true);
+    assert.equal(typeof oauth.data, "object");
+    assert.notEqual(oauth.data, null);
+
+    let workerLog = "";
+    try {
+      workerLog = await fs.readFile(logPath, "utf8");
+    } catch {
+      // ignore
+    }
+    assert.equal(workerLog.trim(), "");
+  } finally {
+    try {
+      daemon.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
+test("daemon routes cron lifecycle commands locally through the scheduler", async () => {
+  const agentDir = await makeTempDir("rin-daemon-cron-");
+  const socketPath = path.join(agentDir, "daemon.sock");
+  const workerPath = path.join(agentDir, "fake-worker.mjs");
+  const logPath = path.join(agentDir, "commands.log");
+  await fs.writeFile(
+    workerPath,
+    `
+import fs from "node:fs";
+import process from "node:process";
+const logPath = ${JSON.stringify(logPath)};
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf("\\n");
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    fs.appendFileSync(logPath, command.type + "\\n");
+    process.stdout.write(JSON.stringify({ type: "response", id: command.id, command: command.type, success: true, data: {} }) + "\\n");
+  }
+});
+`,
+  );
+
+  const daemon = spawnDaemon(agentDir, socketPath, workerPath);
+  try {
+    await waitForSocket(socketPath);
+
+    const listed = await rpc(socketPath, { id: "1", type: "cron_list_tasks" });
+    assert.equal(listed.success, true);
+    assert.deepEqual(listed.data?.tasks, []);
+
+    const saved = await rpc(socketPath, {
+      id: "2",
+      type: "cron_upsert_task",
+      task: {
+        name: "Demo Task",
+        enabled: true,
+        trigger: { kind: "once", runAt: "2099-01-01T00:00:00.000Z" },
+        session: { mode: "dedicated" },
+        target: { kind: "agent_prompt", prompt: "hello" },
+      },
+    });
+    assert.equal(saved.success, true);
+    const taskId = saved.data?.task?.id;
+    assert.equal(typeof taskId, "string");
+    assert.equal(saved.data?.task?.name, "Demo Task");
+
+    const fetched = await rpc(socketPath, {
+      id: "3",
+      type: "cron_get_task",
+      taskId,
+    });
+    assert.equal(fetched.success, true);
+    assert.equal(fetched.data?.task?.id, taskId);
+
+    const paused = await rpc(socketPath, {
+      id: "4",
+      type: "cron_pause_task",
+      taskId,
+    });
+    assert.equal(paused.success, true);
+    assert.equal(paused.data?.task?.enabled, false);
+
+    const resumed = await rpc(socketPath, {
+      id: "5",
+      type: "cron_resume_task",
+      taskId,
+    });
+    assert.equal(resumed.success, true);
+    assert.equal(resumed.data?.task?.enabled, true);
+
+    const completed = await rpc(socketPath, {
+      id: "6",
+      type: "cron_complete_task",
+      taskId,
+    });
+    assert.equal(completed.success, true);
+    assert.equal(completed.data?.task?.enabled, false);
+    assert.equal(completed.data?.task?.completionReason, "completed_by_tool");
+
+    const deleted = await rpc(socketPath, {
+      id: "7",
+      type: "cron_delete_task",
+      taskId,
+    });
+    assert.equal(deleted.success, true);
+    assert.deepEqual(deleted.data, { deleted: true });
+
+    const missing = await rpc(socketPath, {
+      id: "8",
+      type: "cron_get_task",
+      taskId,
+    });
+    assert.equal(missing.success, false);
+    assert.equal(missing.error, "cron_task_not_found");
+
+    let workerLog = "";
+    try {
+      workerLog = await fs.readFile(logPath, "utf8");
+    } catch {
+      // ignore
+    }
+    assert.equal(workerLog.trim(), "");
+  } finally {
+    try {
+      daemon.kill("SIGKILL");
+    } catch {
+      // ignore
+    }
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("daemon attaches a selected session without a frontend switch_session round-trip", async () => {
   const agentDir = await makeTempDir("rin-daemon-select-");
   const socketPath = path.join(agentDir, "daemon.sock");
@@ -158,7 +359,10 @@ process.stdin.on("data", (chunk) => {
     let buffer = "";
     const waitForResponse = (wantedId) =>
       new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`payload_timeout:${wantedId}`)), 5000);
+        const timer = setTimeout(
+          () => reject(new Error(`payload_timeout:${wantedId}`)),
+          5000,
+        );
         const onData = (chunk) => {
           buffer += String(chunk);
           while (true) {

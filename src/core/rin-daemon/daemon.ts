@@ -157,12 +157,117 @@ export async function startDaemon(
     ensureDir(path.dirname(candidate));
   }
 
+  type DaemonCommandResult = {
+    success?: boolean;
+    data?: unknown;
+    error?: string;
+  };
+  type DaemonCommandHandler = (
+    command: any,
+  ) => Promise<DaemonCommandResult> | DaemonCommandResult;
+
+  const catalogOptions = {
+    cwd: runtime.cwd,
+    agentDir: runtime.agentDir,
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  };
   const getSessionSelector = (command: any) =>
     sessionSelectorFromCommand(command);
   const commandHasSessionSelector = (command: any) =>
     hasSessionSelector(getSessionSelector(command));
   const hasSelectedSession = (connection: ConnectionState) =>
     workerPool.hasSelectedSession(connection);
+  const canHandleWithoutSession = (
+    connection: ConnectionState,
+    selectorPresent: boolean,
+    selectedSessionPresent: boolean,
+  ) =>
+    !connection.attachedWorker && !selectorPresent && !selectedSessionPresent;
+  const taskIdFromCommand = (command: any) =>
+    String(command.taskId || "").trim();
+  const sendCommandResult = (
+    connection: ConnectionState,
+    id: string | undefined,
+    type: RinRpcCommandType | "unknown",
+    result: DaemonCommandResult,
+  ) => {
+    const success = result.success !== false;
+    writeLine(
+      connection.socket,
+      response(
+        id,
+        type,
+        success,
+        success ? result.data : String(result.error || "daemon_command_failed"),
+      ),
+    );
+  };
+
+  const sessionlessCommandHandlers: Partial<
+    Record<RinRpcCommandType, DaemonCommandHandler>
+  > = {
+    get_state: () => ({ data: emptySessionState() }),
+    get_messages: () => ({ data: { messages: [] } }),
+    get_session_entries: () => ({ data: { entries: [] } }),
+    get_session_tree: () => ({ data: { tree: [], leafId: null } }),
+    get_commands: async () => ({
+      data: {
+        commands: await listCatalogCommands(catalogOptions),
+      },
+    }),
+    get_available_models: async () => ({
+      data: {
+        models: await listCatalogModels(catalogOptions),
+      },
+    }),
+    get_oauth_state: async () => ({
+      data: await getCatalogOAuthState(catalogOptions),
+    }),
+  };
+
+  const cronCommandHandlers: Partial<
+    Record<RinRpcCommandType, DaemonCommandHandler>
+  > = {
+    cron_list_tasks: () => ({ data: { tasks: cronScheduler.listTasks() } }),
+    cron_get_task: (command) => {
+      const task = cronScheduler.getTask(taskIdFromCommand(command));
+      return task
+        ? { data: { task } }
+        : { success: false, error: "cron_task_not_found" };
+    },
+    cron_upsert_task: (command) => ({
+      data: {
+        task: cronScheduler.upsertTask(
+          command.task || {},
+          command.defaults || {},
+        ),
+      },
+    }),
+    cron_delete_task: (command) => {
+      const ok = cronScheduler.deleteTask(taskIdFromCommand(command));
+      return ok
+        ? { data: { deleted: true } }
+        : { success: false, error: "cron_task_not_found" };
+    },
+    cron_complete_task: (command) => ({
+      data: {
+        task: cronScheduler.completeTask(
+          taskIdFromCommand(command),
+          String(command.reason || "completed_by_tool"),
+        ),
+      },
+    }),
+    cron_pause_task: (command) => ({
+      data: {
+        task: cronScheduler.pauseTask(taskIdFromCommand(command)),
+      },
+    }),
+    cron_resume_task: (command) => ({
+      data: {
+        task: cronScheduler.resumeTask(taskIdFromCommand(command)),
+      },
+    }),
+  };
 
   const selfHandleCommand = async (
     connection: ConnectionState,
@@ -175,102 +280,19 @@ export async function startDaemon(
     const selectorPresent = commandHasSessionSelector(command);
     const selectedSessionPresent = hasSelectedSession(connection);
 
-    if (
-      type === "get_state" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(
-        connection.socket,
-        response(id, type, true, emptySessionState()),
-      );
-      return true;
-    }
-    if (
-      type === "get_messages" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(connection.socket, response(id, type, true, { messages: [] }));
-      return true;
-    }
-    if (
-      type === "get_session_entries" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(connection.socket, response(id, type, true, { entries: [] }));
-      return true;
-    }
-    if (
-      type === "get_session_tree" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(
-        connection.socket,
-        response(id, type, true, { tree: [], leafId: null }),
-      );
-      return true;
-    }
-    if (
-      type === "get_commands" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(
-        connection.socket,
-        response(id, type, true, {
-          commands: await listCatalogCommands({
-            cwd: runtime.cwd,
-            agentDir: runtime.agentDir,
-            additionalExtensionPaths: options.additionalExtensionPaths,
-          }),
-        }),
-      );
-      return true;
-    }
-    if (
-      type === "get_available_models" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(
-        connection.socket,
-        response(id, type, true, {
-          models: await listCatalogModels({
-            cwd: runtime.cwd,
-            agentDir: runtime.agentDir,
-            additionalExtensionPaths: options.additionalExtensionPaths,
-          }),
-        }),
-      );
-      return true;
-    }
-    if (
-      type === "get_oauth_state" &&
-      !connection.attachedWorker &&
-      !selectorPresent &&
-      !selectedSessionPresent
-    ) {
-      writeLine(
-        connection.socket,
-        response(
-          id,
-          type,
-          true,
-          await getCatalogOAuthState({
-            cwd: runtime.cwd,
-            agentDir: runtime.agentDir,
-            additionalExtensionPaths: options.additionalExtensionPaths,
-          }),
-        ),
+    const sessionlessHandler = canHandleWithoutSession(
+      connection,
+      selectorPresent,
+      selectedSessionPresent,
+    )
+      ? sessionlessCommandHandlers[type as RinRpcCommandType]
+      : undefined;
+    if (sessionlessHandler) {
+      sendCommandResult(
+        connection,
+        id,
+        type,
+        await sessionlessHandler(command),
       );
       return true;
     }
@@ -357,9 +379,13 @@ export async function startDaemon(
     if (type === "rename_session") {
       try {
         const { SessionManager } = await sessionManagerModulePromise;
-        await renameBoundSession(String(command.sessionPath || ""), command.name, {
-          SessionManager,
-        });
+        await renameBoundSession(
+          String(command.sessionPath || ""),
+          command.name,
+          {
+            SessionManager,
+          },
+        );
         writeLine(connection.socket, response(id, type, true));
       } catch (error: any) {
         writeLine(
@@ -390,76 +416,14 @@ export async function startDaemon(
       );
       return true;
     }
-    if (type === "cron_list_tasks") {
-      writeLine(
-        connection.socket,
-        response(id, type, true, { tasks: cronScheduler.listTasks() }),
-      );
-      return true;
-    }
-    if (type === "cron_get_task") {
-      const task = cronScheduler.getTask(String(command.taskId || "").trim());
-      writeLine(
-        connection.socket,
-        response(
-          id,
-          type,
-          Boolean(task),
-          task ? { task } : "cron_task_not_found",
-        ),
-      );
-      return true;
-    }
-    if (type === "cron_upsert_task") {
-      const task = cronScheduler.upsertTask(
-        command.task || {},
-        command.defaults || {},
-      );
-      writeLine(connection.socket, response(id, type, true, { task }));
-      return true;
-    }
-    if (type === "cron_delete_task") {
-      const ok = cronScheduler.deleteTask(String(command.taskId || "").trim());
-      writeLine(
-        connection.socket,
-        response(id, type, ok, ok ? { deleted: true } : "cron_task_not_found"),
-      );
-      return true;
-    }
-    if (type === "cron_complete_task") {
-      const task = cronScheduler.completeTask(
-        String(command.taskId || "").trim(),
-        String(command.reason || "completed_by_tool"),
-      );
-      writeLine(connection.socket, response(id, type, true, { task }));
-      return true;
-    }
-    if (type === "cron_pause_task") {
-      const task = cronScheduler.pauseTask(String(command.taskId || "").trim());
-      writeLine(connection.socket, response(id, type, true, { task }));
-      return true;
-    }
-    if (type === "cron_resume_task") {
-      const task = cronScheduler.resumeTask(
-        String(command.taskId || "").trim(),
-      );
-      writeLine(connection.socket, response(id, type, true, { task }));
+    const cronHandler = cronCommandHandlers[type as RinRpcCommandType];
+    if (cronHandler) {
+      sendCommandResult(connection, id, type, await cronHandler(command));
       return true;
     }
     const localResult = await options.handleLocalCommand?.(command);
     if (localResult) {
-      const success = localResult.success !== false;
-      writeLine(
-        connection.socket,
-        response(
-          id,
-          type,
-          success,
-          success
-            ? localResult.data
-            : String(localResult.error || "daemon_command_failed"),
-        ),
-      );
+      sendCommandResult(connection, id, type, localResult);
       return true;
     }
     return false;
