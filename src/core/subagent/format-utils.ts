@@ -1,10 +1,10 @@
 import type { AgentMessage as Message } from "@mariozechner/pi-agent-core";
 
+import { NO_OUTPUT_TEXT } from "../pi/render-utils.js";
 import type { TaskResult, UsageStats } from "./types.js";
 
 export type { TaskResult, UsageStats };
 
-const NO_OUTPUT = "(no output)";
 const DEFAULT_MODEL_LABEL = "(default model)";
 const FALLBACK_SESSION_LABEL = "persisted";
 
@@ -48,7 +48,7 @@ export function getFinalOutput(messages: Message[]): string {
 export function getTaskPrimaryText(
   result: Pick<TaskResult, "output" | "errorMessage">,
 ): string {
-  return result.output || result.errorMessage || NO_OUTPUT;
+  return result.output || result.errorMessage || NO_OUTPUT_TEXT;
 }
 
 export function getTaskSessionLabel(

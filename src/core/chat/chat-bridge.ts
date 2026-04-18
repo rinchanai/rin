@@ -15,6 +15,7 @@ import {
   formatToolDuration,
   formatTruncationWarningMessage,
   getTextOutput,
+  NO_OUTPUT_TEXT,
 } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { readSessionMetadata } from "../session/metadata.js";
@@ -230,7 +231,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       }
 
       return {
-        content: [{ type: "text", text: truncation.content || "(no output)" }],
+        content: [{ type: "text", text: truncation.content || NO_OUTPUT_TEXT }],
         details: {
           truncation: truncation.truncated ? truncation : undefined,
           fullOutputPath,

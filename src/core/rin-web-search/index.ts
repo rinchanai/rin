@@ -7,6 +7,7 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 
 import {
+  buildUserFacingTextResult,
   formatHiddenResultsNotice,
   prepareTruncatedText,
   renderTextToolResult,
@@ -177,15 +178,15 @@ export default function webSearchExtension(pi: ExtensionAPI) {
     renderResult(result, options, theme, context) {
       const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       const details = (result.details as any) || {};
-      const userResult = {
-        content: [{ type: "text", text: String(details.userText || "") }],
+      const userResult = buildUserFacingTextResult(result, context.showImages, {
+        userText: details.userText,
         details: {
           truncation: details.truncation,
           emptyMessage: details.emptyMessage,
           hiddenCount: details.hiddenCount,
           totalResults: details.totalResults,
         },
-      };
+      });
       text.setText(formatWebSearchResult(userResult, options, theme, context.showImages));
       return text;
     },

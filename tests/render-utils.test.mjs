@@ -136,6 +136,51 @@ test("render utils render shared text tool previews", () => {
   );
 });
 
+test("render utils normalize shared user-facing text fallbacks", () => {
+  assert.equal(renderUtils.NO_OUTPUT_TEXT, "(no output)");
+  assert.equal(
+    renderUtils.getToolResultText(
+      { content: [{ type: "text", text: "agent text" }] },
+      false,
+    ),
+    "agent text",
+  );
+  assert.equal(
+    renderUtils.getToolResultUserText(
+      { content: [{ type: "text", text: "agent text" }] },
+      false,
+      "user text",
+    ),
+    "user text",
+  );
+  assert.equal(
+    renderUtils.getToolResultUserText(
+      { content: [{ type: "text", text: "agent text" }] },
+      false,
+      "",
+    ),
+    "agent text",
+  );
+  assert.equal(
+    renderUtils.getToolResultUserText({ content: [] }, false, undefined),
+    "(no output)",
+  );
+  assert.deepEqual(
+    renderUtils.buildUserFacingTextResult(
+      { content: [{ type: "text", text: "agent text" }] },
+      false,
+      {
+        userText: "",
+        details: { hiddenCount: 2 },
+      },
+    ),
+    {
+      content: [{ type: "text", text: "agent text" }],
+      details: { hiddenCount: 2 },
+    },
+  );
+});
+
 test("prepareTruncatedText leaves short text unchanged", () => {
   const result = renderUtils.prepareTruncatedText("hello world");
   assert.equal(result.outputText, "hello world");

@@ -33,11 +33,12 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {
   appendTruncationNotice,
+  buildUserFacingTextResult,
   formatToolDuration,
   formatTruncationWarningMessage,
-  getTextOutput,
+  getToolResultUserText,
   prepareTruncatedText,
-  replaceTabs,
+  renderTextToolResult,
 } from "../pi/render-utils.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
@@ -437,9 +438,11 @@ export default function subagentExtension(pi: ExtensionAPI) {
       }
 
       const details = result.details as SubagentDetails | undefined;
-      const fallback =
-        result.content?.[0]?.type === "text" ? result.content[0].text : "(no output)";
-      const outputText = String(details?.userText || fallback);
+      const outputText = getToolResultUserText(
+        result,
+        context.showImages,
+        details?.userText,
+      );
       const component =
         (context.lastComponent as SubagentResultRenderComponent | undefined) ??
         new SubagentResultRenderComponent();
@@ -473,31 +476,17 @@ export default function subagentExtension(pi: ExtensionAPI) {
     },
     renderResult(result: any, options, theme, context) {
       const details = result.details as SubagentDetails | undefined;
-      const userResult = {
-        content: [{ type: "text", text: String(details?.userText || "") }],
+      const userResult = buildUserFacingTextResult(result, context.showImages, {
+        userText: details?.userText,
         details: {
           truncation: details?.truncation,
         },
-      };
-      const output = getTextOutput(userResult as any, context.showImages);
-      const lines = output.split("\n");
-      const maxLines = options.expanded ? lines.length : 10;
-      const displayLines = lines.slice(0, maxLines);
-      const remaining = lines.length - maxLines;
-      let text = "";
-      if (displayLines.length > 0) {
-        text = `\n${displayLines
-          .map((line) => theme.fg("toolOutput", replaceTabs(line)))
-          .join("\n")}`;
-        if (remaining > 0) {
-          text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
-        }
-      }
-      const truncation = details?.truncation;
-      if (truncation?.truncated) {
-        text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-      }
-      return new Text(text, 0, 0);
+      });
+      return new Text(
+        renderTextToolResult(userResult, options, theme, context.showImages),
+        0,
+        0,
+      );
     },
   });
 }

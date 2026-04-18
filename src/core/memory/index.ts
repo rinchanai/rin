@@ -5,9 +5,9 @@ import { Type } from "@sinclair/typebox";
 
 import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import {
+  buildUserFacingTextResult,
   formatHiddenResultsNotice,
   formatToolDuration,
-  getTextOutput,
   prepareTruncatedText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
@@ -271,15 +271,15 @@ export function formatRenderedMemoryResult(
   endedAt?: number,
 ) {
   const details = (result.details as MemoryToolDetails | undefined) || {};
-  const userResult = {
-    content: [{ type: "text", text: String(details.userText || getTextOutput(result, showImages) || "") }],
+  const userResult = buildUserFacingTextResult(result, showImages, {
+    userText: details.userText,
     details: {
       truncation: details.truncation,
       emptyMessage: details.emptyMessage,
       hiddenCount: details.hiddenCount,
       totalResults: details.totalResults,
     },
-  };
+  });
   let text = formatMemoryResult(userResult, options, theme, showImages);
   const duration = formatToolDuration(startedAt, endedAt);
   if (duration) {

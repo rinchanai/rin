@@ -52,10 +52,14 @@ export function formatHiddenResultsNotice(totalResults: number, hiddenCount: num
   return `[Showing top ${Math.max(totalResults - hiddenCount, 0)} of ${totalResults} results.]`;
 }
 
+type TextToolContent = {
+  content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
+};
+
+export const NO_OUTPUT_TEXT = "(no output)";
+
 export function getTextOutput(
-  result: {
-    content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
-  } | null | undefined,
+  result: TextToolContent | null | undefined,
   showImages: boolean,
 ) {
   if (!result || !Array.isArray(result.content)) return "";
@@ -83,6 +87,48 @@ export function getTextOutput(
   }
 
   return output;
+}
+
+export function getToolResultText(
+  result: TextToolContent | null | undefined,
+  showImages: boolean,
+  fallback = NO_OUTPUT_TEXT,
+) {
+  return getTextOutput(result, showImages) || fallback;
+}
+
+export function getToolResultUserText(
+  result: TextToolContent | null | undefined,
+  showImages: boolean,
+  userText: unknown,
+  fallback = NO_OUTPUT_TEXT,
+) {
+  return str(userText) || getToolResultText(result, showImages, fallback);
+}
+
+export function buildUserFacingTextResult(
+  result: TextToolContent | null | undefined,
+  showImages: boolean,
+  config: {
+    userText?: unknown;
+    fallback?: string;
+    details?: Record<string, unknown>;
+  } = {},
+) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: getToolResultUserText(
+          result,
+          showImages,
+          config.userText,
+          config.fallback,
+        ),
+      },
+    ],
+    details: config.details ?? {},
+  };
 }
 
 export function invalidArgText(theme: any) {

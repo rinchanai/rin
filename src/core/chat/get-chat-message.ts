@@ -8,6 +8,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
+  getToolResultUserText,
   prepareTruncatedAgentUserText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
@@ -127,11 +128,11 @@ export default function chatGetMessageExtension(pi: ExtensionAPI) {
           0,
         );
       }
-      const fallback =
-        result.content?.[0]?.type === "text"
-          ? result.content[0].text
-          : "(no output)";
-      return new Text(String(details?.userText || fallback), 0, 0);
+      return new Text(
+        getToolResultUserText(result, context.showImages, details?.userText),
+        0,
+        0,
+      );
     },
   });
 }
