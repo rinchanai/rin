@@ -5,7 +5,10 @@ import prettyMilliseconds from "pretty-ms";
 
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
-import { buildTurnResultFromMessages } from "../session/turn-result.js";
+import {
+  buildTurnResultFromMessages,
+  extractFinalTextFromTurnResult,
+} from "../session/turn-result.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
@@ -28,17 +31,6 @@ const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
 const WORKING_REACTION_FRAME_INTERVAL_MS = 30_000;
 const INTERIM_PREFIX = "··· ";
-
-function extractFinalTextFromTurnResult(result: any) {
-  const messages = Array.isArray(result?.messages) ? result.messages : [];
-  for (const message of messages) {
-    if (!message || typeof message !== "object") continue;
-    if (safeString((message as any).type).trim() !== "text") continue;
-    const text = safeString((message as any).text).trim();
-    if (text) return text;
-  }
-  return "";
-}
 
 function commandNameFromCommandLine(commandLine: string) {
   const trimmed = safeString(commandLine).trim();

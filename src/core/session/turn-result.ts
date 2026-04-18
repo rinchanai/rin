@@ -22,6 +22,18 @@ export type TurnResult = {
   messages: TurnResultMessage[];
 };
 
+export function extractFinalTextFromTurnResult(
+  result: TurnResult | null | undefined,
+) {
+  const messages = Array.isArray(result?.messages) ? result.messages : [];
+  for (const message of messages) {
+    if (!message || message.type !== "text") continue;
+    const text = safeString(message.text).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 function extractText(content: any) {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";

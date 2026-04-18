@@ -65,3 +65,27 @@ test("turn result builder returns empty messages when there is no assistant outp
     messages: [],
   });
 });
+
+test("turn result final text extractor returns the first non-empty text message", () => {
+  assert.equal(
+    turnResult.extractFinalTextFromTurnResult({
+      messages: [
+        { type: "image", data: "abc", mimeType: "image/png" },
+        { type: "text", text: "   " },
+        { type: "text", text: " final text " },
+        { type: "text", text: "later text" },
+      ],
+    }),
+    "final text",
+  );
+});
+
+test("turn result final text extractor returns empty string when no text message exists", () => {
+  assert.equal(
+    turnResult.extractFinalTextFromTurnResult({
+      messages: [{ type: "file", path: "/tmp/demo.txt", name: "demo.txt" }],
+    }),
+    "",
+  );
+  assert.equal(turnResult.extractFinalTextFromTurnResult(undefined), "");
+});

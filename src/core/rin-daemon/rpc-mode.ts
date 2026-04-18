@@ -2,7 +2,10 @@ import { parseJsonl } from "../rin-lib/common.js";
 import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
-import { buildTurnResultFromMessages } from "../session/turn-result.js";
+import {
+  buildTurnResultFromMessages,
+  extractFinalTextFromTurnResult,
+} from "../session/turn-result.js";
 import {
   getOAuthState,
   getSessionState,
@@ -124,16 +127,6 @@ export async function runCustomRpcMode(
   ) => {
     if (!requestTag) return;
     output({ type: "rpc_turn_event", event, requestTag, ...payload });
-  };
-  const extractFinalTextFromTurnResult = (result: any) => {
-    const messages = Array.isArray(result?.messages) ? result.messages : [];
-    for (const message of messages) {
-      if (!message || typeof message !== "object") continue;
-      if (String((message as any).type || "").trim() !== "text") continue;
-      const text = String((message as any).text || "").trim();
-      if (text) return text;
-    }
-    return "";
   };
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
     const promise = (async () => {
