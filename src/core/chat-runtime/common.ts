@@ -8,6 +8,10 @@ import {
   isImageMimeType,
   isImageName,
 } from "../chat/file-utils.js";
+import {
+  normalizeMessageText,
+  renderMessageText,
+} from "../message-content.js";
 import { ensureDir } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 
@@ -81,35 +85,21 @@ export function renderPlainTextFromNodes(
   nodes: any[],
   options: RenderPlainTextOptions = {},
 ) {
-  return nodes
-    .map((node) => {
-      const type = safeString(node?.type).toLowerCase();
-      const attrs =
-        node?.attrs && typeof node.attrs === "object" ? node.attrs : {};
-      if (type === "text") return safeString(attrs.content || "");
-      if (type === "at") {
+  return normalizeMessageText(
+    renderMessageText(nodes, {
+      normalizeChildren: normalizeMessageText,
+      renderAt: (attrs) => {
         if (typeof options.renderAt === "function") {
-          return safeString(options.renderAt(attrs) || "");
+          return safeString(options.renderAt(attrs));
         }
         const name = safeString(attrs.name).trim();
         const id = safeString(attrs.id).trim();
         if (name) return `@${name}`;
         if (id) return `@${id}`;
         return "";
-      }
-      if (type === "br") return "\n";
-      const children = Array.isArray(node?.children) ? node.children : [];
-      const text = renderPlainTextFromNodes(children, options);
-      if (type === "p" || type === "paragraph") return text ? `${text}\n` : "";
-      return text;
-    })
-    .join("")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[\t ]+\n/g, "\n")
-    .replace(/\n[\t ]+/g, "\n")
-    .replace(/[^\S\n]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+      },
+    }),
+  );
 }
 
 export function fileUrl(filePath: string) {

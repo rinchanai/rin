@@ -66,6 +66,20 @@ test("message content helpers extract text with optional thinking and trimming",
     messageContent.normalizeMessageText(" 第一行\n\n\n  第二行\t \n第三行  "),
     "第一行\n\n第二行\n第三行",
   );
+  assert.equal(
+    messageContent.renderMessageText(
+      [
+        { type: "thinking", thinking: "plan " },
+        { type: "at", attrs: { name: "Rin" } },
+        { type: "text", attrs: { content: " ready" } },
+      ],
+      {
+        includeThinking: true,
+        renderAt: (attrs) => `@${attrs.name}`,
+      },
+    ),
+    "plan @Rin ready",
+  );
 });
 
 test("message content helpers extract valid image parts and default mime types", () => {

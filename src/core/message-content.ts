@@ -3,15 +3,31 @@ import path from "node:path";
 
 import { safeString } from "./text-utils.js";
 
-function collectMessagePartText(
+export type RenderMessageTextOptions = {
+  includeThinking?: boolean;
+  renderAt?: (attrs: Record<string, any>) => string;
+  normalizeChildren?: (text: string) => string;
+};
+
+export function renderMessageText(
   content: any,
-  { includeThinking = false }: { includeThinking?: boolean } = {},
+  {
+    includeThinking = false,
+    renderAt,
+    normalizeChildren,
+  }: RenderMessageTextOptions = {},
 ): string {
   if (!content) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .map((part) => collectMessagePartText(part, { includeThinking }))
+      .map((part) =>
+        renderMessageText(part, {
+          includeThinking,
+          renderAt,
+          normalizeChildren,
+        }),
+      )
       .join("");
   }
   if (typeof content !== "object") return "";
@@ -25,16 +41,23 @@ function collectMessagePartText(
   if (includeThinking && type === "thinking") {
     return safeString(content.thinking);
   }
+  if (type === "at") {
+    return typeof renderAt === "function" ? safeString(renderAt(attrs)) : "";
+  }
   if (type === "br") return "\n";
 
-  const children = Array.isArray(content?.children) ? content.children : [];
-  const childText = children
-    .map((part) => collectMessagePartText(part, { includeThinking }))
-    .join("");
+  const childText = renderMessageText(
+    Array.isArray(content?.children) ? content.children : [],
+    { includeThinking, renderAt, normalizeChildren },
+  );
+  const normalizedChildText =
+    typeof normalizeChildren === "function"
+      ? normalizeChildren(childText)
+      : childText;
   if (type === "p" || type === "paragraph") {
-    return childText ? `${childText}\n` : "";
+    return normalizedChildText ? `${normalizedChildText}\n` : "";
   }
-  return childText;
+  return normalizedChildText;
 }
 
 export function extractMessageText(
@@ -44,7 +67,7 @@ export function extractMessageText(
     trim = false,
   }: { includeThinking?: boolean; trim?: boolean } = {},
 ) {
-  const text = collectMessagePartText(content, { includeThinking });
+  const text = renderMessageText(content, { includeThinking });
   return trim ? text.trim() : text;
 }
 

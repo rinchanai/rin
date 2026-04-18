@@ -30,6 +30,12 @@ test("chat runtime common helpers normalize and render nodes consistently", () =
     "Hello@Rinworld",
   );
   assert.equal(
+    chatRuntimeCommon.renderPlainTextFromNodes([
+      { type: "text", text: "  fallback text  " },
+    ]),
+    "fallback text",
+  );
+  assert.equal(
     chatRuntimeCommon.renderPlainTextFromNodes(nodes, {
       renderAt: (attrs) => `<@${attrs.id}>`,
     }),
