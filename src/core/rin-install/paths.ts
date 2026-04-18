@@ -115,15 +115,6 @@ export function installedAppEntryCandidates(
   ]);
 }
 
-export function sourceAppEntryPath(sourceRoot: string, app: InstalledAppKey) {
-  return path.join(
-    sourceRoot,
-    "dist",
-    "app",
-    ...INSTALLED_APP_ENTRY_FILES[app],
-  );
-}
-
 export function installerManifestPath(installDir: string) {
   return path.join(installDir, "installer.json");
 }

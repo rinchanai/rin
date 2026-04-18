@@ -32,9 +32,8 @@ test("installer path helpers keep installed runtime roots stable", () => {
   );
 });
 
-test("installer path helpers centralize installed and source entrypoints", () => {
+test("installer path helpers centralize installed entrypoints", () => {
   const installDir = "/tmp/rin";
-  const repoRoot = "/repo";
 
   assert.deepEqual(pathsMod.installedAppEntryCandidates(installDir, "rin"), [
     path.join(installDir, "app", "current", "dist", "app", "rin", "main.js"),
@@ -68,10 +67,6 @@ test("installer path helpers centralize installed and source entrypoints", () =>
       ),
       path.join(installDir, "app", "current", "dist", "daemon.js"),
     ],
-  );
-  assert.equal(
-    pathsMod.sourceAppEntryPath(repoRoot, "rin-daemon"),
-    path.join(repoRoot, "dist", "app", "rin-daemon", "daemon.js"),
   );
 });
 

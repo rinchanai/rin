@@ -21,7 +21,6 @@ import {
   managedLaunchdLabel,
   managedSystemdUnitCandidates,
   managedSystemdUnitName,
-  sourceAppEntryPath,
   systemdUserUnitDirForHome,
   systemdUserUnitPathForHome,
 } from "./paths.js";
@@ -73,11 +72,10 @@ function resolveDaemonLaunchContext(
   targetUser: string,
   installDir: string,
   targetHomeForUser: (user: string) => string,
-  repoRootFromHere: () => string,
 ) {
   return {
     targetHome: targetHomeForUser(targetUser),
-    daemonEntry: resolveDaemonEntryForInstall(installDir, repoRootFromHere),
+    daemonEntry: resolveDaemonEntryForInstall(installDir),
     runtimePath: installedRuntimePathValue(),
     nodeCommandArgs: installedRuntimeNodeCommandArgs(),
   };
@@ -98,33 +96,24 @@ function captureCommandForTargetUser(
   });
 }
 
-export function resolveDaemonEntryForInstall(
-  installDir: string,
-  repoRootFromHere: () => string,
-) {
-  for (const candidate of installedAppEntryCandidates(
-    installDir,
-    "rin-daemon",
-  )) {
+export function resolveDaemonEntryForInstall(installDir: string) {
+  const candidates = installedAppEntryCandidates(installDir, "rin-daemon");
+  for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
-  return sourceAppEntryPath(repoRootFromHere(), "rin-daemon");
+  throw new Error(
+    `rin_installed_daemon_entry_missing:${candidates.join(",")}`,
+  );
 }
 
 export function buildLaunchdPlist(
   targetUser: string,
   installDir: string,
   targetHomeForUser: (user: string) => string,
-  repoRootFromHere: () => string,
 ) {
   const label = managedLaunchdLabel(targetUser);
   const { targetHome, daemonEntry, runtimePath, nodeCommandArgs } =
-    resolveDaemonLaunchContext(
-      targetUser,
-      installDir,
-      targetHomeForUser,
-      repoRootFromHere,
-    );
+    resolveDaemonLaunchContext(targetUser, installDir, targetHomeForUser);
   const stdoutPath = daemonStdoutLogPath(installDir);
   const stderrPath = daemonStderrLogPath(installDir);
   const plistPath = launchAgentPlistPathForHome(targetHome, label);
@@ -142,7 +131,6 @@ export function installLaunchdAgent(
   deps: {
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
-    repoRootFromHere: () => string;
   },
 ) {
   const { target, uid } = resolveTargetUserContext(targetUser, deps);
@@ -152,7 +140,6 @@ export function installLaunchdAgent(
     targetUser,
     installDir,
     deps.targetHomeForUser,
-    deps.repoRootFromHere,
   );
   if (elevated) {
     runPrivileged("mkdir", ["-p", path.dirname(plistPath)]);
@@ -202,15 +189,9 @@ export function buildSystemdUserService(
   targetUser: string,
   installDir: string,
   targetHomeForUser: (user: string) => string,
-  repoRootFromHere: () => string,
 ) {
   const { targetHome, daemonEntry, runtimePath, nodeCommandArgs } =
-    resolveDaemonLaunchContext(
-      targetUser,
-      installDir,
-      targetHomeForUser,
-      repoRootFromHere,
-    );
+    resolveDaemonLaunchContext(targetUser, installDir, targetHomeForUser);
   const unitName = managedSystemdUnitName(targetUser);
   const unitPath = systemdUserUnitPathForHome(targetHome, unitName);
   const execStart = [...nodeCommandArgs, daemonEntry].join(" ");
@@ -230,14 +211,12 @@ export function installSystemdUserService(
   deps: {
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
-    repoRootFromHere: () => string;
   },
 ) {
   const spec = buildSystemdUserService(
     targetUser,
     installDir,
     deps.targetHomeForUser,
-    deps.repoRootFromHere,
   );
   const { systemctl, userEnv, target } = systemdUserContext(targetUser, deps);
   const loginctl = firstExistingCommand(
@@ -288,7 +267,6 @@ export function refreshManagedServiceFiles(
   deps: {
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
-    repoRootFromHere: () => string;
   },
 ) {
   if (process.platform !== "linux") return;
@@ -301,7 +279,6 @@ export function refreshManagedServiceFiles(
     targetUser,
     installDir,
     deps.targetHomeForUser,
-    deps.repoRootFromHere,
   );
   const ownerGroup = deps.findSystemUser(targetUser)?.gid;
   for (const filePath of candidateFiles) {
@@ -479,7 +456,6 @@ export function installDaemonService(
   deps: {
     findSystemUser: (user: string) => any;
     targetHomeForUser: (user: string) => string;
-    repoRootFromHere: () => string;
   },
 ) {
   if (process.platform === "darwin")

@@ -278,7 +278,7 @@ async function applyInstalledRuntime(
     process.platform === "darwin" || process.platform === "linux";
   const useElevatedWrite = shouldUseElevatedWrite(targetUser, ownership);
   const useElevatedService = installServiceNow && targetUser !== currentUser;
-  const serviceDeps = { findSystemUser, targetHomeForUser, repoRootFromHere };
+  const serviceDeps = { findSystemUser, targetHomeForUser };
 
   const publishedRuntime = publishInstalledRuntime(
     sourceRoot,

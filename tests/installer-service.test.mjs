@@ -42,13 +42,11 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
       "demo.user+test",
       installDir,
       () => "/home/demo",
-      () => "/repo",
     );
     const plist = service.buildLaunchdPlist(
       "demo.user+test",
       installDir,
       () => "/Users/demo",
-      () => "/repo",
     );
 
     assert.equal(spec.kind, "systemd");
@@ -98,7 +96,7 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
   });
 });
 
-test("resolveDaemonEntryForInstall falls back to legacy and repo daemon entries", async () => {
+test("resolveDaemonEntryForInstall falls back to legacy installed daemon entry and fails without an installed runtime", async () => {
   await withTempDir(async (dir) => {
     const installDir = path.join(dir, "install");
     const legacyDaemon = path.join(
@@ -111,15 +109,12 @@ test("resolveDaemonEntryForInstall falls back to legacy and repo daemon entries"
     await fs.mkdir(path.dirname(legacyDaemon), { recursive: true });
     await fs.writeFile(legacyDaemon, "export {};\n", "utf8");
 
-    assert.equal(
-      service.resolveDaemonEntryForInstall(installDir, () => "/repo"),
-      legacyDaemon,
-    );
+    assert.equal(service.resolveDaemonEntryForInstall(installDir), legacyDaemon);
 
     await fs.rm(installDir, { recursive: true, force: true });
-    assert.equal(
-      service.resolveDaemonEntryForInstall(installDir, () => "/repo"),
-      path.join("/repo", "dist", "app", "rin-daemon", "daemon.js"),
+    assert.throws(
+      () => service.resolveDaemonEntryForInstall(installDir),
+      /rin_installed_daemon_entry_missing:/,
     );
   });
 });
