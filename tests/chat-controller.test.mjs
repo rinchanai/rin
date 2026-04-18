@@ -782,6 +782,7 @@ test("chat controller serves /status locally without disturbing an active turn",
   assert.equal(result.handled, true);
   assert.match(result.text, /^Status: working/m);
   assert.match(result.text, /^Indicators: notice$/m);
+  assert.match(result.text, /^Since: 12s$/m);
   assert.match(result.text, /^Prompt: please check the logs and keep going$/m);
   assert.equal(controller.state.processing?.incomingMessageId, "m1");
   assert.equal(controller.hasActiveTurn(), true);
