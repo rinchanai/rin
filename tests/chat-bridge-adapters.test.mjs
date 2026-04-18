@@ -303,6 +303,72 @@ test("chat runtime config expands multi-entry adapters and strips setup-only met
   );
 });
 
+test("chat runtime normalization skips disabled adapters and entries", () => {
+  const settings = {
+    chat: {
+      telegram: [
+        {
+          name: "Enabled Bot",
+          token: "telegram-enabled",
+        },
+        {
+          name: "Disabled Bot",
+          token: "telegram-disabled",
+          enabled: false,
+        },
+      ],
+      customAdapters: [
+        {
+          packageName: "chat-bridge-adapter-disabled",
+          pluginKey: "adapter-disabled",
+          enabled: false,
+          config: { token: "skip-me" },
+        },
+        {
+          packageName: "chat-bridge-adapter-example",
+          pluginKey: "adapter-example",
+          config: [
+            {
+              name: "Enabled Entry",
+              endpoint: "https://a.example.com",
+            },
+            {
+              name: "Disabled Entry",
+              endpoint: "https://b.example.com",
+              enabled: false,
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const config = runtimeConfig.buildChatConfigFromSettings(settings);
+  const entries = runtimeConfig.listChatRuntimeAdapterEntries(settings);
+  const runtimePackage = runtimeConfig.buildChatRuntimePackageJson(settings);
+
+  assert.deepEqual(config.plugins["adapter-telegram"], {
+    protocol: "polling",
+    token: "telegram-enabled",
+    slash: true,
+  });
+  assert.equal("adapter-telegram:Disabled-Bot" in config.plugins, false);
+  assert.deepEqual(config.plugins["adapter-example"], {
+    endpoint: "https://a.example.com",
+  });
+  assert.equal("adapter-example:Disabled-Entry" in config.plugins, false);
+  assert.deepEqual(
+    entries.map((item) => ({ key: item.key, name: item.name })),
+    [
+      { key: "telegram", name: "Enabled-Bot" },
+      { key: "example", name: "Enabled-Entry" },
+    ],
+  );
+  assert.deepEqual(runtimePackage.dependencies, {
+    "chat-bridge-adapter-example": "latest",
+  });
+});
+
 test("chat support re-exports chat runtime config helpers", () => {
   assert.equal(
     support.buildChatConfigFromSettings,

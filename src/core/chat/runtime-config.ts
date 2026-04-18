@@ -14,18 +14,13 @@ type AdapterEntry = {
   config: Record<string, any>;
 };
 
-type NormalizedBuiltInChatAdapter = {
+type NormalizedChatRuntimeAdapter = {
   key: string;
   pluginKey: string;
   entries: AdapterEntry[];
-};
-
-type NormalizedCustomChatAdapter = {
-  packageName: string;
-  version: string;
-  pluginKey: string;
-  fallbackPrefix: string;
-  entries: AdapterEntry[];
+  builtIn: boolean;
+  packageName?: string;
+  version?: string;
 };
 
 type ChatRuntimePackageJson = {
@@ -35,19 +30,35 @@ type ChatRuntimePackageJson = {
   dependencies: Record<string, string>;
 };
 
+const SETUP_ONLY_ADAPTER_FIELDS = new Set([
+  "name",
+  "owners",
+  "ownerUserIds",
+  "botId",
+]);
+
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isJsonRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeChatAdapterConfig(
   value: unknown,
   defaults: Record<string, any> = {},
 ) {
-  const current =
-    value && typeof value === "object" && !Array.isArray(value)
-      ? cloneJson(value)
-      : {};
+  const current = isJsonRecord(value) ? cloneJson(value) : {};
   return { ...defaults, ...current };
+}
+
+function stripAdapterSetupFields(config: Record<string, any>) {
+  const normalized = { ...config };
+  for (const key of SETUP_ONLY_ADAPTER_FIELDS) {
+    delete normalized[key];
+  }
+  return normalized;
 }
 
 function sanitizeAdapterName(value: unknown, fallback: string) {
@@ -58,7 +69,7 @@ function sanitizeAdapterName(value: unknown, fallback: string) {
 }
 
 function looksLikeSingleAdapterConfig(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  if (!isJsonRecord(value)) return false;
   const keys = Object.keys(value);
   if (!keys.length) return true;
   const singleConfigKeys = new Set([
@@ -74,10 +85,51 @@ function looksLikeSingleAdapterConfig(value: unknown) {
     "botId",
   ]);
   if (keys.some((key) => singleConfigKeys.has(key))) return true;
-  return keys.some((key) => {
-    const entry = (value as Record<string, unknown>)[key];
-    return !entry || typeof entry !== "object" || Array.isArray(entry);
-  });
+  return keys.some((key) => !isJsonRecord(value[key]));
+}
+
+function collectRawAdapterEntries(
+  value: unknown,
+  fallbackPrefix: string,
+): AdapterEntry[] {
+  const rawEntries: AdapterEntry[] = [];
+
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => {
+      if (!isJsonRecord(entry)) return;
+      rawEntries.push({
+        name: sanitizeAdapterName(entry.name, `${fallbackPrefix}-${index + 1}`),
+        config: cloneJson(entry),
+      });
+    });
+    return rawEntries;
+  }
+
+  if (looksLikeSingleAdapterConfig(value)) {
+    rawEntries.push({
+      name: sanitizeAdapterName(
+        isJsonRecord(value) ? value.name : undefined,
+        fallbackPrefix,
+      ),
+      config: isJsonRecord(value) ? cloneJson(value) : {},
+    });
+    return rawEntries;
+  }
+
+  if (isJsonRecord(value)) {
+    for (const [name, entry] of Object.entries(value)) {
+      if (!isJsonRecord(entry)) continue;
+      rawEntries.push({
+        name: sanitizeAdapterName(
+          entry.name || name,
+          safeString(name) || fallbackPrefix,
+        ),
+        config: cloneJson(entry),
+      });
+    }
+  }
+
+  return rawEntries;
 }
 
 function normalizeAdapterEntries(
@@ -85,55 +137,14 @@ function normalizeAdapterEntries(
   defaults: Record<string, any>,
   fallbackPrefix: string,
 ): AdapterEntry[] {
-  const rawEntries: AdapterEntry[] = [];
-
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
-      rawEntries.push({
-        name: sanitizeAdapterName(
-          (entry as Record<string, unknown>).name,
-          `${fallbackPrefix}-${index + 1}`,
-        ),
-        config: cloneJson(entry as Record<string, any>),
-      });
-    });
-  } else if (looksLikeSingleAdapterConfig(value)) {
-    rawEntries.push({
-      name: sanitizeAdapterName(
-        value && typeof value === "object"
-          ? (value as Record<string, unknown>).name
-          : undefined,
-        fallbackPrefix,
-      ),
-      config:
-        value && typeof value === "object"
-          ? cloneJson(value as Record<string, any>)
-          : {},
-    });
-  } else if (value && typeof value === "object") {
-    for (const [name, entry] of Object.entries(value)) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      rawEntries.push({
-        name: sanitizeAdapterName(
-          (entry as Record<string, unknown>).name || name,
-          safeString(name) || fallbackPrefix,
-        ),
-        config: cloneJson(entry as Record<string, any>),
-      });
-    }
-  }
-
-  return rawEntries
+  return collectRawAdapterEntries(value, fallbackPrefix)
     .filter((entry) => entry.config.enabled !== false)
-    .map((entry) => {
-      const config = normalizeChatAdapterConfig(entry.config, defaults);
-      delete (config as any).name;
-      delete (config as any).owners;
-      delete (config as any).ownerUserIds;
-      delete (config as any).botId;
-      return { name: entry.name, config };
-    });
+    .map((entry) => ({
+      name: entry.name,
+      config: stripAdapterSetupFields(
+        normalizeChatAdapterConfig(entry.config, defaults),
+      ),
+    }));
 }
 
 function applyNormalizedAdapterEntries(
@@ -149,73 +160,92 @@ function applyNormalizedAdapterEntries(
   });
 }
 
+function normalizeBuiltInChatAdapters(
+  chat: Record<string, any> | undefined,
+): NormalizedChatRuntimeAdapter[] {
+  return listChatBridgeAdapterSpecs().map((adapter) => ({
+    key: adapter.key,
+    pluginKey: adapter.pluginKey,
+    builtIn: true,
+    entries: normalizeAdapterEntries(
+      chat?.[adapter.key],
+      adapter.defaults,
+      adapter.key,
+    ),
+  }));
+}
+
+function normalizeCustomAdapterFallbackPrefix(
+  adapter: Record<string, any>,
+  pluginKey: string,
+  packageName: string,
+) {
+  return (
+    safeString(adapter.name).trim() ||
+    pluginKey.replace(/^adapter-/, "") ||
+    packageName.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-")
+  );
+}
+
+function normalizeCustomChatAdapter(
+  value: unknown,
+): NormalizedChatRuntimeAdapter | null {
+  if (!isJsonRecord(value)) return null;
+
+  const packageName = safeString(value.packageName).trim();
+  const version = safeString(value.version).trim() || "latest";
+  const pluginKey = safeString(value.pluginKey).trim();
+  const config = value.config;
+  if (value.enabled === false || !packageName || !pluginKey || !config) {
+    return null;
+  }
+
+  const defaults = isJsonRecord(value.defaults)
+    ? cloneJson(value.defaults)
+    : {};
+  const fallbackPrefix = normalizeCustomAdapterFallbackPrefix(
+    value,
+    pluginKey,
+    packageName,
+  );
+
+  return {
+    key: fallbackPrefix,
+    pluginKey,
+    builtIn: false,
+    packageName,
+    version,
+    entries: normalizeAdapterEntries(config, defaults, fallbackPrefix),
+  };
+}
+
 function normalizeCustomChatAdapters(
   chat: Record<string, any> | undefined,
-): NormalizedCustomChatAdapter[] {
+): NormalizedChatRuntimeAdapter[] {
   const items = Array.isArray(chat?.customAdapters) ? chat.customAdapters : [];
   return items
-    .map((item) => {
-      const adapter =
-        item && typeof item === "object" && !Array.isArray(item) ? item : null;
-      const packageName = safeString((adapter as any)?.packageName).trim();
-      const version = safeString((adapter as any)?.version).trim() || "latest";
-      const pluginKey = safeString((adapter as any)?.pluginKey).trim();
-      const defaults =
-        (adapter as any)?.defaults &&
-        typeof (adapter as any).defaults === "object" &&
-        !Array.isArray((adapter as any).defaults)
-          ? cloneJson((adapter as any).defaults)
-          : {};
-      const fallbackPrefix =
-        safeString((adapter as any)?.name).trim() ||
-        pluginKey.replace(/^adapter-/, "") ||
-        packageName.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-");
-      const config = (adapter as any)?.config;
-      if (
-        (adapter as any)?.enabled === false ||
-        !packageName ||
-        !pluginKey ||
-        !config
-      ) {
-        return null;
-      }
-      return {
-        packageName,
-        version,
-        pluginKey,
-        fallbackPrefix,
-        entries: normalizeAdapterEntries(config, defaults, fallbackPrefix),
-      };
-    })
-    .filter(
-      (item): item is NormalizedCustomChatAdapter => Boolean(item),
-    );
+    .map((item) => normalizeCustomChatAdapter(item))
+    .filter((item): item is NormalizedChatRuntimeAdapter => Boolean(item));
 }
 
 function buildNormalizedChatRuntime(settings: unknown) {
   const chat = getStoredChatConfigRoot(settings);
-  const builtInAdapters: NormalizedBuiltInChatAdapter[] =
-    listChatBridgeAdapterSpecs().map((adapter) => ({
-      key: adapter.key,
-      pluginKey: adapter.pluginKey,
-      entries: normalizeAdapterEntries(
-        chat?.[adapter.key],
-        adapter.defaults,
-        adapter.key,
-      ),
-    }));
-  const customAdapters = normalizeCustomChatAdapters(chat);
-  const dependencies: Record<string, string> = {};
+  const adapters = [
+    ...normalizeBuiltInChatAdapters(chat),
+    ...normalizeCustomChatAdapters(chat),
+  ];
+  const dependencies = new Map<string, string>();
 
-  for (const adapter of customAdapters) {
-    dependencies[adapter.packageName] = adapter.version;
+  for (const adapter of adapters) {
+    if (!adapter.builtIn && adapter.packageName) {
+      dependencies.set(adapter.packageName, adapter.version || "latest");
+    }
   }
 
   return {
-    builtInAdapters,
-    customAdapters,
+    adapters,
     dependencies: Object.fromEntries(
-      Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
+      [...dependencies.entries()].sort(([a], [b]) => a.localeCompare(b)),
     ) as Record<string, string>,
   };
 }
@@ -232,15 +262,7 @@ export function buildChatConfigFromSettings(settings: unknown) {
   };
   const runtime = buildNormalizedChatRuntime(settings);
 
-  for (const adapter of runtime.builtInAdapters) {
-    applyNormalizedAdapterEntries(
-      config.plugins,
-      adapter.pluginKey,
-      adapter.entries,
-    );
-  }
-
-  for (const adapter of runtime.customAdapters) {
+  for (const adapter of runtime.adapters) {
     applyNormalizedAdapterEntries(
       config.plugins,
       adapter.pluginKey,
@@ -260,33 +282,15 @@ export type ChatRuntimeAdapterEntry = {
 };
 
 export function listChatRuntimeAdapterEntries(settings: unknown) {
-  const runtime = buildNormalizedChatRuntime(settings);
-  const entries: ChatRuntimeAdapterEntry[] = [];
-
-  for (const adapter of runtime.builtInAdapters) {
-    for (const entry of adapter.entries) {
-      entries.push({
-        key: adapter.key,
-        name: entry.name,
-        config: entry.config,
-        builtIn: true,
-      });
-    }
-  }
-
-  for (const adapter of runtime.customAdapters) {
-    for (const entry of adapter.entries) {
-      entries.push({
-        key: adapter.fallbackPrefix,
-        name: entry.name,
-        config: entry.config,
-        builtIn: false,
-        packageName: adapter.packageName,
-      });
-    }
-  }
-
-  return entries;
+  return buildNormalizedChatRuntime(settings).adapters.flatMap((adapter) =>
+    adapter.entries.map((entry) => ({
+      key: adapter.key,
+      name: entry.name,
+      config: entry.config,
+      builtIn: adapter.builtIn,
+      packageName: adapter.packageName,
+    })),
+  );
 }
 
 export function buildChatRuntimePackageJson(
@@ -321,7 +325,8 @@ function shouldInstallChatRuntimePackage(
   if (currentText !== expectedText) return true;
   if (!fs.existsSync(lockPath)) return true;
   return Object.keys(dependencies).some(
-    (packageName) => !fs.existsSync(dependencyInstallPath(rootDir, packageName)),
+    (packageName) =>
+      !fs.existsSync(dependencyInstallPath(rootDir, packageName)),
   );
 }
 
