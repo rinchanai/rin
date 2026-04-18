@@ -573,6 +573,20 @@ export class ChatController {
       ).trim() || undefined
     );
   }
+  private pickStoredValue(...candidates: unknown[]) {
+    for (const candidate of candidates) {
+      const value = safeString(candidate).trim();
+      if (value) return value;
+    }
+    return undefined;
+  }
+  private updateStoredSessionFile(...candidates: unknown[]) {
+    this.state.piSessionFile = this.pickStoredValue(
+      ...candidates,
+      this.state.piSessionFile,
+    );
+    return this.state.piSessionFile;
+  }
   private buildAssistantDelivery(input: {
     text?: string;
     replyToMessageId?: string;
@@ -590,6 +604,66 @@ export class ChatController {
       sessionId: safeString(input.sessionId || "").trim() || undefined,
       sessionFile: safeString(input.sessionFile || "").trim() || undefined,
     };
+  }
+  private stageAssistantDelivery(input: {
+    text?: string;
+    replyToMessageId?: string;
+    sessionId?: string;
+    sessionFile?: string;
+  }) {
+    const text = safeString(input.text ?? this.latestAssistantText).trim();
+    if (!text) throw new Error("chat_final_assistant_text_missing");
+    this.latestAssistantText = text;
+    this.state.pendingDelivery = this.buildAssistantDelivery({
+      text,
+      replyToMessageId: input.replyToMessageId,
+      sessionId: this.pickStoredValue(input.sessionId, this.currentSessionId()),
+      sessionFile: this.pickStoredValue(
+        input.sessionFile,
+        this.currentSessionFile(),
+      ),
+    });
+    return text;
+  }
+  private async deliverAssistantReply(input: {
+    text?: string;
+    replyToMessageId?: string;
+    sessionId?: string;
+    sessionFile?: string;
+    incomingMessageId?: string;
+    clearProcessing?: boolean;
+  }) {
+    const text = this.stageAssistantDelivery(input);
+    this.saveState();
+    this.markProcessedMessage(input.incomingMessageId);
+    await this.commitPendingDelivery(input.clearProcessing);
+    return text;
+  }
+  private async finishLiveTurn(input: {
+    liveTurn: { promise: Promise<any> };
+    replyToMessageId?: string;
+    incomingMessageId?: string;
+    clearProcessing?: boolean;
+  }) {
+    const completion = await input.liveTurn.promise;
+    await this.waitForInterimDeliveries();
+    const finalText = safeString(completion?.finalText).trim();
+    if (!finalText) {
+      throw new Error("rpc_turn_final_output_missing");
+    }
+    this.updateStoredSessionFile(
+      completion?.sessionFile,
+      this.session?.sessionManager?.getSessionFile?.(),
+    );
+    await this.deliverAssistantReply({
+      text: finalText,
+      replyToMessageId: input.replyToMessageId,
+      sessionId: completion?.sessionId,
+      sessionFile: completion?.sessionFile,
+      incomingMessageId: input.incomingMessageId,
+      clearProcessing: input.clearProcessing,
+    });
+    return { completion, finalText };
   }
   private async commitPendingDelivery(clearProcessing = false) {
     const pending = this.state.pendingDelivery;
@@ -671,13 +745,10 @@ export class ChatController {
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
     if (before !== wanted) await this.session.switchSession(wanted);
-    this.state.piSessionFile =
-      safeString(
-        this.session.sessionManager.getSessionFile?.() ||
-          wanted ||
-          this.state.piSessionFile ||
-          "",
-      ).trim() || undefined;
+    this.updateStoredSessionFile(
+      this.session.sessionManager.getSessionFile?.(),
+      wanted,
+    );
     this.saveState();
     return {
       changed: before !== wanted,
@@ -698,13 +769,10 @@ export class ChatController {
       await this.session.switchSession(wanted);
     }
     const result = await this.session.ensureSessionReady();
-    this.state.piSessionFile =
-      safeString(
-        this.session.sessionManager.getSessionFile?.() ||
-          result?.sessionFile ||
-          this.state.piSessionFile ||
-          "",
-      ).trim() || undefined;
+    this.updateStoredSessionFile(
+      this.session.sessionManager.getSessionFile?.(),
+      result?.sessionFile,
+    );
     this.saveState();
     return result;
   }
@@ -725,35 +793,22 @@ export class ChatController {
     }
     try {
       const data: any = await this.session.runCommand(commandLine);
-      this.state.piSessionFile =
-        safeString(
-          this.session.sessionManager.getSessionFile?.() ||
-            this.state.piSessionFile ||
-            "",
-        ).trim() || undefined;
+      this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
-      this.markProcessedMessage(incomingMessageId);
-      this.latestAssistantText = text;
-      this.state.pendingDelivery = this.buildAssistantDelivery({
+      await this.deliverAssistantReply({
         text,
         replyToMessageId: replyToMessageId || undefined,
-        sessionId: this.currentSessionId() || undefined,
-        sessionFile: this.currentSessionFile(),
+        incomingMessageId,
       });
-      this.saveState();
-      await this.commitPendingDelivery();
       return data;
     } catch (error: any) {
       const errorMessage =
         safeString(error?.message || error).trim() || "chat_command_failed";
       const text = `Chat bridge error: ${errorMessage}`;
-      this.latestAssistantText = text;
-      this.state.pendingDelivery = this.buildAssistantDelivery({
+      this.stageAssistantDelivery({
         text,
         replyToMessageId: replyToMessageId || undefined,
-        sessionId: this.currentSessionId() || undefined,
-        sessionFile: this.currentSessionFile(),
       });
       this.saveState();
       await this.commitPendingDelivery();
@@ -855,12 +910,7 @@ export class ChatController {
       startedAt: Date.now(),
     });
     this.state.chatKey = this.chatKey;
-    this.state.piSessionFile =
-      safeString(
-        this.session.sessionManager.getSessionFile?.() ||
-          this.state.piSessionFile ||
-          "",
-      ).trim() || undefined;
+    this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
     this.state.processing = {
       text: input.text,
       attachments,
@@ -899,36 +949,14 @@ export class ChatController {
       );
       throw error;
     }
-    const completion = await liveTurn.promise;
-    await this.waitForInterimDeliveries();
-    this.latestAssistantText = safeString(completion?.finalText).trim();
-    if (!this.latestAssistantText) {
-      throw new Error("rpc_turn_final_output_missing");
-    }
-    this.state.piSessionFile =
-      safeString(
-        completion?.sessionFile ||
-          this.session.sessionManager.getSessionFile?.() ||
-          this.state.piSessionFile ||
-          "",
-      ).trim() || undefined;
-    this.state.pendingDelivery = this.buildAssistantDelivery({
-      text: this.latestAssistantText,
+    const { finalText } = await this.finishLiveTurn({
+      liveTurn,
       replyToMessageId: replyToMessageId || undefined,
-      sessionId:
-        safeString(
-          completion?.sessionId || this.currentSessionId() || "",
-        ).trim() || undefined,
-      sessionFile:
-        safeString(
-          completion?.sessionFile || this.currentSessionFile() || "",
-        ).trim() || undefined,
+      incomingMessageId: input.incomingMessageId,
+      clearProcessing: true,
     });
-    this.saveState();
-    this.markProcessedMessage(input.incomingMessageId);
-    await this.commitPendingDelivery(true);
     return {
-      finalText: safeString(this.latestAssistantText || "").trim(),
+      finalText,
       sessionId: this.currentSessionId() || undefined,
       sessionFile: this.currentSessionFile(),
     };
@@ -997,17 +1025,13 @@ export class ChatController {
       await this.pollTyping().catch(() => {});
       this.logger.info(`resume interrupted chat turn chatKey=${this.chatKey}`);
       if (deliveredCompletedText && !this.session.isStreaming) {
-        this.latestAssistantText = deliveredCompletedText;
-        this.state.pendingDelivery = this.buildAssistantDelivery({
-          text: this.latestAssistantText,
+        await this.deliverAssistantReply({
+          text: deliveredCompletedText,
           replyToMessageId:
             safeString(pending.replyToMessageId || "").trim() || undefined,
-          sessionId: this.currentSessionId() || undefined,
-          sessionFile: this.currentSessionFile(),
+          incomingMessageId: pending.incomingMessageId,
+          clearProcessing: true,
         });
-        this.saveState();
-        this.markProcessedMessage(pending.incomingMessageId);
-        await this.commitPendingDelivery(true);
         return;
       }
       if (shouldResumeInternally) {
@@ -1028,35 +1052,13 @@ export class ChatController {
           );
           throw error;
         }
-        const completion = await liveTurn.promise;
-        await this.waitForInterimDeliveries();
-        this.latestAssistantText = safeString(completion?.finalText).trim();
-        if (!this.latestAssistantText) {
-          throw new Error("rpc_turn_final_output_missing");
-        }
-        this.state.piSessionFile =
-          safeString(
-            completion?.sessionFile ||
-              this.session.sessionManager.getSessionFile?.() ||
-              this.state.piSessionFile ||
-              "",
-          ).trim() || undefined;
-        this.state.pendingDelivery = this.buildAssistantDelivery({
-          text: this.latestAssistantText,
+        await this.finishLiveTurn({
+          liveTurn,
           replyToMessageId:
             safeString(pending.replyToMessageId || "").trim() || undefined,
-          sessionId:
-            safeString(
-              completion?.sessionId || this.currentSessionId() || "",
-            ).trim() || undefined,
-          sessionFile:
-            safeString(
-              completion?.sessionFile || this.currentSessionFile() || "",
-            ).trim() || undefined,
+          incomingMessageId: pending.incomingMessageId,
+          clearProcessing: true,
         });
-        this.saveState();
-        this.markProcessedMessage(pending.incomingMessageId);
-        await this.commitPendingDelivery(true);
         return;
       }
       await this.runTurnNow(

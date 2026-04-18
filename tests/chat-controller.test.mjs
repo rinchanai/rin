@@ -1239,6 +1239,82 @@ test("chat controller delivers completed assistant text during recovery when pro
   ]);
 });
 
+test("chat controller resumes interrupted chat turns through the shared final delivery path", async () => {
+  const controller = await createController("telegram/1:2");
+  const delivered = [];
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/1:2",
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-recover-resume",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "42",
+    incomingMessageId: "m-recover-resume",
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push({
+      text: this.state.pendingDelivery?.text || "",
+      replyToMessageId: this.state.pendingDelivery?.replyToMessageId,
+      sessionFile: this.state.pendingDelivery?.sessionFile,
+    });
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+    sessionManager: {
+      getSessionFile: () => "/tmp/resume-chat.jsonl",
+      getSessionId: () => "session-resume",
+      getSessionName: () => "telegram/1:2",
+    },
+    resumeInterruptedTurn: async (options) => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.messages = [
+          { role: "user", content: [{ type: "text", text: "hello" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "final resumed text" }],
+          },
+        ];
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "final resumed text");
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+  };
+
+  await controller.recoverIfNeeded();
+
+  const stored = getChatMessage(
+    controller.agentDir,
+    "telegram/1:2",
+    "m-recover-resume",
+  );
+  assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.state.piSessionFile, "/tmp/resume-chat.jsonl");
+  assert.ok(stored?.processedAt);
+  assert.deepEqual(delivered, [
+    {
+      text: "final resumed text",
+      replyToMessageId: "42",
+      sessionFile: "/tmp/resume-chat.jsonl",
+    },
+  ]);
+});
+
 test("chat controller retries persisted final reply delivery on recovery", async () => {
   const controller = await createController("telegram/1:2");
   const sends = [];
