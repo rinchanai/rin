@@ -2,13 +2,14 @@ import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
-  formatSize,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
+  appendTruncationNotice,
+  formatTruncationWarningMessage,
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
@@ -229,13 +230,7 @@ function formatFetchResult(
 
   const truncation = result.details?.truncation;
   if (truncation?.truncated) {
-    if (truncation.firstLineExceedsLimit) {
-      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-    } else if (truncation.truncatedBy === "lines") {
-      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-    } else {
-      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-    }
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
   }
   return text;
 }
@@ -337,14 +332,8 @@ export default function fetchExtension(pi: ExtensionAPI) {
       });
 
       let outputText = truncation.content;
-      if (truncation.firstLineExceedsLimit) {
-        outputText = `[First line exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
-      } else if (truncation.truncated) {
-        if (truncation.truncatedBy === "lines") {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-        } else {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(DEFAULT_MAX_BYTES)} limit).]`;
-        }
+      if (truncation.truncated) {
+        outputText = appendTruncationNotice(outputText, truncation);
         details.truncation = truncation;
       }
 

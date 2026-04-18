@@ -4,13 +4,12 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import {
+  appendTruncationNotice,
+  formatTruncationWarningMessage,
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
@@ -74,13 +73,7 @@ function formatListChatLogResult(
 
   const truncation = result.details?.truncation as TruncationResult | undefined;
   if (truncation?.truncated) {
-    if (truncation.firstLineExceedsLimit) {
-      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-    } else if (truncation.truncatedBy === "lines") {
-      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-    } else {
-      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-    }
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
   }
 
   return text;
@@ -125,14 +118,10 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
           ].join("\n")
         : `No chat log found\nchatKey=${chatKey}\ndate=${date}\npath=${filePath}`;
       const truncation = truncateHead(text);
-      let outputText = truncation.content;
-      if (truncation.truncated) {
-        if (truncation.truncatedBy === "lines") {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-        } else {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
-        }
-      }
+      const outputText = appendTruncationNotice(
+        truncation.content,
+        truncation.truncated ? truncation : undefined,
+      );
       return {
         content: [{ type: "text", text: outputText }],
         details: {

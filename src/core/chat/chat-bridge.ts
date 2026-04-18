@@ -8,13 +8,14 @@ import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateTail,
 } from "@mariozechner/pi-coding-agent";
-import { getTextOutput } from "../pi/render-utils.js";
+import {
+  formatToolDuration,
+  formatTruncationWarningMessage,
+  getTextOutput,
+} from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { readSessionMetadata } from "../session/metadata.js";
 import { normalizeChatKey } from "./support.js";
@@ -22,10 +23,6 @@ import { safeString } from "../text-utils.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
-
-function formatDuration(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
-}
 
 function getTempFilePath(): string {
   const id = randomBytes(8).toString("hex");
@@ -151,30 +148,17 @@ function rebuildChatBridgeResultRenderComponent(
     const warnings: string[] = [];
     if (fullOutputPath) warnings.push(`Full output: ${fullOutputPath}`);
     if (truncation?.truncated) {
-      if (truncation.truncatedBy === "lines") {
-        warnings.push(
-          `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines`,
-        );
-      } else {
-        warnings.push(
-          `Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`,
-        );
-      }
+      warnings.push(formatTruncationWarningMessage(truncation));
     }
     component.addChild(
       new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0),
     );
   }
 
-  if (startedAt !== undefined) {
-    const label = options.isPartial ? "Elapsed" : "Took";
-    const endTime = endedAt ?? Date.now();
+  const duration = formatToolDuration(startedAt, endedAt);
+  if (duration) {
     component.addChild(
-      new Text(
-        `\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`,
-        0,
-        0,
-      ),
+      new Text(`\n${theme.fg("muted", duration)}`, 0, 0),
     );
   }
 }

@@ -27,13 +27,13 @@ import {
 } from "./format-utils.js";
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import {
+  appendTruncationNotice,
+  formatToolDuration,
+  formatTruncationWarningMessage,
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
@@ -166,15 +166,11 @@ class SubagentResultRenderComponent extends Container {
 
 const SUBAGENT_PREVIEW_LINES = 5;
 
-function formatDuration(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
 function rebuildSubagentResultRenderComponent(
   component: SubagentResultRenderComponent,
   outputText: string,
   fullOutputPath: string | undefined,
-  truncated: boolean | undefined,
+  truncation: TruncationResult | undefined,
   expanded: boolean,
   startedAt: number | undefined,
   endedAt: number | undefined,
@@ -222,20 +218,19 @@ function rebuildSubagentResultRenderComponent(
     }
   }
 
-  if (truncated || fullOutputPath) {
+  if (truncation?.truncated || fullOutputPath) {
     const warnings: string[] = [];
     if (fullOutputPath) warnings.push(`Full output: ${fullOutputPath}`);
-    if (truncated) warnings.push("Output truncated");
+    if (truncation?.truncated) warnings.push(formatTruncationWarningMessage(truncation));
     component.addChild(
       new Text(`\n${theme.fg("warning", `[${warnings.join('. ')}]`)}`, 0, 0),
     );
   }
 
-  if (startedAt !== undefined) {
-    const label = endedAt === undefined ? "Elapsed" : "Took";
-    const endTime = endedAt ?? Date.now();
+  const duration = formatToolDuration(startedAt, endedAt);
+  if (duration) {
     component.addChild(
-      new Text(`\n${theme.fg("muted", `${label} ${formatDuration(endTime - startedAt)}`)}`, 0, 0),
+      new Text(`\n${theme.fg("muted", duration)}`, 0, 0),
     );
   }
 }
@@ -342,14 +337,10 @@ async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
   const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
   const text = formatModelList(detailsBase);
   const truncation = truncateHead(text);
-  let outputText = truncation.content;
-  if (truncation.truncated) {
-    if (truncation.truncatedBy === "lines") {
-      outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-    } else {
-      outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
-    }
-  }
+  const outputText = appendTruncationNotice(
+    truncation.content,
+    truncation.truncated ? truncation : undefined,
+  );
   return {
     content: [{ type: "text" as const, text: outputText }],
     details: {
@@ -413,6 +404,11 @@ async function runSubagentResult(
     userText: userTruncation.content,
     fullOutputPath,
     truncated,
+    truncation: userTruncation.truncated
+      ? userTruncation
+      : agentTruncation.truncated
+        ? agentTruncation
+        : undefined,
   };
 
   return {
@@ -493,7 +489,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
         component,
         outputText,
         details?.fullOutputPath,
-        details?.truncated,
+        details?.truncation,
         options.expanded,
         state.startedAt,
         state.endedAt,
@@ -541,13 +537,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
       }
       const truncation = details?.truncation;
       if (truncation?.truncated) {
-        if (truncation.firstLineExceedsLimit) {
-          text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-        } else if (truncation.truncatedBy === "lines") {
-          text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-        } else {
-          text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-        }
+        text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
       }
       return new Text(text, 0, 0);
     },

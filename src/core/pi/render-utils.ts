@@ -1,5 +1,11 @@
 import os from "node:os";
 
+import {
+  DEFAULT_MAX_BYTES,
+  DEFAULT_MAX_LINES,
+  formatSize,
+  type TruncationResult,
+} from "@mariozechner/pi-coding-agent";
 import { getCapabilities, getImageDimensions, imageFallback } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 
@@ -68,4 +74,41 @@ export function getTextOutput(
 
 export function invalidArgText(theme: any) {
   return theme.fg("error", "[invalid arg]");
+}
+
+function formatDuration(ms: number) {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function formatToolDuration(startedAt: number | undefined, endedAt: number | undefined) {
+  if (startedAt === undefined) return undefined;
+  const label = endedAt === undefined ? "Elapsed" : "Took";
+  const endTime = endedAt ?? Date.now();
+  return `${label} ${formatDuration(endTime - startedAt)}`;
+}
+
+export function formatTruncationWarningMessage(truncation: TruncationResult) {
+  if (truncation.firstLineExceedsLimit) {
+    return `First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`;
+  }
+  if (truncation.truncatedBy === "lines") {
+    return `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)`;
+  }
+  return `Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`;
+}
+
+export function formatTruncationNotice(truncation: TruncationResult) {
+  if (truncation.firstLineExceedsLimit) {
+    return `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit.]`;
+  }
+  if (truncation.truncatedBy === "lines") {
+    return `[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
+  }
+  return `[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+}
+
+export function appendTruncationNotice(text: string, truncation: TruncationResult | undefined) {
+  if (!truncation?.truncated) return text;
+  const notice = formatTruncationNotice(truncation);
+  return text ? `${text}\n\n${notice}` : notice;
 }

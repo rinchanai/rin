@@ -4,13 +4,13 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import {
+  appendTruncationNotice,
+  formatToolDuration,
+  formatTruncationWarningMessage,
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
@@ -163,10 +163,6 @@ function trimTrailingEmptyLines(lines: string[]): string[] {
   return lines.slice(0, end);
 }
 
-function formatDuration(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
 function buildSearchMemorySearchStatusText(mode: "search" | "recent", query: string): string {
   if (mode === "recent") return "Loading recent archived sessions...";
   return `Searching archived sessions for ${JSON.stringify(query)}...`;
@@ -219,13 +215,7 @@ function formatMemoryResult(
 
   const truncation = result.details?.truncation;
   if (truncation?.truncated) {
-    if (truncation.firstLineExceedsLimit) {
-      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-    } else if (truncation.truncatedBy === "lines") {
-      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-    } else {
-      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-    }
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
   }
 
   return text;
@@ -285,11 +275,7 @@ export async function executeSearchMemory(
 
     if (truncation.truncated) {
       details.truncation = truncation;
-      if (truncation.truncatedBy === "lines") {
-        outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-      } else {
-        outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
-      }
+      outputText = appendTruncationNotice(outputText, truncation);
     }
     return {
       content: [{ type: "text" as const, text: outputText }],
@@ -329,10 +315,10 @@ export function formatRenderedMemoryResult(
     },
   };
   let text = formatMemoryResult(userResult, options, theme, showImages);
-  if (startedAt !== undefined) {
-    const label = endedAt === undefined ? "Elapsed" : "Took";
-    const duration = theme.fg("muted", `${label} ${formatDuration((endedAt ?? Date.now()) - startedAt)}`);
-    text = text ? `${text}\n${duration}` : `\n${duration}`;
+  const duration = formatToolDuration(startedAt, endedAt);
+  if (duration) {
+    const durationText = theme.fg("muted", duration);
+    text = text ? `${text}\n${durationText}` : `\n${durationText}`;
   }
   return text;
 }

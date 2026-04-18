@@ -4,13 +4,12 @@ import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner
 import { Text } from "@mariozechner/pi-tui";
 
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import {
+  appendTruncationNotice,
+  formatTruncationWarningMessage,
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
@@ -106,13 +105,7 @@ function formatWebSearchResult(
 
   const truncation = result.details?.truncation;
   if (truncation?.truncated) {
-    if (truncation.firstLineExceedsLimit) {
-      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-    } else if (truncation.truncatedBy === "lines") {
-      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-    } else {
-      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-    }
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
   }
 
   return text;
@@ -200,11 +193,7 @@ export default function webSearchExtension(pi: ExtensionAPI) {
 
       if (truncation.truncated) {
         details.truncation = truncation;
-        if (truncation.truncatedBy === "lines") {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-        } else {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
-        }
+        outputText = appendTruncationNotice(outputText, truncation);
       }
 
       return {

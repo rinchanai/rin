@@ -6,13 +6,12 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import {
+  appendTruncationNotice,
+  formatTruncationWarningMessage,
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
@@ -347,13 +346,7 @@ function formatListTaskResult(
 
   const truncation = result.details?.truncation as TruncationResult | undefined;
   if (truncation?.truncated) {
-    if (truncation.firstLineExceedsLimit) {
-      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-    } else if (truncation.truncatedBy === "lines") {
-      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-    } else {
-      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-    }
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
   }
 
   return text;
@@ -413,14 +406,10 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
   if (action === "get") {
     const agentTruncation = truncateHead(texts.agentText);
     const userTruncation = truncateHead(texts.userText);
-    let outputText = agentTruncation.content;
-    if (agentTruncation.truncated) {
-      if (agentTruncation.truncatedBy === "lines") {
-        outputText += `\n\n[Showing ${agentTruncation.outputLines} of ${agentTruncation.totalLines} lines.]`;
-      } else {
-        outputText += `\n\n[Showing ${agentTruncation.outputLines} of ${agentTruncation.totalLines} lines (${formatSize(agentTruncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
-      }
-    }
+    const outputText = appendTruncationNotice(
+      agentTruncation.content,
+      agentTruncation.truncated ? agentTruncation : undefined,
+    );
     return {
       content: [{ type: "text" as const, text: outputText }],
       details: {

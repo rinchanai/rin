@@ -8,13 +8,12 @@ import { Type } from "@sinclair/typebox";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
   type TruncationResult,
   truncateHead,
 } from "@mariozechner/pi-coding-agent";
 import {
+  appendTruncationNotice,
+  formatTruncationWarningMessage,
   getTextOutput,
   invalidArgText,
   replaceTabs,
@@ -111,13 +110,7 @@ function formatRulesResult(
 
   const truncation = result.details?.truncation;
   if (truncation?.truncated) {
-    if (truncation.firstLineExceedsLimit) {
-      text += `\n${theme.fg("warning", `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`)}`;
-    } else if (truncation.truncatedBy === "lines") {
-      text += `\n${theme.fg("warning", `[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`)}`;
-    } else {
-      text += `\n${theme.fg("warning", `[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`)}`;
-    }
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
   }
 
   return text;
@@ -168,11 +161,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
         {};
       if (truncation.truncated) {
         details.truncation = truncation;
-        if (truncation.truncatedBy === "lines") {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-        } else {
-          outputText += `\n\n[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
-        }
+        outputText = appendTruncationNotice(outputText, truncation);
       }
 
       return {
