@@ -4,15 +4,9 @@ import { createHash } from "node:crypto";
 
 import { writeJsonAtomic } from "../platform/fs.js";
 import {
-  directLike,
-  elementsToText,
-  getChatType,
-  mentionLike,
-  pickChatName,
-  pickReplyToMessageId,
-  pickSenderNickname,
-  pickUserId,
-} from "./chat-helpers.js";
+  buildChatInboxRouting,
+  serializeChatInboxSession,
+} from "./inbound-normalization.js";
 import { readJsonFile } from "./support.js";
 import { safeString } from "../text-utils.js";
 
@@ -66,60 +60,6 @@ function itemFileName(itemId: string) {
   return `${itemId}.json`;
 }
 
-function serializeSession(session: any) {
-  return {
-    platform: safeString(session?.platform).trim() || undefined,
-    selfId: safeString(session?.selfId || session?.bot?.selfId).trim() || undefined,
-    channelId: safeString(session?.channelId).trim() || undefined,
-    guildId: safeString(session?.guildId).trim() || undefined,
-    userId: safeString(session?.userId || session?.author?.userId).trim() || undefined,
-    messageId: safeString(session?.messageId).trim() || undefined,
-    timestamp:
-      Number.isFinite(Number(session?.timestamp)) ? Number(session.timestamp) : undefined,
-    content: safeString(session?.content).trim() || undefined,
-    stripped:
-      session?.stripped && typeof session.stripped === "object"
-        ? {
-            content: safeString(session.stripped.content).trim() || undefined,
-          }
-        : undefined,
-    username: safeString(session?.username).trim() || undefined,
-    author:
-      session?.author && typeof session.author === "object"
-        ? JSON.parse(JSON.stringify(session.author))
-        : undefined,
-    user:
-      session?.user && typeof session.user === "object"
-        ? JSON.parse(JSON.stringify(session.user))
-        : undefined,
-    channel:
-      session?.channel && typeof session.channel === "object"
-        ? JSON.parse(JSON.stringify(session.channel))
-        : undefined,
-    guild:
-      session?.guild && typeof session.guild === "object"
-        ? JSON.parse(JSON.stringify(session.guild))
-        : undefined,
-    quote:
-      session?.quote && typeof session.quote === "object"
-        ? JSON.parse(JSON.stringify(session.quote))
-        : undefined,
-  };
-}
-
-function buildChatInboxRouting(session: any, elements: any[]): ChatInboxItemRouting {
-  return {
-    chatType: getChatType(session),
-    isDirect: directLike(session),
-    mentionLike: mentionLike(session),
-    text: elementsToText(elements) || undefined,
-    userId: pickUserId(session) || undefined,
-    nickname: pickSenderNickname(session) || undefined,
-    chatName: pickChatName(session) || undefined,
-    replyToMessageId: pickReplyToMessageId(session) || undefined,
-  };
-}
-
 export function buildChatInboxItem(input: {
   chatKey: string;
   messageId: string;
@@ -140,7 +80,7 @@ export function buildChatInboxItem(input: {
     updatedAt: now,
     attemptCount: 0,
     routing: buildChatInboxRouting(input.session, input.elements),
-    session: serializeSession(input.session),
+    session: serializeChatInboxSession(input.session),
     elements: Array.isArray(input.elements)
       ? JSON.parse(JSON.stringify(input.elements))
       : [],

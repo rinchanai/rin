@@ -40,6 +40,7 @@ import {
   pickUserId,
   safeString,
 } from "./chat-helpers.js";
+import { buildInboundChatLogInput } from "./inbound-normalization.js";
 import { ChatController, loadChatSettings } from "./controller.js";
 import { appendChatLog } from "./chat-log.js";
 import {
@@ -650,23 +651,11 @@ export async function startChatBridge(
           identity,
           trustOf,
         );
-        const platform = safeString(session?.platform || "").trim();
-        const botId = safeString(
-          session?.selfId || session?.bot?.selfId || "",
-        ).trim();
-        const chatKey = composeChatKey(platform, getChatId(session), botId);
-        const text = elementsToText(elements);
-        if (chatKey && text) {
-          appendChatLog(runtime.agentDir, {
-            timestamp: new Date().toISOString(),
-            chatKey,
-            role: "user",
-            text,
-            messageId: pickMessageId(session) || undefined,
-            replyToMessageId: pickReplyToMessageId(session) || undefined,
-            userId: pickUserId(session) || undefined,
-            nickname: pickSenderNickname(session) || undefined,
-          });
+        const logEntry = buildInboundChatLogInput(session, elements, {
+          timestamp: new Date().toISOString(),
+        });
+        if (logEntry) {
+          appendChatLog(runtime.agentDir, logEntry);
         }
       } catch (error: any) {
         logger.warn(

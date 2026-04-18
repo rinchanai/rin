@@ -1,0 +1,305 @@
+import { normalizeElementSummary, type StoredChatMessage } from "./message-store.js";
+import { composeChatKey } from "./support.js";
+import { safeString } from "../text-utils.js";
+
+export type ChatInboxRouting = {
+  chatType: "private" | "group";
+  isDirect: boolean;
+  mentionLike: boolean;
+  text?: string;
+  userId?: string;
+  nickname?: string;
+  chatName?: string;
+  replyToMessageId?: string;
+};
+
+function normalizeMentionToken(value: unknown) {
+  return safeString(value).trim().replace(/^@+/, "").toLowerCase();
+}
+
+function cloneJsonValue<T>(value: T): T | undefined {
+  return value && typeof value === "object"
+    ? (JSON.parse(JSON.stringify(value)) as T)
+    : undefined;
+}
+
+function normalizePlatformTimestamp(value: unknown) {
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function collectIncomingElementText(element: any): string {
+  if (!element) return "";
+  if (typeof element === "string") return element;
+  if (Array.isArray(element)) {
+    return element.map((item) => collectIncomingElementText(item)).join("");
+  }
+  if (typeof element !== "object") return "";
+  const type = safeString(element?.type || "").toLowerCase();
+  const attrs =
+    element?.attrs && typeof element.attrs === "object" ? element.attrs : {};
+  if (type === "text") return safeString(attrs.content || element.text || "");
+  if (type === "br") return "\n";
+  const children = Array.isArray(element?.children) ? element.children : [];
+  const childText = children
+    .map((item) => collectIncomingElementText(item))
+    .join("");
+  if (type === "p" || type === "paragraph") {
+    return childText ? `${childText}\n` : "";
+  }
+  return childText;
+}
+
+function normalizeIncomingText(text: string) {
+  return safeString(text)
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\t ]+\n/g, "\n")
+    .replace(/\n[\t ]+/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export function pickUserId(session: any) {
+  return safeString(session?.userId || session?.author?.userId || "").trim();
+}
+
+export function directLike(session: any) {
+  return (
+    Boolean(session?.isDirect) ||
+    !safeString(session?.guildId || "").trim() ||
+    safeString(session?.channelId || "").startsWith("private:")
+  );
+}
+
+export function ensureSessionElements(session: any) {
+  if (Array.isArray(session?.elements) && session.elements.length) {
+    return session.elements;
+  }
+  const stripped = safeString(session?.stripped?.content || "").trim();
+  if (stripped) return [{ type: "text", attrs: { content: stripped } }];
+  const raw = safeString(session?.content || "").trim();
+  if (raw) return [{ type: "text", attrs: { content: raw } }];
+  return [] as any[];
+}
+
+export function mentionLike(session: any) {
+  if (Boolean(session?.stripped?.appel)) return true;
+  const elements = ensureSessionElements(session);
+  const atElements = elements.filter(
+    (element) => safeString(element?.type).toLowerCase() === "at",
+  );
+  if (!atElements.length) return false;
+
+  const selfTokens = new Set(
+    [
+      session?.selfId,
+      session?.bot?.selfId,
+      session?.username,
+      session?.user?.username,
+      session?.bot?.username,
+      session?.bot?.name,
+      session?.bot?.user?.name,
+      session?.bot?.user?.username,
+      session?.bot?.nick,
+      session?.bot?.user?.nick,
+    ]
+      .map(normalizeMentionToken)
+      .filter(Boolean),
+  );
+
+  for (const element of atElements) {
+    const attrs = element?.attrs || {};
+    const id = normalizeMentionToken(attrs.id);
+    const name = normalizeMentionToken(attrs.name);
+    if ((id && selfTokens.has(id)) || (name && selfTokens.has(name))) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function elementsToText(elements: any) {
+  return normalizeIncomingText(
+    (Array.isArray(elements) ? elements : [])
+      .map((element) => collectIncomingElementText(element))
+      .join(""),
+  );
+}
+
+export function pickSenderNickname(session: any) {
+  const values = [
+    session?.author?.nick,
+    session?.author?.name,
+    session?.author?.nickname,
+    session?.author?.username,
+    session?.username,
+    session?.user?.nick,
+    session?.user?.name,
+    session?.user?.nickname,
+    session?.user?.username,
+  ];
+  for (const value of values) {
+    const text = safeString(value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+export function pickChatName(session: any) {
+  const values = [
+    session?.channel?.name,
+    session?.channelName,
+    session?.guild?.name,
+    session?.guildName,
+  ];
+  for (const value of values) {
+    const text = safeString(value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+export function pickMessageId(session: any) {
+  return safeString(session?.messageId || "").trim();
+}
+
+export function pickReplyToMessageId(session: any) {
+  return safeString(session?.quote?.messageId || session?.quote?.id || "").trim();
+}
+
+export function summarizeQuote(session: any) {
+  const quote = session?.quote;
+  if (!quote || typeof quote !== "object") return undefined;
+  const messageId =
+    safeString(quote?.messageId || quote?.id || "").trim() || undefined;
+  const userId =
+    safeString(
+      quote?.user?.id || quote?.author?.userId || quote?.author?.id || "",
+    ).trim() || undefined;
+  const nickname =
+    safeString(
+      quote?.user?.name || quote?.author?.name || quote?.author?.nick || "",
+    ).trim() || undefined;
+  const content =
+    safeString(quote?.content || quote?.message?.content || "").trim() ||
+    undefined;
+  if (!messageId && !userId && !nickname && !content) return undefined;
+  return { messageId, userId, nickname, content };
+}
+
+export function getChatId(session: any) {
+  const channelId = safeString(session?.channelId || "").trim();
+  if (channelId) return channelId;
+  const userId = pickUserId(session);
+  if (!userId) return "";
+  return safeString(session?.platform) === "onebot" ? `private:${userId}` : userId;
+}
+
+export function getChatType(session: any): "private" | "group" {
+  return directLike(session) ? "private" : "group";
+}
+
+export function serializeChatInboxSession(session: any) {
+  return {
+    platform: safeString(session?.platform).trim() || undefined,
+    selfId: safeString(session?.selfId || session?.bot?.selfId).trim() || undefined,
+    channelId: safeString(session?.channelId).trim() || undefined,
+    guildId: safeString(session?.guildId).trim() || undefined,
+    userId: pickUserId(session) || undefined,
+    messageId: pickMessageId(session) || undefined,
+    timestamp: normalizePlatformTimestamp(session?.timestamp),
+    content: safeString(session?.content).trim() || undefined,
+    stripped:
+      session?.stripped && typeof session.stripped === "object"
+        ? {
+            content: safeString(session.stripped.content).trim() || undefined,
+          }
+        : undefined,
+    username: safeString(session?.username).trim() || undefined,
+    author: cloneJsonValue(session?.author),
+    user: cloneJsonValue(session?.user),
+    channel: cloneJsonValue(session?.channel),
+    guild: cloneJsonValue(session?.guild),
+    quote: cloneJsonValue(session?.quote),
+  };
+}
+
+export function buildChatInboxRouting(
+  session: any,
+  elements: any[],
+): ChatInboxRouting {
+  return {
+    chatType: getChatType(session),
+    isDirect: directLike(session),
+    mentionLike: mentionLike(session),
+    text: elementsToText(elements) || undefined,
+    userId: pickUserId(session) || undefined,
+    nickname: pickSenderNickname(session) || undefined,
+    chatName: pickChatName(session) || undefined,
+    replyToMessageId: pickReplyToMessageId(session) || undefined,
+  };
+}
+
+export function buildInboundStoredChatMessageInput(
+  session: any,
+  elements: any[],
+  options: { receivedAt?: string; trust?: string } = {},
+): Omit<StoredChatMessage, "version" | "recordKey"> | null {
+  const platform = safeString(session?.platform || "").trim();
+  const botId = safeString(session?.selfId || session?.bot?.selfId || "").trim();
+  const chatId = getChatId(session);
+  const chatKey = composeChatKey(platform, chatId, botId);
+  const messageId = pickMessageId(session);
+  if (!chatKey || !messageId) return null;
+  const userId = pickUserId(session);
+  const receivedAt = safeString(options.receivedAt).trim() || new Date().toISOString();
+  const trust = safeString(options.trust).trim() || undefined;
+  return {
+    messageId,
+    role: "user",
+    replyToMessageId: pickReplyToMessageId(session) || undefined,
+    chatKey,
+    platform,
+    botId: botId || undefined,
+    chatId,
+    chatType: getChatType(session),
+    receivedAt,
+    platformTimestamp: normalizePlatformTimestamp(session?.timestamp),
+    userId: userId || undefined,
+    nickname: pickSenderNickname(session) || undefined,
+    chatName: pickChatName(session) || undefined,
+    trust,
+    text: elementsToText(elements) || undefined,
+    rawContent: safeString(session?.content || "").trim() || undefined,
+    strippedContent: safeString(session?.stripped?.content || "").trim() || undefined,
+    elements: normalizeElementSummary(elements),
+    quote: summarizeQuote(session),
+  };
+}
+
+export function buildInboundChatLogInput(
+  session: any,
+  elements: any[],
+  options: { timestamp?: string } = {},
+) {
+  const inbound = buildInboundStoredChatMessageInput(session, elements, {
+    receivedAt: options.timestamp,
+  });
+  if (!inbound) return null;
+  const text = safeString(
+    inbound.text || inbound.strippedContent || inbound.rawContent,
+  ).trim();
+  if (!text) return null;
+  return {
+    timestamp: safeString(options.timestamp).trim() || inbound.receivedAt,
+    chatKey: inbound.chatKey,
+    role: "user" as const,
+    text,
+    messageId: inbound.messageId || undefined,
+    replyToMessageId: inbound.replyToMessageId,
+    userId: inbound.userId,
+    nickname: inbound.nickname,
+  };
+}
