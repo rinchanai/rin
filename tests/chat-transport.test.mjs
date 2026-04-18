@@ -194,6 +194,70 @@ test("chat transport keeps local image parts as file urls instead of inlining da
   });
 });
 
+test("chat transport direct send helpers prepend quotes and reuse file urls", async () => {
+  await withTempDir(async (dir) => {
+    const imagePath = path.join(dir, "demo.png");
+    const filePath = path.join(dir, "demo.txt");
+    await fs.writeFile(imagePath, Buffer.from("abc"));
+    await fs.writeFile(filePath, "hello\n");
+    const sends = [];
+    const app = {
+      bots: [
+        {
+          platform: "telegram",
+          selfId: "1",
+          async sendMessage(chatId, content) {
+            sends.push({ chatId, content });
+            return [`m-${sends.length}`];
+          },
+        },
+      ],
+    };
+    const h = Object.assign((type, attrs) => ({ type, attrs }), {
+      text(content) {
+        return { type: "text", attrs: { content } };
+      },
+      quote(id) {
+        return { type: "quote", attrs: { id } };
+      },
+    });
+
+    await transport.sendText(app, "telegram/1:2", "hello", h, "41");
+    await transport.sendImageFile(
+      app,
+      "telegram/1:2",
+      imagePath,
+      h,
+      "image/png",
+      "42",
+    );
+    await transport.sendGenericFile(
+      app,
+      "telegram/1:2",
+      filePath,
+      h,
+      "demo.txt",
+      "43",
+    );
+
+    assert.equal(sends.length, 3);
+    assert.deepEqual(
+      sends.map((entry) => entry.content.map((node) => node.type)),
+      [
+        ["quote", "text"],
+        ["quote", "image"],
+        ["quote", "file"],
+      ],
+    );
+    assert.equal(sends[0].chatId, "2");
+    assert.equal(sends[0].content[0].attrs.id, "41");
+    assert.equal(sends[1].content[1].attrs.mimeType, "image/png");
+    assert.match(sends[1].content[1].attrs.src, /^file:\/\//);
+    assert.equal(sends[2].content[1].attrs.name, "demo.txt");
+    assert.match(sends[2].content[1].attrs.src, /^file:\/\//);
+  });
+});
+
 test("chat transport treats empty bot send results as delivery failures", async () => {
   await withTempDir(async (dir) => {
     await assert.rejects(

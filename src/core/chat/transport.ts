@@ -38,10 +38,9 @@ export function getWorkingReactionFrame(platform: string, index: number) {
 }
 
 export async function sendTyping(app: any, chatKey: string, h: any) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) return false;
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot) return false;
+  const target = tryResolveChatTarget(app, chatKey);
+  if (!target) return false;
+  const { parsed, bot } = target;
   if (typeof bot?.internal?.sendChatAction === "function") {
     try {
       await bot.internal.sendChatAction({
@@ -67,10 +66,9 @@ export async function rotateWorkingReaction(
   frameIndex: number,
   previousEmoji = "",
 ) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) return previousEmoji || "";
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot) return previousEmoji || "";
+  const target = tryResolveChatTarget(app, chatKey);
+  if (!target) return previousEmoji || "";
+  const { parsed, bot } = target;
   const nextEmoji = getWorkingReactionFrame(parsed.platform, frameIndex);
   if (previousEmoji && previousEmoji === nextEmoji) {
     return previousEmoji;
@@ -122,10 +120,9 @@ export async function clearWorkingReaction(
   messageId: string,
   emoji: string,
 ) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) return false;
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot) return false;
+  const target = tryResolveChatTarget(app, chatKey);
+  if (!target) return false;
+  const { parsed, bot } = target;
   const nextEmoji = safeString(emoji).trim();
   if (!nextEmoji) return false;
 
@@ -169,6 +166,38 @@ export async function clearWorkingReaction(
   } catch {
     return false;
   }
+}
+
+function formatNoBotError(parsed: { platform: string; botId: string }) {
+  return `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`;
+}
+
+function tryResolveChatTarget(app: any, chatKey: string) {
+  const parsed = parseChatKey(chatKey);
+  if (!parsed) return null;
+  const bot = findBot(app, parsed.platform, parsed.botId);
+  if (!bot) return null;
+  return { parsed, bot };
+}
+
+function requireChatTarget(app: any, chatKey: string) {
+  const parsed = parseChatKey(chatKey);
+  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
+  const bot = findBot(app, parsed.platform, parsed.botId);
+  if (!bot) throw new Error(formatNoBotError(parsed));
+  return { parsed, bot };
+}
+
+function withReplyQuote(h: any, replyToMessageId: string, nodes: any[]) {
+  const nextReplyToMessageId = safeString(replyToMessageId).trim();
+  return nextReplyToMessageId
+    ? [h.quote(nextReplyToMessageId), ...nodes]
+    : nodes;
+}
+
+async function sendChatNodes(app: any, chatKey: string, nodes: any[]) {
+  const { parsed, bot } = requireChatTarget(app, chatKey);
+  return await sendBotMessage(bot, parsed.chatId, nodes);
 }
 
 function normalizeDeliveredMessageIds(result: unknown) {
@@ -310,18 +339,11 @@ export async function sendText(
   h: any,
   replyToMessageId = "",
 ) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot)
-    throw new Error(
-      `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
-    );
-  const textNode = h.text(safeString(text));
-  const content = replyToMessageId
-    ? [h.quote(replyToMessageId), textNode]
-    : [textNode];
-  return await sendBotMessage(bot, parsed.chatId, content);
+  return await sendChatNodes(
+    app,
+    chatKey,
+    withReplyQuote(h, replyToMessageId, [h.text(safeString(text))]),
+  );
 }
 
 export async function sendImageFile(
@@ -332,21 +354,16 @@ export async function sendImageFile(
   mimeType = "image/png",
   replyToMessageId = "",
 ) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot)
-    throw new Error(
-      `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
-    );
-  const imageNode = h("image", {
-    src: localAssetUrl(filePath),
-    mimeType,
-  });
-  const content = replyToMessageId
-    ? [h.quote(replyToMessageId), imageNode]
-    : [imageNode];
-  return await sendBotMessage(bot, parsed.chatId, content);
+  return await sendChatNodes(
+    app,
+    chatKey,
+    withReplyQuote(h, replyToMessageId, [
+      h("image", {
+        src: localAssetUrl(filePath),
+        mimeType,
+      }),
+    ]),
+  );
 }
 
 export async function sendGenericFile(
@@ -357,21 +374,16 @@ export async function sendGenericFile(
   name?: string,
   replyToMessageId = "",
 ) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot)
-    throw new Error(
-      `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
-    );
-  const fileNode = h("file", {
-    src: toFileUrl(filePath).href,
-    name: name || path.basename(filePath),
-  });
-  const content = replyToMessageId
-    ? [h.quote(replyToMessageId), fileNode]
-    : [fileNode];
-  return await sendBotMessage(bot, parsed.chatId, content);
+  return await sendChatNodes(
+    app,
+    chatKey,
+    withReplyQuote(h, replyToMessageId, [
+      h("file", {
+        src: localAssetUrl(filePath),
+        name: name || path.basename(filePath),
+      }),
+    ]),
+  );
 }
 
 export async function messagePartToNode(part: ChatMessagePart, h: any) {
@@ -456,14 +468,6 @@ export async function sendOutboxPayload(
   }
   if (payload?.type !== "parts_delivery") return [] as string[];
   const chatKey = safeString(payload.chatKey).trim();
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const bot = findBot(app, parsed.platform, parsed.botId);
-  if (!bot)
-    throw new Error(
-      `no_bot_for_platform:${parsed.platform}${parsed.botId ? `/${parsed.botId}` : ""}`,
-    );
-
   const rawParts = Array.isArray(payload.parts)
     ? payload.parts.filter(Boolean)
     : [];
@@ -474,7 +478,7 @@ export async function sendOutboxPayload(
   ).filter(Boolean);
   if (!nodes.length) throw new Error("chat_outbox_empty_message");
 
-  const deliveryResult = await sendBotMessage(bot, parsed.chatId, nodes);
+  const deliveryResult = await sendChatNodes(app, chatKey, nodes);
 
   const quotePart = rawParts.find((part) => part.type === "quote") as
     | { type: "quote"; id: string }
