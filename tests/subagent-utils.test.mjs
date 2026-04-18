@@ -10,17 +10,17 @@ const rootDir = path.resolve(
 );
 const modelUtils = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "core", "subagent", "builtin", "model-utils.js"),
+    path.join(rootDir, "dist", "core", "subagent", "model-utils.js"),
   ).href
 );
 const formatUtils = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "core", "subagent", "builtin", "format-utils.js"),
+    path.join(rootDir, "dist", "core", "subagent", "format-utils.js"),
   ).href
 );
 const subagentIndex = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "core", "subagent", "builtin", "index.js"),
+    path.join(rootDir, "dist", "core", "subagent", "index.js"),
   ).href
 );
 const subagentService = await import(
@@ -40,34 +40,39 @@ test("subagent model utils normalize and sort model refs", () => {
 });
 
 test("subagent format utils summarize results", () => {
-  const text = formatUtils.buildSubagentAgentText([
-    {
-      index: 1,
-      prompt: "x",
-      cwd: "/tmp",
-      status: "done",
-      exitCode: 0,
-      output: "hello world",
-      usage: {
-        input: 1,
-        output: 2,
-        cacheRead: 0,
-        cacheWrite: 0,
-        cost: 0,
-        contextTokens: 3,
-        turns: 1,
-      },
-      messages: [],
-      sessionMode: "persist",
-      sessionPersisted: true,
-      sessionId: "abc123",
-      sessionName: "auth-review",
-      sessionFile: "/tmp/auth-review.jsonl",
+  const persistedResult = {
+    index: 1,
+    prompt: "x",
+    cwd: "/tmp",
+    status: "done",
+    exitCode: 0,
+    output: "hello world",
+    usage: {
+      input: 1,
+      output: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      cost: 0,
+      contextTokens: 3,
+      turns: 1,
     },
-  ]);
-  assert.ok(text.includes("hello world"));
-  assert.ok(text.includes("Session: auth-review"));
-  assert.ok(text.includes("Path: /tmp/auth-review.jsonl"));
+    messages: [],
+    sessionMode: "persist",
+    sessionPersisted: true,
+    sessionId: "abc123",
+    sessionName: "auth-review",
+    sessionFile: "/tmp/auth-review.jsonl",
+  };
+
+  const agentText = formatUtils.buildSubagentAgentText([persistedResult]);
+  const userText = formatUtils.buildSubagentUserText([persistedResult]);
+  const summary = formatUtils.summarizeTaskResult(persistedResult);
+
+  assert.ok(agentText.includes("hello world"));
+  assert.ok(agentText.includes("Session: auth-review"));
+  assert.ok(agentText.includes("Path: /tmp/auth-review.jsonl"));
+  assert.equal(userText, agentText);
+  assert.match(summary, /\[done\] \(default model\) session=auth-review — hello world$/);
   assert.ok(
     formatUtils
       .formatUsage({
@@ -80,6 +85,68 @@ test("subagent format utils summarize results", () => {
         turns: 0,
       })
       .includes("↑1.2k"),
+  );
+});
+
+
+test("subagent format utils share persisted fallback labels and final output parsing", () => {
+  const results = [
+    {
+      index: 1,
+      prompt: "first",
+      status: "done",
+      exitCode: 0,
+      output: "  first\nresult  ",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: 0,
+        contextTokens: 0,
+        turns: 0,
+      },
+      messages: [],
+      sessionMode: "persist",
+      sessionPersisted: true,
+    },
+    {
+      index: 2,
+      prompt: "second",
+      status: "error",
+      exitCode: 1,
+      errorMessage: "line one\nline two",
+      output: "",
+      model: "openai/gpt-5",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: 0,
+        contextTokens: 0,
+        turns: 0,
+      },
+      messages: [],
+      sessionMode: "memory",
+      sessionPersisted: false,
+    },
+  ];
+
+  const agentText = formatUtils.buildSubagentAgentText(results);
+  const userText = formatUtils.buildSubagentUserText(results);
+
+  assert.match(agentText, /1\. \(default model\) \[session: persisted\]/);
+  assert.match(userText, /Parallel subagents finished: 1\/2 succeeded/);
+  assert.match(userText, /1\. \[ok\] \(default model\) \[session: persisted\] — first result/);
+  assert.match(userText, /2\. \[failed\] openai\/gpt-5 — line one line two/);
+  assert.equal(
+    formatUtils.getFinalOutput([
+      { role: "user", content: [{ type: "text", text: "ignore" }] },
+      { role: "assistant", content: [{ type: "text", text: "  " }] },
+      { role: "assistant", content: [{ type: "text", text: "done" }] },
+    ]),
+    "done",
   );
 });
 

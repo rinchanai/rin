@@ -24,6 +24,7 @@ import {
   getProviderSummaries,
   normalizeModelRef,
 } from "./models.js";
+import { getFinalOutput } from "./format-utils.js";
 import type {
   RunSubagentParams,
   SubagentBackendInfo,
@@ -318,20 +319,6 @@ function validateTasks(
     }
   }
   return undefined;
-}
-
-function getFinalOutput(messages: Message[]): string {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg.role !== "assistant") continue;
-    const text = msg.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n")
-      .trim();
-    if (text) return text;
-  }
-  return "";
 }
 
 function syncSessionMetadata(session: any, result: TaskResult): void {

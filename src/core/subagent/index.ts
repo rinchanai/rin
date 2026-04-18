@@ -23,6 +23,7 @@ import type {
 } from "./types.js";
 import {
   buildSubagentAgentText,
+  buildSubagentUserText,
   summarizeTaskResult,
 } from "./format-utils.js";
 import { VALID_SUBAGENT_THINKING_LEVELS as VALID_THINKING_LEVELS } from "./model-utils.js";
@@ -254,46 +255,6 @@ function formatModelList(
     );
   }
   return lines.join("\n");
-}
-
-function buildTaskSessionLabel(result: TaskResult): string | undefined {
-  if (!result.sessionPersisted) return undefined;
-  return result.sessionName || result.sessionId || result.sessionFile;
-}
-
-function buildSubagentUserText(results: TaskResult[]): string {
-  const failed = results.filter((result) => result.exitCode !== 0);
-  if (results.length === 1) {
-    const single = results[0];
-    const base = single.output || single.errorMessage || "(no output)";
-    const sessionLabel = buildTaskSessionLabel(single);
-    if (!sessionLabel) return base;
-    return [
-      base,
-      "",
-      `Session: ${sessionLabel}`,
-      single.sessionFile ? `Path: ${single.sessionFile}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  return [
-    `Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
-    ...results.map((result) => {
-      const status = result.exitCode === 0 ? "ok" : "failed";
-      const preview = (
-        result.output ||
-        result.errorMessage ||
-        "(no output)"
-      )
-        .replace(/\s+/g, " ")
-        .trim();
-      const sessionLabel = buildTaskSessionLabel(result);
-      const suffix = sessionLabel ? ` [session: ${sessionLabel}]` : "";
-      return `${result.index}. [${status}] ${result.model || result.requestedModel || "(default model)"}${suffix} — ${preview.slice(0, 220)}${preview.length > 220 ? "…" : ""}`;
-    }),
-  ].join("\n\n");
 }
 
 async function writeSubagentFullOutput(agentText: string, userText: string) {

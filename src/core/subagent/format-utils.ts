@@ -4,6 +4,10 @@ import type { TaskResult, UsageStats } from "./types.js";
 
 export type { TaskResult, UsageStats };
 
+const NO_OUTPUT = "(no output)";
+const DEFAULT_MODEL_LABEL = "(default model)";
+const FALLBACK_SESSION_LABEL = "persisted";
+
 export function formatTokens(value: number): string {
   if (!value) return "0";
   if (value < 1000) return String(value);
@@ -41,51 +45,97 @@ export function getFinalOutput(messages: Message[]): string {
   return "";
 }
 
-function formatSessionSummary(result: TaskResult): string {
-  if (!result.sessionPersisted) return "";
-  const label = result.sessionName || result.sessionId || result.sessionFile;
-  return label ? ` session=${label}` : " session=persisted";
+export function getTaskPrimaryText(
+  result: Pick<TaskResult, "output" | "errorMessage">,
+): string {
+  return result.output || result.errorMessage || NO_OUTPUT;
+}
+
+export function getTaskSessionLabel(
+  result: Pick<
+    TaskResult,
+    "sessionPersisted" | "sessionName" | "sessionId" | "sessionFile"
+  >,
+): string | undefined {
+  if (!result.sessionPersisted) return undefined;
+  return (
+    result.sessionName ||
+    result.sessionId ||
+    result.sessionFile ||
+    FALLBACK_SESSION_LABEL
+  );
+}
+
+export function getTaskModelLabel(
+  result: Pick<TaskResult, "model" | "requestedModel">,
+): string {
+  return result.model || result.requestedModel || DEFAULT_MODEL_LABEL;
+}
+
+export function getTaskPreview(
+  result: Pick<TaskResult, "output" | "errorMessage">,
+  maxLength = 180,
+): string {
+  const preview = getTaskPrimaryText(result)
+    .replace(/\s+/g, " ")
+    .trim();
+  return `${preview.slice(0, maxLength)}${preview.length > maxLength ? "…" : ""}`;
+}
+
+function buildSingleResultText(result: TaskResult): string {
+  const sessionLabel = getTaskSessionLabel(result);
+  return [
+    getTaskPrimaryText(result),
+    sessionLabel
+      ? [
+          "",
+          `Session: ${sessionLabel}`,
+          result.sessionFile ? `Path: ${result.sessionFile}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function summarizeTaskResult(result: TaskResult): string {
-  const model = result.model || result.requestedModel || "(default model)";
-  const preview = (result.output || result.errorMessage || "(no output)")
-    .replace(/\s+/g, " ")
-    .trim();
-  return `${result.index}. [${result.status}] ${model}${formatSessionSummary(result)} — ${preview.slice(0, 180)}${preview.length > 180 ? "…" : ""}`;
+  const sessionLabel = getTaskSessionLabel(result);
+  return `${result.index}. [${result.status}] ${getTaskModelLabel(result)}${sessionLabel ? ` session=${sessionLabel}` : ""} — ${getTaskPreview(result)}`;
 }
 
 export function buildSubagentAgentText(results: TaskResult[]): string {
   if (results.length === 1) {
-    const single = results[0];
-    return [
-      single.output || single.errorMessage || "(no output)",
-      single.sessionPersisted
-        ? [
-            "",
-            `Session: ${single.sessionName || single.sessionId || single.sessionFile || "persisted"}`,
-            single.sessionFile ? `Path: ${single.sessionFile}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n")
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    return buildSingleResultText(results[0]);
   }
 
   return results
     .map((result) => {
-      const model = result.model || result.requestedModel || "(default model)";
-      const sessionLabel = result.sessionPersisted
-        ? result.sessionName || result.sessionId || result.sessionFile
-        : "";
+      const sessionLabel = getTaskSessionLabel(result);
       return [
-        `${result.index}. ${model}${sessionLabel ? ` [session: ${sessionLabel}]` : ""}`,
-        result.output || result.errorMessage || "(no output)",
+        `${result.index}. ${getTaskModelLabel(result)}${sessionLabel ? ` [session: ${sessionLabel}]` : ""}`,
+        getTaskPrimaryText(result),
       ]
         .filter(Boolean)
         .join("\n\n");
     })
     .join("\n\n");
+}
+
+export function buildSubagentUserText(results: TaskResult[]): string {
+  const failed = results.filter((result) => result.exitCode !== 0);
+  if (results.length === 1) {
+    return buildSingleResultText(results[0]);
+  }
+
+  return [
+    `Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
+    ...results.map((result) => {
+      const status = result.exitCode === 0 ? "ok" : "failed";
+      const sessionLabel = getTaskSessionLabel(result);
+      const suffix = sessionLabel ? ` [session: ${sessionLabel}]` : "";
+      return `${result.index}. [${status}] ${getTaskModelLabel(result)}${suffix} — ${getTaskPreview(result, 220)}`;
+    }),
+  ].join("\n\n");
 }
