@@ -8,12 +8,11 @@ import {
   ensureDir,
   ensureExtension,
   ensureFileName,
-  extractQuoteMessageId,
   fileUrl,
-  flattenNodes,
   isImageMimeType,
   isImageName,
   normalizeNode,
+  prepareOutboundNodes,
   readBinaryFromNode,
   renderPlainTextFromNodes,
   safeString,
@@ -201,17 +200,7 @@ export class DiscordAdapter {
     const channel = await this.fetchChannel(chatId);
     if (!channel?.send)
       throw new Error(`discord_channel_not_sendable:${chatId}`);
-    const nodes = flattenNodes(content)
-      .map((node) =>
-        typeof node === "string"
-          ? normalizeNode("text", { content: node })
-          : node,
-      )
-      .filter(Boolean);
-    const replyToMessageId = extractQuoteMessageId(nodes);
-    const work = nodes.filter(
-      (node) => safeString(node?.type).toLowerCase() !== "quote",
-    );
+    const { work, replyToMessageId } = prepareOutboundNodes(content);
     const text = renderPlainTextFromNodes(work, {
       renderAt(attrs) {
         const id = safeString(attrs.id).trim();
@@ -479,17 +468,7 @@ export class SlackAdapter {
   }
 
   private async sendMessage(chatId: string, content: any) {
-    const nodes = flattenNodes(content)
-      .map((node) =>
-        typeof node === "string"
-          ? normalizeNode("text", { content: node })
-          : node,
-      )
-      .filter(Boolean);
-    const replyToMessageId = extractQuoteMessageId(nodes);
-    const work = nodes.filter(
-      (node) => safeString(node?.type).toLowerCase() !== "quote",
-    );
+    const { work, replyToMessageId } = prepareOutboundNodes(content);
     const text = renderPlainTextFromNodes(work, {
       renderAt(attrs) {
         const id = safeString(attrs.id).trim();
@@ -806,17 +785,7 @@ export class QQAdapter {
   }
 
   private async sendMessage(chatId: string, content: any) {
-    const nodes = flattenNodes(content)
-      .map((node) =>
-        typeof node === "string"
-          ? normalizeNode("text", { content: node })
-          : node,
-      )
-      .filter(Boolean);
-    const replyToMessageId = extractQuoteMessageId(nodes);
-    const work = nodes.filter(
-      (node) => safeString(node?.type).toLowerCase() !== "quote",
-    );
+    const { work, replyToMessageId } = prepareOutboundNodes(content);
     const text = renderPlainTextFromNodes(work, {
       renderAt(attrs) {
         const id = safeString(attrs.id).trim();
@@ -1090,15 +1059,9 @@ export class LarkAdapter {
   }
 
   private async sendMessage(chatId: string, content: any) {
-    const nodes = flattenNodes(content)
-      .map((node) =>
-        typeof node === "string"
-          ? normalizeNode("text", { content: node })
-          : node,
-      )
-      .filter(Boolean);
+    const { work } = prepareOutboundNodes(content);
     const text = renderPlainTextFromNodes(
-      nodes.filter((node) => safeString(node?.type).toLowerCase() !== "quote"),
+      work,
       {
         renderAt(attrs) {
           const id = safeString(attrs.id).trim();
@@ -1385,15 +1348,9 @@ export class MinecraftAdapter {
   }
 
   private async sendMessage(chatId: string, content: any) {
-    const nodes = flattenNodes(content)
-      .map((node) =>
-        typeof node === "string"
-          ? normalizeNode("text", { content: node })
-          : node,
-      )
-      .filter(Boolean);
+    const { work } = prepareOutboundNodes(content);
     const text = renderPlainTextFromNodes(
-      nodes.filter((node) => safeString(node?.type).toLowerCase() !== "quote"),
+      work,
       {
         renderAt(attrs) {
           return `@${safeString(attrs.name || attrs.id).trim()}`;

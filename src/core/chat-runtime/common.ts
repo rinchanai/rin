@@ -56,6 +56,23 @@ export function flattenNodes(value: any): any[] {
   return value.flatMap((item) => flattenNodes(item)).filter(Boolean);
 }
 
+export function prepareOutboundNodes(content: any) {
+  const nodes = flattenNodes(content)
+    .map((node) =>
+      typeof node === "string"
+        ? normalizeNode("text", { content: node })
+        : node,
+    )
+    .filter(Boolean);
+  return {
+    nodes,
+    work: nodes.filter(
+      (node) => safeString(node?.type).toLowerCase() !== "quote",
+    ),
+    replyToMessageId: extractQuoteMessageId(nodes),
+  };
+}
+
 export type RenderPlainTextOptions = {
   renderAt?: (attrs: Record<string, any>) => string;
 };

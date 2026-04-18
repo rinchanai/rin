@@ -16,10 +16,9 @@ import {
   ensureDir,
   ensureExtension,
   ensureFileName,
-  extractQuoteMessageId,
   fileUrl,
-  flattenNodes,
   normalizeNode,
+  prepareOutboundNodes,
   readBinaryFromNode,
   renderPlainTextFromNodes,
   safeString,
@@ -656,18 +655,8 @@ class TelegramAdapter {
   }
 
   async sendMessage(chatId: string, content: any) {
-    const nodes = flattenNodes(content)
-      .map((node) => {
-        if (typeof node === "string")
-          return normalizeNode("text", { content: node });
-        return node;
-      })
-      .filter(Boolean);
+    const { work, replyToMessageId } = prepareOutboundNodes(content);
     const delivered: string[] = [];
-    const replyToMessageId = extractQuoteMessageId(nodes);
-    const work = nodes.filter(
-      (node) => safeString(node?.type).toLowerCase() !== "quote",
-    );
     let cursor = 0;
     let firstReply = replyToMessageId;
     while (cursor < work.length) {
@@ -1187,13 +1176,7 @@ class OneBotAdapter {
   }
 
   private async sendMessage(chatId: string, content: any) {
-    const nodes = flattenNodes(content)
-      .map((node) => {
-        if (typeof node === "string")
-          return normalizeNode("text", { content: node });
-        return node;
-      })
-      .filter(Boolean);
+    const { nodes } = prepareOutboundNodes(content);
     const message = await this.renderOutboundMessage(nodes);
     if (!message) throw new Error("onebot_send_message_empty");
     const isPrivate = safeString(chatId).startsWith("private:");

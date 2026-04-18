@@ -41,6 +41,21 @@ test("chat runtime common helpers normalize and render nodes consistently", () =
     ]),
     "abc123",
   );
+
+  const prepared = chatRuntimeCommon.prepareOutboundNodes([
+    "Hello",
+    chatRuntimeCommon.normalizeNode("quote", { id: "abc123" }),
+    [chatRuntimeCommon.normalizeNode("at", { id: "42", name: "Rin" })],
+  ]);
+  assert.deepEqual(
+    prepared.nodes.map((node) => node.type),
+    ["text", "quote", "at"],
+  );
+  assert.deepEqual(
+    prepared.work.map((node) => node.type),
+    ["text", "at"],
+  );
+  assert.equal(prepared.replyToMessageId, "abc123");
 });
 
 test("chat runtime common helpers preserve binary payload naming for buffers and file urls", async () => {
