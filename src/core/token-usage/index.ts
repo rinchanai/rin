@@ -4,6 +4,7 @@ import {
   appendTokenTelemetryEvent,
   resolveAgentDir,
 } from "./store.js";
+import { readSessionMetadata } from "../session/metadata.js";
 import { safeString } from "../text-utils.js";
 
 type SessionState = {
@@ -36,20 +37,15 @@ function previewJson(value: unknown, limit = 260): string {
   }
 }
 
-function sessionMeta(ctx: any) {
-  const manager = ctx?.sessionManager;
-  return {
-    sessionId: safeString(ctx?.sessionId || manager?.getSessionId?.() || "").trim(),
-    sessionFile: safeString(ctx?.sessionFile || manager?.getSessionFile?.() || "").trim(),
-    sessionName: safeString(manager?.getSessionName?.() || "").trim(),
-    sessionPersisted: Boolean(manager?.isPersisted?.() && manager?.getSessionFile?.()),
-    cwd: safeString(ctx?.cwd || process.cwd()).trim(),
-  };
+const sessionMeta = readSessionMetadata;
+
+function sessionKey(ctx: any) {
+  const meta = sessionMeta(ctx);
+  return meta.sessionId || meta.sessionFile || meta.cwd || "default";
 }
 
 function getSessionState(ctx: any): SessionState {
-  const meta = sessionMeta(ctx);
-  const key = meta.sessionId || meta.sessionFile || meta.cwd || "default";
+  const key = sessionKey(ctx);
   let state = sessionStateById.get(key);
   if (!state) {
     state = {
@@ -277,7 +273,7 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   pi.on("tool_execution_start", async (event, ctx) => {
     const capability = inferCapability("tool_execution_start", null, event?.toolName);
     recordEvent(ctx, {
-      id: [sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session", "tool_execution_start", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
+      id: [sessionKey(ctx), "tool_execution_start", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
       eventType: "tool_execution_start",
       phase: "tool",
       toolCallId: safeString(event?.toolCallId).trim(),
@@ -293,7 +289,7 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   pi.on("tool_execution_end", async (event, ctx) => {
     const capability = inferCapability("tool_execution_end", null, event?.toolName);
     recordEvent(ctx, {
-      id: [sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session", "tool_execution_end", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
+      id: [sessionKey(ctx), "tool_execution_end", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
       eventType: "tool_execution_end",
       phase: "tool",
       toolCallId: safeString(event?.toolCallId).trim(),
@@ -321,7 +317,7 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
     recordEvent(ctx, {
       id:
         safeString(message?.id).trim()
-          ? [sessionMeta(ctx).sessionId || sessionMeta(ctx).sessionFile || "session", "message_end", safeString(message?.id).trim()].join(":")
+          ? [sessionKey(ctx), "message_end", safeString(message?.id).trim()].join(":")
           : nextEventId("message_end", ctx),
       eventType: "message_end",
       phase: "message",
@@ -382,8 +378,6 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
     recordEvent(ctx, {
       eventType: "session_shutdown",
     });
-    const meta = sessionMeta(ctx);
-    const key = meta.sessionId || meta.sessionFile || meta.cwd || "default";
-    sessionStateById.delete(key);
+    sessionStateById.delete(sessionKey(ctx));
   });
 }

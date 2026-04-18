@@ -8,6 +8,7 @@ import {
   maintainMemory,
   maintainSessionSummary,
 } from "./maintainer.js";
+import { normalizeSessionValue } from "../session/metadata.js";
 import { safeString } from "./core/utils.js";
 
 export type MaintenanceJob = {
@@ -123,8 +124,12 @@ function defaultTrigger(kind: MaintenanceJob["kind"]) {
 async function enqueueMaintenanceJob(
   input: Omit<MaintenanceJob, "id" | "createdAt" | "updatedAt">,
 ) {
-  const agentDir = path.resolve(safeString(input.agentDir).trim());
-  const sessionFile = path.resolve(safeString(input.sessionFile).trim());
+  const normalizedAgentDir = normalizeSessionValue(input.agentDir);
+  const normalizedSessionFile = normalizeSessionValue(input.sessionFile);
+  const agentDir = normalizedAgentDir ? path.resolve(normalizedAgentDir) : "";
+  const sessionFile = normalizedSessionFile
+    ? path.resolve(normalizedSessionFile)
+    : "";
   const kind =
     safeString(input.kind).trim() === "session_summary"
       ? "session_summary"
@@ -322,8 +327,10 @@ async function assertUsableSessionFile(sessionFile: string) {
 }
 
 async function processJob(job: MaintenanceJob) {
-  const agentDir = path.resolve(safeString(job.agentDir).trim());
-  const sessionFile = path.resolve(safeString(job.sessionFile).trim());
+  const normalizedAgentDir = normalizeSessionValue(job.agentDir);
+  const normalizedSessionFile = normalizeSessionValue(job.sessionFile);
+  const agentDir = normalizedAgentDir ? path.resolve(normalizedAgentDir) : "";
+  const sessionFile = normalizedSessionFile ? path.resolve(normalizedSessionFile) : "";
   const leafId = safeString(job.leafId).trim() || undefined;
   if (!agentDir || !sessionFile) {
     throw new Error("maintenance_job_invalid_payload");

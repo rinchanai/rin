@@ -16,6 +16,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { getTextOutput } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
+import { readSessionMetadata } from "../session/metadata.js";
 import { normalizeChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
 
@@ -211,6 +212,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       const currentChatKey = normalizeChatKey(
         ctx.sessionManager?.getSessionName?.() || "",
       );
+      const session = readSessionMetadata(ctx);
       const result = await requestDaemonCommand(
         {
           type: "chat_bridge_eval",
@@ -223,12 +225,8 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
               Number.isFinite(timeoutSeconds) && timeoutSeconds > 0
                 ? Math.round(timeoutSeconds * 1000)
                 : undefined,
-            sessionId:
-              safeString(ctx.sessionManager?.getSessionId?.() || "").trim() ||
-              undefined,
-            sessionFile:
-              safeString(ctx.sessionManager?.getSessionFile?.() || "").trim() ||
-              undefined,
+            sessionId: session.sessionId || undefined,
+            sessionFile: session.sessionFile || undefined,
           },
         },
         {

@@ -13,6 +13,10 @@ import { MEMORY_TASK_THINKING_LEVEL } from "../rin-lib/memory-task-config.js";
 import { openBoundSession } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
 import {
+  normalizeSessionValue,
+  readSessionMetadata,
+} from "../session/metadata.js";
+import {
   buildSessionRecallSummaryPrompt,
   normalizeSessionSummaryText,
 } from "../session/summary.js";
@@ -107,9 +111,12 @@ async function createForkedSessionManager(options: {
   sessionFile: string;
   leafId?: string;
 }) {
-  const sessionFile = path.resolve(safeString(options.sessionFile).trim());
+  const session = readSessionMetadata(options);
+  const sessionFile = session.sessionFile
+    ? path.resolve(session.sessionFile)
+    : "";
   if (!sessionFile) throw new Error("session_file_required");
-  const leafId = safeString(options.leafId).trim() || undefined;
+  const leafId = session.leafId || undefined;
   const { SessionManager } = await loadRinSessionManagerModule();
   const sourceManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
   const cwd = safeString(sourceManager.getCwd?.() || "").trim() || HOME_DIR;
@@ -175,8 +182,12 @@ async function storeSessionSummaryInTranscriptArchive(options: {
   sessionFile: string;
   summary: string;
 }) {
-  const agentDir = path.resolve(safeString(options.agentDir).trim());
-  const sessionFile = path.resolve(safeString(options.sessionFile).trim());
+  const normalizedAgentDir = normalizeSessionValue(options.agentDir);
+  const normalizedSessionFile = normalizeSessionValue(options.sessionFile);
+  const agentDir = normalizedAgentDir ? path.resolve(normalizedAgentDir) : "";
+  const sessionFile = normalizedSessionFile
+    ? path.resolve(normalizedSessionFile)
+    : "";
   const summary = normalizeSessionSummaryText(options.summary);
   if (!sessionFile || !summary) {
     return { skipped: "empty-summary" };
@@ -184,7 +195,8 @@ async function storeSessionSummaryInTranscriptArchive(options: {
 
   const { SessionManager } = await loadRinSessionManagerModule();
   const sessionManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
-  const sessionId = safeString(sessionManager.getSessionId?.() || "").trim();
+  const sessionInfo = readSessionMetadata(sessionManager);
+  const sessionId = sessionInfo.sessionId;
   const existingEntries = await loadTranscriptSessionEntries(
     {
       sessionId: sessionId || undefined,
@@ -275,21 +287,24 @@ export async function maintainMemory(
     additionalExtensionPaths?: string[];
   } = {},
 ) {
-  const sessionFile = safeString(opts.sessionFile || "").trim();
+  const session = readSessionMetadata(opts);
+  const sessionFile = session.sessionFile;
   if (!sessionFile) return { skipped: "no-session-file" };
+  const trigger = safeString(opts.trigger || "self_improve:review").trim();
+  const leafId = session.leafId || undefined;
   const extracted = await runForkedSessionSelfImproveReview({
     agentDir: safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir(),
     sessionFile,
-    leafId: safeString(opts.leafId || "").trim() || undefined,
-    trigger: safeString(opts.trigger || "self_improve:review").trim(),
+    leafId,
+    trigger,
     additionalExtensionPaths: opts.additionalExtensionPaths,
   });
   return {
     ...extracted,
     mode: "session",
     sessionFile,
-    leafId: safeString(opts.leafId || "").trim() || undefined,
-    trigger: safeString(opts.trigger || "self_improve:review").trim(),
+    leafId,
+    trigger,
   };
 }
 
@@ -302,14 +317,17 @@ export async function maintainSessionSummary(
     trigger?: string;
   } = {},
 ) {
-  const sessionFile = safeString(opts.sessionFile || "").trim();
+  const session = readSessionMetadata(opts);
+  const sessionFile = session.sessionFile;
   if (!sessionFile) return { skipped: "no-session-file" };
   const agentDir =
     safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir();
+  const leafId = session.leafId || undefined;
+  const trigger = safeString(opts.trigger || "session_summary:review").trim();
   const output = await runForkedSessionPrompt({
     agentDir,
     sessionFile,
-    leafId: safeString(opts.leafId || "").trim() || undefined,
+    leafId,
     prompt: buildSessionRecallSummaryPrompt(sessionFile),
   });
   const applied = await storeSessionSummaryInTranscriptArchive({
@@ -321,8 +339,8 @@ export async function maintainSessionSummary(
     ...applied,
     mode: "session",
     sessionFile,
-    leafId: safeString(opts.leafId || "").trim() || undefined,
-    trigger: safeString(opts.trigger || "session_summary:review").trim(),
+    leafId,
+    trigger,
     output,
   };
 }

@@ -14,6 +14,7 @@ import {
   normalizeSessionNameDetail,
   readFirstUserMessageFromSessionFile,
 } from "../session/names.js";
+import { normalizeSessionValue } from "../session/metadata.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -118,7 +119,10 @@ function resolveSessionDisplayName(
   sessionFile: string,
   fallbackPreview: string,
 ): string {
-  const normalizedSessionFile = path.resolve(safeString(sessionFile).trim());
+  const normalizedSessionFileValue = normalizeSessionValue(sessionFile);
+  const normalizedSessionFile = normalizedSessionFileValue
+    ? path.resolve(normalizedSessionFileValue)
+    : "";
   if (!normalizedSessionFile) {
     return normalizeSessionNameDetail(fallbackPreview, 180);
   }

@@ -17,6 +17,7 @@ import {
   replaceTabs,
 } from "../pi/render-utils.js";
 import { normalizeChatKey } from "../chat/support.js";
+import { readSessionMetadata } from "../session/metadata.js";
 
 function defaultDaemonSocketPath() {
   const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
@@ -359,12 +360,10 @@ function formatListTaskResult(
 }
 
 async function executeTaskAction(action: string, params: any, ctx: any) {
-  const currentSessionFile =
-    String(ctx.sessionManager.getSessionFile?.() || "").trim() || undefined;
-  const currentSessionId =
-    String(ctx.sessionManager.getSessionId?.() || "").trim() || undefined;
-  const currentSessionName =
-    String(ctx.sessionManager.getSessionName?.() || "").trim() || undefined;
+  const session = readSessionMetadata(ctx);
+  const currentSessionFile = session.sessionFile || undefined;
+  const currentSessionId = session.sessionId || undefined;
+  const currentSessionName = session.sessionName || undefined;
   const currentChatKey = normalizeChatKey(currentSessionName);
 
   let data: any;

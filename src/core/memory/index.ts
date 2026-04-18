@@ -20,6 +20,7 @@ import {
   loadRecentTranscriptSessions,
   searchTranscriptArchive,
 } from "./transcripts.js";
+import { readSessionMetadata } from "../session/metadata.js";
 
 const MEMORY_RESULT_PREVIEW_LINES = 10;
 
@@ -57,13 +58,14 @@ const searchMemoryParams = Type.Object({
 
 async function archiveMessageTranscript(message: any, ctx: any) {
   if (!message || typeof message !== "object") return;
+  const session = readSessionMetadata(ctx);
   await appendTranscriptArchiveEntry(
     {
       id: String(message?.id || "").trim(),
       timestamp:
         String(message?.timestamp || "").trim() || new Date().toISOString(),
-      sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
-      sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
       role: String(message?.role || "").trim(),
       content: message?.content,
       toolName: String(message?.toolName || "").trim(),

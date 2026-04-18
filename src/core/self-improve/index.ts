@@ -24,6 +24,7 @@ import {
   describeSelfImprovePromptSlot,
   refineSelfImprovePromptSlot,
 } from "./processing.js";
+import { readSessionMetadata } from "../session/metadata.js";
 
 let installerAutoInitConsumed = false;
 
@@ -33,13 +34,7 @@ const reviewStateBySession = new Map<
   { userTurns: number; lastQueuedTurn: number }
 >();
 
-function sessionMeta(ctx: any) {
-  return {
-    sessionId: String(ctx?.sessionManager?.getSessionId?.() || "").trim(),
-    sessionFile: String(ctx?.sessionManager?.getSessionFile?.() || "").trim(),
-    leafId: String(ctx?.sessionManager?.getLeafId?.() || "").trim(),
-  };
-}
+const sessionMeta = readSessionMetadata;
 
 function getSessionReviewState(sessionId: string) {
   const key = String(sessionId || "").trim();
@@ -76,10 +71,11 @@ async function processSelfImproveReview(
   if (!sessionFile || !agentDir) {
     return;
   }
+  const meta = readSessionMetadata(opts);
   await enqueueMemoryMaintenanceJob({
     agentDir,
     sessionFile,
-    leafId: String(opts.leafId || "").trim() || undefined,
+    leafId: meta.leafId || undefined,
     trigger: opts.trigger,
     snapshotKey: opts.snapshotKey,
   });
@@ -95,10 +91,11 @@ async function processSessionSummaryUpdate(
   if (!sessionFile || !agentDir) {
     return;
   }
+  const meta = readSessionMetadata(opts);
   await enqueueSessionSummaryJob({
     agentDir,
     sessionFile,
-    leafId: String(opts.leafId || "").trim() || undefined,
+    leafId: meta.leafId || undefined,
     trigger: opts.trigger,
   });
   spawnQueuedMemoryWorker(agentDir);

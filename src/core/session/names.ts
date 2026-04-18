@@ -1,5 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+  normalizeSessionValue,
+} from "./metadata.js";
 import { safeString } from "../text-utils.js";
 
 const DEFAULT_SESSION_NAME_DETAIL_MAX = 180;
@@ -17,7 +20,8 @@ export function normalizeSessionNameDetail(
 }
 
 export function readFirstUserMessageFromSessionFile(sessionFile: string): string {
-  const filePath = path.resolve(safeString(sessionFile).trim());
+  const normalizedSessionFile = normalizeSessionValue(sessionFile);
+  const filePath = normalizedSessionFile ? path.resolve(normalizedSessionFile) : "";
   if (!filePath || !fs.existsSync(filePath)) return "";
   try {
     const raw = fs.readFileSync(filePath, "utf8");

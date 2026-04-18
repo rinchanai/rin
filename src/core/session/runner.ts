@@ -1,6 +1,7 @@
 import { safeString } from "../platform/process.js";
 
 import { openBoundSession } from "./factory.js";
+import { readSessionMetadata } from "./metadata.js";
 
 function extractAssistantText(content: any) {
   if (typeof content === "string") return content.trim();
@@ -40,13 +41,9 @@ export async function runSessionPrompt(options: {
     });
     await session.agent.waitForIdle();
     if (!latestAssistantText) throw new Error("final_assistant_text_missing");
-    const sessionFile =
-      safeString(
-        session.sessionFile || session.sessionManager?.getSessionFile?.() || "",
-      ).trim() || undefined;
-    const sessionId =
-      safeString(session.sessionId || session.sessionManager?.getSessionId?.() || "").trim() ||
-      undefined;
+    const sessionMeta = readSessionMetadata(session);
+    const sessionFile = sessionMeta.sessionFile || undefined;
+    const sessionId = sessionMeta.sessionId || undefined;
     return {
       session,
       sessionFile,

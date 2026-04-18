@@ -13,6 +13,7 @@ import {
 } from "../chat/support.js";
 import { ensureDir } from "../platform/fs.js";
 import { sendOutboxPayload } from "../chat/transport.js";
+import { readSessionMetadata } from "../session/metadata.js";
 import { serializeBridgeValue } from "./eval.js";
 import { safeString } from "../text-utils.js";
 
@@ -177,8 +178,9 @@ export function createChatBridgeRuntime(options: {
 }) {
   const currentChatKey = safeString(options.currentChatKey).trim() || undefined;
   const requestId = safeString(options.requestId).trim() || undefined;
-  const sessionId = safeString(options.sessionId).trim() || undefined;
-  const sessionFile = safeString(options.sessionFile).trim() || undefined;
+  const session = readSessionMetadata(options);
+  const sessionId = session.sessionId || undefined;
+  const sessionFile = session.sessionFile || undefined;
   const scopeCache = new Map<string, any>();
 
   const buildScope = (targetChatKey: string) => {

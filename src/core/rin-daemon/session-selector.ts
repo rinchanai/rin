@@ -1,19 +1,16 @@
+import { normalizeSessionValue } from "../session/metadata.js";
+
 export type SessionSelector = {
   sessionFile?: string;
   sessionId?: string;
 };
 
-function normalizeSelectorValue(value: unknown) {
-  const text = typeof value === "string" ? value.trim() : "";
-  return text || undefined;
-}
-
 export function sessionSelectorFromCommand(command: any): SessionSelector {
   return {
-    sessionFile: normalizeSelectorValue(
+    sessionFile: normalizeSessionValue(
       command?.sessionFile ?? command?.sessionPath,
     ),
-    sessionId: normalizeSelectorValue(command?.sessionId),
+    sessionId: normalizeSessionValue(command?.sessionId),
   };
 }
 
@@ -27,8 +24,8 @@ export function sessionSelectorFromState(
     | undefined,
 ): SessionSelector {
   return {
-    sessionFile: normalizeSelectorValue(value?.sessionFile),
-    sessionId: normalizeSelectorValue(value?.sessionId),
+    sessionFile: normalizeSessionValue(value?.sessionFile),
+    sessionId: normalizeSessionValue(value?.sessionId),
   };
 }
 

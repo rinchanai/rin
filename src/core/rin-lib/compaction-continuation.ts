@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import { readSessionIdentity } from "../session/metadata.js";
+
 export type CompactionContinuationMarker = {
   version: 1;
   reason: "threshold" | "overflow";
@@ -21,14 +23,6 @@ const CONTINUATION_MARKER_DIR = join(
   CONTINUATION_MARKER_ROOT,
   "rin-compaction-continuation",
 );
-
-function readSessionIdentity(source: any): string {
-  const sessionManager = source?.sessionManager || source;
-  const sessionFile = sessionManager?.getSessionFile?.();
-  const sessionId = sessionManager?.getSessionId?.();
-  const cwd = source?.cwd || sessionManager?.getCwd?.();
-  return String(sessionFile || sessionId || cwd || "unknown-session");
-}
 
 export function getCompactionContinuationMarkerPath(source: any): string {
   const hash = createHash("sha1")

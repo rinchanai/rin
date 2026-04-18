@@ -1,17 +1,14 @@
-function normalizeSelectorValue(value) {
-    const text = typeof value === "string" ? value.trim() : "";
-    return text || undefined;
-}
+import { normalizeSessionValue } from "../session/metadata.js";
 export function sessionSelectorFromCommand(command) {
     return {
-        sessionFile: normalizeSelectorValue(command?.sessionFile ?? command?.sessionPath),
-        sessionId: normalizeSelectorValue(command?.sessionId),
+        sessionFile: normalizeSessionValue(command?.sessionFile ?? command?.sessionPath),
+        sessionId: normalizeSessionValue(command?.sessionId),
     };
 }
 export function sessionSelectorFromState(value) {
     return {
-        sessionFile: normalizeSelectorValue(value?.sessionFile),
-        sessionId: normalizeSelectorValue(value?.sessionId),
+        sessionFile: normalizeSessionValue(value?.sessionFile),
+        sessionId: normalizeSessionValue(value?.sessionId),
     };
 }
 export function hasSessionSelector(selector) {
