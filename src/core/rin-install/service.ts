@@ -27,6 +27,77 @@ import {
   systemdUserUnitPathForHome,
 } from "./paths.js";
 
+function currentSystemUser() {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return "";
+  }
+}
+
+function firstExistingCommand(candidates: string[], fallback: string) {
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return fallback;
+}
+
+function resolveTargetUserContext(
+  targetUser: string,
+  deps: {
+    findSystemUser: (user: string) => any;
+    targetHomeForUser?: (user: string) => string;
+  },
+) {
+  const target = deps.findSystemUser(targetUser) as any;
+  const uid = Number(target?.uid ?? -1);
+  const targetHome = deps.targetHomeForUser?.(targetUser) || "";
+  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : "";
+  const userEnv =
+    runtimeDir && fs.existsSync(runtimeDir)
+      ? {
+          XDG_RUNTIME_DIR: runtimeDir,
+          DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus`,
+        }
+      : {};
+  return {
+    target,
+    uid,
+    targetHome,
+    runtimeDir,
+    userEnv,
+  };
+}
+
+function resolveDaemonLaunchContext(
+  targetUser: string,
+  installDir: string,
+  targetHomeForUser: (user: string) => string,
+  repoRootFromHere: () => string,
+) {
+  return {
+    targetHome: targetHomeForUser(targetUser),
+    daemonEntry: resolveDaemonEntryForInstall(installDir, repoRootFromHere),
+    runtimePath: installedRuntimePathValue(),
+    nodeCommandArgs: installedRuntimeNodeCommandArgs(),
+  };
+}
+
+function captureCommandForTargetUser(
+  targetUser: string,
+  command: string,
+  args: string[],
+  extraEnv: Record<string, string> = {},
+) {
+  if (targetUser && targetUser !== currentSystemUser()) {
+    return captureCommandAsUser(targetUser, command, args, extraEnv);
+  }
+  return execFileSync(command, args, {
+    encoding: "utf8",
+    env: { ...process.env, ...extraEnv },
+  });
+}
+
 export function resolveDaemonEntryForInstall(
   installDir: string,
   repoRootFromHere: () => string,
@@ -47,16 +118,17 @@ export function buildLaunchdPlist(
   repoRootFromHere: () => string,
 ) {
   const label = managedLaunchdLabel(targetUser);
-  const targetHome = targetHomeForUser(targetUser);
-  const daemonEntry = resolveDaemonEntryForInstall(
-    installDir,
-    repoRootFromHere,
-  );
+  const { targetHome, daemonEntry, runtimePath, nodeCommandArgs } =
+    resolveDaemonLaunchContext(
+      targetUser,
+      installDir,
+      targetHomeForUser,
+      repoRootFromHere,
+    );
   const stdoutPath = daemonStdoutLogPath(installDir);
   const stderrPath = daemonStderrLogPath(installDir);
   const plistPath = launchAgentPlistPathForHome(targetHome, label);
-  const runtimePath = installedRuntimePathValue();
-  const programArguments = [...installedRuntimeNodeCommandArgs(), daemonEntry]
+  const programArguments = [...nodeCommandArgs, daemonEntry]
     .map((entry) => `      <string>${entry}</string>`)
     .join("\n");
   const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n  <dict>\n    <key>Label</key>\n    <string>${label}</string>\n    <key>ProgramArguments</key>\n    <array>\n${programArguments}\n    </array>\n    <key>EnvironmentVariables</key>\n    <dict>\n      <key>PATH</key>\n      <string>${runtimePath}</string>\n      <key>RIN_DIR</key>\n      <string>${installDir}</string>\n    </dict>\n    <key>WorkingDirectory</key>\n    <string>${targetHome}</string>\n    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>StandardOutPath</key>\n    <string>${stdoutPath}</string>\n    <key>StandardErrorPath</key>\n    <string>${stderrPath}</string>\n  </dict>\n</plist>\n`;
@@ -73,8 +145,7 @@ export function installLaunchdAgent(
     repoRootFromHere: () => string;
   },
 ) {
-  const target = deps.findSystemUser(targetUser) as any;
-  const uid = Number(target?.uid ?? -1);
+  const { target, uid } = resolveTargetUserContext(targetUser, deps);
   if (uid < 0)
     throw new Error(`rin_launchd_target_user_not_found:${targetUser}`);
   const { label, plistPath, plist, stdoutPath, stderrPath } = buildLaunchdPlist(
@@ -133,17 +204,16 @@ export function buildSystemdUserService(
   targetHomeForUser: (user: string) => string,
   repoRootFromHere: () => string,
 ) {
-  const daemonEntry = resolveDaemonEntryForInstall(
-    installDir,
-    repoRootFromHere,
-  );
-  const targetHome = targetHomeForUser(targetUser);
+  const { targetHome, daemonEntry, runtimePath, nodeCommandArgs } =
+    resolveDaemonLaunchContext(
+      targetUser,
+      installDir,
+      targetHomeForUser,
+      repoRootFromHere,
+    );
   const unitName = managedSystemdUnitName(targetUser);
   const unitPath = systemdUserUnitPathForHome(targetHome, unitName);
-  const runtimePath = installedRuntimePathValue();
-  const execStart = [...installedRuntimeNodeCommandArgs(), daemonEntry].join(
-    " ",
-  );
+  const execStart = [...nodeCommandArgs, daemonEntry].join(" ");
   const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=PATH=${runtimePath}\nEnvironment=RIN_DIR=${installDir}\nExecStart=${execStart}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
   return {
     kind: "systemd" as const,
@@ -163,28 +233,17 @@ export function installSystemdUserService(
     repoRootFromHere: () => string;
   },
 ) {
-  const target = deps.findSystemUser(targetUser) as any;
   const spec = buildSystemdUserService(
     targetUser,
     installDir,
     deps.targetHomeForUser,
     deps.repoRootFromHere,
   );
-  const systemctl = fs.existsSync("/usr/bin/systemctl")
-    ? "/usr/bin/systemctl"
-    : "systemctl";
-  const loginctl = fs.existsSync("/usr/bin/loginctl")
-    ? "/usr/bin/loginctl"
-    : "loginctl";
-  const uid = Number(target?.uid ?? -1);
-  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : "";
-  const userEnv =
-    runtimeDir && fs.existsSync(runtimeDir)
-      ? {
-          XDG_RUNTIME_DIR: runtimeDir,
-          DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus`,
-        }
-      : {};
+  const { systemctl, userEnv, target } = systemdUserContext(targetUser, deps);
+  const loginctl = firstExistingCommand(
+    ["/usr/bin/loginctl", "/bin/loginctl"],
+    "loginctl",
+  );
   if (elevated) {
     writeTextFileWithPrivilege(
       spec.servicePath,
@@ -238,20 +297,21 @@ export function refreshManagedServiceFiles(
   const candidateFiles = managedSystemdUnitCandidates(targetUser).map((unit) =>
     path.join(unitDir, unit),
   );
+  const spec = buildSystemdUserService(
+    targetUser,
+    installDir,
+    deps.targetHomeForUser,
+    deps.repoRootFromHere,
+  );
+  const ownerGroup = deps.findSystemUser(targetUser)?.gid;
   for (const filePath of candidateFiles) {
     if (!fs.existsSync(filePath)) continue;
-    const spec = buildSystemdUserService(
-      targetUser,
-      installDir,
-      deps.targetHomeForUser,
-      deps.repoRootFromHere,
-    );
     if (elevated)
       writeTextFileWithPrivilege(
         filePath,
         spec.service,
         targetUser,
-        deps.findSystemUser(targetUser)?.gid,
+        ownerGroup,
         0o644,
       );
     else writeTextFile(filePath, spec.service, 0o644);
@@ -262,23 +322,15 @@ export function systemdUserContext(
   targetUser: string,
   deps: { findSystemUser: (user: string) => any },
 ) {
-  const systemctl = fs.existsSync("/usr/bin/systemctl")
-    ? "/usr/bin/systemctl"
-    : fs.existsSync("/bin/systemctl")
-      ? "/bin/systemctl"
-      : "";
-  const target = deps.findSystemUser(targetUser) as any;
-  const uid = Number(target?.uid ?? -1);
-  const runtimeDir = uid >= 0 ? `/run/user/${uid}` : "";
-  const userEnv =
-    runtimeDir && fs.existsSync(runtimeDir)
-      ? {
-          XDG_RUNTIME_DIR: runtimeDir,
-          DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus`,
-        }
-      : {};
+  const { target, uid, runtimeDir, userEnv } = resolveTargetUserContext(
+    targetUser,
+    deps,
+  );
   return {
-    systemctl,
+    target,
+    uid,
+    runtimeDir,
+    systemctl: firstExistingCommand(["/usr/bin/systemctl", "/bin/systemctl"], ""),
     userEnv,
     units: managedSystemdUnitCandidates(targetUser),
   };
@@ -291,24 +343,18 @@ export function daemonSocketPathForUser(
     targetHomeForUser: (user: string) => string;
   },
 ) {
-  const target = deps.findSystemUser(targetUser) as any;
+  const { uid, targetHome } = resolveTargetUserContext(targetUser, deps);
   if (process.platform === "darwin")
     return path.join(
-      deps.targetHomeForUser(targetUser),
+      targetHome,
       "Library",
       "Caches",
       "rin-daemon",
       "daemon.sock",
     );
-  const uid = Number(target?.uid ?? -1);
   if (uid >= 0)
     return path.join("/run/user", String(uid), "rin-daemon", "daemon.sock");
-  return path.join(
-    deps.targetHomeForUser(targetUser),
-    ".cache",
-    "rin-daemon",
-    "daemon.sock",
-  );
+  return path.join(targetHome, ".cache", "rin-daemon", "daemon.sock");
 }
 
 export function collectDaemonFailureDetails(
@@ -328,29 +374,15 @@ export function collectDaemonFailureDetails(
   ];
   if (process.platform === "linux") {
     const { systemctl, userEnv, units } = systemdUserContext(targetUser, deps);
-    const effectiveUser = (() => {
-      try {
-        return os.userInfo().username;
-      } catch {
-        return "";
-      }
-    })();
     if (systemctl) {
       for (const unit of units) {
         try {
-          const status =
-            targetUser && targetUser !== effectiveUser
-              ? captureCommandAsUser(
-                  targetUser,
-                  systemctl,
-                  ["--user", "status", unit, "--no-pager", "-l"],
-                  userEnv,
-                )
-              : execFileSync(
-                  systemctl,
-                  ["--user", "status", unit, "--no-pager", "-l"],
-                  { encoding: "utf8", env: { ...process.env, ...userEnv } },
-                );
+          const status = captureCommandForTargetUser(
+            targetUser,
+            systemctl,
+            ["--user", "status", unit, "--no-pager", "-l"],
+            userEnv,
+          );
           lines.push(
             `serviceUnit=${unit}`,
             "serviceStatus:",
@@ -373,19 +405,12 @@ export function collectDaemonFailureDetails(
       }
       for (const unit of units) {
         try {
-          const journal =
-            targetUser && targetUser !== effectiveUser
-              ? captureCommandAsUser(
-                  targetUser,
-                  "journalctl",
-                  ["--user", "-u", unit, "-n", "20", "--no-pager"],
-                  userEnv,
-                )
-              : execFileSync(
-                  "journalctl",
-                  ["--user", "-u", unit, "-n", "20", "--no-pager"],
-                  { encoding: "utf8", env: { ...process.env, ...userEnv } },
-                );
+          const journal = captureCommandForTargetUser(
+            targetUser,
+            "journalctl",
+            ["--user", "-u", unit, "-n", "20", "--no-pager"],
+            userEnv,
+          );
           if (String(journal || "").trim()) {
             lines.push(
               `serviceJournal=${unit}`,
@@ -473,16 +498,11 @@ export async function waitForSocket(
   targetUser?: string,
 ) {
   const startedAt = Date.now();
-  const currentUser = (() => {
-    try {
-      return os.userInfo().username;
-    } catch {
-      return "";
-    }
-  })();
+  const currentUser = currentSystemUser();
+  const isCurrentUser = !targetUser || targetUser === currentUser;
   while (Date.now() - startedAt < timeoutMs) {
     const ok = await new Promise<boolean>((resolve) => {
-      if (targetUser && targetUser !== currentUser) {
+      if (!isCurrentUser) {
         try {
           const probe = captureCommandAsUser(targetUser, process.execPath, [
             "-e",

@@ -132,4 +132,24 @@ test("systemdUserContext keeps managed unit candidates ordered", () => {
     "rin-daemon-demo.user-test.service",
     "rin-daemon.service",
   ]);
+  assert.deepEqual(context.userEnv, {});
+});
+
+test("daemonSocketPathForUser prefers runtime dir and falls back to home cache", () => {
+  if (process.platform !== "linux") return;
+
+  assert.equal(
+    service.daemonSocketPathForUser("demo", {
+      findSystemUser: () => ({ uid: 123 }),
+      targetHomeForUser: () => "/home/demo",
+    }),
+    path.join("/run/user", "123", "rin-daemon", "daemon.sock"),
+  );
+  assert.equal(
+    service.daemonSocketPathForUser("demo", {
+      findSystemUser: () => ({ uid: -1 }),
+      targetHomeForUser: () => "/home/demo",
+    }),
+    path.join("/home/demo", ".cache", "rin-daemon", "daemon.sock"),
+  );
 });
