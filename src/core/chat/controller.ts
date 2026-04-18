@@ -9,6 +9,7 @@ import {
   buildTurnResultFromMessages,
   extractFinalTextFromTurnResult,
 } from "../session/turn-result.js";
+import { normalizeSessionRef } from "../session/ref.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import {
@@ -197,11 +198,12 @@ export class ChatController {
         return;
       }
       if (finalText) this.latestAssistantText = finalText;
+      const session = normalizeSessionRef(payload);
       this.liveTurn?.resolve({
         finalText,
         result: payload.result,
-        sessionId: safeString(payload.sessionId).trim() || undefined,
-        sessionFile: safeString(payload.sessionFile).trim() || undefined,
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile,
       });
       return;
     }
@@ -595,14 +597,15 @@ export class ChatController {
   }) {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
+    const session = normalizeSessionRef(input);
     return {
       type: "text_delivery" as const,
       chatKey: this.chatKey,
       text,
       replyToMessageId:
         safeString(input.replyToMessageId || "").trim() || undefined,
-      sessionId: safeString(input.sessionId || "").trim() || undefined,
-      sessionFile: safeString(input.sessionFile || "").trim() || undefined,
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
     };
   }
   private stageAssistantDelivery(input: {
@@ -901,7 +904,7 @@ export class ChatController {
   ) {
     await this.connect();
     if (!this.session) throw new Error("chat_session_not_connected");
-    const wantedSessionFile = safeString(input.sessionFile || "").trim();
+    const { sessionFile: wantedSessionFile } = normalizeSessionRef(input);
     if (wantedSessionFile) await this.resumeSessionFile(wantedSessionFile);
     await this.ensureSessionReady();
     const { text, images, attachments } = await restorePromptParts({

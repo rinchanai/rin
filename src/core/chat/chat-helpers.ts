@@ -22,6 +22,7 @@ import {
   extractMessageText,
 } from "../message-content.js";
 import { safeString } from "../text-utils.js";
+import { normalizeSessionRef } from "../session/ref.js";
 
 export type SavedAttachment = {
   kind: "image" | "file";
@@ -159,13 +160,10 @@ export function lookupReplySession(
   replyToMessageId: string,
 ) {
   const linked = lookupReplyMessage(agentDir, chatKey, replyToMessageId);
-  const sessionId = safeString(linked?.sessionId || "").trim();
-  const sessionFile = safeString(linked?.sessionFile || "").trim();
   if (!linked) return null;
   return {
     linked,
-    sessionId: sessionId || undefined,
-    sessionFile: sessionFile || undefined,
+    ...normalizeSessionRef(linked),
   };
 }
 

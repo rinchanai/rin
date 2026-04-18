@@ -1,5 +1,7 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
+import { normalizeSessionRef } from "../session/ref.js";
+
 export function applyRpcSessionState(
   target: {
     model: any;
@@ -17,9 +19,7 @@ export function applyRpcSessionState(
   },
   state: any,
 ) {
-  const sessionId = String(state?.sessionId || "");
-  const sessionFile =
-    typeof state?.sessionFile === "string" ? state.sessionFile : undefined;
+  const { sessionId, sessionFile } = normalizeSessionRef(state);
 
   target.model = state?.model ?? null;
   target.thinkingLevel = state?.thinkingLevel ?? target.thinkingLevel;
@@ -33,7 +33,7 @@ export function applyRpcSessionState(
   }
   target.isCompacting = Boolean(state?.isCompacting);
   target.pendingMessageCount = Number(state?.pendingMessageCount || 0);
-  target.sessionId = sessionId;
+  target.sessionId = sessionId || "";
   target.sessionFile = sessionFile;
   target.sessionName =
     typeof state?.sessionName === "string" ? state.sessionName : undefined;

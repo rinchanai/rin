@@ -9,6 +9,7 @@ import {
 } from "./message-store.js";
 import { parseChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
+import { normalizeSessionRef } from "../session/ref.js";
 
 export type ChatLogEntry = {
   version: 1;
@@ -60,6 +61,7 @@ function storedMessageToChatLogEntry(
   const role = normalizeRole(record.role);
   const text = normalizeStoredText(record);
   if (!role || !text) return null;
+  const session = normalizeSessionRef(record);
   return {
     version: 1,
     timestamp: safeString(record.receivedAt || record.processedAt || "").trim(),
@@ -68,8 +70,8 @@ function storedMessageToChatLogEntry(
     text,
     messageId: safeString(record.messageId).trim() || undefined,
     replyToMessageId: safeString(record.replyToMessageId).trim() || undefined,
-    sessionId: safeString(record.sessionId).trim() || undefined,
-    sessionFile: safeString(record.sessionFile).trim() || undefined,
+    sessionId: session.sessionId,
+    sessionFile: session.sessionFile,
     userId: safeString(record.userId).trim() || undefined,
     nickname: safeString(record.nickname).trim() || undefined,
   };
@@ -88,12 +90,13 @@ function buildStoredMessageFromChatLogEntry(
     input.timestamp || new Date().toISOString(),
   ).trim();
   if (!role || !text || !messageId) return null;
+  const session = normalizeSessionRef(input);
   return {
     messageId,
     role,
     replyToMessageId: safeString(input.replyToMessageId).trim() || undefined,
-    sessionId: safeString(input.sessionId).trim() || undefined,
-    sessionFile: safeString(input.sessionFile).trim() || undefined,
+    sessionId: session.sessionId,
+    sessionFile: session.sessionFile,
     processedAt: role === "assistant" ? timestamp : undefined,
     chatKey,
     platform: parsed.platform,

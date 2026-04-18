@@ -147,8 +147,8 @@ test("chat transport stores explicit session binding for outbox text deliveries"
         type: "text_delivery",
         chatKey: "telegram/1:2",
         text: "scheduled hello",
-        sessionId: "sess-task",
-        sessionFile: "/tmp/task-session.jsonl",
+        sessionId: " sess-task ",
+        sessionFile: " /tmp/task-session.jsonl ",
       },
       Object.assign((type, attrs) => ({ type, attrs }), {
         text(content) {

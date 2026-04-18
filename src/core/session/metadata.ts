@@ -1,4 +1,9 @@
-import { safeString } from "../text-utils.js";
+import {
+  normalizeSessionRef,
+  normalizeSessionValue,
+} from "./ref.js";
+
+export { normalizeSessionRef, normalizeSessionValue } from "./ref.js";
 
 export type SessionMetadata = {
   sessionId: string;
@@ -28,11 +33,6 @@ type SessionSourceLike = {
   sessionPersisted?: unknown;
 };
 
-export function normalizeSessionValue(value: unknown) {
-  const text = safeString(value).trim();
-  return text || undefined;
-}
-
 export function readSessionMetadata(
   source: SessionSourceLike | SessionManagerLike | null | undefined,
 ): SessionMetadata {
@@ -40,15 +40,13 @@ export function readSessionMetadata(
   const sessionManager = (sessionSource?.sessionManager || source || undefined) as
     | SessionManagerLike
     | undefined;
-  const sessionFile = normalizeSessionValue(
-    sessionSource?.sessionFile ?? sessionManager?.getSessionFile?.(),
-  );
+  const { sessionId, sessionFile } = normalizeSessionRef({
+    sessionId: sessionSource?.sessionId ?? sessionManager?.getSessionId?.(),
+    sessionFile: sessionSource?.sessionFile ?? sessionManager?.getSessionFile?.(),
+  });
 
   return {
-    sessionId:
-      normalizeSessionValue(
-        sessionSource?.sessionId ?? sessionManager?.getSessionId?.(),
-      ) || "",
+    sessionId: sessionId || "",
     sessionFile: sessionFile || "",
     leafId:
       normalizeSessionValue(

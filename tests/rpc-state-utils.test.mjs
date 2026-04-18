@@ -29,8 +29,8 @@ test("rpc state utils derive branch and apply state", () => {
   };
 
   stateUtils.applyRpcSessionState(target, {
-    sessionId: "s0",
-    sessionFile: "/tmp/old",
+    sessionId: " s0 ",
+    sessionFile: " /tmp/old ",
     model: { provider: "anthropic", id: "claude-sonnet-4-5" },
     thinkingLevel: "medium",
     steeringMode: "one-at-a-time",
@@ -47,8 +47,8 @@ test("rpc state utils derive branch and apply state", () => {
   assert.equal(target.autoCompactionEnabled, true);
 
   stateUtils.applyRpcSessionState(target, {
-    sessionId: "s1",
-    sessionFile: "/tmp/x",
+    sessionId: " s1 ",
+    sessionFile: " /tmp/x ",
     thinkingLevel: "low",
     isStreaming: true,
   });
@@ -66,8 +66,8 @@ test("rpc state utils derive branch and apply state", () => {
       },
     },
     {
-      sessionId: "s2",
-      sessionFile: "/tmp/y",
+      sessionId: " s2 ",
+      sessionFile: " /tmp/y ",
       isStreaming: true,
     },
   );

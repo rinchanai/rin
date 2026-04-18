@@ -1,30 +1,19 @@
-import { normalizeSessionValue } from "../session/metadata.js";
+import { hasSessionRef, normalizeSessionRef, resolveSessionRef, sessionRefMatches, } from "../session/ref.js";
 export function normalizeSessionSelector(value) {
-    return {
-        sessionFile: normalizeSessionValue(value?.sessionFile ?? value?.sessionPath),
-        sessionId: normalizeSessionValue(value?.sessionId),
-    };
+    return normalizeSessionRef(value);
 }
 export function sessionSelectorFromCommand(command) {
-    return normalizeSessionSelector(command);
+    return normalizeSessionRef(command);
 }
 export function sessionSelectorFromState(value) {
-    return normalizeSessionSelector(value);
+    return normalizeSessionRef(value);
 }
 export function hasSessionSelector(selector) {
-    return Boolean(selector.sessionFile || selector.sessionId);
+    return hasSessionRef(selector);
 }
 export function resolveSessionSelector(commandSelector, fallbackSelector) {
-    return hasSessionSelector(commandSelector)
-        ? commandSelector
-        : fallbackSelector;
+    return resolveSessionRef(commandSelector, fallbackSelector);
 }
 export function sessionMatchesSelector(current, selector) {
-    if (selector.sessionFile && current.sessionFile === selector.sessionFile) {
-        return true;
-    }
-    if (selector.sessionId && current.sessionId === selector.sessionId) {
-        return true;
-    }
-    return false;
+    return sessionRefMatches(current, selector);
 }

@@ -1,27 +1,24 @@
-import { normalizeSessionValue } from "../session/metadata.js";
+import {
+  hasSessionRef,
+  normalizeSessionRef,
+  resolveSessionRef,
+  sessionRefMatches,
+  type SessionRef,
+  type SessionRefInput,
+} from "../session/ref.js";
 
-export type SessionSelector = {
-  sessionFile?: string;
-  sessionId?: string;
-};
+export type SessionSelector = SessionRef;
 
-type SessionSelectorInput = {
-  sessionFile?: unknown;
-  sessionPath?: unknown;
-  sessionId?: unknown;
-};
+type SessionSelectorInput = SessionRefInput;
 
 export function normalizeSessionSelector(
   value: SessionSelectorInput | null | undefined,
 ): SessionSelector {
-  return {
-    sessionFile: normalizeSessionValue(value?.sessionFile ?? value?.sessionPath),
-    sessionId: normalizeSessionValue(value?.sessionId),
-  };
+  return normalizeSessionRef(value);
 }
 
 export function sessionSelectorFromCommand(command: any): SessionSelector {
-  return normalizeSessionSelector(command);
+  return normalizeSessionRef(command);
 }
 
 export function sessionSelectorFromState(
@@ -33,31 +30,23 @@ export function sessionSelectorFromState(
     | null
     | undefined,
 ): SessionSelector {
-  return normalizeSessionSelector(value);
+  return normalizeSessionRef(value);
 }
 
 export function hasSessionSelector(selector: SessionSelector) {
-  return Boolean(selector.sessionFile || selector.sessionId);
+  return hasSessionRef(selector);
 }
 
 export function resolveSessionSelector(
   commandSelector: SessionSelector,
   fallbackSelector: SessionSelector,
 ) {
-  return hasSessionSelector(commandSelector)
-    ? commandSelector
-    : fallbackSelector;
+  return resolveSessionRef(commandSelector, fallbackSelector);
 }
 
 export function sessionMatchesSelector(
   current: SessionSelector,
   selector: SessionSelector,
 ) {
-  if (selector.sessionFile && current.sessionFile === selector.sessionFile) {
-    return true;
-  }
-  if (selector.sessionId && current.sessionId === selector.sessionId) {
-    return true;
-  }
-  return false;
+  return sessionRefMatches(current, selector);
 }

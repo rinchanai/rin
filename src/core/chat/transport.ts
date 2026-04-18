@@ -20,6 +20,7 @@ import {
   extractTextFromContent,
   safeString,
 } from "./chat-helpers.js";
+import { normalizeSessionRef } from "../session/ref.js";
 
 const DEFAULT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
 const ONEBOT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
@@ -230,14 +231,8 @@ function resolveSessionContext(
   replyToMessageId = "",
   explicit: { sessionId?: string; sessionFile?: string } = {},
 ) {
-  const sessionId = safeString(explicit.sessionId).trim();
-  const sessionFile = safeString(explicit.sessionFile).trim();
-  if (sessionId || sessionFile) {
-    return {
-      sessionId: sessionId || undefined,
-      sessionFile: sessionFile || undefined,
-    };
-  }
+  const session = normalizeSessionRef(explicit);
+  if (session.sessionId || session.sessionFile) return session;
   const nextReplyToMessageId = safeString(replyToMessageId).trim();
   if (!nextReplyToMessageId) return {};
   const linked = findChatMessageByChatAndId(
@@ -245,10 +240,7 @@ function resolveSessionContext(
     chatKey,
     nextReplyToMessageId,
   );
-  return {
-    sessionId: safeString(linked?.sessionId).trim() || undefined,
-    sessionFile: safeString(linked?.sessionFile).trim() || undefined,
-  };
+  return normalizeSessionRef(linked);
 }
 
 export function recordDeliveredAssistantMessages(
@@ -437,6 +429,7 @@ export async function sendOutboxPayload(
     const chatKey = safeString(payload.chatKey).trim();
     const text = safeString(payload.text).trim();
     const replyToMessageId = safeString(payload.replyToMessageId).trim();
+    const session = normalizeSessionRef(payload);
     const deliveryResult = await sendText(
       app,
       chatKey,
@@ -451,8 +444,8 @@ export async function sendOutboxPayload(
         role: "assistant",
         text,
         replyToMessageId: replyToMessageId || undefined,
-        sessionId: safeString(payload.sessionId).trim() || undefined,
-        sessionFile: safeString(payload.sessionFile).trim() || undefined,
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile,
       });
       return recordDeliveredAssistantMessages(agentDir, {
         chatKey,
@@ -460,14 +453,15 @@ export async function sendOutboxPayload(
         text,
         rawContent: text,
         replyToMessageId: replyToMessageId || undefined,
-        sessionId: safeString(payload.sessionId).trim() || undefined,
-        sessionFile: safeString(payload.sessionFile).trim() || undefined,
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile,
       });
     }
     return [] as string[];
   }
   if (payload?.type !== "parts_delivery") return [] as string[];
   const chatKey = safeString(payload.chatKey).trim();
+  const session = normalizeSessionRef(payload);
   const rawParts = Array.isArray(payload.parts)
     ? payload.parts.filter(Boolean)
     : [];
@@ -498,8 +492,8 @@ export async function sendOutboxPayload(
       role: "assistant",
       text: finalLoggedText,
       replyToMessageId,
-      sessionId: safeString(payload.sessionId).trim() || undefined,
-      sessionFile: safeString(payload.sessionFile).trim() || undefined,
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
     });
   }
   const storedSummary = summarizeOutgoingParts(rawParts);
@@ -509,8 +503,8 @@ export async function sendOutboxPayload(
     text: finalLoggedText || storedSummary || undefined,
     rawContent: storedSummary || finalLoggedText || undefined,
     replyToMessageId,
-    sessionId: safeString(payload.sessionId).trim() || undefined,
-    sessionFile: safeString(payload.sessionFile).trim() || undefined,
+    sessionId: session.sessionId,
+    sessionFile: session.sessionFile,
   });
 }
 

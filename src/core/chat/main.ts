@@ -64,6 +64,7 @@ import { composeChatKey, loadIdentity, trustOf } from "./support.js";
 import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
+import { normalizeSessionRef } from "../session/ref.js";
 
 function createLogger(name: string) {
   const prefix = `[${name}]`;
@@ -692,7 +693,7 @@ export async function startChatBridge(
   const runTurn = async (payload: ChatBridgeTurnPayload) => {
     const chatKey = safeString(payload?.chatKey).trim();
     const text = safeString(payload?.text).trim();
-    const sessionFile = safeString(payload?.sessionFile).trim() || undefined;
+    const { sessionFile } = normalizeSessionRef(payload);
     const controllerKey =
       safeString(payload?.controllerKey).trim() || "default";
     const deliveryEnabled = payload?.deliveryEnabled !== false;
@@ -747,6 +748,7 @@ export async function startChatBridge(
       safeString(payload?.currentChatKey).trim() || undefined;
     const requestId = safeString(payload?.requestId).trim() || undefined;
     const code = safeString(payload?.code);
+    const session = normalizeSessionRef(payload);
     const runtimeContext = createChatBridgeRuntime({
       app,
       agentDir: runtime.agentDir,
@@ -754,8 +756,8 @@ export async function startChatBridge(
       currentChatKey,
       h,
       requestId,
-      sessionId: safeString(payload?.sessionId).trim() || undefined,
-      sessionFile: safeString(payload?.sessionFile).trim() || undefined,
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
     });
     let auditPath = "";
     try {
@@ -770,8 +772,8 @@ export async function startChatBridge(
         ok: true,
         currentChatKey,
         requestId,
-        sessionId: safeString(payload?.sessionId).trim() || undefined,
-        sessionFile: safeString(payload?.sessionFile).trim() || undefined,
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile,
         timeoutMs: result.timeoutMs,
         durationMs: Date.now() - startedAtMs,
         code,
@@ -793,8 +795,8 @@ export async function startChatBridge(
         ok: false,
         currentChatKey,
         requestId,
-        sessionId: safeString(payload?.sessionId).trim() || undefined,
-        sessionFile: safeString(payload?.sessionFile).trim() || undefined,
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile,
         durationMs: Date.now() - startedAtMs,
         code,
         error: safeString(error?.stack || error?.message || error).trim(),
