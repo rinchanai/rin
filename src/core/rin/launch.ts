@@ -58,11 +58,15 @@ export function buildTuiRuntimeEnv(
   currentUser: string,
   installDir?: string,
 ) {
+  const runtimeAgentDir =
+    String(process.env[RIN_DIR_ENV] || "").trim() ||
+    String(process.env[PI_AGENT_DIR_ENV] || "").trim() ||
+    String(installDir || "").trim();
   return targetUserRuntimeEnv(targetUser, {
-    ...(installDir
+    ...(runtimeAgentDir
       ? {
-          [RIN_DIR_ENV]: installDir,
-          [PI_AGENT_DIR_ENV]: installDir,
+          [RIN_DIR_ENV]: runtimeAgentDir,
+          [PI_AGENT_DIR_ENV]: runtimeAgentDir,
         }
       : {}),
     RIN_DAEMON_SOCKET_PATH: socketPathForUser(targetUser),

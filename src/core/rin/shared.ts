@@ -359,9 +359,13 @@ function daemonControlContext(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const installDir = resolveInstallDirForTarget(parsed);
   const targetUser = parsed.targetUser;
+  const runtimeAgentDir =
+    safeString(process.env[RIN_DIR_ENV]).trim() ||
+    safeString(process.env[PI_AGENT_DIR_ENV]).trim() ||
+    installDir;
   const runtimeEnv = targetUserRuntimeEnv(targetUser, {
-    [RIN_DIR_ENV]: installDir,
-    [PI_AGENT_DIR_ENV]: installDir,
+    [RIN_DIR_ENV]: runtimeAgentDir,
+    [PI_AGENT_DIR_ENV]: runtimeAgentDir,
   });
   const systemctl =
     process.platform === "linux"

@@ -1,0 +1,224 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+const rootDir = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  "..",
+  "..",
+);
+const events = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "events.js")).href
+);
+
+test("rpc session events do not refresh whole state on every stream update", async () => {
+  const seen = [];
+  let refreshMessages = 0;
+  let refreshMessagesAndSession = 0;
+  const target = {
+    isStreaming: false,
+    isCompacting: false,
+    retryAttempt: 0,
+    activeTurn: { mode: "prompt" },
+    remoteTurnRunning: false,
+    setRemoteTurnRunning(value) {
+      this.remoteTurnRunning = value;
+      this.isStreaming = value;
+    },
+    emitFrontendStatus(force) {
+      seen.push({
+        type: "frontend_status_refresh",
+        force,
+        compacting: this.isCompacting,
+      });
+    },
+    emitEvent: (event) => seen.push(event),
+  };
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "message_update", message: { role: "assistant" } },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(refreshMessages, 0);
+  assert.equal(refreshMessagesAndSession, 0);
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "message_end", message: { role: "assistant" } },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(refreshMessages, 1);
+  assert.equal(refreshMessagesAndSession, 0);
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "rpc_turn_event", event: "heartbeat", requestTag: "tag-1" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isStreaming, true);
+  assert.equal(target.remoteTurnRunning, true);
+  assert.equal(target.activeTurn?.mode, "prompt");
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "compaction_start", reason: "threshold" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isCompacting, true);
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "compaction_end", reason: "threshold", aborted: false },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isCompacting, false);
+  assert.equal(target.remoteTurnRunning, true);
+  assert.equal(target.isStreaming, true);
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "worker_exit", code: 9, signal: null },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isStreaming, false);
+  assert.equal(target.remoteTurnRunning, false);
+  assert.equal(target.activeTurn, null);
+  assert.equal(refreshMessagesAndSession, 2);
+
+  target.activeTurn = { mode: "prompt" };
+  target.remoteTurnRunning = true;
+  target.isStreaming = true;
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "rpc_turn_event", event: "complete", requestTag: "tag-1" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  assert.equal(target.isStreaming, false);
+  assert.equal(target.remoteTurnRunning, false);
+  assert.equal(target.activeTurn, null);
+  assert.equal(refreshMessagesAndSession, 3);
+  assert.deepEqual(seen, [
+    { type: "message_update", message: { role: "assistant" } },
+    { type: "message_end", message: { role: "assistant" } },
+    { type: "rpc_turn_event", event: "heartbeat", requestTag: "tag-1" },
+    { type: "compaction_start", reason: "threshold" },
+    { type: "frontend_status_refresh", force: true, compacting: true },
+    { type: "compaction_end", reason: "threshold", aborted: false },
+    { type: "frontend_status_refresh", force: true, compacting: false },
+    { type: "worker_exit", code: 9, signal: null },
+    { type: "rpc_turn_event", event: "complete", requestTag: "tag-1" },
+  ]);
+});
+
+test("rpc session events delegate worker exit recovery to the runtime when available", async () => {
+  const seen = [];
+  let refreshMessages = 0;
+  let refreshMessagesAndSession = 0;
+  const target = {
+    handleSessionUnavailable() {
+      seen.push({ type: "session_unavailable" });
+    },
+    emitEvent: (event) => seen.push(event),
+  };
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "worker_exit", code: 9, signal: null },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+
+  assert.equal(refreshMessages, 0);
+  assert.equal(refreshMessagesAndSession, 0);
+  assert.deepEqual(seen, [
+    { type: "session_unavailable" },
+    { type: "worker_exit", code: 9, signal: null },
+  ]);
+});
+
+test("rpc session recovery events are delegated without fake turn termination", async () => {
+  const seen = [];
+  let refreshMessages = 0;
+  let refreshMessagesAndSession = 0;
+  const target = {
+    handleSessionUnavailable() {
+      seen.push({ type: "session_unavailable" });
+    },
+    handleSessionRecovered() {
+      seen.push({ type: "session_recovered_hook" });
+    },
+    emitEvent: (event) => seen.push(event),
+  };
+
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "session_recovering", sessionFile: "/tmp/demo.jsonl" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+  await events.handleRpcSessionEvent(
+    target,
+    { type: "session_recovered", sessionFile: "/tmp/demo.jsonl" },
+    async () => {
+      refreshMessages += 1;
+    },
+    async () => {
+      refreshMessagesAndSession += 1;
+    },
+  );
+
+  assert.equal(refreshMessages, 0);
+  assert.equal(refreshMessagesAndSession, 0);
+  assert.deepEqual(seen, [
+    { type: "session_unavailable" },
+    { type: "session_recovering", sessionFile: "/tmp/demo.jsonl" },
+    { type: "session_recovered_hook" },
+    { type: "session_recovered", sessionFile: "/tmp/demo.jsonl" },
+  ]);
+});
