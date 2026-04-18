@@ -1,7 +1,6 @@
 import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 
 import WebSocket from "ws";
 
@@ -13,6 +12,20 @@ import {
 } from "../chat-bridge/adapters.js";
 import { composeChatKey } from "../chat/support.js";
 import {
+  compactObject,
+  ensureDir,
+  ensureExtension,
+  ensureFileName,
+  extractQuoteMessageId,
+  fileUrl,
+  flattenNodes,
+  normalizeNode,
+  readBinaryFromNode,
+  renderPlainTextFromNodes,
+  safeString,
+  sleep,
+} from "./common.js";
+import {
   DiscordAdapter,
   LarkAdapter,
   MinecraftAdapter,
@@ -20,164 +33,11 @@ import {
   SlackAdapter,
 } from "./extra-adapters.js";
 
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function compactObject<T extends Record<string, any>>(value: T) {
-  const next: Record<string, any> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (item === undefined || item === null) continue;
-    if (typeof item === "string" && !item.trim()) continue;
-    next[key] = item;
-  }
-  return next as T;
-}
-
-function extensionFromMimeType(mimeType: string) {
-  const mime = safeString(mimeType).toLowerCase().trim();
-  if (!mime) return "";
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  if (mime === "image/gif") return ".gif";
-  if (mime === "application/pdf") return ".pdf";
-  if (mime.startsWith("text/")) return ".txt";
-  return "";
-}
-
-function ensureFileName(name: string, fallback = "attachment") {
-  const base = safeString(name)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "_")
-    .replace(/^\.+$/, "");
-  return base || fallback;
-}
-
-function ensureExtension(fileName: string, mimeType = "") {
-  if (path.extname(fileName)) return fileName;
-  const ext = extensionFromMimeType(mimeType);
-  return ext ? `${fileName}${ext}` : fileName;
-}
-
-function normalizeNode(
-  type: string,
-  attrs?: Record<string, any>,
-  children?: any[],
-) {
-  return {
-    type: safeString(type).trim().toLowerCase(),
-    attrs: attrs && typeof attrs === "object" ? attrs : {},
-    children: Array.isArray(children)
-      ? children.flat(Infinity).filter(Boolean)
-      : [],
-  };
-}
-
-function flattenNodes(value: any): any[] {
-  if (!Array.isArray(value)) return value ? [value] : [];
-  return value.flatMap((item) => flattenNodes(item)).filter(Boolean);
-}
-
-function renderPlainTextFromNodes(nodes: any[]) {
-  return nodes
-    .map((node) => {
-      const type = safeString(node?.type).toLowerCase();
-      const attrs =
-        node?.attrs && typeof node.attrs === "object" ? node.attrs : {};
-      if (type === "text") return safeString(attrs.content || "");
-      if (type === "at") {
-        const name = safeString(attrs.name).trim();
-        const id = safeString(attrs.id).trim();
-        if (name) return `@${name}`;
-        if (id) return `@${id}`;
-        return "";
-      }
-      if (type === "br") return "\n";
-      const children = Array.isArray(node?.children) ? node.children : [];
-      const text = renderPlainTextFromNodes(children);
-      if (type === "p" || type === "paragraph") return text ? `${text}\n` : "";
-      return text;
-    })
-    .join("")
-    .replace(/\r\n?/g, "\n")
-    .replace(/[\t ]+\n/g, "\n")
-    .replace(/\n[\t ]+/g, "\n")
-    .replace(/[^\S\n]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 function toSnakeCase(value: string) {
   return safeString(value)
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .replace(/[-\s]+/g, "_")
     .toLowerCase();
-}
-
-function fileUrl(filePath: string) {
-  return pathToFileURL(path.resolve(filePath)).href;
-}
-
-async function readBinaryFromNode(node: any) {
-  const attrs = node?.attrs && typeof node.attrs === "object" ? node.attrs : {};
-  const name = ensureFileName(
-    safeString(attrs.name).trim() ||
-      `${safeString(node?.type).trim() || "file"}`,
-    "file",
-  );
-  const mimeType = safeString(attrs.mimeType || attrs.mime || "").trim();
-  if (Buffer.isBuffer(attrs.data)) {
-    return {
-      data: attrs.data,
-      name: ensureExtension(name, mimeType),
-      mimeType,
-    };
-  }
-  const src = safeString(attrs.src || attrs.url || "").trim();
-  if (!src) return null;
-  if (src.startsWith("file://")) {
-    const filePath = fileURLToPath(src);
-    const data = await fs.promises.readFile(filePath);
-    return {
-      data,
-      name:
-        ensureExtension(path.basename(filePath), mimeType) ||
-        ensureExtension(name, mimeType),
-      mimeType,
-    };
-  }
-  if (/^https?:\/\//i.test(src)) {
-    return {
-      url: src,
-      name: ensureExtension(name, mimeType),
-      mimeType,
-    };
-  }
-  const data = await fs.promises.readFile(path.resolve(src));
-  return {
-    data,
-    name:
-      ensureExtension(path.basename(src), mimeType) ||
-      ensureExtension(name, mimeType),
-    mimeType,
-  };
-}
-
-function extractQuoteMessageId(nodes: any[]) {
-  const quote = nodes.find(
-    (node) => safeString(node?.type).toLowerCase() === "quote",
-  );
-  return safeString(quote?.attrs?.id || "").trim() || undefined;
 }
 
 function isTextLikeNode(node: any) {
