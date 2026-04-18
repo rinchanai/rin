@@ -1,11 +1,11 @@
 # README languages
 
-The English README at [`../../README.md`](../../README.md) is the canonical version.
+The English README at [`../README.md`](../README.md) is the canonical version.
 Translations in this directory are convenience copies and may lag behind the English version.
 
 ## Available
 
-- [English](../../README.md)
+- [English](../README.md)
 - [简体中文](README.zh-CN.md)
 - [日本語](README.ja.md)
 - [Español](README.es.md)

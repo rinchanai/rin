@@ -1,8 +1,8 @@
-[English](../../README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md) | [更多语言](README.md)
+[English](../README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md) | [更多语言](README.md)
 
 # Rin
 
-> 说明：这是便于阅读的翻译版本，规范内容以英文 README（`../../README.md`）为准，且英文版可能更新更快。
+> 说明：这是便于阅读的翻译版本，规范内容以英文 README（`../README.md`）为准，且英文版可能更新更快。
 
 一个终端优先的本地 AI 助手：能聊天、改文件、记事情、联网搜索，还能跑定时任务。
 
@@ -110,10 +110,10 @@ Rin 默认就接好了这些能力：
 
 想继续了解，可以从这里开始：
 
-- [`docs/rin/README.md`](../rin/README.md)
-- [`docs/rin/docs/capabilities.md`](../rin/docs/capabilities.md)
-- [`docs/rin/docs/runtime-layout.md`](../rin/docs/runtime-layout.md)
-- [`docs/rin/docs/builtin-extensions.md`](../rin/docs/builtin-extensions.md)
+- [`docs/rin/README.md`](../docs/rin/README.md)
+- [`docs/rin/docs/capabilities.md`](../docs/rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](../docs/rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](../docs/rin/docs/builtin-extensions.md)
 
 ## 一句话总结
 
