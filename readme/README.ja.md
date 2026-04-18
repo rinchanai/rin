@@ -1,8 +1,8 @@
-[English](../../README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md) | [その他の言語](README.md)
+[English](../README.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md) | [Español](README.es.md) | [Français](README.fr.md) | [その他の言語](README.md)
 
 # Rin
 
-> 注: これは読みやすさのための翻訳版です。正式な内容は英語版 README（`../../README.md`）を基準とし、英語版のほうが先に更新される場合があります。
+> 注: これは読みやすさのための翻訳版です。正式な内容は英語版 README（`../README.md`）を基準とし、英語版のほうが先に更新される場合があります。
 
 チャット、ファイル編集、記憶、Web 検索、定期実行ができる、ターミナル中心のローカル AI アシスタントです。
 
@@ -101,10 +101,10 @@ Rin には次の機能が最初から入っています。
 
 詳しく知りたい場合は、まずこちらを参照してください。
 
-- [`docs/rin/README.md`](../rin/README.md)
-- [`docs/rin/docs/capabilities.md`](../rin/docs/capabilities.md)
-- [`docs/rin/docs/runtime-layout.md`](../rin/docs/runtime-layout.md)
-- [`docs/rin/docs/builtin-extensions.md`](../rin/docs/builtin-extensions.md)
+- [`docs/rin/README.md`](../docs/rin/README.md)
+- [`docs/rin/docs/capabilities.md`](../docs/rin/docs/capabilities.md)
+- [`docs/rin/docs/runtime-layout.md`](../docs/rin/docs/runtime-layout.md)
+- [`docs/rin/docs/builtin-extensions.md`](../docs/rin/docs/builtin-extensions.md)
 
 ## ひとことで言うと
 
