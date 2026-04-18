@@ -1,3 +1,4 @@
+import { managedSystemdUnitCandidates } from "../rin-install/paths.js";
 import {
   createTargetExecutionContext,
   ensureDaemonAvailable,
@@ -15,10 +16,7 @@ function tryManagedServiceAction(
       stdio: "ignore",
     });
   } catch {}
-  for (const unit of [
-    `rin-daemon-${context.targetUser}.service`,
-    "rin-daemon.service",
-  ]) {
+  for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
     try {
       context.capture([context.systemctl, "--user", "status", unit], {
         stdio: "ignore",

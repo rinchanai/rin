@@ -22,6 +22,7 @@ import {
   installerLocatorCandidatesForHome,
   launcherMetadataCandidatesForHome,
   launcherMetadataPathForHome,
+  managedSystemdUnitCandidates,
 } from "../rin-install/paths.js";
 
 export type ParsedArgs = {
@@ -237,10 +238,7 @@ export async function ensureDaemonAvailable(context: TargetExecutionContext) {
   if (await context.canConnectSocket()) return;
 
   if (context.systemctl) {
-    for (const unit of [
-      `rin-daemon-${context.targetUser}.service`,
-      "rin-daemon.service",
-    ]) {
+    for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
       try {
         context.exec([context.systemctl, "--user", "start", unit]);
         break;

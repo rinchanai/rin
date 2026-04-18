@@ -19,6 +19,9 @@ import {
   daemonStdoutLogPath,
   installedAppEntryCandidates,
   launchAgentPlistPathForHome,
+  managedLaunchdLabel,
+  managedSystemdUnitCandidates,
+  managedSystemdUnitName,
   sourceAppEntryPath,
   systemdUserUnitDirForHome,
   systemdUserUnitPathForHome,
@@ -43,7 +46,7 @@ export function buildLaunchdPlist(
   targetHomeForUser: (user: string) => string,
   repoRootFromHere: () => string,
 ) {
-  const label = `com.rin.daemon.${String(targetUser).replace(/[^A-Za-z0-9_.-]+/g, "-")}`;
+  const label = managedLaunchdLabel(targetUser);
   const targetHome = targetHomeForUser(targetUser);
   const daemonEntry = resolveDaemonEntryForInstall(
     installDir,
@@ -135,7 +138,7 @@ export function buildSystemdUserService(
     repoRootFromHere,
   );
   const targetHome = targetHomeForUser(targetUser);
-  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-")}.service`;
+  const unitName = managedSystemdUnitName(targetUser);
   const unitPath = systemdUserUnitPathForHome(targetHome, unitName);
   const runtimePath = installedRuntimePathValue();
   const execStart = [...installedRuntimeNodeCommandArgs(), daemonEntry].join(
@@ -232,11 +235,9 @@ export function refreshManagedServiceFiles(
   if (process.platform !== "linux") return;
   const targetHome = deps.targetHomeForUser(targetUser);
   const unitDir = systemdUserUnitDirForHome(targetHome);
-  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-")}.service`;
-  const candidateFiles = [
-    path.join(unitDir, unitName),
-    path.join(unitDir, "rin-daemon.service"),
-  ];
+  const candidateFiles = managedSystemdUnitCandidates(targetUser).map((unit) =>
+    path.join(unitDir, unit),
+  );
   for (const filePath of candidateFiles) {
     if (!fs.existsSync(filePath)) continue;
     const spec = buildSystemdUserService(
@@ -276,8 +277,11 @@ export function systemdUserContext(
           DBUS_SESSION_BUS_ADDRESS: `unix:path=${runtimeDir}/bus`,
         }
       : {};
-  const unitName = `rin-daemon-${String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-")}.service`;
-  return { systemctl, userEnv, units: [unitName, "rin-daemon.service"] };
+  return {
+    systemctl,
+    userEnv,
+    units: managedSystemdUnitCandidates(targetUser),
+  };
 }
 
 export function captureCommandAsUser(

@@ -4,22 +4,16 @@ import path from "node:path";
 import { readJsonFile } from "../platform/fs.js";
 import { resolveInstallRecordTargetFromCandidates } from "./install-record.js";
 import {
+  installDirFromManagedLaunchdPlist,
+  installDirFromManagedSystemdUnit,
   installDiscoveryHomeRoots,
   installerLocatorCandidatesForHome,
+  isManagedLaunchdPlistName,
+  isManagedSystemdUnitName,
   launchAgentsDirForHome,
   launcherMetadataCandidatesForHome,
   systemdUserUnitDirForHome,
 } from "./paths.js";
-
-function installDirFromSystemdUnit(text: string) {
-  const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
-  return String(match?.[1] || "").trim();
-}
-
-function installDirFromLaunchdPlist(text: string) {
-  const match = text.match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/);
-  return String(match?.[1] || "").trim();
-}
 
 export type InstalledTarget = {
   targetUser: string;
@@ -75,9 +69,9 @@ export function discoverInstalledTargets(
     const systemdDir = systemdUserUnitDirForHome(homeDir);
     try {
       for (const entry of fs.readdirSync(systemdDir)) {
-        if (!/^rin-daemon(?:-.+)?\.service$/.test(entry)) continue;
+        if (!isManagedSystemdUnitName(entry)) continue;
         const filePath = path.join(systemdDir, entry);
-        const installDir = installDirFromSystemdUnit(
+        const installDir = installDirFromManagedSystemdUnit(
           fs.readFileSync(filePath, "utf8"),
         );
         if (!installDir) continue;
@@ -88,9 +82,9 @@ export function discoverInstalledTargets(
     const launchAgentsDir = launchAgentsDirForHome(homeDir);
     try {
       for (const entry of fs.readdirSync(launchAgentsDir)) {
-        if (!/^com\.rin\.daemon\..+\.plist$/.test(entry)) continue;
+        if (!isManagedLaunchdPlistName(entry)) continue;
         const filePath = path.join(launchAgentsDir, entry);
-        const installDir = installDirFromLaunchdPlist(
+        const installDir = installDirFromManagedLaunchdPlist(
           fs.readFileSync(filePath, "utf8"),
         );
         if (!installDir) continue;

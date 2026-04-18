@@ -123,3 +123,13 @@ test("resolveDaemonEntryForInstall falls back to legacy and repo daemon entries"
     );
   });
 });
+
+test("systemdUserContext keeps managed unit candidates ordered", () => {
+  const context = service.systemdUserContext("demo.user+test", {
+    findSystemUser: () => ({ uid: -1 }),
+  });
+  assert.deepEqual(context.units, [
+    "rin-daemon-demo.user-test.service",
+    "rin-daemon.service",
+  ]);
+});

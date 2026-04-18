@@ -1,3 +1,4 @@
+import { managedSystemdUnitCandidates } from "../rin-install/paths.js";
 import { createTargetExecutionContext } from "./shared.js";
 export async function runDoctor(parsed) {
     const context = createTargetExecutionContext(parsed);
@@ -34,10 +35,7 @@ export async function runDoctor(parsed) {
         lines.push(...workerLines);
     }
     if (context.systemctl) {
-        for (const unit of [
-            `rin-daemon-${context.targetUser}.service`,
-            "rin-daemon.service",
-        ]) {
+        for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
             try {
                 const status = context.capture([
                     context.systemctl,
@@ -58,10 +56,7 @@ export async function runDoctor(parsed) {
                 }
             }
         }
-        for (const unit of [
-            `rin-daemon-${context.targetUser}.service`,
-            "rin-daemon.service",
-        ]) {
+        for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
             try {
                 const journal = context.capture([
                     "journalctl",

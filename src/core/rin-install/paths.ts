@@ -181,6 +181,58 @@ export function launcherMetadataCandidatesForHome(home: string) {
   return Array.from(new Set([primary, secondary]));
 }
 
+const LEGACY_MANAGED_SYSTEMD_UNIT_NAME = "rin-daemon.service";
+
+function managedSystemdUnitUserFragment(targetUser: string) {
+  return String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-");
+}
+
+function managedLaunchdUserFragment(targetUser: string) {
+  return String(targetUser).replace(/[^A-Za-z0-9_.-]+/g, "-");
+}
+
+export function managedSystemdUnitName(targetUser: string) {
+  return `rin-daemon-${managedSystemdUnitUserFragment(targetUser)}.service`;
+}
+
+export function managedSystemdUnitCandidates(targetUser: string) {
+  return Array.from(
+    new Set([
+      managedSystemdUnitName(targetUser),
+      LEGACY_MANAGED_SYSTEMD_UNIT_NAME,
+    ]),
+  );
+}
+
+export function isManagedSystemdUnitName(unitName: string) {
+  return (
+    unitName === LEGACY_MANAGED_SYSTEMD_UNIT_NAME ||
+    /^rin-daemon(?:-.+)?\.service$/.test(unitName)
+  );
+}
+
+export function installDirFromManagedSystemdUnit(text: string) {
+  const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
+  return String(match?.[1] || "").trim();
+}
+
+export function managedLaunchdLabel(targetUser: string) {
+  return `com.rin.daemon.${managedLaunchdUserFragment(targetUser)}`;
+}
+
+export function managedLaunchdPlistName(targetUser: string) {
+  return `${managedLaunchdLabel(targetUser)}.plist`;
+}
+
+export function isManagedLaunchdPlistName(fileName: string) {
+  return /^com\.rin\.daemon\..+\.plist$/.test(fileName);
+}
+
+export function installDirFromManagedLaunchdPlist(text: string) {
+  const match = text.match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/);
+  return String(match?.[1] || "").trim();
+}
+
 export function launchAgentsDirForHome(home: string) {
   return path.join(home, "Library", "LaunchAgents");
 }
