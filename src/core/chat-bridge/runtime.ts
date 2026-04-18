@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { ChatMessagePart } from "../rin-lib/chat-outbox.js";
+import { formatLocalDateOnly } from "../chat/date.js";
 import { readChatLog } from "../chat/chat-log.js";
 import { normalizeChatMessageLookup } from "../chat/message-store.js";
 import {
@@ -158,8 +159,7 @@ export function appendChatBridgeAudit(
   agentDir: string,
   entry: Record<string, unknown>,
 ) {
-  const now = new Date();
-  const day = now.toISOString().slice(0, 10);
+  const day = formatLocalDateOnly();
   const filePath = path.join(auditDir(agentDir), `${day}.jsonl`);
   ensureDir(path.dirname(filePath));
   fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, "utf8");
@@ -254,8 +254,7 @@ export function createChatBridgeRuntime(options: {
           );
         },
         listLog(date?: string, nextChatKey?: string) {
-          const nextDate =
-            safeString(date).trim() || new Date().toISOString().slice(0, 10);
+          const nextDate = safeString(date).trim() || formatLocalDateOnly();
           return readChatLog(
             options.agentDir,
             safeString(nextChatKey).trim() || chatKey,

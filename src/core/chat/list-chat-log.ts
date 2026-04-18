@@ -12,6 +12,7 @@ import {
   renderTextToolResult,
 } from "../pi/render-utils.js";
 import { safeString } from "../text-utils.js";
+import { formatLocalDateOnly } from "./date.js";
 
 async function loadChatLogModule() {
   return await import("./chat-log.js");
@@ -26,18 +27,13 @@ type ListChatLogDetails = {
   truncation?: TruncationResult;
 };
 
-function localDateString(date = new Date()) {
-  const utc = date.getTime() - date.getTimezoneOffset() * 60_000;
-  return new Date(utc).toISOString().slice(0, 10);
-}
-
 function formatListChatLogCall(args: any, theme: any) {
   const chatKey = safeString(args?.chatKey).trim();
   const date = safeString(args?.date).trim();
   return [
     theme.fg("toolTitle", theme.bold("list_chat_log")),
     chatKey ? ` ${theme.fg("accent", chatKey)}` : "",
-    theme.fg("muted", ` ${date || localDateString()}`),
+    theme.fg("muted", ` ${date || formatLocalDateOnly()}`),
   ].join("");
 }
 
@@ -74,7 +70,7 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
     execute: async (_toolCallId, params) => {
       const chatKey = safeString((params as any)?.chatKey).trim();
       const date =
-        safeString((params as any)?.date).trim() || localDateString();
+        safeString((params as any)?.date).trim() || formatLocalDateOnly();
       if (!chatKey) throw new Error("chat_list_log_chatKey_required");
 
       const agentDir = getAgentDir();

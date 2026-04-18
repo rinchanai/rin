@@ -7,6 +7,7 @@ import {
   updateChatMessage,
   type StoredChatMessage,
 } from "./message-store.js";
+import { normalizeLocalDateOnly } from "./date.js";
 import { parseChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
 import { normalizeSessionRef } from "../session/ref.js";
@@ -30,16 +31,6 @@ function normalizeRole(value: unknown) {
   return text === "user" || text === "assistant"
     ? (text as "user" | "assistant")
     : null;
-}
-
-function normalizeDateOnly(value: string) {
-  const text = safeString(value).trim();
-  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (match) return match[1];
-  const date = text ? new Date(text) : new Date();
-  if (Number.isNaN(date.getTime()))
-    return new Date().toISOString().slice(0, 10);
-  return date.toISOString().slice(0, 10);
 }
 
 function inferChatType(parsed: { platform: string; chatId: string }) {
@@ -124,7 +115,7 @@ export function chatLogDir(agentDir: string) {
 export function chatLogPath(agentDir: string, chatKey: string, date: string) {
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const day = normalizeDateOnly(date);
+  const day = normalizeLocalDateOnly(date, new Date());
   return parsed.botId
     ? path.join(
         chatLogDir(agentDir),

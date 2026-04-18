@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
+import { normalizeLocalDateOnly } from "./date.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import { safeString } from "../text-utils.js";
 
@@ -92,7 +93,7 @@ type StoredChatDateIndex = {
 function chatDateIndexPath(agentDir: string, chatKey: string, date: string) {
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const day = isoDateOnly(date);
+  const day = normalizeLocalDateOnly(date, new Date());
   const platform = sanitizePathSegment(parsed.platform, "platform");
   const chatId = sanitizePathSegment(parsed.chatId, "chat");
   return parsed.botId
@@ -151,7 +152,7 @@ function updateChatDateIndexRecord(
   recordKey: string,
   action: "add" | "remove",
 ) {
-  const nextDate = isoDateOnly(date);
+  const nextDate = normalizeLocalDateOnly(date);
   const nextRecordKey = safeString(recordKey).trim();
   if (!nextDate || !nextRecordKey) return;
   const current = readChatDateIndex(agentDir, chatKey, nextDate) || [];
@@ -170,7 +171,7 @@ function storedMessageDate(
     | undefined,
 ) {
   if (!record) return "";
-  return isoDateOnly(record.receivedAt || record.processedAt || "");
+  return normalizeLocalDateOnly(record.receivedAt || record.processedAt || "");
 }
 
 function sortChatMessages(messages: StoredChatMessage[]) {
@@ -366,23 +367,13 @@ export function listChatMessages(agentDir: string) {
   return out;
 }
 
-function isoDateOnly(value: string) {
-  const match = safeString(value)
-    .trim()
-    .match(/^(\d{4}-\d{2}-\d{2})/);
-  if (match) return match[1];
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toISOString().slice(0, 10);
-}
-
 export function listChatMessagesByChatAndDate(
   agentDir: string,
   chatKey: string,
   date: string,
 ) {
   const nextChatKey = safeString(chatKey).trim();
-  const nextDate = isoDateOnly(date);
+  const nextDate = normalizeLocalDateOnly(date);
   if (!nextChatKey || !nextDate) return [];
 
   const indexedRecordKeys = readChatDateIndex(agentDir, nextChatKey, nextDate);
