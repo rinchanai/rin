@@ -12,6 +12,11 @@ export function ensurePrivateDir(dir: string) {
   } catch {}
 }
 
+export function stringifyJson(value: unknown, trailingNewline = true) {
+  const text = JSON.stringify(value, null, 2);
+  return trailingNewline ? `${text}\n` : text;
+}
+
 export function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
@@ -22,7 +27,7 @@ export function readJsonFile<T>(filePath: string, fallback: T): T {
 
 export function writeJsonFile(filePath: string, value: unknown) {
   ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  fs.writeFileSync(filePath, stringifyJson(value), "utf8");
 }
 
 export function writeJsonAtomic(
@@ -33,7 +38,7 @@ export function writeJsonAtomic(
 ) {
   (privateDir ? ensurePrivateDir : ensureDir)(path.dirname(filePath));
   const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), { mode });
+  fs.writeFileSync(tmp, stringifyJson(value), { mode });
   fs.renameSync(tmp, filePath);
   try {
     fs.chmodSync(filePath, mode);

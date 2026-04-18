@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
+import { writeJsonAtomic } from "../platform/fs.js";
 import { readSessionIdentity } from "../session/metadata.js";
 
 export type CompactionContinuationMarker = {
@@ -38,14 +39,13 @@ export function writeCompactionContinuationMarker(
   },
 ) {
   const file = getCompactionContinuationMarkerPath(source);
-  mkdirSync(dirname(file), { recursive: true });
   const next: CompactionContinuationMarker = {
     version: 1,
     at: Number(marker?.at || Date.now()),
     reason: marker.reason,
     assistantPreview: String(marker?.assistantPreview || "").trim() || undefined,
   };
-  writeFileSync(file, JSON.stringify(next), "utf8");
+  writeJsonAtomic(file, next);
   return next;
 }
 

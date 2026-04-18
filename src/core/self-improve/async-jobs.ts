@@ -8,6 +8,7 @@ import {
   maintainMemory,
   maintainSessionSummary,
 } from "./maintainer.js";
+import { readJsonFile, stringifyJson, writeJsonAtomic } from "../platform/fs.js";
 import { normalizeSessionValue } from "../session/metadata.js";
 import { safeString } from "./core/utils.js";
 
@@ -73,32 +74,21 @@ async function ensureStateDir(agentDir: string) {
   await fs.mkdir(stateDir(agentDir), { recursive: true });
 }
 
-async function writeJsonAtomic(filePath: string, value: unknown) {
-  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-  await fs.rename(tempPath, filePath);
-}
-
 async function appendJsonLine(filePath: string, value: unknown) {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
 }
 
 async function loadQueue(agentDir: string): Promise<MaintenanceJob[]> {
-  try {
-    const raw = await fs.readFile(queuePath(agentDir), "utf8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((item) => item && typeof item === "object")
-      : [];
-  } catch {
-    return [];
-  }
+  const parsed = readJsonFile<unknown>(queuePath(agentDir), []);
+  return Array.isArray(parsed)
+    ? parsed.filter((item) => item && typeof item === "object")
+    : [];
 }
 
 async function saveQueue(agentDir: string, jobs: MaintenanceJob[]) {
   await ensureStateDir(agentDir);
-  await writeJsonAtomic(queuePath(agentDir), jobs);
+  writeJsonAtomic(queuePath(agentDir), jobs);
 }
 
 function sameJob(a: Partial<MaintenanceJob>, b: Partial<MaintenanceJob>) {
@@ -214,7 +204,7 @@ async function acquireWorkerLock(agentDir: string) {
   try {
     const handle = await fs.open(filePath, "wx");
     await handle.writeFile(
-      `${JSON.stringify({ pid: process.pid, createdAt: nowIso() })}\n`,
+      stringifyJson({ pid: process.pid, createdAt: nowIso() }),
       "utf8",
     );
     return handle;
@@ -228,7 +218,7 @@ async function acquireWorkerLock(agentDir: string) {
         await fs.rm(filePath, { force: true });
         const handle = await fs.open(filePath, "wx");
         await handle.writeFile(
-          `${JSON.stringify({ pid: process.pid, createdAt: nowIso() })}\n`,
+          stringifyJson({ pid: process.pid, createdAt: nowIso() }),
           "utf8",
         );
         return handle;

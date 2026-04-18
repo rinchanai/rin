@@ -3,7 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
+import {
+  ensureDir,
+  readJsonFile,
+  stringifyJson,
+  writeJsonFile,
+} from "../platform/fs.js";
 import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
 import {
   appConfigDirForHome,
@@ -218,7 +223,7 @@ export function writeJsonFileWithPrivilege(
 ) {
   writeTextFileWithPrivilege(
     filePath,
-    `${JSON.stringify(value, null, 2)}\n`,
+    stringifyJson(value),
     ownerUser,
     ownerGroup,
   );

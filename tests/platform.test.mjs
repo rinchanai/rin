@@ -35,6 +35,10 @@ test("platform/fs writeJsonAtomic and readJsonFile roundtrip", async () => {
     fsMod.writeJsonAtomic(filePath, { ok: true, count: 2 });
     const parsed = fsMod.readJsonFile(filePath, null);
     assert.deepEqual(parsed, { ok: true, count: 2 });
+    assert.equal(
+      await fs.readFile(filePath, "utf8"),
+      '{\n  "ok": true,\n  "count": 2\n}\n',
+    );
   });
 });
 

@@ -1,7 +1,6 @@
-import fs from "node:fs";
 import path from "node:path";
 
-import { ensureDir } from "../platform/fs.js";
+import { writeJsonAtomic } from "../platform/fs.js";
 
 export type ChatMessagePart =
   | {
@@ -65,13 +64,8 @@ export function enqueueChatOutboxPayload(
   payload: ChatOutboxPayload,
 ) {
   const dir = chatOutboxDir(agentDir);
-  ensureDir(dir);
   const base = `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2)}`;
-  const tmp = path.join(dir, `${base}.tmp`);
   const filePath = path.join(dir, `${base}.json`);
-  fs.writeFileSync(tmp, `${JSON.stringify(payload, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  fs.renameSync(tmp, filePath);
+  writeJsonAtomic(filePath, payload);
   return filePath;
 }
