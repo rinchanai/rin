@@ -183,7 +183,6 @@ export class RpcInteractiveSession {
   private activeTurn: PendingRpcOperation | null = null;
   private rpcConnected = false;
   private remoteTurnRunning = false;
-  private preserveWorkingAfterCompaction = false;
   private disposed = false;
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
@@ -398,7 +397,6 @@ export class RpcInteractiveSession {
   async abort() {
     this.activeTurn = null;
     this.remoteTurnRunning = false;
-    this.preserveWorkingAfterCompaction = false;
     this.isCompacting = false;
     this.isBashRunning = false;
     this.retryAttempt = 0;
@@ -788,7 +786,6 @@ export class RpcInteractiveSession {
     this.rpcConnected = connected;
     if (!connected) {
       this.remoteTurnRunning = false;
-      this.preserveWorkingAfterCompaction = false;
       this.activeTurn = null;
     }
     this.syncStreamingState();
@@ -860,7 +857,6 @@ export class RpcInteractiveSession {
     }
 
     this.activeTurn = operation;
-    this.preserveWorkingAfterCompaction = false;
     this.syncStreamingState();
 
     const sendOperation = async () => {
@@ -895,7 +891,6 @@ export class RpcInteractiveSession {
     this.recoveryPending = true;
     this.activeTurn = null;
     this.remoteTurnRunning = false;
-    this.preserveWorkingAfterCompaction = false;
     this.isCompacting = false;
     this.isBashRunning = false;
     if (options?.transportClosed) {

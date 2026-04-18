@@ -15,7 +15,7 @@ export function applyRpcSessionState(
     sessionName?: string;
     state: any;
     activeTurn?: unknown;
-    preserveWorkingAfterCompaction?: boolean;
+    remoteTurnRunning?: boolean;
     setRemoteTurnRunning?: (running: boolean) => void;
   },
   state: any,
@@ -29,13 +29,12 @@ export function applyRpcSessionState(
   target.steeringMode = state?.steeringMode ?? target.steeringMode;
   target.followUpMode = state?.followUpMode ?? target.followUpMode;
   target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
+  // `get_state` is a coarse snapshot and may briefly drop `isStreaming` around
+  // auto-compaction. Once a local turn has reached the remote-working phase,
+  // keep that latch until a terminal event or disconnect clears it.
   const nextRemoteTurnRunning =
     Boolean(state?.isStreaming) ||
-    Boolean(
-      target.preserveWorkingAfterCompaction &&
-        target.activeTurn &&
-        !state?.isCompacting,
-    );
+    Boolean(target.activeTurn && target.remoteTurnRunning);
   if (typeof target.setRemoteTurnRunning === "function") {
     target.setRemoteTurnRunning(nextRemoteTurnRunning);
   } else {
