@@ -316,4 +316,38 @@ test("cron scheduler protects built-in tasks from public mutation", async () => 
   }
 });
 
+test("cron scheduler derives running from live execution without persisting it", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
+  const scheduler = new cronMod.CronScheduler({ agentDir });
+  try {
+    scheduler.start();
+    scheduler.upsertTask({
+      id: "cron_running_state",
+      trigger: { kind: "interval", intervalMs: 60_000 },
+      session: { mode: "dedicated" },
+      target: { kind: "shell_command", command: "echo ready" },
+    });
+
+    scheduler.activeExecutions.set("cron_running_state", {
+      startedAt: Date.now(),
+    });
+    scheduler.save();
+
+    const runningTask = scheduler.getTask("cron_running_state");
+    assert.equal(runningTask?.running, true);
+
+    const rows = JSON.parse(await fs.readFile(tasksFile, "utf8"));
+    const storedTask = rows.find((task) => task.id === "cron_running_state");
+    assert.ok(storedTask);
+    assert.equal(storedTask.running, false);
+
+    scheduler.activeExecutions.delete("cron_running_state");
+    assert.equal(scheduler.getTask("cron_running_state")?.running, false);
+  } finally {
+    scheduler.stop();
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 

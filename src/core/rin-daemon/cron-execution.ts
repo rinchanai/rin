@@ -250,7 +250,6 @@ export async function executeCronTask(
       error?.message || error || "cron_task_failed",
     ).trim();
   } finally {
-    task.running = false;
     task.lastFinishedAt = nowIso();
     task.updatedAt = nowIso();
     if (

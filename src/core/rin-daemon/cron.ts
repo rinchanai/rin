@@ -145,6 +145,10 @@ function assertMutableTask(task: CronTaskRecord | undefined) {
   if (task.builtIn) throw new Error(`cron_builtin_task_protected:${task.id}`);
 }
 
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export class CronScheduler {
   private tasks = new Map<string, CronTaskRecord>();
   private activeExecutions = new Map<string, { startedAt: number }>();
@@ -180,14 +184,14 @@ export class CronScheduler {
     return Array.from(this.tasks.values())
       .filter((task) => options.includeBuiltIn || !task.builtIn)
       .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
-      .map((task) => JSON.parse(JSON.stringify(this.snapshotTask(task))));
+      .map((task) => this.publicTask(task));
   }
 
   getTask(taskId: string, options: { includeBuiltIn?: boolean } = {}) {
     const task = this.tasks.get(taskId);
     if (!task) return undefined;
     if (!options.includeBuiltIn && task.builtIn) return undefined;
-    return JSON.parse(JSON.stringify(this.snapshotTask(task)));
+    return this.publicTask(task);
   }
 
   upsertTask(
@@ -341,7 +345,7 @@ export class CronScheduler {
         lastResultText: existing?.lastResultText,
         lastError: existing?.lastError,
         runCount: existing?.runCount ?? 0,
-        running: existing?.running ?? false,
+        running: false,
       },
       Date.now(),
     );
@@ -374,7 +378,7 @@ export class CronScheduler {
       lastResultText: existing?.lastResultText,
       lastError: existing?.lastError,
       runCount: existing?.runCount ?? 0,
-      running: existing?.running ?? false,
+      running: false,
     };
 
     if (task.completedAt) {
@@ -384,7 +388,7 @@ export class CronScheduler {
 
     this.tasks.set(task.id, task);
     this.save();
-    return JSON.parse(JSON.stringify(task));
+    return this.publicTask(task);
   }
 
   deleteTask(taskId: string) {
@@ -401,11 +405,10 @@ export class CronScheduler {
     task.completedAt = nowIso();
     task.completionReason = safeString(reason).trim() || "completed";
     task.enabled = false;
-    task.running = false;
     task.nextRunAt = undefined;
     task.updatedAt = nowIso();
     this.save();
-    return JSON.parse(JSON.stringify(task));
+    return this.publicTask(task);
   }
 
   pauseTask(taskId: string) {
@@ -417,7 +420,7 @@ export class CronScheduler {
     task.nextRunAt = undefined;
     task.updatedAt = nowIso();
     this.save();
-    return JSON.parse(JSON.stringify(task));
+    return this.publicTask(task);
   }
 
   resumeTask(taskId: string) {
@@ -429,7 +432,7 @@ export class CronScheduler {
     task.nextRunAt = computeNextRunAt(task, Date.now());
     task.updatedAt = nowIso();
     this.save();
-    return JSON.parse(JSON.stringify(task));
+    return this.publicTask(task);
   }
 
   private load() {
@@ -456,17 +459,28 @@ export class CronScheduler {
     this.save();
   }
 
-  private snapshotTask(task: CronTaskRecord) {
+  private snapshotTask(task: CronTaskRecord): CronTaskRecord {
     return {
       ...task,
       running: this.activeExecutions.has(task.id),
     };
   }
 
+  private persistedTask(task: CronTaskRecord): CronTaskRecord {
+    return {
+      ...task,
+      running: false,
+    };
+  }
+
+  private publicTask(task: CronTaskRecord): CronTaskRecord {
+    return cloneJson(this.snapshotTask(task));
+  }
+
   private save() {
     writeJsonAtomic(
       cronTasksPath(this.options.agentDir),
-      Array.from(this.tasks.values()).map((task) => this.snapshotTask(task)),
+      Array.from(this.tasks.values()).map((task) => this.persistedTask(task)),
     );
   }
 
@@ -497,7 +511,6 @@ export class CronScheduler {
         );
       for (const task of due) {
         this.activeExecutions.set(task.id, { startedAt: Date.now() });
-        task.running = true;
         task.lastStartedAt = nowIso();
         task.runCount += 1;
         task.lastError = undefined;
@@ -525,7 +538,6 @@ export class CronScheduler {
       }
     } finally {
       this.activeExecutions.delete(task.id);
-      task.running = false;
       this.save();
     }
   }
