@@ -1,6 +1,9 @@
 import fs from "node:fs";
-import path from "node:path";
 
+import {
+  dropLegacyChatSettings,
+  normalizeStoredChatSettings,
+} from "../chat/settings.js";
 import {
   defaultHomeForUser,
   installAuthPath,
@@ -11,6 +14,75 @@ import {
   legacyInstallerLocatorPathForHome,
   legacyInstallerManifestPath,
 } from "./paths.js";
+
+function resolveInstallOwner(
+  targetUser: string,
+  findSystemUser: (targetUser: string) => any,
+) {
+  const target = findSystemUser(targetUser) as any;
+  const ownerUser = target?.name || targetUser;
+  return {
+    ownerUser,
+    ownerGroup: target?.gid,
+    ownerHome: target?.home || defaultHomeForUser(ownerUser),
+  };
+}
+
+function writeInstallerJson(
+  filePath: string,
+  value: unknown,
+  options: {
+    elevated?: boolean;
+    ownerUser?: string;
+    ownerGroup?: string | number;
+  },
+  deps: {
+    writeJsonFileWithPrivilege: (
+      filePath: string,
+      value: unknown,
+      ownerUser?: string,
+      ownerGroup?: string | number,
+    ) => void;
+    writeJsonFile: (filePath: string, value: unknown) => void;
+  },
+) {
+  if (options.elevated) {
+    deps.writeJsonFileWithPrivilege(
+      filePath,
+      value,
+      options.ownerUser,
+      options.ownerGroup,
+    );
+    return;
+  }
+  deps.writeJsonFile(filePath, value);
+}
+
+function removeFile(
+  filePath: string,
+  elevated: boolean,
+  runPrivileged: (command: string, args: string[]) => void,
+) {
+  try {
+    if (elevated) {
+      runPrivileged("rm", ["-f", filePath]);
+      return;
+    }
+    fs.rmSync(filePath, { force: true });
+  } catch {}
+}
+
+function mergeInstalledChatSettings(settingsJson: any, chatConfig?: any) {
+  const normalized = normalizeStoredChatSettings(settingsJson, {
+    ensureChat: Boolean(chatConfig && typeof chatConfig === "object"),
+  });
+  if (!chatConfig || typeof chatConfig !== "object") return normalized;
+  for (const [adapterKey, adapterConfig] of Object.entries(chatConfig)) {
+    if (adapterConfig === undefined) continue;
+    normalized.chat[adapterKey] = adapterConfig;
+  }
+  return normalized;
+}
 
 export function reconcileInstallerManifest(
   options: {
@@ -40,10 +112,10 @@ export function reconcileInstallerManifest(
     runPrivileged: (command: string, args: string[]) => void;
   },
 ) {
-  const target = deps.findSystemUser(options.targetUser) as any;
-  const ownerUser = target?.name || options.targetUser;
-  const ownerGroup = target?.gid;
-  const ownerHome = target?.home || defaultHomeForUser(ownerUser);
+  const { ownerUser, ownerGroup, ownerHome } = resolveInstallOwner(
+    options.targetUser,
+    deps.findSystemUser,
+  );
   if (!options.elevated) deps.ensureDir(options.installDir);
 
   const manifestPath = installerManifestPath(options.installDir);
@@ -73,9 +145,7 @@ export function reconcileInstallerManifest(
   if (options.thinkingLevel)
     manifestJson.defaultThinkingLevel = options.thinkingLevel;
   if (options.chatConfig) manifestJson.chat = options.chatConfig;
-  if (manifestJson.koishi && typeof manifestJson.koishi === "object") {
-    delete manifestJson.koishi;
-  }
+  dropLegacyChatSettings(manifestJson);
   manifestJson.updatedAt = new Date().toISOString();
 
   const manifestPaths = Array.from(
@@ -85,29 +155,20 @@ export function reconcileInstallerManifest(
     new Set([legacyManifestPath, legacyLocatorManifestPath]),
   );
 
-  if (options.elevated) {
-    for (const filePath of manifestPaths) {
-      deps.writeJsonFileWithPrivilege(
-        filePath,
-        manifestJson,
+  for (const filePath of manifestPaths) {
+    writeInstallerJson(
+      filePath,
+      manifestJson,
+      {
+        elevated: options.elevated,
         ownerUser,
         ownerGroup,
-      );
-    }
-    for (const filePath of legacyManifestPaths) {
-      try {
-        deps.runPrivileged("rm", ["-f", filePath]);
-      } catch {}
-    }
-  } else {
-    for (const filePath of manifestPaths) {
-      deps.writeJsonFile(filePath, manifestJson);
-    }
-    for (const filePath of legacyManifestPaths) {
-      try {
-        fs.rmSync(filePath, { force: true });
-      } catch {}
-    }
+      },
+      deps,
+    );
+  }
+  for (const filePath of legacyManifestPaths) {
+    removeFile(filePath, Boolean(options.elevated), deps.runPrivileged);
   }
 
   return {
@@ -140,35 +201,24 @@ export function normalizeInstalledChatSettings(
     writeJsonFile: (filePath: string, value: unknown) => void;
   },
 ) {
-  const target = deps.findSystemUser(options.targetUser) as any;
-  const ownerUser = target?.name || options.targetUser;
-  const ownerGroup = target?.gid;
-  const settingsPath = installSettingsPath(options.installDir);
-  const settingsJson = deps.readInstallerJson<any>(
-    settingsPath,
-    {},
-    Boolean(options.elevated),
+  const { ownerUser, ownerGroup } = resolveInstallOwner(
+    options.targetUser,
+    deps.findSystemUser,
   );
-  if (
-    !settingsJson.chat &&
-    settingsJson.koishi &&
-    typeof settingsJson.koishi === "object"
-  ) {
-    settingsJson.chat = JSON.parse(JSON.stringify(settingsJson.koishi));
-  }
-  if (settingsJson.koishi && typeof settingsJson.koishi === "object") {
-    delete settingsJson.koishi;
-  }
-  if (options.elevated) {
-    deps.writeJsonFileWithPrivilege(
-      settingsPath,
-      settingsJson,
+  const settingsPath = installSettingsPath(options.installDir);
+  const settingsJson = normalizeStoredChatSettings(
+    deps.readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated)),
+  );
+  writeInstallerJson(
+    settingsPath,
+    settingsJson,
+    {
+      elevated: options.elevated,
       ownerUser,
       ownerGroup,
-    );
-  } else {
-    deps.writeJsonFile(settingsPath, settingsJson);
-  }
+    },
+    deps,
+  );
   return { settingsPath };
 }
 
@@ -206,40 +256,21 @@ export async function persistInstallerOutputs(
     runPrivileged: (command: string, args: string[]) => void;
   },
 ) {
-  const target = deps.findSystemUser(options.targetUser) as any;
-  const ownerUser = target?.name || options.targetUser;
-  const ownerGroup = target?.gid;
+  const { ownerUser, ownerGroup } = resolveInstallOwner(
+    options.targetUser,
+    deps.findSystemUser,
+  );
   if (!options.elevated) deps.ensureDir(options.installDir);
 
   const settingsPath = installSettingsPath(options.installDir);
-  const settingsJson = deps.readInstallerJson<any>(
-    settingsPath,
-    {},
-    Boolean(options.elevated),
+  const settingsJson = mergeInstalledChatSettings(
+    deps.readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated)),
+    options.chatConfig,
   );
   if (options.provider) settingsJson.defaultProvider = options.provider;
   if (options.modelId) settingsJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     settingsJson.defaultThinkingLevel = options.thinkingLevel;
-  if (
-    !settingsJson.chat &&
-    settingsJson.koishi &&
-    typeof settingsJson.koishi === "object"
-  ) {
-    settingsJson.chat = JSON.parse(JSON.stringify(settingsJson.koishi));
-  }
-  if (options.chatConfig && typeof options.chatConfig === "object") {
-    settingsJson.chat ||= {};
-    for (const [adapterKey, adapterConfig] of Object.entries(
-      options.chatConfig,
-    )) {
-      if (adapterConfig === undefined) continue;
-      settingsJson.chat[adapterKey] = adapterConfig;
-    }
-  }
-  if (settingsJson.koishi && typeof settingsJson.koishi === "object") {
-    delete settingsJson.koishi;
-  }
 
   const authPath = installAuthPath(options.installDir);
   const authJson = deps.readInstallerJson<any>(
@@ -269,23 +300,26 @@ export async function persistInstallerOutputs(
     deps,
   );
 
-  if (options.elevated) {
-    deps.writeJsonFileWithPrivilege(
-      settingsPath,
-      settingsJson,
+  writeInstallerJson(
+    settingsPath,
+    settingsJson,
+    {
+      elevated: options.elevated,
       ownerUser,
       ownerGroup,
-    );
-    deps.writeJsonFileWithPrivilege(
-      authPath,
-      nextAuthJson,
+    },
+    deps,
+  );
+  writeInstallerJson(
+    authPath,
+    nextAuthJson,
+    {
+      elevated: options.elevated,
       ownerUser,
       ownerGroup,
-    );
-  } else {
-    deps.writeJsonFile(settingsPath, settingsJson);
-    deps.writeJsonFile(authPath, nextAuthJson);
-  }
+    },
+    deps,
+  );
   deps.writeJsonFile(launcherPath, launcherJson);
   const launchers = deps.writeLaunchersForUser(
     options.currentUser,

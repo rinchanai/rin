@@ -9,6 +9,7 @@ import YAML from "yaml";
 import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
 import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
+import { getStoredChatConfigRoot } from "./settings.js";
 
 export { ensureDir, readJsonFile, writeJsonFile };
 
@@ -120,14 +121,8 @@ function applyAdapterPlugins(
   });
 }
 
-function chatConfigRoot(settings: any) {
-  if (settings && typeof settings.chat === "object") return settings.chat;
-  if (settings && typeof settings.koishi === "object") return settings.koishi;
-  return {};
-}
-
 function normalizeCustomChatAdapters(settings: any) {
-  const chat = chatConfigRoot(settings);
+  const chat = getStoredChatConfigRoot(settings);
   const items = Array.isArray(chat?.customAdapters) ? chat.customAdapters : [];
   return items
     .map((item) => {
@@ -175,7 +170,7 @@ export function buildChatConfigFromSettings(settings: any) {
     } as Record<string, any>,
   };
 
-  const chat = chatConfigRoot(settings);
+  const chat = getStoredChatConfigRoot(settings);
 
   for (const adapter of listChatBridgeAdapterSpecs()) {
     applyAdapterPlugins(
@@ -209,7 +204,7 @@ export type ChatRuntimeAdapterEntry = {
 };
 
 export function listChatRuntimeAdapterEntries(settings: any) {
-  const chat = chatConfigRoot(settings);
+  const chat = getStoredChatConfigRoot(settings);
   const entries: ChatRuntimeAdapterEntry[] = [];
 
   for (const adapter of listChatBridgeAdapterSpecs()) {

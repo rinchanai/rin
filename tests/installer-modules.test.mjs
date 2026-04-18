@@ -137,7 +137,8 @@ test("persist reconcileInstallerManifest writes primary and locator manifests fo
       {
         findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
         ensureDir: async () => {},
-        readInstallerJson: (_filePath, fallback) => fallback,
+        readInstallerJson: (_filePath, fallback) =>
+          fallback === null ? { koishi: { telegram: { token: "legacy" } } } : fallback,
         writeJsonFileWithPrivilege: () => {},
         writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
         runPrivileged: () => {},
@@ -156,6 +157,7 @@ test("persist reconcileInstallerManifest writes primary and locator manifests fo
     assert.equal(writes[0].value.defaultProvider, "openai");
     assert.equal(writes[0].value.defaultModel, "gpt");
     assert.equal(writes[0].value.defaultThinkingLevel, "medium");
+    assert.equal("koishi" in writes[0].value, false);
   });
 });
 
@@ -205,5 +207,59 @@ test("persist normalizeInstalledChatSettings migrates legacy koishi settings", a
     assert.ok(writes[0].filePath.endsWith(path.join(dir, "settings.json")));
     assert.deepEqual(writes[0].value.chat, { telegram: { token: "x" } });
     assert.equal("koishi" in writes[0].value, false);
+  });
+});
+
+test("persist persistInstallerOutputs normalizes malformed chat roots before merging adapters", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const writes = [];
+    const result = await persist.persistInstallerOutputs(
+      {
+        currentUser: "operator",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        chatConfig: { telegram: { token: "fresh-token" } },
+        authData: { apiKey: "secret" },
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: () => {},
+        readInstallerJson: (filePath, fallback) => {
+          if (filePath === path.join(dir, "settings.json")) {
+            return { chat: "broken", koishi: { telegram: { token: "legacy" } } };
+          }
+          if (filePath === path.join(dir, "auth.json")) {
+            return { existing: true };
+          }
+          return fallback;
+        },
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        launcherMetadataPathForUser: () => path.join(dir, "launcher.json"),
+        readJsonFile: (_filePath, fallback) => fallback,
+        writeLaunchersForUser: () => ({
+          rinPath: "/tmp/rin",
+          rinInstallPath: "/tmp/rin-install",
+        }),
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    const settingsWrite = writes.find((entry) => entry.filePath === result.settingsPath);
+    assert.ok(settingsWrite);
+    assert.deepEqual(settingsWrite.value.chat, {
+      telegram: { token: "fresh-token" },
+    });
+    assert.equal("koishi" in settingsWrite.value, false);
+
+    const authWrite = writes.find((entry) => entry.filePath === result.authPath);
+    assert.ok(authWrite);
+    assert.deepEqual(authWrite.value, { existing: true, apiKey: "secret" });
   });
 });

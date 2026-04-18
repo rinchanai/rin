@@ -7,6 +7,7 @@ import {
   type ChatBridgePromptApi,
 } from "../chat-bridge/setup.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
+import { normalizeStoredChatSettings } from "./settings.js";
 import { readJsonFile, writeJsonFile } from "./support.js";
 
 const CHAT_BRIDGE_COMMAND_CANCELLED = "chat_bridge_setup_cancelled";
@@ -92,15 +93,10 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
       const prompt = createUiPromptApi(ctx.ui);
       const profile = resolveRuntimeProfile();
       const settingsPath = path.join(profile.agentDir, "settings.json");
-      const settings = readJsonFile<any>(settingsPath, {});
-      if (
-        !settings.chat &&
-        settings.koishi &&
-        typeof settings.koishi === "object"
-      ) {
-        settings.chat = JSON.parse(JSON.stringify(settings.koishi));
-      }
-      settings.chat ||= {};
+      const settings = normalizeStoredChatSettings(
+        readJsonFile<any>(settingsPath, {}),
+        { ensureChat: true },
+      );
 
       let result;
       try {
@@ -131,9 +127,6 @@ export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
       }
 
       settings.chat[adapterKey] = result.chatConfig[adapterKey];
-      if (settings.koishi && typeof settings.koishi === "object") {
-        delete settings.koishi;
-      }
       writeJsonFile(settingsPath, settings);
 
       const lines = [
