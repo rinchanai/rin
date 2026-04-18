@@ -103,6 +103,21 @@ test("chat chat helpers derive incoming text from elements", () => {
     "第一行\n\n第二行",
   );
   assert.equal(
+    helpers.elementsToText([
+      { type: "at", attrs: { id: "1" } },
+      {
+        type: "p",
+        children: [
+          { type: "text", attrs: { content: " 混合" } },
+          { type: "br" },
+          { type: "text", attrs: { content: "元素" } },
+        ],
+      },
+      { type: "text", attrs: { content: " 结束" } },
+    ]),
+    "混合\n元素\n结束",
+  );
+  assert.equal(
     helpers.elementsToText([{ type: "img", attrs: { file: "demo.png" } }]),
     "",
   );

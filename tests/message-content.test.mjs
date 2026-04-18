@@ -10,11 +10,13 @@ const rootDir = path.resolve(
   "..",
 );
 const messageContent = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "message-content.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "message-content.js")).href
 );
 
 async function withTempDir(fn) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-message-content-test-"));
+  const dir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-message-content-test-"),
+  );
   try {
     await fn(dir);
   } finally {
@@ -23,7 +25,10 @@ async function withTempDir(fn) {
 }
 
 test("message content helpers extract text with optional thinking and trimming", () => {
-  assert.equal(messageContent.extractMessageText("  raw text  "), "  raw text  ");
+  assert.equal(
+    messageContent.extractMessageText("  raw text  "),
+    "  raw text  ",
+  );
   assert.equal(
     messageContent.extractMessageText([
       { type: "thinking", thinking: "plan" },
@@ -40,6 +45,26 @@ test("message content helpers extract text with optional thinking and trimming",
       { includeThinking: true, trim: true },
     ),
     "plan done",
+  );
+  assert.equal(
+    messageContent.extractMessageText([
+      { type: "at", attrs: { id: "1" } },
+      { type: "text", attrs: { content: " 第一行" } },
+      { type: "br" },
+      {
+        type: "paragraph",
+        children: [
+          { type: "text", attrs: { content: "第二行" } },
+          { type: "br" },
+          { type: "text", attrs: { content: " 继续" } },
+        ],
+      },
+    ]),
+    " 第一行\n第二行\n 继续\n",
+  );
+  assert.equal(
+    messageContent.normalizeMessageText(" 第一行\n\n\n  第二行\t \n第三行  "),
+    "第一行\n\n第二行\n第三行",
   );
 });
 
@@ -71,7 +96,12 @@ test("message content helpers extract tool call parts, names, and counts", () =>
       unnamedCall,
       { type: "toolCall", id: "4", name: "bash" },
     ]),
-    [bashCall, readCall, unnamedCall, { type: "toolCall", id: "4", name: "bash" }],
+    [
+      bashCall,
+      readCall,
+      unnamedCall,
+      { type: "toolCall", id: "4", name: "bash" },
+    ],
   );
   assert.deepEqual(
     messageContent.extractToolCallNames([

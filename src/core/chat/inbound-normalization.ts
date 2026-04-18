@@ -1,5 +1,12 @@
-import { normalizeElementSummary, type StoredChatMessage } from "./message-store.js";
+import {
+  normalizeElementSummary,
+  type StoredChatMessage,
+} from "./message-store.js";
 import { composeChatKey } from "./support.js";
+import {
+  extractMessageText,
+  normalizeMessageText,
+} from "../message-content.js";
 import { safeString } from "../text-utils.js";
 
 export type ChatInboxRouting = {
@@ -26,38 +33,6 @@ function cloneJsonValue<T>(value: T): T | undefined {
 function normalizePlatformTimestamp(value: unknown) {
   const timestamp = Number(value);
   return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
-function collectIncomingElementText(element: any): string {
-  if (!element) return "";
-  if (typeof element === "string") return element;
-  if (Array.isArray(element)) {
-    return element.map((item) => collectIncomingElementText(item)).join("");
-  }
-  if (typeof element !== "object") return "";
-  const type = safeString(element?.type || "").toLowerCase();
-  const attrs =
-    element?.attrs && typeof element.attrs === "object" ? element.attrs : {};
-  if (type === "text") return safeString(attrs.content || element.text || "");
-  if (type === "br") return "\n";
-  const children = Array.isArray(element?.children) ? element.children : [];
-  const childText = children
-    .map((item) => collectIncomingElementText(item))
-    .join("");
-  if (type === "p" || type === "paragraph") {
-    return childText ? `${childText}\n` : "";
-  }
-  return childText;
-}
-
-function normalizeIncomingText(text: string) {
-  return safeString(text)
-    .replace(/\r\n?/g, "\n")
-    .replace(/[\t ]+\n/g, "\n")
-    .replace(/\n[\t ]+/g, "\n")
-    .replace(/[^\S\n]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 export function pickUserId(session: any) {
@@ -121,11 +96,7 @@ export function mentionLike(session: any) {
 }
 
 export function elementsToText(elements: any) {
-  return normalizeIncomingText(
-    (Array.isArray(elements) ? elements : [])
-      .map((element) => collectIncomingElementText(element))
-      .join(""),
-  );
+  return normalizeMessageText(extractMessageText(elements));
 }
 
 export function pickSenderNickname(session: any) {
@@ -166,7 +137,9 @@ export function pickMessageId(session: any) {
 }
 
 export function pickReplyToMessageId(session: any) {
-  return safeString(session?.quote?.messageId || session?.quote?.id || "").trim();
+  return safeString(
+    session?.quote?.messageId || session?.quote?.id || "",
+  ).trim();
 }
 
 export function summarizeQuote(session: any) {
@@ -194,7 +167,9 @@ export function getChatId(session: any) {
   if (channelId) return channelId;
   const userId = pickUserId(session);
   if (!userId) return "";
-  return safeString(session?.platform) === "onebot" ? `private:${userId}` : userId;
+  return safeString(session?.platform) === "onebot"
+    ? `private:${userId}`
+    : userId;
 }
 
 export function getChatType(session: any): "private" | "group" {
@@ -204,7 +179,8 @@ export function getChatType(session: any): "private" | "group" {
 export function serializeChatInboxSession(session: any) {
   return {
     platform: safeString(session?.platform).trim() || undefined,
-    selfId: safeString(session?.selfId || session?.bot?.selfId).trim() || undefined,
+    selfId:
+      safeString(session?.selfId || session?.bot?.selfId).trim() || undefined,
     channelId: safeString(session?.channelId).trim() || undefined,
     guildId: safeString(session?.guildId).trim() || undefined,
     userId: pickUserId(session) || undefined,
@@ -248,13 +224,16 @@ export function buildInboundStoredChatMessageInput(
   options: { receivedAt?: string; trust?: string } = {},
 ): Omit<StoredChatMessage, "version" | "recordKey"> | null {
   const platform = safeString(session?.platform || "").trim();
-  const botId = safeString(session?.selfId || session?.bot?.selfId || "").trim();
+  const botId = safeString(
+    session?.selfId || session?.bot?.selfId || "",
+  ).trim();
   const chatId = getChatId(session);
   const chatKey = composeChatKey(platform, chatId, botId);
   const messageId = pickMessageId(session);
   if (!chatKey || !messageId) return null;
   const userId = pickUserId(session);
-  const receivedAt = safeString(options.receivedAt).trim() || new Date().toISOString();
+  const receivedAt =
+    safeString(options.receivedAt).trim() || new Date().toISOString();
   const trust = safeString(options.trust).trim() || undefined;
   return {
     messageId,
@@ -273,7 +252,8 @@ export function buildInboundStoredChatMessageInput(
     trust,
     text: elementsToText(elements) || undefined,
     rawContent: safeString(session?.content || "").trim() || undefined,
-    strippedContent: safeString(session?.stripped?.content || "").trim() || undefined,
+    strippedContent:
+      safeString(session?.stripped?.content || "").trim() || undefined,
     elements: normalizeElementSummary(elements),
     quote: summarizeQuote(session),
   };

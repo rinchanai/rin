@@ -3,6 +3,40 @@ import path from "node:path";
 
 import { safeString } from "./text-utils.js";
 
+function collectMessagePartText(
+  content: any,
+  { includeThinking = false }: { includeThinking?: boolean } = {},
+): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => collectMessagePartText(part, { includeThinking }))
+      .join("");
+  }
+  if (typeof content !== "object") return "";
+
+  const type = safeString(content?.type).toLowerCase();
+  const attrs =
+    content?.attrs && typeof content.attrs === "object" ? content.attrs : {};
+  if (type === "text") {
+    return safeString(content.text ?? attrs.content ?? "");
+  }
+  if (includeThinking && type === "thinking") {
+    return safeString(content.thinking);
+  }
+  if (type === "br") return "\n";
+
+  const children = Array.isArray(content?.children) ? content.children : [];
+  const childText = children
+    .map((part) => collectMessagePartText(part, { includeThinking }))
+    .join("");
+  if (type === "p" || type === "paragraph") {
+    return childText ? `${childText}\n` : "";
+  }
+  return childText;
+}
+
 export function extractMessageText(
   content: any,
   {
@@ -10,23 +44,18 @@ export function extractMessageText(
     trim = false,
   }: { includeThinking?: boolean; trim?: boolean } = {},
 ) {
-  const text =
-    typeof content === "string"
-      ? content
-      : Array.isArray(content)
-        ? content
-            .map((part) => {
-              if (!part || typeof part !== "object") return "";
-              if (part.type === "text") return safeString(part.text);
-              if (includeThinking && part.type === "thinking") {
-                return safeString(part.thinking);
-              }
-              return "";
-            })
-            .filter(Boolean)
-            .join("")
-        : "";
+  const text = collectMessagePartText(content, { includeThinking });
   return trim ? text.trim() : text;
+}
+
+export function normalizeMessageText(text: unknown) {
+  return safeString(text)
+    .replace(/\r\n?/g, "\n")
+    .replace(/[\t ]+\n/g, "\n")
+    .replace(/\n[\t ]+/g, "\n")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function extractMessageObjectParts(content: any, type: string) {
