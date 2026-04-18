@@ -54,13 +54,6 @@ function isAgentAlreadyProcessingError(error: unknown) {
   );
 }
 
-function formatElapsedSince(startedAt: number) {
-  return prettyMilliseconds(Math.max(0, Date.now() - startedAt), {
-    secondsDecimalDigits: 0,
-    unitCount: 2,
-  });
-}
-
 function summarizePromptText(text: string, limit = 80) {
   const value = safeString(text).replace(/\s+/g, " ").trim();
   if (!value) return "";
@@ -376,7 +369,12 @@ export class ChatController {
 
     const processing = this.state.processing;
     if (processing?.startedAt) {
-      lines.push(`Since: ${formatElapsedSince(processing.startedAt)}`);
+      lines.push(
+        `Since: ${prettyMilliseconds(Math.max(0, Date.now() - processing.startedAt), {
+          secondsDecimalDigits: 0,
+          unitCount: 2,
+        })}`,
+      );
     }
     const replyToMessageId = this.currentReplyToMessageId();
     if (replyToMessageId) lines.push(`Reply target: ${replyToMessageId}`);
