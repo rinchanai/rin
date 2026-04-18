@@ -1,10 +1,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  ensureExtension as ensureSharedExtension,
+  ensureFileName,
+  extensionFromMimeType as extensionFromSharedMimeType,
+  isImageMimeType,
+  isImageName,
+} from "../chat/file-utils.js";
 import { ensureDir } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 
-export { ensureDir, safeString };
+export { ensureDir, ensureFileName, isImageMimeType, isImageName, safeString };
+
+export function extensionFromMimeType(mimeType: string) {
+  return extensionFromSharedMimeType(mimeType, { allTextMimeTypes: true });
+}
+
+export function ensureExtension(fileName: string, mimeType = "") {
+  return ensureSharedExtension(fileName, mimeType, {
+    allTextMimeTypes: true,
+  });
+}
 
 export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -18,32 +35,6 @@ export function compactObject<T extends Record<string, any>>(value: T) {
     next[key] = item;
   }
   return next as T;
-}
-
-export function extensionFromMimeType(mimeType: string) {
-  const mime = safeString(mimeType).toLowerCase().trim();
-  if (!mime) return "";
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  if (mime === "image/gif") return ".gif";
-  if (mime === "application/pdf") return ".pdf";
-  if (mime.startsWith("text/")) return ".txt";
-  return "";
-}
-
-export function ensureFileName(name: string, fallback = "attachment") {
-  const base = safeString(name)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "_")
-    .replace(/^\.+$/, "");
-  return base || fallback;
-}
-
-export function ensureExtension(fileName: string, mimeType = "") {
-  if (path.extname(fileName)) return fileName;
-  const ext = extensionFromMimeType(mimeType);
-  return ext ? `${fileName}${ext}` : fileName;
 }
 
 export function normalizeNode(

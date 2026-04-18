@@ -2,16 +2,29 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { extname } from "node:path";
 
 import YAML from "yaml";
 
 import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
 import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
+import {
+  ensureExtension as ensureSharedExtension,
+  ensureFileName,
+  extensionFromMimeType as extensionFromSharedMimeType,
+  fileNameFromUrl,
+} from "./file-utils.js";
 import { getStoredChatConfigRoot } from "./settings.js";
 
-export { ensureDir, readJsonFile, writeJsonFile };
+export { ensureDir, readJsonFile, writeJsonFile, ensureFileName, fileNameFromUrl };
+
+export function extensionFromMimeType(mimeType: string) {
+  return extensionFromSharedMimeType(mimeType);
+}
+
+export function ensureExtension(fileName: string, mimeType = "") {
+  return ensureSharedExtension(fileName, mimeType);
+}
 
 function normalizeChatAdapterConfig(
   value: any,
@@ -623,39 +636,3 @@ export function findBot(app: any, platform: string, botId = "") {
   );
 }
 
-export function ensureFileName(name: string, fallback = "attachment") {
-  const base = safeString(name)
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "_")
-    .replace(/^\.+$/, "");
-  return base || fallback;
-}
-
-export function fileNameFromUrl(url: string, fallback = "attachment") {
-  try {
-    const pathname = new URL(url).pathname;
-    const name = decodeURIComponent(path.basename(pathname));
-    return ensureFileName(name, fallback);
-  } catch {
-    return ensureFileName(path.basename(url), fallback);
-  }
-}
-
-export function extensionFromMimeType(mimeType: string) {
-  const mime = safeString(mimeType).toLowerCase().trim();
-  if (!mime) return "";
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  if (mime === "image/gif") return ".gif";
-  if (mime === "application/pdf") return ".pdf";
-  if (mime === "text/plain") return ".txt";
-  return "";
-}
-
-export function ensureExtension(fileName: string, mimeType = "") {
-  const ext = extname(fileName);
-  if (ext) return fileName;
-  const inferred = extensionFromMimeType(mimeType);
-  return inferred ? `${fileName}${inferred}` : fileName;
-}

@@ -11,20 +11,14 @@ import {
   extractQuoteMessageId,
   fileUrl,
   flattenNodes,
+  isImageMimeType,
+  isImageName,
   normalizeNode,
   readBinaryFromNode,
   renderPlainTextFromNodes,
   safeString,
   sleep,
 } from "./common.js";
-
-function isImageMimeType(mimeType: string) {
-  return safeString(mimeType).toLowerCase().startsWith("image/");
-}
-
-function isImageName(name: string) {
-  return /\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(safeString(name));
-}
 
 function emitBotStatus(app: any, bot: any, status: number) {
   if (Number(bot?.status) === status) return;
