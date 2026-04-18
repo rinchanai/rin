@@ -1,7 +1,8 @@
 import {
   getChatBridgeAdapterSpec,
-  listChatBridgeAdapterSpecs,
+  listChatBridgeAdapterPromptOptions,
 } from "./adapters.js";
+import type { ChatBridgeBuiltInAdapterKey } from "./adapters.js";
 
 export type ChatBridgePromptApi = {
   ensureNotCancelled: <T>(value: T | symbol | undefined | null) => T;
@@ -370,28 +371,37 @@ async function promptMinecraftConfig(prompt: ChatBridgePromptApi) {
   };
 }
 
+type ChatBridgeAdapterPromptResult = {
+  detail: string;
+  config: any;
+};
+
+type ChatBridgeAdapterPromptHandler = (
+  prompt: ChatBridgePromptApi,
+) => Promise<ChatBridgeAdapterPromptResult>;
+
+const CHAT_BRIDGE_ADAPTER_PROMPTS: Record<
+  ChatBridgeBuiltInAdapterKey,
+  ChatBridgeAdapterPromptHandler
+> = {
+  telegram: promptTelegramConfig,
+  onebot: promptOneBotConfig,
+  qq: promptQQConfig,
+  lark: promptLarkConfig,
+  discord: promptDiscordConfig,
+  slack: promptSlackConfig,
+  minecraft: promptMinecraftConfig,
+};
+
 async function promptChatBridgeAdapterConfig(
   prompt: ChatBridgePromptApi,
-  adapterKey: string,
+  adapterKey: ChatBridgeBuiltInAdapterKey,
 ) {
-  switch (adapterKey) {
-    case "telegram":
-      return await promptTelegramConfig(prompt);
-    case "onebot":
-      return await promptOneBotConfig(prompt);
-    case "qq":
-      return await promptQQConfig(prompt);
-    case "lark":
-      return await promptLarkConfig(prompt);
-    case "discord":
-      return await promptDiscordConfig(prompt);
-    case "slack":
-      return await promptSlackConfig(prompt);
-    case "minecraft":
-      return await promptMinecraftConfig(prompt);
-    default:
-      throw new Error(`unsupported_chat_bridge_adapter:${adapterKey}`);
+  const promptAdapter = CHAT_BRIDGE_ADAPTER_PROMPTS[adapterKey];
+  if (!promptAdapter) {
+    throw new Error(`unsupported_chat_bridge_adapter:${adapterKey}`);
   }
+  return await promptAdapter(prompt);
 }
 
 export async function promptChatBridgeSetup(
@@ -420,18 +430,7 @@ export async function promptChatBridgeSetup(
     prompt.ensureNotCancelled(
       await prompt.select({
         message: "Choose a chat platform.",
-        options: listChatBridgeAdapterSpecs().map((item) => ({
-          value: item.key,
-          label: item.label,
-          hint:
-            item.key === "telegram"
-              ? "bot token"
-              : item.key === "onebot"
-                ? "endpoint + protocol"
-                : item.key === "slack"
-                  ? "app token + bot token"
-                  : "guided setup",
-        })),
+        options: listChatBridgeAdapterPromptOptions(),
       }),
     ),
   ).trim();
@@ -440,7 +439,10 @@ export async function promptChatBridgeSetup(
     throw new Error(`unsupported_chat_bridge_adapter:${adapterKey}`);
 
   chatDescription = adapterSpec.label;
-  const configured = await promptChatBridgeAdapterConfig(prompt, adapterKey);
+  const configured = await promptChatBridgeAdapterConfig(
+    prompt,
+    adapterSpec.key,
+  );
   chatDetail = configured.detail;
   chatConfig = configured.config;
 

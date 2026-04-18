@@ -1,7 +1,16 @@
+export type ChatBridgeBuiltInAdapterKey =
+  | "telegram"
+  | "onebot"
+  | "qq"
+  | "lark"
+  | "discord"
+  | "slack"
+  | "minecraft";
+
 export type ChatBridgeAdapterSetupKind = "telegram" | "onebot" | "json";
 
 export type ChatBridgeAdapterSpec = {
-  key: string;
+  key: ChatBridgeBuiltInAdapterKey;
   label: string;
   pluginKey: string;
   packageName: string;
@@ -10,6 +19,7 @@ export type ChatBridgeAdapterSpec = {
   installer: {
     kind: ChatBridgeAdapterSetupKind;
     placeholder?: string;
+    selectHint?: string;
   };
 };
 
@@ -28,6 +38,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
       kind: "telegram",
       placeholder:
         '{"token":"123456:ABCDEF...","protocol":"polling","slash":true}',
+      selectHint: "bot token",
     },
   },
   {
@@ -45,6 +56,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
       kind: "onebot",
       placeholder:
         '{"endpoint":"ws://127.0.0.1:3001","protocol":"ws","selfId":"","token":""}',
+      selectHint: "endpoint + protocol",
     },
   },
   {
@@ -60,6 +72,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     installer: {
       kind: "json",
       placeholder: '{"id":"...","secret":"...","token":"..."}',
+      selectHint: "guided setup",
     },
   },
   {
@@ -74,6 +87,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     installer: {
       kind: "json",
       placeholder: '{"platform":"feishu","appId":"...","appSecret":"..."}',
+      selectHint: "guided setup",
     },
   },
   {
@@ -82,7 +96,11 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     pluginKey: "adapter-discord",
     packageName: "builtin:discord",
     defaults: {},
-    installer: { kind: "json", placeholder: '{"token":"..."}' },
+    installer: {
+      kind: "json",
+      placeholder: '{"token":"..."}',
+      selectHint: "guided setup",
+    },
   },
   {
     key: "slack",
@@ -95,6 +113,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
     installer: {
       kind: "json",
       placeholder: '{"protocol":"ws","token":"xapp-...","botToken":"xoxb-..."}',
+      selectHint: "app token + bot token",
     },
   },
   {
@@ -113,6 +132,7 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
       kind: "json",
       placeholder:
         '{"url":"ws://127.0.0.1:8080","selfId":"minecraft","serverName":"Survival","token":"..."}',
+      selectHint: "guided setup",
     },
   },
 ];
@@ -126,7 +146,17 @@ export function listChatBridgeAdapterSpecs() {
 }
 
 export function getChatBridgeAdapterSpec(key: string) {
-  return CHAT_BRIDGE_ADAPTER_SPEC_MAP.get(String(key || "").trim());
+  return CHAT_BRIDGE_ADAPTER_SPEC_MAP.get(
+    String(key || "").trim() as ChatBridgeBuiltInAdapterKey,
+  );
+}
+
+export function listChatBridgeAdapterPromptOptions() {
+  return CHAT_BRIDGE_ADAPTER_SPECS.map((item) => ({
+    value: item.key,
+    label: item.label,
+    hint: item.installer.selectHint,
+  }));
 }
 
 export function listSupportedChatBridgeLabels() {

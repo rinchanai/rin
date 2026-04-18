@@ -12,6 +12,30 @@ const rootDir = path.resolve(
 const support = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href
 );
+const adapters = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat-bridge", "adapters.js"))
+    .href
+);
+
+test("chat bridge adapter prompt options come from shared built-in specs", () => {
+  const options = adapters.listChatBridgeAdapterPromptOptions();
+
+  assert.deepEqual(options.find((item) => item.value === "telegram"), {
+    value: "telegram",
+    label: "Telegram",
+    hint: "bot token",
+  });
+  assert.deepEqual(options.find((item) => item.value === "onebot"), {
+    value: "onebot",
+    label: "OneBot",
+    hint: "endpoint + protocol",
+  });
+  assert.deepEqual(options.find((item) => item.value === "slack"), {
+    value: "slack",
+    label: "Slack",
+    hint: "app token + bot token",
+  });
+});
 
 test("chat bridge adapter config materialization covers built-in official adapters", () => {
   const config = support.buildChatConfigFromSettings({

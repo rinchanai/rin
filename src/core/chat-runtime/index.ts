@@ -7,6 +7,10 @@ import WebSocket from "ws";
 
 import { enqueueChatInboxItem } from "../chat/inbox.js";
 import { getChatId, pickMessageId } from "../chat/chat-helpers.js";
+import {
+  getChatBridgeAdapterSpec,
+  type ChatBridgeBuiltInAdapterKey,
+} from "../chat-bridge/adapters.js";
 import { composeChatKey } from "../chat/support.js";
 import {
   DiscordAdapter,
@@ -1504,6 +1508,26 @@ class OneBotAdapter {
   }
 }
 
+type BuiltInChatRuntimeAdapterConstructor = new (
+  app: ChatRuntimeApp,
+  dataDir: string,
+  config: Record<string, any>,
+  logger: any,
+) => any;
+
+const BUILT_IN_CHAT_RUNTIME_ADAPTER_FACTORIES: Record<
+  ChatBridgeBuiltInAdapterKey,
+  BuiltInChatRuntimeAdapterConstructor
+> = {
+  telegram: TelegramAdapter,
+  onebot: OneBotAdapter,
+  qq: QQAdapter,
+  lark: LarkAdapter,
+  discord: DiscordAdapter,
+  slack: SlackAdapter,
+  minecraft: MinecraftAdapter,
+};
+
 export function createChatRuntimeApp(agentDir?: string) {
   return new ChatRuntimeApp(agentDir);
 }
@@ -1527,45 +1551,19 @@ export function instantiateBuiltInChatRuntimeAdapters(
 ) {
   const created: Array<{ key: string; name: string }> = [];
   for (const entry of input.adapterEntries) {
-    try {
-      if (entry.key === "telegram") {
-        new TelegramAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
-      if (entry.key === "onebot") {
-        new OneBotAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
-      if (entry.key === "qq") {
-        new QQAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
-      if (entry.key === "lark") {
-        new LarkAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
-      if (entry.key === "discord") {
-        new DiscordAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
-      if (entry.key === "slack") {
-        new SlackAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
-      if (entry.key === "minecraft") {
-        new MinecraftAdapter(app, input.dataDir, entry.config, input.logger);
-        created.push({ key: entry.key, name: entry.name });
-        continue;
-      }
+    const adapterSpec = getChatBridgeAdapterSpec(entry.key);
+    const Adapter = adapterSpec
+      ? BUILT_IN_CHAT_RUNTIME_ADAPTER_FACTORIES[adapterSpec.key]
+      : undefined;
+    if (!Adapter) {
       input.logger?.warn?.(
         `chat runtime adapter not implemented key=${entry.key} name=${entry.name}`,
       );
+      continue;
+    }
+    try {
+      new Adapter(app, input.dataDir, entry.config, input.logger);
+      created.push({ key: entry.key, name: entry.name });
     } catch (error: any) {
       input.logger?.warn?.(
         `chat runtime adapter init failed key=${entry.key} name=${entry.name} err=${safeString(error?.message || error)}`,
