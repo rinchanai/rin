@@ -58,12 +58,8 @@ import {
   createChatRuntimeH,
   instantiateBuiltInChatRuntimeAdapters,
 } from "../chat-runtime/index.js";
-import {
-  composeChatKey,
-  listChatRuntimeAdapterEntries,
-  loadIdentity,
-  trustOf,
-} from "./support.js";
+import { listChatRuntimeAdapterEntries } from "./runtime-config.js";
+import { composeChatKey, loadIdentity, trustOf } from "./support.js";
 import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
@@ -373,8 +369,8 @@ export async function startChatBridge(
     if (!nextChatKey || !nextMessageId) return false;
     return Boolean(
       safeString(
-        getChatMessage(runtime.agentDir, nextChatKey, nextMessageId)?.processedAt ||
-          "",
+        getChatMessage(runtime.agentDir, nextChatKey, nextMessageId)
+          ?.processedAt || "",
       ).trim(),
     );
   };
@@ -575,7 +571,11 @@ export async function startChatBridge(
         );
         const result = command
           ? await handleCommandSession(queuedSession, command, identity)
-          : await handleChatTurnSession(queuedSession, queuedElements, identity);
+          : await handleChatTurnSession(
+              queuedSession,
+              queuedElements,
+              identity,
+            );
         if (result?.retry) {
           requeueChatInboxFile(runtime.agentDir, claimedPath, envelope, {
             delayMs: computeChatInboxRetryDelay(envelope.attemptCount + 1),
@@ -623,7 +623,9 @@ export async function startChatBridge(
         restoreChatInboxFile(runtime.agentDir, claimedPath, envelope);
         continue;
       }
-      const controller = envelope.chatKey ? getController(envelope.chatKey) : null;
+      const controller = envelope.chatKey
+        ? getController(envelope.chatKey)
+        : null;
       if (controller?.claimsInboundMessage(envelope.messageId)) {
         completeChatInboxFile(claimedPath);
         continue;
@@ -708,13 +710,12 @@ export async function startChatBridge(
     const affectChatBinding = payload?.affectChatBinding !== false;
     const disposeAfterTurn = payload?.disposeAfterTurn === true;
     if (!text) throw new Error("chat_text_required");
-    const useBoundController =
-      Boolean(
-        chatKey &&
-          controllerKey === "default" &&
-          deliveryEnabled &&
-          affectChatBinding,
-      );
+    const useBoundController = Boolean(
+      chatKey &&
+      controllerKey === "default" &&
+      deliveryEnabled &&
+      affectChatBinding,
+    );
     const controller = useBoundController
       ? getController(chatKey)
       : getDetachedController(controllerKey, {
@@ -863,7 +864,8 @@ export async function startChatBridge(
       clearInterval(typingPollTimer);
       if (inboxPollTimer) clearInterval(inboxPollTimer);
       for (const controller of controllers.values()) controller.dispose();
-      for (const controller of detachedControllers.values()) controller.dispose();
+      for (const controller of detachedControllers.values())
+        controller.dispose();
       try {
         await app.stop();
       } catch {}

@@ -12,29 +12,43 @@ const rootDir = path.resolve(
 const support = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href
 );
-const adapters = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "chat-bridge", "adapters.js"))
+const runtimeConfig = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "runtime-config.js"))
     .href
+);
+const adapters = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "chat-bridge", "adapters.js"),
+  ).href
 );
 
 test("chat bridge adapter prompt options come from shared built-in specs", () => {
   const options = adapters.listChatBridgeAdapterPromptOptions();
 
-  assert.deepEqual(options.find((item) => item.value === "telegram"), {
-    value: "telegram",
-    label: "Telegram",
-    hint: "bot token",
-  });
-  assert.deepEqual(options.find((item) => item.value === "onebot"), {
-    value: "onebot",
-    label: "OneBot",
-    hint: "endpoint + protocol",
-  });
-  assert.deepEqual(options.find((item) => item.value === "slack"), {
-    value: "slack",
-    label: "Slack",
-    hint: "app token + bot token",
-  });
+  assert.deepEqual(
+    options.find((item) => item.value === "telegram"),
+    {
+      value: "telegram",
+      label: "Telegram",
+      hint: "bot token",
+    },
+  );
+  assert.deepEqual(
+    options.find((item) => item.value === "onebot"),
+    {
+      value: "onebot",
+      label: "OneBot",
+      hint: "endpoint + protocol",
+    },
+  );
+  assert.deepEqual(
+    options.find((item) => item.value === "slack"),
+    {
+      value: "slack",
+      label: "Slack",
+      hint: "app token + bot token",
+    },
+  );
 });
 
 test("chat bridge adapter config materialization covers built-in official adapters", () => {
@@ -165,6 +179,110 @@ test("chat bridge runtime adapter entries use internal built-in runtime adapters
       { key: "onebot", builtIn: true },
       { key: "minecraft", builtIn: true },
     ],
+  );
+});
+
+test("chat runtime config expands multi-entry adapters and strips setup-only metadata", () => {
+  const settings = {
+    chat: {
+      telegram: [
+        {
+          name: "Alpha Bot",
+          token: "telegram-alpha",
+          owners: ["owner"],
+          ownerUserIds: ["42"],
+          botId: "tg-alpha",
+        },
+        {
+          name: "Beta/Bot",
+          token: "telegram-beta",
+          slash: false,
+        },
+      ],
+      customAdapters: [
+        {
+          packageName: "chat-bridge-adapter-example",
+          pluginKey: "adapter-example",
+          defaults: { region: "cn" },
+          config: [
+            {
+              name: "Corp A",
+              endpoint: "https://a.example.com",
+              owners: ["owner"],
+            },
+            {
+              name: "Corp/B",
+              endpoint: "https://b.example.com",
+              ownerUserIds: ["7"],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const config = runtimeConfig.buildChatConfigFromSettings(settings);
+  const entries = runtimeConfig.listChatRuntimeAdapterEntries(settings);
+
+  assert.deepEqual(config.plugins["adapter-telegram"], {
+    protocol: "polling",
+    token: "telegram-alpha",
+    slash: true,
+  });
+  assert.deepEqual(config.plugins["adapter-telegram:Beta-Bot"], {
+    protocol: "polling",
+    token: "telegram-beta",
+    slash: false,
+  });
+  assert.deepEqual(config.plugins["adapter-example"], {
+    region: "cn",
+    endpoint: "https://a.example.com",
+  });
+  assert.deepEqual(config.plugins["adapter-example:Corp-B"], {
+    region: "cn",
+    endpoint: "https://b.example.com",
+  });
+  assert.deepEqual(
+    entries
+      .filter((item) => item.key === "example")
+      .map((item) => ({
+        key: item.key,
+        name: item.name,
+        config: item.config,
+        builtIn: item.builtIn,
+        packageName: item.packageName,
+      })),
+    [
+      {
+        key: "example",
+        name: "Corp-A",
+        config: { region: "cn", endpoint: "https://a.example.com" },
+        builtIn: false,
+        packageName: "chat-bridge-adapter-example",
+      },
+      {
+        key: "example",
+        name: "Corp-B",
+        config: { region: "cn", endpoint: "https://b.example.com" },
+        builtIn: false,
+        packageName: "chat-bridge-adapter-example",
+      },
+    ],
+  );
+});
+
+test("chat support re-exports chat runtime config helpers", () => {
+  assert.equal(
+    support.buildChatConfigFromSettings,
+    runtimeConfig.buildChatConfigFromSettings,
+  );
+  assert.equal(
+    support.listChatRuntimeAdapterEntries,
+    runtimeConfig.listChatRuntimeAdapterEntries,
+  );
+  assert.equal(
+    support.buildChatRuntimePackageJson,
+    runtimeConfig.buildChatRuntimePackageJson,
   );
 });
 

@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
-import YAML from "yaml";
-
-import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
 import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 import {
@@ -14,9 +10,23 @@ import {
   extensionFromMimeType as extensionFromSharedMimeType,
   fileNameFromUrl,
 } from "./file-utils.js";
-import { getStoredChatConfigRoot } from "./settings.js";
 
-export { ensureDir, readJsonFile, writeJsonFile, ensureFileName, fileNameFromUrl };
+export {
+  ensureDir,
+  readJsonFile,
+  writeJsonFile,
+  ensureFileName,
+  fileNameFromUrl,
+};
+export {
+  buildChatConfigFromSettings,
+  buildChatRuntimePackageJson,
+  ensureChatRuntimeDependencies,
+  listChatRuntimeAdapterEntries,
+  materializeChatConfig,
+  shouldInstallChatRuntimeDependencies,
+} from "./runtime-config.js";
+export type { ChatRuntimeAdapterEntry } from "./runtime-config.js";
 
 export function extensionFromMimeType(mimeType: string) {
   return extensionFromSharedMimeType(mimeType);
@@ -24,338 +34,6 @@ export function extensionFromMimeType(mimeType: string) {
 
 export function ensureExtension(fileName: string, mimeType = "") {
   return ensureSharedExtension(fileName, mimeType);
-}
-
-function normalizeChatAdapterConfig(
-  value: any,
-  defaults: Record<string, any> = {},
-) {
-  const current =
-    value && typeof value === "object" && !Array.isArray(value)
-      ? JSON.parse(JSON.stringify(value))
-      : {};
-  return { ...defaults, ...current };
-}
-
-function sanitizeAdapterName(value: any, fallback: string) {
-  const raw = safeString(value)
-    .trim()
-    .replace(/[^A-Za-z0-9._-]+/g, "-");
-  return raw || fallback;
-}
-
-function looksLikeSingleAdapterConfig(value: any) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const keys = Object.keys(value);
-  if (!keys.length) return true;
-  const singleConfigKeys = new Set([
-    "name",
-    "enabled",
-    "endpoint",
-    "selfId",
-    "token",
-    "protocol",
-    "slash",
-    "owners",
-    "ownerUserIds",
-    "botId",
-  ]);
-  if (keys.some((key) => singleConfigKeys.has(key))) return true;
-  return keys.some((key) => {
-    const entry = value[key];
-    return !entry || typeof entry !== "object" || Array.isArray(entry);
-  });
-}
-
-function normalizeAdapterEntries(
-  value: any,
-  defaults: Record<string, any>,
-  fallbackPrefix: string,
-) {
-  const rawEntries: Array<{ name: string; config: Record<string, any> }> = [];
-
-  if (Array.isArray(value)) {
-    value.forEach((entry, index) => {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return;
-      rawEntries.push({
-        name: sanitizeAdapterName(
-          (entry as any).name,
-          `${fallbackPrefix}-${index + 1}`,
-        ),
-        config: JSON.parse(JSON.stringify(entry)),
-      });
-    });
-  } else if (looksLikeSingleAdapterConfig(value)) {
-    rawEntries.push({
-      name: sanitizeAdapterName(value && value.name, fallbackPrefix),
-      config:
-        value && typeof value === "object"
-          ? JSON.parse(JSON.stringify(value))
-          : {},
-    });
-  } else if (value && typeof value === "object") {
-    for (const [name, entry] of Object.entries(value)) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      rawEntries.push({
-        name: sanitizeAdapterName(
-          (entry as any).name || name,
-          safeString(name) || fallbackPrefix,
-        ),
-        config: JSON.parse(JSON.stringify(entry)),
-      });
-    }
-  }
-
-  return rawEntries
-    .filter((entry) => entry.config.enabled !== false)
-    .map((entry) => {
-      const config = normalizeChatAdapterConfig(entry.config, defaults);
-      delete (config as any).name;
-      delete (config as any).owners;
-      delete (config as any).ownerUserIds;
-      delete (config as any).botId;
-      return { name: entry.name, config };
-    });
-}
-
-function applyAdapterPlugins(
-  plugins: Record<string, any>,
-  baseName: string,
-  value: any,
-  defaults: Record<string, any>,
-  fallbackPrefix: string,
-) {
-  const entries = normalizeAdapterEntries(value, defaults, fallbackPrefix);
-  if (!entries.length) return;
-  entries.forEach((entry, index) => {
-    const key =
-      index === 0 ? baseName : `${baseName}:${entry.name || index + 1}`;
-    plugins[key] = entry.config;
-  });
-}
-
-function normalizeCustomChatAdapters(settings: any) {
-  const chat = getStoredChatConfigRoot(settings);
-  const items = Array.isArray(chat?.customAdapters) ? chat.customAdapters : [];
-  return items
-    .map((item) => {
-      const adapter =
-        item && typeof item === "object" && !Array.isArray(item) ? item : null;
-      const packageName = safeString(adapter?.packageName).trim();
-      const version = safeString(adapter?.version).trim() || "latest";
-      const pluginKey = safeString(adapter?.pluginKey).trim();
-      const config = adapter?.config;
-      const defaults =
-        adapter?.defaults &&
-        typeof adapter.defaults === "object" &&
-        !Array.isArray(adapter.defaults)
-          ? JSON.parse(JSON.stringify(adapter.defaults))
-          : {};
-      const fallbackPrefix =
-        safeString(adapter?.name).trim() ||
-        pluginKey.replace(/^adapter-/, "") ||
-        packageName.replace(/^@/, "").replace(/[^A-Za-z0-9._-]+/g, "-");
-      const enabled = adapter?.enabled !== false;
-      return {
-        packageName,
-        version,
-        pluginKey,
-        config,
-        defaults,
-        fallbackPrefix,
-        enabled,
-      };
-    })
-    .filter(
-      (item) =>
-        item.enabled && item.packageName && item.pluginKey && item.config,
-    );
-}
-
-export function buildChatConfigFromSettings(settings: any) {
-  const config = {
-    name: "rin",
-    prefix: ["/"],
-    prefixMode: "strict",
-    plugins: {
-      "proxy-agent": {},
-      http: {},
-    } as Record<string, any>,
-  };
-
-  const chat = getStoredChatConfigRoot(settings);
-
-  for (const adapter of listChatBridgeAdapterSpecs()) {
-    applyAdapterPlugins(
-      config.plugins,
-      adapter.pluginKey,
-      chat?.[adapter.key],
-      adapter.defaults,
-      adapter.key,
-    );
-  }
-
-  for (const adapter of normalizeCustomChatAdapters(settings)) {
-    applyAdapterPlugins(
-      config.plugins,
-      adapter.pluginKey,
-      adapter.config,
-      adapter.defaults,
-      adapter.fallbackPrefix,
-    );
-  }
-
-  return config;
-}
-
-export type ChatRuntimeAdapterEntry = {
-  key: string;
-  name: string;
-  config: Record<string, any>;
-  builtIn: boolean;
-  packageName?: string;
-};
-
-export function listChatRuntimeAdapterEntries(settings: any) {
-  const chat = getStoredChatConfigRoot(settings);
-  const entries: ChatRuntimeAdapterEntry[] = [];
-
-  for (const adapter of listChatBridgeAdapterSpecs()) {
-    for (const entry of normalizeAdapterEntries(
-      chat?.[adapter.key],
-      adapter.defaults,
-      adapter.key,
-    )) {
-      entries.push({
-        key: adapter.key,
-        name: entry.name,
-        config: entry.config,
-        builtIn: true,
-      });
-    }
-  }
-
-  for (const adapter of normalizeCustomChatAdapters(settings)) {
-    for (const entry of normalizeAdapterEntries(
-      adapter.config,
-      adapter.defaults,
-      adapter.fallbackPrefix,
-    )) {
-      entries.push({
-        key: adapter.fallbackPrefix,
-        name: entry.name,
-        config: entry.config,
-        builtIn: false,
-        packageName: adapter.packageName,
-      });
-    }
-  }
-
-  return entries;
-}
-
-export function buildChatRuntimePackageJson(settings: any) {
-  const dependencies: Record<string, string> = {};
-
-  for (const adapter of normalizeCustomChatAdapters(settings)) {
-    dependencies[adapter.packageName] = adapter.version;
-  }
-
-  const sortedDependencies = Object.fromEntries(
-    Object.entries(dependencies).sort(([a], [b]) => a.localeCompare(b)),
-  );
-  return {
-    name: "rin-chat-runtime",
-    private: true,
-    version: "0.0.0",
-    dependencies: sortedDependencies,
-  };
-}
-
-function dependencyInstallPath(rootDir: string, packageName: string) {
-  const normalized = safeString(packageName).trim();
-  if (!normalized) return "";
-  return path.join(rootDir, "node_modules", ...normalized.split("/"));
-}
-
-export function shouldInstallChatRuntimeDependencies(
-  rootDir: string,
-  settings: any,
-) {
-  const runtimePackage = buildChatRuntimePackageJson(settings);
-  const dependencies = runtimePackage.dependencies || {};
-  if (!Object.keys(dependencies).length) return false;
-  const packageJsonPath = path.join(rootDir, "package.json");
-  const lockPath = path.join(rootDir, "package-lock.json");
-  const expectedText = `${JSON.stringify(runtimePackage, null, 2)}\n`;
-  const currentText = fs.existsSync(packageJsonPath)
-    ? fs.readFileSync(packageJsonPath, "utf8")
-    : "";
-  if (currentText !== expectedText) return true;
-  if (!fs.existsSync(lockPath)) return true;
-  return Object.keys(dependencies).some(
-    (packageName) =>
-      !fs.existsSync(dependencyInstallPath(rootDir, packageName)),
-  );
-}
-
-export function ensureChatRuntimeDependencies(rootDir: string, settings: any) {
-  const runtimePackage = buildChatRuntimePackageJson(settings);
-  const dependencies = runtimePackage.dependencies || {};
-  if (!shouldInstallChatRuntimeDependencies(rootDir, settings)) {
-    return {
-      installed: false,
-      dependencies,
-      rootDir,
-    };
-  }
-  if (!Object.keys(dependencies).length) {
-    return {
-      installed: false,
-      dependencies,
-      rootDir,
-    };
-  }
-  ensureDir(rootDir);
-  const packageJsonPath = path.join(rootDir, "package.json");
-  writeJsonFile(packageJsonPath, runtimePackage);
-  try {
-    execFileSync(
-      "npm",
-      [
-        "install",
-        "--no-audit",
-        "--no-fund",
-        "--omit=dev",
-        "--legacy-peer-deps",
-      ],
-      {
-        cwd: rootDir,
-        stdio: "pipe",
-        encoding: "utf8",
-      },
-    );
-  } catch (error: any) {
-    const detail = safeString(
-      error?.stderr || error?.stdout || error?.message || error,
-    ).trim();
-    throw new Error(`chat_runtime_install_failed${detail ? `:${detail}` : ""}`);
-  }
-  return {
-    installed: true,
-    dependencies,
-    rootDir,
-  };
-}
-
-export function materializeChatConfig(configPath: string, settings: any) {
-  const rootDir = path.dirname(configPath);
-  ensureDir(rootDir);
-  const config = buildChatConfigFromSettings(settings);
-  fs.writeFileSync(configPath, YAML.stringify(config), "utf8");
-  const packageJsonPath = path.join(rootDir, "package.json");
-  writeJsonFile(packageJsonPath, buildChatRuntimePackageJson(settings));
-  return { configPath, config };
 }
 
 function platformRequiresBotId(platform: string) {
@@ -635,4 +313,3 @@ export function findBot(app: any, platform: string, botId = "") {
     null
   );
 }
-
