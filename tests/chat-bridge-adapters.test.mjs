@@ -163,6 +163,38 @@ test("chat bridge config materialization includes custom adapters and runtime pa
   });
 });
 
+test("chat runtime package dependencies stay sorted and latest config wins per package", () => {
+  const runtimePackage = support.buildChatRuntimePackageJson({
+    chat: {
+      customAdapters: [
+        {
+          packageName: "z-chat-bridge-adapter",
+          version: "^1.0.0",
+          pluginKey: "adapter-z-first",
+          config: { token: "first" },
+        },
+        {
+          packageName: "@scope/a-chat-bridge-adapter",
+          version: "^2.0.0",
+          pluginKey: "adapter-a",
+          config: { token: "a" },
+        },
+        {
+          packageName: "z-chat-bridge-adapter",
+          version: "^3.0.0",
+          pluginKey: "adapter-z-second",
+          config: { token: "second" },
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(runtimePackage.dependencies, {
+    "@scope/a-chat-bridge-adapter": "^2.0.0",
+    "z-chat-bridge-adapter": "^3.0.0",
+  });
+});
+
 test("chat bridge runtime adapter entries use internal built-in runtime adapters", () => {
   const entries = support.listChatRuntimeAdapterEntries({
     chat: {
