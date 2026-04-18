@@ -33,6 +33,93 @@ test("worker helpers split command args and format stats", () => {
   assert.ok(text.includes("Tool Calls: 2"));
 });
 
+test("worker helpers expose normalized slash commands and oauth state", () => {
+  const commands = workerHelpers.getSlashCommands({
+    extensionRunner: {
+      getRegisteredCommands: () => [
+        {
+          invocationName: "  resume  ",
+          description: "  Resume a session.  ",
+        },
+        {
+          name: "resume",
+          description: "duplicate entry should be ignored",
+        },
+      ],
+    },
+    promptTemplates: [
+      {
+        name: "  polish  ",
+        description: "  Rewrite the final reply.  ",
+        sourceInfo: { file: "prompt-a" },
+      },
+    ],
+    resourceLoader: {
+      getSkills: () => ({
+        skills: [
+          {
+            name: "  cleanup  ",
+            description: "  Remove stale files.  ",
+            sourceInfo: { file: "skill-a" },
+          },
+        ],
+      }),
+    },
+    modelRegistry: {
+      authStorage: {
+        list: () => ["gemini"],
+        get: () => ({ type: "api_key", key: "secret" }),
+        getOAuthProviders: () => [
+          { id: "gemini", name: "Gemini", usesCallbackServer: 0 },
+        ],
+      },
+    },
+  });
+
+  assert.equal(commands.filter((command) => command.name === "resume").length, 1);
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.name === "polish" &&
+        command.description === "Rewrite the final reply." &&
+        command.source === "prompt",
+    ),
+  );
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.name === "skill:cleanup" &&
+        command.description === "Remove stale files." &&
+        command.source === "skill",
+    ),
+  );
+  assert.deepEqual(
+    workerHelpers.getOAuthState({
+      modelRegistry: {
+        authStorage: {
+          list: () => ["gemini"],
+          get: () => ({ type: "api_key", key: "secret" }),
+          getOAuthProviders: () => [
+            { id: "gemini", name: "Gemini", usesCallbackServer: 0 },
+          ],
+        },
+      },
+    }),
+    {
+      credentials: {
+        gemini: { type: "api_key" },
+      },
+      providers: [
+        {
+          id: "gemini",
+          name: "Gemini",
+          usesCallbackServer: false,
+        },
+      ],
+    },
+  );
+});
+
 test("runBuiltinCommand uses runtime for session replacement commands", async () => {
   const calls = [];
   const runtime = {

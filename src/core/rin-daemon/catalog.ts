@@ -6,7 +6,14 @@ import {
 } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { BuiltinModuleHost } from "../builtins/host.js";
-import { getBuiltinSlashCommands } from "./worker-helpers.js";
+import {
+  dedupeSlashCommands,
+  getBuiltinSlashCommands,
+  getExtensionSlashCommands,
+  getOAuthStateFromStorage,
+  getPromptSlashCommands,
+  getSkillSlashCommands,
+} from "./catalog-helpers.js";
 
 async function createCatalogContext(
   options: {
@@ -88,41 +95,19 @@ export async function listCatalogCommands(
 ) {
   const { resourceLoader, extensionRunner, builtinHost } =
     await createCatalogContext(options);
-  const prompts = resourceLoader.getPrompts().prompts;
-  const skills = resourceLoader.getSkills().skills;
-  const seen = new Set<string>();
-  return [
+  return dedupeSlashCommands([
     ...getBuiltinSlashCommands(),
-    ...extensionRunner.getRegisteredCommands().map((command: any) => ({
-      name: String(command?.invocationName || command?.name || "").trim(),
-      description: String(command?.description || "").trim(),
-      source: "extension",
-      sourceInfo: command?.sourceInfo,
-    })),
-    ...builtinHost.getRegisteredCommands().map((command: any) => ({
-      name: String(command?.invocationName || command?.name || "").trim(),
-      description: String(command?.description || "").trim(),
-      source: "builtin_module",
-      sourceInfo: command?.sourceInfo,
-    })),
-    ...prompts.map((template: any) => ({
-      name: String(template?.name || "").trim(),
-      description: String(template?.description || "").trim(),
-      source: "prompt",
-      sourceInfo: template?.sourceInfo,
-    })),
-    ...skills.map((skill: any) => ({
-      name: `skill:${String(skill?.name || "").trim()}`,
-      description: String(skill?.description || "").trim(),
-      source: "skill",
-      sourceInfo: skill?.sourceInfo,
-    })),
-  ].filter((item) => {
-    const name = String(item?.name || "").trim();
-    if (!name || seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
+    ...getExtensionSlashCommands(
+      extensionRunner.getRegisteredCommands(),
+      "extension",
+    ),
+    ...getExtensionSlashCommands(
+      builtinHost.getRegisteredCommands(),
+      "builtin_module",
+    ),
+    ...getPromptSlashCommands(resourceLoader.getPrompts().prompts),
+    ...getSkillSlashCommands(resourceLoader.getSkills().skills),
+  ]);
 }
 
 export async function listCatalogModels(
@@ -144,16 +129,5 @@ export async function getCatalogOAuthState(
   } = {},
 ) {
   const { authStorage } = await createCatalogContext(options);
-  const credentials = Object.fromEntries(
-    authStorage.list().map((providerId: string) => {
-      const credential = authStorage.get(providerId);
-      return [providerId, credential ? { type: credential.type } : undefined];
-    }),
-  );
-  const providers = authStorage.getOAuthProviders().map((provider: any) => ({
-    id: provider.id,
-    name: provider.name,
-    usesCallbackServer: Boolean(provider.usesCallbackServer),
-  }));
-  return { credentials, providers };
+  return getOAuthStateFromStorage(authStorage);
 }

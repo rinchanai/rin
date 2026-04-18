@@ -1,6 +1,13 @@
-import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import { loadRinChangelogModule } from "../rin-lib/loader.js";
 import { listBoundSessions } from "../session/factory.js";
+import {
+  getBuiltinSlashCommands,
+  getExtensionSlashCommands,
+  getOAuthStateFromStorage,
+  getPromptSlashCommands,
+  getSkillSlashCommands,
+  dedupeSlashCommands,
+} from "./catalog-helpers.js";
 
 export function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -23,68 +30,22 @@ export function getSessionState(session: any) {
   };
 }
 
-export function getBuiltinSlashCommands() {
-  return BUILTIN_SLASH_COMMANDS.map((command) => ({
-    name: String(command?.name || "").trim(),
-    description: String(command?.description || "").trim(),
-    source: "builtin",
-  })).filter((command) => command.name);
-}
-
-function dedupeSlashCommands(commands: any[]) {
-  const seen = new Set<string>();
-  return commands.filter((command) => {
-    const name = String(command?.name || "").trim();
-    if (!name || seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
-}
+export { getBuiltinSlashCommands } from "./catalog-helpers.js";
 
 export function getSlashCommands(session: any) {
-  const commands: any[] = [...getBuiltinSlashCommands()];
-  for (const command of session.extensionRunner?.getRegisteredCommands?.() ??
-    []) {
-    commands.push({
-      name: command.invocationName,
-      description: command.description,
-      source: "extension",
-      sourceInfo: command.sourceInfo,
-    });
-  }
-  for (const template of session.promptTemplates ?? []) {
-    commands.push({
-      name: template.name,
-      description: template.description,
-      source: "prompt",
-      sourceInfo: template.sourceInfo,
-    });
-  }
-  for (const skill of session.resourceLoader?.getSkills?.().skills ?? []) {
-    commands.push({
-      name: `skill:${skill.name}`,
-      description: skill.description,
-      source: "skill",
-      sourceInfo: skill.sourceInfo,
-    });
-  }
-  return dedupeSlashCommands(commands);
+  return dedupeSlashCommands([
+    ...getBuiltinSlashCommands(),
+    ...getExtensionSlashCommands(
+      session.extensionRunner?.getRegisteredCommands?.() ?? [],
+      "extension",
+    ),
+    ...getPromptSlashCommands(session.promptTemplates ?? []),
+    ...getSkillSlashCommands(session.resourceLoader?.getSkills?.().skills ?? []),
+  ]);
 }
 
 export function getOAuthState(session: any) {
-  const authStorage = session.modelRegistry.authStorage;
-  const credentials = Object.fromEntries(
-    authStorage.list().map((providerId: string) => {
-      const credential = authStorage.get(providerId);
-      return [providerId, credential ? { type: credential.type } : undefined];
-    }),
-  );
-  const providers = authStorage.getOAuthProviders().map((provider: any) => ({
-    id: provider.id,
-    name: provider.name,
-    usesCallbackServer: Boolean(provider.usesCallbackServer),
-  }));
-  return { credentials, providers };
+  return getOAuthStateFromStorage(session.modelRegistry.authStorage);
 }
 
 export function splitCommandArgs(text: string) {
