@@ -25,6 +25,11 @@ import {
   systemdUserUnitPathForHome,
 } from "./paths.js";
 import { canConnectDaemonSocket } from "../rin-daemon/client.js";
+import {
+  findManagedSystemdJournalSnapshot,
+  findManagedSystemdStatusSnapshot,
+  tryManagedSystemdAction,
+} from "./managed-service.js";
 
 function currentSystemUser() {
   try {
@@ -101,9 +106,7 @@ export function resolveDaemonEntryForInstall(installDir: string) {
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
-  throw new Error(
-    `rin_installed_daemon_entry_missing:${candidates.join(",")}`,
-  );
+  throw new Error(`rin_installed_daemon_entry_missing:${candidates.join(",")}`);
 }
 
 export function buildLaunchdPlist(
@@ -307,7 +310,10 @@ export function systemdUserContext(
     target,
     uid,
     runtimeDir,
-    systemctl: firstExistingCommand(["/usr/bin/systemctl", "/bin/systemctl"], ""),
+    systemctl: firstExistingCommand(
+      ["/usr/bin/systemctl", "/bin/systemctl"],
+      "",
+    ),
     userEnv,
     units: managedSystemdUnitCandidates(targetUser),
   };
@@ -352,50 +358,31 @@ export function collectDaemonFailureDetails(
   if (process.platform === "linux") {
     const { systemctl, userEnv, units } = systemdUserContext(targetUser, deps);
     if (systemctl) {
-      for (const unit of units) {
-        try {
-          const status = captureCommandForTargetUser(
-            targetUser,
-            systemctl,
-            ["--user", "status", unit, "--no-pager", "-l"],
-            userEnv,
-          );
-          lines.push(
-            `serviceUnit=${unit}`,
-            "serviceStatus:",
-            ...String(status).trim().split(/\r?\n/).slice(0, 20),
-          );
-          break;
-        } catch (error: any) {
-          const text = String(
-            error?.stdout || error?.stderr || error?.message || "",
-          ).trim();
-          if (text) {
-            lines.push(
-              `serviceUnit=${unit}`,
-              "serviceStatus:",
-              ...text.split(/\r?\n/).slice(0, 20),
-            );
-            break;
-          }
-        }
+      const status = findManagedSystemdStatusSnapshot(units, (unit) =>
+        captureCommandForTargetUser(
+          targetUser,
+          systemctl,
+          ["--user", "status", unit, "--no-pager", "-l"],
+          userEnv,
+        ),
+      );
+      if (status) {
+        lines.push(
+          `serviceUnit=${status.unit}`,
+          "serviceStatus:",
+          ...status.lines,
+        );
       }
-      for (const unit of units) {
-        try {
-          const journal = captureCommandForTargetUser(
-            targetUser,
-            "journalctl",
-            ["--user", "-u", unit, "-n", "20", "--no-pager"],
-            userEnv,
-          );
-          if (String(journal || "").trim()) {
-            lines.push(
-              `serviceJournal=${unit}`,
-              ...String(journal).trim().split(/\r?\n/).slice(-20),
-            );
-            break;
-          }
-        } catch {}
+      const journal = findManagedSystemdJournalSnapshot(units, (unit) =>
+        captureCommandForTargetUser(
+          targetUser,
+          "journalctl",
+          ["--user", "-u", unit, "-n", "20", "--no-pager"],
+          userEnv,
+        ),
+      );
+      if (journal) {
+        lines.push(`serviceJournal=${journal.unit}`, ...journal.lines);
       }
     }
   }
@@ -414,39 +401,39 @@ export function reconcileSystemdUserService(
   const { systemctl, userEnv, units } = systemdUserContext(targetUser, deps);
   if (!systemctl) return false;
   if (elevated) {
-    runCommandAsUser(
-      targetUser,
-      systemctl,
-      ["--user", "daemon-reload"],
-      userEnv,
+    return Boolean(
+      tryManagedSystemdAction(units, {
+        daemonReload: () =>
+          runCommandAsUser(
+            targetUser,
+            systemctl,
+            ["--user", "daemon-reload"],
+            userEnv,
+          ),
+        runAction: (unit) =>
+          runCommandAsUser(
+            targetUser,
+            systemctl,
+            ["--user", action, unit],
+            userEnv,
+          ),
+      }),
     );
-    for (const unit of units) {
-      try {
-        runCommandAsUser(
-          targetUser,
-          systemctl,
-          ["--user", action, unit],
-          userEnv,
-        );
-        return true;
-      } catch {}
-    }
-    return false;
   }
-  execFileSync(systemctl, ["--user", "daemon-reload"], {
-    stdio: "inherit",
-    env: { ...process.env, ...userEnv },
-  });
-  for (const unit of units) {
-    try {
-      execFileSync(systemctl, ["--user", action, unit], {
-        stdio: "inherit",
-        env: { ...process.env, ...userEnv },
-      });
-      return true;
-    } catch {}
-  }
-  return false;
+  return Boolean(
+    tryManagedSystemdAction(units, {
+      daemonReload: () =>
+        execFileSync(systemctl, ["--user", "daemon-reload"], {
+          stdio: "inherit",
+          env: { ...process.env, ...userEnv },
+        }),
+      runAction: (unit) =>
+        execFileSync(systemctl, ["--user", action, unit], {
+          stdio: "inherit",
+          env: { ...process.env, ...userEnv },
+        }),
+    }),
+  );
 }
 
 export function installDaemonService(

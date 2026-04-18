@@ -1,4 +1,4 @@
-import { managedSystemdUnitCandidates } from "../rin-install/paths.js";
+import { tryManagedSystemdAction } from "../rin-install/managed-service.js";
 import {
   createTargetExecutionContext,
   ensureDaemonAvailable,
@@ -11,23 +11,22 @@ function tryManagedServiceAction(
   action: "start" | "stop" | "restart",
 ) {
   if (!context.systemctl) return false;
-  try {
-    context.capture([context.systemctl, "--user", "daemon-reload"], {
-      stdio: "ignore",
-    });
-  } catch {}
-  for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
-    try {
-      context.capture([context.systemctl, "--user", "status", unit], {
+  const effectiveAction = action === "start" ? "restart" : action;
+  const unit = tryManagedSystemdAction(context.managedServiceUnits, {
+    daemonReload: () =>
+      context.capture([context.systemctl, "--user", "daemon-reload"], {
         stdio: "ignore",
-      });
-      const effectiveAction = action === "start" ? "restart" : action;
-      context.exec([context.systemctl, "--user", effectiveAction, unit]);
-      console.log(`rin ${action} complete: ${unit}`);
-      return true;
-    } catch {}
-  }
-  return false;
+      }),
+    probeUnit: (candidate) =>
+      context.capture([context.systemctl, "--user", "status", candidate], {
+        stdio: "ignore",
+      }),
+    runAction: (candidate) =>
+      context.exec([context.systemctl, "--user", effectiveAction, candidate]),
+  });
+  if (!unit) return false;
+  console.log(`rin ${action} complete: ${unit}`);
+  return true;
 }
 
 export async function runStart(parsed: ParsedArgs) {

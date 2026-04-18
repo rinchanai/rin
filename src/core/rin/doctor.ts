@@ -1,4 +1,7 @@
-import { managedSystemdUnitCandidates } from "../rin-install/paths.js";
+import {
+  findManagedSystemdJournalSnapshot,
+  findManagedSystemdStatusSnapshot,
+} from "../rin-install/managed-service.js";
 import { createTargetExecutionContext, ParsedArgs } from "./shared.js";
 
 export async function runDoctor(parsed: ParsedArgs) {
@@ -51,39 +54,30 @@ export async function runDoctor(parsed: ParsedArgs) {
   }
 
   if (context.systemctl) {
-    for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
-      try {
-        const status = context.capture([
+    const status = findManagedSystemdStatusSnapshot(
+      context.managedServiceUnits,
+      (unit) =>
+        context.capture([
           context.systemctl,
           "--user",
           "status",
           unit,
           "--no-pager",
           "-l",
-        ]);
-        lines.push(
-          `serviceUnit=${unit}`,
-          "serviceStatus:",
-          ...String(status).trim().split(/\r?\n/).slice(0, 20),
-        );
-        break;
-      } catch (error: any) {
-        const text = String(
-          error?.stdout || error?.stderr || error?.message || "",
-        ).trim();
-        if (text) {
-          lines.push(
-            `serviceUnit=${unit}`,
-            "serviceStatus:",
-            ...text.split(/\r?\n/).slice(0, 20),
-          );
-          break;
-        }
-      }
+        ]),
+    );
+    if (status) {
+      lines.push(
+        `serviceUnit=${status.unit}`,
+        "serviceStatus:",
+        ...status.lines,
+      );
     }
-    for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
-      try {
-        const journal = context.capture([
+
+    const journal = findManagedSystemdJournalSnapshot(
+      context.managedServiceUnits,
+      (unit) =>
+        context.capture([
           "journalctl",
           "--user",
           "-u",
@@ -91,15 +85,10 @@ export async function runDoctor(parsed: ParsedArgs) {
           "-n",
           "20",
           "--no-pager",
-        ]);
-        if (String(journal || "").trim()) {
-          lines.push(
-            `serviceJournal=${unit}`,
-            ...String(journal).trim().split(/\r?\n/).slice(-20),
-          );
-          break;
-        }
-      } catch {}
+        ]),
+    );
+    if (journal) {
+      lines.push(`serviceJournal=${journal.unit}`, ...journal.lines);
     }
   }
 

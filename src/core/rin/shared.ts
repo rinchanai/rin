@@ -26,6 +26,7 @@ import {
   launcherMetadataPathForHome,
   managedSystemdUnitCandidates,
 } from "../rin-install/paths.js";
+import { tryManagedSystemdAction } from "../rin-install/managed-service.js";
 
 export type ParsedArgs = {
   command:
@@ -130,8 +131,7 @@ export function createTargetExecutionContext(
   };
 
   const canConnectSocketInContext = async () => {
-    if (isTargetUser)
-      return await canConnectDaemonSocket(base.socketPath, 500);
+    if (isTargetUser) return await canConnectDaemonSocket(base.socketPath, 500);
     try {
       capture(
         [
@@ -187,12 +187,10 @@ export async function ensureDaemonAvailable(context: TargetExecutionContext) {
   if (await context.canConnectSocket()) return;
 
   if (context.systemctl) {
-    for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
-      try {
-        context.exec([context.systemctl, "--user", "start", unit]);
-        break;
-      } catch {}
-    }
+    tryManagedSystemdAction(context.managedServiceUnits, {
+      runAction: (unit) =>
+        context.exec([context.systemctl, "--user", "start", unit]),
+    });
     const startedAt = Date.now();
     while (Date.now() - startedAt < 5000) {
       if (await context.canConnectSocket()) return;
@@ -333,6 +331,7 @@ function daemonControlContext(parsed: ParsedArgs) {
     runtimeEnv,
     systemctl,
     socketPath,
+    managedServiceUnits: managedSystemdUnitCandidates(targetUser),
   };
 }
 

@@ -13,6 +13,11 @@ const service = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "service.js"))
     .href
 );
+const managedService = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-install", "managed-service.js"),
+  ).href
+);
 
 async function withTempDir(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-install-service-"));
@@ -109,7 +114,10 @@ test("resolveDaemonEntryForInstall falls back to legacy installed daemon entry a
     await fs.mkdir(path.dirname(legacyDaemon), { recursive: true });
     await fs.writeFile(legacyDaemon, "export {};\n", "utf8");
 
-    assert.equal(service.resolveDaemonEntryForInstall(installDir), legacyDaemon);
+    assert.equal(
+      service.resolveDaemonEntryForInstall(installDir),
+      legacyDaemon,
+    );
 
     await fs.rm(installDir, { recursive: true, force: true });
     assert.throws(
@@ -128,6 +136,66 @@ test("systemdUserContext keeps managed unit candidates ordered", () => {
     "rin-daemon.service",
   ]);
   assert.deepEqual(context.userEnv, {});
+});
+
+test("managed systemd helpers keep first matching unit semantics", () => {
+  const units = [
+    "missing.service",
+    "rin-daemon-demo.service",
+    "rin-daemon.service",
+  ];
+  const calls = [];
+
+  const status = managedService.findManagedSystemdStatusSnapshot(
+    units,
+    (unit) => {
+      calls.push(`status:${unit}`);
+      if (unit === "missing.service")
+        throw { stderr: "Unit missing.service could not be found" };
+      if (unit === "rin-daemon-demo.service")
+        return "● rin-daemon-demo.service - Demo\n   Active: active (running)";
+      return "";
+    },
+  );
+  assert.deepEqual(status, {
+    unit: "missing.service",
+    lines: ["Unit missing.service could not be found"],
+  });
+
+  const journal = managedService.findManagedSystemdJournalSnapshot(
+    units,
+    (unit) => {
+      calls.push(`journal:${unit}`);
+      if (unit === "missing.service") return "";
+      if (unit === "rin-daemon-demo.service")
+        return "older\nrecent one\nrecent two";
+      return "";
+    },
+    2,
+  );
+  assert.deepEqual(journal, {
+    unit: "rin-daemon-demo.service",
+    lines: ["recent one", "recent two"],
+  });
+
+  const actionUnit = managedService.tryManagedSystemdAction(units, {
+    daemonReload: () => calls.push("reload"),
+    probeUnit: (unit) => {
+      calls.push(`probe:${unit}`);
+      if (unit === "missing.service") throw new Error("missing");
+    },
+    runAction: (unit) => calls.push(`run:${unit}`),
+  });
+  assert.equal(actionUnit, "rin-daemon-demo.service");
+  assert.deepEqual(calls, [
+    "status:missing.service",
+    "journal:missing.service",
+    "journal:rin-daemon-demo.service",
+    "reload",
+    "probe:missing.service",
+    "probe:rin-daemon-demo.service",
+    "run:rin-daemon-demo.service",
+  ]);
 });
 
 test("daemonSocketPathForUser prefers runtime dir and falls back to home cache", () => {
