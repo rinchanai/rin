@@ -14,6 +14,11 @@ import {
   saveChatMessage,
   updateChatMessage,
 } from "./message-store.js";
+import {
+  extractExistingFilePaths as extractExistingFilePathsFromText,
+  extractImageParts as extractStructuredImageParts,
+  extractMessageText,
+} from "../message-content.js";
 import { safeString } from "../text-utils.js";
 
 export type SavedAttachment = {
@@ -271,52 +276,15 @@ export function extractTextFromContent(
   content: any,
   { includeThinking = false }: { includeThinking?: boolean } = {},
 ) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      if (part.type === "text") return safeString(part.text);
-      if (includeThinking && part.type === "thinking")
-        return safeString(part.thinking);
-      return "";
-    })
-    .filter(Boolean)
-    .join("")
-    .trim();
+  return extractMessageText(content, { includeThinking, trim: true });
 }
 
 export function extractImageParts(content: any) {
-  if (!Array.isArray(content))
-    return [] as Array<{ data: string; mimeType: string }>;
-  const out: Array<{ data: string; mimeType: string }> = [];
-  for (const part of content) {
-    if (!part || typeof part !== "object") continue;
-    if (part.type !== "image") continue;
-    const data = safeString((part as any).data || "");
-    const mimeType =
-      safeString((part as any).mimeType || "").trim() || "image/png";
-    if (!data) continue;
-    out.push({ data, mimeType });
-  }
-  return out;
+  return extractStructuredImageParts(content);
 }
 
 export function extractExistingFilePaths(text: string) {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const pattern = /file:\/\/(\/[^\s'"`<>]+)/g;
-  for (const match of text.matchAll(pattern)) {
-    const raw = safeString(match[1] || "").trim();
-    if (!raw) continue;
-    const resolved = path.resolve(raw);
-    if (seen.has(resolved)) continue;
-    if (!fs.existsSync(resolved)) continue;
-    if (!fs.statSync(resolved).isFile()) continue;
-    seen.add(resolved);
-    out.push(resolved);
-  }
-  return out.slice(0, 8);
+  return extractExistingFilePathsFromText(text);
 }
 
 export function persistInboundMessage(

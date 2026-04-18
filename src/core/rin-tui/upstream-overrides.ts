@@ -6,6 +6,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { Loader, truncateToWidth } from "@mariozechner/pi-tui";
 
+import { extractMessageText } from "../message-content.js";
+
 let applied = false;
 const ANSI_DIM = "\u001b[2m";
 const ANSI_RESET = "\u001b[0m";
@@ -17,13 +19,7 @@ function dim(text: string) {
 function extractUserTextFromEvent(event: any) {
   const message = event?.message;
   if (!message || message.role !== "user") return "";
-  if (typeof message.content === "string") return message.content.trim();
-  if (!Array.isArray(message.content)) return "";
-  return message.content
-    .filter((item: any) => item?.type === "text")
-    .map((item: any) => String(item?.text || ""))
-    .join("")
-    .trim();
+  return extractMessageText(message.content, { trim: true });
 }
 
 function ensureTransportLoader(instance: any, label?: string) {

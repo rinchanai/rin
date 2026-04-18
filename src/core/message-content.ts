@@ -1,0 +1,64 @@
+import fs from "node:fs";
+import path from "node:path";
+
+import { safeString } from "./text-utils.js";
+
+export function extractMessageText(
+  content: any,
+  {
+    includeThinking = false,
+    trim = false,
+  }: { includeThinking?: boolean; trim?: boolean } = {},
+) {
+  const text =
+    typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content
+            .map((part) => {
+              if (!part || typeof part !== "object") return "";
+              if (part.type === "text") return safeString(part.text);
+              if (includeThinking && part.type === "thinking") {
+                return safeString(part.thinking);
+              }
+              return "";
+            })
+            .filter(Boolean)
+            .join("")
+        : "";
+  return trim ? text.trim() : text;
+}
+
+export function extractImageParts(content: any) {
+  if (!Array.isArray(content))
+    return [] as Array<{ data: string; mimeType: string }>;
+  const out: Array<{ data: string; mimeType: string }> = [];
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    if (part.type !== "image") continue;
+    const data = safeString((part as any).data || "");
+    if (!data) continue;
+    out.push({
+      data,
+      mimeType: safeString((part as any).mimeType || "").trim() || "image/png",
+    });
+  }
+  return out;
+}
+
+export function extractExistingFilePaths(text: string, max = 8) {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const pattern = /file:\/\/(\/[^\s'"`<>]+)/g;
+  for (const match of text.matchAll(pattern)) {
+    const raw = safeString(match[1] || "").trim();
+    if (!raw) continue;
+    const resolved = path.resolve(raw);
+    if (seen.has(resolved)) continue;
+    if (!fs.existsSync(resolved)) continue;
+    if (!fs.statSync(resolved).isFile()) continue;
+    seen.add(resolved);
+    out.push(resolved);
+  }
+  return out.slice(0, Math.max(0, max));
+}

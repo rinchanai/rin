@@ -1,5 +1,7 @@
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
 
+import { extractMessageText } from "../message-content.js";
+
 const ALL_THINKING_LEVELS: ThinkingLevel[] = [
   "off",
   "minimal",
@@ -10,17 +12,7 @@ const ALL_THINKING_LEVELS: ThinkingLevel[] = [
 ];
 
 export function extractText(value: any): string {
-  if (typeof value === "string") return value;
-  if (!Array.isArray(value)) return "";
-  return value
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      if (part.type === "text") return String(part.text || "");
-      if (part.type === "thinking") return String(part.thinking || "");
-      return "";
-    })
-    .filter(Boolean)
-    .join("");
+  return extractMessageText(value, { includeThinking: true });
 }
 
 export function computeAvailableThinkingLevels(model: any): ThinkingLevel[] {

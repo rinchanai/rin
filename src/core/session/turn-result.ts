@@ -1,5 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
+
+import {
+  extractExistingFilePaths,
+  extractImageParts,
+  extractMessageText,
+} from "../message-content.js";
 import { safeString } from "../text-utils.js";
 
 export type TurnResultMessage =
@@ -34,54 +39,6 @@ export function extractFinalTextFromTurnResult(
   return "";
 }
 
-function extractText(content: any) {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (!part || typeof part !== "object") return "";
-      if (part.type === "text") return safeString((part as any).text);
-      return "";
-    })
-    .filter(Boolean)
-    .join("")
-    .trim();
-}
-
-function extractImages(content: any) {
-  if (!Array.isArray(content))
-    return [] as Array<{ data: string; mimeType: string }>;
-  const out: Array<{ data: string; mimeType: string }> = [];
-  for (const part of content) {
-    if (!part || typeof part !== "object") continue;
-    if (part.type !== "image") continue;
-    const data = safeString((part as any).data || "");
-    if (!data) continue;
-    out.push({
-      data,
-      mimeType: safeString((part as any).mimeType || "").trim() || "image/png",
-    });
-  }
-  return out;
-}
-
-function extractExistingFilePaths(text: string) {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const pattern = /file:\/\/(\/[^\s'"`<>]+)/g;
-  for (const match of text.matchAll(pattern)) {
-    const raw = safeString(match[1] || "").trim();
-    if (!raw) continue;
-    const resolved = path.resolve(raw);
-    if (seen.has(resolved)) continue;
-    if (!fs.existsSync(resolved)) continue;
-    if (!fs.statSync(resolved).isFile()) continue;
-    seen.add(resolved);
-    out.push(resolved);
-  }
-  return out.slice(0, 8);
-}
-
 function findLastAssistantMessage(messages: any[]) {
   for (const message of [...messages].reverse()) {
     if (safeString(message?.role) !== "assistant") continue;
@@ -96,8 +53,8 @@ export function buildTurnResultFromMessages(messages: any[]): TurnResult {
   );
   if (!assistant) return { messages: [] };
 
-  const text = extractText(assistant.content);
-  const images = extractImages(assistant.content);
+  const text = extractMessageText(assistant.content, { trim: true });
+  const images = extractImageParts(assistant.content);
   const files = extractExistingFilePaths(text);
   const result: TurnResultMessage[] = [];
 
