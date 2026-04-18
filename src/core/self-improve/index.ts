@@ -19,6 +19,10 @@ import {
   refreshOnboardingCompletion,
   resolveAgentDir,
   loadSelfImproveStore,
+  SAVE_PROMPTS_BASE_CONTENT_DESCRIPTION,
+  SAVE_PROMPTS_CONTENT_DESCRIPTION,
+  SAVE_PROMPTS_PROMPT_GUIDELINES,
+  SAVE_PROMPTS_SLOT_DESCRIPTION,
 } from "./lib.js";
 import {
   describeSelfImprovePromptSlot,
@@ -110,20 +114,17 @@ const saveSelfImprovePromptParams = Type.Object({
       Type.Literal("core_facts"),
     ],
     {
-      description:
-        "Which always-on prompt slot to inspect or update. `agent_profile` stores the assistant's stable role, tone, and behavior style. `user_profile` stores the user's identity knowledge. `core_doctrine` stores durable methodology, worldview, and values. `core_facts` stores durable external facts, environment facts, user preferences, and operating conventions.",
+      description: SAVE_PROMPTS_SLOT_DESCRIPTION,
     },
   ),
   content: Type.Optional(
     Type.String({
-      description:
-        "Full revised canonical content for the slot. Use one line per topic. Keep the wording concise and information-dense. Omit this on the first call to read the current slot state.",
+      description: SAVE_PROMPTS_CONTENT_DESCRIPTION,
     }),
   ),
   baseContent: Type.Optional(
     Type.String({
-      description:
-        "Current canonical content returned by the read step. Before updating a populated slot, first call save_prompts with only `slot` to read the current canonical content. Then pass that returned content here exactly as `baseContent`. Treat the read result as canonical. Keep `content` in the same normalized shape unless you intentionally want save_prompts to re-normalize it.",
+      description: SAVE_PROMPTS_BASE_CONTENT_DESCRIPTION,
     }),
   ),
 });
@@ -283,10 +284,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
     description:
       "Save durable prompt baselines that persist across sessions and stay available every turn. Keep them compact and focused on what will still matter later.",
     promptSnippet: "Save durable prompt baselines.",
-    promptGuidelines: [
-      "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
-      "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
-    ],
+    promptGuidelines: SAVE_PROMPTS_PROMPT_GUIDELINES,
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>
       await executeSaveSelfImprovePromptAction(params),

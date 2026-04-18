@@ -72,6 +72,24 @@ test("buildOnboardingPrompt keeps init instructions hidden and language-first", 
   );
 });
 
+test("save_prompts guidance explains slot routing and full-slot rewrites", () => {
+  assert.match(
+    lib.SAVE_PROMPTS_SLOT_DESCRIPTION,
+    /agent_profile.*assistant's own stable identity/i,
+  );
+  assert.ok(
+    lib.SAVE_PROMPTS_PROMPT_GUIDELINES.some((line) =>
+      /user_profile.*core_doctrine.*core_facts/i.test(String(line)),
+    ),
+  );
+  assert.ok(
+    lib.SAVE_PROMPTS_PROMPT_GUIDELINES.some((line) =>
+      /rewrite the full canonical slot/i.test(String(line)),
+    ),
+  );
+  assert.match(lib.SAVE_PROMPTS_CONTENT_DESCRIPTION, /not just the delta/i);
+});
+
 test("processing describes prompt slots with content and limits", async () => {
   const state = processing.describeSelfImprovePromptSlot({
     slot: "agent_profile",
