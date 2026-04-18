@@ -4,6 +4,7 @@ import {
   appendTokenTelemetryEvent,
   resolveAgentDir,
 } from "./store.js";
+import { extractToolCallNames } from "../message-content.js";
 import { readSessionMetadata } from "../session/metadata.js";
 import { safeString } from "../text-utils.js";
 
@@ -81,18 +82,6 @@ function nextEventId(prefix: string, ctx: any) {
   ].join(":");
 }
 
-function extractToolCalls(message: any): string[] {
-  if (!Array.isArray(message?.content)) return [];
-  const names: string[] = [];
-  for (const part of message.content) {
-    if (!part || typeof part !== "object") continue;
-    if (part.type !== "toolCall") continue;
-    const name = safeString(part.name || part.toolName || "").trim();
-    if (name) names.push(name);
-  }
-  return Array.from(new Set(names));
-}
-
 function inferCapability(eventType: string, message: any, toolName = "") {
   const normalizedToolName = safeString(toolName).trim();
   if (eventType === "tool_execution_start" || eventType === "tool_execution_end") {
@@ -103,7 +92,7 @@ function inferCapability(eventType: string, message: any, toolName = "") {
   }
 
   if (message?.role === "assistant") {
-    const toolCalls = extractToolCalls(message);
+    const toolCalls = extractToolCallNames(message?.content);
     if (!toolCalls.length) {
       return {
         capabilityKind: "assistant_text",
@@ -305,7 +294,7 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     const message = event?.message as any;
-    const toolNames = extractToolCalls(message);
+    const toolNames = extractToolCallNames(message?.content);
     const capability = inferCapability("message_end", message, message?.toolName);
     const usage = message?.usage || {};
     const totalTokens =

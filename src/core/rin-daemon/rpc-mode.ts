@@ -1,3 +1,4 @@
+import { extractToolCallParts } from "../message-content.js";
 import { parseJsonl } from "../rin-lib/common.js";
 import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
@@ -25,9 +26,7 @@ function appendInterruptedToolResults(
     : [];
   const lastMessage = messages[messages.length - 1];
   if (!lastMessage || lastMessage.role !== "assistant") return false;
-  const toolCalls = Array.isArray(lastMessage.content)
-    ? lastMessage.content.filter((item: any) => item?.type === "toolCall")
-    : [];
+  const toolCalls = extractToolCallParts(lastMessage.content);
   if (!toolCalls.length) return false;
 
   for (const toolCall of toolCalls) {

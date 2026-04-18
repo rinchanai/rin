@@ -58,6 +58,42 @@ test("message content helpers extract valid image parts and default mime types",
   );
 });
 
+test("message content helpers extract tool call parts, names, and counts", () => {
+  const bashCall = { type: "toolCall", id: "1", name: "bash" };
+  const readCall = { type: "toolCall", id: "2", toolName: "read" };
+  const unnamedCall = { type: "toolCall", id: "3", name: "   " };
+
+  assert.deepEqual(
+    messageContent.extractToolCallParts([
+      { type: "text", text: "ignore" },
+      bashCall,
+      readCall,
+      unnamedCall,
+      { type: "toolCall", id: "4", name: "bash" },
+    ]),
+    [bashCall, readCall, unnamedCall, { type: "toolCall", id: "4", name: "bash" }],
+  );
+  assert.deepEqual(
+    messageContent.extractToolCallNames([
+      bashCall,
+      readCall,
+      unnamedCall,
+      { type: "toolCall", id: "4", name: "bash" },
+    ]),
+    ["bash", "read"],
+  );
+  assert.equal(
+    messageContent.countToolCalls([
+      { type: "text", text: "ignore" },
+      bashCall,
+      readCall,
+      unnamedCall,
+    ]),
+    3,
+  );
+  assert.deepEqual(messageContent.extractToolCallParts("not-an-array"), []);
+});
+
 test("message content helpers resolve only explicit existing file URLs", async () => {
   await withTempDir(async (dir) => {
     const first = path.join(dir, "first.txt");

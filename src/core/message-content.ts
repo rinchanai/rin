@@ -29,18 +29,40 @@ export function extractMessageText(
   return trim ? text.trim() : text;
 }
 
+function extractMessageObjectParts(content: any, type: string) {
+  if (!Array.isArray(content)) return [] as Array<Record<string, any>>;
+  return content.filter(
+    (part): part is Record<string, any> =>
+      Boolean(part) && typeof part === "object" && part.type === type,
+  );
+}
+
+export function extractToolCallParts(content: any) {
+  return extractMessageObjectParts(content, "toolCall");
+}
+
+export function extractToolCallNames(content: any) {
+  return Array.from(
+    new Set(
+      extractToolCallParts(content)
+        .map((part) => safeString(part.name || part.toolName || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+export function countToolCalls(content: any) {
+  return extractToolCallParts(content).length;
+}
+
 export function extractImageParts(content: any) {
-  if (!Array.isArray(content))
-    return [] as Array<{ data: string; mimeType: string }>;
   const out: Array<{ data: string; mimeType: string }> = [];
-  for (const part of content) {
-    if (!part || typeof part !== "object") continue;
-    if (part.type !== "image") continue;
-    const data = safeString((part as any).data || "");
+  for (const part of extractMessageObjectParts(content, "image")) {
+    const data = safeString(part.data || "");
     if (!data) continue;
     out.push({
       data,
-      mimeType: safeString((part as any).mimeType || "").trim() || "image/png",
+      mimeType: safeString(part.mimeType || "").trim() || "image/png",
     });
   }
   return out;

@@ -1,3 +1,4 @@
+import { countToolCalls } from "../message-content.js";
 import {
   calculateContextTokens,
   estimateContextTokens,
@@ -65,11 +66,7 @@ export function computeSessionStats(
       cacheRead += Number(usage.cacheRead || 0);
       cacheWrite += Number(usage.cacheWrite || 0);
       cost += Number(usage.cost?.total || 0);
-      for (const part of Array.isArray((message as any).content)
-        ? (message as any).content
-        : []) {
-        if (part?.type === "toolCall") toolCalls += 1;
-      }
+      toolCalls += countToolCalls((message as any).content);
     }
     if (message.role === "toolResult") toolResults += 1;
   }
