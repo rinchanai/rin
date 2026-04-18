@@ -21,6 +21,7 @@ import {
   getTranscriptArchivePath,
   loadTranscriptSessionEntries,
 } from "../memory/transcripts.js";
+import { safeString } from "./core/utils.js";
 import { resolveAgentDir } from "./lib.js";
 
 type ExtensionCtxLike = {
@@ -31,10 +32,6 @@ type MaintenanceChangedFile = {
   path: string;
   change: "created" | "updated" | "deleted";
 };
-
-function safeString(value: unknown): string {
-  return typeof value === "string" ? value : String(value || "");
-}
 
 async function collectManagedFiles(dir: string): Promise<string[]> {
   if (!fssync.existsSync(dir)) return [];

@@ -32,7 +32,7 @@ function selfImprovePromptsDir(rootDir: string) {
 function promptDocFromFile(filePath: string, text: string): MemoryDoc | null {
   const slot = path.basename(filePath, ".md").trim();
   if (!MEMORY_PROMPT_SLOTS.includes(slot as any)) return null;
-  const content = String(text || "").trim();
+  const content = safeString(text).trim();
   if (!content) return null;
   const now = nowIso();
   return {
