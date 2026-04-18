@@ -13,6 +13,7 @@ import {
   saveChatMessage,
   updateChatMessage,
 } from "./message-store.js";
+import { safeString } from "../text-utils.js";
 
 export type SavedAttachment = {
   kind: "image" | "file";
@@ -64,10 +65,7 @@ export type ChatBridgePromptMeta = {
   attachedFiles?: Array<{ name?: string; path?: string }>;
 };
 
-export function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+export { safeString };
 
 export function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });

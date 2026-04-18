@@ -1,10 +1,8 @@
 import path from "node:path";
 import os from "node:os";
+import { safeString } from "../text-utils.js";
 
-export function safeString(value: unknown): string {
-  if (value == null) return "";
-  return String(value);
-}
+export { safeString };
 
 export function bridgeDaemonSocketPath(agentDir: string) {
   return path.join(agentDir, "data", "daemon", "bridge.sock");

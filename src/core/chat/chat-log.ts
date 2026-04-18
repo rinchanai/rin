@@ -8,6 +8,7 @@ import {
   type StoredChatMessage,
 } from "./message-store.js";
 import { parseChatKey } from "./support.js";
+import { safeString } from "../text-utils.js";
 
 export type ChatLogEntry = {
   version: 1;
@@ -22,11 +23,6 @@ export type ChatLogEntry = {
   userId?: string;
   nickname?: string;
 };
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
 
 function normalizeRole(value: unknown) {
   const text = safeString(value).trim();

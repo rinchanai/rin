@@ -13,6 +13,9 @@ const helpers = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "chat-helpers.js"))
     .href
 );
+const textUtils = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "text-utils.js")).href
+);
 
 async function withTempDir(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-test-"));
@@ -24,6 +27,7 @@ async function withTempDir(fn) {
 }
 
 test("chat chat helpers extract chat metadata", () => {
+  assert.equal(helpers.safeString, textUtils.safeString);
   const session = {
     platform: "telegram",
     guildId: "g1",

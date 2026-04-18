@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { safeString } from "../text-utils.js";
 
 export type TurnResultMessage =
   | {
@@ -20,11 +21,6 @@ export type TurnResultMessage =
 export type TurnResult = {
   messages: TurnResultMessage[];
 };
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
 
 function extractText(content: any) {
   if (typeof content === "string") return content;

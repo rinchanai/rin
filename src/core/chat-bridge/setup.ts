@@ -3,6 +3,7 @@ import {
   listChatBridgeAdapterPromptOptions,
 } from "./adapters.js";
 import type { ChatBridgeBuiltInAdapterKey } from "./adapters.js";
+import { safeString } from "../text-utils.js";
 
 export type ChatBridgePromptApi = {
   ensureNotCancelled: <T>(value: T | symbol | undefined | null) => T;
@@ -17,11 +18,6 @@ export type ChatBridgeSetupResult = {
   chatDetail: string;
   chatConfig: any;
 };
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
 
 function withGuide(message: string, guide?: string, links?: string | string[]) {
   const main = safeString(message).trim();

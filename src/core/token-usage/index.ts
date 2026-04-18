@@ -4,6 +4,7 @@ import {
   appendTokenTelemetryEvent,
   resolveAgentDir,
 } from "./store.js";
+import { safeString } from "../text-utils.js";
 
 type SessionState = {
   seq: number;
@@ -19,11 +20,6 @@ type SessionState = {
 
 const sessionStateById = new Map<string, SessionState>();
 const extensionInstanceId = `${process.pid}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-
-function safeString(value: unknown): string {
-  if (value == null) return "";
-  return String(value);
-}
 
 function previewText(value: unknown, limit = 220): string {
   const text = safeString(value).replace(/\s+/g, " ").trim();

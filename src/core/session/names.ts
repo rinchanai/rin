@@ -1,9 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-
-function safeString(value: unknown): string {
-  return typeof value === "string" ? value : String(value || "");
-}
+import { safeString } from "../text-utils.js";
 
 const DEFAULT_SESSION_NAME_DETAIL_MAX = 180;
 

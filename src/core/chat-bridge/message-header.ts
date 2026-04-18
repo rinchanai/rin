@@ -3,6 +3,7 @@ import os from "node:os";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { consumeChatPromptContext } from "./prompt-context.js";
+import { safeString } from "../text-utils.js";
 
 type TurnPromptMeta = {
   source?: string;
@@ -62,11 +63,6 @@ function buildCrossUserSystemPromptBlock(
     "System user guidance:",
     `- The agent is currently running as the local system user ${agentSystemUser}, while the human user is currently using the machine as ${invokingSystemUser}.`,
   ].join("\n");
-}
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
 }
 
 function pad2(value: number) {

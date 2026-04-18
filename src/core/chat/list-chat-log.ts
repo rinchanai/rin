@@ -14,14 +14,10 @@ import {
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
+import { safeString } from "../text-utils.js";
 
 async function loadChatLogModule() {
   return await import("./chat-log.js");
-}
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
 }
 
 type ListChatLogDetails = {

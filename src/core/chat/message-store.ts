@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
+import { safeString } from "../text-utils.js";
 
 export type StoredChatMessage = {
   version: 1;
@@ -36,11 +37,6 @@ export type StoredChatMessage = {
     content?: string;
   };
 };
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });

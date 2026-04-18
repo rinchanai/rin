@@ -14,14 +14,10 @@ import {
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
+import { safeString } from "../text-utils.js";
 
 async function loadMessageStoreModule() {
   return await import("./message-store.js");
-}
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
 }
 
 type GetChatMessageDetails = {

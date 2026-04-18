@@ -2,11 +2,7 @@ import path from "node:path";
 
 import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+import { safeString } from "../text-utils.js";
 
 async function loadSupportModule() {
   return await import("./support.js");

@@ -1,6 +1,4 @@
-function safeString(value: unknown): string {
-  return typeof value === "string" ? value : String(value || "");
-}
+import { safeString } from "../text-utils.js";
 
 export function buildSessionRecallSummaryPrompt(sessionPath: string): string {
   const normalizedSessionPath = safeString(sessionPath).trim() || "(unknown)";

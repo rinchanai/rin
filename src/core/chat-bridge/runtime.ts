@@ -13,11 +13,7 @@ import {
 } from "../chat/support.js";
 import { sendOutboxPayload } from "../chat/transport.js";
 import { serializeBridgeValue } from "./eval.js";
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+import { safeString } from "../text-utils.js";
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });

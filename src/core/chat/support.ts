@@ -7,11 +7,7 @@ import { extname } from "node:path";
 import YAML from "yaml";
 
 import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+import { safeString } from "../text-utils.js";
 
 function ensureDir(dir: string) {
   fs.mkdirSync(dir, { recursive: true });

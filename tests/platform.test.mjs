@@ -16,6 +16,9 @@ const processMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "platform", "process.js"))
     .href
 );
+const textUtils = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "text-utils.js")).href
+);
 
 async function withTempDir(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-platform-test-"));
@@ -36,6 +39,7 @@ test("platform/fs writeJsonAtomic and readJsonFile roundtrip", async () => {
 });
 
 test("platform/process helpers behave as expected", async () => {
+  assert.equal(processMod.safeString, textUtils.safeString);
   assert.equal(processMod.safeString(null), "");
   assert.equal(processMod.safeString(42), "42");
   assert.equal(processMod.isPidAlive(process.pid), true);

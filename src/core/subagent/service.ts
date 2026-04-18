@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { safeString } from "../text-utils.js";
 
 const HOME_DIR = os.homedir();
 
@@ -35,10 +36,6 @@ import type {
 export const MAX_PARALLEL_SUBAGENT_TASKS = 8;
 
 let sessionCreationQueue: Promise<unknown> = Promise.resolve();
-
-function safeString(value: unknown): string {
-  return typeof value === "string" ? value : String(value || "");
-}
 
 function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = sessionCreationQueue.then(fn, fn);

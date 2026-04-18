@@ -14,11 +14,7 @@ import {
   pickUserId,
 } from "./chat-helpers.js";
 import { readJsonFile } from "./support.js";
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+import { safeString } from "../text-utils.js";
 
 function hashKey(value: string) {
   return createHash("sha1").update(value).digest("hex");

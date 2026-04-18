@@ -1,7 +1,4 @@
-export function safeString(value: unknown): string {
-  if (value == null) return "";
-  return String(value);
-}
+export { safeString } from "../text-utils.js";
 
 export function isPidAlive(pid: unknown): boolean {
   const n = Number(pid || 0);

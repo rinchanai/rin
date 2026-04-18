@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 
 import BetterSqlite3 from "better-sqlite3";
+import { safeString } from "../text-utils.js";
 
 export type TokenTelemetryEvent = {
   id?: string;
@@ -70,11 +71,6 @@ const AGGREGATE_ORDER_FIELDS = new Set([
   "cost_total",
   "context_tokens",
 ]);
-
-function safeString(value: unknown): string {
-  if (value == null) return "";
-  return String(value);
-}
 
 function safeNumber(value: unknown): number {
   const num = Number(value || 0);

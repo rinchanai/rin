@@ -4,6 +4,7 @@ import path from "node:path";
 import net from "node:net";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { safeString } from "../text-utils.js";
 
 import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
@@ -48,10 +49,7 @@ type InstallConfig = {
   defaultInstallDir?: string;
 };
 
-export function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+export { safeString };
 
 export function repoRootFromHere() {
   return path.resolve(

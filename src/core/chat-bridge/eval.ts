@@ -1,9 +1,5 @@
 import vm from "node:vm";
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
+import { safeString } from "../text-utils.js";
 
 const DEFAULT_CHAT_BRIDGE_TIMEOUT_MS = 10_000;
 const MAX_CHAT_BRIDGE_TIMEOUT_MS = 120_000;

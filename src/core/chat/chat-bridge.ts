@@ -16,14 +16,10 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { getTextOutput } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
+import { safeString } from "../text-utils.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
-
-function safeString(value: unknown) {
-  if (value == null) return "";
-  return String(value);
-}
 
 function parseChatKey(value: unknown) {
   const text = safeString(value).trim();
