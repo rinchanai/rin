@@ -125,7 +125,37 @@ test("session listing helpers derive display title and active state consistently
     "2026-04-18T00:00:00.000Z",
   );
   assert.equal(
-    listing.isActiveBoundSession(session, "/tmp/session-1.jsonl"),
+    listing.isActiveBoundSession(session, " /tmp/session-1.jsonl "),
     true,
+  );
+});
+
+test("session listing normalization trims legacy values and preserves normalized items", () => {
+  const normalized = listing.normalizeBoundSessionListItem({
+    id: " session-1 ",
+    path: " /tmp/session-1.jsonl ",
+    firstMessage: " Hello ",
+    modified: "2026-04-18T00:00:00.000Z",
+  });
+
+  assert.deepEqual(normalized, {
+    id: "session-1",
+    path: "/tmp/session-1.jsonl",
+    name: undefined,
+    firstMessage: "Hello",
+    modified: new Date("2026-04-18T00:00:00.000Z"),
+  });
+  assert.equal(listing.normalizeBoundSessionListItem(normalized), normalized);
+  assert.deepEqual(
+    listing.normalizeBoundSessionList([
+      normalized,
+      {
+        id: "session-1-copy",
+        path: " /tmp/session-1.jsonl ",
+        firstMessage: "Other",
+        modified: "2026-04-19T00:00:00.000Z",
+      },
+    ]).map((item) => item.id),
+    ["session-1"],
   );
 });

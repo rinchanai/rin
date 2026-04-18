@@ -1,15 +1,15 @@
 import { normalizeSessionValue } from "../session/metadata.js";
-export function sessionSelectorFromCommand(command) {
+export function normalizeSessionSelector(value) {
     return {
-        sessionFile: normalizeSessionValue(command?.sessionFile ?? command?.sessionPath),
-        sessionId: normalizeSessionValue(command?.sessionId),
-    };
-}
-export function sessionSelectorFromState(value) {
-    return {
-        sessionFile: normalizeSessionValue(value?.sessionFile),
+        sessionFile: normalizeSessionValue(value?.sessionFile ?? value?.sessionPath),
         sessionId: normalizeSessionValue(value?.sessionId),
     };
+}
+export function sessionSelectorFromCommand(command) {
+    return normalizeSessionSelector(command);
+}
+export function sessionSelectorFromState(value) {
+    return normalizeSessionSelector(value);
 }
 export function hasSessionSelector(selector) {
     return Boolean(selector.sessionFile || selector.sessionId);

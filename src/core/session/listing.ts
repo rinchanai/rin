@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { safeString } from "../text-utils.js";
+import { normalizeSessionValue } from "./metadata.js";
 
 export type BoundSessionListItem = {
   id: string;
@@ -10,32 +10,47 @@ export type BoundSessionListItem = {
   modified: Date;
 };
 
-function nonEmptyString(value: unknown): string | undefined {
-  const next = safeString(value).trim();
-  return next || undefined;
+function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      typeof (value as BoundSessionListItem).id === "string" &&
+      typeof (value as BoundSessionListItem).path === "string" &&
+      ((value as BoundSessionListItem).name === undefined ||
+        typeof (value as BoundSessionListItem).name === "string") &&
+      typeof (value as BoundSessionListItem).firstMessage === "string" &&
+      (value as BoundSessionListItem).modified instanceof Date &&
+      Number.isFinite((value as BoundSessionListItem).modified.getTime()),
+  );
 }
 
 function normalizeModified(value: unknown, fallback?: unknown) {
   const candidate =
     value instanceof Date
       ? value
-      : new Date(nonEmptyString(value) || nonEmptyString(fallback) || Date.now());
+      : new Date(
+          normalizeSessionValue(value) ||
+            normalizeSessionValue(fallback) ||
+            Date.now(),
+        );
   return Number.isFinite(candidate.getTime()) ? candidate : new Date();
 }
 
 export function normalizeBoundSessionListItem(
   session: any,
 ): BoundSessionListItem | null {
-  const sessionPath = nonEmptyString(session?.path) || nonEmptyString(session?.id);
+  if (isBoundSessionListItem(session)) return session;
+  const sessionPath =
+    normalizeSessionValue(session?.path) || normalizeSessionValue(session?.id);
   if (!sessionPath) return null;
-  const id = nonEmptyString(session?.id) || sessionPath;
+  const id = normalizeSessionValue(session?.id) || sessionPath;
   return {
     id,
     path: sessionPath,
-    name: nonEmptyString(session?.name),
+    name: normalizeSessionValue(session?.name),
     firstMessage:
-      nonEmptyString(session?.firstMessage) ||
-      nonEmptyString(session?.title) ||
+      normalizeSessionValue(session?.firstMessage) ||
+      normalizeSessionValue(session?.title) ||
       id ||
       "Untitled session",
     modified: normalizeModified(session?.modified, session?.subtitle),
@@ -63,8 +78,10 @@ export function getBoundSessionDisplayTitle(session: any): string {
 
 export function getBoundSessionSubtitle(session: any): string | undefined {
   const text =
-    (typeof session?.modified === "string" && nonEmptyString(session.modified)) ||
-    (typeof session?.subtitle === "string" && nonEmptyString(session.subtitle));
+    (typeof session?.modified === "string" &&
+      normalizeSessionValue(session.modified)) ||
+    (typeof session?.subtitle === "string" &&
+      normalizeSessionValue(session.subtitle));
   if (text) return text;
   const normalized = normalizeBoundSessionListItem(session);
   return normalized ? normalized.modified.toISOString() : undefined;
@@ -72,7 +89,7 @@ export function getBoundSessionSubtitle(session: any): string | undefined {
 
 export function isActiveBoundSession(session: any, activePath?: string): boolean {
   const normalized = normalizeBoundSessionListItem(session);
-  const targetPath = nonEmptyString(activePath);
+  const targetPath = normalizeSessionValue(activePath);
   if (!normalized || !targetPath) return false;
   return path.resolve(normalized.path) === path.resolve(targetPath);
 }

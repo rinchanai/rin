@@ -54,6 +54,36 @@ test("getRestorableSessionSelectors keeps live session workers and remembers tur
   await fs.rm(dir, { recursive: true, force: true });
 });
 
+test("getRestorableSessionSelectors normalizes duplicate session files and preserves resume intent", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  const first = pool.resolveWorkerForCommand(
+    { socket: { destroyed: false, write() {} }, clientBuffer: "" },
+    { type: "new_session" },
+  );
+  first.sessionFile = " /tmp/test-session.jsonl ";
+  first.isStreaming = false;
+  const second = pool.resolveWorkerForCommand(
+    { socket: { destroyed: false, write() {} }, clientBuffer: "" },
+    { type: "new_session" },
+  );
+  second.sessionFile = "/tmp/test-session.jsonl";
+  second.isStreaming = true;
+
+  assert.deepEqual(pool.getRestorableSessionSelectors(), [
+    { sessionFile: "/tmp/test-session.jsonl", resumeTurn: true },
+  ]);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
 test("detached worker survives eviction while response is pending", async () => {
   const dir = await makeTempDir("rin-worker-pool-");
   const workerPath = path.join(dir, "worker.mjs");

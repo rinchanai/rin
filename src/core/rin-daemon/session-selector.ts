@@ -5,13 +5,23 @@ export type SessionSelector = {
   sessionId?: string;
 };
 
-export function sessionSelectorFromCommand(command: any): SessionSelector {
+type SessionSelectorInput = {
+  sessionFile?: unknown;
+  sessionPath?: unknown;
+  sessionId?: unknown;
+};
+
+export function normalizeSessionSelector(
+  value: SessionSelectorInput | null | undefined,
+): SessionSelector {
   return {
-    sessionFile: normalizeSessionValue(
-      command?.sessionFile ?? command?.sessionPath,
-    ),
-    sessionId: normalizeSessionValue(command?.sessionId),
+    sessionFile: normalizeSessionValue(value?.sessionFile ?? value?.sessionPath),
+    sessionId: normalizeSessionValue(value?.sessionId),
   };
+}
+
+export function sessionSelectorFromCommand(command: any): SessionSelector {
+  return normalizeSessionSelector(command);
 }
 
 export function sessionSelectorFromState(
@@ -23,10 +33,7 @@ export function sessionSelectorFromState(
     | null
     | undefined,
 ): SessionSelector {
-  return {
-    sessionFile: normalizeSessionValue(value?.sessionFile),
-    sessionId: normalizeSessionValue(value?.sessionId),
-  };
+  return normalizeSessionSelector(value);
 }
 
 export function hasSessionSelector(selector: SessionSelector) {

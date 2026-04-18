@@ -229,27 +229,33 @@ export class WorkerPool {
         }
     }
     getRestorableSessionSelectors() {
-        const seen = new Set();
-        return Array.from(this.workers)
-            .filter((worker) => worker.sessionFile &&
-            !worker.gracefulShutdownRequested &&
-            !seen.has(worker.sessionFile))
-            .map((worker) => {
-            const sessionFile = String(worker.sessionFile);
-            seen.add(sessionFile);
-            return {
-                sessionFile,
-                resumeTurn: Boolean(worker.isStreaming || worker.isCompacting),
-            };
-        });
+        const restorable = new Map();
+        for (const worker of this.workers) {
+            if (worker.gracefulShutdownRequested)
+                continue;
+            const selector = this.getWorkerSelector(worker);
+            if (!selector.sessionFile)
+                continue;
+            const resumeTurn = Boolean(worker.isStreaming || worker.isCompacting);
+            const existing = restorable.get(selector.sessionFile);
+            if (existing) {
+                existing.resumeTurn ||= resumeTurn;
+                continue;
+            }
+            restorable.set(selector.sessionFile, {
+                sessionFile: selector.sessionFile,
+                resumeTurn,
+            });
+        }
+        return Array.from(restorable.values());
     }
     restoreSessionWorker(item) {
-        const sessionFile = String(item?.sessionFile || "").trim();
-        if (!sessionFile)
+        const selector = sessionSelectorFromState(item);
+        if (!selector.sessionFile)
             return;
         const worker = this.createWorker();
-        this.setWorkerSessionRefs(worker, { sessionFile, sessionId: undefined });
-        worker.child.stdin.write(`${JSON.stringify({ type: "switch_session", sessionPath: sessionFile })}\n`);
+        this.setWorkerSessionRefs(worker, selector);
+        worker.child.stdin.write(`${JSON.stringify({ type: "switch_session", sessionPath: selector.sessionFile })}\n`);
         if (item?.resumeTurn) {
             worker.child.stdin.write(`${JSON.stringify({ type: "resume_interrupted_turn", source: "daemon-restart" })}\n`);
         }
@@ -513,7 +519,7 @@ export class WorkerPool {
     shouldRecoverWorker(worker, liveConnections) {
         if (this.shuttingDown || worker.gracefulShutdownRequested)
             return false;
-        return Boolean(worker.sessionFile && liveConnections.size > 0);
+        return Boolean(this.getWorkerSelector(worker).sessionFile && liveConnections.size > 0);
     }
     recoverWorker(selector, worker, liveConnections, pending) {
         const resumeTurn = Boolean(worker.isStreaming || worker.isCompacting);
