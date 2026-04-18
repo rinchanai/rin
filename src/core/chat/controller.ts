@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import prettyMilliseconds from "pretty-ms";
+
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
@@ -53,15 +55,10 @@ function isAgentAlreadyProcessingError(error: unknown) {
 }
 
 function formatElapsedSince(startedAt: number) {
-  const elapsedMs = Math.max(0, Date.now() - startedAt);
-  const totalSeconds = Math.floor(elapsedMs / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes <= 0) return `${seconds}s`;
-  if (minutes < 60) return `${minutes}m ${seconds}s`;
-  const hours = Math.floor(minutes / 60);
-  const remainMinutes = minutes % 60;
-  return `${hours}h ${remainMinutes}m`;
+  return prettyMilliseconds(Math.max(0, Date.now() - startedAt), {
+    secondsDecimalDigits: 0,
+    unitCount: 2,
+  });
 }
 
 function summarizePromptText(text: string, limit = 80) {
