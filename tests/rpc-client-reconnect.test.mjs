@@ -197,6 +197,30 @@ test("rpc interactive session keeps working status during compaction", () => {
   });
 });
 
+test("rpc interactive session does not downgrade a running owned turn after compaction state refresh", () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.activeTurn = { mode: "prompt", message: "demo" };
+  session.setRemoteTurnRunning(true);
+
+  session.applyState({
+    sessionId: "s1",
+    sessionFile: "/tmp/demo.jsonl",
+    isStreaming: false,
+    isCompacting: false,
+  });
+
+  assert.equal(session.remoteTurnRunning, true);
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "working",
+    label: "Working",
+    connected: true,
+  });
+});
+
 test("rpc interactive session reconnect loop restores transport and session in one pipeline", async () => {
   let connected = false;
   let connectCalls = 0;

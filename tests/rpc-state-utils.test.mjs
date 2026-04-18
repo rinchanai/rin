@@ -78,7 +78,7 @@ test("rpc state utils derive branch and apply state", () => {
     {
       ...target,
       activeTurn: { mode: "prompt" },
-      preserveWorkingAfterCompaction: true,
+      remoteTurnRunning: true,
       setRemoteTurnRunning(value) {
         remoteStreaming = value;
       },
