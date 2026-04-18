@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { ensureDir } from "../platform/fs.js";
+
 export type ChatMessagePart =
   | {
       type: "text";
@@ -53,10 +55,6 @@ export type ChatOutboxPayload =
       sessionFile?: string;
       parts: ChatMessagePart[];
     };
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
 
 export function chatOutboxDir(agentDir: string) {
   return path.join(path.resolve(agentDir), "data", "chat-outbox");

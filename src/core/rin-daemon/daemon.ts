@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { ensureDir } from "../platform/fs.js";
 import {
   bridgeDaemonSocketPath,
   defaultDaemonSocketPath,
@@ -33,10 +34,6 @@ import {
   sessionSelectorFromCommand,
 } from "./session-selector.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
 
 function writeLine(socket: net.Socket, payload: unknown) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);

@@ -11,13 +11,10 @@ import {
   setIdentityTrust,
   trustOf,
 } from "../chat/support.js";
+import { ensureDir } from "../platform/fs.js";
 import { sendOutboxPayload } from "../chat/transport.js";
 import { serializeBridgeValue } from "./eval.js";
 import { safeString } from "../text-utils.js";
-
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
 
 function inferChatType(parsed: { platform: string; chatId: string }) {
   if (parsed.platform === "telegram") {

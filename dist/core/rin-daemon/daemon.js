@@ -3,6 +3,7 @@ import net from "node:net";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { ensureDir } from "../platform/fs.js";
 import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "../rin-lib/common.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { emptySessionState, isSessionScopedCommand, response, } from "../rin-lib/rpc.js";
@@ -13,9 +14,6 @@ import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
 import { hasSessionSelector, sessionSelectorFromCommand, } from "./session-selector.js";
 import { WorkerPool } from "./worker-pool.js";
-function ensureDir(dir) {
-    fs.mkdirSync(dir, { recursive: true });
-}
 function writeLine(socket, payload) {
     if (!socket.destroyed)
         socket.write(`${JSON.stringify(payload)}\n`);

@@ -38,10 +38,6 @@ export type StoredChatMessage = {
   };
 };
 
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
 function sanitizePathSegment(value: string, fallback: string) {
   const text = safeString(value)
     .trim()
@@ -128,12 +124,7 @@ export function saveChatMessage(
   const refs = readJsonFile<string[]>(refFilePath, []);
   const relative = path.relative(chatMessageStoreDir(agentDir), filePath);
   if (!refs.includes(relative)) {
-    ensureDir(path.dirname(refFilePath));
-    fs.writeFileSync(
-      refFilePath,
-      `${JSON.stringify([...refs, relative], null, 2)}\n`,
-      "utf8",
-    );
+    writeJsonFile(refFilePath, [...refs, relative]);
   }
 
   return { record, filePath };

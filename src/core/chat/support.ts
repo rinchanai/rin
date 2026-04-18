@@ -7,24 +7,10 @@ import { extname } from "node:path";
 import YAML from "yaml";
 
 import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
+import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 
-function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-export function readJsonFile<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-export function writeJsonFile(filePath: string, value: unknown) {
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
+export { ensureDir, readJsonFile, writeJsonFile };
 
 function normalizeChatAdapterConfig(
   value: any,
@@ -324,11 +310,7 @@ export function ensureChatRuntimeDependencies(rootDir: string, settings: any) {
   }
   ensureDir(rootDir);
   const packageJsonPath = path.join(rootDir, "package.json");
-  fs.writeFileSync(
-    packageJsonPath,
-    `${JSON.stringify(runtimePackage, null, 2)}\n`,
-    "utf8",
-  );
+  writeJsonFile(packageJsonPath, runtimePackage);
   try {
     execFileSync(
       "npm",
@@ -364,11 +346,7 @@ export function materializeChatConfig(configPath: string, settings: any) {
   const config = buildChatConfigFromSettings(settings);
   fs.writeFileSync(configPath, YAML.stringify(config), "utf8");
   const packageJsonPath = path.join(rootDir, "package.json");
-  fs.writeFileSync(
-    packageJsonPath,
-    `${JSON.stringify(buildChatRuntimePackageJson(settings), null, 2)}\n`,
-    "utf8",
-  );
+  writeJsonFile(packageJsonPath, buildChatRuntimePackageJson(settings));
   return { configPath, config };
 }
 

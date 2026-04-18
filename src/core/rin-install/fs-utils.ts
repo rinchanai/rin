@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
+import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
 import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
 import {
   appConfigDirForHome,
@@ -17,17 +18,7 @@ import {
   launcherPathForHome,
 } from "./paths.js";
 
-export function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
-
-export function readJsonFile<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
-  } catch {
-    return fallback;
-  }
-}
+export { ensureDir, readJsonFile, writeJsonFile };
 
 export function readJsonFileWithPrivilege<T>(filePath: string, fallback: T): T {
   const privilegeCommand = pickPrivilegeCommand();
@@ -56,11 +47,6 @@ export function readInstallerJson<T>(
     }
     return fallback;
   }
-}
-
-export function writeJsonFile(filePath: string, value: unknown) {
-  ensureDir(path.dirname(filePath));
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 export function writeTextFile(filePath: string, value: string, mode = 0o600) {
@@ -230,31 +216,12 @@ export function writeJsonFileWithPrivilege(
   ownerUser?: string,
   ownerGroup?: string | number,
 ) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-write-"));
-  const tempFile = path.join(tempDir, "payload.json");
-  const privilegeCommand = pickPrivilegeCommand();
-  try {
-    fs.writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    execFileSync(privilegeCommand, ["mkdir", "-p", path.dirname(filePath)], {
-      stdio: "inherit",
-    });
-    execFileSync(
-      privilegeCommand,
-      ["install", "-m", "600", tempFile, filePath],
-      { stdio: "inherit" },
-    );
-    if (ownerUser && process.platform !== "win32") {
-      const owner =
-        ownerGroup != null && `${ownerGroup}` !== ""
-          ? `${ownerUser}:${ownerGroup}`
-          : ownerUser;
-      execFileSync(privilegeCommand, ["chown", owner, filePath], {
-        stdio: "inherit",
-      });
-    }
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
+  writeTextFileWithPrivilege(
+    filePath,
+    `${JSON.stringify(value, null, 2)}\n`,
+    ownerUser,
+    ownerGroup,
+  );
 }
 
 export function syncTree(sourcePath: string, destPath: string) {

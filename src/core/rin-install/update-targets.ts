@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { readJsonFile } from "../platform/fs.js";
 import { resolveInstallRecordTargetFromCandidates } from "./install-record.js";
 import {
   installDiscoveryHomeRoots,
@@ -9,14 +10,6 @@ import {
   launcherMetadataCandidatesForHome,
   systemdUserUnitDirForHome,
 } from "./paths.js";
-
-function readJsonFile<T>(filePath: string, fallback: T): T {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function installDirFromSystemdUnit(text: string) {
   const match = text.match(/^Environment=RIN_DIR=(.+)$/m);

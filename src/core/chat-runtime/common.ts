@@ -1,13 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { ensureDir } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 
-export { safeString };
-
-export function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
+export { ensureDir, safeString };
 
 export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

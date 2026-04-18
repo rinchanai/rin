@@ -38,6 +38,17 @@ test("platform/fs writeJsonAtomic and readJsonFile roundtrip", async () => {
   });
 });
 
+test("platform/fs writeJsonFile writes pretty JSON with trailing newline", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "nested", "config.json");
+    fsMod.writeJsonFile(filePath, { ok: true });
+    assert.equal(
+      await fs.readFile(filePath, "utf8"),
+      '{\n  "ok": true\n}\n',
+    );
+  });
+});
+
 test("platform/process helpers behave as expected", async () => {
   assert.equal(processMod.safeString, textUtils.safeString);
   assert.equal(processMod.safeString(null), "");

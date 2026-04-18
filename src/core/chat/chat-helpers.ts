@@ -7,6 +7,7 @@ import {
   ensureFileName,
   fileNameFromUrl,
 } from "./support.js";
+import { ensureDir } from "../platform/fs.js";
 import {
   findChatMessageByChatAndId,
   normalizeElementSummary,
@@ -65,11 +66,7 @@ export type ChatBridgePromptMeta = {
   attachedFiles?: Array<{ name?: string; path?: string }>;
 };
 
-export { safeString };
-
-export function ensureDir(dir: string) {
-  fs.mkdirSync(dir, { recursive: true });
-}
+export { ensureDir, safeString };
 
 export function listJsonFiles(dir: string) {
   try {

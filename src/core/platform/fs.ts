@@ -20,6 +20,11 @@ export function readJsonFile<T>(filePath: string, fallback: T): T {
   }
 }
 
+export function writeJsonFile(filePath: string, value: unknown) {
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
 export function writeJsonAtomic(
   filePath: string,
   value: unknown,
