@@ -1,11 +1,10 @@
-import path from "node:path";
-
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import {
   createConfiguredAgentSession,
   getRuntimeSessionDir,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
+import { normalizeBoundSessionList } from "./listing.js";
 
 export async function openBoundSession(options: {
   cwd: string;
@@ -43,19 +42,19 @@ export async function listBoundSessions(options: {
     ? { SessionManager: options.SessionManager }
     : await loadRinSessionManagerModule();
   const sessions = await SessionManager.list(cwd, sessionDir).catch(() => []);
-  const seen = new Set<string>();
-  return sessions
-    .filter((session: any) => {
-      const sessionPath = String(session?.path || "").trim();
-      if (!sessionPath) return false;
-      const resolvedPath = path.resolve(sessionPath);
-      if (seen.has(resolvedPath)) return false;
-      seen.add(resolvedPath);
-      return true;
-    })
-    .sort(
-      (a: any, b: any) =>
-        new Date(String(b?.modified || 0)).getTime() -
-        new Date(String(a?.modified || 0)).getTime(),
-    );
+  return normalizeBoundSessionList(sessions);
+}
+
+export async function renameBoundSession(
+  sessionPath: string,
+  name: string,
+  options: { SessionManager?: any } = {},
+) {
+  const nextName = String(name || "").trim();
+  if (!nextName) throw new Error("Session name cannot be empty");
+  const { SessionManager } = options.SessionManager
+    ? { SessionManager: options.SessionManager }
+    : await loadRinSessionManagerModule();
+  const manager = SessionManager.open(sessionPath);
+  manager.appendSessionInfo(nextName);
 }

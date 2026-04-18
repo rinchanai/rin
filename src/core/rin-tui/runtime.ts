@@ -48,6 +48,7 @@ import {
   applyRpcSessionTree,
   getSessionBranch,
 } from "./state-utils.js";
+import { normalizeBoundSessionList } from "../session/listing.js";
 
 type RpcExtensionBindings = {
   uiContext?: any;
@@ -444,7 +445,7 @@ export class RpcInteractiveSession {
       await this.waitForDaemonAvailable();
     }
     const data = await this.call("list_sessions", { scope });
-    return Array.isArray(data?.sessions) ? data.sessions : [];
+    return normalizeBoundSessionList(data?.sessions);
   }
 
   async setModel(model: any) {

@@ -66,25 +66,6 @@ function syncRpcTransportLoader(instance: any) {
   );
 }
 
-function normalizeRemoteSession(session: any) {
-  const modified =
-    session?.modified instanceof Date
-      ? session.modified
-      : new Date(session?.modified || Date.now());
-  return {
-    path: String(session?.path || session?.id || ""),
-    name:
-      typeof session?.name === "string" && session.name ? session.name : undefined,
-    firstMessage:
-      typeof session?.firstMessage === "string" && session.firstMessage
-        ? session.firstMessage
-        : typeof session?.title === "string" && session.title
-          ? session.title
-          : "Untitled session",
-    modified,
-  };
-}
-
 function createSessionSelectorLoaders(instance: any) {
   if (!isRpcTransportControlled(instance)) {
     const loadSessions = (onProgress?: any) =>
@@ -105,8 +86,7 @@ function createSessionSelectorLoaders(instance: any) {
     };
   }
 
-  const loadRemoteSessions = async () =>
-    (await instance.session.listSessions("all")).map(normalizeRemoteSession);
+  const loadRemoteSessions = () => instance.session.listSessions("all");
 
   return {
     currentSessionsLoader: loadRemoteSessions,

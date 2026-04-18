@@ -48,6 +48,46 @@ test("rpc client ignores stale socket disconnect after reconnect", () => {
   assert.equal(seen[0]?.name, "connection_lost");
 });
 
+test("rpc client normalizes session list display metadata from daemon responses", async () => {
+  const client = new RinDaemonFrontendClient("/tmp/fake.sock");
+  client.isConnected = () => true;
+  client.send = async (payload) => {
+    if (payload.type === "list_sessions") {
+      return {
+        success: true,
+        data: {
+          sessions: [
+            {
+              id: "session-1",
+              path: "/tmp/session-1.jsonl",
+              title: "Legacy title",
+              subtitle: "2026-04-18T00:00:00.000Z",
+            },
+          ],
+        },
+      };
+    }
+    if (payload.type === "get_state") {
+      return {
+        success: true,
+        data: { sessionFile: "/tmp/session-1.jsonl" },
+      };
+    }
+    return { success: true, data: {} };
+  };
+
+  const sessions = await client.listSessions();
+
+  assert.deepEqual(sessions, [
+    {
+      id: "/tmp/session-1.jsonl",
+      title: "Legacy title",
+      subtitle: "2026-04-18T00:00:00.000Z",
+      isActive: true,
+    },
+  ]);
+});
+
 test("rpc interactive session startup fails when the daemon is unavailable", async () => {
   const client = {
     isConnected: () => false,

@@ -2,6 +2,12 @@ import net from "node:net";
 
 import { defaultDaemonSocketPath, parseJsonl } from "../rin-lib/common.js";
 import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
+import {
+  getBoundSessionDisplayTitle,
+  getBoundSessionSubtitle,
+  isActiveBoundSession,
+  normalizeBoundSessionList,
+} from "../session/listing.js";
 import type {
   FrontendAutocompleteItem,
   FrontendCommandItem,
@@ -144,24 +150,16 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
       this.send({ type: "get_state" }).catch(() => ({ success: false })),
     ]);
     const data = this.getData(sessionsResponse);
-    const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+    const sessions = normalizeBoundSessionList(data?.sessions);
     const activePath =
       stateResponse && stateResponse.success === true
         ? stateResponse.data?.sessionFile
         : undefined;
     return sessions.map((session: any) => ({
       id: String(session.path || session.id || ""),
-      title: String(
-        session.name ||
-          session.id ||
-          session.firstMessage ||
-          "Untitled session",
-      ),
-      subtitle:
-        typeof session.modified === "string" ? session.modified : undefined,
-      isActive: activePath
-        ? String(session.path || "") === String(activePath)
-        : false,
+      title: getBoundSessionDisplayTitle(session),
+      subtitle: getBoundSessionSubtitle(session),
+      isActive: isActiveBoundSession(session, activePath),
     }));
   }
 

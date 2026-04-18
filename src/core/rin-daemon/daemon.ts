@@ -20,7 +20,7 @@ import {
   applyRuntimeProfileEnvironment,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
-import { listBoundSessions } from "../session/factory.js";
+import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import {
@@ -358,18 +358,23 @@ export async function startDaemon(
       return true;
     }
     if (type === "rename_session") {
-      const { SessionManager } = await sessionManagerModulePromise;
-      const name = String(command.name || "").trim();
-      if (!name) {
+      try {
+        const { SessionManager } = await sessionManagerModulePromise;
+        await renameBoundSession(String(command.sessionPath || ""), command.name, {
+          SessionManager,
+        });
+        writeLine(connection.socket, response(id, type, true));
+      } catch (error: any) {
         writeLine(
           connection.socket,
-          response(id, type, false, "Session name cannot be empty"),
+          response(
+            id,
+            type,
+            false,
+            String(error?.message || "Session name cannot be empty"),
+          ),
         );
-        return true;
       }
-      const manager = SessionManager.open(command.sessionPath);
-      manager.appendSessionInfo(name);
-      writeLine(connection.socket, response(id, type, true));
       return true;
     }
     if (type === "daemon_status") {

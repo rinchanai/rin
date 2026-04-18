@@ -13,6 +13,10 @@ const factory = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "session", "factory.js"))
     .href,
 );
+const listing = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "session", "listing.js"))
+    .href,
+);
 
 test("listBoundSessions reads only canonical root sessions", async () => {
   const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-sessions-"));
@@ -49,4 +53,79 @@ test("listBoundSessions reads only canonical root sessions", async () => {
   assert.deepEqual(sessions.map((item) => item.id), ["newer", "older"]);
   assert.deepEqual(listed, [sessionDir]);
   await fs.rm(sessionDir, { recursive: true, force: true });
+});
+
+test("listBoundSessions normalizes legacy session metadata into canonical fields", async () => {
+  const sessions = await factory.listBoundSessions({
+    cwd: "/tmp/project",
+    sessionDir: "/tmp/sessions",
+    SessionManager: {
+      async list() {
+        return [
+          {
+            id: "session-1",
+            title: "Legacy title",
+            subtitle: "2026-04-18T00:00:00.000Z",
+          },
+        ];
+      },
+    },
+  });
+
+  assert.deepEqual(
+    {
+      id: sessions[0]?.id,
+      path: sessions[0]?.path,
+      name: sessions[0]?.name,
+      firstMessage: sessions[0]?.firstMessage,
+      modified: sessions[0]?.modified?.toISOString(),
+    },
+    {
+      id: "session-1",
+      path: "session-1",
+      name: undefined,
+      firstMessage: "Legacy title",
+      modified: "2026-04-18T00:00:00.000Z",
+    },
+  );
+});
+
+test("renameBoundSession delegates to SessionManager.open once", async () => {
+  const renamed = [];
+  await factory.renameBoundSession("/tmp/demo.jsonl", "Renamed", {
+    SessionManager: {
+      open(sessionPath) {
+        renamed.push(["open", sessionPath]);
+        return {
+          appendSessionInfo(name) {
+            renamed.push(["rename", name]);
+          },
+        };
+      },
+    },
+  });
+
+  assert.deepEqual(renamed, [
+    ["open", "/tmp/demo.jsonl"],
+    ["rename", "Renamed"],
+  ]);
+});
+
+test("session listing helpers derive display title and active state consistently", () => {
+  const session = {
+    id: "session-1",
+    path: "/tmp/session-1.jsonl",
+    firstMessage: "Hello",
+    modified: new Date("2026-04-18T00:00:00.000Z"),
+  };
+
+  assert.equal(listing.getBoundSessionDisplayTitle(session), "Hello");
+  assert.equal(
+    listing.getBoundSessionSubtitle(session),
+    "2026-04-18T00:00:00.000Z",
+  );
+  assert.equal(
+    listing.isActiveBoundSession(session, "/tmp/session-1.jsonl"),
+    true,
+  );
 });

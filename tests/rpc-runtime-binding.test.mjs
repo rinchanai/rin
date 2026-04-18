@@ -268,6 +268,62 @@ test("rpc runtime resumes a session through select_session", async () => {
   assert.equal(sent[0]?.sessionPath, "/tmp/s2.jsonl");
 });
 
+test("rpc runtime normalizes daemon session listings into canonical session metadata", async () => {
+  const session = new RpcInteractiveSession({
+    send(payload) {
+      if (payload.type === "list_sessions") {
+        return Promise.resolve({
+          success: true,
+          data: {
+            sessions: [
+              {
+                id: "session-1",
+                title: "Legacy title",
+                subtitle: "2026-04-18T00:00:00.000Z",
+              },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ success: true, data: {} });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  const sessions = await session.listSessions("all");
+
+  assert.deepEqual(
+    {
+      id: sessions[0]?.id,
+      path: sessions[0]?.path,
+      name: sessions[0]?.name,
+      firstMessage: sessions[0]?.firstMessage,
+      modified: sessions[0]?.modified?.toISOString(),
+    },
+    {
+      id: "session-1",
+      path: "session-1",
+      name: undefined,
+      firstMessage: "Legacy title",
+      modified: "2026-04-18T00:00:00.000Z",
+    },
+  );
+});
+
 test("rpc runtime rebuilds session context from entries when messages are stale", () => {
   const session = new RpcInteractiveSession({
     send() {

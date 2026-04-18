@@ -75,9 +75,9 @@ test("rpc session selector loads sessions through the daemon instead of local Se
         return [
           {
             id: "/tmp/demo.jsonl",
-            title: "demo",
-            subtitle: "2026-04-16T00:00:00.000Z",
-            isActive: true,
+            path: "/tmp/demo.jsonl",
+            firstMessage: "demo",
+            modified: new Date("2026-04-16T00:00:00.000Z"),
           },
         ];
       },

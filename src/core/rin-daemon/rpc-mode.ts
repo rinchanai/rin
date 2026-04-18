@@ -1,7 +1,7 @@
 import { parseJsonl } from "../rin-lib/common.js";
 import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
-import { listBoundSessions } from "../session/factory.js";
+import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { buildTurnResultFromMessages } from "../session/turn-result.js";
 import {
   getOAuthState,
@@ -541,10 +541,9 @@ export async function runCustomRpcMode(
         return done(id, type, model);
       }
       case "rename_session": {
-        const name = String(command.name || "").trim();
-        if (!name) throw new Error("Session name cannot be empty");
-        const manager = SessionManager.open(command.sessionPath);
-        manager.appendSessionInfo(name);
+        await renameBoundSession(String(command.sessionPath || ""), command.name, {
+          SessionManager,
+        });
         return done(id, type);
       }
       case "set_session_name": {
