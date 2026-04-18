@@ -43,7 +43,7 @@ async function readJson(filePath) {
   return JSON.parse(await fs.readFile(filePath, "utf8"));
 }
 
-test("message store backfills and maintains chat-date index after the first chat-day read", async () => {
+test("message store eagerly maintains chat-date indexes while preserving chat-day reads", async () => {
   await withTempRoot(async (root) => {
     messageStore.saveChatMessage(root, {
       messageId: "m1",
@@ -86,20 +86,7 @@ test("message store backfills and maintains chat-date index after the first chat
     });
 
     const indexPath = chatDateIndexPath(root, "2026-04-04");
-    await assert.rejects(fs.access(indexPath));
-
-    const firstRead = messageStore.listChatMessagesByChatAndDate(
-      root,
-      "telegram/123:456",
-      "2026-04-04",
-    );
-    assert.deepEqual(
-      firstRead.map((item) => item.messageId),
-      ["m1", "m2"],
-    );
-
-    const initialIndex = await readJson(indexPath);
-    assert.deepEqual(initialIndex, {
+    assert.deepEqual(await readJson(indexPath), {
       version: 1,
       recordKeys: [
         messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
@@ -121,8 +108,7 @@ test("message store backfills and maintains chat-date index after the first chat
       strippedContent: "third",
     });
 
-    const updatedIndex = await readJson(indexPath);
-    assert.deepEqual(updatedIndex, {
+    assert.deepEqual(await readJson(indexPath), {
       version: 1,
       recordKeys: [
         messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
@@ -136,6 +122,58 @@ test("message store backfills and maintains chat-date index after the first chat
         .map((item) => item.messageId),
       ["m1", "m2", "m3"],
     );
+  });
+});
+
+test("message store backfills a missing chat-date index from existing records", async () => {
+  await withTempRoot(async (root) => {
+    messageStore.saveChatMessage(root, {
+      messageId: "m1",
+      role: "user",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "2026-04-04T12:00:00.000Z",
+      text: "first",
+      rawContent: "first",
+      strippedContent: "first",
+    });
+    messageStore.saveChatMessage(root, {
+      messageId: "m2",
+      role: "assistant",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "2026-04-04T12:00:05.000Z",
+      text: "second",
+      rawContent: "second",
+      strippedContent: "second",
+    });
+
+    const indexPath = chatDateIndexPath(root, "2026-04-04");
+    await fs.rm(indexPath, { force: true });
+    await assert.rejects(fs.access(indexPath));
+
+    const rebuilt = messageStore.listChatMessagesByChatAndDate(
+      root,
+      "telegram/123:456",
+      "2026-04-04",
+    );
+    assert.deepEqual(
+      rebuilt.map((item) => item.messageId),
+      ["m1", "m2"],
+    );
+    assert.deepEqual(await readJson(indexPath), {
+      version: 1,
+      recordKeys: [
+        messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
+        messageStore.buildChatMessageRecordKey("telegram/123:456", "m2"),
+      ],
+    });
   });
 });
 
