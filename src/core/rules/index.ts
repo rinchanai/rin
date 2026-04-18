@@ -1,19 +1,18 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  DefaultResourceLoader,
+  type ExtensionAPI,
+  type TruncationResult,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
-import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import {
-  type TruncationResult,
-  truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import {
-  appendTruncationNotice,
   invalidArgText,
+  prepareTruncatedText,
   renderTextToolResult,
   shortenPath,
   str,
@@ -124,17 +123,15 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
         };
       }
 
-      const truncation = truncateHead(prompt);
-      let outputText = truncation.content;
+      const truncated = prepareTruncatedText(prompt);
       const details: { truncation?: TruncationResult; emptyMessage?: string } =
         {};
-      if (truncation.truncated) {
-        details.truncation = truncation;
-        outputText = appendTruncationNotice(outputText, truncation);
+      if (truncated.truncation) {
+        details.truncation = truncated.truncation;
       }
 
       return {
-        content: [{ type: "text", text: outputText }],
+        content: [{ type: "text", text: truncated.outputText }],
         details,
       };
     },

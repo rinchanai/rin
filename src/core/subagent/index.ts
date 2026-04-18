@@ -35,6 +35,7 @@ import {
   formatToolDuration,
   formatTruncationWarningMessage,
   getTextOutput,
+  prepareTruncatedText,
   replaceTabs,
 } from "../pi/render-utils.js";
 
@@ -336,18 +337,14 @@ function buildRunUpdate(
 async function listModelsResult(ctx: any, currentThinkingLevel: ThinkingLevel) {
   const detailsBase = await getSubagentBackendInfo(ctx, currentThinkingLevel);
   const text = formatModelList(detailsBase);
-  const truncation = truncateHead(text);
-  const outputText = appendTruncationNotice(
-    truncation.content,
-    truncation.truncated ? truncation : undefined,
-  );
+  const truncated = prepareTruncatedText(text);
   return {
-    content: [{ type: "text" as const, text: outputText }],
+    content: [{ type: "text" as const, text: truncated.outputText }],
     details: {
       ...detailsBase,
       action: "list_models" as const,
-      userText: truncation.content,
-      truncation: truncation.truncated ? truncation : undefined,
+      userText: truncated.previewText,
+      truncation: truncated.truncation,
     },
   };
 }

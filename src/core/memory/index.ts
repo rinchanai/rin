@@ -3,15 +3,12 @@ import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import {
-  type TruncationResult,
-  truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import {
-  appendTruncationNotice,
   formatHiddenResultsNotice,
   formatToolDuration,
   getTextOutput,
+  prepareTruncatedText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 
@@ -231,8 +228,7 @@ export async function executeSearchMemory(
     };
     const agentText = formatAgentSearchResult(response);
     const userText = formatSearchResult(response);
-    const truncation = truncateHead(agentText);
-    let outputText = truncation.content;
+    const truncated = prepareTruncatedText(agentText);
     const visibleRows = Array.isArray(response?.results) ? response.results : [];
     const details: MemoryToolDetails = {
       hiddenCount: 0,
@@ -244,12 +240,11 @@ export async function executeSearchMemory(
       details.emptyMessage = "No memory results found.";
     }
 
-    if (truncation.truncated) {
-      details.truncation = truncation;
-      outputText = appendTruncationNotice(outputText, truncation);
+    if (truncated.truncation) {
+      details.truncation = truncated.truncation;
     }
     return {
-      content: [{ type: "text" as const, text: outputText }],
+      content: [{ type: "text" as const, text: truncated.outputText }],
       details,
     };
   } catch (error: any) {

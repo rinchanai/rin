@@ -1,15 +1,14 @@
 
 import { Type } from "@sinclair/typebox";
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type TruncationResult,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import {
-  type TruncationResult,
-  truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import {
-  appendTruncationNotice,
   formatHiddenResultsNotice,
+  prepareTruncatedText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 
@@ -143,8 +142,7 @@ export default function webSearchExtension(pi: ExtensionAPI) {
 
       const agentText = formatAgentResults(response);
       const userText = formatResults(response);
-      const truncation = truncateHead(agentText);
-      let outputText = truncation.content;
+      const truncated = prepareTruncatedText(agentText);
       const rows = Array.isArray(response?.results) ? response.results : [];
       const hiddenCount = rows.length > 3 ? rows.length - 3 : 0;
       const details: {
@@ -163,13 +161,12 @@ export default function webSearchExtension(pi: ExtensionAPI) {
         details.emptyMessage = "No web results found.";
       }
 
-      if (truncation.truncated) {
-        details.truncation = truncation;
-        outputText = appendTruncationNotice(outputText, truncation);
+      if (truncated.truncation) {
+        details.truncation = truncated.truncation;
       }
 
       return {
-        content: [{ type: "text", text: outputText }],
+        content: [{ type: "text", text: truncated.outputText }],
         details,
         isError: response?.ok !== true,
       };

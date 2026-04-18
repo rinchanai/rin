@@ -5,6 +5,7 @@ import {
   DEFAULT_MAX_LINES,
   formatSize,
   keyHint,
+  truncateHead,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { getCapabilities, getImageDimensions, imageFallback } from "@mariozechner/pi-tui";
@@ -123,6 +124,40 @@ export function appendTruncationNotice(text: string, truncation: TruncationResul
   if (!truncation?.truncated) return text;
   const notice = formatTruncationNotice(truncation);
   return text ? `${text}\n\n${notice}` : notice;
+}
+
+type TruncateTextOptions = Parameters<typeof truncateHead>[1];
+
+export function prepareTruncatedText(text: string, options?: TruncateTextOptions) {
+  const result = truncateHead(text, options);
+  const truncation = result.truncated ? result : undefined;
+  return {
+    outputText: appendTruncationNotice(result.content, truncation),
+    previewText: result.content,
+    truncation,
+  };
+}
+
+export function prepareTruncatedAgentUserText(
+  agentText: string,
+  userText: string,
+  options?: TruncateTextOptions,
+) {
+  const agent = prepareTruncatedText(agentText, options);
+  if (agentText === userText) {
+    return {
+      ...agent,
+      userPreviewText: agent.previewText,
+      userTruncation: agent.truncation,
+    };
+  }
+
+  const user = prepareTruncatedText(userText, options);
+  return {
+    ...agent,
+    userPreviewText: user.previewText,
+    userTruncation: user.truncation,
+  };
 }
 
 export function renderTextToolResult(

@@ -135,3 +135,30 @@ test("render utils render shared text tool previews", () => {
     "<warning>Fetching...</warning>",
   );
 });
+
+test("prepareTruncatedText leaves short text unchanged", () => {
+  const result = renderUtils.prepareTruncatedText("hello world");
+  assert.equal(result.outputText, "hello world");
+  assert.equal(result.previewText, "hello world");
+  assert.equal(result.truncation, undefined);
+});
+
+test("prepareTruncatedText appends a truncation notice when limits are exceeded", () => {
+  const result = renderUtils.prepareTruncatedText("one\ntwo\nthree", {
+    maxLines: 2,
+  });
+  assert.ok(result.truncation);
+  assert.match(result.outputText, /\[Showing \d+ of \d+ lines/);
+  assert.ok(result.outputText.startsWith(result.previewText));
+});
+
+test("prepareTruncatedAgentUserText reuses one truncation result for identical text", () => {
+  const result = renderUtils.prepareTruncatedAgentUserText(
+    "one\ntwo\nthree",
+    "one\ntwo\nthree",
+    { maxLines: 2 },
+  );
+  assert.equal(result.userPreviewText, result.previewText);
+  assert.equal(result.userTruncation, result.truncation);
+  assert.match(result.outputText, /\[Showing \d+ of \d+ lines/);
+});

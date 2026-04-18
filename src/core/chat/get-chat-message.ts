@@ -1,14 +1,14 @@
 
-import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  getAgentDir,
+  type ExtensionAPI,
+  type TruncationResult,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  type TruncationResult,
-  truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import {
-  appendTruncationNotice,
+  prepareTruncatedAgentUserText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 import { safeString } from "../text-utils.js";
@@ -99,21 +99,16 @@ export default function chatGetMessageExtension(pi: ExtensionAPI) {
           return matches.length > 1 ? `match ${index + 1}\n${body}` : body;
         })
         .join("\n\n");
-      const agentTruncation = truncateHead(text);
-      const userTruncation = truncateHead(text);
-      const outputText = appendTruncationNotice(
-        agentTruncation.content,
-        agentTruncation.truncated ? agentTruncation : undefined,
-      );
+      const truncated = prepareTruncatedAgentUserText(text, text);
 
       return {
-        content: [{ type: "text", text: outputText }],
+        content: [{ type: "text", text: truncated.outputText }],
         details: {
           messageId,
           chatKey,
           matches,
-          userText: userTruncation.content,
-          truncation: userTruncation.truncated ? userTruncation : undefined,
+          userText: truncated.userPreviewText,
+          truncation: truncated.userTruncation,
         } satisfies GetChatMessageDetails,
         isError: false,
       };

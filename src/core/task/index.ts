@@ -1,14 +1,13 @@
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  type TruncationResult,
+} from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  type TruncationResult,
-  truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import {
-  appendTruncationNotice,
+  prepareTruncatedAgentUserText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
@@ -339,19 +338,17 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
 
   const texts = buildTexts(action, data, params);
   if (action === "get") {
-    const agentTruncation = truncateHead(texts.agentText);
-    const userTruncation = truncateHead(texts.userText);
-    const outputText = appendTruncationNotice(
-      agentTruncation.content,
-      agentTruncation.truncated ? agentTruncation : undefined,
+    const truncated = prepareTruncatedAgentUserText(
+      texts.agentText,
+      texts.userText,
     );
     return {
-      content: [{ type: "text" as const, text: outputText }],
+      content: [{ type: "text" as const, text: truncated.outputText }],
       details: {
         ...data,
         action,
-        userText: userTruncation.content,
-        truncation: userTruncation.truncated ? userTruncation : undefined,
+        userText: truncated.userPreviewText,
+        truncation: truncated.userTruncation,
       } satisfies TaskActionDetails,
     };
   }

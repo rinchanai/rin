@@ -2,16 +2,15 @@ import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
-  truncateHead,
+  type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  appendTruncationNotice,
+  prepareTruncatedText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
-import type { TruncationResult } from "@mariozechner/pi-coding-agent";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT = "Rin fetch/1.0";
@@ -303,19 +302,17 @@ export default function fetchExtension(pi: ExtensionAPI) {
       }
 
       const fullText = formatTextResponse(details, bodyText);
-      const truncation = truncateHead(fullText, {
+      const truncated = prepareTruncatedText(fullText, {
         maxLines: DEFAULT_MAX_LINES,
         maxBytes: DEFAULT_MAX_BYTES,
       });
 
-      let outputText = truncation.content;
-      if (truncation.truncated) {
-        outputText = appendTruncationNotice(outputText, truncation);
-        details.truncation = truncation;
+      if (truncated.truncation) {
+        details.truncation = truncated.truncation;
       }
 
       return {
-        content: [{ type: "text", text: outputText }],
+        content: [{ type: "text", text: truncated.outputText }],
         details,
       };
     },

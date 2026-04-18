@@ -1,14 +1,14 @@
 
-import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import {
+  getAgentDir,
+  type ExtensionAPI,
+  type TruncationResult,
+} from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
-  type TruncationResult,
-  truncateHead,
-} from "@mariozechner/pi-coding-agent";
-import {
-  appendTruncationNotice,
+  prepareTruncatedText,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 import { safeString } from "../text-utils.js";
@@ -90,20 +90,16 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
             formatChatLog(entries),
           ].join("\n")
         : `No chat log found\nchatKey=${chatKey}\ndate=${date}\npath=${filePath}`;
-      const truncation = truncateHead(text);
-      const outputText = appendTruncationNotice(
-        truncation.content,
-        truncation.truncated ? truncation : undefined,
-      );
+      const truncated = prepareTruncatedText(text);
       return {
-        content: [{ type: "text", text: outputText }],
+        content: [{ type: "text", text: truncated.outputText }],
         details: {
           chatKey,
           date,
           filePath,
           count: entries.length,
           entries,
-          truncation: truncation.truncated ? truncation : undefined,
+          truncation: truncated.truncation,
         } satisfies ListChatLogDetails,
         isError: false,
       };
