@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import path from "node:path";
 
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
@@ -43,20 +42,9 @@ export async function listBoundSessions(options: {
   const { SessionManager } = options.SessionManager
     ? { SessionManager: options.SessionManager }
     : await loadRinSessionManagerModule();
-  const dirs = await fs.readdir(sessionDir, { withFileTypes: true }).catch(() => []);
-  const groups = await Promise.all([
-    SessionManager.list(cwd, sessionDir).catch(() => []),
-    ...dirs
-      .filter((entry: any) => entry?.isDirectory?.())
-      .map((entry: any) =>
-        SessionManager.list(cwd, path.join(sessionDir, entry.name)).catch(
-          () => [],
-        ),
-      ),
-  ]);
+  const sessions = await SessionManager.list(cwd, sessionDir).catch(() => []);
   const seen = new Set<string>();
-  return groups
-    .flat()
+  return sessions
     .filter((session: any) => {
       const sessionPath = String(session?.path || "").trim();
       if (!sessionPath) return false;

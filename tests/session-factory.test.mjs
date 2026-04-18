@@ -14,7 +14,7 @@ const factory = await import(
     .href,
 );
 
-test("listBoundSessions reads root sessions and legacy subdirectories", async () => {
+test("listBoundSessions reads only canonical root sessions", async () => {
   const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-sessions-"));
   await fs.mkdir(path.join(sessionDir, "legacy"));
   const listed = [];
@@ -24,30 +24,29 @@ test("listBoundSessions reads root sessions and legacy subdirectories", async ()
     SessionManager: {
       async list(_cwd, dir) {
         listed.push(dir);
-        if (dir === sessionDir) {
-          return [
-            {
-              id: "root",
-              path: path.join(dir, "root.jsonl"),
-              modified: new Date("2026-04-16T00:00:00.000Z"),
-            },
-          ];
-        }
-        if (dir === path.join(sessionDir, "legacy")) {
-          return [
-            {
-              id: "legacy",
-              path: path.join(dir, "legacy.jsonl"),
-              modified: new Date("2026-04-17T00:00:00.000Z"),
-            },
-          ];
-        }
-        return [];
+        if (dir !== sessionDir) return [];
+        return [
+          {
+            id: "older",
+            path: path.join(dir, "older.jsonl"),
+            modified: new Date("2026-04-16T00:00:00.000Z"),
+          },
+          {
+            id: "newer",
+            path: path.join(dir, "newer.jsonl"),
+            modified: new Date("2026-04-17T00:00:00.000Z"),
+          },
+          {
+            id: "duplicate-newer",
+            path: path.join(dir, "newer.jsonl"),
+            modified: new Date("2026-04-18T00:00:00.000Z"),
+          },
+        ];
       },
     },
   });
 
-  assert.deepEqual(sessions.map((item) => item.id), ["legacy", "root"]);
-  assert.deepEqual(listed.sort(), [sessionDir, path.join(sessionDir, "legacy")]);
+  assert.deepEqual(sessions.map((item) => item.id), ["newer", "older"]);
+  assert.deepEqual(listed, [sessionDir]);
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
