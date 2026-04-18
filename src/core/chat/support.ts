@@ -375,6 +375,11 @@ export function parseChatKey(chatKey: string) {
   return { platform, botId, chatId };
 }
 
+export function normalizeChatKey(value: unknown) {
+  const chatKey = safeString(value).trim();
+  return parseChatKey(chatKey) ? chatKey : undefined;
+}
+
 export function chatStateDir(dataDir: string, chatKey: string) {
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);

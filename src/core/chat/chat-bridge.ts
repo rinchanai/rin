@@ -16,15 +16,11 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { getTextOutput } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
+import { normalizeChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
-
-function parseChatKey(value: unknown) {
-  const text = safeString(value).trim();
-  return /^[^/:]+(?:\/[^:]+)?:.+$/.test(text) ? text : undefined;
-}
 
 function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
@@ -212,7 +208,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       const requestId =
         safeString(toolCallId).trim() ||
         `chat_bridge_${Date.now().toString(36)}`;
-      const currentChatKey = parseChatKey(
+      const currentChatKey = normalizeChatKey(
         ctx.sessionManager?.getSessionName?.() || "",
       );
       const result = await requestDaemonCommand(

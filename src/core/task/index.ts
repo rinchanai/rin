@@ -16,16 +16,12 @@ import {
   getTextOutput,
   replaceTabs,
 } from "../pi/render-utils.js";
+import { normalizeChatKey } from "../chat/support.js";
 
 function defaultDaemonSocketPath() {
   const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
   if (runtimeDir) return `${runtimeDir}/rin-daemon/daemon.sock`;
   return `${process.env.HOME || ""}/.cache/rin-daemon/daemon.sock`;
-}
-
-function parseChatKey(value: unknown) {
-  const text = String(value || "").trim();
-  return /^[^/:]+(?:\/[^:]+)?:.+$/.test(text) ? text : undefined;
 }
 
 async function sendDaemon(command: any) {
@@ -369,7 +365,7 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
     String(ctx.sessionManager.getSessionId?.() || "").trim() || undefined;
   const currentSessionName =
     String(ctx.sessionManager.getSessionName?.() || "").trim() || undefined;
-  const currentChatKey = parseChatKey(currentSessionName);
+  const currentChatKey = normalizeChatKey(currentSessionName);
 
   let data: any;
   if (action === "get") {

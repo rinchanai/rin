@@ -119,3 +119,97 @@ test("get_task returns a requested task instead of falling back to 'No scheduled
     await fs.rm(runtimeDir, { recursive: true, force: true });
   }
 });
+
+test("save_task only auto-binds valid current chat session names", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-task-runtime-"));
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  await fs.mkdir(socketDir, { recursive: true });
+
+  const requests = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        requests.push(payload);
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: true,
+            data: { task: payload.task },
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => resolve());
+  });
+
+  const tools = [];
+  taskIndex.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+  });
+  const saveTool = tools.find((tool) => tool.name === "save_task");
+  assert.ok(saveTool);
+
+  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
+  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  try {
+    await saveTool.execute(
+      "tool-invalid",
+      {
+        trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+        target: { kind: "agent_prompt", prompt: "hello" },
+      },
+      undefined,
+      undefined,
+      {
+        sessionManager: {
+          getSessionFile: () => undefined,
+          getSessionId: () => undefined,
+          getSessionName: () => "telegram:1",
+        },
+      },
+    );
+    await saveTool.execute(
+      "tool-valid",
+      {
+        trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+        target: { kind: "agent_prompt", prompt: "hello" },
+      },
+      undefined,
+      undefined,
+      {
+        sessionManager: {
+          getSessionFile: () => undefined,
+          getSessionId: () => undefined,
+          getSessionName: () => "telegram/777:1",
+        },
+      },
+    );
+
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].type, "cron_upsert_task");
+    assert.equal(requests[0].defaults?.chatKey, undefined);
+    assert.equal(requests[0].task?.chatKey, undefined);
+    assert.equal(requests[1].defaults?.chatKey, "telegram/777:1");
+    assert.equal(requests[1].task?.chatKey, "telegram/777:1");
+  } finally {
+    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
