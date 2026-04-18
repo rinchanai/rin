@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -34,10 +34,10 @@ import {
 import {
   appendTruncationNotice,
   buildUserFacingTextResult,
-  formatToolDuration,
-  formatTruncationWarningMessage,
+  ExpandableTextResultComponent,
   getToolResultUserText,
   prepareTruncatedText,
+  rebuildExpandableTextResultComponent,
   renderTextToolResult,
 } from "../pi/render-utils.js";
 
@@ -153,90 +153,7 @@ type SubagentRenderState = {
   interval: NodeJS.Timeout | undefined;
 };
 
-type SubagentResultRenderState = {
-  cachedWidth: number | undefined;
-  cachedLines: string[] | undefined;
-  cachedSkipped: number | undefined;
-};
-
-class SubagentResultRenderComponent extends Container {
-  state: SubagentResultRenderState = {
-    cachedWidth: undefined,
-    cachedLines: undefined,
-    cachedSkipped: undefined,
-  };
-}
-
 const SUBAGENT_PREVIEW_LINES = 5;
-
-function rebuildSubagentResultRenderComponent(
-  component: SubagentResultRenderComponent,
-  outputText: string,
-  fullOutputPath: string | undefined,
-  truncation: TruncationResult | undefined,
-  expanded: boolean,
-  startedAt: number | undefined,
-  endedAt: number | undefined,
-  theme: any,
-): void {
-  const state = component.state;
-  component.clear();
-
-  const output = String(outputText || "").trim();
-  if (output) {
-    const styledOutput = output
-      .split("\n")
-      .map((line) => theme.fg("toolOutput", line))
-      .join("\n");
-
-    if (expanded) {
-      component.addChild(new Text(`\n${styledOutput}`, 0, 0));
-    } else {
-      component.addChild({
-        render: (width: number) => {
-          if (state.cachedLines === undefined || state.cachedWidth !== width) {
-            const preview = truncateToVisualLines(
-              styledOutput,
-              SUBAGENT_PREVIEW_LINES,
-              width,
-            );
-            state.cachedLines = preview.visualLines;
-            state.cachedSkipped = preview.skippedCount;
-            state.cachedWidth = width;
-          }
-          if (state.cachedSkipped && state.cachedSkipped > 0) {
-            const hint =
-              theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
-              ` ${keyHint("app.tools.expand" as any, "to expand")})`;
-            return ["", truncateToWidth(hint, width, "..."), ...(state.cachedLines ?? [])];
-          }
-          return ["", ...(state.cachedLines ?? [])];
-        },
-        invalidate: () => {
-          state.cachedWidth = undefined;
-          state.cachedLines = undefined;
-          state.cachedSkipped = undefined;
-        },
-      });
-    }
-  }
-
-  if (truncation?.truncated || fullOutputPath) {
-    const warnings: string[] = [];
-    if (fullOutputPath) warnings.push(`Full output: ${fullOutputPath}`);
-    if (truncation?.truncated) warnings.push(formatTruncationWarningMessage(truncation));
-    component.addChild(
-      new Text(`\n${theme.fg("warning", `[${warnings.join('. ')}]`)}`, 0, 0),
-    );
-  }
-
-  const duration = formatToolDuration(startedAt, endedAt);
-  if (duration) {
-    component.addChild(
-      new Text(`\n${theme.fg("muted", duration)}`, 0, 0),
-    );
-  }
-}
 
 function formatModelList(
   details: SubagentDetails | SubagentBackendInfo,
@@ -444,16 +361,19 @@ export default function subagentExtension(pi: ExtensionAPI) {
         details?.userText,
       );
       const component =
-        (context.lastComponent as SubagentResultRenderComponent | undefined) ??
-        new SubagentResultRenderComponent();
-      rebuildSubagentResultRenderComponent(
+        (context.lastComponent as ExpandableTextResultComponent | undefined) ??
+        new ExpandableTextResultComponent();
+      rebuildExpandableTextResultComponent(
         component,
-        outputText,
-        details?.fullOutputPath,
-        details?.truncation,
-        options.expanded,
-        state.startedAt,
-        state.endedAt,
+        {
+          outputText,
+          expanded: options.expanded,
+          previewLines: SUBAGENT_PREVIEW_LINES,
+          fullOutputPath: details?.fullOutputPath,
+          truncation: details?.truncation,
+          startedAt: state.startedAt,
+          endedAt: state.endedAt,
+        },
         theme,
       );
       component.invalidate();

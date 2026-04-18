@@ -3,8 +3,8 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 import {
@@ -12,10 +12,10 @@ import {
   truncateTail,
 } from "@mariozechner/pi-coding-agent";
 import {
-  formatToolDuration,
-  formatTruncationWarningMessage,
+  ExpandableTextResultComponent,
   getTextOutput,
   NO_OUTPUT_TEXT,
+  rebuildExpandableTextResultComponent,
 } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { readSessionMetadata } from "../session/metadata.js";
@@ -45,20 +45,6 @@ type ChatBridgeRenderState = {
   interval: NodeJS.Timeout | undefined;
 };
 
-type ChatBridgeResultRenderState = {
-  cachedWidth: number | undefined;
-  cachedLines: string[] | undefined;
-  cachedSkipped: number | undefined;
-};
-
-class ChatBridgeResultRenderComponent extends Container {
-  state: ChatBridgeResultRenderState = {
-    cachedWidth: undefined,
-    cachedLines: undefined,
-    cachedSkipped: undefined,
-  };
-}
-
 function previewCode(value: unknown) {
   const lines = safeString(value)
     .split("\n")
@@ -78,90 +64,6 @@ function formatChatBridgeCall(
     ? theme.fg("muted", ` (timeout ${timeout}s)`)
     : "";
   return theme.fg("toolTitle", theme.bold(`$ ${preview}`)) + timeoutSuffix;
-}
-
-function rebuildChatBridgeResultRenderComponent(
-  component: ChatBridgeResultRenderComponent,
-  result: {
-    content: Array<{
-      type: string;
-      text?: string;
-      data?: string;
-      mimeType?: string;
-    }>;
-    details?: ChatBridgeDetails;
-  },
-  options: { expanded: boolean; isPartial: boolean },
-  showImages: boolean,
-  startedAt: number | undefined,
-  endedAt: number | undefined,
-  theme: any,
-): void {
-  const state = component.state;
-  component.clear();
-
-  const output = getTextOutput(result as any, showImages).trim();
-  if (output) {
-    const styledOutput = output
-      .split("\n")
-      .map((line) => theme.fg("toolOutput", line))
-      .join("\n");
-
-    if (options.expanded) {
-      component.addChild(new Text(`\n${styledOutput}`, 0, 0));
-    } else {
-      component.addChild({
-        render: (width: number) => {
-          if (state.cachedLines === undefined || state.cachedWidth !== width) {
-            const preview = truncateToVisualLines(
-              styledOutput,
-              CHAT_BRIDGE_PREVIEW_LINES,
-              width,
-            );
-            state.cachedLines = preview.visualLines;
-            state.cachedSkipped = preview.skippedCount;
-            state.cachedWidth = width;
-          }
-          if (state.cachedSkipped && state.cachedSkipped > 0) {
-            const hint =
-              theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
-              ` ${keyHint("app.tools.expand" as any, "to expand")})`;
-            return [
-              "",
-              truncateToWidth(hint, width, "..."),
-              ...(state.cachedLines ?? []),
-            ];
-          }
-          return ["", ...(state.cachedLines ?? [])];
-        },
-        invalidate: () => {
-          state.cachedWidth = undefined;
-          state.cachedLines = undefined;
-          state.cachedSkipped = undefined;
-        },
-      });
-    }
-  }
-
-  const truncation = result.details?.truncation;
-  const fullOutputPath = result.details?.fullOutputPath;
-  if (truncation?.truncated || fullOutputPath) {
-    const warnings: string[] = [];
-    if (fullOutputPath) warnings.push(`Full output: ${fullOutputPath}`);
-    if (truncation?.truncated) {
-      warnings.push(formatTruncationWarningMessage(truncation));
-    }
-    component.addChild(
-      new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0),
-    );
-  }
-
-  const duration = formatToolDuration(startedAt, endedAt);
-  if (duration) {
-    component.addChild(
-      new Text(`\n${theme.fg("muted", duration)}`, 0, 0),
-    );
-  }
 }
 
 const paramsSchema = Type.Object({
@@ -271,17 +173,22 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
           state.interval = undefined;
         }
       }
+      const details = (result as any)?.details as ChatBridgeDetails | undefined;
+      const outputText = getTextOutput(result as any, context.showImages);
       const component =
-        (context.lastComponent as
-          | ChatBridgeResultRenderComponent
-          | undefined) ?? new ChatBridgeResultRenderComponent();
-      rebuildChatBridgeResultRenderComponent(
+        (context.lastComponent as ExpandableTextResultComponent | undefined) ??
+        new ExpandableTextResultComponent();
+      rebuildExpandableTextResultComponent(
         component,
-        result as any,
-        options,
-        context.showImages,
-        state.startedAt,
-        state.endedAt,
+        {
+          outputText,
+          expanded: options.expanded,
+          previewLines: CHAT_BRIDGE_PREVIEW_LINES,
+          fullOutputPath: details?.fullOutputPath,
+          truncation: details?.truncation,
+          startedAt: state.startedAt,
+          endedAt: state.endedAt,
+        },
         theme,
       );
       component.invalidate();

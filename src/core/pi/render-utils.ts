@@ -6,9 +6,17 @@ import {
   formatSize,
   keyHint,
   truncateHead,
+  truncateToVisualLines,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
-import { getCapabilities, getImageDimensions, imageFallback } from "@mariozechner/pi-tui";
+import {
+  Container,
+  Text,
+  getCapabilities,
+  getImageDimensions,
+  imageFallback,
+  truncateToWidth,
+} from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 
 function sanitizeBinaryOutput(str: string): string {
@@ -204,6 +212,96 @@ export function prepareTruncatedAgentUserText(
     userPreviewText: user.previewText,
     userTruncation: user.truncation,
   };
+}
+
+export type ExpandableTextResultRenderState = {
+  cachedWidth: number | undefined;
+  cachedLines: string[] | undefined;
+  cachedSkipped: number | undefined;
+};
+
+export class ExpandableTextResultComponent extends Container {
+  state: ExpandableTextResultRenderState = {
+    cachedWidth: undefined,
+    cachedLines: undefined,
+    cachedSkipped: undefined,
+  };
+}
+
+export function rebuildExpandableTextResultComponent(
+  component: ExpandableTextResultComponent,
+  config: {
+    outputText: string;
+    expanded: boolean;
+    previewLines?: number;
+    fullOutputPath?: string;
+    truncation?: TruncationResult;
+    startedAt?: number;
+    endedAt?: number;
+  },
+  theme: any,
+) {
+  const state = component.state;
+  component.clear();
+
+  const output = String(config.outputText || "").trim();
+  if (output) {
+    const styledOutput = output
+      .split("\n")
+      .map((line) => theme.fg("toolOutput", line))
+      .join("\n");
+
+    if (config.expanded) {
+      component.addChild(new Text(`\n${styledOutput}`, 0, 0));
+    } else {
+      component.addChild({
+        render: (width: number) => {
+          if (state.cachedLines === undefined || state.cachedWidth !== width) {
+            const preview = truncateToVisualLines(
+              styledOutput,
+              config.previewLines ?? 5,
+              width,
+            );
+            state.cachedLines = preview.visualLines;
+            state.cachedSkipped = preview.skippedCount;
+            state.cachedWidth = width;
+          }
+          if (state.cachedSkipped && state.cachedSkipped > 0) {
+            const hint =
+              theme.fg("muted", `... (${state.cachedSkipped} earlier lines,`) +
+              ` ${keyHint("app.tools.expand" as any, "to expand")})`;
+            return [
+              "",
+              truncateToWidth(hint, width, "..."),
+              ...(state.cachedLines ?? []),
+            ];
+          }
+          return ["", ...(state.cachedLines ?? [])];
+        },
+        invalidate: () => {
+          state.cachedWidth = undefined;
+          state.cachedLines = undefined;
+          state.cachedSkipped = undefined;
+        },
+      });
+    }
+  }
+
+  if (config.truncation?.truncated || config.fullOutputPath) {
+    const warnings: string[] = [];
+    if (config.fullOutputPath) warnings.push(`Full output: ${config.fullOutputPath}`);
+    if (config.truncation?.truncated) {
+      warnings.push(formatTruncationWarningMessage(config.truncation));
+    }
+    component.addChild(
+      new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0),
+    );
+  }
+
+  const duration = formatToolDuration(config.startedAt, config.endedAt);
+  if (duration) {
+    component.addChild(new Text(`\n${theme.fg("muted", duration)}`, 0, 0));
+  }
 }
 
 export function renderTextToolResult(
