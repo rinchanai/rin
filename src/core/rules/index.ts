@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -13,10 +13,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {
   appendTruncationNotice,
-  formatTruncationWarningMessage,
-  getTextOutput,
   invalidArgText,
-  replaceTabs,
+  renderTextToolResult,
   shortenPath,
   str,
 } from "../pi/render-utils.js";
@@ -75,12 +73,6 @@ function formatRulesCall(
   return `${theme.fg("toolTitle", theme.bold("rules"))} ${path === null ? invalidArgText(theme) : theme.fg("accent", path)}`;
 }
 
-function trimTrailingEmptyLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end--;
-  return lines.slice(0, end);
-}
-
 function formatRulesResult(
   result: {
     content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -90,30 +82,7 @@ function formatRulesResult(
   theme: any,
   showImages: boolean,
 ) {
-  const output = getTextOutput(result, showImages);
-  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
-  const maxLines = options.expanded ? lines.length : 10;
-  const displayLines = lines.slice(0, maxLines);
-  const remaining = lines.length - maxLines;
-
-  let text = "";
-  if (displayLines.length > 0) {
-    text = `\n${displayLines
-      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
-      .join("\n")}`;
-    if (remaining > 0) {
-      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
-    }
-  } else if (result.details?.emptyMessage) {
-    text = `\n${theme.fg("muted", result.details.emptyMessage)}`;
-  }
-
-  const truncation = result.details?.truncation;
-  if (truncation?.truncated) {
-    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-  }
-
-  return text;
+  return renderTextToolResult(result, options, theme, showImages);
 }
 
 export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {

@@ -1,6 +1,6 @@
 
 import { Type } from "@sinclair/typebox";
-import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import {
@@ -9,9 +9,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {
   appendTruncationNotice,
-  formatTruncationWarningMessage,
-  getTextOutput,
-  replaceTabs,
+  formatHiddenResultsNotice,
+  renderTextToolResult,
 } from "../pi/render-utils.js";
 
 function trimSnippet(value: string, max = 220): string {
@@ -61,12 +60,6 @@ function formatAgentResults(response: any): string {
   ].join("\n\n");
 }
 
-function trimTrailingEmptyLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end--;
-  return lines.slice(0, end);
-}
-
 function formatWebSearchResult(
   result: {
     content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -81,34 +74,13 @@ function formatWebSearchResult(
   theme: any,
   showImages: boolean,
 ) {
-  const output = getTextOutput(result, showImages);
-  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
-  const maxLines = options.expanded ? lines.length : 10;
-  const displayLines = lines.slice(0, maxLines);
-  const remaining = lines.length - maxLines;
-
-  let text = "";
-  if (displayLines.length > 0) {
-    text = `\n${displayLines
-      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
-      .join("\n")}`;
-    if (remaining > 0) {
-      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
-    }
-  } else if (result.details?.emptyMessage) {
-    text = `\n${theme.fg("muted", result.details.emptyMessage)}`;
-  }
-
-  if ((result.details?.hiddenCount ?? 0) > 0) {
-    text += `\n${theme.fg("muted", `[Showing top ${Math.max((result.details?.totalResults ?? 0) - (result.details?.hiddenCount ?? 0), 0)} of ${result.details?.totalResults} results.]`)}`;
-  }
-
-  const truncation = result.details?.truncation;
-  if (truncation?.truncated) {
-    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-  }
-
-  return text;
+  const topResultsNotice = formatHiddenResultsNotice(
+    result.details?.totalResults ?? 0,
+    result.details?.hiddenCount ?? 0,
+  );
+  return renderTextToolResult(result, options, theme, showImages, {
+    extraMutedLines: topResultsNotice ? [topResultsNotice] : [],
+  });
 }
 
 async function loadSearchWeb() {

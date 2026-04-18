@@ -72,3 +72,66 @@ test("render utils format shared tool durations", () => {
   assert.equal(renderUtils.formatToolDuration(undefined, undefined), undefined);
   assert.equal(renderUtils.formatToolDuration(1000, 3500), "Took 2.5s");
 });
+
+test("render utils format shared hidden result notices", () => {
+  assert.equal(renderUtils.formatHiddenResultsNotice(5, 2), "[Showing top 3 of 5 results.]");
+  assert.equal(renderUtils.formatHiddenResultsNotice(5, 0), "");
+});
+
+test("render utils render shared text tool previews", () => {
+  const theme = {
+    fg: (kind, text) => `<${kind}>${text}</${kind}>`,
+  };
+  const truncation = {
+    truncated: true,
+    truncatedBy: "lines",
+    outputLines: 2,
+    totalLines: 4,
+    maxLines: 2,
+  };
+
+  assert.equal(
+    renderUtils.renderTextToolResult(
+      {
+        content: [{ type: "text", text: "alpha\nbeta" }],
+        details: {
+          emptyMessage: "Nothing here.",
+        },
+      },
+      { expanded: false },
+      theme,
+      false,
+      {
+        extraMutedLines: [renderUtils.formatHiddenResultsNotice(5, 2)],
+        truncation,
+      },
+    ),
+    "\n<toolOutput>alpha</toolOutput>\n<toolOutput>beta</toolOutput>\n<muted>[Showing top 3 of 5 results.]</muted>\n<warning>[Truncated: showing 2 of 4 lines (2 line limit)]</warning>",
+  );
+
+  assert.equal(
+    renderUtils.renderTextToolResult(
+      {
+        content: [{ type: "text", text: "" }],
+        details: {
+          emptyMessage: "Nothing here.",
+        },
+      },
+      { expanded: false },
+      theme,
+      false,
+    ),
+    "\n<muted>Nothing here.</muted>",
+  );
+
+  assert.equal(
+    renderUtils.renderTextToolResult(
+      { content: [{ type: "text", text: "ignored" }] },
+      { expanded: false, isPartial: true },
+      theme,
+      false,
+      { partialText: "Fetching..." },
+    ),
+    "<warning>Fetching...</warning>",
+  );
+});

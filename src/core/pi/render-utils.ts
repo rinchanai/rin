@@ -4,6 +4,7 @@ import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
   formatSize,
+  keyHint,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { getCapabilities, getImageDimensions, imageFallback } from "@mariozechner/pi-tui";
@@ -37,6 +38,17 @@ export function str(value: unknown) {
 
 export function replaceTabs(text: string) {
   return String(text || "").replace(/\t/g, "   ");
+}
+
+export function trimTrailingEmptyLines(lines: string[]): string[] {
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  return lines.slice(0, end);
+}
+
+export function formatHiddenResultsNotice(totalResults: number, hiddenCount: number) {
+  if (!(hiddenCount > 0)) return "";
+  return `[Showing top ${Math.max(totalResults - hiddenCount, 0)} of ${totalResults} results.]`;
 }
 
 export function getTextOutput(
@@ -111,4 +123,56 @@ export function appendTruncationNotice(text: string, truncation: TruncationResul
   if (!truncation?.truncated) return text;
   const notice = formatTruncationNotice(truncation);
   return text ? `${text}\n\n${notice}` : notice;
+}
+
+export function renderTextToolResult(
+  result: {
+    content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
+    details?: { truncation?: TruncationResult; emptyMessage?: string };
+  },
+  options: { expanded: boolean; isPartial?: boolean },
+  theme: any,
+  showImages: boolean,
+  config: {
+    previewLines?: number;
+    partialText?: string;
+    emptyMessage?: string;
+    extraMutedLines?: string[];
+    truncation?: TruncationResult;
+  } = {},
+) {
+  if (options.isPartial && config.partialText) {
+    return theme.fg("warning", config.partialText);
+  }
+
+  const output = getTextOutput(result, showImages);
+  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const maxLines = options.expanded ? lines.length : (config.previewLines ?? 10);
+  const displayLines = lines.slice(0, maxLines);
+  const remaining = lines.length - maxLines;
+
+  let text = "";
+  if (displayLines.length > 0) {
+    text = `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;
+    if (remaining > 0) {
+      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
+    }
+  } else {
+    const emptyMessage = config.emptyMessage ?? result.details?.emptyMessage;
+    if (emptyMessage) {
+      text = `\n${theme.fg("muted", emptyMessage)}`;
+    }
+  }
+
+  for (const line of config.extraMutedLines ?? []) {
+    if (!line) continue;
+    text += `\n${theme.fg("muted", line)}`;
+  }
+
+  const truncation = config.truncation ?? result.details?.truncation;
+  if (truncation?.truncated) {
+    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
+  }
+
+  return text;
 }

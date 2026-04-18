@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -9,10 +9,10 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {
   appendTruncationNotice,
+  formatHiddenResultsNotice,
   formatToolDuration,
-  formatTruncationWarningMessage,
   getTextOutput,
-  replaceTabs,
+  renderTextToolResult,
 } from "../pi/render-utils.js";
 
 import {
@@ -21,8 +21,6 @@ import {
   searchTranscriptArchive,
 } from "./transcripts.js";
 import { readSessionMetadata } from "../session/metadata.js";
-
-const MEMORY_RESULT_PREVIEW_LINES = 10;
 
 type MemoryToolDetails = {
   truncation?: TruncationResult;
@@ -157,12 +155,6 @@ export function formatAgentSearchResult(response: any): string {
   ].join("\n\n");
 }
 
-function trimTrailingEmptyLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end -= 1;
-  return lines.slice(0, end);
-}
-
 function buildSearchMemorySearchStatusText(mode: "search" | "recent", query: string): string {
   if (mode === "recent") return "Loading recent archived sessions...";
   return `Searching archived sessions for ${JSON.stringify(query)}...`;
@@ -191,34 +183,13 @@ function formatMemoryResult(
   theme: any,
   showImages: boolean,
 ) {
-  const output = getTextOutput(result, showImages);
-  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
-  const maxLines = options.expanded ? lines.length : MEMORY_RESULT_PREVIEW_LINES;
-  const displayLines = lines.slice(0, maxLines);
-  const remaining = lines.length - maxLines;
-
-  let text = "";
-  if (displayLines.length > 0) {
-    text = `\n${displayLines
-      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
-      .join("\n")}`;
-    if (remaining > 0) {
-      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
-    }
-  } else if (result.details?.emptyMessage) {
-    text = `\n${theme.fg("muted", result.details.emptyMessage)}`;
-  }
-
-  if ((result.details?.hiddenCount ?? 0) > 0) {
-    text += `\n${theme.fg("muted", `[Showing top ${Math.max((result.details?.totalResults ?? 0) - (result.details?.hiddenCount ?? 0), 0)} of ${result.details?.totalResults} results.]`)}`;
-  }
-
-  const truncation = result.details?.truncation;
-  if (truncation?.truncated) {
-    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-  }
-
-  return text;
+  const topResultsNotice = formatHiddenResultsNotice(
+    result.details?.totalResults ?? 0,
+    result.details?.hiddenCount ?? 0,
+  );
+  return renderTextToolResult(result, options, theme, showImages, {
+    extraMutedLines: topResultsNotice ? [topResultsNotice] : [],
+  });
 }
 
 function throwIfAborted(signal?: AbortSignal) {

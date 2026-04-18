@@ -1,4 +1,4 @@
-import { keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -9,9 +9,7 @@ import { Type } from "@sinclair/typebox";
 
 import {
   appendTruncationNotice,
-  formatTruncationWarningMessage,
-  getTextOutput,
-  replaceTabs,
+  renderTextToolResult,
 } from "../pi/render-utils.js";
 import type { TruncationResult } from "@mariozechner/pi-coding-agent";
 
@@ -200,12 +198,6 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
   return lines.join("\n");
 }
 
-function trimTrailingEmptyLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end--;
-  return lines.slice(0, end);
-}
-
 function formatFetchResult(
   result: {
     content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
@@ -215,24 +207,9 @@ function formatFetchResult(
   theme: any,
   showImages: boolean,
 ) {
-  if (options.isPartial) return theme.fg("warning", "Fetching...");
-  const output = getTextOutput(result, showImages);
-  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
-  const maxLines = options.expanded ? lines.length : 10;
-  const displayLines = lines.slice(0, maxLines);
-  const remaining = lines.length - maxLines;
-  let text = `\n${displayLines
-    .map((line) => theme.fg("toolOutput", replaceTabs(line)))
-    .join("\n")}`;
-  if (remaining > 0) {
-    text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
-  }
-
-  const truncation = result.details?.truncation;
-  if (truncation?.truncated) {
-    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-  }
-  return text;
+  return renderTextToolResult(result, options, theme, showImages, {
+    partialText: "Fetching...",
+  });
 }
 
 export default function fetchExtension(pi: ExtensionAPI) {

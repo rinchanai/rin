@@ -1,5 +1,5 @@
 
-import { getAgentDir, keyHint, truncateToVisualLines, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -9,9 +9,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import {
   appendTruncationNotice,
-  formatTruncationWarningMessage,
-  getTextOutput,
-  replaceTabs,
+  renderTextToolResult,
 } from "../pi/render-utils.js";
 import { safeString } from "../text-utils.js";
 
@@ -27,12 +25,6 @@ type ListChatLogDetails = {
   entries: any[];
   truncation?: TruncationResult;
 };
-
-function trimTrailingEmptyLines(lines: string[]): string[] {
-  let end = lines.length;
-  while (end > 0 && lines[end - 1] === "") end--;
-  return lines.slice(0, end);
-}
 
 function localDateString(date = new Date()) {
   const utc = date.getTime() - date.getTimezoneOffset() * 60_000;
@@ -55,28 +47,9 @@ function formatListChatLogResult(
   theme: any,
   showImages: boolean,
 ) {
-  const output = getTextOutput(result, showImages);
-  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
-  const maxLines = options.expanded ? lines.length : 10;
-  const displayLines = lines.slice(0, maxLines);
-  const remaining = lines.length - maxLines;
-
-  let text = "";
-  if (displayLines.length > 0) {
-    text = `\n${displayLines
-      .map((line) => theme.fg("toolOutput", replaceTabs(line)))
-      .join("\n")}`;
-    if (remaining > 0) {
-      text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
-    }
-  }
-
-  const truncation = result.details?.truncation as TruncationResult | undefined;
-  if (truncation?.truncated) {
-    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-  }
-
-  return text;
+  return renderTextToolResult(result, options, theme, showImages, {
+    truncation: result.details?.truncation as TruncationResult | undefined,
+  });
 }
 
 export default function chatListChatLogExtension(pi: ExtensionAPI) {
