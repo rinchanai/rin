@@ -57,6 +57,19 @@ export type TokenUsageQueryOptions = {
 };
 
 const dbCache = new Map<string, BetterSqlite3.Database>();
+const statementCache = new WeakMap<BetterSqlite3.Database, Map<string, any>>();
+
+const AGGREGATE_ORDER_FIELDS = new Set([
+  "rows",
+  "token_events",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cache_write_tokens",
+  "total_tokens",
+  "cost_total",
+  "context_tokens",
+]);
 
 function safeString(value: unknown): string {
   if (value == null) return "";
@@ -157,6 +170,20 @@ function initDb(db: BetterSqlite3.Database) {
   `);
 }
 
+function prepareCached(db: BetterSqlite3.Database, sql: string) {
+  let statements = statementCache.get(db);
+  if (!statements) {
+    statements = new Map();
+    statementCache.set(db, statements);
+  }
+  let statement = statements.get(sql);
+  if (!statement) {
+    statement = db.prepare(sql);
+    statements.set(sql, statement);
+  }
+  return statement;
+}
+
 export function openTokenUsageDb(agentDir = ""): BetterSqlite3.Database {
   const dbPath = resolveTokenUsageDbPath(agentDir);
   const existing = dbCache.get(dbPath);
@@ -204,7 +231,9 @@ export function appendTokenTelemetryEvent(
     toolNames: normalizeToolNames(event.toolNames),
   };
   normalized.id = safeString(event.id).trim() || stableEventId(normalized);
-  const insert = db.prepare(`
+  const insert = prepareCached(
+    db,
+    `
     INSERT OR IGNORE INTO telemetry_events (
       id,
       timestamp,
@@ -282,7 +311,8 @@ export function appendTokenTelemetryEvent(
       @is_error,
       @metadata_json
     )
-  `);
+  `,
+  );
   insert.run({
     id: normalized.id,
     timestamp: normalized.timestamp,
@@ -333,9 +363,9 @@ export function getTokenUsageOverview(
 ) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
-  return db
-    .prepare(
-      `
+  return prepareCached(
+    db,
+    `
       SELECT
         COUNT(*) AS total_events,
         SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END) AS token_events,
@@ -356,8 +386,7 @@ export function getTokenUsageOverview(
       FROM telemetry_events
       ${whereSql}
     `,
-    )
-    .get(params) as any;
+  ).get(params) as any;
 }
 
 type DimensionDef = {
@@ -500,18 +529,7 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
   const direction = safeString(options.direction).trim().toLowerCase() === "asc"
     ? "ASC"
     : "DESC";
-  const supportedOrder = new Set([
-    ...dims.map((dim) => dim.key),
-    "rows",
-    "token_events",
-    "input_tokens",
-    "output_tokens",
-    "cache_read_tokens",
-    "cache_write_tokens",
-    "total_tokens",
-    "cost_total",
-    "context_tokens",
-  ]);
+  const supportedOrder = new Set([...dims.map((dim) => dim.key), ...AGGREGATE_ORDER_FIELDS]);
   const orderExpr = supportedOrder.has(orderBy)
     ? `"${orderBy}"`
     : `"total_tokens"`;
@@ -532,18 +550,18 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
     ${whereSql}
     ${groupSql}
     ORDER BY ${orderExpr} ${direction}
-    LIMIT ${limit}
+    LIMIT @limit
   `;
-  return db.prepare(sql).all(params) as any[];
+  return prepareCached(db, sql).all({ ...params, limit }) as any[];
 }
 
 export function queryTokenUsageEvents(options: TokenUsageQueryOptions = {}) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
   const limit = Math.max(1, Math.min(500, Math.round(safeNumber(options.limit || 40))));
-  return db
-    .prepare(
-      `
+  return prepareCached(
+    db,
+    `
       SELECT
         timestamp,
         session_id,
@@ -570,8 +588,7 @@ export function queryTokenUsageEvents(options: TokenUsageQueryOptions = {}) {
       FROM telemetry_events
       ${whereSql}
       ORDER BY timestamp DESC
-      LIMIT ${limit}
+      LIMIT @limit
     `,
-    )
-    .all(params) as any[];
+  ).all({ ...params, limit }) as any[];
 }

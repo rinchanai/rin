@@ -164,3 +164,68 @@ test("token usage store returns recent events in reverse time order", async () =
     assert.equal(rows[1].total_tokens, 10);
   });
 });
+
+test("token usage store handles repeated cached queries with varying limits", async () => {
+  await withTempRoot(async (root) => {
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-1",
+        timestamp: "2026-04-10T08:00:00.000Z",
+        sessionId: "s1",
+        eventType: "message_end",
+        totalTokens: 10,
+      },
+      root,
+    );
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-2",
+        timestamp: "2026-04-10T08:01:00.000Z",
+        sessionId: "s2",
+        eventType: "message_end",
+        totalTokens: 20,
+      },
+      root,
+    );
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-3",
+        timestamp: "2026-04-10T08:02:00.000Z",
+        sessionId: "s3",
+        eventType: "message_end",
+        totalTokens: 30,
+      },
+      root,
+    );
+
+    const recentOne = store.queryTokenUsageEvents({ agentDir: root, limit: 1 });
+    assert.equal(recentOne.length, 1);
+    assert.equal(recentOne[0].session_id, "s3");
+
+    const recentThree = store.queryTokenUsageEvents({ agentDir: root, limit: 3 });
+    assert.equal(recentThree.length, 3);
+    assert.deepEqual(
+      recentThree.map((row) => row.session_id),
+      ["s3", "s2", "s1"],
+    );
+
+    const topOne = store.queryTokenUsageAggregate({
+      agentDir: root,
+      groupBy: ["session_id"],
+      limit: 1,
+    });
+    assert.equal(topOne.length, 1);
+    assert.equal(topOne[0].session_id, "s3");
+
+    const topThree = store.queryTokenUsageAggregate({
+      agentDir: root,
+      groupBy: ["session_id"],
+      limit: 3,
+    });
+    assert.equal(topThree.length, 3);
+    assert.deepEqual(
+      topThree.map((row) => row.session_id),
+      ["s3", "s2", "s1"],
+    );
+  });
+});
