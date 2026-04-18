@@ -7,12 +7,8 @@ import {
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { BuiltinModuleHost } from "../builtins/host.js";
 import {
-  dedupeSlashCommands,
-  getBuiltinSlashCommands,
-  getExtensionSlashCommands,
+  collectSlashCommands,
   getOAuthStateFromStorage,
-  getPromptSlashCommands,
-  getSkillSlashCommands,
 } from "./catalog-helpers.js";
 
 async function createCatalogContext(
@@ -95,19 +91,20 @@ export async function listCatalogCommands(
 ) {
   const { resourceLoader, extensionRunner, builtinHost } =
     await createCatalogContext(options);
-  return dedupeSlashCommands([
-    ...getBuiltinSlashCommands(),
-    ...getExtensionSlashCommands(
-      extensionRunner.getRegisteredCommands(),
-      "extension",
-    ),
-    ...getExtensionSlashCommands(
-      builtinHost.getRegisteredCommands(),
-      "builtin_module",
-    ),
-    ...getPromptSlashCommands(resourceLoader.getPrompts().prompts),
-    ...getSkillSlashCommands(resourceLoader.getSkills().skills),
-  ]);
+  return collectSlashCommands({
+    commandGroups: [
+      {
+        commands: extensionRunner.getRegisteredCommands(),
+        source: "extension",
+      },
+      {
+        commands: builtinHost.getRegisteredCommands(),
+        source: "builtin_module",
+      },
+    ],
+    promptTemplates: resourceLoader.getPrompts().prompts,
+    skills: resourceLoader.getSkills().skills,
+  });
 }
 
 export async function listCatalogModels(

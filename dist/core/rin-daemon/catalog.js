@@ -2,7 +2,7 @@ import path from "node:path";
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { BuiltinModuleHost } from "../builtins/host.js";
-import { getBuiltinSlashCommands } from "./worker-helpers.js";
+import { collectSlashCommands, getOAuthStateFromStorage, } from "./catalog-helpers.js";
 async function createCatalogContext(options = {}) {
     const codingAgentModule = await loadRinCodingAgent();
     const { AuthStorage, DefaultResourceLoader, ModelRegistry, SettingsManager, ExtensionRunner, createEventBus, discoverAndLoadExtensions, } = codingAgentModule;
@@ -42,41 +42,19 @@ async function createCatalogContext(options = {}) {
 }
 export async function listCatalogCommands(options = {}) {
     const { resourceLoader, extensionRunner, builtinHost } = await createCatalogContext(options);
-    const prompts = resourceLoader.getPrompts().prompts;
-    const skills = resourceLoader.getSkills().skills;
-    const seen = new Set();
-    return [
-        ...getBuiltinSlashCommands(),
-        ...extensionRunner.getRegisteredCommands().map((command) => ({
-            name: String(command?.invocationName || command?.name || "").trim(),
-            description: String(command?.description || "").trim(),
-            source: "extension",
-            sourceInfo: command?.sourceInfo,
-        })),
-        ...builtinHost.getRegisteredCommands().map((command) => ({
-            name: String(command?.invocationName || command?.name || "").trim(),
-            description: String(command?.description || "").trim(),
-            source: "builtin_module",
-            sourceInfo: command?.sourceInfo,
-        })),
-        ...prompts.map((template) => ({
-            name: String(template?.name || "").trim(),
-            description: String(template?.description || "").trim(),
-            source: "prompt",
-            sourceInfo: template?.sourceInfo,
-        })),
-        ...skills.map((skill) => ({
-            name: `skill:${String(skill?.name || "").trim()}`,
-            description: String(skill?.description || "").trim(),
-            source: "skill",
-            sourceInfo: skill?.sourceInfo,
-        })),
-    ].filter((item) => {
-        const name = String(item?.name || "").trim();
-        if (!name || seen.has(name))
-            return false;
-        seen.add(name);
-        return true;
+    return collectSlashCommands({
+        commandGroups: [
+            {
+                commands: extensionRunner.getRegisteredCommands(),
+                source: "extension",
+            },
+            {
+                commands: builtinHost.getRegisteredCommands(),
+                source: "builtin_module",
+            },
+        ],
+        promptTemplates: resourceLoader.getPrompts().prompts,
+        skills: resourceLoader.getSkills().skills,
     });
 }
 export async function listCatalogModels(options = {}) {
@@ -85,14 +63,5 @@ export async function listCatalogModels(options = {}) {
 }
 export async function getCatalogOAuthState(options = {}) {
     const { authStorage } = await createCatalogContext(options);
-    const credentials = Object.fromEntries(authStorage.list().map((providerId) => {
-        const credential = authStorage.get(providerId);
-        return [providerId, credential ? { type: credential.type } : undefined];
-    }));
-    const providers = authStorage.getOAuthProviders().map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        usesCallbackServer: Boolean(provider.usesCallbackServer),
-    }));
-    return { credentials, providers };
+    return getOAuthStateFromStorage(authStorage);
 }

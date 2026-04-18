@@ -13,38 +13,35 @@ const helperModule = await import(
   ).href,
 );
 
-const {
-  dedupeSlashCommands,
-  getExtensionSlashCommands,
-  getOAuthStateFromStorage,
-  getPromptSlashCommands,
-  getSkillSlashCommands,
-} = helperModule;
+const { collectSlashCommands, getOAuthStateFromStorage } = helperModule;
 
 test("catalog helpers normalize and dedupe slash commands", () => {
-  const commands = dedupeSlashCommands([
-    ...getExtensionSlashCommands(
-      [
-        {
-          invocationName: "  resume  ",
-          description: "  Resume a session.  ",
-          sourceInfo: { file: "extension-a" },
-        },
-        {
-          name: "resume",
-          description: "duplicate entry should be ignored",
-        },
-      ],
-      "extension",
-    ),
-    ...getPromptSlashCommands([
+  const commands = collectSlashCommands({
+    includeBuiltin: false,
+    commandGroups: [
+      {
+        source: "extension",
+        commands: [
+          {
+            invocationName: "  resume  ",
+            description: "  Resume a session.  ",
+            sourceInfo: { file: "extension-a" },
+          },
+          {
+            name: "resume",
+            description: "duplicate entry should be ignored",
+          },
+        ],
+      },
+    ],
+    promptTemplates: [
       {
         name: "  polish  ",
         description: "  Rewrite the final reply.  ",
         sourceInfo: { file: "prompt-a" },
       },
-    ]),
-    ...getSkillSlashCommands([
+    ],
+    skills: [
       {
         name: "  cleanup  ",
         description: "  Remove stale files.  ",
@@ -54,8 +51,8 @@ test("catalog helpers normalize and dedupe slash commands", () => {
         name: "   ",
         description: "ignored",
       },
-    ]),
-  ]);
+    ],
+  });
 
   assert.deepEqual(commands, [
     {
@@ -77,6 +74,30 @@ test("catalog helpers normalize and dedupe slash commands", () => {
       sourceInfo: { file: "skill-a" },
     },
   ]);
+});
+
+test("catalog helpers keep builtin-module commands in source order", () => {
+  const commands = collectSlashCommands({
+    commandGroups: [
+      {
+        source: "builtin_module",
+        commands: [
+          {
+            invocationName: "  inspect  ",
+            description: "  Inspect chat state.  ",
+          },
+        ],
+      },
+    ],
+  });
+
+  const inspectCommand = commands.find((command) => command.name === "inspect");
+  assert.deepEqual(inspectCommand, {
+    name: "inspect",
+    description: "Inspect chat state.",
+    source: "builtin_module",
+  });
+  assert.equal(commands.some((command) => command.name === "model"), true);
 });
 
 test("catalog helpers read oauth state from auth storage", () => {

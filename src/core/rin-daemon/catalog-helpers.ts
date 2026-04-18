@@ -81,6 +81,33 @@ export function getSkillSlashCommands(skills: any[]) {
     .filter((command) => command.name !== "skill:");
 }
 
+type SlashCommandSourceGroup = {
+  commands: any[];
+  source: string;
+};
+
+function collectSlashCommandSourceGroups(groups: SlashCommandSourceGroup[]) {
+  return groups.flatMap(({ commands, source }) =>
+    getExtensionSlashCommands(commands, source),
+  );
+}
+
+export function collectSlashCommands(
+  options: {
+    includeBuiltin?: boolean;
+    commandGroups?: SlashCommandSourceGroup[];
+    promptTemplates?: any[];
+    skills?: any[];
+  } = {},
+) {
+  return dedupeSlashCommands([
+    ...(options.includeBuiltin === false ? [] : getBuiltinSlashCommands()),
+    ...collectSlashCommandSourceGroups(options.commandGroups ?? []),
+    ...getPromptSlashCommands(options.promptTemplates ?? []),
+    ...getSkillSlashCommands(options.skills ?? []),
+  ]);
+}
+
 export function getOAuthStateFromStorage(authStorage: any) {
   const credentials = Object.fromEntries(
     (authStorage?.list?.() ?? []).map((providerId: string) => {
