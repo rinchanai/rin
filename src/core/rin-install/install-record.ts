@@ -28,6 +28,20 @@ export function normalizeInstallRecord(
   };
 }
 
+function resolveInstallRecordTargetFromRecord(
+  home: string,
+  fallbackUser: string,
+  record: InstallRecord | null,
+) {
+  if (!record) return null;
+  const targetUser = String(record.defaultTargetUser || fallbackUser).trim();
+  const installDir = String(
+    record.defaultInstallDir || defaultInstallDirForHome(home),
+  ).trim();
+  if (!targetUser || !installDir) return null;
+  return { targetUser, installDir };
+}
+
 export function loadInstallRecordFromCandidates(
   home: string,
   filePaths: string[],
@@ -47,14 +61,11 @@ export function resolveInstallRecordTarget(
   fallbackUser: string,
   raw: unknown,
 ) {
-  const record = normalizeInstallRecord(home, raw);
-  if (!record) return null;
-  const targetUser = String(record.defaultTargetUser || fallbackUser).trim();
-  const installDir = String(
-    record.defaultInstallDir || defaultInstallDirForHome(home),
-  ).trim();
-  if (!targetUser || !installDir) return null;
-  return { targetUser, installDir };
+  return resolveInstallRecordTargetFromRecord(
+    home,
+    fallbackUser,
+    normalizeInstallRecord(home, raw),
+  );
 }
 
 export function resolveInstallRecordTargetFromCandidates(
@@ -63,12 +74,9 @@ export function resolveInstallRecordTargetFromCandidates(
   filePaths: string[],
   readCandidate: (filePath: string) => unknown,
 ) {
-  const record = loadInstallRecordFromCandidates(home, filePaths, readCandidate);
-  if (!record) return null;
-  const targetUser = String(record.defaultTargetUser || fallbackUser).trim();
-  const installDir = String(
-    record.defaultInstallDir || defaultInstallDirForHome(home),
-  ).trim();
-  if (!targetUser || !installDir) return null;
-  return { targetUser, installDir };
+  return resolveInstallRecordTargetFromRecord(
+    home,
+    fallbackUser,
+    loadInstallRecordFromCandidates(home, filePaths, readCandidate),
+  );
 }

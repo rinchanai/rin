@@ -19,8 +19,7 @@ import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
 import { loadInstallRecordFromCandidates } from "../rin-install/install-record.js";
 import {
   defaultInstallDirForHome,
-  installerLocatorCandidatesForHome,
-  launcherMetadataCandidatesForHome,
+  installRecordCandidatesForHome,
   launcherMetadataPathForHome,
   managedSystemdUnitCandidates,
 } from "../rin-install/paths.js";
@@ -80,10 +79,7 @@ export function loadInstallConfigForHome(home = os.homedir()): InstallConfig {
   return (
     loadInstallRecordFromCandidates(
       home,
-      [
-        ...launcherMetadataCandidatesForHome(home),
-        ...installerLocatorCandidatesForHome(home),
-      ],
+      installRecordCandidatesForHome(home),
       (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
     ) || {}
   );

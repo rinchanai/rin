@@ -7,12 +7,8 @@ import {
 import {
   defaultHomeForUser,
   installAuthPath,
-  installerLocatorPathForHome,
-  installerManifestPath,
-  installerRecoveryManifestCandidates,
+  installerManifestPaths,
   installSettingsPath,
-  legacyInstallerLocatorPathForHome,
-  legacyInstallerManifestPath,
 } from "./paths.js";
 
 function resolveInstallOwner(
@@ -118,16 +114,15 @@ export function reconcileInstallerManifest(
   );
   if (!options.elevated) deps.ensureDir(options.installDir);
 
-  const manifestPath = installerManifestPath(options.installDir);
-  const legacyManifestPath = legacyInstallerManifestPath(options.installDir);
-  const locatorManifestPath = installerLocatorPathForHome(ownerHome);
-  const legacyLocatorManifestPath =
-    legacyInstallerLocatorPathForHome(ownerHome);
+  const manifestPaths = installerManifestPaths(options.installDir, ownerHome);
+  const {
+    manifestPath,
+    locatorManifestPath,
+    legacyManifestPath,
+    legacyLocatorManifestPath,
+  } = manifestPaths;
   let manifestJson: any = {};
-  for (const filePath of installerRecoveryManifestCandidates(
-    options.installDir,
-    ownerHome,
-  )) {
+  for (const filePath of manifestPaths.recoveryPaths) {
     const current = deps.readInstallerJson<any>(
       filePath,
       null,
@@ -148,14 +143,7 @@ export function reconcileInstallerManifest(
   dropLegacyChatSettings(manifestJson);
   manifestJson.updatedAt = new Date().toISOString();
 
-  const manifestPaths = Array.from(
-    new Set([manifestPath, locatorManifestPath]),
-  );
-  const legacyManifestPaths = Array.from(
-    new Set([legacyManifestPath, legacyLocatorManifestPath]),
-  );
-
-  for (const filePath of manifestPaths) {
+  for (const filePath of manifestPaths.writePaths) {
     writeInstallerJson(
       filePath,
       manifestJson,
@@ -167,7 +155,7 @@ export function reconcileInstallerManifest(
       deps,
     );
   }
-  for (const filePath of legacyManifestPaths) {
+  for (const filePath of manifestPaths.cleanupPaths) {
     removeFile(filePath, Boolean(options.elevated), deps.runPrivileged);
   }
 

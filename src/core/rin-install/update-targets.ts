@@ -51,20 +51,24 @@ export function discoverInstalledTargets(
 
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    const manifestTarget = resolveInstallRecordTargetFromCandidates(
-      homeDir,
-      userName,
-      installerLocatorCandidatesForHome(homeDir),
-      (filePath) => readJsonFile<any>(filePath, null),
-    );
-    if (manifestTarget) {
-      add(
-        manifestTarget.targetUser,
-        manifestTarget.installDir,
+    const addInstallRecordSource = (
+      source: InstalledTarget["source"],
+      filePaths: string[],
+    ) => {
+      const target = resolveInstallRecordTargetFromCandidates(
         homeDir,
-        "manifest",
+        userName,
+        filePaths,
+        (filePath) => readJsonFile<any>(filePath, null),
       );
-    }
+      if (!target) return;
+      add(target.targetUser, target.installDir, homeDir, source);
+    };
+
+    addInstallRecordSource(
+      "manifest",
+      installerLocatorCandidatesForHome(homeDir),
+    );
 
     const systemdDir = systemdUserUnitDirForHome(homeDir);
     try {
@@ -92,20 +96,10 @@ export function discoverInstalledTargets(
       }
     } catch {}
 
-    const launcherTarget = resolveInstallRecordTargetFromCandidates(
-      homeDir,
-      userName,
+    addInstallRecordSource(
+      "launcher",
       launcherMetadataCandidatesForHome(homeDir),
-      (filePath) => readJsonFile<any>(filePath, null),
     );
-    if (launcherTarget) {
-      add(
-        launcherTarget.targetUser,
-        launcherTarget.installDir,
-        homeDir,
-        "launcher",
-      );
-    }
   };
 
   for (const root of homeRoots) {

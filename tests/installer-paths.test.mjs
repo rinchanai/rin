@@ -118,6 +118,39 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     path.join(linuxHome, ".rin", "config", "installer.json"),
   ]);
   assert.deepEqual(
+    pathsMod.installerManifestPaths(installDir, linuxHome),
+    {
+      manifestPath: path.join(installDir, "installer.json"),
+      locatorManifestPath: path.join(linuxHome, ".rin", "installer.json"),
+      legacyManifestPath: path.join(installDir, "config", "installer.json"),
+      legacyLocatorManifestPath: path.join(
+        linuxHome,
+        ".rin",
+        "config",
+        "installer.json",
+      ),
+      writePaths: [
+        path.join(installDir, "installer.json"),
+        path.join(linuxHome, ".rin", "installer.json"),
+      ],
+      cleanupPaths: [
+        path.join(installDir, "config", "installer.json"),
+        path.join(linuxHome, ".rin", "config", "installer.json"),
+      ],
+      recoveryPaths: [
+        path.join(installDir, "installer.json"),
+        path.join(linuxHome, ".rin", "installer.json"),
+        path.join(installDir, "config", "installer.json"),
+        path.join(linuxHome, ".rin", "config", "installer.json"),
+      ],
+    },
+  );
+  assert.deepEqual(
+    pathsMod.installerManifestPaths(path.join(linuxHome, ".rin"), linuxHome)
+      .writePaths,
+    [path.join(linuxHome, ".rin", "installer.json")],
+  );
+  assert.deepEqual(
     pathsMod.installerRecoveryManifestCandidates(installDir, linuxHome),
     [
       path.join(installDir, "installer.json"),
@@ -149,6 +182,12 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
   assert.deepEqual(pathsMod.launcherMetadataCandidatesForHome(linuxHome), [
     pathsMod.launcherMetadataPathForHome(linuxHome),
     alternateLauncherMetadataPath,
+  ]);
+  assert.deepEqual(pathsMod.installRecordCandidatesForHome(linuxHome), [
+    pathsMod.launcherMetadataPathForHome(linuxHome),
+    alternateLauncherMetadataPath,
+    path.join(linuxHome, ".rin", "installer.json"),
+    path.join(linuxHome, ".rin", "config", "installer.json"),
   ]);
   assert.equal(
     pathsMod.managedLaunchdLabel("demo.user+test"),

@@ -8,12 +8,21 @@ const INSTALLED_APP_ENTRY_FILES = {
 
 export type InstalledAppKey = keyof typeof INSTALLED_APP_ENTRY_FILES;
 
+function uniqueNonEmptyStrings(values: Array<string | undefined | null>) {
+  return Array.from(
+    new Set(values.map((value) => String(value || "").trim()).filter(Boolean)),
+  );
+}
+
 export function defaultHomeRoot(platform = process.platform) {
   return platform === "darwin" ? "/Users" : "/home";
 }
 
 export function installDiscoveryHomeRoots() {
-  return [...new Set([defaultHomeRoot("linux"), defaultHomeRoot("darwin")])];
+  return uniqueNonEmptyStrings([
+    defaultHomeRoot("linux"),
+    defaultHomeRoot("darwin"),
+  ]);
 }
 
 export function defaultHomeForUser(user: string, platform = process.platform) {
@@ -100,10 +109,10 @@ export function installedAppEntryCandidates(
   installDir: string,
   app: InstalledAppKey,
 ) {
-  const legacyPath = legacyInstalledAppEntryPath(installDir, app);
-  return [currentInstalledAppEntryPath(installDir, app), legacyPath].filter(
-    Boolean,
-  );
+  return uniqueNonEmptyStrings([
+    currentInstalledAppEntryPath(installDir, app),
+    legacyInstalledAppEntryPath(installDir, app),
+  ]);
 }
 
 export function sourceAppEntryPath(sourceRoot: string, app: InstalledAppKey) {
@@ -131,23 +140,40 @@ export function legacyInstallerLocatorPathForHome(home: string) {
   return legacyInstallerManifestPath(defaultInstallDirForHome(home));
 }
 
+export function installerManifestPaths(installDir: string, home: string) {
+  const manifestPath = installerManifestPath(installDir);
+  const locatorManifestPath = installerLocatorPathForHome(home);
+  const legacyManifestPath = legacyInstallerManifestPath(installDir);
+  const legacyLocatorManifestPath = legacyInstallerLocatorPathForHome(home);
+  return {
+    manifestPath,
+    locatorManifestPath,
+    legacyManifestPath,
+    legacyLocatorManifestPath,
+    writePaths: uniqueNonEmptyStrings([manifestPath, locatorManifestPath]),
+    cleanupPaths: uniqueNonEmptyStrings([
+      legacyManifestPath,
+      legacyLocatorManifestPath,
+    ]),
+    recoveryPaths: uniqueNonEmptyStrings([
+      manifestPath,
+      locatorManifestPath,
+      legacyManifestPath,
+      legacyLocatorManifestPath,
+    ]),
+  };
+}
+
 export function installerLocatorCandidatesForHome(home: string) {
-  return [
-    installerLocatorPathForHome(home),
-    legacyInstallerLocatorPathForHome(home),
-  ];
+  return installerManifestPaths(defaultInstallDirForHome(home), home)
+    .recoveryPaths;
 }
 
 export function installerRecoveryManifestCandidates(
   installDir: string,
   home: string,
 ) {
-  return [
-    installerManifestPath(installDir),
-    installerLocatorPathForHome(home),
-    legacyInstallerManifestPath(installDir),
-    legacyInstallerLocatorPathForHome(home),
-  ];
+  return installerManifestPaths(installDir, home).recoveryPaths;
 }
 
 export function localBinDirForHome(home: string) {
@@ -173,12 +199,20 @@ export function launcherMetadataPathForHome(
 }
 
 export function launcherMetadataCandidatesForHome(home: string) {
-  const primary = launcherMetadataPathForHome(home);
-  const secondary = launcherMetadataPathForHome(
-    home,
-    process.platform === "darwin" ? "linux" : "darwin",
-  );
-  return Array.from(new Set([primary, secondary]));
+  return uniqueNonEmptyStrings([
+    launcherMetadataPathForHome(home),
+    launcherMetadataPathForHome(
+      home,
+      process.platform === "darwin" ? "linux" : "darwin",
+    ),
+  ]);
+}
+
+export function installRecordCandidatesForHome(home: string) {
+  return uniqueNonEmptyStrings([
+    ...launcherMetadataCandidatesForHome(home),
+    ...installerLocatorCandidatesForHome(home),
+  ]);
 }
 
 const LEGACY_MANAGED_SYSTEMD_UNIT_NAME = "rin-daemon.service";
@@ -196,12 +230,10 @@ export function managedSystemdUnitName(targetUser: string) {
 }
 
 export function managedSystemdUnitCandidates(targetUser: string) {
-  return Array.from(
-    new Set([
-      managedSystemdUnitName(targetUser),
-      LEGACY_MANAGED_SYSTEMD_UNIT_NAME,
-    ]),
-  );
+  return uniqueNonEmptyStrings([
+    managedSystemdUnitName(targetUser),
+    LEGACY_MANAGED_SYSTEMD_UNIT_NAME,
+  ]);
 }
 
 export function isManagedSystemdUnitName(unitName: string) {
