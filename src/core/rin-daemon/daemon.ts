@@ -28,6 +28,10 @@ import {
   listCatalogCommands,
   listCatalogModels,
 } from "./catalog.js";
+import {
+  hasSessionSelector,
+  sessionSelectorFromCommand,
+} from "./session-selector.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
 function ensureDir(dir: string) {
@@ -96,14 +100,15 @@ export async function startDaemon(
     getExtraStatus?:
       | (() => Promise<Record<string, unknown> | undefined>)
       | (() => Record<string, unknown> | undefined);
-    handleLocalCommand?: (command: any) => Promise<
-      | {
-          success?: boolean;
-          data?: unknown;
-          error?: string;
-        }
-      | undefined
-    >
+    handleLocalCommand?: (command: any) =>
+      | Promise<
+          | {
+              success?: boolean;
+              data?: unknown;
+              error?: string;
+            }
+          | undefined
+        >
       | {
           success?: boolean;
           data?: unknown;
@@ -155,22 +160,10 @@ export async function startDaemon(
     ensureDir(path.dirname(candidate));
   }
 
-  const getSessionSelector = (command: any) => ({
-    sessionFile:
-      typeof command?.sessionFile === "string" && command.sessionFile
-        ? command.sessionFile
-        : typeof command?.sessionPath === "string" && command.sessionPath
-          ? command.sessionPath
-          : undefined,
-    sessionId:
-      typeof command?.sessionId === "string" && command.sessionId
-        ? command.sessionId
-        : undefined,
-  });
-  const hasSessionSelector = (command: any) => {
-    const selector = getSessionSelector(command);
-    return Boolean(selector.sessionFile || selector.sessionId);
-  };
+  const getSessionSelector = (command: any) =>
+    sessionSelectorFromCommand(command);
+  const commandHasSessionSelector = (command: any) =>
+    hasSessionSelector(getSessionSelector(command));
   const hasSelectedSession = (connection: ConnectionState) =>
     workerPool.hasSelectedSession(connection);
 
@@ -182,7 +175,7 @@ export async function startDaemon(
     const type = String(command?.type || "unknown") as
       | RinRpcCommandType
       | "unknown";
-    const selectorPresent = hasSessionSelector(command);
+    const selectorPresent = commandHasSessionSelector(command);
     const selectedSessionPresent = hasSelectedSession(connection);
 
     if (
@@ -318,7 +311,10 @@ export async function startDaemon(
         );
         return true;
       }
-      writeLine(connection.socket, response(id, type, true, { cancelled: false }));
+      writeLine(
+        connection.socket,
+        response(id, type, true, { cancelled: false }),
+      );
       workerPool.evictDetachedWorkers();
       return true;
     }
@@ -385,7 +381,9 @@ export async function startDaemon(
           ...workerPool.getStatusSnapshot(),
           taskCount: cronScheduler.listTasks().length,
           webSearch: getSearxngSidecarStatus(runtime.agentDir),
-          ...(extraStatus && typeof extraStatus === "object" ? extraStatus : {}),
+          ...(extraStatus && typeof extraStatus === "object"
+            ? extraStatus
+            : {}),
         }),
       );
       return true;
@@ -401,7 +399,12 @@ export async function startDaemon(
       const task = cronScheduler.getTask(String(command.taskId || "").trim());
       writeLine(
         connection.socket,
-        response(id, type, Boolean(task), task ? { task } : "cron_task_not_found"),
+        response(
+          id,
+          type,
+          Boolean(task),
+          task ? { task } : "cron_task_not_found",
+        ),
       );
       return true;
     }
@@ -507,7 +510,8 @@ export async function startDaemon(
             if (
               !worker &&
               isSessionScopedCommand(String(command?.type || "unknown")) &&
-              (hasSessionSelector(command) || hasSelectedSession(connection))
+              (commandHasSessionSelector(command) ||
+                hasSelectedSession(connection))
             ) {
               worker = await workerPool.ensureSelectedWorker(
                 connection,

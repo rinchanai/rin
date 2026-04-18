@@ -11,6 +11,7 @@ import { listBoundSessions } from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
+import { hasSessionSelector, sessionSelectorFromCommand, } from "./session-selector.js";
 import { WorkerPool } from "./worker-pool.js";
 function ensureDir(dir) {
     fs.mkdirSync(dir, { recursive: true });
@@ -90,25 +91,13 @@ export async function startDaemon(options = {}) {
         catch { }
         ensureDir(path.dirname(candidate));
     }
-    const getSessionSelector = (command) => ({
-        sessionFile: typeof command?.sessionFile === "string" && command.sessionFile
-            ? command.sessionFile
-            : typeof command?.sessionPath === "string" && command.sessionPath
-                ? command.sessionPath
-                : undefined,
-        sessionId: typeof command?.sessionId === "string" && command.sessionId
-            ? command.sessionId
-            : undefined,
-    });
-    const hasSessionSelector = (command) => {
-        const selector = getSessionSelector(command);
-        return Boolean(selector.sessionFile || selector.sessionId);
-    };
+    const getSessionSelector = (command) => sessionSelectorFromCommand(command);
+    const commandHasSessionSelector = (command) => hasSessionSelector(getSessionSelector(command));
     const hasSelectedSession = (connection) => workerPool.hasSelectedSession(connection);
     const selfHandleCommand = async (connection, command) => {
         const id = command?.id;
         const type = String(command?.type || "unknown");
-        const selectorPresent = hasSessionSelector(command);
+        const selectorPresent = commandHasSessionSelector(command);
         const selectedSessionPresent = hasSelectedSession(connection);
         if (type === "get_state" &&
             !connection.attachedWorker &&
@@ -250,7 +239,9 @@ export async function startDaemon(options = {}) {
                 ...workerPool.getStatusSnapshot(),
                 taskCount: cronScheduler.listTasks().length,
                 webSearch: getSearxngSidecarStatus(runtime.agentDir),
-                ...(extraStatus && typeof extraStatus === "object" ? extraStatus : {}),
+                ...(extraStatus && typeof extraStatus === "object"
+                    ? extraStatus
+                    : {}),
             }));
             return true;
         }
@@ -260,7 +251,7 @@ export async function startDaemon(options = {}) {
         }
         if (type === "cron_get_task") {
             const task = cronScheduler.getTask(String(command.taskId || "").trim());
-            writeLine(connection.socket, response(id, type, Boolean(task), task || "cron_task_not_found"));
+            writeLine(connection.socket, response(id, type, Boolean(task), task ? { task } : "cron_task_not_found"));
             return true;
         }
         if (type === "cron_upsert_task") {
@@ -336,7 +327,8 @@ export async function startDaemon(options = {}) {
                     let worker = workerPool.resolveWorkerForCommand(connection, command);
                     if (!worker &&
                         isSessionScopedCommand(String(command?.type || "unknown")) &&
-                        (hasSessionSelector(command) || hasSelectedSession(connection))) {
+                        (commandHasSessionSelector(command) ||
+                            hasSelectedSession(connection))) {
                         worker = await workerPool.ensureSelectedWorker(connection, getSessionSelector(command));
                     }
                     if (!worker) {

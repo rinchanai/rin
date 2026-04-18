@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { parseJsonl } from "../rin-lib/common.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
+import { hasSessionSelector, resolveSessionSelector, sessionMatchesSelector, sessionSelectorFromCommand, sessionSelectorFromState, } from "./session-selector.js";
 function writeLine(socket, payload) {
     if (!socket.destroyed)
         socket.write(`${JSON.stringify(payload)}\n`);
@@ -42,8 +43,7 @@ export class WorkerPool {
             this.maybeReleaseWorker(worker);
         }
         if (options.clearSelection) {
-            connection.sessionFile = undefined;
-            connection.sessionId = undefined;
+            this.rememberSessionSelection(connection, {});
         }
     }
     terminateWorkerGracefully(worker) {
@@ -110,7 +110,7 @@ export class WorkerPool {
         if (attach)
             this.attachWorker(connection, worker);
         const selector = this.getSessionSelector(command);
-        if (selector.sessionFile || selector.sessionId) {
+        if (hasSessionSelector(selector)) {
             this.rememberSessionSelection(connection, selector);
         }
         worker.lastUsedAt = Date.now();
@@ -128,23 +128,23 @@ export class WorkerPool {
         this.requestWorker(worker, connection, command, true);
     }
     hasSelectedSession(connection) {
-        const selector = this.getConnectionSelector(connection);
-        return Boolean(selector.sessionFile || selector.sessionId);
+        return hasSessionSelector(this.getConnectionSelector(connection));
     }
     async selectSession(connection, selector) {
+        const wanted = sessionSelectorFromState(selector);
         if (connection.attachedWorker &&
-            !this.workerMatchesSelector(connection.attachedWorker, selector)) {
+            !this.workerMatchesSelector(connection.attachedWorker, wanted)) {
             this.detachWorker(connection);
         }
-        this.rememberSessionSelection(connection, selector);
+        this.rememberSessionSelection(connection, wanted);
         return await this.ensureSelectedWorker(connection);
     }
     async ensureSelectedWorker(connection, selector) {
         if (selector) {
-            this.rememberSessionSelection(connection, selector);
+            this.rememberSessionSelection(connection, sessionSelectorFromState(selector));
         }
         const wanted = this.getConnectionSelector(connection);
-        if (!wanted.sessionFile && !wanted.sessionId) {
+        if (!hasSessionSelector(wanted)) {
             return connection.attachedWorker;
         }
         if (connection.attachedWorker &&
@@ -183,7 +183,7 @@ export class WorkerPool {
         if (selectedWorker)
             return selectedWorker;
         if (connection.attachedWorker &&
-            (!selector.sessionFile && !selector.sessionId
+            (!hasSessionSelector(selector)
                 ? true
                 : this.workerMatchesSelector(connection.attachedWorker, selector))) {
             return connection.attachedWorker;
@@ -275,14 +275,7 @@ export class WorkerPool {
             const data = payload.data || {};
             if (typeof data.sessionFile === "string" ||
                 typeof data.sessionId === "string") {
-                this.setWorkerSessionRefs(worker, {
-                    sessionFile: typeof data.sessionFile === "string" && data.sessionFile
-                        ? data.sessionFile
-                        : undefined,
-                    sessionId: typeof data.sessionId === "string" && data.sessionId
-                        ? data.sessionId
-                        : undefined,
-                });
+                this.setWorkerSessionRefs(worker, sessionSelectorFromState(data));
             }
             if (payload.command === "get_state") {
                 worker.isStreaming = Boolean(data.isStreaming);
@@ -306,14 +299,7 @@ export class WorkerPool {
             this.maybeReleaseWorker(worker);
         }
         if (payload.type === "rpc_turn_event" && payload.event === "complete") {
-            this.setWorkerSessionRefs(worker, {
-                sessionFile: typeof payload.sessionFile === "string" && payload.sessionFile
-                    ? payload.sessionFile
-                    : undefined,
-                sessionId: typeof payload.sessionId === "string" && payload.sessionId
-                    ? payload.sessionId
-                    : undefined,
-            });
+            this.setWorkerSessionRefs(worker, sessionSelectorFromState(payload));
         }
     }
     createWorker(requester) {
@@ -362,11 +348,8 @@ export class WorkerPool {
                     worker.pendingResponses.has(String(payload.id))) {
                     const pending = worker.pendingResponses.get(String(payload.id));
                     worker.pendingResponses.delete(String(payload.id));
-                    if (pending.connection && (worker.sessionFile || worker.sessionId)) {
-                        this.rememberSessionSelection(pending.connection, {
-                            sessionFile: worker.sessionFile,
-                            sessionId: worker.sessionId,
-                        });
+                    if (pending.connection) {
+                        this.rememberSessionSelection(pending.connection, this.getWorkerSelector(worker));
                     }
                     if (pending.resolve)
                         pending.resolve(payload);
@@ -393,10 +376,7 @@ export class WorkerPool {
                 if (pending.connection)
                     liveConnections.add(pending.connection);
             }
-            const selector = {
-                sessionFile: worker.sessionFile,
-                sessionId: worker.sessionId,
-            };
+            const selector = this.getWorkerSelector(worker);
             const shouldRecover = this.shouldRecoverWorker(worker, liveConnections);
             this.deleteWorkerSessionRefs(worker);
             this.workers.delete(worker);
@@ -439,12 +419,7 @@ export class WorkerPool {
         worker.connections.add(connection);
         worker.lastUsedAt = Date.now();
         worker.idleSince = null;
-        if (worker.sessionFile || worker.sessionId) {
-            this.rememberSessionSelection(connection, {
-                sessionFile: worker.sessionFile,
-                sessionId: worker.sessionId,
-            });
-        }
+        this.rememberSessionSelection(connection, this.getWorkerSelector(worker));
     }
     maybeReleaseWorker(worker) {
         if (!this.workers.has(worker))
@@ -455,7 +430,9 @@ export class WorkerPool {
             worker.idleSince = null;
             return;
         }
-        if (worker.pendingResponses.size > 0 || worker.isStreaming || worker.isCompacting) {
+        if (worker.pendingResponses.size > 0 ||
+            worker.isStreaming ||
+            worker.isCompacting) {
             worker.idleSince = null;
             return;
         }
@@ -469,39 +446,21 @@ export class WorkerPool {
         }
     }
     getSessionSelector(command) {
-        const sessionFile = typeof command?.sessionFile === "string" && command.sessionFile
-            ? command.sessionFile
-            : typeof command?.sessionPath === "string" && command.sessionPath
-                ? command.sessionPath
-                : undefined;
-        const sessionId = typeof command?.sessionId === "string" && command.sessionId
-            ? command.sessionId
-            : undefined;
-        return { sessionFile, sessionId };
+        return sessionSelectorFromCommand(command);
     }
     getConnectionSelector(connection) {
-        return {
-            sessionFile: typeof connection.sessionFile === "string" && connection.sessionFile
-                ? connection.sessionFile
-                : undefined,
-            sessionId: typeof connection.sessionId === "string" && connection.sessionId
-                ? connection.sessionId
-                : undefined,
-        };
+        return sessionSelectorFromState(connection);
+    }
+    getWorkerSelector(worker) {
+        return sessionSelectorFromState(worker);
     }
     resolveSelector(connection, command) {
-        const commandSelector = this.getSessionSelector(command);
-        const connectionSelector = this.getConnectionSelector(connection);
-        return {
-            sessionFile: commandSelector.sessionFile || connectionSelector.sessionFile,
-            sessionId: commandSelector.sessionId || connectionSelector.sessionId,
-        };
+        return resolveSessionSelector(this.getSessionSelector(command), this.getConnectionSelector(connection));
     }
     rememberSessionSelection(connection, selector) {
-        if (selector.sessionFile !== undefined)
-            connection.sessionFile = selector.sessionFile;
-        if (selector.sessionId !== undefined)
-            connection.sessionId = selector.sessionId;
+        const next = sessionSelectorFromState(selector);
+        connection.sessionFile = next.sessionFile;
+        connection.sessionId = next.sessionId;
     }
     findWorkerBySelector(selector) {
         if (selector.sessionFile &&
@@ -514,13 +473,7 @@ export class WorkerPool {
         return undefined;
     }
     workerMatchesSelector(worker, selector) {
-        if (selector.sessionFile && worker.sessionFile === selector.sessionFile) {
-            return true;
-        }
-        if (selector.sessionId && worker.sessionId === selector.sessionId) {
-            return true;
-        }
-        return false;
+        return sessionMatchesSelector(this.getWorkerSelector(worker), selector);
     }
     deleteWorkerSessionRefs(worker) {
         if (worker.sessionFile &&
@@ -535,25 +488,26 @@ export class WorkerPool {
         worker.sessionId = undefined;
     }
     setWorkerSessionRefs(worker, next) {
+        const selector = sessionSelectorFromState(next);
         if (worker.sessionFile &&
             this.workersBySessionFile.get(worker.sessionFile) === worker &&
-            worker.sessionFile !== next.sessionFile) {
+            worker.sessionFile !== selector.sessionFile) {
             this.workersBySessionFile.delete(worker.sessionFile);
         }
         if (worker.sessionId &&
             this.workersBySessionId.get(worker.sessionId) === worker &&
-            worker.sessionId !== next.sessionId) {
+            worker.sessionId !== selector.sessionId) {
             this.workersBySessionId.delete(worker.sessionId);
         }
-        worker.sessionFile = next.sessionFile;
-        worker.sessionId = next.sessionId;
+        worker.sessionFile = selector.sessionFile;
+        worker.sessionId = selector.sessionId;
         if (worker.sessionFile) {
             this.workersBySessionFile.set(worker.sessionFile, worker);
         }
         if (worker.sessionId)
             this.workersBySessionId.set(worker.sessionId, worker);
         for (const connection of worker.connections) {
-            this.rememberSessionSelection(connection, next);
+            this.rememberSessionSelection(connection, selector);
         }
     }
     shouldRecoverWorker(worker, liveConnections) {

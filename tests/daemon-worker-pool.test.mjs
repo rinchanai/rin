@@ -139,7 +139,9 @@ test("attached worker stays alive across detached-worker sweeps", async () => {
     gcIdleMs: 10,
     sweepIntervalMs: 10,
   });
-  const worker = pool.resolveWorkerForCommand(connection, { type: "new_session" });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
   pool.requestWorker(worker, connection, { type: "get_state" }, true);
 
   await sleep(80);
@@ -169,7 +171,9 @@ test("detached idle worker exits after grace period via reaper", async () => {
     gcIdleMs: 20,
     sweepIntervalMs: 10,
   });
-  const worker = pool.resolveWorkerForCommand(connection, { type: "new_session" });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
   pool.requestWorker(worker, connection, { type: "get_state" }, true);
   pool.detachWorker(connection);
 
@@ -244,7 +248,7 @@ setInterval(() => {}, 1000);
   assert.equal(connection.attachedWorker, replacement);
   assert.equal(pool.getStatusSnapshot().workerCount, 1);
   assert.deepEqual(
-    (await fs.readFile(logPath, 'utf8')).trim().split('\n').filter(Boolean),
+    (await fs.readFile(logPath, "utf8")).trim().split("\n").filter(Boolean),
     ["switch_session", "switch_session"],
   );
 
@@ -356,13 +360,16 @@ setInterval(() => {}, 1000);
   };
 
   const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
-  const worker = pool.resolveWorkerForCommand(connection, { type: "new_session" });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
   worker.sessionFile = "/tmp/recovered.jsonl";
   worker.sessionId = "recovered-session";
   pool.forwardToWorker(connection, worker, { id: "req_1", type: "get_state" });
 
   for (let i = 0; i < 20; i += 1) {
-    if (writes.some((value) => JSON.parse(value).type === "session_recovered")) break;
+    if (writes.some((value) => JSON.parse(value).type === "session_recovered"))
+      break;
     await sleep(50);
   }
 
@@ -375,6 +382,84 @@ setInterval(() => {}, 1000);
   assert.equal(payloads[1].error, "rin_session_recovering");
   assert.equal(payloads[2].sessionFile, "/tmp/recovered.jsonl");
   assert.equal(pool.getStatusSnapshot().workerCount, 1);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("selectSession with only sessionId ignores stale remembered sessionFile", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  const originalWorker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
+  const targetWorker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
+
+  pool.setWorkerSessionRefs(originalWorker, {
+    sessionFile: "/tmp/original.jsonl",
+    sessionId: "original-session",
+  });
+  pool.setWorkerSessionRefs(targetWorker, {
+    sessionId: "target-session",
+  });
+  pool.attachWorker(connection, originalWorker);
+
+  const selected = await pool.selectSession(connection, {
+    sessionId: "target-session",
+  });
+
+  assert.equal(selected, targetWorker);
+  assert.equal(connection.attachedWorker, targetWorker);
+  assert.equal(connection.sessionFile, undefined);
+  assert.equal(connection.sessionId, "target-session");
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("worker session ref updates clear stale attached connection selectors", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
+
+  pool.setWorkerSessionRefs(worker, {
+    sessionFile: "/tmp/original.jsonl",
+    sessionId: "original-session",
+  });
+  pool.attachWorker(connection, worker);
+  pool.setWorkerSessionRefs(worker, {
+    sessionId: "memory-session",
+  });
+
+  assert.equal(connection.attachedWorker, worker);
+  assert.equal(connection.sessionFile, undefined);
+  assert.equal(connection.sessionId, "memory-session");
 
   pool.destroyAll();
   await fs.rm(dir, { recursive: true, force: true });

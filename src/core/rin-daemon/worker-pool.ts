@@ -3,6 +3,14 @@ import { spawn } from "node:child_process";
 
 import { parseJsonl } from "../rin-lib/common.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
+import {
+  hasSessionSelector,
+  resolveSessionSelector,
+  sessionMatchesSelector,
+  sessionSelectorFromCommand,
+  sessionSelectorFromState,
+  type SessionSelector,
+} from "./session-selector.js";
 
 export type ConnectionState = {
   socket: net.Socket;
@@ -34,11 +42,6 @@ export type WorkerHandle = {
   lastUsedAt: number;
   idleSince: number | null;
   gracefulShutdownRequested: boolean;
-};
-
-type SessionSelector = {
-  sessionFile?: string;
-  sessionId?: string;
 };
 
 function writeLine(socket: net.Socket, payload: unknown) {
@@ -100,8 +103,7 @@ export class WorkerPool {
       this.maybeReleaseWorker(worker);
     }
     if (options.clearSelection) {
-      connection.sessionFile = undefined;
-      connection.sessionId = undefined;
+      this.rememberSessionSelection(connection, {});
     }
   }
 
@@ -174,7 +176,7 @@ export class WorkerPool {
   ) {
     if (attach) this.attachWorker(connection, worker);
     const selector = this.getSessionSelector(command);
-    if (selector.sessionFile || selector.sessionId) {
+    if (hasSessionSelector(selector)) {
       this.rememberSessionSelection(connection, selector);
     }
     worker.lastUsedAt = Date.now();
@@ -198,18 +200,18 @@ export class WorkerPool {
   }
 
   hasSelectedSession(connection: ConnectionState) {
-    const selector = this.getConnectionSelector(connection);
-    return Boolean(selector.sessionFile || selector.sessionId);
+    return hasSessionSelector(this.getConnectionSelector(connection));
   }
 
   async selectSession(connection: ConnectionState, selector: SessionSelector) {
+    const wanted = sessionSelectorFromState(selector);
     if (
       connection.attachedWorker &&
-      !this.workerMatchesSelector(connection.attachedWorker, selector)
+      !this.workerMatchesSelector(connection.attachedWorker, wanted)
     ) {
       this.detachWorker(connection);
     }
-    this.rememberSessionSelection(connection, selector);
+    this.rememberSessionSelection(connection, wanted);
     return await this.ensureSelectedWorker(connection);
   }
 
@@ -218,10 +220,13 @@ export class WorkerPool {
     selector?: SessionSelector,
   ) {
     if (selector) {
-      this.rememberSessionSelection(connection, selector);
+      this.rememberSessionSelection(
+        connection,
+        sessionSelectorFromState(selector),
+      );
     }
     const wanted = this.getConnectionSelector(connection);
-    if (!wanted.sessionFile && !wanted.sessionId) {
+    if (!hasSessionSelector(wanted)) {
       return connection.attachedWorker;
     }
     if (
@@ -264,7 +269,7 @@ export class WorkerPool {
     if (selectedWorker) return selectedWorker;
     if (
       connection.attachedWorker &&
-      (!selector.sessionFile && !selector.sessionId
+      (!hasSessionSelector(selector)
         ? true
         : this.workerMatchesSelector(connection.attachedWorker, selector))
     ) {
@@ -371,16 +376,7 @@ export class WorkerPool {
         typeof data.sessionFile === "string" ||
         typeof data.sessionId === "string"
       ) {
-        this.setWorkerSessionRefs(worker, {
-          sessionFile:
-            typeof data.sessionFile === "string" && data.sessionFile
-              ? data.sessionFile
-              : undefined,
-          sessionId:
-            typeof data.sessionId === "string" && data.sessionId
-              ? data.sessionId
-              : undefined,
-        });
+        this.setWorkerSessionRefs(worker, sessionSelectorFromState(data));
       }
       if (payload.command === "get_state") {
         worker.isStreaming = Boolean(data.isStreaming);
@@ -405,16 +401,7 @@ export class WorkerPool {
       this.maybeReleaseWorker(worker);
     }
     if (payload.type === "rpc_turn_event" && payload.event === "complete") {
-      this.setWorkerSessionRefs(worker, {
-        sessionFile:
-          typeof payload.sessionFile === "string" && payload.sessionFile
-            ? payload.sessionFile
-            : undefined,
-        sessionId:
-          typeof payload.sessionId === "string" && payload.sessionId
-            ? payload.sessionId
-            : undefined,
-      });
+      this.setWorkerSessionRefs(worker, sessionSelectorFromState(payload));
     }
   }
 
@@ -471,11 +458,11 @@ export class WorkerPool {
         ) {
           const pending = worker.pendingResponses.get(String(payload.id))!;
           worker.pendingResponses.delete(String(payload.id));
-          if (pending.connection && (worker.sessionFile || worker.sessionId)) {
-            this.rememberSessionSelection(pending.connection, {
-              sessionFile: worker.sessionFile,
-              sessionId: worker.sessionId,
-            });
+          if (pending.connection) {
+            this.rememberSessionSelection(
+              pending.connection,
+              this.getWorkerSelector(worker),
+            );
           }
           if (pending.resolve) pending.resolve(payload);
           if (pending.connection) writeLine(pending.connection.socket, payload);
@@ -502,10 +489,7 @@ export class WorkerPool {
       for (const pending of worker.pendingResponses.values()) {
         if (pending.connection) liveConnections.add(pending.connection);
       }
-      const selector = {
-        sessionFile: worker.sessionFile,
-        sessionId: worker.sessionId,
-      };
+      const selector = this.getWorkerSelector(worker);
       const shouldRecover = this.shouldRecoverWorker(worker, liveConnections);
       this.deleteWorkerSessionRefs(worker);
       this.workers.delete(worker);
@@ -552,12 +536,7 @@ export class WorkerPool {
     worker.connections.add(connection);
     worker.lastUsedAt = Date.now();
     worker.idleSince = null;
-    if (worker.sessionFile || worker.sessionId) {
-      this.rememberSessionSelection(connection, {
-        sessionFile: worker.sessionFile,
-        sessionId: worker.sessionId,
-      });
-    }
+    this.rememberSessionSelection(connection, this.getWorkerSelector(worker));
   }
 
   private maybeReleaseWorker(worker: WorkerHandle) {
@@ -567,7 +546,11 @@ export class WorkerPool {
       worker.idleSince = null;
       return;
     }
-    if (worker.pendingResponses.size > 0 || worker.isStreaming || worker.isCompacting) {
+    if (
+      worker.pendingResponses.size > 0 ||
+      worker.isStreaming ||
+      worker.isCompacting
+    ) {
       worker.idleSince = null;
       return;
     }
@@ -582,47 +565,34 @@ export class WorkerPool {
   }
 
   private getSessionSelector(command: any): SessionSelector {
-    const sessionFile =
-      typeof command?.sessionFile === "string" && command.sessionFile
-        ? command.sessionFile
-        : typeof command?.sessionPath === "string" && command.sessionPath
-          ? command.sessionPath
-          : undefined;
-    const sessionId =
-      typeof command?.sessionId === "string" && command.sessionId
-        ? command.sessionId
-        : undefined;
-    return { sessionFile, sessionId };
+    return sessionSelectorFromCommand(command);
   }
 
   private getConnectionSelector(connection: ConnectionState): SessionSelector {
-    return {
-      sessionFile:
-        typeof connection.sessionFile === "string" && connection.sessionFile
-          ? connection.sessionFile
-          : undefined,
-      sessionId:
-        typeof connection.sessionId === "string" && connection.sessionId
-          ? connection.sessionId
-          : undefined,
-    };
+    return sessionSelectorFromState(connection);
   }
 
-  private resolveSelector(connection: ConnectionState, command: any): SessionSelector {
-    const commandSelector = this.getSessionSelector(command);
-    const connectionSelector = this.getConnectionSelector(connection);
-    return {
-      sessionFile: commandSelector.sessionFile || connectionSelector.sessionFile,
-      sessionId: commandSelector.sessionId || connectionSelector.sessionId,
-    };
+  private getWorkerSelector(worker: WorkerHandle): SessionSelector {
+    return sessionSelectorFromState(worker);
+  }
+
+  private resolveSelector(
+    connection: ConnectionState,
+    command: any,
+  ): SessionSelector {
+    return resolveSessionSelector(
+      this.getSessionSelector(command),
+      this.getConnectionSelector(connection),
+    );
   }
 
   private rememberSessionSelection(
     connection: ConnectionState,
     selector: SessionSelector,
   ) {
-    if (selector.sessionFile !== undefined) connection.sessionFile = selector.sessionFile;
-    if (selector.sessionId !== undefined) connection.sessionId = selector.sessionId;
+    const next = sessionSelectorFromState(selector);
+    connection.sessionFile = next.sessionFile;
+    connection.sessionId = next.sessionId;
   }
 
   private findWorkerBySelector(selector: SessionSelector) {
@@ -638,14 +608,11 @@ export class WorkerPool {
     return undefined;
   }
 
-  private workerMatchesSelector(worker: WorkerHandle, selector: SessionSelector) {
-    if (selector.sessionFile && worker.sessionFile === selector.sessionFile) {
-      return true;
-    }
-    if (selector.sessionId && worker.sessionId === selector.sessionId) {
-      return true;
-    }
-    return false;
+  private workerMatchesSelector(
+    worker: WorkerHandle,
+    selector: SessionSelector,
+  ) {
+    return sessionMatchesSelector(this.getWorkerSelector(worker), selector);
   }
 
   private deleteWorkerSessionRefs(worker: WorkerHandle) {
@@ -666,28 +633,29 @@ export class WorkerPool {
   }
 
   private setWorkerSessionRefs(worker: WorkerHandle, next: SessionSelector) {
+    const selector = sessionSelectorFromState(next);
     if (
       worker.sessionFile &&
       this.workersBySessionFile.get(worker.sessionFile) === worker &&
-      worker.sessionFile !== next.sessionFile
+      worker.sessionFile !== selector.sessionFile
     ) {
       this.workersBySessionFile.delete(worker.sessionFile);
     }
     if (
       worker.sessionId &&
       this.workersBySessionId.get(worker.sessionId) === worker &&
-      worker.sessionId !== next.sessionId
+      worker.sessionId !== selector.sessionId
     ) {
       this.workersBySessionId.delete(worker.sessionId);
     }
-    worker.sessionFile = next.sessionFile;
-    worker.sessionId = next.sessionId;
+    worker.sessionFile = selector.sessionFile;
+    worker.sessionId = selector.sessionId;
     if (worker.sessionFile) {
       this.workersBySessionFile.set(worker.sessionFile, worker);
     }
     if (worker.sessionId) this.workersBySessionId.set(worker.sessionId, worker);
     for (const connection of worker.connections) {
-      this.rememberSessionSelection(connection, next);
+      this.rememberSessionSelection(connection, selector);
     }
   }
 
@@ -723,11 +691,7 @@ export class WorkerPool {
       if (entry.connection) {
         writeLine(
           entry.connection.socket,
-          responseError(
-            entry.id,
-            entry.commandType,
-            "rin_session_recovering",
-          ),
+          responseError(entry.id, entry.commandType, "rin_session_recovering"),
         );
       }
     }
