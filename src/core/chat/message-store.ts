@@ -84,6 +84,134 @@ function recordPath(agentDir: string, recordKey: string) {
   );
 }
 
+type StoredChatDateIndex = {
+  version: 1;
+  recordKeys: string[];
+};
+
+function chatDateIndexPath(agentDir: string, chatKey: string, date: string) {
+  const parsed = parseChatKey(chatKey);
+  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
+  const day = isoDateOnly(date);
+  const platform = sanitizePathSegment(parsed.platform, "platform");
+  const chatId = sanitizePathSegment(parsed.chatId, "chat");
+  return parsed.botId
+    ? path.join(
+        indexesDir(agentDir),
+        "by-chat-date",
+        platform,
+        sanitizePathSegment(parsed.botId, "bot"),
+        chatId,
+        `${day}.json`,
+      )
+    : path.join(
+        indexesDir(agentDir),
+        "by-chat-date",
+        platform,
+        chatId,
+        `${day}.json`,
+      );
+}
+
+function chatDateIndexExists(agentDir: string, chatKey: string, date: string) {
+  return fs.existsSync(chatDateIndexPath(agentDir, chatKey, date));
+}
+
+function normalizeRecordKeys(value: unknown) {
+  const list = Array.isArray(value)
+    ? value
+    : Array.isArray((value as StoredChatDateIndex | null)?.recordKeys)
+      ? (value as StoredChatDateIndex).recordKeys
+      : [];
+  return [
+    ...new Set(list.map((item) => safeString(item).trim()).filter(Boolean)),
+  ];
+}
+
+function readChatDateIndex(agentDir: string, chatKey: string, date: string) {
+  if (!chatDateIndexExists(agentDir, chatKey, date)) return null;
+  return normalizeRecordKeys(
+    readJsonFile<StoredChatDateIndex | string[] | null>(
+      chatDateIndexPath(agentDir, chatKey, date),
+      null,
+    ),
+  );
+}
+
+function writeChatDateIndex(
+  agentDir: string,
+  chatKey: string,
+  date: string,
+  recordKeys: string[],
+) {
+  writeJsonFile(chatDateIndexPath(agentDir, chatKey, date), {
+    version: 1,
+    recordKeys: normalizeRecordKeys(recordKeys),
+  } satisfies StoredChatDateIndex);
+}
+
+function storedMessageDate(
+  record:
+    | Pick<StoredChatMessage, "receivedAt" | "processedAt">
+    | null
+    | undefined,
+) {
+  if (!record) return "";
+  return isoDateOnly(record.receivedAt || record.processedAt || "");
+}
+
+function sortChatMessages(messages: StoredChatMessage[]) {
+  return [...messages].sort((a, b) => {
+    const left = Date.parse(a.receivedAt || a.processedAt || "") || 0;
+    const right = Date.parse(b.receivedAt || b.processedAt || "") || 0;
+    if (left !== right) return left - right;
+    return a.recordKey.localeCompare(b.recordKey);
+  });
+}
+
+function readChatMessagesByRecordKeys(agentDir: string, recordKeys: string[]) {
+  return normalizeRecordKeys(recordKeys)
+    .map((recordKey) =>
+      readJsonFile<StoredChatMessage | null>(
+        recordPath(agentDir, recordKey),
+        null,
+      ),
+    )
+    .filter((item): item is StoredChatMessage =>
+      Boolean(item && safeString(item.messageId).trim()),
+    );
+}
+
+function syncChatDateIndexIfPresent(
+  agentDir: string,
+  record: StoredChatMessage,
+  previousDate?: string,
+) {
+  const nextChatKey = safeString(record.chatKey).trim();
+  const nextDate = storedMessageDate(record);
+  if (!nextChatKey || !record.recordKey) return;
+  if (
+    previousDate &&
+    previousDate !== nextDate &&
+    chatDateIndexExists(agentDir, nextChatKey, previousDate)
+  ) {
+    writeChatDateIndex(
+      agentDir,
+      nextChatKey,
+      previousDate,
+      (readChatDateIndex(agentDir, nextChatKey, previousDate) || []).filter(
+        (item) => item !== record.recordKey,
+      ),
+    );
+  }
+  if (!nextDate || !chatDateIndexExists(agentDir, nextChatKey, nextDate))
+    return;
+  writeChatDateIndex(agentDir, nextChatKey, nextDate, [
+    ...(readChatDateIndex(agentDir, nextChatKey, nextDate) || []),
+    record.recordKey,
+  ]);
+}
+
 function normalizeStoredRole(value: unknown) {
   const text = safeString(value).trim();
   return text === "user" || text === "assistant"
@@ -117,6 +245,7 @@ export function saveChatMessage(
   input: Omit<StoredChatMessage, "version" | "recordKey">,
 ) {
   const record = buildStoredChatMessage(input);
+  const previous = getChatMessage(agentDir, record.chatKey, record.messageId);
   const filePath = recordPath(agentDir, record.recordKey);
   writeJsonFile(filePath, record);
 
@@ -126,6 +255,7 @@ export function saveChatMessage(
   if (!refs.includes(relative)) {
     writeJsonFile(refFilePath, [...refs, relative]);
   }
+  syncChatDateIndexIfPresent(agentDir, record, storedMessageDate(previous));
 
   return { record, filePath };
 }
@@ -171,6 +301,7 @@ export function updateChatMessage(
 ) {
   const current = getChatMessage(agentDir, chatKey, messageId);
   if (!current) return null;
+  const previousDate = storedMessageDate(current);
   const next: StoredChatMessage = {
     ...current,
     ...patch,
@@ -183,6 +314,7 @@ export function updateChatMessage(
     chatId: current.chatId,
   };
   writeJsonFile(recordPath(agentDir, current.recordKey), next);
+  syncChatDateIndexIfPresent(agentDir, next, previousDate);
   return next;
 }
 
@@ -242,18 +374,31 @@ export function listChatMessagesByChatAndDate(
 ) {
   const nextChatKey = safeString(chatKey).trim();
   const nextDate = isoDateOnly(date);
-  return listChatMessages(agentDir)
-    .filter(
+  if (!nextChatKey || !nextDate) return [];
+
+  const indexedRecordKeys = readChatDateIndex(agentDir, nextChatKey, nextDate);
+  if (indexedRecordKeys) {
+    return sortChatMessages(
+      readChatMessagesByRecordKeys(agentDir, indexedRecordKeys).filter(
+        (item) =>
+          item.chatKey === nextChatKey && storedMessageDate(item) === nextDate,
+      ),
+    );
+  }
+
+  const records = sortChatMessages(
+    listChatMessages(agentDir).filter(
       (item) =>
-        item.chatKey === nextChatKey &&
-        isoDateOnly(item.receivedAt || item.processedAt || "") === nextDate,
-    )
-    .sort((a, b) => {
-      const left = Date.parse(a.receivedAt || a.processedAt || "") || 0;
-      const right = Date.parse(b.receivedAt || b.processedAt || "") || 0;
-      if (left !== right) return left - right;
-      return a.recordKey.localeCompare(b.recordKey);
-    });
+        item.chatKey === nextChatKey && storedMessageDate(item) === nextDate,
+    ),
+  );
+  writeChatDateIndex(
+    agentDir,
+    nextChatKey,
+    nextDate,
+    records.map((item) => item.recordKey),
+  );
+  return records;
 }
 
 export function normalizeChatMessageLookup(
