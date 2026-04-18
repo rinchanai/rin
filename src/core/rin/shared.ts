@@ -1,12 +1,15 @@
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-import net from "node:net";
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { safeString } from "../text-utils.js";
 
 import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
+import {
+  canConnectDaemonSocket,
+  requestDaemonCommand,
+} from "../rin-daemon/client.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 import {
   buildUserShell,
@@ -89,24 +92,6 @@ export function loadInstallConfig() {
   return loadInstallConfigForHome(os.homedir());
 }
 
-async function canConnectSocket(socketPath: string) {
-  return await new Promise<boolean>((resolve) => {
-    const socket = net.createConnection(socketPath);
-    let done = false;
-    const finish = (value: boolean) => {
-      if (done) return;
-      done = true;
-      try {
-        socket.destroy();
-      } catch {}
-      resolve(value);
-    };
-    socket.once("connect", () => finish(true));
-    socket.once("error", () => finish(false));
-    setTimeout(() => finish(false), 500);
-  });
-}
-
 type TargetExecutionContextBase = ReturnType<typeof daemonControlContext>;
 export type TargetExecutionContext = TargetExecutionContextBase & {
   currentUser: string;
@@ -145,7 +130,8 @@ export function createTargetExecutionContext(
   };
 
   const canConnectSocketInContext = async () => {
-    if (isTargetUser) return await canConnectSocket(base.socketPath);
+    if (isTargetUser)
+      return await canConnectDaemonSocket(base.socketPath, 500);
     try {
       capture(
         [
@@ -176,47 +162,14 @@ export function createTargetExecutionContext(
       }
     }
 
-    return await new Promise<any>((resolve) => {
-      const socket = net.createConnection(base.socketPath);
-      let buffer = "";
-      let settled = false;
-      const finish = (value: any) => {
-        if (settled) return;
-        settled = true;
-        try {
-          socket.destroy();
-        } catch {}
-        resolve(value);
-      };
-      socket.once("error", () => finish(undefined));
-      socket.on("data", (chunk) => {
-        buffer += String(chunk);
-        while (true) {
-          const idx = buffer.indexOf("\n");
-          if (idx < 0) break;
-          let line = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.trim()) continue;
-          try {
-            const payload = JSON.parse(line);
-            if (
-              payload?.type === "response" &&
-              payload?.command === "daemon_status"
-            ) {
-              finish(payload.success === true ? payload.data : undefined);
-              return;
-            }
-          } catch {}
-        }
-      });
-      socket.once("connect", () => {
-        socket.write(
-          `${JSON.stringify({ id: "doctor_1", type: "daemon_status" })}\n`,
-        );
-        setTimeout(() => finish(undefined), 1500);
-      });
-    });
+    try {
+      return await requestDaemonCommand(
+        { id: "doctor_1", type: "daemon_status" },
+        { socketPath: base.socketPath, timeoutMs: 1500 },
+      );
+    } catch {
+      return undefined;
+    }
   };
 
   return {

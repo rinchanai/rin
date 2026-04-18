@@ -1,5 +1,3 @@
-import net from "node:net";
-
 import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
@@ -13,63 +11,27 @@ import {
   appendTruncationNotice,
   renderTextToolResult,
 } from "../pi/render-utils.js";
+import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { normalizeChatKey } from "../chat/support.js";
 import { readSessionMetadata } from "../session/metadata.js";
 
-function defaultDaemonSocketPath() {
+function defaultTaskDaemonSocketPath() {
   const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
   if (runtimeDir) return `${runtimeDir}/rin-daemon/daemon.sock`;
   return `${process.env.HOME || ""}/.cache/rin-daemon/daemon.sock`;
 }
 
 async function sendDaemon(command: any) {
-  const socketPath = defaultDaemonSocketPath();
-  const id = `cron_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  return await new Promise<any>((resolve, reject) => {
-    const socket = net.createConnection(socketPath);
-    let buffer = "";
-    const timer = setTimeout(() => {
-      try {
-        socket.destroy();
-      } catch {}
-      reject(new Error("cron_daemon_timeout"));
-    }, 30_000);
-
-    const cleanup = () => clearTimeout(timer);
-    socket.once("error", (error) => {
-      cleanup();
-      reject(error);
-    });
-    socket.on("data", (chunk) => {
-      buffer += String(chunk);
-      while (true) {
-        const idx = buffer.indexOf("\n");
-        if (idx < 0) break;
-        let line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        if (line.endsWith("\r")) line = line.slice(0, -1);
-        if (!line.trim()) continue;
-        let payload: any;
-        try {
-          payload = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (payload?.type !== "response" || payload?.id !== id) continue;
-        cleanup();
-        try {
-          socket.destroy();
-        } catch {}
-        if (payload.success !== true)
-          reject(new Error(String(payload.error || "cron_request_failed")));
-        else resolve(payload.data);
-        return;
-      }
-    });
-    socket.once("connect", () => {
-      socket.write(`${JSON.stringify({ ...command, id })}\n`);
-    });
-  });
+  return await requestDaemonCommand(
+    {
+      ...command,
+      id: `cron_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    },
+    {
+      socketPath: defaultTaskDaemonSocketPath(),
+      timeoutMs: 30_000,
+    },
+  );
 }
 
 function createTaskId() {

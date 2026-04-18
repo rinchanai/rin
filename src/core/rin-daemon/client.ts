@@ -1,29 +1,53 @@
 import net from "node:net";
 
-import { defaultDaemonSocketPath, safeString } from "../rin-lib/common.js";
+import {
+  defaultDaemonSocketPath,
+  parseJsonl,
+  safeString,
+} from "../rin-lib/common.js";
 
-function parseJsonLine(buffer: string) {
-  const idx = buffer.indexOf("\n");
-  if (idx < 0) return null;
-  let line = buffer.slice(0, idx);
-  if (line.endsWith("\r")) line = line.slice(0, -1);
-  return { line, rest: buffer.slice(idx + 1) };
+function resolveDaemonSocketPath(socketPath?: string) {
+  return safeString(socketPath).trim() || defaultDaemonSocketPath();
+}
+
+export async function canConnectDaemonSocket(
+  socketPath?: string,
+  timeoutMs = 500,
+) {
+  const resolvedSocketPath = resolveDaemonSocketPath(socketPath);
+  const timeout = Math.max(1, Number(timeoutMs || 500));
+  return await new Promise<boolean>((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket.destroy();
+      } catch {}
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(false), timeout);
+    socket.once("error", () => finish(false));
+    socket.once("connect", () => finish(true));
+    socket.connect({ path: resolvedSocketPath });
+  });
 }
 
 export async function requestDaemonCommand(
   command: Record<string, any>,
   options: { socketPath?: string; timeoutMs?: number } = {},
 ) {
-  const socketPath =
-    safeString(options.socketPath).trim() || defaultDaemonSocketPath();
+  const socketPath = resolveDaemonSocketPath(options.socketPath);
   const timeoutMs = Math.max(1, Number(options.timeoutMs || 30_000));
   const id =
     safeString(command?.id).trim() ||
     `daemon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   return await new Promise<any>((resolve, reject) => {
     const socket = new net.Socket();
+    const state = { buffer: "" };
     let settled = false;
-    let buffer = "";
     const finish = (error?: unknown, value?: any) => {
       if (settled) return;
       settled = true;
@@ -46,27 +70,21 @@ export async function requestDaemonCommand(
     socket.setEncoding("utf8");
     socket.on("error", (error) => finish(error));
     socket.on("data", (chunk) => {
-      buffer += String(chunk);
-      while (true) {
-        const parsed = parseJsonLine(buffer);
-        if (!parsed) return;
-        buffer = parsed.rest;
-        if (!parsed.line.trim()) continue;
+      parseJsonl(String(chunk), state, (line) => {
         let payload: any;
         try {
-          payload = JSON.parse(parsed.line);
+          payload = JSON.parse(line);
         } catch {
           finish(new Error("daemon_invalid_json"));
           return;
         }
-        if (payload?.type !== "response" || payload?.id !== id) continue;
+        if (payload?.type !== "response" || payload?.id !== id) return;
         if (payload?.success === false) {
           finish(new Error(String(payload?.error || "daemon_request_failed")));
           return;
         }
         finish(undefined, payload?.data ?? payload);
-        return;
-      }
+      });
     });
     socket.on("connect", () => {
       try {

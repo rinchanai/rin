@@ -1,7 +1,6 @@
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
-import net from "node:net";
 import { execFileSync } from "node:child_process";
 
 import {
@@ -26,6 +25,7 @@ import {
   systemdUserUnitDirForHome,
   systemdUserUnitPathForHome,
 } from "./paths.js";
+import { canConnectDaemonSocket } from "../rin-daemon/client.js";
 
 function currentSystemUser() {
   try {
@@ -516,19 +516,7 @@ export async function waitForSocket(
           return;
         }
       }
-      const socket = net.createConnection(socketPath);
-      let done = false;
-      const finish = (value: boolean) => {
-        if (done) return;
-        done = true;
-        try {
-          socket.destroy();
-        } catch {}
-        resolve(value);
-      };
-      socket.once("connect", () => finish(true));
-      socket.once("error", () => finish(false));
-      setTimeout(() => finish(false), 300);
+      void canConnectDaemonSocket(socketPath, 300).then(resolve);
     });
     if (ok) return true;
     await new Promise((resolve) => setTimeout(resolve, 150));
