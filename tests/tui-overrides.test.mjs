@@ -54,6 +54,77 @@ test("loader stop clears render interval", () => {
   assert.ok(renders >= 1);
 });
 
+test("local session selector reuses bound session helpers for canonicalized list and rename", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let listed = [];
+  let renamed = [];
+  let selector;
+  const originalList = codingAgentModule.SessionManager.list;
+  const originalOpen = codingAgentModule.SessionManager.open;
+
+  codingAgentModule.SessionManager.list = async (_cwd, dir) => {
+    listed.push(dir);
+    return [
+      {
+        id: "session-1",
+        title: "Legacy title",
+        subtitle: "2026-04-18T00:00:00.000Z",
+      },
+    ];
+  };
+  codingAgentModule.SessionManager.open = (sessionPath) => ({
+    appendSessionInfo(name) {
+      renamed.push([sessionPath, name]);
+    },
+  });
+
+  try {
+    const instance = {
+      sessionManager: {
+        getSessionFile: () => "/tmp/demo.jsonl",
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/.sessions",
+      },
+      keybindings: {},
+      ui: { requestRender() {} },
+      showSelector(factory) {
+        selector = factory(() => {}).component;
+        return selector;
+      },
+      handleResumeSession: async () => {},
+      shutdown: async () => {},
+    };
+
+    codingAgentModule.InteractiveMode.prototype.showSessionSelector.call(instance);
+
+    const sessions = await selector.currentSessionsLoader();
+    await selector.renameSession("/tmp/demo.jsonl", "renamed");
+
+    assert.deepEqual(listed, ["/tmp/.sessions", "/tmp/.sessions"]);
+    assert.deepEqual(
+      {
+        id: sessions[0]?.id,
+        path: sessions[0]?.path,
+        name: sessions[0]?.name,
+        firstMessage: sessions[0]?.firstMessage,
+        modified: sessions[0]?.modified?.toISOString(),
+      },
+      {
+        id: "session-1",
+        path: "session-1",
+        name: undefined,
+        firstMessage: "Legacy title",
+        modified: "2026-04-18T00:00:00.000Z",
+      },
+    );
+    assert.deepEqual(renamed, [["/tmp/demo.jsonl", "renamed"]]);
+  } finally {
+    codingAgentModule.SessionManager.list = originalList;
+    codingAgentModule.SessionManager.open = originalOpen;
+  }
+});
+
 test("rpc session selector loads sessions through the daemon instead of local SessionManager", async () => {
   await overrides.applyRinTuiOverrides();
 

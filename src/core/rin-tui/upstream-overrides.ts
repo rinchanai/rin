@@ -7,6 +7,7 @@ import {
 import { Loader, truncateToWidth } from "@mariozechner/pi-tui";
 
 import { extractMessageText } from "../message-content.js";
+import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 
 let applied = false;
 const ANSI_DIM = "\u001b[2m";
@@ -63,22 +64,35 @@ function syncRpcTransportLoader(instance: any) {
 }
 
 function createSessionSelectorLoaders(instance: any) {
+  const renameSessionIfNamed = async (
+    rename: (sessionFilePath: string, nextName: string) => Promise<void> | void,
+    sessionFilePath: string,
+    nextName: string | undefined,
+  ) => {
+    const next = (nextName ?? "").trim();
+    if (!next) return;
+    await rename(sessionFilePath, next);
+  };
+
   if (!isRpcTransportControlled(instance)) {
-    const loadSessions = (onProgress?: any) =>
-      SessionManager.list(
-        instance.sessionManager.getCwd(),
-        instance.sessionManager.getSessionDir(),
-        onProgress,
-      );
+    const loadSessions = () =>
+      listBoundSessions({
+        cwd: instance.sessionManager.getCwd(),
+        sessionDir: instance.sessionManager.getSessionDir(),
+        SessionManager,
+      });
     return {
       currentSessionsLoader: loadSessions,
       allSessionsLoader: loadSessions,
-      renameSession: async (sessionFilePath: string, nextName: string | undefined) => {
-        const next = (nextName ?? "").trim();
-        if (!next) return;
-        const mgr = SessionManager.open(sessionFilePath);
-        mgr.appendSessionInfo(next);
-      },
+      renameSession: async (
+        sessionFilePath: string,
+        nextName: string | undefined,
+      ) =>
+        await renameSessionIfNamed(
+          (path, name) => renameBoundSession(path, name, { SessionManager }),
+          sessionFilePath,
+          nextName,
+        ),
     };
   }
 
@@ -87,11 +101,15 @@ function createSessionSelectorLoaders(instance: any) {
   return {
     currentSessionsLoader: loadRemoteSessions,
     allSessionsLoader: loadRemoteSessions,
-    renameSession: async (sessionFilePath: string, nextName: string | undefined) => {
-      const next = (nextName ?? "").trim();
-      if (!next) return;
-      await instance.session.renameSession(sessionFilePath, next);
-    },
+    renameSession: async (
+      sessionFilePath: string,
+      nextName: string | undefined,
+    ) =>
+      await renameSessionIfNamed(
+        (path, name) => instance.session.renameSession(path, name),
+        sessionFilePath,
+        nextName,
+      ),
   };
 }
 
