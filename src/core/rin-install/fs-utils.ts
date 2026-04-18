@@ -146,11 +146,16 @@ export function runPrivileged(command: string, args: string[]) {
   execFileSync(privilegeCommand, [command, ...args], { stdio: "inherit" });
 }
 
-export function runCommandAsUser(
+export function commandAsUserInvocation(
   targetUser: string,
   command: string,
   args: string[],
   extraEnv: Record<string, string> = {},
+  deps: {
+    isRoot?: boolean;
+    hasRunuser?: boolean;
+    privilegeCommand?: string;
+  } = {},
 ) {
   const envArgs = Object.entries(extraEnv).map(
     ([key, value]) => `${key}=${JSON.stringify(value)}`,
@@ -161,27 +166,58 @@ export function runCommandAsUser(
     ...args.map((arg) => JSON.stringify(arg)),
   ].join(" ");
   const isRoot =
-    typeof process.getuid === "function" ? process.getuid() === 0 : false;
+    deps.isRoot ??
+    (typeof process.getuid === "function" ? process.getuid() === 0 : false);
+  const hasRunuser = deps.hasRunuser ?? fs.existsSync("/usr/sbin/runuser");
 
-  if (isRoot && fs.existsSync("/usr/sbin/runuser")) {
-    execFileSync(
-      "/usr/sbin/runuser",
-      ["-u", targetUser, "--", "sh", "-lc", shellCommand],
-      { stdio: "inherit" },
-    );
-    return;
+  if (isRoot && hasRunuser) {
+    return {
+      command: "/usr/sbin/runuser",
+      args: ["-u", targetUser, "--", "sh", "-lc", shellCommand],
+    };
   }
-  const privilegeCommand = pickPrivilegeCommand();
+  const privilegeCommand = deps.privilegeCommand ?? pickPrivilegeCommand();
   if (privilegeCommand.endsWith("doas") || privilegeCommand.endsWith("sudo")) {
-    execFileSync(
-      privilegeCommand,
-      ["-u", targetUser, "sh", "-lc", shellCommand],
-      { stdio: "inherit" },
-    );
-    return;
+    return {
+      command: privilegeCommand,
+      args: ["-u", targetUser, "sh", "-lc", shellCommand],
+    };
   }
-  execFileSync(privilegeCommand, ["sh", "-lc", shellCommand], {
-    stdio: "inherit",
+  return {
+    command: privilegeCommand,
+    args: ["sh", "-lc", shellCommand],
+  };
+}
+
+export function runCommandAsUser(
+  targetUser: string,
+  command: string,
+  args: string[],
+  extraEnv: Record<string, string> = {},
+) {
+  const invocation = commandAsUserInvocation(
+    targetUser,
+    command,
+    args,
+    extraEnv,
+  );
+  execFileSync(invocation.command, invocation.args, { stdio: "inherit" });
+}
+
+export function captureCommandAsUser(
+  targetUser: string,
+  command: string,
+  args: string[],
+  extraEnv: Record<string, string> = {},
+) {
+  const invocation = commandAsUserInvocation(
+    targetUser,
+    command,
+    args,
+    extraEnv,
+  );
+  return execFileSync(invocation.command, invocation.args, {
+    encoding: "utf8",
   });
 }
 

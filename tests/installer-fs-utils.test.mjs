@@ -28,6 +28,74 @@ test("installer fs utils compute launcher targets and script", () => {
   assert.equal(script.includes(process.execPath), false);
 });
 
+test("commandAsUserInvocation prefers runuser for root", () => {
+  const invocation = fsUtils.commandAsUserInvocation(
+    "demo",
+    "node",
+    ["--version"],
+    { DEMO_ENV: "hello world" },
+    {
+      isRoot: true,
+      hasRunuser: true,
+      privilegeCommand: "/usr/bin/sudo",
+    },
+  );
+
+  assert.equal(invocation.command, "/usr/sbin/runuser");
+  assert.deepEqual(invocation.args, [
+    "-u",
+    "demo",
+    "--",
+    "sh",
+    "-lc",
+    'DEMO_ENV="hello world" "node" "--version"',
+  ]);
+});
+
+test("commandAsUserInvocation uses sudo style user switch when needed", () => {
+  const invocation = fsUtils.commandAsUserInvocation(
+    "demo",
+    "node",
+    ["-e", "console.log('ok')"],
+    {},
+    {
+      isRoot: false,
+      hasRunuser: false,
+      privilegeCommand: "/usr/bin/sudo",
+    },
+  );
+
+  assert.equal(invocation.command, "/usr/bin/sudo");
+  assert.deepEqual(invocation.args, [
+    "-u",
+    "demo",
+    "sh",
+    "-lc",
+    `"node" "-e" ${JSON.stringify("console.log('ok')")}`,
+  ]);
+});
+
+test("commandAsUserInvocation falls back to plain privilege shell command", () => {
+  const invocation = fsUtils.commandAsUserInvocation(
+    "demo",
+    "node",
+    ["--version"],
+    {},
+    {
+      isRoot: false,
+      hasRunuser: false,
+      privilegeCommand: "/usr/bin/pkexec",
+    },
+  );
+
+  assert.equal(invocation.command, "/usr/bin/pkexec");
+  assert.deepEqual(invocation.args, [
+    "sh",
+    "-lc",
+    '"node" "--version"',
+  ]);
+});
+
 test("syncInstalledDocs copies upstream mirrors into installed doc locations", async () => {
   const tempRoot = await fs.mkdtemp(path.join(tempBaseDir, "rin-install-src-"));
   const installDir = await fs.mkdtemp(

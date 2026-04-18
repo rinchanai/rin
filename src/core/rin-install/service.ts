@@ -4,8 +4,8 @@ import path from "node:path";
 import net from "node:net";
 import { execFileSync } from "node:child_process";
 
-import { pickPrivilegeCommand } from "../rin-lib/system.js";
 import {
+  captureCommandAsUser,
   ensureDir,
   installedRuntimeNodeCommandArgs,
   installedRuntimePathValue,
@@ -282,40 +282,6 @@ export function systemdUserContext(
     userEnv,
     units: managedSystemdUnitCandidates(targetUser),
   };
-}
-
-export function captureCommandAsUser(
-  targetUser: string,
-  command: string,
-  args: string[],
-  extraEnv: Record<string, string> = {},
-) {
-  const envArgs = Object.entries(extraEnv).map(
-    ([key, value]) => `${key}=${JSON.stringify(value)}`,
-  );
-  const shellCommand = [
-    ...envArgs,
-    JSON.stringify(command),
-    ...args.map((arg) => JSON.stringify(arg)),
-  ].join(" ");
-  const isRoot =
-    typeof process.getuid === "function" ? process.getuid() === 0 : false;
-  if (isRoot && fs.existsSync("/usr/sbin/runuser"))
-    return execFileSync(
-      "/usr/sbin/runuser",
-      ["-u", targetUser, "--", "sh", "-lc", shellCommand],
-      { encoding: "utf8" },
-    );
-  const privilegeCommand = pickPrivilegeCommand();
-  if (privilegeCommand.endsWith("doas") || privilegeCommand.endsWith("sudo"))
-    return execFileSync(
-      privilegeCommand,
-      ["-u", targetUser, "sh", "-lc", shellCommand],
-      { encoding: "utf8" },
-    );
-  return execFileSync(privilegeCommand, ["sh", "-lc", shellCommand], {
-    encoding: "utf8",
-  });
 }
 
 export function daemonSocketPathForUser(
