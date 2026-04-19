@@ -199,10 +199,29 @@ export function launcherMetadataCandidatesForHome(home: string) {
   ]);
 }
 
+export type InstallRecordSource = "manifest" | "launcher";
+
+export type InstallRecordSourceCandidate = {
+  source: InstallRecordSource;
+  filePaths: string[];
+};
+
+export function installRecordSourcesForHome(
+  home: string,
+): InstallRecordSourceCandidate[] {
+  const manifestFilePaths = installerLocatorCandidatesForHome(home);
+  const launcherFilePaths = launcherMetadataCandidatesForHome(home);
+  return [
+    { source: "manifest", filePaths: manifestFilePaths },
+    { source: "launcher", filePaths: launcherFilePaths },
+  ];
+}
+
 export function installRecordCandidatesForHome(home: string) {
+  const [manifestSource, launcherSource] = installRecordSourcesForHome(home);
   return uniqueNonEmptyStrings([
-    ...launcherMetadataCandidatesForHome(home),
-    ...installerLocatorCandidatesForHome(home),
+    ...launcherSource.filePaths,
+    ...manifestSource.filePaths,
   ]);
 }
 

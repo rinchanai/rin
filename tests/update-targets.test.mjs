@@ -35,6 +35,7 @@ test("discoverInstalledTargets scans manifest, launcher, systemd, and launchd ho
     const eveHome = path.join(homeRoot, "eve");
     const frankHome = path.join(homeRoot, "frank");
     const graceHome = path.join(usersRoot, "grace");
+    const heidiHome = path.join(homeRoot, "heidi");
 
     await fs.mkdir(path.join(aliceHome, ".rin"), { recursive: true });
     await fs.writeFile(
@@ -140,6 +141,27 @@ test("discoverInstalledTargets scans manifest, launcher, systemd, and launchd ho
       "utf8",
     );
 
+    await fs.mkdir(path.join(heidiHome, ".rin"), { recursive: true });
+    await fs.writeFile(
+      path.join(heidiHome, ".rin", "installer.json"),
+      JSON.stringify({
+        targetUser: "heidi",
+        installDir: "/opt/rin-heidi-manifest",
+      }),
+      "utf8",
+    );
+    await fs.mkdir(path.join(heidiHome, ".config", "rin"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(heidiHome, ".config", "rin", "install.json"),
+      JSON.stringify({
+        defaultTargetUser: "heidi",
+        defaultInstallDir: "/opt/rin-heidi-launcher",
+      }),
+      "utf8",
+    );
+
     const discovered = updateTargets.discoverInstalledTargets([
       homeRoot,
       usersRoot,
@@ -187,6 +209,18 @@ test("discoverInstalledTargets scans manifest, launcher, systemd, and launchd ho
         installDir: "/Users/grace/.rin-managed",
         ownerHome: graceHome,
         source: "launcher",
+      },
+      {
+        targetUser: "heidi",
+        installDir: "/opt/rin-heidi-launcher",
+        ownerHome: heidiHome,
+        source: "launcher",
+      },
+      {
+        targetUser: "heidi",
+        installDir: "/opt/rin-heidi-manifest",
+        ownerHome: heidiHome,
+        source: "manifest",
       },
     ]);
   });

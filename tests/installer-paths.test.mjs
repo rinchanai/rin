@@ -178,6 +178,22 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     pathsMod.launcherMetadataPathForHome(linuxHome),
     alternateLauncherMetadataPath,
   ]);
+  assert.deepEqual(pathsMod.installRecordSourcesForHome(linuxHome), [
+    {
+      source: "manifest",
+      filePaths: [
+        path.join(linuxHome, ".rin", "installer.json"),
+        path.join(linuxHome, ".rin", "config", "installer.json"),
+      ],
+    },
+    {
+      source: "launcher",
+      filePaths: [
+        pathsMod.launcherMetadataPathForHome(linuxHome),
+        alternateLauncherMetadataPath,
+      ],
+    },
+  ]);
   assert.deepEqual(pathsMod.installRecordCandidatesForHome(linuxHome), [
     pathsMod.launcherMetadataPathForHome(linuxHome),
     alternateLauncherMetadataPath,

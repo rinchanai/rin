@@ -7,11 +7,10 @@ import {
   installDirFromManagedLaunchdPlist,
   installDirFromManagedSystemdUnit,
   installDiscoveryHomeRoots,
-  installerLocatorCandidatesForHome,
+  installRecordSourcesForHome,
   isManagedLaunchdPlistName,
   isManagedSystemdUnitName,
   launchAgentsDirForHome,
-  launcherMetadataCandidatesForHome,
   systemdUserUnitDirForHome,
 } from "./paths.js";
 
@@ -21,6 +20,28 @@ export type InstalledTarget = {
   ownerHome: string;
   source: "manifest" | "systemd" | "launchd" | "launcher";
 };
+
+type ManagedInstallDiscovery = {
+  source: Extract<InstalledTarget["source"], "systemd" | "launchd">;
+  dirForHome: (home: string) => string;
+  isManagedName: (name: string) => boolean;
+  installDirFromText: (text: string) => string;
+};
+
+const MANAGED_INSTALL_DISCOVERY: ManagedInstallDiscovery[] = [
+  {
+    source: "systemd",
+    dirForHome: systemdUserUnitDirForHome,
+    isManagedName: isManagedSystemdUnitName,
+    installDirFromText: installDirFromManagedSystemdUnit,
+  },
+  {
+    source: "launchd",
+    dirForHome: launchAgentsDirForHome,
+    isManagedName: isManagedLaunchdPlistName,
+    installDirFromText: installDirFromManagedLaunchdPlist,
+  },
+];
 
 export function discoverInstalledTargets(
   homeRoots = installDiscoveryHomeRoots(),
@@ -49,57 +70,47 @@ export function discoverInstalledTargets(
     });
   };
 
+  const addInstallRecordTarget = (
+    homeDir: string,
+    userName: string,
+    source: Extract<InstalledTarget["source"], "manifest" | "launcher">,
+    filePaths: string[],
+  ) => {
+    const target = resolveInstallRecordTargetFromCandidates(
+      homeDir,
+      userName,
+      filePaths,
+      (filePath) => readJsonFile<any>(filePath, null),
+    );
+    if (!target) return;
+    add(target.targetUser, target.installDir, homeDir, source);
+  };
+
+  const addManagedInstallTargets = (homeDir: string, userName: string) => {
+    for (const discovery of MANAGED_INSTALL_DISCOVERY) {
+      const installDirPath = discovery.dirForHome(homeDir);
+      try {
+        for (const entry of fs.readdirSync(installDirPath)) {
+          if (!discovery.isManagedName(entry)) continue;
+          const filePath = path.join(installDirPath, entry);
+          const installDir = discovery.installDirFromText(
+            fs.readFileSync(filePath, "utf8"),
+          );
+          if (!installDir) continue;
+          add(userName, installDir, homeDir, discovery.source);
+        }
+      } catch {}
+    }
+  };
+
   const scanHome = (homeDir: string) => {
     const userName = path.basename(homeDir);
-    const addInstallRecordSource = (
-      source: InstalledTarget["source"],
-      filePaths: string[],
-    ) => {
-      const target = resolveInstallRecordTargetFromCandidates(
-        homeDir,
-        userName,
-        filePaths,
-        (filePath) => readJsonFile<any>(filePath, null),
-      );
-      if (!target) return;
-      add(target.targetUser, target.installDir, homeDir, source);
-    };
 
-    addInstallRecordSource(
-      "manifest",
-      installerLocatorCandidatesForHome(homeDir),
-    );
+    for (const { source, filePaths } of installRecordSourcesForHome(homeDir)) {
+      addInstallRecordTarget(homeDir, userName, source, filePaths);
+    }
 
-    const systemdDir = systemdUserUnitDirForHome(homeDir);
-    try {
-      for (const entry of fs.readdirSync(systemdDir)) {
-        if (!isManagedSystemdUnitName(entry)) continue;
-        const filePath = path.join(systemdDir, entry);
-        const installDir = installDirFromManagedSystemdUnit(
-          fs.readFileSync(filePath, "utf8"),
-        );
-        if (!installDir) continue;
-        add(userName, installDir, homeDir, "systemd");
-      }
-    } catch {}
-
-    const launchAgentsDir = launchAgentsDirForHome(homeDir);
-    try {
-      for (const entry of fs.readdirSync(launchAgentsDir)) {
-        if (!isManagedLaunchdPlistName(entry)) continue;
-        const filePath = path.join(launchAgentsDir, entry);
-        const installDir = installDirFromManagedLaunchdPlist(
-          fs.readFileSync(filePath, "utf8"),
-        );
-        if (!installDir) continue;
-        add(userName, installDir, homeDir, "launchd");
-      }
-    } catch {}
-
-    addInstallRecordSource(
-      "launcher",
-      launcherMetadataCandidatesForHome(homeDir),
-    );
+    addManagedInstallTargets(homeDir, userName);
   };
 
   for (const root of homeRoots) {
