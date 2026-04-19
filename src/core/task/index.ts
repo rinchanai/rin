@@ -12,49 +12,36 @@ import {
   renderTextToolResult,
 } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
+import { createCronTaskId } from "../rin-daemon/cron-utils.js";
 import { normalizeChatKey } from "../chat/support.js";
 import { readSessionMetadata } from "../session/metadata.js";
-
-function defaultTaskDaemonSocketPath() {
-  const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
-  if (runtimeDir) return `${runtimeDir}/rin-daemon/daemon.sock`;
-  return `${process.env.HOME || ""}/.cache/rin-daemon/daemon.sock`;
-}
-
-async function sendDaemon(command: any) {
-  return await requestDaemonCommand(
-    {
-      ...command,
-      id: `cron_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
-    },
-    {
-      socketPath: defaultTaskDaemonSocketPath(),
-      timeoutMs: 30_000,
-    },
-  );
-}
-
-function createTaskId() {
-  return `cron_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
 
 function wrapAgentPrompt(prompt: string) {
   return String(prompt || "").trim();
 }
 
-function buildTaskForSave(
-  input: any,
-  defaults: {
-    currentSessionFile?: string;
-    currentSessionId?: string;
-    currentSessionName?: string;
-    currentChatKey?: string;
-  },
-) {
-  const taskId = String(input?.id || "").trim() || createTaskId();
+type TaskSaveDefaults = {
+  sessionFile?: string;
+  sessionId?: string;
+  sessionName?: string;
+  chatKey?: string;
+};
+
+function readTaskSaveDefaults(ctx: any): TaskSaveDefaults {
+  const session = readSessionMetadata(ctx);
+  const sessionName = session.sessionName || undefined;
+  return {
+    sessionFile: session.sessionFile || undefined,
+    sessionId: session.sessionId || undefined,
+    sessionName,
+    chatKey: normalizeChatKey(sessionName),
+  };
+}
+
+function buildTaskForSave(input: any, defaults: TaskSaveDefaults) {
+  const taskId = String(input?.id || "").trim() || createCronTaskId();
   const session = input?.session || { mode: "dedicated" };
-  const chatKey =
-    input?.chatKey !== undefined ? input.chatKey : defaults.currentChatKey;
+  const chatKey = input?.chatKey !== undefined ? input.chatKey : defaults.chatKey;
   const target =
     input?.target?.kind === "agent_prompt"
       ? {
@@ -280,38 +267,23 @@ function formatListTaskResult(
 }
 
 async function executeTaskAction(action: string, params: any, ctx: any) {
-  const session = readSessionMetadata(ctx);
-  const currentSessionFile = session.sessionFile || undefined;
-  const currentSessionId = session.sessionId || undefined;
-  const currentSessionName = session.sessionName || undefined;
-  const currentChatKey = normalizeChatKey(currentSessionName);
+  const defaults = readTaskSaveDefaults(ctx);
 
   let data: any;
   if (action === "get") {
-    data = await sendDaemon(
+    data = await requestDaemonCommand(
       String(params?.taskId || "").trim()
         ? { type: "cron_get_task", taskId: params?.taskId }
         : { type: "cron_list_tasks" },
     );
   } else if (action === "save") {
-    const defaults = {
-      sessionFile: currentSessionFile,
-      sessionId: currentSessionId,
-      sessionName: currentSessionName,
-      chatKey: currentChatKey,
-    };
-    data = await sendDaemon({
+    data = await requestDaemonCommand({
       type: "cron_upsert_task",
-      task: buildTaskForSave(params, {
-        currentSessionFile,
-        currentSessionId,
-        currentSessionName,
-        currentChatKey,
-      }),
+      task: buildTaskForSave(params, defaults),
       defaults,
     });
   } else if (action in TASK_MUTATION_COMMANDS) {
-    data = await sendDaemon({
+    data = await requestDaemonCommand({
       type: TASK_MUTATION_COMMANDS[action as keyof typeof TASK_MUTATION_COMMANDS],
       taskId: params?.taskId,
     });

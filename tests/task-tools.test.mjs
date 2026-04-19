@@ -95,8 +95,8 @@ test("get_task returns a requested task instead of falling back to 'No scheduled
   const getTool = tools.find((tool) => tool.name === "get_task");
   assert.ok(getTool);
 
-  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
-  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
   try {
     const result = await getTool.execute(
       "tool-1",
@@ -114,7 +114,86 @@ test("get_task returns a requested task instead of falling back to 'No scheduled
     assert.match(String(result.content?.[0]?.text || ""), /cron_demo \(Demo Task\)/);
     assert.doesNotMatch(String(result.content?.[0]?.text || ""), /No scheduled tasks\./);
   } finally {
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test("get_task respects RIN_DAEMON_SOCKET_PATH over legacy runtime dir lookup", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-task-runtime-"));
+  const explicitSocketDir = path.join(runtimeDir, "explicit-daemon");
+  const socketPath = path.join(explicitSocketDir, "daemon.sock");
+  await fs.mkdir(explicitSocketDir, { recursive: true });
+
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: true,
+            data: {
+              task: {
+                id: "cron_env_socket",
+                enabled: true,
+                trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+                session: { mode: "dedicated" },
+                target: { kind: "agent_prompt", prompt: "hello" },
+                nextRunAt: "2026-04-18T00:00:00.000Z",
+              },
+            },
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => resolve());
+  });
+
+  const tools = [];
+  taskIndex.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+  });
+  const getTool = tools.find((tool) => tool.name === "get_task");
+  assert.ok(getTool);
+
+  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.XDG_RUNTIME_DIR = path.join(runtimeDir, "wrong-runtime-dir");
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
+  try {
+    const result = await getTool.execute(
+      "tool-explicit-socket",
+      { taskId: "cron_env_socket" },
+      undefined,
+      undefined,
+      {
+        sessionManager: {
+          getSessionFile: () => undefined,
+          getSessionId: () => undefined,
+          getSessionName: () => undefined,
+        },
+      },
+    );
+    assert.match(String(result.content?.[0]?.text || ""), /cron_env_socket/);
+  } finally {
     process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
     await new Promise((resolve) => server.close(() => resolve()));
     await fs.rm(runtimeDir, { recursive: true, force: true });
   }
@@ -184,8 +263,8 @@ test("get_task without taskId lists scheduled tasks via cron_list_tasks", async 
   const getTool = tools.find((tool) => tool.name === "get_task");
   assert.ok(getTool);
 
-  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
-  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
   try {
     const result = await getTool.execute(
       "tool-2",
@@ -207,7 +286,7 @@ test("get_task without taskId lists scheduled tasks via cron_list_tasks", async 
     assert.match(String(result.content?.[0]?.text || ""), /disabled/);
     assert.doesNotMatch(String(result.content?.[0]?.text || ""), /No scheduled tasks\./);
   } finally {
-    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
     await new Promise((resolve) => server.close(() => resolve()));
     await fs.rm(runtimeDir, { recursive: true, force: true });
   }
@@ -258,8 +337,8 @@ test("save_task only auto-binds valid current chat session names", async () => {
   const saveTool = tools.find((tool) => tool.name === "save_task");
   assert.ok(saveTool);
 
-  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
-  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
   try {
     await saveTool.execute(
       "tool-invalid",
@@ -301,7 +380,7 @@ test("save_task only auto-binds valid current chat session names", async () => {
     assert.equal(requests[1].defaults?.chatKey, "telegram/777:1");
     assert.equal(requests[1].task?.chatKey, "telegram/777:1");
   } finally {
-    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
     await new Promise((resolve) => server.close(() => resolve()));
     await fs.rm(runtimeDir, { recursive: true, force: true });
   }
@@ -365,8 +444,8 @@ test("manage_task maps public actions to daemon task commands", async () => {
   const manageTool = tools.find((tool) => tool.name === "manage_task");
   assert.ok(manageTool);
 
-  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
-  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
   try {
     const deleted = await manageTool.execute(
       "tool-delete",
@@ -398,7 +477,7 @@ test("manage_task maps public actions to daemon task commands", async () => {
     assert.match(String(paused.content?.[0]?.text || ""), /disabled/);
     assert.match(String(resumed.content?.[0]?.text || ""), /next=2026-04-18T00:00:00.000Z/);
   } finally {
-    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
     await new Promise((resolve) => server.close(() => resolve()));
     await fs.rm(runtimeDir, { recursive: true, force: true });
   }

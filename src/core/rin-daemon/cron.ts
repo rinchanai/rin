@@ -10,6 +10,7 @@ import { shellQuote } from "../rin-lib/system.js";
 import { executeCronTask } from "./cron-execution.js";
 import {
   computeNextRunAt,
+  createCronTaskId,
   cronTasksPath,
   nextCronAt,
   normalizeIso,
@@ -202,10 +203,7 @@ export class CronScheduler {
   ) {
     const existing = input.id ? this.tasks.get(String(input.id)) : undefined;
     assertMutableTask(existing);
-    const id =
-      existing?.id ||
-      safeString(input.id).trim() ||
-      `cron_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const id = existing?.id || safeString(input.id).trim() || createCronTaskId();
     const createdAt = existing?.createdAt || nowIso();
     const updatedAt = nowIso();
     const name =

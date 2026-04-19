@@ -24,6 +24,10 @@ export function cronTasksPath(agentDir: string) {
   return path.join(cronRoot(agentDir), "tasks.json");
 }
 
+export function createCronTaskId() {
+  return `cron_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
 export function cronTaskRunId(task: CronTaskRecord) {
   return `${task.id}:${task.runCount}:${Date.now()}`;
 }
