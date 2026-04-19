@@ -7,6 +7,7 @@ import {
   extractMessageText,
   normalizeMessageText,
 } from "../message-content.js";
+import { cloneJsonIfObject } from "../json-utils.js";
 import { safeString } from "../text-utils.js";
 
 export type ChatInboxRouting = {
@@ -22,12 +23,6 @@ export type ChatInboxRouting = {
 
 function normalizeMentionToken(value: unknown) {
   return safeString(value).trim().replace(/^@+/, "").toLowerCase();
-}
-
-function cloneJsonValue<T>(value: T): T | undefined {
-  return value && typeof value === "object"
-    ? (JSON.parse(JSON.stringify(value)) as T)
-    : undefined;
 }
 
 function normalizePlatformTimestamp(value: unknown) {
@@ -194,11 +189,11 @@ export function serializeChatInboxSession(session: any) {
           }
         : undefined,
     username: safeString(session?.username).trim() || undefined,
-    author: cloneJsonValue(session?.author),
-    user: cloneJsonValue(session?.user),
-    channel: cloneJsonValue(session?.channel),
-    guild: cloneJsonValue(session?.guild),
-    quote: cloneJsonValue(session?.quote),
+    author: cloneJsonIfObject(session?.author),
+    user: cloneJsonIfObject(session?.user),
+    channel: cloneJsonIfObject(session?.channel),
+    guild: cloneJsonIfObject(session?.guild),
+    quote: cloneJsonIfObject(session?.quote),
   };
 }
 

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 const HOME_DIR = os.homedir();
+import { cloneJson } from "../json-utils.js";
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
 import { shellQuote } from "../rin-lib/system.js";
@@ -143,10 +144,6 @@ function mergeBuiltInTaskState(
 function assertMutableTask(task: CronTaskRecord | undefined) {
   if (!task) return;
   if (task.builtIn) throw new Error(`cron_builtin_task_protected:${task.id}`);
-}
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 export class CronScheduler {

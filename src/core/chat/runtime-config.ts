@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import YAML from "yaml";
 
 import { listChatBridgeAdapterSpecs } from "../chat-bridge/adapters.js";
+import { cloneJson, isJsonRecord } from "../json-utils.js";
 import { ensureDir, writeJsonFile } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 import { getStoredChatConfigRoot } from "./settings.js";
@@ -36,14 +37,6 @@ const SETUP_ONLY_ADAPTER_FIELDS = new Set([
   "ownerUserIds",
   "botId",
 ]);
-
-function cloneJson<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function isJsonRecord(value: unknown): value is Record<string, any> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
 
 function normalizeChatAdapterConfig(
   value: unknown,

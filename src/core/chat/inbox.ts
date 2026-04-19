@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
+import { cloneJson, cloneJsonIfObject } from "../json-utils.js";
 import { writeJsonAtomic } from "../platform/fs.js";
 import {
   buildChatInboxRouting,
@@ -81,9 +82,7 @@ export function buildChatInboxItem(input: {
     attemptCount: 0,
     routing: buildChatInboxRouting(input.session, input.elements),
     session: serializeChatInboxSession(input.session),
-    elements: Array.isArray(input.elements)
-      ? JSON.parse(JSON.stringify(input.elements))
-      : [],
+    elements: Array.isArray(input.elements) ? cloneJson(input.elements) : [],
   } satisfies ChatInboxItem;
 }
 
@@ -122,10 +121,10 @@ export function readChatInboxItem(filePath: string) {
 }
 
 export function restoreChatInboxSession(item: ChatInboxItem, bot?: any) {
-  const session =
-    item?.session && typeof item.session === "object"
-      ? JSON.parse(JSON.stringify(item.session))
-      : {};
+  const session = (cloneJsonIfObject(item?.session) ?? {}) as Record<
+    string,
+    any
+  >;
   const routing =
     item?.routing && typeof item.routing === "object" ? item.routing : null;
   if (bot) session.bot = bot;
