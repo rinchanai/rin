@@ -46,10 +46,20 @@ test("platform/fs writeJsonFile writes pretty JSON with trailing newline", async
   await withTempDir(async (dir) => {
     const filePath = path.join(dir, "nested", "config.json");
     fsMod.writeJsonFile(filePath, { ok: true });
+    assert.equal(await fs.readFile(filePath, "utf8"), '{\n  "ok": true\n}\n');
+  });
+});
+
+test("platform/fs appendJsonLine helpers append compact jsonl entries", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "nested", "events.jsonl");
+    await fsMod.appendJsonLine(filePath, { step: 1, ok: true });
+    fsMod.appendJsonLineSync(filePath, { step: 2, ok: false });
     assert.equal(
       await fs.readFile(filePath, "utf8"),
-      '{\n  "ok": true\n}\n',
+      '{"step":1,"ok":true}\n{"step":2,"ok":false}\n',
     );
+    assert.equal(fsMod.stringifyJsonLine({ ok: true }), '{"ok":true}\n');
   });
 });
 

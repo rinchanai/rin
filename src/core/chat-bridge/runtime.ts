@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import type { ChatMessagePart } from "../rin-lib/chat-outbox.js";
@@ -12,7 +11,7 @@ import {
   setIdentityTrust,
   trustOf,
 } from "../chat/support.js";
-import { ensureDir } from "../platform/fs.js";
+import { appendJsonLineSync } from "../platform/fs.js";
 import { sendOutboxPayload } from "../chat/transport.js";
 import { readSessionMetadata } from "../session/metadata.js";
 import { serializeBridgeValue } from "./eval.js";
@@ -161,8 +160,7 @@ export function appendChatBridgeAudit(
 ) {
   const day = formatLocalDateOnly();
   const filePath = path.join(auditDir(agentDir), `${day}.jsonl`);
-  ensureDir(path.dirname(filePath));
-  fs.appendFileSync(filePath, `${JSON.stringify(entry)}\n`, "utf8");
+  appendJsonLineSync(filePath, entry);
   return filePath;
 }
 

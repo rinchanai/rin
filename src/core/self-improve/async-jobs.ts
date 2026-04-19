@@ -4,11 +4,13 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+import { maintainMemory, maintainSessionSummary } from "./maintainer.js";
 import {
-  maintainMemory,
-  maintainSessionSummary,
-} from "./maintainer.js";
-import { readJsonFile, stringifyJson, writeJsonAtomic } from "../platform/fs.js";
+  appendJsonLine,
+  readJsonFile,
+  stringifyJson,
+  writeJsonAtomic,
+} from "../platform/fs.js";
 import { normalizeSessionValue } from "../session/metadata.js";
 import { safeString } from "./core/utils.js";
 
@@ -72,11 +74,6 @@ function lockPath(agentDir: string) {
 
 async function ensureStateDir(agentDir: string) {
   await fs.mkdir(stateDir(agentDir), { recursive: true });
-}
-
-async function appendJsonLine(filePath: string, value: unknown) {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
 }
 
 async function loadQueue(agentDir: string): Promise<MaintenanceJob[]> {
@@ -281,7 +278,9 @@ function truncateText(value: unknown, limit = 800) {
 }
 
 function normalizeErrorMessage(error: unknown) {
-  return safeString((error as any)?.message || error || "maintenance_job_failed").trim();
+  return safeString(
+    (error as any)?.message || error || "maintenance_job_failed",
+  ).trim();
 }
 
 function isPermanentJobError(message: string) {
@@ -320,33 +319,29 @@ async function processJob(job: MaintenanceJob) {
   const normalizedAgentDir = normalizeSessionValue(job.agentDir);
   const normalizedSessionFile = normalizeSessionValue(job.sessionFile);
   const agentDir = normalizedAgentDir ? path.resolve(normalizedAgentDir) : "";
-  const sessionFile = normalizedSessionFile ? path.resolve(normalizedSessionFile) : "";
+  const sessionFile = normalizedSessionFile
+    ? path.resolve(normalizedSessionFile)
+    : "";
   const leafId = safeString(job.leafId).trim() || undefined;
   if (!agentDir || !sessionFile) {
     throw new Error("maintenance_job_invalid_payload");
   }
   await assertUsableSessionFile(sessionFile);
   if (job.kind === "session_summary") {
-    return await maintainSessionSummary(
-      {} as any,
-      {
-        agentDir,
-        sessionFile,
-        leafId,
-        trigger: job.trigger,
-      },
-    );
-  }
-  return await maintainMemory(
-    {} as any,
-    {
+    return await maintainSessionSummary({} as any, {
       agentDir,
       sessionFile,
       leafId,
       trigger: job.trigger,
-      additionalExtensionPaths: job.additionalExtensionPaths,
-    },
-  );
+    });
+  }
+  return await maintainMemory({} as any, {
+    agentDir,
+    sessionFile,
+    leafId,
+    trigger: job.trigger,
+    additionalExtensionPaths: job.additionalExtensionPaths,
+  });
 }
 
 export async function processQueuedMemoryJobs(agentDir: string) {
@@ -382,8 +377,9 @@ export async function processQueuedMemoryJobs(agentDir: string) {
           attempts: Math.max(1, Number(job.attempts || 0) || 1),
           skipped: safeString((result as any)?.skipped).trim() || undefined,
           outputPreview:
-            truncateText((result as any)?.output || (result as any)?.sessionSummary) ||
-            undefined,
+            truncateText(
+              (result as any)?.output || (result as any)?.sessionSummary,
+            ) || undefined,
           changedFiles: normalizeChangedFiles((result as any)?.changedFiles),
         });
         processed += 1;

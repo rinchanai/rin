@@ -17,6 +17,10 @@ export function stringifyJson(value: unknown, trailingNewline = true) {
   return trailingNewline ? `${text}\n` : text;
 }
 
+export function stringifyJsonLine(value: unknown) {
+  return `${JSON.stringify(value)}\n`;
+}
+
 export function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
@@ -28,6 +32,16 @@ export function readJsonFile<T>(filePath: string, fallback: T): T {
 export function writeJsonFile(filePath: string, value: unknown) {
   ensureDir(path.dirname(filePath));
   fs.writeFileSync(filePath, stringifyJson(value), "utf8");
+}
+
+export function appendJsonLineSync(filePath: string, value: unknown) {
+  ensureDir(path.dirname(filePath));
+  fs.appendFileSync(filePath, stringifyJsonLine(value), "utf8");
+}
+
+export async function appendJsonLine(filePath: string, value: unknown) {
+  ensureDir(path.dirname(filePath));
+  await fs.promises.appendFile(filePath, stringifyJsonLine(value), "utf8");
 }
 
 export function writeJsonAtomic(
