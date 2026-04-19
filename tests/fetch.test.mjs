@@ -61,7 +61,7 @@ test("fetch tool pretty prints JSON responses", async () => {
   });
 });
 
-test("fetch tool extracts HTML title and strips hidden markup", async () => {
+test("fetch tool extracts HTML title and strips non-visible markup", async () => {
   await withServer((request, response) => {
     assert.equal(request.url, "/demo.html");
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -69,9 +69,14 @@ test("fetch tool extracts HTML title and strips hidden markup", async () => {
 <html>
   <head>
     <title> Demo &amp; Test </title>
+    <meta name="description" content="Head only metadata">
     <style>.hidden { display: none; }</style>
   </head>
   <body>
+    <!-- hidden comment -->
+    <div hidden>Hidden attr</div>
+    <p aria-hidden="true">Hidden aria</p>
+    <section style="display:none">Hidden style</section>
     <h1>Hello</h1>
     <script>console.log("secret")</script>
     <ul><li>One</li><li>Two</li></ul>
@@ -86,9 +91,15 @@ test("fetch tool extracts HTML title and strips hidden markup", async () => {
     );
     const text = String(result.content?.[0]?.text || "");
     assert.match(text, /Title: Demo & Test/);
+    assert.equal(text.match(/Demo & Test/g)?.length ?? 0, 1);
     assert.match(text, /Hello/);
     assert.match(text, /- One/);
     assert.match(text, /- Two/);
+    assert.doesNotMatch(text, /Head only metadata/);
+    assert.doesNotMatch(text, /hidden comment/i);
+    assert.doesNotMatch(text, /Hidden attr/);
+    assert.doesNotMatch(text, /Hidden aria/);
+    assert.doesNotMatch(text, /Hidden style/);
     assert.doesNotMatch(text, /console\.log/);
     assert.doesNotMatch(text, /display: none/);
     assert.equal(result.details?.title, "Demo & Test");
@@ -115,10 +126,13 @@ test("fetch tool rejects non-text responses", async () => {
   });
 });
 
-test("fetch tool saves the full response to a temp file when truncated", async () => {
+test("fetch tool saves the full response to a preferred temp root when truncated", async () => {
   const previousTmpDir = process.env.TMPDIR;
-  process.env.TMPDIR = "/home/rin/tmp";
+  const previousRinTmpDir = process.env.RIN_TMP_DIR;
+  const preferredRoot = await fs.mkdtemp(path.join("/home/rin/tmp", "rin-fetch-save-"));
   let fullOutputPath;
+  process.env.TMPDIR = "/path/that/does/not/exist";
+  process.env.RIN_TMP_DIR = preferredRoot;
   try {
     await withServer((request, response) => {
       assert.equal(request.url, "/huge.txt");
@@ -136,6 +150,7 @@ test("fetch tool saves the full response to a temp file when truncated", async (
       assert.match(text, /\[Showing \d+ of \d+ lines\.\]/);
       assert.equal(typeof result.details?.fullOutputPath, "string");
       fullOutputPath = result.details?.fullOutputPath;
+      assert.ok(fullOutputPath.startsWith(preferredRoot));
       const saved = await fs.readFile(fullOutputPath, "utf8");
       assert.match(saved, /Fetched: http:\/\/127\.0\.0\.1:\d+\/huge\.txt/);
       assert.match(saved, /line 2200/);
@@ -143,8 +158,7 @@ test("fetch tool saves the full response to a temp file when truncated", async (
     });
   } finally {
     process.env.TMPDIR = previousTmpDir;
-    if (fullOutputPath) {
-      await fs.rm(path.dirname(fullOutputPath), { recursive: true, force: true });
-    }
+    process.env.RIN_TMP_DIR = previousRinTmpDir;
+    await fs.rm(preferredRoot, { recursive: true, force: true });
   }
 });

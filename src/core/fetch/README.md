@@ -18,5 +18,6 @@ Inject a narrow `fetch` tool for direct URL retrieval.
 - pretty-prints JSON and normalizes plain-text responses when possible
 - rejects non-text responses instead of downloading files
 - when truncation happens, saves the full response to a temp file and surfaces that path in the tool result
+- full-response temp files prefer `RIN_TMP_DIR`, then `/home/rin/tmp`, then the process/system temp dir
 
 Text output is truncated to the normal tool limits, with the full response saved to a temp file when needed.

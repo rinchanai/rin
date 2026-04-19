@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -146,8 +146,30 @@ function extractHtmlTitle(html: string) {
   return "";
 }
 
+const HIDDEN_HTML_ELEMENT_PATTERNS = [
+  /<[^>]+\shidden(?=\s|=|\/?>)[^>]*>[\s\S]*?<\/[^>]+>/gi,
+  /<[^>]+\saria-hidden\s*=\s*["']?true["']?[^>]*>[\s\S]*?<\/[^>]+>/gi,
+  /<[^>]+\sstyle\s*=\s*["'][^"']*(?:display\s*:\s*none|visibility\s*:\s*hidden)[^"']*["'][^>]*>[\s\S]*?<\/[^>]+>/gi,
+];
+
+function stripHiddenHtmlElements(html: string) {
+  let text = String(html || "");
+  for (let pass = 0; pass < 3; pass += 1) {
+    const next = HIDDEN_HTML_ELEMENT_PATTERNS.reduce(
+      (value, pattern) => value.replace(pattern, " "),
+      text,
+    );
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
 function htmlToText(html: string) {
   let text = String(html || "");
+  text = text.replace(/<!--[\s\S]*?-->/g, " ");
+  text = text.replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ");
+  text = stripHiddenHtmlElements(text);
   text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
   text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
   text = text.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ");
@@ -202,11 +224,28 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
   return lines.join("\n");
 }
 
+function getFetchTempRootCandidates() {
+  return Array.from(
+    new Set(
+      [process.env.RIN_TMP_DIR, "/home/rin/tmp", process.env.TMPDIR, tmpdir()]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .map((value) => path.resolve(value)),
+    ),
+  );
+}
+
 async function writeFetchFullOutput(text: string) {
-  const dir = await mkdtemp(path.join(tmpdir(), "rin-fetch-"));
-  const filePath = path.join(dir, "fetch.txt");
-  await writeFile(filePath, `${text}\n`, "utf8");
-  return filePath;
+  for (const root of getFetchTempRootCandidates()) {
+    try {
+      await mkdir(root, { recursive: true });
+      const dir = await mkdtemp(path.join(root, "rin-fetch-"));
+      const filePath = path.join(dir, "fetch.txt");
+      await writeFile(filePath, `${text}\n`, "utf8");
+      return filePath;
+    } catch {}
+  }
+  throw new Error("fetch_full_output_write_failed");
 }
 
 function formatFetchResult(
