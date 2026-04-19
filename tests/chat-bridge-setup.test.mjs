@@ -75,6 +75,30 @@ test("chat bridge setup configures Slack with socket mode defaults", async () =>
   });
 });
 
+test("chat bridge setup configures QQ with shared websocket defaults", async () => {
+  const result = await setup.promptChatBridgeSetup(
+    createPromptHarness({
+      confirm: [true],
+      select: ["qq", "public"],
+      text: ["qq-app-id", "qq-secret", "qq-token"],
+    }),
+  );
+
+  assert.equal(result.adapterKey, "qq");
+  assert.equal(result.chatDescription, "QQ");
+  assert.deepEqual(result.chatConfig, {
+    qq: {
+      protocol: "websocket",
+      sandbox: false,
+      authType: "bearer",
+      id: "qq-app-id",
+      secret: "qq-secret",
+      token: "qq-token",
+      type: "public",
+    },
+  });
+});
+
 test("chat bridge setup infers OneBot HTTP mode and omits blank optional fields", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
