@@ -225,3 +225,87 @@ test("discoverInstalledTargets scans manifest, launcher, systemd, and launchd ho
     ]);
   });
 });
+
+test("discoverInstalledTargets dedupes identical targets while keeping earlier source precedence", async () => {
+  await withTempDir(async (dir) => {
+    const homeRoot = path.join(dir, "home");
+    const ivanHome = path.join(homeRoot, "ivan");
+    const judyHome = path.join(homeRoot, "judy");
+
+    await fs.mkdir(path.join(ivanHome, ".rin"), { recursive: true });
+    await fs.writeFile(
+      path.join(ivanHome, ".rin", "installer.json"),
+      JSON.stringify({
+        targetUser: "ivan",
+        installDir: "/srv/rin-ivan",
+      }),
+      "utf8",
+    );
+    await fs.mkdir(path.join(ivanHome, ".config", "rin"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(ivanHome, ".config", "rin", "install.json"),
+      JSON.stringify({
+        defaultTargetUser: "ivan",
+        defaultInstallDir: "/srv/rin-ivan",
+      }),
+      "utf8",
+    );
+    await fs.mkdir(path.join(ivanHome, ".config", "systemd", "user"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        ivanHome,
+        ".config",
+        "systemd",
+        "user",
+        "rin-daemon-ivan.service",
+      ),
+      "Environment=RIN_DIR=/srv/rin-ivan\n",
+      "utf8",
+    );
+
+    await fs.mkdir(path.join(judyHome, ".config", "rin"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(judyHome, ".config", "rin", "install.json"),
+      JSON.stringify({
+        defaultTargetUser: "judy",
+        defaultInstallDir: "/srv/rin-judy",
+      }),
+      "utf8",
+    );
+    await fs.mkdir(path.join(judyHome, ".config", "systemd", "user"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        judyHome,
+        ".config",
+        "systemd",
+        "user",
+        "rin-daemon-judy.service",
+      ),
+      "Environment=RIN_DIR=/srv/rin-judy\n",
+      "utf8",
+    );
+
+    assert.deepEqual(updateTargets.discoverInstalledTargets([homeRoot]), [
+      {
+        targetUser: "ivan",
+        installDir: "/srv/rin-ivan",
+        ownerHome: ivanHome,
+        source: "manifest",
+      },
+      {
+        targetUser: "judy",
+        installDir: "/srv/rin-judy",
+        ownerHome: judyHome,
+        source: "launcher",
+      },
+    ]);
+  });
+});
