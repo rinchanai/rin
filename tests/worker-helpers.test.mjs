@@ -10,31 +10,21 @@ const rootDir = path.resolve(
 const workerHelpers = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-daemon", "worker-helpers.js"),
-  ).href
+  ).href,
 );
 
-test("worker helpers split command args and format stats", () => {
-  assert.deepEqual(
-    workerHelpers.splitCommandArgs(`model openai/gpt-5 "high detail"`),
-    ["model", "openai/gpt-5", "high detail"],
-  );
-  const text = workerHelpers.formatSessionStats({
-    sessionId: "s1",
-    sessionFile: "",
-    totalMessages: 3,
-    userMessages: 1,
-    assistantMessages: 1,
-    toolResults: 1,
-    toolCalls: 2,
-    tokens: { total: 10, input: 4, output: 5, cacheRead: 1, cacheWrite: 0 },
-    cost: 0.01,
-  });
-  assert.ok(text.includes("Session ID: s1"));
-  assert.ok(text.includes("Tool Calls: 2"));
-});
+function createAuthStorageFixture() {
+  return {
+    list: () => ["gemini"],
+    get: () => ({ type: "api_key", key: "secret" }),
+    getOAuthProviders: () => [
+      { id: "gemini", name: "Gemini", usesCallbackServer: 0 },
+    ],
+  };
+}
 
-test("worker helpers expose normalized slash commands and oauth state", () => {
-  const commands = workerHelpers.getSlashCommands({
+function createSessionFixture() {
+  return {
     extensionRunner: {
       getRegisteredCommands: () => [
         {
@@ -66,15 +56,34 @@ test("worker helpers expose normalized slash commands and oauth state", () => {
       }),
     },
     modelRegistry: {
-      authStorage: {
-        list: () => ["gemini"],
-        get: () => ({ type: "api_key", key: "secret" }),
-        getOAuthProviders: () => [
-          { id: "gemini", name: "Gemini", usesCallbackServer: 0 },
-        ],
-      },
+      authStorage: createAuthStorageFixture(),
     },
+  };
+}
+
+test("worker helpers split command args and format stats", () => {
+  assert.deepEqual(
+    workerHelpers.splitCommandArgs(`model openai/gpt-5 "high detail"`),
+    ["model", "openai/gpt-5", "high detail"],
+  );
+  const text = workerHelpers.formatSessionStats({
+    sessionId: "s1",
+    sessionFile: "",
+    totalMessages: 3,
+    userMessages: 1,
+    assistantMessages: 1,
+    toolResults: 1,
+    toolCalls: 2,
+    tokens: { total: 10, input: 4, output: 5, cacheRead: 1, cacheWrite: 0 },
+    cost: 0.01,
   });
+  assert.ok(text.includes("Session ID: s1"));
+  assert.ok(text.includes("Tool Calls: 2"));
+});
+
+test("worker helpers expose normalized slash commands and oauth state", () => {
+  const session = createSessionFixture();
+  const commands = workerHelpers.getSlashCommands(session);
 
   assert.equal(commands.filter((command) => command.name === "resume").length, 1);
   assert.ok(
@@ -93,31 +102,19 @@ test("worker helpers expose normalized slash commands and oauth state", () => {
         command.source === "skill",
     ),
   );
-  assert.deepEqual(
-    workerHelpers.getOAuthState({
-      modelRegistry: {
-        authStorage: {
-          list: () => ["gemini"],
-          get: () => ({ type: "api_key", key: "secret" }),
-          getOAuthProviders: () => [
-            { id: "gemini", name: "Gemini", usesCallbackServer: 0 },
-          ],
-        },
-      },
-    }),
-    {
-      credentials: {
-        gemini: { type: "api_key" },
-      },
-      providers: [
-        {
-          id: "gemini",
-          name: "Gemini",
-          usesCallbackServer: false,
-        },
-      ],
+  assert.equal(commands.some((command) => command.name === "model"), true);
+  assert.deepEqual(workerHelpers.getOAuthState(session), {
+    credentials: {
+      gemini: { type: "api_key" },
     },
-  );
+    providers: [
+      {
+        id: "gemini",
+        name: "Gemini",
+        usesCallbackServer: false,
+      },
+    ],
+  });
 });
 
 test("runBuiltinCommand uses runtime for session replacement commands", async () => {

@@ -1,10 +1,5 @@
 import { loadRinChangelogModule } from "../rin-lib/loader.js";
 import { listBoundSessions } from "../session/factory.js";
-import {
-  collectSlashCommands,
-  getBuiltinSlashCommands,
-  getOAuthStateFromStorage,
-} from "./catalog-helpers.js";
 
 export function writeJsonLine(value: unknown) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -27,24 +22,11 @@ export function getSessionState(session: any) {
   };
 }
 
-export { getBuiltinSlashCommands } from "./catalog-helpers.js";
-
-export function getSlashCommands(session: any) {
-  return collectSlashCommands({
-    commandGroups: [
-      {
-        commands: session.extensionRunner?.getRegisteredCommands?.() ?? [],
-        source: "extension",
-      },
-    ],
-    promptTemplates: session.promptTemplates ?? [],
-    skills: session.resourceLoader?.getSkills?.().skills ?? [],
-  });
-}
-
-export function getOAuthState(session: any) {
-  return getOAuthStateFromStorage(session.modelRegistry.authStorage);
-}
+export {
+  getBuiltinSlashCommands,
+  getSessionOAuthState as getOAuthState,
+  getSessionSlashCommands as getSlashCommands,
+} from "./catalog-helpers.js";
 
 export function splitCommandArgs(text: string) {
   const args: string[] = [];

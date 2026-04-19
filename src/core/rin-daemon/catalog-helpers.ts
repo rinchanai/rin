@@ -7,6 +7,19 @@ type SlashCommandEntry = {
   sourceInfo?: unknown;
 };
 
+type SlashCommandSourceGroup = {
+  commands: any[];
+  source: string;
+};
+
+type RuntimeSlashCommandCollectionOptions = {
+  includeBuiltin?: boolean;
+  extensionCommands?: any[];
+  builtinModuleCommands?: any[];
+  promptTemplates?: any[];
+  skills?: any[];
+};
+
 function trimText(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -81,11 +94,6 @@ export function getSkillSlashCommands(skills: any[]) {
     .filter((command) => command.name !== "skill:");
 }
 
-type SlashCommandSourceGroup = {
-  commands: any[];
-  source: string;
-};
-
 function collectSlashCommandSourceGroups(groups: SlashCommandSourceGroup[]) {
   return groups.flatMap(({ commands, source }) =>
     getExtensionSlashCommands(commands, source),
@@ -108,6 +116,40 @@ export function collectSlashCommands(
   ]);
 }
 
+function getRuntimeSlashCommandSourceGroups(
+  options: RuntimeSlashCommandCollectionOptions,
+) {
+  return [
+    {
+      commands: options.extensionCommands ?? [],
+      source: "extension",
+    },
+    {
+      commands: options.builtinModuleCommands ?? [],
+      source: "builtin_module",
+    },
+  ].filter(({ commands }) => commands.length > 0);
+}
+
+export function collectRuntimeSlashCommands(
+  options: RuntimeSlashCommandCollectionOptions = {},
+) {
+  return collectSlashCommands({
+    includeBuiltin: options.includeBuiltin,
+    commandGroups: getRuntimeSlashCommandSourceGroups(options),
+    promptTemplates: options.promptTemplates ?? [],
+    skills: options.skills ?? [],
+  });
+}
+
+export function getSessionSlashCommands(session: any) {
+  return collectRuntimeSlashCommands({
+    extensionCommands: session.extensionRunner?.getRegisteredCommands?.() ?? [],
+    promptTemplates: session.promptTemplates ?? [],
+    skills: session.resourceLoader?.getSkills?.().skills ?? [],
+  });
+}
+
 export function getOAuthStateFromStorage(authStorage: any) {
   const credentials = Object.fromEntries(
     (authStorage?.list?.() ?? []).map((providerId: string) => {
@@ -123,4 +165,8 @@ export function getOAuthStateFromStorage(authStorage: any) {
     }),
   );
   return { credentials, providers };
+}
+
+export function getSessionOAuthState(session: any) {
+  return getOAuthStateFromStorage(session?.modelRegistry?.authStorage);
 }

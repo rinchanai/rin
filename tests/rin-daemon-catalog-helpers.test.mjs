@@ -13,7 +13,11 @@ const helperModule = await import(
   ).href,
 );
 
-const { collectSlashCommands, getOAuthStateFromStorage } = helperModule;
+const {
+  collectRuntimeSlashCommands,
+  collectSlashCommands,
+  getOAuthStateFromStorage,
+} = helperModule;
 
 test("catalog helpers normalize and dedupe slash commands", () => {
   const commands = collectSlashCommands({
@@ -76,17 +80,12 @@ test("catalog helpers normalize and dedupe slash commands", () => {
   ]);
 });
 
-test("catalog helpers keep builtin-module commands in source order", () => {
-  const commands = collectSlashCommands({
-    commandGroups: [
+test("catalog helpers collect runtime slash commands in source order", () => {
+  const commands = collectRuntimeSlashCommands({
+    builtinModuleCommands: [
       {
-        source: "builtin_module",
-        commands: [
-          {
-            invocationName: "  inspect  ",
-            description: "  Inspect chat state.  ",
-          },
-        ],
+        invocationName: "  inspect  ",
+        description: "  Inspect chat state.  ",
       },
     ],
   });

@@ -2,7 +2,7 @@ import path from "node:path";
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { BuiltinModuleHost } from "../builtins/host.js";
-import { collectSlashCommands, getOAuthStateFromStorage, } from "./catalog-helpers.js";
+import { collectRuntimeSlashCommands, getOAuthStateFromStorage, } from "./catalog-helpers.js";
 async function createCatalogContext(options = {}) {
     const codingAgentModule = await loadRinCodingAgent();
     const { AuthStorage, DefaultResourceLoader, ModelRegistry, SettingsManager, ExtensionRunner, createEventBus, discoverAndLoadExtensions, } = codingAgentModule;
@@ -42,17 +42,9 @@ async function createCatalogContext(options = {}) {
 }
 export async function listCatalogCommands(options = {}) {
     const { resourceLoader, extensionRunner, builtinHost } = await createCatalogContext(options);
-    return collectSlashCommands({
-        commandGroups: [
-            {
-                commands: extensionRunner.getRegisteredCommands(),
-                source: "extension",
-            },
-            {
-                commands: builtinHost.getRegisteredCommands(),
-                source: "builtin_module",
-            },
-        ],
+    return collectRuntimeSlashCommands({
+        extensionCommands: extensionRunner.getRegisteredCommands(),
+        builtinModuleCommands: builtinHost.getRegisteredCommands(),
         promptTemplates: resourceLoader.getPrompts().prompts,
         skills: resourceLoader.getSkills().skills,
     });
