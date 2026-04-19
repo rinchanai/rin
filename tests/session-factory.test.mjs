@@ -159,6 +159,15 @@ test("session listing helpers derive presentation and active state consistently"
     })?.subtitle,
     "2026-04-19T00:00:00.000Z",
   );
+  assert.equal(
+    listing.describeBoundSession({
+      id: "legacy-session",
+      title: "Legacy title",
+      modified: "not-a-date",
+      subtitle: "Legacy subtitle",
+    })?.subtitle,
+    "Legacy subtitle",
+  );
   assert.equal(listing.getBoundSessionDisplayTitle(session), "Hello");
   assert.equal(
     listing.getBoundSessionSubtitle(session),
