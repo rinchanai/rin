@@ -700,44 +700,99 @@ export function normalizeChatMessageLookup(
   }));
 }
 
-export function describeChatMessageRecord(record: StoredChatMessage) {
-  return [
-    `messageId=${record.messageId}`,
-    `chatKey=${record.chatKey}`,
-    record.role ? `role=${record.role}` : "",
-    record.replyToMessageId
-      ? `replyToMessageId=${record.replyToMessageId}`
-      : "",
-    record.sessionId ? `sessionId=${record.sessionId}` : "",
-    record.sessionFile ? `sessionFile=${record.sessionFile}` : "",
-    record.userId ? `userId=${record.userId}` : "",
-    record.nickname ? `nickname=${record.nickname}` : "",
-    record.chatName ? `chatName=${record.chatName}` : "",
-    record.trust ? `trust=${record.trust}` : "",
-    record.receivedAt ? `receivedAt=${record.receivedAt}` : "",
-    record.text ? `text=${record.text}` : "",
-  ]
+type ChatMessageRecordField = {
+  detailLabel: string;
+  summaryLabel: string;
+  getValue: (record: StoredChatMessage) => string | undefined;
+};
+
+const CHAT_MESSAGE_RECORD_FIELDS: ChatMessageRecordField[] = [
+  {
+    detailLabel: "messageId",
+    summaryLabel: "message id",
+    getValue: (record) => record.messageId,
+  },
+  {
+    detailLabel: "chatKey",
+    summaryLabel: "chatKey",
+    getValue: (record) => record.chatKey,
+  },
+  {
+    detailLabel: "role",
+    summaryLabel: "role",
+    getValue: (record) => record.role,
+  },
+  {
+    detailLabel: "replyToMessageId",
+    summaryLabel: "reply to",
+    getValue: (record) => record.replyToMessageId,
+  },
+  {
+    detailLabel: "sessionId",
+    summaryLabel: "session id",
+    getValue: (record) => record.sessionId,
+  },
+  {
+    detailLabel: "sessionFile",
+    summaryLabel: "session file",
+    getValue: (record) => record.sessionFile,
+  },
+  {
+    detailLabel: "userId",
+    summaryLabel: "sender user id",
+    getValue: (record) => record.userId,
+  },
+  {
+    detailLabel: "nickname",
+    summaryLabel: "sender nickname",
+    getValue: (record) => record.nickname,
+  },
+  {
+    detailLabel: "chatName",
+    summaryLabel: "chat name",
+    getValue: (record) => record.chatName,
+  },
+  {
+    detailLabel: "trust",
+    summaryLabel: "sender trust",
+    getValue: (record) => record.trust,
+  },
+  {
+    detailLabel: "receivedAt",
+    summaryLabel: "received at",
+    getValue: (record) => record.receivedAt,
+  },
+  {
+    detailLabel: "text",
+    summaryLabel: "text",
+    getValue: (record) => record.text,
+  },
+];
+
+function renderChatMessageRecord(
+  record: StoredChatMessage,
+  renderField: (field: ChatMessageRecordField, value: string) => string,
+) {
+  return CHAT_MESSAGE_RECORD_FIELDS.map((field) => {
+    const value = field.getValue(record);
+    return value ? renderField(field, value) : "";
+  })
     .filter(Boolean)
     .join("\n");
 }
 
+export function describeChatMessageRecord(record: StoredChatMessage) {
+  return renderChatMessageRecord(
+    record,
+    (field, value) => `${field.detailLabel}=${value}`,
+  );
+}
+
 export function summarizeChatMessageRecord(record: StoredChatMessage) {
-  return [
-    `- message id: ${record.messageId}`,
-    `- chatKey: ${record.chatKey}`,
-    record.role ? `- role: ${record.role}` : "",
-    record.replyToMessageId ? `- reply to: ${record.replyToMessageId}` : "",
-    record.sessionId ? `- session id: ${record.sessionId}` : "",
-    record.sessionFile ? `- session file: ${record.sessionFile}` : "",
-    record.userId ? `- sender user id: ${record.userId}` : "",
-    record.nickname ? `- sender nickname: ${record.nickname}` : "",
-    record.chatName ? `- chat name: ${record.chatName}` : "",
-    record.trust ? `- sender trust: ${record.trust}` : "",
-    record.receivedAt ? `- received at: ${record.receivedAt}` : "",
-    record.text ? `- text: ${record.text}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return renderChatMessageRecord(
+    record,
+    (field, value) => `- ${field.summaryLabel}: ${value}`,
+  );
 }
 
 export function normalizeElementSummary(

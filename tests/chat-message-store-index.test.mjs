@@ -579,3 +579,62 @@ test("message store updates legacy records into the preferred root without reviv
     );
   });
 });
+
+test("message store record formatters stay aligned across detail and summary output", () => {
+  const record = {
+    messageId: "m1",
+    chatKey: "telegram/123:456",
+    role: "assistant",
+    replyToMessageId: "m0",
+    sessionId: "session-1",
+    sessionFile: "/tmp/session.jsonl",
+    userId: "user-1",
+    nickname: "Rin",
+    chatName: "demo room",
+    trust: "TRUSTED",
+    receivedAt: "2026-04-05T09:30:00.000Z",
+    text: "hello world",
+  };
+
+  assert.equal(
+    messageStore.describeChatMessageRecord(record),
+    [
+      "messageId=m1",
+      "chatKey=telegram/123:456",
+      "role=assistant",
+      "replyToMessageId=m0",
+      "sessionId=session-1",
+      "sessionFile=/tmp/session.jsonl",
+      "userId=user-1",
+      "nickname=Rin",
+      "chatName=demo room",
+      "trust=TRUSTED",
+      "receivedAt=2026-04-05T09:30:00.000Z",
+      "text=hello world",
+    ].join("\n"),
+  );
+  assert.equal(
+    messageStore.summarizeChatMessageRecord(record),
+    [
+      "- message id: m1",
+      "- chatKey: telegram/123:456",
+      "- role: assistant",
+      "- reply to: m0",
+      "- session id: session-1",
+      "- session file: /tmp/session.jsonl",
+      "- sender user id: user-1",
+      "- sender nickname: Rin",
+      "- chat name: demo room",
+      "- sender trust: TRUSTED",
+      "- received at: 2026-04-05T09:30:00.000Z",
+      "- text: hello world",
+    ].join("\n"),
+  );
+  assert.equal(
+    messageStore.summarizeChatMessageRecord({
+      messageId: "m1",
+      chatKey: "telegram/123:456",
+    }),
+    ["- message id: m1", "- chatKey: telegram/123:456"].join("\n"),
+  );
+});
