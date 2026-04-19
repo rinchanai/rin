@@ -222,6 +222,35 @@ test("cron seeded dedicated agent task preserves its bound session", async () =>
   }
 });
 
+test("cron agent task falls back to canonical turn result text", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const task = {
+    id: "cron_result_fallback",
+    chatKey: "telegram/demo:1",
+    session: { mode: "dedicated" },
+    target: { kind: "agent_prompt", prompt: "hello" },
+  };
+  try {
+    const result = await execMod.executeCronAgentTask(task, {
+      agentDir,
+      runId: "run-1",
+      chat: {
+        runTurn: async () => ({
+          result: {
+            messages: [{ type: "text", text: "done from result" }],
+          },
+          sessionId: "s1",
+          sessionFile: "/tmp/cron-result-fallback.jsonl",
+        }),
+      },
+    });
+    assert.equal(result.text, "done from result");
+    assert.equal(task.dedicatedSessionFile, undefined);
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("cron execution shell task returns summarized success body", async () => {
   const text = await execMod.executeCronShellTask(
     {

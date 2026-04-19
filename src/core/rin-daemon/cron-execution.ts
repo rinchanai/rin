@@ -7,6 +7,7 @@ import path from "node:path";
 const HOME_DIR = os.homedir();
 
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
+import { resolveTurnCompletion } from "../session/turn-result.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
 
@@ -186,7 +187,8 @@ export async function executeCronAgentTask(
     text: task.target.prompt,
     sessionFile,
   });
-  const finalText = summarizeText(result?.finalText, 4000);
+  const completion = resolveTurnCompletion(result);
+  const finalText = summarizeText(completion.finalText, 4000);
   if (!finalText) throw new Error("cron_final_assistant_text_missing");
   const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
   if (task.session.mode === "dedicated") {

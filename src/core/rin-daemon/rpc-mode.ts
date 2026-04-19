@@ -3,10 +3,7 @@ import { parseJsonl } from "../rin-lib/common.js";
 import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
-import {
-  buildTurnResultFromMessages,
-  extractFinalTextFromTurnResult,
-} from "../session/turn-result.js";
+import { resolveTurnCompletion } from "../session/turn-result.js";
 import {
   getOAuthState,
   getSessionState,
@@ -143,14 +140,17 @@ export async function runCustomRpcMode(
         await task();
         const session = getSession();
         await session.agent.waitForIdle();
-        const result = buildTurnResultFromMessages(session.messages || []);
-        const finalText = extractFinalTextFromTurnResult(result);
-        if (!finalText) throw new Error("rpc_turn_final_output_missing");
+        const completion = resolveTurnCompletion({
+          messages: session.messages || [],
+        });
+        if (!completion.finalText) {
+          throw new Error("rpc_turn_final_output_missing");
+        }
         emitTurnEvent("complete", requestTag, {
           sessionFile: session.sessionFile,
           sessionId: session.sessionId,
-          finalText,
-          result,
+          finalText: completion.finalText,
+          result: completion.result,
         });
       } catch (error: any) {
         emitTurnEvent("error", requestTag, {

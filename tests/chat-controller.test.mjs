@@ -496,6 +496,58 @@ test("chat controller uses rpc completion text as the canonical final reply", as
   assert.deepEqual(delivered, ["rpc final text"]);
 });
 
+test("chat controller falls back to rpc completion result when payload finalText is missing", async () => {
+  const controller = await createController("telegram/1:2");
+  const delivered = [];
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push(controller.latestAssistantText);
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "canonical session text" }],
+      },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/rpc-result-chat.jsonl",
+      getSessionId: () => "session-rpc-result",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/rpc-result-chat.jsonl",
+      sessionId: "session-rpc-result",
+    }),
+    prompt: async (_message, options) => {
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "", {
+          messages: [{ type: "text", text: "canonical result text" }],
+        });
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({ text: "hello", attachments: [] }, "prompt");
+
+  assert.deepEqual(delivered, ["canonical result text"]);
+  assert.equal(result?.finalText, "canonical result text");
+  assert.deepEqual(result?.result, {
+    messages: [{ type: "text", text: "canonical result text" }],
+  });
+});
+
 test("chat controller uses RpcInteractiveSession prompt path for chat turns", async () => {
   const controller = await createController("telegram/9:9");
   const calls = [];

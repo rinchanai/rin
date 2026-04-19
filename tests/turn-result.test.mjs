@@ -89,3 +89,58 @@ test("turn result final text extractor returns empty string when no text message
   );
   assert.equal(turnResult.extractFinalTextFromTurnResult(undefined), "");
 });
+
+test("turn completion resolver prefers canonical result text over payload finalText", () => {
+  assert.deepEqual(
+    turnResult.resolveTurnCompletion({
+      finalText: "stale payload text",
+      result: {
+        messages: [{ type: "text", text: "canonical result text" }],
+      },
+    }),
+    {
+      finalText: "canonical result text",
+      result: {
+        messages: [{ type: "text", text: "canonical result text" }],
+      },
+    },
+  );
+});
+
+test("turn completion resolver falls back to messages and payload text when needed", () => {
+  assert.deepEqual(
+    turnResult.resolveTurnCompletion({
+      result: { messages: [] },
+      messages: [
+        { role: "user", content: [{ type: "text", text: "hello" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "from session messages" }],
+        },
+      ],
+      finalText: "payload fallback",
+    }),
+    {
+      finalText: "from session messages",
+      result: {
+        messages: [{ type: "text", text: "from session messages" }],
+      },
+    },
+  );
+
+  assert.deepEqual(
+    turnResult.resolveTurnCompletion({
+      result: { messages: [{ type: "file", path: "/tmp/demo.txt" }] },
+      finalText: "payload fallback",
+    }),
+    {
+      finalText: "payload fallback",
+      result: {
+        messages: [
+          { type: "text", text: "payload fallback" },
+          { type: "file", path: "/tmp/demo.txt" },
+        ],
+      },
+    },
+  );
+});

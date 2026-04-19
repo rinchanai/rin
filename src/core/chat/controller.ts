@@ -5,10 +5,7 @@ import prettyMilliseconds from "pretty-ms";
 
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
-import {
-  buildTurnResultFromMessages,
-  extractFinalTextFromTurnResult,
-} from "../session/turn-result.js";
+import { resolveTurnCompletion } from "../session/turn-result.js";
 import { normalizeSessionRef } from "../session/ref.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
 import {
@@ -197,16 +194,16 @@ export class ChatController {
       this.markAcceptedMessage(this.currentIncomingMessageId());
     }
     if (payload.event === "complete") {
-      const finalText = safeString(payload.finalText).trim();
-      if (!finalText) {
+      const completion = resolveTurnCompletion(payload);
+      if (!completion.finalText) {
         this.failLiveTurn(new Error("rpc_turn_final_output_missing"));
         return;
       }
-      if (finalText) this.latestAssistantText = finalText;
+      this.latestAssistantText = completion.finalText;
       const session = normalizeSessionRef(payload);
       this.liveTurn?.resolve({
-        finalText,
-        result: payload.result,
+        finalText: completion.finalText,
+        result: completion.result,
         sessionId: session.sessionId,
         sessionFile: session.sessionFile,
       });
@@ -504,12 +501,9 @@ export class ChatController {
     ).trim();
   }
   private collectFinalAssistantText() {
-    const messages = Array.isArray(this.session?.messages)
-      ? this.session.messages
-      : [];
-    return extractFinalTextFromTurnResult(
-      buildTurnResultFromMessages(messages),
-    );
+    return resolveTurnCompletion({
+      messages: Array.isArray(this.session?.messages) ? this.session.messages : [],
+    }).finalText;
   }
   private queueInterimDelivery(run: () => Promise<void>) {
     const queued = this.interimDeliveryQueue.then(run, run);
@@ -655,8 +649,11 @@ export class ChatController {
   }) {
     const completion = await input.liveTurn.promise;
     await this.waitForInterimDeliveries();
-    const finalText = safeString(completion?.finalText).trim();
-    if (!finalText) {
+    const canonicalCompletion = resolveTurnCompletion({
+      ...completion,
+      messages: Array.isArray(this.session?.messages) ? this.session.messages : [],
+    });
+    if (!canonicalCompletion.finalText) {
       throw new Error("rpc_turn_final_output_missing");
     }
     this.updateStoredSessionFile(
@@ -664,14 +661,14 @@ export class ChatController {
       this.session?.sessionManager?.getSessionFile?.(),
     );
     await this.deliverAssistantReply({
-      text: finalText,
+      text: canonicalCompletion.finalText,
       replyToMessageId: input.replyToMessageId,
       sessionId: completion?.sessionId,
       sessionFile: completion?.sessionFile,
       incomingMessageId: input.incomingMessageId,
       clearProcessing: input.clearProcessing,
     });
-    return { completion, finalText };
+    return { completion, ...canonicalCompletion };
   }
   private async commitPendingDelivery(clearProcessing = false) {
     const pending = this.state.pendingDelivery;
@@ -957,7 +954,7 @@ export class ChatController {
       );
       throw error;
     }
-    const { finalText } = await this.finishLiveTurn({
+    const { finalText, result } = await this.finishLiveTurn({
       liveTurn,
       replyToMessageId: replyToMessageId || undefined,
       incomingMessageId: input.incomingMessageId,
@@ -965,6 +962,7 @@ export class ChatController {
     });
     return {
       finalText,
+      result,
       sessionId: this.currentSessionId() || undefined,
       sessionFile: this.currentSessionFile(),
     };
@@ -1018,7 +1016,7 @@ export class ChatController {
         .reverse()
         .find((message: any) => message?.role === "assistant");
       const deliveredCompletedText = lastAssistantAfterUser
-        ? extractFinalTextFromTurnResult(buildTurnResultFromMessages(messages))
+        ? this.collectFinalAssistantText()
         : "";
       const currentLastUser = [...messages]
         .reverse()

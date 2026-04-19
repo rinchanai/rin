@@ -27,6 +27,26 @@ export type TurnResult = {
   messages: TurnResultMessage[];
 };
 
+export type TurnCompletionInput = {
+  result?: TurnResult | null;
+  messages?: any[];
+  finalText?: unknown;
+};
+
+function buildTextOnlyTurnResult(text: unknown): TurnResult {
+  const value = safeString(text).trim();
+  return value
+    ? { messages: [{ type: "text", text: value }] }
+    : { messages: [] };
+}
+
+function normalizeTurnResult(
+  result: TurnResult | null | undefined,
+): TurnResult | null {
+  if (!Array.isArray(result?.messages)) return null;
+  return { messages: result.messages.filter(Boolean) };
+}
+
 export function extractFinalTextFromTurnResult(
   result: TurnResult | null | undefined,
 ) {
@@ -37,6 +57,42 @@ export function extractFinalTextFromTurnResult(
     if (text) return text;
   }
   return "";
+}
+
+export function resolveTurnResult(input: TurnCompletionInput = {}): TurnResult {
+  const existingResult = normalizeTurnResult(input.result);
+  if (existingResult && extractFinalTextFromTurnResult(existingResult)) {
+    return existingResult;
+  }
+
+  const messagesResult = Array.isArray(input.messages)
+    ? buildTurnResultFromMessages(input.messages)
+    : null;
+  if (messagesResult && extractFinalTextFromTurnResult(messagesResult)) {
+    return messagesResult;
+  }
+
+  const fallbackText = safeString(input.finalText).trim();
+  if (existingResult) {
+    return fallbackText
+      ? {
+          messages: [
+            { type: "text", text: fallbackText },
+            ...existingResult.messages,
+          ],
+        }
+      : existingResult;
+  }
+  if (messagesResult) return messagesResult;
+  return buildTextOnlyTurnResult(fallbackText);
+}
+
+export function resolveTurnCompletion(input: TurnCompletionInput = {}) {
+  const result = resolveTurnResult(input);
+  return {
+    result,
+    finalText: extractFinalTextFromTurnResult(result),
+  };
 }
 
 function findLastAssistantMessage(messages: any[]) {
