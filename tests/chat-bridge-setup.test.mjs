@@ -75,6 +75,25 @@ test("chat bridge setup configures Slack with socket mode defaults", async () =>
   });
 });
 
+test("chat bridge setup infers OneBot HTTP mode and omits blank optional fields", async () => {
+  const result = await setup.promptChatBridgeSetup(
+    createPromptHarness({
+      confirm: [true],
+      select: ["onebot"],
+      text: ["https://example.com/onebot", "", "   "],
+    }),
+  );
+
+  assert.equal(result.adapterKey, "onebot");
+  assert.equal(result.chatDescription, "OneBot");
+  assert.deepEqual(result.chatConfig, {
+    onebot: {
+      endpoint: "https://example.com/onebot",
+      protocol: "http",
+    },
+  });
+});
+
 test("chat bridge setup configures Feishu / Lark with websocket defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({

@@ -19,6 +19,54 @@ export type ChatBridgeSetupResult = {
   chatConfig: any;
 };
 
+type ChatBridgePromptFieldValue = string | undefined;
+type ChatBridgePromptFieldValues = Record<string, ChatBridgePromptFieldValue>;
+
+type ChatBridgeTextPromptFieldSpec = {
+  kind: "text" | "url";
+  key: string;
+  message: string;
+  placeholder?: string;
+  defaultValue?: string;
+  required?: boolean;
+  validate?: (value: string) => string | void;
+};
+
+type ChatBridgeSelectPromptFieldSpec<T extends string = string> = {
+  kind: "select";
+  key: string;
+  message: string;
+  values: Array<{ value: T; label: string; hint?: string }>;
+};
+
+type ChatBridgePromptFieldSpec =
+  | ChatBridgeTextPromptFieldSpec
+  | ChatBridgeSelectPromptFieldSpec;
+
+type ChatBridgeAdapterPromptResult = {
+  detail: string;
+  config: any;
+};
+
+type ChatBridgeAdapterPromptHandler = (
+  prompt: ChatBridgePromptApi,
+) => Promise<ChatBridgeAdapterPromptResult>;
+
+type ChatBridgeAdapterPromptDefinition = {
+  fields: readonly ChatBridgePromptFieldSpec[];
+  detail: (values: ChatBridgePromptFieldValues) => string;
+  config: (values: ChatBridgePromptFieldValues) => any;
+};
+
+const TELEGRAM_BOTFATHER_URL = "https://t.me/BotFather";
+const ONEBOT_DOCS_URL = "https://11.onebot.dev/";
+const QQ_BOT_DOCS_URL = "https://bot.q.qq.com/wiki/develop/api-v2/";
+const FEISHU_LARK_APP_LINKS = [
+  "Feishu https://open.feishu.cn/app?lang=zh-CN",
+  "Lark https://open.larksuite.com/",
+];
+const SLACK_APPS_URL = "https://api.slack.com/apps";
+
 function withGuide(message: string, guide?: string, links?: string | string[]) {
   const main = safeString(message).trim();
   const extra = safeString(guide).trim();
@@ -29,6 +77,27 @@ function withGuide(message: string, guide?: string, links?: string | string[]) {
   if (extra) lines.push(`Where to find it: ${extra}`);
   if (linkList.length) lines.push(`Open: ${linkList.join(" · ")}`);
   return lines.join("\n");
+}
+
+function textField(
+  key: string,
+  options: Omit<ChatBridgeTextPromptFieldSpec, "kind" | "key">,
+): ChatBridgeTextPromptFieldSpec {
+  return { kind: "text", key, ...options };
+}
+
+function urlField(
+  key: string,
+  options: Omit<ChatBridgeTextPromptFieldSpec, "kind" | "key">,
+): ChatBridgeTextPromptFieldSpec {
+  return { kind: "url", key, ...options };
+}
+
+function selectField<T extends string>(
+  key: string,
+  options: Omit<ChatBridgeSelectPromptFieldSpec<T>, "kind" | "key">,
+): ChatBridgeSelectPromptFieldSpec<T> {
+  return { kind: "select", key, ...options };
 }
 
 async function promptText(
@@ -57,26 +126,6 @@ async function promptText(
   ).trim();
 }
 
-async function promptOptionalText(
-  prompt: ChatBridgePromptApi,
-  options: {
-    message: string;
-    placeholder?: string;
-    defaultValue?: string;
-    validate?: (value: string) => string | void;
-  },
-) {
-  const value = await promptText(prompt, {
-    ...options,
-    required: false,
-    validate(value) {
-      if (!value) return;
-      return options.validate?.(value);
-    },
-  });
-  return value || undefined;
-}
-
 async function promptSelectValue<T extends string>(
   prompt: ChatBridgePromptApi,
   options: {
@@ -94,28 +143,46 @@ async function promptSelectValue<T extends string>(
   ) as T;
 }
 
-async function promptUrl(
+async function promptFieldValue(
   prompt: ChatBridgePromptApi,
-  options: {
-    message: string;
-    placeholder?: string;
-    defaultValue?: string;
-    required?: boolean;
-  },
-) {
+  field: ChatBridgePromptFieldSpec,
+): Promise<ChatBridgePromptFieldValue> {
+  if (field.kind === "select") {
+    return await promptSelectValue(prompt, {
+      message: field.message,
+      values: field.values,
+    });
+  }
+
   const value = await promptText(prompt, {
-    ...options,
-    required: options.required,
+    message: field.message,
+    placeholder: field.placeholder,
+    defaultValue: field.defaultValue,
+    required: field.required,
     validate(value) {
-      if (!value && !options.required) return;
-      try {
-        new URL(value);
-      } catch {
-        return "Use a valid URL.";
+      if (field.kind === "url") {
+        if (!value && !field.required) return;
+        try {
+          new URL(value);
+        } catch {
+          return "Use a valid URL.";
+        }
       }
+      return field.validate?.(value);
     },
   });
   return value || undefined;
+}
+
+async function promptFieldValues(
+  prompt: ChatBridgePromptApi,
+  fields: readonly ChatBridgePromptFieldSpec[],
+) {
+  const values: ChatBridgePromptFieldValues = {};
+  for (const field of fields) {
+    values[field.key] = await promptFieldValue(prompt, field);
+  }
+  return values;
 }
 
 function compactObject<T extends Record<string, any>>(value: T) {
@@ -128,64 +195,64 @@ function compactObject<T extends Record<string, any>>(value: T) {
   return next as T;
 }
 
-async function promptTelegramConfig(prompt: ChatBridgePromptApi) {
-  const token = await promptText(prompt, {
+function getEndpointProtocol(endpoint: string | undefined) {
+  return /^https?:\/\//i.test(String(endpoint || "")) ? "http" : "ws";
+}
+
+function createPromptHandler(
+  definition: ChatBridgeAdapterPromptDefinition,
+): ChatBridgeAdapterPromptHandler {
+  return async (prompt) => {
+    const values = await promptFieldValues(prompt, definition.fields);
+    return {
+      detail: definition.detail(values),
+      config: definition.config(values),
+    };
+  };
+}
+
+const TELEGRAM_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  textField("token", {
     message: withGuide(
       "Enter the Telegram bot token.",
       "Telegram @BotFather → choose your bot → API token.",
-      "https://t.me/BotFather",
+      TELEGRAM_BOTFATHER_URL,
     ),
     placeholder: "123456:ABCDEF...",
     required: true,
-  });
-  return {
-    detail: "Chat bridge mode: polling · token saved to target settings.json",
-    config: { telegram: { token, protocol: "polling", slash: true } },
-  };
-}
+  }),
+];
 
-async function promptOneBotConfig(prompt: ChatBridgePromptApi) {
-  const endpoint = await promptUrl(prompt, {
+const ONEBOT_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  urlField("endpoint", {
     message: withGuide(
       "Enter the OneBot endpoint URL.",
       "Your OneBot bridge or client config, for example NapCat, LLOneBot, or another OneBot server.",
-      "https://11.onebot.dev/",
+      ONEBOT_DOCS_URL,
     ),
     placeholder: "ws://127.0.0.1:3001",
     required: true,
-  });
-  const protocol = /^https?:\/\//i.test(String(endpoint || "")) ? "http" : "ws";
-  const selfId = await promptOptionalText(prompt, {
+  }),
+  textField("selfId", {
     message: withGuide(
       "Enter the OneBot self ID if you already know it. Leave blank to fill later.",
       "Usually the bot QQ number from your OneBot client or bridge config.",
-      "https://11.onebot.dev/",
+      ONEBOT_DOCS_URL,
     ),
     placeholder: "123456789",
-  });
-  const token = await promptOptionalText(prompt, {
+  }),
+  textField("token", {
     message: withGuide(
       "Enter the OneBot access token if required. Leave blank otherwise.",
       "Use the access token from your OneBot server config only if you enabled one.",
-      "https://11.onebot.dev/",
+      ONEBOT_DOCS_URL,
     ),
     placeholder: "optional token",
-  });
-  return {
-    detail: `Chat bridge mode: ${protocol} · endpoint: ${endpoint}`,
-    config: {
-      onebot: compactObject({
-        endpoint,
-        protocol,
-        selfId,
-        token,
-      }),
-    },
-  };
-}
+  }),
+];
 
-async function promptDiscordConfig(prompt: ChatBridgePromptApi) {
-  const token = await promptText(prompt, {
+const DISCORD_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  textField("token", {
     message: withGuide(
       "Enter the Discord bot token.",
       "Discord Developer Portal → your application → Bot → Reset Token / Token.",
@@ -193,169 +260,200 @@ async function promptDiscordConfig(prompt: ChatBridgePromptApi) {
     ),
     placeholder: "Bot token",
     required: true,
-  });
-  return {
-    detail: "Chat bridge token: [saved to target settings.json]",
-    config: { discord: { token } },
-  };
-}
+  }),
+];
 
-async function promptQQConfig(prompt: ChatBridgePromptApi) {
-  const id = await promptText(prompt, {
+const QQ_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  textField("id", {
     message: withGuide(
       "Enter the QQ bot app ID.",
       "QQ bot developer docs → create your bot application → app credentials.",
-      "https://bot.q.qq.com/wiki/develop/api-v2/",
+      QQ_BOT_DOCS_URL,
     ),
     placeholder: "App ID",
     required: true,
-  });
-  const secret = await promptText(prompt, {
+  }),
+  textField("secret", {
     message: withGuide(
       "Enter the QQ bot secret.",
       "QQ bot developer docs → create your bot application → app credentials.",
-      "https://bot.q.qq.com/wiki/develop/api-v2/",
+      QQ_BOT_DOCS_URL,
     ),
     placeholder: "Secret",
     required: true,
-  });
-  const token = await promptText(prompt, {
+  }),
+  textField("token", {
     message: withGuide(
       "Enter the QQ bot token.",
       "QQ bot developer docs → your bot application → token / credentials.",
-      "https://bot.q.qq.com/wiki/develop/api-v2/",
+      QQ_BOT_DOCS_URL,
     ),
     placeholder: "Token",
     required: true,
-  });
-  const type = await promptSelectValue(prompt, {
+  }),
+  selectField("type", {
     message: withGuide(
       "Choose the QQ bot scope.",
       "Use the bot type shown in your QQ bot application settings.",
-      "https://bot.q.qq.com/wiki/develop/api-v2/",
+      QQ_BOT_DOCS_URL,
     ),
     values: [
       { value: "public", label: "Public" },
       { value: "private", label: "Private" },
     ],
-  });
-  return {
-    detail:
-      "Chat bridge mode: websocket · app credentials saved to target settings.json",
-    config: { qq: { id, secret, token, type, protocol: "websocket" } },
-  };
-}
+  }),
+];
 
-async function promptLarkConfig(prompt: ChatBridgePromptApi) {
-  const platform = await promptSelectValue(prompt, {
+const LARK_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  selectField("platform", {
     message: withGuide(
       "Choose the Lark / Feishu region.",
       "If your app is on open.feishu.cn use Feishu. If it is on open.larksuite.com use Lark.",
-      [
-        "Feishu https://open.feishu.cn/app?lang=zh-CN",
-        "Lark https://open.larksuite.com/",
-      ],
+      FEISHU_LARK_APP_LINKS,
     ),
     values: [
       { value: "feishu", label: "Feishu", hint: "China / open.feishu.cn" },
       { value: "lark", label: "Lark", hint: "Global / open.larksuite.com" },
     ],
-  });
-  const appId = await promptText(prompt, {
+  }),
+  textField("appId", {
     message: withGuide(
       "Enter the Lark / Feishu app ID.",
       "Developer console → your app → Credentials / Basic information.",
-      [
-        "Feishu https://open.feishu.cn/app?lang=zh-CN",
-        "Lark https://open.larksuite.com/",
-      ],
+      FEISHU_LARK_APP_LINKS,
     ),
     placeholder: "App ID",
     required: true,
-  });
-  const appSecret = await promptText(prompt, {
+  }),
+  textField("appSecret", {
     message: withGuide(
       "Enter the Lark / Feishu app secret.",
       "Developer console → your app → Credentials / Basic information.",
-      [
-        "Feishu https://open.feishu.cn/app?lang=zh-CN",
-        "Lark https://open.larksuite.com/",
-      ],
+      FEISHU_LARK_APP_LINKS,
     ),
     placeholder: "App secret",
     required: true,
-  });
-  return {
-    detail: `Chat bridge mode: ws · platform: ${platform} · app credentials saved to target settings.json`,
-    config: {
-      lark: {
-        platform,
-        protocol: "ws",
-        appId,
-        appSecret,
-      },
-    },
-  };
-}
+  }),
+];
 
-async function promptSlackConfig(prompt: ChatBridgePromptApi) {
-  const token = await promptText(prompt, {
+const SLACK_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  textField("token", {
     message: withGuide(
       "Enter the Slack app-level token.",
       "Slack app settings → Basic Information or Socket Mode → App-Level Tokens (starts with xapp-).",
-      "https://api.slack.com/apps",
+      SLACK_APPS_URL,
     ),
     placeholder: "xapp-...",
     required: true,
-  });
-  const botToken = await promptText(prompt, {
+  }),
+  textField("botToken", {
     message: withGuide(
       "Enter the Slack bot token.",
       "Slack app settings → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
-      "https://api.slack.com/apps",
+      SLACK_APPS_URL,
     ),
     placeholder: "xoxb-...",
     required: true,
-  });
-  return {
-    detail: "Chat bridge mode: ws",
-    config: {
-      slack: {
-        protocol: "ws",
-        token,
-        botToken,
-      },
-    },
-  };
-}
+  }),
+];
 
-async function promptMinecraftConfig(prompt: ChatBridgePromptApi) {
-  const url = await promptUrl(prompt, {
+const MINECRAFT_PROMPT_FIELDS: readonly ChatBridgePromptFieldSpec[] = [
+  urlField("url", {
     message: withGuide(
       "Enter the Minecraft QueQiao WebSocket URL.",
       "Use the WebSocket address exposed by your QueQiao bridge or Minecraft adapter.",
     ),
     placeholder: "ws://127.0.0.1:8080",
     required: true,
-  });
-  const selfId = await promptOptionalText(prompt, {
+  }),
+  textField("selfId", {
     message:
       "Enter the Minecraft bridge self ID if you want a custom one. Leave blank to use minecraft.",
     placeholder: "minecraft",
-  });
-  const serverName = await promptOptionalText(prompt, {
+  }),
+  textField("serverName", {
     message:
       "Enter the Minecraft server name if you want it shown in chat logs. Leave blank otherwise.",
     placeholder: "Survival",
-  });
-  const token = await promptOptionalText(prompt, {
+  }),
+  textField("token", {
     message:
       "Enter the QueQiao access token if required. Leave blank otherwise.",
     placeholder: "optional token",
-  });
-  return {
-    detail: `Chat bridge mode: ws · endpoint: ${url}`,
-    config: {
+  }),
+];
+
+const CHAT_BRIDGE_ADAPTER_PROMPTS: Record<
+  ChatBridgeBuiltInAdapterKey,
+  ChatBridgeAdapterPromptHandler
+> = {
+  telegram: createPromptHandler({
+    fields: TELEGRAM_PROMPT_FIELDS,
+    detail: () =>
+      "Chat bridge mode: polling · token saved to target settings.json",
+    config: ({ token }) => ({
+      telegram: { token, protocol: "polling", slash: true },
+    }),
+  }),
+  onebot: createPromptHandler({
+    fields: ONEBOT_PROMPT_FIELDS,
+    detail: ({ endpoint }) => {
+      const protocol = getEndpointProtocol(endpoint);
+      return `Chat bridge mode: ${protocol} · endpoint: ${endpoint}`;
+    },
+    config: ({ endpoint, selfId, token }) => {
+      const protocol = getEndpointProtocol(endpoint);
+      return {
+        onebot: compactObject({
+          endpoint,
+          protocol,
+          selfId,
+          token,
+        }),
+      };
+    },
+  }),
+  qq: createPromptHandler({
+    fields: QQ_PROMPT_FIELDS,
+    detail: () =>
+      "Chat bridge mode: websocket · app credentials saved to target settings.json",
+    config: ({ id, secret, token, type }) => ({
+      qq: { id, secret, token, type, protocol: "websocket" },
+    }),
+  }),
+  lark: createPromptHandler({
+    fields: LARK_PROMPT_FIELDS,
+    detail: ({ platform }) =>
+      `Chat bridge mode: ws · platform: ${platform} · app credentials saved to target settings.json`,
+    config: ({ platform, appId, appSecret }) => ({
+      lark: {
+        platform,
+        protocol: "ws",
+        appId,
+        appSecret,
+      },
+    }),
+  }),
+  discord: createPromptHandler({
+    fields: DISCORD_PROMPT_FIELDS,
+    detail: () => "Chat bridge token: [saved to target settings.json]",
+    config: ({ token }) => ({ discord: { token } }),
+  }),
+  slack: createPromptHandler({
+    fields: SLACK_PROMPT_FIELDS,
+    detail: () => "Chat bridge mode: ws",
+    config: ({ token, botToken }) => ({
+      slack: {
+        protocol: "ws",
+        token,
+        botToken,
+      },
+    }),
+  }),
+  minecraft: createPromptHandler({
+    fields: MINECRAFT_PROMPT_FIELDS,
+    detail: ({ url }) => `Chat bridge mode: ws · endpoint: ${url}`,
+    config: ({ url, selfId, serverName, token }) => ({
       minecraft: compactObject({
         protocol: "ws",
         url,
@@ -363,30 +461,8 @@ async function promptMinecraftConfig(prompt: ChatBridgePromptApi) {
         serverName,
         token,
       }),
-    },
-  };
-}
-
-type ChatBridgeAdapterPromptResult = {
-  detail: string;
-  config: any;
-};
-
-type ChatBridgeAdapterPromptHandler = (
-  prompt: ChatBridgePromptApi,
-) => Promise<ChatBridgeAdapterPromptResult>;
-
-const CHAT_BRIDGE_ADAPTER_PROMPTS: Record<
-  ChatBridgeBuiltInAdapterKey,
-  ChatBridgeAdapterPromptHandler
-> = {
-  telegram: promptTelegramConfig,
-  onebot: promptOneBotConfig,
-  qq: promptQQConfig,
-  lark: promptLarkConfig,
-  discord: promptDiscordConfig,
-  slack: promptSlackConfig,
-  minecraft: promptMinecraftConfig,
+    }),
+  }),
 };
 
 async function promptChatBridgeAdapterConfig(
@@ -422,14 +498,10 @@ export async function promptChatBridgeSetup(
     return { adapterKey, chatDescription, chatDetail, chatConfig };
   }
 
-  adapterKey = String(
-    prompt.ensureNotCancelled(
-      await prompt.select({
-        message: "Choose a chat platform.",
-        options: listChatBridgeAdapterPromptOptions(),
-      }),
-    ),
-  ).trim();
+  adapterKey = await promptSelectValue(prompt, {
+    message: "Choose a chat platform.",
+    values: listChatBridgeAdapterPromptOptions(),
+  });
   const adapterSpec = getChatBridgeAdapterSpec(adapterKey);
   if (!adapterSpec)
     throw new Error(`unsupported_chat_bridge_adapter:${adapterKey}`);
