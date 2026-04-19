@@ -133,17 +133,81 @@ function normalizePlainText(text: string) {
     .trim();
 }
 
+function parseHtmlTagAttributes(tag: string) {
+  const attributes = new Map<string, string>();
+  for (const match of tag.matchAll(
+    /\b([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g,
+  )) {
+    const name = String(match[1] || "")
+      .trim()
+      .toLowerCase();
+    if (!name || name === "meta") continue;
+    const value = match[2] ?? match[3] ?? match[4] ?? "";
+    if (!attributes.has(name)) attributes.set(name, value);
+  }
+  return attributes;
+}
+
+function findHtmlMetaTagContent(
+  html: string,
+  predicate: (attributes: Map<string, string>) => boolean,
+) {
+  for (const match of String(html || "").matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = match[0];
+    if (!tag) continue;
+    const attributes = parseHtmlTagAttributes(tag);
+    if (predicate(attributes)) {
+      return attributes.get("content") || "";
+    }
+  }
+  return "";
+}
+
+function extractHtmlDeclaredCharset(html: string) {
+  return findHtmlMetaTagContent(html, (attributes) => {
+    const declaredCharset = String(attributes.get("charset") || "").trim();
+    if (declaredCharset) {
+      attributes.set("content", declaredCharset);
+      return true;
+    }
+    const httpEquiv = String(attributes.get("http-equiv") || "")
+      .trim()
+      .toLowerCase();
+    if (httpEquiv !== "content-type") return false;
+    const content = String(attributes.get("content") || "");
+    const match = /charset\s*=\s*([^;]+)/i.exec(content);
+    if (!match?.[1]) return false;
+    attributes.set("content", match[1].trim().replace(/^"|"$/g, ""));
+    return true;
+  });
+}
+
+function sniffHtmlCharset(
+  buffer: Buffer,
+  mimeType: string,
+  headerCharset?: string,
+) {
+  if (headerCharset) return headerCharset;
+  const probe = buffer
+    .subarray(0, Math.min(buffer.byteLength, 8192))
+    .toString("latin1");
+  if (!isProbablyHtml(mimeType, probe)) return undefined;
+  const declaredCharset = extractHtmlDeclaredCharset(probe);
+  return declaredCharset || undefined;
+}
+
 function extractHtmlTitle(html: string) {
   const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
   if (titleMatch?.[1])
     return normalizePlainText(decodeHtmlEntities(titleMatch[1]));
-  const ogTitleMatch =
-    /<meta[^>]+property=["']og:title["'][^>]+content=["']([\s\S]*?)["'][^>]*>/i.exec(
-      html,
+  const ogTitle = findHtmlMetaTagContent(html, (attributes) => {
+    return (
+      String(attributes.get("property") || "")
+        .trim()
+        .toLowerCase() === "og:title"
     );
-  if (ogTitleMatch?.[1])
-    return normalizePlainText(decodeHtmlEntities(ogTitleMatch[1]));
-  return "";
+  });
+  return ogTitle ? normalizePlainText(decodeHtmlEntities(ogTitle)) : "";
 }
 
 const HIDDEN_HTML_ELEMENT_PATTERNS = [
@@ -250,7 +314,12 @@ async function writeFetchFullOutput(text: string) {
 
 function formatFetchResult(
   result: {
-    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    content: Array<{
+      type: string;
+      text?: string;
+      data?: string;
+      mimeType?: string;
+    }>;
     details?: { truncation?: TruncationResult; fullOutputPath?: string };
   },
   options: { expanded: boolean; isPartial?: boolean },
@@ -260,7 +329,9 @@ function formatFetchResult(
   const fullOutputPath = String(result.details?.fullOutputPath || "").trim();
   return renderTextToolResult(result, options, theme, showImages, {
     partialText: "Fetching...",
-    extraMutedLines: fullOutputPath ? [`Full output: ${fullOutputPath}`] : undefined,
+    extraMutedLines: fullOutputPath
+      ? [`Full output: ${fullOutputPath}`]
+      : undefined,
   });
 }
 
@@ -311,9 +382,10 @@ export default function fetchExtension(pi: ExtensionAPI) {
         signal?.removeEventListener("abort", abortFromParent);
       }
 
-      const { mimeType, charset } = parseContentType(
+      const { mimeType, charset: headerCharset } = parseContentType(
         response.headers.get("content-type"),
       );
+      const charset = sniffHtmlCharset(buffer, mimeType, headerCharset);
       const details: FetchDetails = {
         url,
         finalUrl: response.url || url,
@@ -380,8 +452,16 @@ export default function fetchExtension(pi: ExtensionAPI) {
       );
     },
     renderResult(result, options, theme, context) {
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      text.setText(formatFetchResult(result as any, options as any, theme, context.showImages));
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(
+        formatFetchResult(
+          result as any,
+          options as any,
+          theme,
+          context.showImages,
+        ),
+      );
       return text;
     },
   });
