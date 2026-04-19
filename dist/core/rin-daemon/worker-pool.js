@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { parseJsonl } from "../rin-lib/common.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
-import { hasSessionSelector, resolveSessionSelector, sessionMatchesSelector, sessionSelectorFromCommand, sessionSelectorFromState, } from "./session-selector.js";
+import { hasSessionRef as hasSessionSelector, normalizeSessionRef as normalizeSessionSelector, resolveSessionRef as resolveSessionSelector, sessionRefMatches as sessionMatchesSelector, } from "../session/ref.js";
+const sessionSelectorFromCommand = normalizeSessionSelector;
+const sessionSelectorFromState = normalizeSessionSelector;
 function writeLine(socket, payload) {
     if (!socket.destroyed)
         socket.write(`${JSON.stringify(payload)}\n`);

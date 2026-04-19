@@ -12,7 +12,7 @@ const sessionRef = await import(
     .href,
 );
 
-test("session ref helpers normalize aliases and resolve selectors consistently", () => {
+test("session ref helpers normalize shared command/state shapes and resolve consistently", () => {
   assert.deepEqual(
     sessionRef.normalizeSessionRef({
       sessionPath: " /tmp/demo.jsonl ",
@@ -21,6 +21,29 @@ test("session ref helpers normalize aliases and resolve selectors consistently",
     {
       sessionFile: "/tmp/demo.jsonl",
       sessionId: "demo-session",
+    },
+  );
+
+  assert.deepEqual(
+    sessionRef.normalizeSessionRef({
+      sessionFile: " /tmp/command.jsonl ",
+      sessionPath: " /tmp/ignored.jsonl ",
+      sessionId: " command-session ",
+    }),
+    {
+      sessionFile: "/tmp/command.jsonl",
+      sessionId: "command-session",
+    },
+  );
+
+  assert.deepEqual(
+    sessionRef.normalizeSessionRef({
+      sessionFile: " /tmp/state.jsonl ",
+      sessionId: " state-session ",
+    }),
+    {
+      sessionFile: "/tmp/state.jsonl",
+      sessionId: "state-session",
     },
   );
 

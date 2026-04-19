@@ -4,13 +4,15 @@ import { spawn } from "node:child_process";
 import { parseJsonl } from "../rin-lib/common.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
 import {
-  hasSessionSelector,
-  resolveSessionSelector,
-  sessionMatchesSelector,
-  sessionSelectorFromCommand,
-  sessionSelectorFromState,
-  type SessionSelector,
-} from "./session-selector.js";
+  hasSessionRef as hasSessionSelector,
+  normalizeSessionRef as normalizeSessionSelector,
+  resolveSessionRef as resolveSessionSelector,
+  sessionRefMatches as sessionMatchesSelector,
+  type SessionRef as SessionSelector,
+} from "../session/ref.js";
+
+const sessionSelectorFromCommand = normalizeSessionSelector;
+const sessionSelectorFromState = normalizeSessionSelector;
 
 export type ConnectionState = {
   socket: net.Socket;

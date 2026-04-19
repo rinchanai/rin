@@ -12,7 +12,7 @@ import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
-import { hasSessionSelector, sessionSelectorFromCommand, } from "./session-selector.js";
+import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, } from "../session/ref.js";
 import { WorkerPool } from "./worker-pool.js";
 function writeLine(socket, payload) {
     if (!socket.destroyed)

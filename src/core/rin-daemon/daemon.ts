@@ -30,9 +30,9 @@ import {
   listCatalogModels,
 } from "./catalog.js";
 import {
-  hasSessionSelector,
-  sessionSelectorFromCommand,
-} from "./session-selector.js";
+  hasSessionRef as hasSessionSelector,
+  normalizeSessionRef as sessionSelectorFromCommand,
+} from "../session/ref.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
 function writeLine(socket: net.Socket, payload: unknown) {
