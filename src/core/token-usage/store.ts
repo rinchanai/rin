@@ -61,17 +61,37 @@ export type TokenUsageQueryOptions = {
 const dbCache = new Map<string, BetterSqlite3.Database>();
 const statementCache = new WeakMap<BetterSqlite3.Database, Map<string, any>>();
 
-const AGGREGATE_ORDER_FIELDS = new Set([
-  "rows",
+const DEFAULT_AGGREGATE_LIMIT = 20;
+const DEFAULT_EVENTS_LIMIT = 40;
+const MAX_QUERY_LIMIT = 500;
+
+const AGGREGATE_METRICS = [
+  { key: "rows", select: `COUNT(*)` },
+  { key: "token_events", select: `SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END)` },
+  { key: "input_tokens", select: `SUM(input_tokens)` },
+  { key: "output_tokens", select: `SUM(output_tokens)` },
+  { key: "cache_read_tokens", select: `SUM(cache_read_tokens)` },
+  { key: "cache_write_tokens", select: `SUM(cache_write_tokens)` },
+  { key: "total_tokens", select: `SUM(total_tokens)` },
+  { key: "cost_total", select: `SUM(cost_total)` },
+  { key: "context_tokens", select: `MAX(context_tokens)` },
+] as const;
+
+const AGGREGATE_ORDER_FIELDS = new Set(
+  AGGREGATE_METRICS.map((metric) => metric.key),
+);
+const OVERVIEW_INT_FIELDS = [
+  "total_events",
   "token_events",
   "input_tokens",
   "output_tokens",
   "cache_read_tokens",
   "cache_write_tokens",
   "total_tokens",
-  "cost_total",
-  "context_tokens",
-]);
+  "session_count",
+  "model_count",
+] as const;
+const OVERVIEW_FLOAT_FIELDS = ["cost_total"] as const;
 
 export type NormalizedTokenTelemetryEvent = {
   id: string;
@@ -147,6 +167,23 @@ function safeJsonStringify(value: unknown): string | null {
   } catch {
     return null;
   }
+}
+
+function clampQueryLimit(value: unknown, fallback: number): number {
+  return Math.max(1, Math.min(MAX_QUERY_LIMIT, Math.round(safeNumber(value || fallback))));
+}
+
+function normalizeOverviewRow(row: any) {
+  const normalized = { ...(row || {}) };
+  for (const key of OVERVIEW_INT_FIELDS) {
+    normalized[key] = normalizeInt(row?.[key]);
+  }
+  for (const key of OVERVIEW_FLOAT_FIELDS) {
+    normalized[key] = safeNumber(row?.[key]);
+  }
+  normalized.first_timestamp = normalizeText(row?.first_timestamp);
+  normalized.last_timestamp = normalizeText(row?.last_timestamp);
+  return normalized;
 }
 
 export function resolveAgentDir(agentDir = ""): string {
@@ -263,7 +300,7 @@ function normalizeToolNames(input: unknown): string[] {
         .map((item) => safeString(item).trim())
         .filter(Boolean),
     ),
-  );
+  ).sort();
 }
 
 function stableEventId(event: Omit<NormalizedTokenTelemetryEvent, "id">): string {
@@ -281,7 +318,7 @@ function stableEventId(event: Omit<NormalizedTokenTelemetryEvent, "id">): string
     event.messageRole,
     event.toolName,
     String(event.totalTokens),
-    event.toolNames.join(","),
+    safeJsonStringify(event.toolNames) || "[]",
   ].join("|");
   const digest = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 24);
   return `evt_${digest}`;
@@ -469,30 +506,32 @@ export function getTokenUsageOverview(
 ) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
-  return prepareCached(
-    db,
-    `
-      SELECT
-        COUNT(*) AS total_events,
-        SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END) AS token_events,
-        SUM(input_tokens) AS input_tokens,
-        SUM(output_tokens) AS output_tokens,
-        SUM(cache_read_tokens) AS cache_read_tokens,
-        SUM(cache_write_tokens) AS cache_write_tokens,
-        SUM(total_tokens) AS total_tokens,
-        SUM(cost_total) AS cost_total,
-        COUNT(DISTINCT NULLIF(session_id, '')) AS session_count,
-        COUNT(DISTINCT CASE
-          WHEN COALESCE(provider, '') <> '' AND COALESCE(model, '') <> '' THEN provider || '/' || model
-          WHEN COALESCE(model, '') <> '' THEN model
-          ELSE NULL
-        END) AS model_count,
-        MIN(timestamp) AS first_timestamp,
-        MAX(timestamp) AS last_timestamp
-      FROM telemetry_events
-      ${whereSql}
-    `,
-  ).get(params) as any;
+  return normalizeOverviewRow(
+    prepareCached(
+      db,
+      `
+        SELECT
+          COUNT(*) AS total_events,
+          SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END) AS token_events,
+          SUM(input_tokens) AS input_tokens,
+          SUM(output_tokens) AS output_tokens,
+          SUM(cache_read_tokens) AS cache_read_tokens,
+          SUM(cache_write_tokens) AS cache_write_tokens,
+          SUM(total_tokens) AS total_tokens,
+          SUM(cost_total) AS cost_total,
+          COUNT(DISTINCT NULLIF(session_id, '')) AS session_count,
+          COUNT(DISTINCT CASE
+            WHEN COALESCE(provider, '') <> '' AND COALESCE(model, '') <> '' THEN provider || '/' || model
+            WHEN COALESCE(model, '') <> '' THEN model
+            ELSE NULL
+          END) AS model_count,
+          MIN(timestamp) AS first_timestamp,
+          MAX(timestamp) AS last_timestamp
+        FROM telemetry_events
+        ${whereSql}
+      `,
+    ).get(params),
+  );
 }
 
 type DimensionDef = {
@@ -639,19 +678,11 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
   const orderExpr = supportedOrder.has(orderBy)
     ? `"${orderBy}"`
     : `"total_tokens"`;
-  const limit = Math.max(1, Math.min(500, Math.round(safeNumber(options.limit || 20))));
+  const limit = clampQueryLimit(options.limit, DEFAULT_AGGREGATE_LIMIT);
   const sql = `
     SELECT
       ${selectDims.length ? `${selectDims.join(",\n      ")},` : ""}
-      COUNT(*) AS rows,
-      SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END) AS token_events,
-      SUM(input_tokens) AS input_tokens,
-      SUM(output_tokens) AS output_tokens,
-      SUM(cache_read_tokens) AS cache_read_tokens,
-      SUM(cache_write_tokens) AS cache_write_tokens,
-      SUM(total_tokens) AS total_tokens,
-      SUM(cost_total) AS cost_total,
-      MAX(context_tokens) AS context_tokens
+      ${AGGREGATE_METRICS.map((metric) => `${metric.select} AS ${metric.key}`).join(",\n      ")}
     FROM telemetry_events
     ${whereSql}
     ${groupSql}
@@ -664,7 +695,7 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
 export function queryTokenUsageEvents(options: TokenUsageQueryOptions = {}) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
-  const limit = Math.max(1, Math.min(500, Math.round(safeNumber(options.limit || 40))));
+  const limit = clampQueryLimit(options.limit, DEFAULT_EVENTS_LIMIT);
   return prepareCached(
     db,
     `

@@ -111,7 +111,7 @@ test("token usage store normalizes telemetry events in one place", () => {
     eventType: "  ",
     turnIndex: "7.2",
     toolCallCount: "4.8",
-    toolNames: [" read ", "read", " write "],
+    toolNames: [" write ", "read", "read", " archive "],
     inputTokens: "10.9",
     outputTokens: -3,
     costTotal: "0.125",
@@ -122,7 +122,7 @@ test("token usage store normalizes telemetry events in one place", () => {
   assert.equal(normalized.eventType, "event");
   assert.equal(normalized.turnIndex, 7);
   assert.equal(normalized.toolCallCount, 5);
-  assert.deepEqual(normalized.toolNames, ["read", "write"]);
+  assert.deepEqual(normalized.toolNames, ["archive", "read", "write"]);
   assert.equal(normalized.inputTokens, 11);
   assert.equal(normalized.outputTokens, 0);
   assert.equal(normalized.costTotal, 0.125);
@@ -188,6 +188,52 @@ test("token usage store derives stable ids and tolerates unserializable metadata
     const rows = store.queryTokenUsageEvents({ agentDir: root, limit: 10 });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].total_tokens, 15);
+  });
+});
+
+test("token usage store canonicalizes tool names before deriving stable ids", async () => {
+  await withTempRoot(async (root) => {
+    const first = store.appendTokenTelemetryEvent(
+      {
+        timestamp: "2026-04-10T09:35:00.000Z",
+        sessionId: "s1",
+        eventType: "message_end",
+        capabilityKey: "tools:read+write",
+        totalTokens: 21,
+        toolNames: ["write", "read"],
+      },
+      root,
+    );
+    const second = store.appendTokenTelemetryEvent(
+      {
+        timestamp: "2026-04-10T09:35:00.000Z",
+        sessionId: "s1",
+        eventType: "message_end",
+        capabilityKey: "tools:read+write",
+        totalTokens: 21,
+        toolNames: ["read", "write", "read"],
+      },
+      root,
+    );
+
+    assert.equal(first.id, second.id);
+    const rows = store.queryTokenUsageEvents({ agentDir: root, limit: 10 });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].total_tokens, 21);
+  });
+});
+
+test("token usage overview normalizes empty sums to zeros", async () => {
+  await withTempRoot(async (root) => {
+    const overview = store.getTokenUsageOverview({ agentDir: root });
+    assert.equal(overview.total_events, 0);
+    assert.equal(overview.token_events, 0);
+    assert.equal(overview.total_tokens, 0);
+    assert.equal(overview.cost_total, 0);
+    assert.equal(overview.session_count, 0);
+    assert.equal(overview.model_count, 0);
+    assert.equal(overview.first_timestamp, "");
+    assert.equal(overview.last_timestamp, "");
   });
 });
 
