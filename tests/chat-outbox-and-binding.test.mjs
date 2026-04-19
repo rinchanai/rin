@@ -13,10 +13,8 @@ const outbox = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "chat-outbox.js"))
     .href
 );
-const binding = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "chat-bridge", "session-binding.js"),
-  ).href
+const support = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href
 );
 
 async function withTempDir(fn) {
@@ -41,8 +39,8 @@ test("chat outbox enqueues payload on disk", async () => {
   });
 });
 
-test("chat bridge session binding paths are stable", () => {
-  const statePath = binding.chatStatePath("/tmp/rin-data", "telegram/777:1");
+test("chat state paths stay stable", () => {
+  const statePath = support.chatStatePath("/tmp/rin-data", "telegram/777:1");
   assert.ok(
     statePath.endsWith(
       path.join("chats", "telegram", "777", "1", "state.json"),
@@ -50,14 +48,14 @@ test("chat bridge session binding paths are stable", () => {
   );
 });
 
-test("chat bridge rejects legacy telegram chat keys without bot id", () => {
+test("chat state rejects legacy telegram chat keys without bot id", () => {
   assert.throws(
-    () => binding.chatStatePath("/tmp/rin-data", "telegram:1"),
+    () => support.chatStatePath("/tmp/rin-data", "telegram:1"),
     /invalid_chatKey:telegram:1/,
   );
 });
 
-test("chat bridge state discovery ignores legacy telegram state dirs", async () => {
+test("chat state discovery ignores legacy telegram state dirs", async () => {
   await withTempDir(async (dir) => {
     const chatsRoot = path.join(dir, "chats");
     await fs.mkdir(path.join(chatsRoot, "telegram", "legacy-chat"), {
@@ -75,7 +73,7 @@ test("chat bridge state discovery ignores legacy telegram state dirs", async () 
       "{}\n",
     );
 
-    assert.deepEqual(binding.listChatStateFiles(chatsRoot), [
+    assert.deepEqual(support.listChatStateFiles(chatsRoot), [
       {
         chatKey: "telegram/777:scoped-chat",
         statePath: path.join(

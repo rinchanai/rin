@@ -1,6 +1,4 @@
-import { canAccessAgentInput } from "../chat-bridge/policy.js";
-
-import { composeChatKey, trustOf } from "./support.js";
+import { canAccessAgentInput, composeChatKey, trustOf } from "./support.js";
 import {
   directLike,
   elementsToText,

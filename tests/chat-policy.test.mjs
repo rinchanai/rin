@@ -7,26 +7,26 @@ const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
 );
-const policy = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "chat-bridge", "policy.js"))
+const support = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js"))
     .href
 );
 
 test("chat policy allows trusted users to check status, abort, and start new chat sessions", () => {
-  assert.equal(policy.canRunCommand("TRUSTED", "status"), true);
-  assert.equal(policy.canRunCommand("TRUSTED", "new"), true);
-  assert.equal(policy.canRunCommand("TRUSTED", "abort"), true);
+  assert.equal(support.canRunCommand("TRUSTED", "status"), true);
+  assert.equal(support.canRunCommand("TRUSTED", "new"), true);
+  assert.equal(support.canRunCommand("TRUSTED", "abort"), true);
 });
 
 test("chat policy still blocks higher-impact chat commands for trusted users", () => {
-  assert.equal(policy.canRunCommand("TRUSTED", "resume"), false);
-  assert.equal(policy.canRunCommand("TRUSTED", "model"), false);
-  assert.equal(policy.canRunCommand("TRUSTED", "reload"), false);
+  assert.equal(support.canRunCommand("TRUSTED", "resume"), false);
+  assert.equal(support.canRunCommand("TRUSTED", "model"), false);
+  assert.equal(support.canRunCommand("TRUSTED", "reload"), false);
 });
 
 test("chat policy keeps non-help commands restricted while owners retain full command access", () => {
-  assert.equal(policy.canRunCommand("OTHER", "help"), false);
-  assert.equal(policy.canRunCommand("OTHER", "abort"), false);
-  assert.equal(policy.canRunCommand("OWNER", "abort"), true);
-  assert.equal(policy.canRunCommand("OWNER", "resume"), true);
+  assert.equal(support.canRunCommand("OTHER", "help"), false);
+  assert.equal(support.canRunCommand("OTHER", "abort"), false);
+  assert.equal(support.canRunCommand("OWNER", "abort"), true);
+  assert.equal(support.canRunCommand("OWNER", "resume"), true);
 });

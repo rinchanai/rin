@@ -7,8 +7,8 @@ import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
 import { normalizeSessionRef } from "../session/ref.js";
-import { chatStatePath } from "../chat-bridge/session-binding.js";
 import {
+  chatStatePath,
   isPrivateChat,
   parseChatKey,
   readJsonFile,

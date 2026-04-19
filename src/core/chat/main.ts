@@ -15,13 +15,13 @@ import {
   appendChatBridgeAudit,
   createChatBridgeRuntime,
 } from "../chat-bridge/runtime.js";
-import { canRunCommand } from "../chat-bridge/policy.js";
 import { enqueueChatPromptContext } from "../chat-bridge/prompt-context.js";
 import {
+  canRunCommand,
   chatStateDir,
   listChatStateFiles,
   listDetachedControllerStateFiles,
-} from "../chat-bridge/session-binding.js";
+} from "./support.js";
 import { getChatCommandRows, syncTelegramCommands } from "./boot.js";
 import {
   elementsToText,
