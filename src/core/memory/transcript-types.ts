@@ -1,0 +1,72 @@
+export type TranscriptArchiveEntry = {
+  id: string;
+  timestamp: string;
+  sessionId: string;
+  sessionFile: string;
+  role: string;
+  text: string;
+  content?: unknown;
+  toolName?: string;
+  toolCallId?: string;
+  customType?: string;
+  stopReason?: string;
+  errorMessage?: string;
+  provider?: string;
+  model?: string;
+  display?: boolean;
+  archiveLine?: number;
+  archivePath?: string;
+};
+
+export type TranscriptResultMessage = {
+  id: string;
+  role: string;
+  timestamp: string;
+  line: number;
+  text: string;
+  toolName?: string;
+};
+
+export type TranscriptSessionResult = {
+  sourceType: "session";
+  id: string;
+  name: string;
+  score: number;
+  path: string;
+  sessionId: string;
+  sessionFile: string;
+  timestamp: string;
+  description: string;
+  preview: string;
+  role: string;
+  summary?: string;
+  hitCount?: number;
+  messages?: TranscriptResultMessage[];
+};
+
+export type IndexedTranscriptEntry = {
+  rowKey: string;
+  archivePath: string;
+  sessionKey: string;
+  entry: TranscriptArchiveEntry;
+  timestampMs: number;
+  preview: string;
+  lineNumber: number;
+};
+
+export type IndexedSessionBucket = {
+  sessionKey: string;
+  sessionId: string;
+  sessionFile: string;
+  bestScore: number;
+  totalScore: number;
+  hitCount: number;
+  latestHitTimestampMs: number;
+  messages: TranscriptResultMessage[];
+};
+
+export type TranscriptFileState = {
+  archivePath: string;
+  mtimeMs: number;
+  size: number;
+};
