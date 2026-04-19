@@ -111,7 +111,7 @@ test("renameBoundSession delegates to SessionManager.open once", async () => {
   ]);
 });
 
-test("session listing helpers derive display title and active state consistently", () => {
+test("session listing helpers derive presentation and active state consistently", () => {
   const session = {
     id: "session-1",
     path: "/tmp/session-1.jsonl",
@@ -119,6 +119,31 @@ test("session listing helpers derive display title and active state consistently
     modified: new Date("2026-04-18T00:00:00.000Z"),
   };
 
+  assert.deepEqual(
+    listing.describeBoundSession(session, " /tmp/session-1.jsonl "),
+    {
+      ...session,
+      title: "Hello",
+      subtitle: "2026-04-18T00:00:00.000Z",
+      isActive: true,
+    },
+  );
+  assert.deepEqual(listing.describeBoundSessions([session], "/tmp/session-1.jsonl"), [
+    {
+      ...session,
+      title: "Hello",
+      subtitle: "2026-04-18T00:00:00.000Z",
+      isActive: true,
+    },
+  ]);
+  assert.equal(
+    listing.describeBoundSession({
+      id: "legacy-session",
+      title: "Legacy title",
+      subtitle: "2026-04-19T00:00:00.000Z",
+    })?.subtitle,
+    "2026-04-19T00:00:00.000Z",
+  );
   assert.equal(listing.getBoundSessionDisplayTitle(session), "Hello");
   assert.equal(
     listing.getBoundSessionSubtitle(session),

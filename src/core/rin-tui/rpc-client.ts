@@ -2,12 +2,7 @@ import net from "node:net";
 
 import { defaultDaemonSocketPath, parseJsonl } from "../rin-lib/common.js";
 import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
-import {
-  getBoundSessionDisplayTitle,
-  getBoundSessionSubtitle,
-  isActiveBoundSession,
-  normalizeBoundSessionList,
-} from "../session/listing.js";
+import { describeBoundSessions } from "../session/listing.js";
 import type {
   FrontendAutocompleteItem,
   FrontendCommandItem,
@@ -150,16 +145,15 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
       this.send({ type: "get_state" }).catch(() => ({ success: false })),
     ]);
     const data = this.getData(sessionsResponse);
-    const sessions = normalizeBoundSessionList(data?.sessions);
     const activePath =
       stateResponse && stateResponse.success === true
         ? stateResponse.data?.sessionFile
         : undefined;
-    return sessions.map((session: any) => ({
+    return describeBoundSessions(data?.sessions, activePath).map((session) => ({
       id: String(session.path || session.id || ""),
-      title: getBoundSessionDisplayTitle(session),
-      subtitle: getBoundSessionSubtitle(session),
-      isActive: isActiveBoundSession(session, activePath),
+      title: session.title,
+      subtitle: session.subtitle,
+      isActive: session.isActive,
     }));
   }
 

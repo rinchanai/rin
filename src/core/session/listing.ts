@@ -14,6 +14,12 @@ export type BoundSessionListItem = {
   modified: Date;
 };
 
+export type BoundSessionListPresentation = BoundSessionListItem & {
+  title: string;
+  subtitle?: string;
+  isActive: boolean;
+};
+
 function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
   return Boolean(
     value &&
@@ -79,29 +85,79 @@ export function normalizeBoundSessionList(sessions: any): BoundSessionListItem[]
     .sort((a, b) => b.modified.getTime() - a.modified.getTime());
 }
 
-export function getBoundSessionDisplayTitle(session: any): string {
-  const normalized = normalizeBoundSessionListItem(session);
+function resolveBoundSessionDisplayTitle(
+  session: BoundSessionListItem | null | undefined,
+): string {
   return (
     resolveSessionDisplayName({
-      currentName: normalized?.name,
-      firstUserMessage: normalized?.firstMessage,
+      currentName: session?.name,
+      firstUserMessage: session?.firstMessage,
     }) || DEFAULT_SESSION_DISPLAY_NAME
   );
 }
 
-export function getBoundSessionSubtitle(session: any): string | undefined {
+function resolveBoundSessionSubtitle(
+  session: any,
+  normalized: BoundSessionListItem | null | undefined,
+): string | undefined {
   const text = firstNormalizedSessionText(
     typeof session?.modified === "string" ? session.modified : "",
     typeof session?.subtitle === "string" ? session.subtitle : "",
   );
-  if (text) return text;
+  return text || normalized?.modified.toISOString();
+}
+
+function isNormalizedBoundSessionActive(
+  session: BoundSessionListItem | null | undefined,
+  normalizedActivePath?: string,
+): boolean {
+  if (!session || !normalizedActivePath) return false;
+  return path.resolve(session.path) === path.resolve(normalizedActivePath);
+}
+
+function presentNormalizedBoundSession(
+  session: BoundSessionListItem,
+  normalizedActivePath?: string,
+): BoundSessionListPresentation {
+  return {
+    ...session,
+    title: resolveBoundSessionDisplayTitle(session),
+    subtitle: session.modified.toISOString(),
+    isActive: isNormalizedBoundSessionActive(session, normalizedActivePath),
+  };
+}
+
+export function describeBoundSession(
+  session: any,
+  activePath?: string,
+): BoundSessionListPresentation | null {
   const normalized = normalizeBoundSessionListItem(session);
-  return normalized ? normalized.modified.toISOString() : undefined;
+  if (!normalized) return null;
+  const normalizedActivePath = normalizeSessionValue(activePath);
+  return {
+    ...presentNormalizedBoundSession(normalized, normalizedActivePath),
+    subtitle: resolveBoundSessionSubtitle(session, normalized),
+  };
+}
+
+export function describeBoundSessions(
+  sessions: any,
+  activePath?: string,
+): BoundSessionListPresentation[] {
+  const normalizedActivePath = normalizeSessionValue(activePath);
+  return normalizeBoundSessionList(sessions).map((session) =>
+    presentNormalizedBoundSession(session, normalizedActivePath),
+  );
+}
+
+export function getBoundSessionDisplayTitle(session: any): string {
+  return resolveBoundSessionDisplayTitle(normalizeBoundSessionListItem(session));
+}
+
+export function getBoundSessionSubtitle(session: any): string | undefined {
+  return describeBoundSession(session)?.subtitle;
 }
 
 export function isActiveBoundSession(session: any, activePath?: string): boolean {
-  const normalized = normalizeBoundSessionListItem(session);
-  const targetPath = normalizeSessionValue(activePath);
-  if (!normalized || !targetPath) return false;
-  return path.resolve(normalized.path) === path.resolve(targetPath);
+  return describeBoundSession(session, activePath)?.isActive || false;
 }
