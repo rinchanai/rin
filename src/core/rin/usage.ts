@@ -5,7 +5,9 @@ import {
   ParsedArgs,
   safeString,
 } from "./shared.js";
+import type { TokenUsageQueryOptions } from "../token-usage/store.js";
 import {
+  formatProviderModelLabel,
   getTokenUsageOverview,
   listTokenUsageDimensions,
   queryTokenUsageAggregate,
@@ -25,6 +27,21 @@ export type UsageCliOptions = {
   dimensions: boolean;
   help: boolean;
 };
+
+type UsageScope = Pick<TokenUsageQueryOptions, "agentDir" | "from" | "to" | "filters">;
+
+type UsageAggregateSection = {
+  title: string;
+  groupBy: string[];
+  limit: number;
+};
+
+const DASHBOARD_AGGREGATE_SECTIONS: UsageAggregateSection[] = [
+  { title: "top models", groupBy: ["provider_model"], limit: 8 },
+  { title: "top sources", groupBy: ["source"], limit: 8 },
+  { title: "top sessions", groupBy: ["session_name", "session_id"], limit: 8 },
+  { title: "top capabilities", groupBy: ["capability"], limit: 10 },
+];
 
 function printUsageHelp() {
   console.log([
@@ -261,10 +278,7 @@ function renderEventTable(rows: Array<Record<string, unknown>>) {
     session_id: row.session_id,
     source: row.source,
     event_type: row.event_type,
-    provider_model:
-      safeString(row.provider).trim() && safeString(row.model).trim()
-        ? `${row.provider}/${row.model}`
-        : row.model,
+    provider_model: formatProviderModelLabel(row.provider, row.model),
     capability: row.capability_key,
     tool_name: row.tool_name,
     message_role: row.message_role,
@@ -287,6 +301,34 @@ function renderEventTable(rows: Array<Record<string, unknown>>) {
   ]);
 }
 
+function buildUsageScope(agentDir: string, options: UsageCliOptions): UsageScope {
+  return {
+    agentDir,
+    from: options.from,
+    to: options.to,
+    filters: options.filters,
+  };
+}
+
+function queryDashboardAggregate(
+  scope: UsageScope,
+  section: UsageAggregateSection,
+): Array<Record<string, unknown>> {
+  return queryTokenUsageAggregate({
+    ...scope,
+    groupBy: section.groupBy,
+    limit: section.limit,
+  });
+}
+
+function queryRecentMessageEvents(scope: UsageScope, limit: number): Array<Record<string, unknown>> {
+  return queryTokenUsageEvents({
+    ...scope,
+    filters: [...scope.filters, { key: "event_type", value: "message_end" }],
+    limit,
+  }).filter((row) => Number(row.total_tokens || 0) > 0);
+}
+
 export function renderUsageReport(agentDir: string, options: UsageCliOptions): string {
   if (options.help) {
     printUsageHelp();
@@ -298,23 +340,14 @@ export function renderUsageReport(agentDir: string, options: UsageCliOptions): s
       ...listTokenUsageDimensions().map((item) => `- ${item}`),
     ].join("\n");
   }
+  const scope = buildUsageScope(agentDir, options);
   if (options.events) {
-    const rows = queryTokenUsageEvents({
-      agentDir,
-      from: options.from,
-      to: options.to,
-      filters: options.filters,
-      limit: options.limit,
-    });
-    return renderEventTable(rows);
+    return renderEventTable(queryTokenUsageEvents({ ...scope, limit: options.limit }));
   }
   if (options.groupBy.length > 0) {
     const rows = queryTokenUsageAggregate({
-      agentDir,
-      from: options.from,
-      to: options.to,
+      ...scope,
       groupBy: options.groupBy,
-      filters: options.filters,
       limit: options.limit,
       orderBy: options.orderBy,
       direction: options.direction,
@@ -323,64 +356,17 @@ export function renderUsageReport(agentDir: string, options: UsageCliOptions): s
     return renderAggregateTable("aggregate", options.groupBy, rows);
   }
 
-  const overview = getTokenUsageOverview({
-    agentDir,
-    from: options.from,
-    to: options.to,
-    filters: options.filters,
-  });
-  const byModel = queryTokenUsageAggregate({
-    agentDir,
-    from: options.from,
-    to: options.to,
-    filters: options.filters,
-    groupBy: ["provider_model"],
-    limit: 8,
-  });
-  const bySource = queryTokenUsageAggregate({
-    agentDir,
-    from: options.from,
-    to: options.to,
-    filters: options.filters,
-    groupBy: ["source"],
-    limit: 8,
-  });
-  const bySession = queryTokenUsageAggregate({
-    agentDir,
-    from: options.from,
-    to: options.to,
-    filters: options.filters,
-    groupBy: ["session_name", "session_id"],
-    limit: 8,
-  });
-  const byCapability = queryTokenUsageAggregate({
-    agentDir,
-    from: options.from,
-    to: options.to,
-    filters: options.filters,
-    groupBy: ["capability"],
-    limit: 10,
-  });
-  const recent = queryTokenUsageEvents({
-    agentDir,
-    from: options.from,
-    to: options.to,
-    filters: [...options.filters, { key: "event_type", value: "message_end" }],
-    limit: 10,
-  }).filter((row) => Number(row.total_tokens || 0) > 0);
+  const overview = getTokenUsageOverview(scope);
+  const aggregateSections = DASHBOARD_AGGREGATE_SECTIONS.map((section) =>
+    renderAggregateTable(section.title, section.groupBy, queryDashboardAggregate(scope, section)),
+  );
+  const recent = queryRecentMessageEvents(scope, 10);
 
   return [
     "token usage dashboard",
     summarizeOverview(overview),
     "",
-    renderAggregateTable("top models", ["provider_model"], byModel),
-    "",
-    renderAggregateTable("top sources", ["source"], bySource),
-    "",
-    renderAggregateTable("top sessions", ["session_name", "session_id"], bySession),
-    "",
-    renderAggregateTable("top capabilities", ["capability"], byCapability),
-    "",
+    ...aggregateSections.flatMap((section) => [section, ""]),
     "recent token events",
     renderEventTable(recent),
   ].join("\n");

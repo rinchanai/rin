@@ -12,6 +12,9 @@ const rootDir = path.resolve(
 const store = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "token-usage", "store.js")).href,
 );
+const usageCli = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "usage.js")).href,
+);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-token-usage-test-"));
@@ -127,6 +130,12 @@ test("token usage store normalizes telemetry events in one place", () => {
   assert.equal(normalized.outputTokens, 0);
   assert.equal(normalized.costTotal, 0.125);
   assert.equal(normalized.metadata, null);
+});
+
+test("token usage store formats provider_model labels from one shared rule", () => {
+  assert.equal(store.formatProviderModelLabel("openai", "gpt-5.4"), "openai/gpt-5.4");
+  assert.equal(store.formatProviderModelLabel("", "gpt-5.4-mini"), "gpt-5.4-mini");
+  assert.equal(store.formatProviderModelLabel("", ""), "(none)");
 });
 
 test("token usage store ignores duplicate event ids", async () => {
@@ -411,5 +420,37 @@ test("token usage store handles repeated cached queries with varying limits", as
       topThree.map((row) => row.session_id),
       ["s3", "s2", "s1"],
     );
+  });
+});
+
+test("usage report keeps provider_model labels consistent in raw event tables", async () => {
+  await withTempRoot(async (root) => {
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-none-model",
+        timestamp: "2026-04-10T08:00:00.000Z",
+        sessionId: "s1",
+        eventType: "message_end",
+        messageRole: "assistant",
+        capabilityKey: "assistant:text",
+        totalTokens: 10,
+      },
+      root,
+    );
+
+    const report = usageCli.renderUsageReport(root, {
+      groupBy: [],
+      filters: [],
+      limit: 20,
+      orderBy: "total_tokens",
+      direction: "desc",
+      events: true,
+      includeZero: false,
+      dimensions: false,
+      help: false,
+    });
+
+    assert.match(report, /provider_model/);
+    assert.match(report, /\(none\)/);
   });
 });

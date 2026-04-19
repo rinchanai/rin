@@ -64,6 +64,7 @@ const statementCache = new WeakMap<BetterSqlite3.Database, Map<string, any>>();
 const DEFAULT_AGGREGATE_LIMIT = 20;
 const DEFAULT_EVENTS_LIMIT = 40;
 const MAX_QUERY_LIMIT = 500;
+const EMPTY_DIMENSION_VALUE = "(none)";
 
 const AGGREGATE_METRICS = [
   { key: "rows", select: `COUNT(*)` },
@@ -192,7 +193,7 @@ type DimensionDef = {
 };
 
 function coalescedTextDimensionExpr(valueExpr: string): string {
-  return `COALESCE(NULLIF(${valueExpr}, ''), '(none)')`;
+  return `COALESCE(NULLIF(${valueExpr}, ''), '${EMPTY_DIMENSION_VALUE}')`;
 }
 
 function yesNoDimensionExpr(condition: string): string {
@@ -219,6 +220,13 @@ const PROVIDER_MODEL_VALUE_EXPR = [
   `END`,
 ].join(" ");
 const PROVIDER_MODEL_DIMENSION_EXPR = coalescedTextDimensionExpr(PROVIDER_MODEL_VALUE_EXPR);
+
+export function formatProviderModelLabel(provider: unknown, model: unknown): string {
+  const normalizedProvider = normalizeText(provider);
+  const normalizedModel = normalizeText(model);
+  if (normalizedProvider && normalizedModel) return `${normalizedProvider}/${normalizedModel}`;
+  return normalizedModel || EMPTY_DIMENSION_VALUE;
+}
 
 function resolveDimensionDef(
   key: string,
@@ -593,7 +601,7 @@ const DIMENSIONS = {
   tool_name: textDimension(`tool_name`),
   capability: textDimension(`capability_key`),
   capability_kind: textDimension(`capability_kind`),
-  turn_index: buildDimension(`COALESCE(CAST(turn_index AS TEXT), '(none)')`),
+  turn_index: buildDimension(`COALESCE(CAST(turn_index AS TEXT), '${EMPTY_DIMENSION_VALUE}')`),
   is_error: yesNoDimension(`is_error = 1`),
 } satisfies Record<string, DimensionDef>;
 
