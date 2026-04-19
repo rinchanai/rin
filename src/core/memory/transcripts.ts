@@ -14,8 +14,8 @@ import { appendJsonLine } from "../platform/fs.js";
 import {
   normalizeSessionNameDetail,
   readSessionDisplayNameParts,
+  resolveSessionDisplayName,
 } from "../session/names.js";
-import { normalizeSessionValue } from "../session/metadata.js";
 
 type Database = BetterSqlite3.Database;
 
@@ -116,24 +116,18 @@ function resolveTranscriptSearchDbPath(rootOverride = ""): string {
   return path.join(resolveMemoryRoot(rootOverride), "search.db");
 }
 
-function resolveSessionDisplayName(
+function resolveTranscriptSessionDisplayName(
   sessionFile: string,
   fallbackPreview: string,
 ): string {
-  const normalizedSessionFileValue = normalizeSessionValue(sessionFile);
-  const normalizedSessionFile = normalizedSessionFileValue
-    ? path.resolve(normalizedSessionFileValue)
-    : "";
+  const normalizedSessionFile = safeString(sessionFile).trim();
   if (!normalizedSessionFile) {
     return normalizeSessionNameDetail(fallbackPreview, 180);
   }
 
-  const { currentName, firstUserMessage } =
-    readSessionDisplayNameParts(normalizedSessionFile);
-  return (
-    currentName ||
-    firstUserMessage ||
-    normalizeSessionNameDetail(fallbackPreview, 180)
+  return resolveSessionDisplayName(
+    readSessionDisplayNameParts(path.resolve(normalizedSessionFile)),
+    fallbackPreview,
   );
 }
 
@@ -493,7 +487,7 @@ function presentSessionResult(
     (a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp),
   )[0];
   const preview = buildSessionPreview(displayEntries);
-  const sessionName = resolveSessionDisplayName(
+  const sessionName = resolveTranscriptSessionDisplayName(
     safeString(previewEntry?.sessionFile || "").trim(),
     preview,
   );

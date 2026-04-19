@@ -642,7 +642,7 @@ test("search_memory falls back to the first user message when no stored session 
   });
 });
 
-test("search_memory derives the display name with a single session file read", async () => {
+test("search_memory derives the display name without a full readFileSync slurp", async () => {
   await withTempRoot(async (root) => {
     const sessionFile = await writeSessionFile(root, "single-read-session.jsonl", [
       {
@@ -696,7 +696,7 @@ test("search_memory derives the display name with a single session file read", a
         root,
       );
       assert.equal(rows[0].name, "Need help debugging the outbound chat routing bug");
-      assert.equal(sessionFileReadCount, 1);
+      assert.equal(sessionFileReadCount, 0);
     } finally {
       fsSync.readFileSync = originalReadFileSync;
     }

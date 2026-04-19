@@ -1,7 +1,4 @@
-import {
-  normalizeSessionRef,
-  normalizeSessionValue,
-} from "./ref.js";
+import { normalizeSessionRef, normalizeSessionValue } from "./ref.js";
 
 export { normalizeSessionRef, normalizeSessionValue } from "./ref.js";
 

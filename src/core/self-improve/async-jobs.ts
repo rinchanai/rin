@@ -11,7 +11,7 @@ import {
   stringifyJson,
   writeJsonAtomic,
 } from "../platform/fs.js";
-import { normalizeSessionValue } from "../session/metadata.js";
+import { normalizeSessionValue } from "../session/ref.js";
 import { nowIso, safeString } from "./core/utils.js";
 import {
   maintenanceHistoryPath,

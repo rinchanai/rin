@@ -12,10 +12,8 @@ import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../rin-lib/memory-task-config.js";
 import { openBoundSession } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
-import {
-  normalizeSessionValue,
-  readSessionMetadata,
-} from "../session/metadata.js";
+import { readSessionMetadata } from "../session/metadata.js";
+import { normalizeSessionValue } from "../session/ref.js";
 import {
   buildSessionRecallSummaryPrompt,
   normalizeSessionSummaryText,

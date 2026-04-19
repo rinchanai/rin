@@ -1,6 +1,10 @@
 import path from "node:path";
 
-import { normalizeSessionValue } from "./metadata.js";
+import { normalizeSessionValue } from "./ref.js";
+import {
+  DEFAULT_SESSION_DISPLAY_NAME,
+  resolveSessionDisplayName,
+} from "./names.js";
 
 export type BoundSessionListItem = {
   id: string;
@@ -24,15 +28,19 @@ function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
   );
 }
 
+function firstNormalizedSessionText(...values: unknown[]) {
+  for (const value of values) {
+    const text = normalizeSessionValue(value);
+    if (text) return text;
+  }
+  return "";
+}
+
 function normalizeModified(value: unknown, fallback?: unknown) {
   const candidate =
     value instanceof Date
       ? value
-      : new Date(
-          normalizeSessionValue(value) ||
-            normalizeSessionValue(fallback) ||
-            Date.now(),
-        );
+      : new Date(firstNormalizedSessionText(value, fallback) || Date.now());
   return Number.isFinite(candidate.getTime()) ? candidate : new Date();
 }
 
@@ -40,19 +48,19 @@ export function normalizeBoundSessionListItem(
   session: any,
 ): BoundSessionListItem | null {
   if (isBoundSessionListItem(session)) return session;
-  const sessionPath =
-    normalizeSessionValue(session?.path) || normalizeSessionValue(session?.id);
+  const sessionPath = firstNormalizedSessionText(session?.path, session?.id);
   if (!sessionPath) return null;
-  const id = normalizeSessionValue(session?.id) || sessionPath;
+  const id = firstNormalizedSessionText(session?.id, sessionPath);
   return {
     id,
     path: sessionPath,
     name: normalizeSessionValue(session?.name),
-    firstMessage:
-      normalizeSessionValue(session?.firstMessage) ||
-      normalizeSessionValue(session?.title) ||
-      id ||
-      "Untitled session",
+    firstMessage: firstNormalizedSessionText(
+      session?.firstMessage,
+      session?.title,
+      id,
+      DEFAULT_SESSION_DISPLAY_NAME,
+    ),
     modified: normalizeModified(session?.modified, session?.subtitle),
   };
 }
@@ -73,15 +81,19 @@ export function normalizeBoundSessionList(sessions: any): BoundSessionListItem[]
 
 export function getBoundSessionDisplayTitle(session: any): string {
   const normalized = normalizeBoundSessionListItem(session);
-  return normalized?.name || normalized?.firstMessage || "Untitled session";
+  return (
+    resolveSessionDisplayName({
+      currentName: normalized?.name,
+      firstUserMessage: normalized?.firstMessage,
+    }) || DEFAULT_SESSION_DISPLAY_NAME
+  );
 }
 
 export function getBoundSessionSubtitle(session: any): string | undefined {
-  const text =
-    (typeof session?.modified === "string" &&
-      normalizeSessionValue(session.modified)) ||
-    (typeof session?.subtitle === "string" &&
-      normalizeSessionValue(session.subtitle));
+  const text = firstNormalizedSessionText(
+    typeof session?.modified === "string" ? session.modified : "",
+    typeof session?.subtitle === "string" ? session.subtitle : "",
+  );
   if (text) return text;
   const normalized = normalizeBoundSessionListItem(session);
   return normalized ? normalized.modified.toISOString() : undefined;
