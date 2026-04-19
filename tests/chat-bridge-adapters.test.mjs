@@ -303,6 +303,106 @@ test("chat runtime config expands multi-entry adapters and strips setup-only met
   );
 });
 
+test("chat runtime normalization expands named built-in and custom adapter maps", () => {
+  const settings = {
+    chat: {
+      telegram: {
+        "Alpha Bot": {
+          token: "telegram-alpha",
+        },
+        beta: {
+          name: "Beta/Bot",
+          token: "telegram-beta",
+          slash: false,
+        },
+      },
+      customAdapters: [
+        {
+          packageName: "chat-bridge-adapter-example",
+          pluginKey: "adapter-example",
+          defaults: { region: "cn" },
+          config: {
+            "Corp A": {
+              endpoint: "https://a.example.com",
+            },
+            corpB: {
+              name: "Corp/B",
+              endpoint: "https://b.example.com",
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  const config = runtimeConfig.buildChatConfigFromSettings(settings);
+  const entries = runtimeConfig.listChatRuntimeAdapterEntries(settings);
+
+  assert.deepEqual(config.plugins["adapter-telegram"], {
+    protocol: "polling",
+    token: "telegram-alpha",
+    slash: true,
+  });
+  assert.deepEqual(config.plugins["adapter-telegram:Beta-Bot"], {
+    protocol: "polling",
+    token: "telegram-beta",
+    slash: false,
+  });
+  assert.deepEqual(config.plugins["adapter-example"], {
+    region: "cn",
+    endpoint: "https://a.example.com",
+  });
+  assert.deepEqual(config.plugins["adapter-example:Corp-B"], {
+    region: "cn",
+    endpoint: "https://b.example.com",
+  });
+  assert.deepEqual(
+    entries
+      .filter((item) => item.key === "telegram" || item.key === "example")
+      .map((item) => ({
+        key: item.key,
+        name: item.name,
+        config: item.config,
+      })),
+    [
+      {
+        key: "telegram",
+        name: "Alpha-Bot",
+        config: {
+          protocol: "polling",
+          token: "telegram-alpha",
+          slash: true,
+        },
+      },
+      {
+        key: "telegram",
+        name: "Beta-Bot",
+        config: {
+          protocol: "polling",
+          token: "telegram-beta",
+          slash: false,
+        },
+      },
+      {
+        key: "example",
+        name: "Corp-A",
+        config: {
+          region: "cn",
+          endpoint: "https://a.example.com",
+        },
+      },
+      {
+        key: "example",
+        name: "Corp-B",
+        config: {
+          region: "cn",
+          endpoint: "https://b.example.com",
+        },
+      },
+    ],
+  );
+});
+
 test("chat runtime normalization skips disabled adapters and entries", () => {
   const settings = {
     chat: {

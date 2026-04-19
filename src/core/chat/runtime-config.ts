@@ -31,8 +31,31 @@ type ChatRuntimePackageJson = {
   dependencies: Record<string, string>;
 };
 
+type ChatRuntimeAdapterSource = {
+  key: string;
+  pluginKey: string;
+  value: unknown;
+  defaults: Record<string, any>;
+  builtIn: boolean;
+  packageName?: string;
+  version?: string;
+};
+
 const SETUP_ONLY_ADAPTER_FIELDS = new Set([
   "name",
+  "owners",
+  "ownerUserIds",
+  "botId",
+]);
+
+const SINGLE_ADAPTER_CONFIG_KEYS = new Set([
+  "name",
+  "enabled",
+  "endpoint",
+  "selfId",
+  "token",
+  "protocol",
+  "slash",
   "owners",
   "ownerUserIds",
   "botId",
@@ -65,19 +88,7 @@ function looksLikeSingleAdapterConfig(value: unknown) {
   if (!isJsonRecord(value)) return false;
   const keys = Object.keys(value);
   if (!keys.length) return true;
-  const singleConfigKeys = new Set([
-    "name",
-    "enabled",
-    "endpoint",
-    "selfId",
-    "token",
-    "protocol",
-    "slash",
-    "owners",
-    "ownerUserIds",
-    "botId",
-  ]);
-  if (keys.some((key) => singleConfigKeys.has(key))) return true;
+  if (keys.some((key) => SINGLE_ADAPTER_CONFIG_KEYS.has(key))) return true;
   return keys.some((key) => !isJsonRecord(value[key]));
 }
 
@@ -153,18 +164,15 @@ function applyNormalizedAdapterEntries(
   });
 }
 
-function normalizeBuiltInChatAdapters(
+function collectBuiltInChatAdapterSources(
   chat: Record<string, any> | undefined,
-): NormalizedChatRuntimeAdapter[] {
+): ChatRuntimeAdapterSource[] {
   return listChatBridgeAdapterSpecs().map((adapter) => ({
     key: adapter.key,
     pluginKey: adapter.pluginKey,
+    value: chat?.[adapter.key],
+    defaults: adapter.defaults,
     builtIn: true,
-    entries: normalizeAdapterEntries(
-      chat?.[adapter.key],
-      adapter.defaults,
-      adapter.key,
-    ),
   }));
 }
 
@@ -180,9 +188,9 @@ function normalizeCustomAdapterFallbackPrefix(
   );
 }
 
-function normalizeCustomChatAdapter(
+function normalizeCustomChatAdapterSource(
   value: unknown,
-): NormalizedChatRuntimeAdapter | null {
+): ChatRuntimeAdapterSource | null {
   if (!isJsonRecord(value)) return null;
 
   const packageName = safeString(value.packageName).trim();
@@ -193,40 +201,42 @@ function normalizeCustomChatAdapter(
     return null;
   }
 
-  const defaults = isJsonRecord(value.defaults)
-    ? cloneJson(value.defaults)
-    : {};
-  const fallbackPrefix = normalizeCustomAdapterFallbackPrefix(
-    value,
-    pluginKey,
-    packageName,
-  );
-
   return {
-    key: fallbackPrefix,
+    key: normalizeCustomAdapterFallbackPrefix(value, pluginKey, packageName),
     pluginKey,
+    value: config,
+    defaults: isJsonRecord(value.defaults) ? cloneJson(value.defaults) : {},
     builtIn: false,
     packageName,
     version,
-    entries: normalizeAdapterEntries(config, defaults, fallbackPrefix),
   };
 }
 
-function normalizeCustomChatAdapters(
+function collectCustomChatAdapterSources(
   chat: Record<string, any> | undefined,
-): NormalizedChatRuntimeAdapter[] {
+): ChatRuntimeAdapterSource[] {
   const items = Array.isArray(chat?.customAdapters) ? chat.customAdapters : [];
   return items
-    .map((item) => normalizeCustomChatAdapter(item))
-    .filter((item): item is NormalizedChatRuntimeAdapter => Boolean(item));
+    .map((item) => normalizeCustomChatAdapterSource(item))
+    .filter((item): item is ChatRuntimeAdapterSource => Boolean(item));
 }
 
-function buildNormalizedChatRuntime(settings: unknown) {
-  const chat = getStoredChatConfigRoot(settings);
-  const adapters = [
-    ...normalizeBuiltInChatAdapters(chat),
-    ...normalizeCustomChatAdapters(chat),
-  ];
+function normalizeChatRuntimeAdapter(
+  source: ChatRuntimeAdapterSource,
+): NormalizedChatRuntimeAdapter {
+  return {
+    key: source.key,
+    pluginKey: source.pluginKey,
+    builtIn: source.builtIn,
+    packageName: source.packageName,
+    version: source.version,
+    entries: normalizeAdapterEntries(source.value, source.defaults, source.key),
+  };
+}
+
+function collectRuntimeDependencies(
+  adapters: NormalizedChatRuntimeAdapter[],
+): Record<string, string> {
   const dependencies = new Map<string, string>();
 
   for (const adapter of adapters) {
@@ -235,11 +245,21 @@ function buildNormalizedChatRuntime(settings: unknown) {
     }
   }
 
+  return Object.fromEntries(
+    [...dependencies.entries()].sort(([a], [b]) => a.localeCompare(b)),
+  ) as Record<string, string>;
+}
+
+function buildNormalizedChatRuntime(settings: unknown) {
+  const chat = getStoredChatConfigRoot(settings);
+  const adapters = [
+    ...collectBuiltInChatAdapterSources(chat),
+    ...collectCustomChatAdapterSources(chat),
+  ].map((adapter) => normalizeChatRuntimeAdapter(adapter));
+
   return {
     adapters,
-    dependencies: Object.fromEntries(
-      [...dependencies.entries()].sort(([a], [b]) => a.localeCompare(b)),
-    ) as Record<string, string>,
+    dependencies: collectRuntimeDependencies(adapters),
   };
 }
 
