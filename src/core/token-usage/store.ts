@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -72,6 +73,50 @@ const AGGREGATE_ORDER_FIELDS = new Set([
   "context_tokens",
 ]);
 
+export type NormalizedTokenTelemetryEvent = {
+  id: string;
+  timestamp: string;
+  sessionId: string;
+  sessionFile: string;
+  sessionName: string;
+  sessionPersisted: boolean;
+  cwd: string;
+  eventType: string;
+  source: string;
+  trigger: string;
+  turnIndex: number | null;
+  phase: string;
+  provider: string;
+  model: string;
+  thinkingLevel: string;
+  messageId: string;
+  messageRole: string;
+  stopReason: string;
+  toolCallId: string;
+  toolName: string;
+  toolCallCount: number;
+  toolNames: string[];
+  capabilityKind: string;
+  capabilityKey: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  costInput: number;
+  costOutput: number;
+  costCacheRead: number;
+  costCacheWrite: number;
+  costTotal: number;
+  contextTokens: number;
+  isError: boolean;
+  metadata: Record<string, unknown> | null;
+};
+
+function normalizeText(value: unknown): string {
+  return safeString(value).trim();
+}
+
 function safeNumber(value: unknown): number {
   const num = Number(value || 0);
   return Number.isFinite(num) ? num : 0;
@@ -81,8 +126,27 @@ function normalizeInt(value: unknown): number {
   return Math.max(0, Math.round(safeNumber(value)));
 }
 
+function normalizeOptionalInt(value: unknown): number | null {
+  if (value == null || normalizeText(value) === "") return null;
+  return Math.round(safeNumber(value));
+}
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeMetadata(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function safeJsonStringify(value: unknown): string | null {
+  if (value == null) return null;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
 }
 
 export function resolveAgentDir(agentDir = ""): string {
@@ -202,18 +266,72 @@ function normalizeToolNames(input: unknown): string[] {
   );
 }
 
-function stableEventId(event: TokenTelemetryEvent): string {
+function stableEventId(event: Omit<NormalizedTokenTelemetryEvent, "id">): string {
   const seed = [
-    safeString(event.sessionId).trim(),
-    safeString(event.eventType).trim(),
-    safeString(event.messageId).trim(),
-    safeString(event.toolCallId).trim(),
-    safeString(event.timestamp).trim(),
-    safeString(event.turnIndex).trim(),
-    safeString(event.capabilityKey).trim(),
-    Math.random().toString(36).slice(2, 10),
+    event.timestamp,
+    event.sessionId,
+    event.sessionFile,
+    event.eventType,
+    event.messageId,
+    event.toolCallId,
+    String(event.turnIndex ?? ""),
+    event.capabilityKey,
+    event.provider,
+    event.model,
+    event.messageRole,
+    event.toolName,
+    String(event.totalTokens),
+    event.toolNames.join(","),
   ].join("|");
-  return seed || `evt_${Date.now().toString(36)}`;
+  const digest = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 24);
+  return `evt_${digest}`;
+}
+
+export function normalizeTokenTelemetryEvent(
+  event: TokenTelemetryEvent,
+): NormalizedTokenTelemetryEvent {
+  const normalizedWithoutId = {
+    timestamp: normalizeText(event.timestamp) || nowIso(),
+    sessionId: normalizeText(event.sessionId),
+    sessionFile: normalizeText(event.sessionFile),
+    sessionName: normalizeText(event.sessionName),
+    sessionPersisted: Boolean(event.sessionPersisted),
+    cwd: normalizeText(event.cwd),
+    eventType: normalizeText(event.eventType) || "event",
+    source: normalizeText(event.source),
+    trigger: normalizeText(event.trigger),
+    turnIndex: normalizeOptionalInt(event.turnIndex),
+    phase: normalizeText(event.phase),
+    provider: normalizeText(event.provider),
+    model: normalizeText(event.model),
+    thinkingLevel: normalizeText(event.thinkingLevel),
+    messageId: normalizeText(event.messageId),
+    messageRole: normalizeText(event.messageRole),
+    stopReason: normalizeText(event.stopReason),
+    toolCallId: normalizeText(event.toolCallId),
+    toolName: normalizeText(event.toolName),
+    toolCallCount: normalizeInt(event.toolCallCount),
+    toolNames: normalizeToolNames(event.toolNames),
+    capabilityKind: normalizeText(event.capabilityKind),
+    capabilityKey: normalizeText(event.capabilityKey),
+    inputTokens: normalizeInt(event.inputTokens),
+    outputTokens: normalizeInt(event.outputTokens),
+    cacheReadTokens: normalizeInt(event.cacheReadTokens),
+    cacheWriteTokens: normalizeInt(event.cacheWriteTokens),
+    totalTokens: normalizeInt(event.totalTokens),
+    costInput: safeNumber(event.costInput),
+    costOutput: safeNumber(event.costOutput),
+    costCacheRead: safeNumber(event.costCacheRead),
+    costCacheWrite: safeNumber(event.costCacheWrite),
+    costTotal: safeNumber(event.costTotal),
+    contextTokens: normalizeInt(event.contextTokens),
+    isError: Boolean(event.isError),
+    metadata: normalizeMetadata(event.metadata),
+  } satisfies Omit<NormalizedTokenTelemetryEvent, "id">;
+  return {
+    id: normalizeText(event.id) || stableEventId(normalizedWithoutId),
+    ...normalizedWithoutId,
+  };
 }
 
 export function appendTokenTelemetryEvent(
@@ -221,12 +339,7 @@ export function appendTokenTelemetryEvent(
   agentDir = "",
 ): { id: string } {
   const db = openTokenUsageDb(agentDir);
-  const normalized: TokenTelemetryEvent = {
-    ...event,
-    timestamp: safeString(event.timestamp).trim() || nowIso(),
-    toolNames: normalizeToolNames(event.toolNames),
-  };
-  normalized.id = safeString(event.id).trim() || stableEventId(normalized);
+  const normalized = normalizeTokenTelemetryEvent(event);
   const insert = prepareCached(
     db,
     `
@@ -312,44 +425,41 @@ export function appendTokenTelemetryEvent(
   insert.run({
     id: normalized.id,
     timestamp: normalized.timestamp,
-    session_id: safeString(normalized.sessionId).trim() || null,
-    session_file: safeString(normalized.sessionFile).trim() || null,
-    session_name: safeString(normalized.sessionName).trim() || null,
+    session_id: normalized.sessionId || null,
+    session_file: normalized.sessionFile || null,
+    session_name: normalized.sessionName || null,
     session_persisted: normalized.sessionPersisted ? 1 : 0,
-    cwd: safeString(normalized.cwd).trim() || null,
-    event_type: safeString(normalized.eventType).trim() || "event",
-    source: safeString(normalized.source).trim() || null,
-    trigger: safeString(normalized.trigger).trim() || null,
-    turn_index:
-      normalized.turnIndex == null ? null : Math.round(safeNumber(normalized.turnIndex)),
-    phase: safeString(normalized.phase).trim() || null,
-    provider: safeString(normalized.provider).trim() || null,
-    model: safeString(normalized.model).trim() || null,
-    thinking_level: safeString(normalized.thinkingLevel).trim() || null,
-    message_id: safeString(normalized.messageId).trim() || null,
-    message_role: safeString(normalized.messageRole).trim() || null,
-    stop_reason: safeString(normalized.stopReason).trim() || null,
-    tool_call_id: safeString(normalized.toolCallId).trim() || null,
-    tool_name: safeString(normalized.toolName).trim() || null,
-    tool_call_count: normalizeInt(normalized.toolCallCount),
-    tool_names_json: normalized.toolNames?.length
-      ? JSON.stringify(normalized.toolNames)
-      : null,
-    capability_kind: safeString(normalized.capabilityKind).trim() || null,
-    capability_key: safeString(normalized.capabilityKey).trim() || null,
-    input_tokens: normalizeInt(normalized.inputTokens),
-    output_tokens: normalizeInt(normalized.outputTokens),
-    cache_read_tokens: normalizeInt(normalized.cacheReadTokens),
-    cache_write_tokens: normalizeInt(normalized.cacheWriteTokens),
-    total_tokens: normalizeInt(normalized.totalTokens),
-    cost_input: safeNumber(normalized.costInput),
-    cost_output: safeNumber(normalized.costOutput),
-    cost_cache_read: safeNumber(normalized.costCacheRead),
-    cost_cache_write: safeNumber(normalized.costCacheWrite),
-    cost_total: safeNumber(normalized.costTotal),
-    context_tokens: normalizeInt(normalized.contextTokens),
+    cwd: normalized.cwd || null,
+    event_type: normalized.eventType,
+    source: normalized.source || null,
+    trigger: normalized.trigger || null,
+    turn_index: normalized.turnIndex,
+    phase: normalized.phase || null,
+    provider: normalized.provider || null,
+    model: normalized.model || null,
+    thinking_level: normalized.thinkingLevel || null,
+    message_id: normalized.messageId || null,
+    message_role: normalized.messageRole || null,
+    stop_reason: normalized.stopReason || null,
+    tool_call_id: normalized.toolCallId || null,
+    tool_name: normalized.toolName || null,
+    tool_call_count: normalized.toolCallCount,
+    tool_names_json: safeJsonStringify(normalized.toolNames.length ? normalized.toolNames : null),
+    capability_kind: normalized.capabilityKind || null,
+    capability_key: normalized.capabilityKey || null,
+    input_tokens: normalized.inputTokens,
+    output_tokens: normalized.outputTokens,
+    cache_read_tokens: normalized.cacheReadTokens,
+    cache_write_tokens: normalized.cacheWriteTokens,
+    total_tokens: normalized.totalTokens,
+    cost_input: normalized.costInput,
+    cost_output: normalized.costOutput,
+    cost_cache_read: normalized.costCacheRead,
+    cost_cache_write: normalized.costCacheWrite,
+    cost_total: normalized.costTotal,
+    context_tokens: normalized.contextTokens,
     is_error: normalized.isError ? 1 : 0,
-    metadata_json: normalized.metadata ? JSON.stringify(normalized.metadata) : null,
+    metadata_json: safeJsonStringify(normalized.metadata),
   });
   return { id: normalized.id };
 }

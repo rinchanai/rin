@@ -134,45 +134,46 @@ function inferCapability(eventType: string, message: any, toolName = "") {
 function recordEvent(ctx: any, input: Record<string, any>) {
   const meta = sessionMeta(ctx);
   const state = getSessionState(ctx);
+  const eventType = safeString(input.eventType).trim() || "event";
   appendTokenTelemetryEvent(
     {
-      id: safeString(input.id).trim() || nextEventId(safeString(input.eventType).trim() || "event", ctx),
-      timestamp: safeString(input.timestamp).trim() || new Date().toISOString(),
+      id: safeString(input.id).trim() || nextEventId(eventType, ctx),
+      timestamp: input.timestamp,
       sessionId: meta.sessionId,
       sessionFile: meta.sessionFile,
       sessionName: meta.sessionName,
       sessionPersisted: meta.sessionPersisted,
       cwd: meta.cwd,
-      eventType: safeString(input.eventType).trim() || "event",
+      eventType,
       source: safeString(input.source).trim() || state.source,
       trigger: safeString(input.trigger).trim() || state.trigger,
       turnIndex: input.turnIndex ?? state.turnIndex,
-      phase: safeString(input.phase).trim(),
+      phase: input.phase,
       provider: safeString(input.provider).trim() || state.provider,
       model: safeString(input.model).trim() || state.model,
       thinkingLevel: safeString(input.thinkingLevel).trim() || state.thinkingLevel,
-      messageId: safeString(input.messageId).trim(),
-      messageRole: safeString(input.messageRole).trim(),
-      stopReason: safeString(input.stopReason).trim(),
-      toolCallId: safeString(input.toolCallId).trim(),
-      toolName: safeString(input.toolName).trim(),
-      toolCallCount: Number(input.toolCallCount || 0) || 0,
-      toolNames: Array.isArray(input.toolNames) ? input.toolNames : [],
-      capabilityKind: safeString(input.capabilityKind).trim(),
-      capabilityKey: safeString(input.capabilityKey).trim(),
-      inputTokens: Number(input.inputTokens || 0) || 0,
-      outputTokens: Number(input.outputTokens || 0) || 0,
-      cacheReadTokens: Number(input.cacheReadTokens || 0) || 0,
-      cacheWriteTokens: Number(input.cacheWriteTokens || 0) || 0,
-      totalTokens: Number(input.totalTokens || 0) || 0,
-      costInput: Number(input.costInput || 0) || 0,
-      costOutput: Number(input.costOutput || 0) || 0,
-      costCacheRead: Number(input.costCacheRead || 0) || 0,
-      costCacheWrite: Number(input.costCacheWrite || 0) || 0,
-      costTotal: Number(input.costTotal || 0) || 0,
-      contextTokens: Number(input.contextTokens || 0) || 0,
+      messageId: input.messageId,
+      messageRole: input.messageRole,
+      stopReason: input.stopReason,
+      toolCallId: input.toolCallId,
+      toolName: input.toolName,
+      toolCallCount: input.toolCallCount,
+      toolNames: input.toolNames,
+      capabilityKind: input.capabilityKind,
+      capabilityKey: input.capabilityKey,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      cacheReadTokens: input.cacheReadTokens,
+      cacheWriteTokens: input.cacheWriteTokens,
+      totalTokens: input.totalTokens,
+      costInput: input.costInput,
+      costOutput: input.costOutput,
+      costCacheRead: input.costCacheRead,
+      costCacheWrite: input.costCacheWrite,
+      costTotal: input.costTotal,
+      contextTokens: input.contextTokens,
       isError: Boolean(input.isError),
-      metadata: (input.metadata as any) || null,
+      metadata: input.metadata || null,
     },
     resolveAgentDir(),
   );
@@ -294,6 +295,7 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
 
   pi.on("message_end", async (event, ctx) => {
     const message = event?.message as any;
+    const state = getSessionState(ctx);
     const toolNames = extractToolCallNames(message?.content);
     const capability = inferCapability("message_end", message, message?.toolName);
     const usage = message?.usage || {};
@@ -336,8 +338,8 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
         safeString(message?.stopReason).trim() === "error" ||
         safeString(message?.errorMessage).trim().length > 0,
       metadata: {
-        inputPreview: getSessionState(ctx).lastInputPreview,
-        promptPreview: getSessionState(ctx).lastPromptPreview,
+        inputPreview: state.lastInputPreview,
+        promptPreview: state.lastPromptPreview,
         errorMessage: previewText(message?.errorMessage, 260),
       },
     });

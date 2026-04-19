@@ -104,6 +104,31 @@ test("token usage store aggregates by session and capability", async () => {
   });
 });
 
+test("token usage store normalizes telemetry events in one place", () => {
+  const normalized = store.normalizeTokenTelemetryEvent({
+    timestamp: " 2026-04-10T09:00:00.000Z ",
+    sessionId: " s1 ",
+    eventType: "  ",
+    turnIndex: "7.2",
+    toolCallCount: "4.8",
+    toolNames: [" read ", "read", " write "],
+    inputTokens: "10.9",
+    outputTokens: -3,
+    costTotal: "0.125",
+    metadata: ["ignored"],
+  });
+  assert.equal(normalized.timestamp, "2026-04-10T09:00:00.000Z");
+  assert.equal(normalized.sessionId, "s1");
+  assert.equal(normalized.eventType, "event");
+  assert.equal(normalized.turnIndex, 7);
+  assert.equal(normalized.toolCallCount, 5);
+  assert.deepEqual(normalized.toolNames, ["read", "write"]);
+  assert.equal(normalized.inputTokens, 11);
+  assert.equal(normalized.outputTokens, 0);
+  assert.equal(normalized.costTotal, 0.125);
+  assert.equal(normalized.metadata, null);
+});
+
 test("token usage store ignores duplicate event ids", async () => {
   await withTempRoot(async (root) => {
     store.appendTokenTelemetryEvent(
@@ -128,6 +153,41 @@ test("token usage store ignores duplicate event ids", async () => {
     const rows = store.queryTokenUsageEvents({ agentDir: root, limit: 10 });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].event_type, "session_start");
+  });
+});
+
+
+test("token usage store derives stable ids and tolerates unserializable metadata", async () => {
+  await withTempRoot(async (root) => {
+    const metadata = {};
+    metadata.self = metadata;
+    const first = store.appendTokenTelemetryEvent(
+      {
+        timestamp: "2026-04-10T09:30:00.000Z",
+        sessionId: "s1",
+        eventType: "message_end",
+        capabilityKey: "assistant:text",
+        totalTokens: 15,
+        metadata,
+      },
+      root,
+    );
+    const second = store.appendTokenTelemetryEvent(
+      {
+        timestamp: "2026-04-10T09:30:00.000Z",
+        sessionId: "s1",
+        eventType: "message_end",
+        capabilityKey: "assistant:text",
+        totalTokens: 15,
+        metadata,
+      },
+      root,
+    );
+
+    assert.equal(first.id, second.id);
+    const rows = store.queryTokenUsageEvents({ agentDir: root, limit: 10 });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].total_tokens, 15);
   });
 });
 
