@@ -2,6 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
+import {
+  chatMessageStoreRoots,
+  chatScopedDatePath,
+  getChatMessageStoreLayout,
+  indexRoots,
+  indexesDirForStoreDir,
+  recordRoots,
+  recordsDirForStoreDir,
+  sanitizePathSegment,
+} from "./message-store-layout.js";
 import { normalizeLocalDateOnly } from "./date.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
 import { safeString } from "../text-utils.js";
@@ -39,89 +49,8 @@ export type StoredChatMessage = {
   };
 };
 
-function sanitizePathSegment(value: string, fallback: string) {
-  const text = safeString(value)
-    .trim()
-    .replace(/[^A-Za-z0-9._:-]+/g, "_");
-  return text || fallback;
-}
-
 function hashKey(value: string) {
   return createHash("sha1").update(value).digest("hex");
-}
-
-type ChatMessageStoreLayout = {
-  preferredStoreDir: string;
-  legacyStoreDir: string;
-  storeDir: string;
-  fallbackStoreDir?: string;
-  recordsDir: string;
-  indexesDir: string;
-  logDir: string;
-  source: "preferred" | "legacy" | "implicit-preferred";
-};
-
-function recordsDirForStoreDir(storeDir: string) {
-  return path.join(storeDir, "records");
-}
-
-function indexesDirForStoreDir(storeDir: string) {
-  return path.join(storeDir, "indexes");
-}
-
-function buildChatMessageStoreLayout(
-  preferredStoreDir: string,
-  legacyStoreDir: string,
-  storeDir: string,
-  fallbackStoreDir: string | undefined,
-  source: ChatMessageStoreLayout["source"],
-): ChatMessageStoreLayout {
-  return {
-    preferredStoreDir,
-    legacyStoreDir,
-    storeDir,
-    fallbackStoreDir,
-    recordsDir: recordsDirForStoreDir(storeDir),
-    indexesDir: indexesDirForStoreDir(storeDir),
-    logDir: path.join(storeDir, "chat-log-view"),
-    source,
-  };
-}
-
-function detectChatMessageStoreLayout(rootDir: string) {
-  const preferredStoreDir = path.join(rootDir, "data", "chat-message-store");
-  const legacyStoreDir = path.join(rootDir, "data", "koishi-message-store");
-  const hasPreferred = fs.existsSync(preferredStoreDir);
-  const hasLegacy = fs.existsSync(legacyStoreDir);
-  if (hasPreferred) {
-    return buildChatMessageStoreLayout(
-      preferredStoreDir,
-      legacyStoreDir,
-      preferredStoreDir,
-      hasLegacy ? legacyStoreDir : undefined,
-      "preferred",
-    );
-  }
-  if (hasLegacy) {
-    return buildChatMessageStoreLayout(
-      preferredStoreDir,
-      legacyStoreDir,
-      legacyStoreDir,
-      undefined,
-      "legacy",
-    );
-  }
-  return buildChatMessageStoreLayout(
-    preferredStoreDir,
-    legacyStoreDir,
-    preferredStoreDir,
-    undefined,
-    "implicit-preferred",
-  );
-}
-
-function getChatMessageStoreLayout(agentDir: string) {
-  return detectChatMessageStoreLayout(path.resolve(agentDir));
 }
 
 function dedupeStrings(values: Iterable<unknown>) {
@@ -144,23 +73,6 @@ function sameStringLists(
   );
 }
 
-function chatMessageStoreRoots(agentDir: string) {
-  const layout = getChatMessageStoreLayout(agentDir);
-  return dedupeStrings([layout.storeDir, layout.fallbackStoreDir]);
-}
-
-function recordRoots(agentDir: string) {
-  return chatMessageStoreRoots(agentDir).map((storeDir) =>
-    recordsDirForStoreDir(storeDir),
-  );
-}
-
-function indexRoots(agentDir: string) {
-  return chatMessageStoreRoots(agentDir).map((storeDir) =>
-    indexesDirForStoreDir(storeDir),
-  );
-}
-
 export function chatMessageStoreDir(agentDir: string) {
   return getChatMessageStoreLayout(agentDir).storeDir;
 }
@@ -171,28 +83,6 @@ function recordsDir(agentDir: string) {
 
 function indexesDir(agentDir: string) {
   return getChatMessageStoreLayout(agentDir).indexesDir;
-}
-
-function chatScopedDatePath(
-  rootDir: string,
-  chatKey: string,
-  date: string,
-  extension: ".json" | ".txt",
-) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const day = normalizeLocalDateOnly(date, new Date());
-  const platform = sanitizePathSegment(parsed.platform, "platform");
-  const chatId = sanitizePathSegment(parsed.chatId, "chat");
-  return parsed.botId
-    ? path.join(
-        rootDir,
-        platform,
-        sanitizePathSegment(parsed.botId, "bot"),
-        chatId,
-        `${day}${extension}`,
-      )
-    : path.join(rootDir, platform, chatId, `${day}${extension}`);
 }
 
 export function chatMessageLogDir(agentDir: string) {
@@ -499,23 +389,33 @@ function definedStoredChatMessagePatch(
   ) as Partial<StoredChatMessage>;
 }
 
+function persistChatMessageRecord(
+  agentDir: string,
+  record: StoredChatMessage,
+  previousDate?: string,
+) {
+  const filePath = recordPath(agentDir, record.recordKey);
+  writeJsonFile(filePath, record);
+  syncMessageRefs(
+    agentDir,
+    record.messageId,
+    path.relative(chatMessageStoreDir(agentDir), filePath),
+  );
+  syncChatDateIndex(agentDir, record, previousDate);
+  return filePath;
+}
+
 export function saveChatMessage(
   agentDir: string,
   input: Omit<StoredChatMessage, "version" | "recordKey">,
 ) {
   const record = buildStoredChatMessage(input);
   const previous = getChatMessage(agentDir, record.chatKey, record.messageId);
-  const filePath = recordPath(agentDir, record.recordKey);
-  writeJsonFile(filePath, record);
-
-  const storeLayout = getChatMessageStoreLayout(agentDir);
-  syncMessageRefs(
+  const filePath = persistChatMessageRecord(
     agentDir,
-    record.messageId,
-    path.relative(storeLayout.storeDir, filePath),
+    record,
+    storedMessageDate(previous),
   );
-  syncChatDateIndex(agentDir, record, storedMessageDate(previous));
-
   return { record, filePath };
 }
 
@@ -595,15 +495,7 @@ export function updateChatMessage(
     platform: current.platform,
     chatId: current.chatId,
   };
-  const filePath = recordPath(agentDir, current.recordKey);
-  writeJsonFile(filePath, next);
-  const storeLayout = getChatMessageStoreLayout(agentDir);
-  syncMessageRefs(
-    agentDir,
-    current.messageId,
-    path.relative(storeLayout.storeDir, filePath),
-  );
-  syncChatDateIndex(agentDir, next, previousDate);
+  persistChatMessageRecord(agentDir, next, previousDate);
   return next;
 }
 
