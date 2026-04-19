@@ -3,6 +3,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 
 import { Type } from "@sinclair/typebox";
 
+import { resolveAgentDir } from "./agent-dir.js";
 import {
   buildCompiledSelfImprovePrompt,
   buildSystemPromptSelfImprove,
@@ -16,11 +17,8 @@ import {
   markOnboardingPrompted,
   refreshOnboardingCompletion,
 } from "./onboarding.js";
-import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 
-export function resolveAgentDir() {
-  return resolveRuntimeProfile().agentDir;
-}
+export { resolveAgentDir } from "./agent-dir.js";
 
 export const selfImproveActionParams = Type.Object({
   action: Type.Union(

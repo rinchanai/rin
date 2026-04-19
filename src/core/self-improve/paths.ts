@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { resolveAgentDir, safeString } from "./core/utils.js";
+import { resolveAgentDir } from "./agent-dir.js";
 
 export const SELF_IMPROVE_DIR = "self_improve";
 export const SELF_IMPROVE_PROMPTS_DIR = "prompts";
@@ -12,10 +12,7 @@ export const MAINTENANCE_HISTORY_FILE = "maintenance-history.jsonl";
 export const MAINTENANCE_LOCK_FILE = "maintenance-worker.lock";
 
 export function resolveSelfImproveRoot(agentDirOverride = ""): string {
-  const agentDir = safeString(agentDirOverride).trim()
-    ? path.resolve(agentDirOverride)
-    : resolveAgentDir();
-  return path.join(agentDir, SELF_IMPROVE_DIR);
+  return path.join(resolveAgentDir(agentDirOverride), SELF_IMPROVE_DIR);
 }
 
 export function selfImprovePromptsDir(agentDirOverride = ""): string {

@@ -3,8 +3,9 @@ import { pathToFileURL } from "node:url";
 
 import { processQueuedMemoryJobs } from "./async-jobs.js";
 import { safeString } from "./core/utils.js";
+import { resolveAgentDir } from "./agent-dir.js";
 
-function readAgentDirArg() {
+function readAgentDirArgValue() {
   for (let index = 2; index < process.argv.length; index += 1) {
     const value = process.argv[index];
     if (value === "--agent-dir") {
@@ -20,9 +21,9 @@ function readAgentDirArg() {
 }
 
 export async function runMemoryWorker() {
-  const agentDir = readAgentDirArg();
-  if (!agentDir) return;
-  await processQueuedMemoryJobs(agentDir);
+  const agentDirArg = readAgentDirArgValue();
+  if (!agentDirArg) return;
+  await processQueuedMemoryJobs(resolveAgentDir(agentDirArg));
 }
 
 const isDirectEntry =

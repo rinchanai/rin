@@ -294,7 +294,7 @@ export async function maintainMemory(
   const trigger = safeString(opts.trigger || "self_improve:review").trim();
   const leafId = session.leafId || undefined;
   const extracted = await runForkedSessionSelfImproveReview({
-    agentDir: safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir(),
+    agentDir: resolveAgentDir(opts.agentDir),
     sessionFile,
     leafId,
     trigger,
@@ -321,8 +321,7 @@ export async function maintainSessionSummary(
   const session = readSessionMetadata(opts);
   const sessionFile = session.sessionFile;
   if (!sessionFile) return { skipped: "no-session-file" };
-  const agentDir =
-    safeString(opts.agentDir || resolveAgentDir()).trim() || resolveAgentDir();
+  const agentDir = resolveAgentDir(opts.agentDir);
   const leafId = session.leafId || undefined;
   const trigger = safeString(opts.trigger || "session_summary:review").trim();
   const output = await runForkedSessionPrompt({

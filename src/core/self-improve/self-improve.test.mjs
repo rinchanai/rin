@@ -79,6 +79,44 @@ test("self-improve paths resolve under the agent root", () => {
   );
 });
 
+test("self-improve agent dir resolution follows runtime profile precedence", () => {
+  const previousRinDir = process.env.RIN_DIR;
+  const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+  try {
+    delete process.env.RIN_DIR;
+    delete process.env.PI_CODING_AGENT_DIR;
+    assert.equal(
+      lib.resolveAgentDir(),
+      path.resolve(path.join(os.homedir(), ".rin")),
+    );
+
+    process.env.PI_CODING_AGENT_DIR = "/tmp/pi-agent";
+    assert.equal(lib.resolveAgentDir(), path.resolve("/tmp/pi-agent"));
+    assert.equal(
+      selfImprovePaths.resolveSelfImproveRoot(),
+      path.join(path.resolve("/tmp/pi-agent"), "self_improve"),
+    );
+
+    process.env.RIN_DIR = "/tmp/rin-agent";
+    assert.equal(lib.resolveAgentDir(), path.resolve("/tmp/rin-agent"));
+    assert.equal(
+      lib.resolveAgentDir("/tmp/override-agent"),
+      path.resolve("/tmp/override-agent"),
+    );
+    assert.equal(
+      selfImprovePaths.resolveSelfImproveRoot("/tmp/override-agent"),
+      path.join(path.resolve("/tmp/override-agent"), "self_improve"),
+    );
+  } finally {
+    if (previousRinDir === undefined) delete process.env.RIN_DIR;
+    else process.env.RIN_DIR = previousRinDir;
+    if (previousPiAgentDir === undefined)
+      delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
+  }
+});
+
 test("buildOnboardingPrompt keeps init instructions hidden and language-first", () => {
   const prompt = lib.buildOnboardingPrompt("manual");
   assert.ok(!prompt.includes("[Memory onboarding request]"));
