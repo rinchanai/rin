@@ -123,6 +123,34 @@ test("readSessionDisplayNameParts extracts first user text from structured conte
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
 
+test("readSessionDisplayNameParts ignores blank later renames", async () => {
+  const sessionDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-session-names-"),
+  );
+  const sessionFile = path.join(sessionDir, "blank-rename.jsonl");
+  await fs.writeFile(
+    sessionFile,
+    [
+      JSON.stringify({ type: "session_info", name: "Initial title" }),
+      JSON.stringify({
+        type: "message",
+        message: { role: "user", content: "First question" },
+      }),
+      JSON.stringify({ type: "session_info", name: "Renamed title" }),
+      JSON.stringify({ type: "session_info", name: "   " }),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(names.readSessionDisplayNameParts(sessionFile), {
+    currentName: "Renamed title",
+    firstUserMessage: "First question",
+  });
+
+  await fs.rm(sessionDir, { recursive: true, force: true });
+});
+
 test("session display readers return empty parts for blank or missing paths", () => {
   assert.deepEqual(names.readSessionDisplayNameParts(""), {
     currentName: "",
