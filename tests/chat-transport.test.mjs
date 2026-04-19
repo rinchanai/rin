@@ -128,6 +128,58 @@ test("chat transport forwards mixed parts as a single native chat send", async (
   });
 });
 
+test("chat transport stores summarized content for non-text part deliveries", async () => {
+  await withTempDir(async (dir) => {
+    const imagePath = path.join(dir, "demo.png");
+    const filePath = path.join(dir, "demo.txt");
+    await fs.writeFile(imagePath, Buffer.from("abc"));
+    await fs.writeFile(filePath, "hello\n");
+
+    await transport.sendOutboxPayload(
+      {
+        bots: [
+          {
+            platform: "telegram",
+            selfId: "1",
+            async sendMessage() {
+              return ["m-parts-summary"];
+            },
+          },
+        ],
+      },
+      dir,
+      {
+        type: "parts_delivery",
+        chatKey: "telegram/1:2",
+        parts: [
+          { type: "image", path: imagePath, mimeType: "image/png" },
+          { type: "file", path: filePath, name: "demo.txt" },
+        ],
+      },
+      Object.assign((type, attrs) => ({ type, attrs }), {
+        text(content) {
+          return { type: "text", attrs: { content } };
+        },
+        quote(id) {
+          return { type: "quote", attrs: { id } };
+        },
+        file(src, mimeType, options) {
+          return { type: "file", attrs: { src, mimeType, ...options } };
+        },
+      }),
+    );
+
+    const stored = messageStore.getChatMessage(
+      dir,
+      "telegram/1:2",
+      "m-parts-summary",
+    );
+    assert.match(stored?.text || "", /\[#image\]/);
+    assert.match(stored?.text || "", /\[#file\]/);
+    assert.match(stored?.rawContent || "", /demo\.txt/);
+  });
+});
+
 test("chat transport stores explicit session binding for outbox text deliveries", async () => {
   await withTempDir(async (dir) => {
     await transport.sendOutboxPayload(

@@ -243,17 +243,19 @@ function resolveSessionContext(
   return normalizeSessionRef(linked);
 }
 
+type DeliveredAssistantRecordInput = {
+  chatKey: string;
+  deliveryResult: string[];
+  text?: string;
+  rawContent?: string;
+  replyToMessageId?: string;
+  sessionId?: string;
+  sessionFile?: string;
+};
+
 export function recordDeliveredAssistantMessages(
   agentDir: string,
-  input: {
-    chatKey: string;
-    deliveryResult: string[];
-    text?: string;
-    rawContent?: string;
-    replyToMessageId?: string;
-    sessionId?: string;
-    sessionFile?: string;
-  },
+  input: DeliveredAssistantRecordInput,
 ) {
   const chatKey = safeString(input.chatKey).trim();
   if (!chatKey) return [] as string[];
@@ -301,6 +303,47 @@ export function recordDeliveredAssistantMessages(
   }
 
   return messageIds;
+}
+
+type FinalizeDeliveredAssistantInput = DeliveredAssistantRecordInput & {
+  logText?: string;
+};
+
+function finalizeDeliveredAssistantOutput(
+  agentDir: string,
+  input: FinalizeDeliveredAssistantInput,
+) {
+  const chatKey = safeString(input.chatKey).trim();
+  if (!chatKey) return [] as string[];
+  const replyToMessageId =
+    safeString(input.replyToMessageId).trim() || undefined;
+  const session = normalizeSessionRef({
+    sessionId: input.sessionId,
+    sessionFile: input.sessionFile,
+  });
+  const logText = safeString(input.logText).trim();
+
+  if (logText) {
+    appendChatLog(agentDir, {
+      timestamp: new Date().toISOString(),
+      chatKey,
+      role: "assistant",
+      text: logText,
+      replyToMessageId,
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
+    });
+  }
+
+  return recordDeliveredAssistantMessages(agentDir, {
+    chatKey,
+    deliveryResult: input.deliveryResult,
+    text: input.text,
+    rawContent: input.rawContent,
+    replyToMessageId,
+    sessionId: session.sessionId,
+    sessionFile: session.sessionFile,
+  });
 }
 
 function localAssetUrl(filePath: string) {
@@ -419,6 +462,26 @@ export async function messagePartToNode(part: ChatMessagePart, h: any) {
   );
 }
 
+function buildPartsDeliveryRecord(rawParts: ChatMessagePart[]) {
+  const quotePart = rawParts.find((part) => part.type === "quote") as
+    | { type: "quote"; id: string }
+    | undefined;
+  const replyToMessageId = safeString(quotePart?.id).trim() || undefined;
+  const logText = rawParts
+    .filter((part) => part.type === "text")
+    .map((part) => safeString((part as any).text).trim())
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+  const summary = summarizeOutgoingParts(rawParts);
+  return {
+    replyToMessageId,
+    logText,
+    text: logText || summary || undefined,
+    rawContent: summary || logText || undefined,
+  };
+}
+
 export async function sendOutboxPayload(
   app: any,
   agentDir: string,
@@ -437,27 +500,17 @@ export async function sendOutboxPayload(
       h,
       replyToMessageId,
     );
-    if (chatKey && text) {
-      appendChatLog(agentDir, {
-        timestamp: new Date().toISOString(),
-        chatKey,
-        role: "assistant",
-        text,
-        replyToMessageId: replyToMessageId || undefined,
-        sessionId: session.sessionId,
-        sessionFile: session.sessionFile,
-      });
-      return recordDeliveredAssistantMessages(agentDir, {
-        chatKey,
-        deliveryResult,
-        text,
-        rawContent: text,
-        replyToMessageId: replyToMessageId || undefined,
-        sessionId: session.sessionId,
-        sessionFile: session.sessionFile,
-      });
-    }
-    return [] as string[];
+    if (!chatKey || !text) return [] as string[];
+    return finalizeDeliveredAssistantOutput(agentDir, {
+      chatKey,
+      deliveryResult,
+      logText: text,
+      text,
+      rawContent: text,
+      replyToMessageId,
+      sessionId: session.sessionId,
+      sessionFile: session.sessionFile,
+    });
   }
   if (payload?.type !== "parts_delivery") return [] as string[];
   const chatKey = safeString(payload.chatKey).trim();
@@ -474,37 +527,12 @@ export async function sendOutboxPayload(
 
   const deliveryResult = await sendChatNodes(app, chatKey, nodes);
 
-  const quotePart = rawParts.find((part) => part.type === "quote") as
-    | { type: "quote"; id: string }
-    | undefined;
-  const replyToMessageId = safeString(quotePart?.id).trim() || undefined;
-
-  const finalLoggedText = rawParts
-    .filter((part) => part.type === "text")
-    .map((part) => safeString((part as any).text).trim())
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
-  if (finalLoggedText) {
-    appendChatLog(agentDir, {
-      timestamp: new Date().toISOString(),
-      chatKey,
-      role: "assistant",
-      text: finalLoggedText,
-      replyToMessageId,
-      sessionId: session.sessionId,
-      sessionFile: session.sessionFile,
-    });
-  }
-  const storedSummary = summarizeOutgoingParts(rawParts);
-  return recordDeliveredAssistantMessages(agentDir, {
+  return finalizeDeliveredAssistantOutput(agentDir, {
     chatKey,
     deliveryResult,
-    text: finalLoggedText || storedSummary || undefined,
-    rawContent: storedSummary || finalLoggedText || undefined,
-    replyToMessageId,
     sessionId: session.sessionId,
     sessionFile: session.sessionFile,
+    ...buildPartsDeliveryRecord(rawParts),
   });
 }
 
