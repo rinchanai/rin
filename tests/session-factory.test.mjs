@@ -11,11 +11,11 @@ const rootDir = path.resolve(
 );
 const factory = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "session", "factory.js"))
-    .href,
+    .href
 );
 const listing = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "session", "listing.js"))
-    .href,
+    .href
 );
 
 test("listBoundSessions reads only canonical root sessions", async () => {
@@ -50,7 +50,10 @@ test("listBoundSessions reads only canonical root sessions", async () => {
     },
   });
 
-  assert.deepEqual(sessions.map((item) => item.id), ["newer", "older"]);
+  assert.deepEqual(
+    sessions.map((item) => item.id),
+    ["newer", "older"],
+  );
   assert.deepEqual(listed, [sessionDir]);
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
@@ -128,18 +131,30 @@ test("session listing helpers derive presentation and active state consistently"
       isActive: true,
     },
   );
-  assert.deepEqual(listing.describeBoundSessions([session], "/tmp/session-1.jsonl"), [
-    {
-      ...session,
-      title: "Hello",
-      subtitle: "2026-04-18T00:00:00.000Z",
-      isActive: true,
-    },
-  ]);
+  assert.deepEqual(
+    listing.describeBoundSessions([session], "/tmp/session-1.jsonl"),
+    [
+      {
+        ...session,
+        title: "Hello",
+        subtitle: "2026-04-18T00:00:00.000Z",
+        isActive: true,
+      },
+    ],
+  );
   assert.equal(
     listing.describeBoundSession({
       id: "legacy-session",
       title: "Legacy title",
+      subtitle: "2026-04-19T00:00:00.000Z",
+    })?.subtitle,
+    "2026-04-19T00:00:00.000Z",
+  );
+  assert.equal(
+    listing.describeBoundSession({
+      id: "legacy-session",
+      title: "Legacy title",
+      modified: "not-a-date",
       subtitle: "2026-04-19T00:00:00.000Z",
     })?.subtitle,
     "2026-04-19T00:00:00.000Z",
@@ -171,16 +186,23 @@ test("session listing normalization trims legacy values and preserves normalized
     modified: new Date("2026-04-18T00:00:00.000Z"),
   });
   assert.equal(listing.normalizeBoundSessionListItem(normalized), normalized);
+  assert.equal(
+    listing.normalizeBoundSessionListItem({ id: " legacy-session " })
+      ?.firstMessage,
+    "legacy-session",
+  );
   assert.deepEqual(
-    listing.normalizeBoundSessionList([
-      normalized,
-      {
-        id: "session-1-copy",
-        path: " /tmp/session-1.jsonl ",
-        firstMessage: "Other",
-        modified: "2026-04-19T00:00:00.000Z",
-      },
-    ]).map((item) => item.id),
+    listing
+      .normalizeBoundSessionList([
+        normalized,
+        {
+          id: "session-1-copy",
+          path: " /tmp/session-1.jsonl ",
+          firstMessage: "Other",
+          modified: "2026-04-19T00:00:00.000Z",
+        },
+      ])
+      .map((item) => item.id),
     ["session-1"],
   );
 });

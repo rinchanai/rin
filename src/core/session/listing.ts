@@ -23,14 +23,14 @@ export type BoundSessionListPresentation = BoundSessionListItem & {
 function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      typeof (value as BoundSessionListItem).id === "string" &&
-      typeof (value as BoundSessionListItem).path === "string" &&
-      ((value as BoundSessionListItem).name === undefined ||
-        typeof (value as BoundSessionListItem).name === "string") &&
-      typeof (value as BoundSessionListItem).firstMessage === "string" &&
-      (value as BoundSessionListItem).modified instanceof Date &&
-      Number.isFinite((value as BoundSessionListItem).modified.getTime()),
+    typeof value === "object" &&
+    typeof (value as BoundSessionListItem).id === "string" &&
+    typeof (value as BoundSessionListItem).path === "string" &&
+    ((value as BoundSessionListItem).name === undefined ||
+      typeof (value as BoundSessionListItem).name === "string") &&
+    typeof (value as BoundSessionListItem).firstMessage === "string" &&
+    (value as BoundSessionListItem).modified instanceof Date &&
+    Number.isFinite((value as BoundSessionListItem).modified.getTime()),
   );
 }
 
@@ -42,12 +42,27 @@ function firstNormalizedSessionText(...values: unknown[]) {
   return "";
 }
 
+function resolveNormalizedSessionPath(sessionPath: string) {
+  return path.resolve(sessionPath);
+}
+
+function firstNormalizedSessionDate(...values: unknown[]) {
+  for (const value of values) {
+    const candidate =
+      value instanceof Date
+        ? value
+        : new Date(firstNormalizedSessionText(value));
+    if (Number.isFinite(candidate.getTime())) return candidate;
+  }
+  return undefined;
+}
+
 function normalizeModified(value: unknown, fallback?: unknown) {
-  const candidate =
-    value instanceof Date
-      ? value
-      : new Date(firstNormalizedSessionText(value, fallback) || Date.now());
-  return Number.isFinite(candidate.getTime()) ? candidate : new Date();
+  return firstNormalizedSessionDate(value, fallback) || new Date();
+}
+
+function resolveModifiedSubtitle(value: unknown, fallback?: unknown) {
+  return firstNormalizedSessionDate(value, fallback)?.toISOString();
 }
 
 export function normalizeBoundSessionListItem(
@@ -65,19 +80,20 @@ export function normalizeBoundSessionListItem(
       session?.firstMessage,
       session?.title,
       id,
-      DEFAULT_SESSION_DISPLAY_NAME,
     ),
     modified: normalizeModified(session?.modified, session?.subtitle),
   };
 }
 
-export function normalizeBoundSessionList(sessions: any): BoundSessionListItem[] {
+export function normalizeBoundSessionList(
+  sessions: any,
+): BoundSessionListItem[] {
   const seen = new Set<string>();
   return (Array.isArray(sessions) ? sessions : [])
     .map(normalizeBoundSessionListItem)
     .filter((item): item is BoundSessionListItem => Boolean(item))
     .filter((item) => {
-      const resolvedPath = path.resolve(item.path);
+      const resolvedPath = resolveNormalizedSessionPath(item.path);
       if (seen.has(resolvedPath)) return false;
       seen.add(resolvedPath);
       return true;
@@ -100,11 +116,13 @@ function resolveBoundSessionSubtitle(
   session: any,
   normalized: BoundSessionListItem | null | undefined,
 ): string | undefined {
-  const text = firstNormalizedSessionText(
-    typeof session?.modified === "string" ? session.modified : "",
-    typeof session?.subtitle === "string" ? session.subtitle : "",
+  return (
+    resolveModifiedSubtitle(session?.modified, normalized?.modified) ||
+    firstNormalizedSessionText(
+      typeof session?.subtitle === "string" ? session.subtitle : "",
+    ) ||
+    normalized?.modified.toISOString()
   );
-  return text || normalized?.modified.toISOString();
 }
 
 function isNormalizedBoundSessionActive(
@@ -112,7 +130,10 @@ function isNormalizedBoundSessionActive(
   normalizedActivePath?: string,
 ): boolean {
   if (!session || !normalizedActivePath) return false;
-  return path.resolve(session.path) === path.resolve(normalizedActivePath);
+  return (
+    resolveNormalizedSessionPath(session.path) ===
+    resolveNormalizedSessionPath(normalizedActivePath)
+  );
 }
 
 function presentNormalizedBoundSession(
@@ -151,13 +172,18 @@ export function describeBoundSessions(
 }
 
 export function getBoundSessionDisplayTitle(session: any): string {
-  return resolveBoundSessionDisplayTitle(normalizeBoundSessionListItem(session));
+  return resolveBoundSessionDisplayTitle(
+    normalizeBoundSessionListItem(session),
+  );
 }
 
 export function getBoundSessionSubtitle(session: any): string | undefined {
   return describeBoundSession(session)?.subtitle;
 }
 
-export function isActiveBoundSession(session: any, activePath?: string): boolean {
+export function isActiveBoundSession(
+  session: any,
+  activePath?: string,
+): boolean {
   return describeBoundSession(session, activePath)?.isActive || false;
 }
