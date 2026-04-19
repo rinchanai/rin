@@ -140,3 +140,23 @@ test("chat helpers persist inbound messages with the shared normalized store sha
     assert.deepEqual(stored?.elements, expected.elements);
   });
 });
+
+test("chat inbound log input reuses stored text fallback order", () => {
+  const logEntry = normalization.buildInboundChatLogInput(
+    {
+      platform: "telegram",
+      selfId: "8623230033",
+      channelId: "-100123",
+      userId: "owner-1",
+      messageId: "m-fallback",
+      content: "  raw fallback  ",
+      stripped: { content: "  stripped fallback  " },
+    },
+    [],
+    { timestamp: "2026-04-18T13:00:00.000Z" },
+  );
+
+  assert.equal(logEntry?.chatKey, "telegram/8623230033:-100123");
+  assert.equal(logEntry?.text, "stripped fallback");
+  assert.equal(logEntry?.timestamp, "2026-04-18T13:00:00.000Z");
+});

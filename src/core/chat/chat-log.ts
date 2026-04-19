@@ -1,6 +1,8 @@
 import {
   chatMessageLogPath,
   listChatMessagesByChatAndDate,
+  normalizeStoredChatMessageRole,
+  projectStoredChatMessageToChatLog,
   upsertChatMessage,
   type StoredChatMessage,
 } from "./message-store.js";
@@ -22,38 +24,15 @@ export type ChatLogEntry = {
   nickname?: string;
 };
 
-function normalizeRole(value: unknown) {
-  const text = safeString(value).trim();
-  return text === "user" || text === "assistant"
-    ? (text as "user" | "assistant")
-    : null;
-}
-
-function normalizeStoredText(record: StoredChatMessage) {
-  return safeString(
-    record.text || record.strippedContent || record.rawContent,
-  ).trim();
-}
-
 function storedMessageToChatLogEntry(
   record: StoredChatMessage,
 ): ChatLogEntry | null {
-  const role = normalizeRole(record.role);
-  const text = normalizeStoredText(record);
-  if (!role || !text) return null;
-  const session = normalizeSessionRef(record);
+  const projected = projectStoredChatMessageToChatLog(record);
+  if (!projected) return null;
   return {
     version: 1,
-    timestamp: safeString(record.receivedAt || record.processedAt || "").trim(),
     chatKey: record.chatKey,
-    role,
-    text,
-    messageId: safeString(record.messageId).trim() || undefined,
-    replyToMessageId: safeString(record.replyToMessageId).trim() || undefined,
-    sessionId: session.sessionId,
-    sessionFile: session.sessionFile,
-    userId: safeString(record.userId).trim() || undefined,
-    nickname: safeString(record.nickname).trim() || undefined,
+    ...projected,
   };
 }
 
@@ -63,7 +42,7 @@ function buildStoredMessageFromChatLogEntry(
   const chatKey = safeString(input.chatKey).trim();
   const parsed = parseChatKey(chatKey);
   if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const role = normalizeRole(input.role);
+  const role = normalizeStoredChatMessageRole(input.role);
   const text = safeString(input.text).trim();
   const messageId = safeString(input.messageId).trim();
   const timestamp = safeString(

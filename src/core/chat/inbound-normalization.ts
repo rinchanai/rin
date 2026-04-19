@@ -1,5 +1,6 @@
 import {
   normalizeElementSummary,
+  normalizeStoredChatMessageText,
   type StoredChatMessage,
 } from "./message-store.js";
 import { composeChatKey } from "./support.js";
@@ -263,9 +264,7 @@ export function buildInboundChatLogInput(
     receivedAt: options.timestamp,
   });
   if (!inbound) return null;
-  const text = safeString(
-    inbound.text || inbound.strippedContent || inbound.rawContent,
-  ).trim();
+  const text = normalizeStoredChatMessageText(inbound);
   if (!text) return null;
   return {
     timestamp: safeString(options.timestamp).trim() || inbound.receivedAt,

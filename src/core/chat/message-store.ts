@@ -11,6 +11,7 @@ import {
 } from "./message-store-layout.js";
 import { normalizeLocalDateOnly } from "./date.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
+import { normalizeSessionRef } from "../session/ref.js";
 import { safeString } from "../text-utils.js";
 
 export type StoredChatMessage = {
@@ -269,20 +270,29 @@ function updateChatDateIndexRecord(
   writeChatDateIndex(layout, chatKey, nextDate, nextRecordKeys);
 }
 
-function storedMessageDate(
+export function storedChatMessageTimestamp(
   record:
     | Pick<StoredChatMessage, "receivedAt" | "processedAt">
     | null
     | undefined,
 ) {
   if (!record) return "";
-  return normalizeLocalDateOnly(record.receivedAt || record.processedAt || "");
+  return safeString(record.receivedAt || record.processedAt || "").trim();
+}
+
+function storedMessageDate(
+  record:
+    | Pick<StoredChatMessage, "receivedAt" | "processedAt">
+    | null
+    | undefined,
+) {
+  return normalizeLocalDateOnly(storedChatMessageTimestamp(record));
 }
 
 function sortChatMessages(messages: StoredChatMessage[]) {
   return [...messages].sort((a, b) => {
-    const left = Date.parse(a.receivedAt || a.processedAt || "") || 0;
-    const right = Date.parse(b.receivedAt || b.processedAt || "") || 0;
+    const left = Date.parse(storedChatMessageTimestamp(a)) || 0;
+    const right = Date.parse(storedChatMessageTimestamp(b)) || 0;
     if (left !== right) return left - right;
     return a.recordKey.localeCompare(b.recordKey);
   });
@@ -355,11 +365,55 @@ function syncChatDateIndex(
   updateChatDateIndexRecord(layout, nextChatKey, nextDate, record.recordKey, "add");
 }
 
-function normalizeStoredRole(value: unknown) {
+export function normalizeStoredChatMessageRole(value: unknown) {
   const text = safeString(value).trim();
   return text === "user" || text === "assistant"
     ? (text as "user" | "assistant")
     : undefined;
+}
+
+export function normalizeStoredChatMessageText(
+  record:
+    | Pick<StoredChatMessage, "text" | "strippedContent" | "rawContent">
+    | null
+    | undefined,
+) {
+  if (!record) return "";
+  return safeString(
+    record.text || record.strippedContent || record.rawContent,
+  ).trim();
+}
+
+export type StoredChatLogProjection = {
+  timestamp: string;
+  role: "user" | "assistant";
+  text: string;
+  messageId?: string;
+  replyToMessageId?: string;
+  sessionId?: string;
+  sessionFile?: string;
+  userId?: string;
+  nickname?: string;
+};
+
+export function projectStoredChatMessageToChatLog(
+  record: StoredChatMessage,
+): StoredChatLogProjection | null {
+  const role = normalizeStoredChatMessageRole(record.role);
+  const text = normalizeStoredChatMessageText(record);
+  if (!role || !text) return null;
+  const session = normalizeSessionRef(record);
+  return {
+    timestamp: storedChatMessageTimestamp(record),
+    role,
+    text,
+    messageId: safeString(record.messageId).trim() || undefined,
+    replyToMessageId: safeString(record.replyToMessageId).trim() || undefined,
+    sessionId: session.sessionId,
+    sessionFile: session.sessionFile,
+    userId: safeString(record.userId).trim() || undefined,
+    nickname: safeString(record.nickname).trim() || undefined,
+  };
 }
 
 export function buildChatMessageRecordKey(chatKey: string, messageId: string) {
@@ -378,7 +432,7 @@ export function buildStoredChatMessage(
     version: 1 as const,
     recordKey: buildChatMessageRecordKey(chatKey, messageId),
     messageId,
-    role: normalizeStoredRole(input.role),
+    role: normalizeStoredChatMessageRole(input.role),
     chatKey,
   };
 }
@@ -502,7 +556,7 @@ function updateChatMessageWithLayout(
     recordKey: current.recordKey,
     chatKey: current.chatKey,
     messageId: current.messageId,
-    role: normalizeStoredRole(patch.role) || current.role,
+    role: normalizeStoredChatMessageRole(patch.role) || current.role,
     platform: current.platform,
     chatId: current.chatId,
   };

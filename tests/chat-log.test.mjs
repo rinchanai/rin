@@ -92,3 +92,41 @@ test("chat chat log appends into unified message store and reads one day chat hi
     assert.match(chatLog.formatChatLog(entries), /assistant: Good morning!/);
   });
 });
+
+test("chat chat log reuses message-store projection for fallback text and timestamp fields", async () => {
+  await withTempRoot(async (root) => {
+    messageStore.saveChatMessage(root, {
+      messageId: "m-fallback",
+      role: "assistant",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "",
+      processedAt: "2026-04-04T12:00:05.000Z",
+      sessionId: " session-1 ",
+      sessionFile: " /tmp/demo-session.jsonl ",
+      text: "",
+      rawContent: "  from raw content  ",
+      strippedContent: "",
+    });
+
+    const { entries } = chatLog.readChatLog(root, "telegram/123:456", "2026-04-04");
+    assert.deepEqual(entries, [
+      {
+        version: 1,
+        timestamp: "2026-04-04T12:00:05.000Z",
+        chatKey: "telegram/123:456",
+        role: "assistant",
+        text: "from raw content",
+        messageId: "m-fallback",
+        replyToMessageId: undefined,
+        sessionId: "session-1",
+        sessionFile: "/tmp/demo-session.jsonl",
+        userId: undefined,
+        nickname: undefined,
+      },
+    ]);
+  });
+});
