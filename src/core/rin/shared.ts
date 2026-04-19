@@ -5,6 +5,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { safeString } from "../text-utils.js";
 
 import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
+import { readJsonFile } from "../platform/fs.js";
 import {
   buildDaemonSocketProbeScript,
   buildDaemonStatusScript,
@@ -70,7 +71,7 @@ export function loadInstallConfigForHome(home = os.homedir()): InstallConfig {
     loadInstallRecordFromCandidates(
       home,
       installRecordCandidatesForHome(home),
-      (filePath) => JSON.parse(fs.readFileSync(filePath, "utf8")),
+      (filePath) => readJsonFile(filePath, null),
     ) || {}
   );
 }

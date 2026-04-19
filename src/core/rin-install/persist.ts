@@ -4,6 +4,7 @@ import {
   dropLegacyChatSettings,
   normalizeStoredChatSettings,
 } from "../chat/settings.js";
+import { isNonArrayObject, loadFirstValidCandidate } from "./candidate-loader.js";
 import {
   defaultHomeForUser,
   installAuthPath,
@@ -121,18 +122,13 @@ export function reconcileInstallerManifest(
     legacyManifestPath,
     legacyLocatorManifestPath,
   } = manifestPaths;
-  let manifestJson: any = {};
-  for (const filePath of manifestPaths.recoveryPaths) {
-    const current = deps.readInstallerJson<any>(
-      filePath,
-      null,
-      Boolean(options.elevated),
-    );
-    if (current && typeof current === "object") {
-      manifestJson = current;
-      break;
-    }
-  }
+  const manifestJson: any =
+    loadFirstValidCandidate(
+      manifestPaths.recoveryPaths,
+      (filePath) =>
+        deps.readInstallerJson<any>(filePath, null, Boolean(options.elevated)),
+      (value) => (isNonArrayObject(value) ? value : null),
+    ) || {};
   manifestJson.targetUser = options.targetUser;
   manifestJson.installDir = options.installDir;
   if (options.provider) manifestJson.defaultProvider = options.provider;

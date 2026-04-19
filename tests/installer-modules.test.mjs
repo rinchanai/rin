@@ -89,18 +89,27 @@ test("install-record normalizes launcher metadata and installer manifests", () =
       installDir: "/srv/rin-demo",
     },
   );
+
+  const readCalls = [];
   assert.deepEqual(
     installRecord.loadInstallRecordFromCandidates(
       "/home/demo",
-      ["missing", "manifest"],
-      (filePath) =>
-        filePath === "manifest" ? { targetUser: "candidate-demo" } : null,
+      ["broken", "empty", "manifest", "unused"],
+      (filePath) => {
+        readCalls.push(filePath);
+        if (filePath === "broken") throw new Error("broken json");
+        if (filePath === "empty") return [];
+        if (filePath === "manifest") return { targetUser: "candidate-demo" };
+        return { targetUser: "unused-demo" };
+      },
     ),
     {
       defaultTargetUser: "candidate-demo",
       defaultInstallDir: "/home/demo/.rin",
     },
   );
+  assert.deepEqual(readCalls, ["broken", "empty", "manifest"]);
+
   assert.deepEqual(
     installRecord.resolveInstallRecordTargetFromCandidates(
       "/home/demo",
@@ -158,6 +167,50 @@ test("persist reconcileInstallerManifest writes primary and locator manifests fo
     assert.equal(writes[0].value.defaultModel, "gpt");
     assert.equal(writes[0].value.defaultThinkingLevel, "medium");
     assert.equal("koishi" in writes[0].value, false);
+  });
+});
+
+test("persist reconcileInstallerManifest skips malformed recovery candidates before reusing a prior manifest", async () => {
+  await withTempDir(async (dir) => {
+    const installDir = path.join(dir, "srv", "rin-demo");
+    const ownerHome = path.join(dir, "home", "demo");
+    const writes = [];
+    const readCalls = [];
+
+    persist.reconcileInstallerManifest(
+      {
+        targetUser: "demo",
+        installDir,
+        provider: "openai",
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: async () => {},
+        readInstallerJson: (filePath, fallback) => {
+          readCalls.push(filePath);
+          if (filePath === path.join(installDir, "installer.json")) return [];
+          if (filePath === path.join(ownerHome, ".rin", "installer.json")) {
+            return { preserved: true, defaultModel: "existing-model" };
+          }
+          return fallback;
+        },
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        runPrivileged: () => {},
+      },
+    );
+
+    assert.deepEqual(readCalls, [
+      path.join(installDir, "installer.json"),
+      path.join(ownerHome, ".rin", "installer.json"),
+    ]);
+    assert.equal(writes.length, 2);
+    for (const entry of writes) {
+      assert.equal(entry.value.preserved, true);
+      assert.equal(entry.value.defaultModel, "existing-model");
+      assert.equal(entry.value.defaultProvider, "openai");
+    }
   });
 });
 

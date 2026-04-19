@@ -1,3 +1,4 @@
+import { loadFirstValidCandidate } from "./candidate-loader.js";
 import { defaultInstallDirForHome } from "./paths.js";
 
 export type InstallRecord = {
@@ -47,13 +48,9 @@ export function loadInstallRecordFromCandidates(
   filePaths: string[],
   readCandidate: (filePath: string) => unknown,
 ) {
-  for (const filePath of filePaths) {
-    try {
-      const record = normalizeInstallRecord(home, readCandidate(filePath));
-      if (record) return record;
-    } catch {}
-  }
-  return null;
+  return loadFirstValidCandidate(filePaths, readCandidate, (value) =>
+    normalizeInstallRecord(home, value),
+  );
 }
 
 export function resolveInstallRecordTarget(
