@@ -127,6 +127,46 @@ test("resolveDaemonEntryForInstall falls back to legacy installed daemon entry a
   });
 });
 
+test("refreshManagedServiceFiles updates existing managed units without creating missing candidates", async () => {
+  if (process.platform !== "linux") return;
+
+  await withTempDir(async (dir) => {
+    const installDir = path.join(dir, "install");
+    const currentDaemon = path.join(
+      installDir,
+      "app",
+      "current",
+      "dist",
+      "app",
+      "rin-daemon",
+      "daemon.js",
+    );
+    const targetHome = path.join(dir, "home");
+    const unitDir = path.join(targetHome, ".config", "systemd", "user");
+    const currentUnit = path.join(unitDir, "rin-daemon-demo.user-test.service");
+    const legacyUnit = path.join(unitDir, "rin-daemon.service");
+
+    await fs.mkdir(path.dirname(currentDaemon), { recursive: true });
+    await fs.writeFile(currentDaemon, "export {};\n", "utf8");
+    await fs.mkdir(unitDir, { recursive: true });
+    await fs.writeFile(legacyUnit, "stale\n", "utf8");
+
+    service.refreshManagedServiceFiles("demo.user+test", installDir, false, {
+      findSystemUser: () => ({ gid: 123 }),
+      targetHomeForUser: () => targetHome,
+    });
+
+    const spec = service.buildSystemdUserService(
+      "demo.user+test",
+      installDir,
+      () => targetHome,
+    );
+    assert.equal(await fs.readFile(legacyUnit, "utf8"), spec.service);
+    assert.equal((await fs.stat(legacyUnit)).mode & 0o777, 0o644);
+    await assert.rejects(fs.access(currentUnit), /ENOENT/);
+  });
+});
+
 test("systemdUserContext keeps managed unit candidates ordered", () => {
   const context = service.systemdUserContext("demo.user+test", {
     findSystemUser: () => ({ uid: -1 }),

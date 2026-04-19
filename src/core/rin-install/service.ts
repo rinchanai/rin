@@ -101,6 +101,63 @@ function captureCommandForTargetUser(
   });
 }
 
+const MANAGED_SERVICE_FILE_MODE = 0o644;
+
+function writeManagedServiceFile(
+  filePath: string,
+  value: string,
+  options: {
+    elevated?: boolean;
+    ownerUser?: string;
+    ownerGroup?: string | number;
+    mode?: number;
+  } = {},
+) {
+  const {
+    elevated = false,
+    ownerUser,
+    ownerGroup,
+    mode = MANAGED_SERVICE_FILE_MODE,
+  } = options;
+  if (elevated) {
+    writeTextFileWithPrivilege(filePath, value, ownerUser, ownerGroup, mode);
+    return;
+  }
+  writeTextFile(filePath, value, mode);
+}
+
+function runSystemdUserCommand(
+  targetUser: string,
+  context: {
+    systemctl: string;
+    userEnv: Record<string, string>;
+  },
+  args: string[],
+  elevated = false,
+) {
+  const commandArgs = ["--user", ...args];
+  if (elevated) {
+    runCommandAsUser(
+      targetUser,
+      context.systemctl,
+      commandArgs,
+      context.userEnv,
+    );
+    return;
+  }
+  execFileSync(context.systemctl, commandArgs, {
+    stdio: "inherit",
+    env: { ...process.env, ...context.userEnv },
+  });
+}
+
+function managedSystemdUnitPaths(targetUser: string, targetHome: string) {
+  const unitDir = systemdUserUnitDirForHome(targetHome);
+  return managedSystemdUnitCandidates(targetUser).map((unit) =>
+    path.join(unitDir, unit),
+  );
+}
+
 export function resolveDaemonEntryForInstall(installDir: string) {
   const candidates = installedAppEntryCandidates(installDir, "rin-daemon");
   for (const candidate of candidates) {
@@ -147,13 +204,11 @@ export function installLaunchdAgent(
   if (elevated) {
     runPrivileged("mkdir", ["-p", path.dirname(plistPath)]);
     runPrivileged("mkdir", ["-p", path.dirname(stdoutPath)]);
-    writeTextFileWithPrivilege(
-      plistPath,
-      plist,
-      targetUser,
-      target?.gid,
-      0o644,
-    );
+    writeManagedServiceFile(plistPath, plist, {
+      elevated: true,
+      ownerUser: targetUser,
+      ownerGroup: target?.gid,
+    });
     try {
       runPrivileged("launchctl", ["bootout", `gui/${uid}`, plistPath]);
     } catch {}
@@ -164,7 +219,7 @@ export function installLaunchdAgent(
   } else {
     ensureDir(path.dirname(plistPath));
     ensureDir(path.dirname(stdoutPath));
-    writeTextFile(plistPath, plist, 0o644);
+    writeManagedServiceFile(plistPath, plist);
     try {
       execFileSync("launchctl", ["bootout", `gui/${uid}`, plistPath], {
         stdio: "ignore",
@@ -226,40 +281,28 @@ export function installSystemdUserService(
     ["/usr/bin/loginctl", "/bin/loginctl"],
     "loginctl",
   );
+  writeManagedServiceFile(spec.servicePath, spec.service, {
+    elevated,
+    ownerUser: targetUser,
+    ownerGroup: target?.gid,
+  });
   if (elevated) {
-    writeTextFileWithPrivilege(
-      spec.servicePath,
-      spec.service,
-      targetUser,
-      target?.gid,
-      0o644,
-    );
     try {
       runPrivileged(loginctl, ["enable-linger", targetUser]);
     } catch {}
-    runCommandAsUser(
-      targetUser,
-      systemctl,
-      ["--user", "daemon-reload"],
-      userEnv,
-    );
-    runCommandAsUser(
-      targetUser,
-      systemctl,
-      ["--user", "enable", "--now", spec.label],
-      userEnv,
-    );
-  } else {
-    writeTextFile(spec.servicePath, spec.service, 0o644);
-    execFileSync(systemctl, ["--user", "daemon-reload"], {
-      stdio: "inherit",
-      env: { ...process.env, ...userEnv },
-    });
-    execFileSync(systemctl, ["--user", "enable", "--now", spec.label], {
-      stdio: "inherit",
-      env: { ...process.env, ...userEnv },
-    });
   }
+  runSystemdUserCommand(
+    targetUser,
+    { systemctl, userEnv },
+    ["daemon-reload"],
+    elevated,
+  );
+  runSystemdUserCommand(
+    targetUser,
+    { systemctl, userEnv },
+    ["enable", "--now", spec.label],
+    elevated,
+  );
   return spec;
 }
 
@@ -273,28 +316,22 @@ export function refreshManagedServiceFiles(
   },
 ) {
   if (process.platform !== "linux") return;
-  const targetHome = deps.targetHomeForUser(targetUser);
-  const unitDir = systemdUserUnitDirForHome(targetHome);
-  const candidateFiles = managedSystemdUnitCandidates(targetUser).map((unit) =>
-    path.join(unitDir, unit),
-  );
   const spec = buildSystemdUserService(
     targetUser,
     installDir,
     deps.targetHomeForUser,
   );
   const ownerGroup = deps.findSystemUser(targetUser)?.gid;
-  for (const filePath of candidateFiles) {
+  for (const filePath of managedSystemdUnitPaths(
+    targetUser,
+    deps.targetHomeForUser(targetUser),
+  )) {
     if (!fs.existsSync(filePath)) continue;
-    if (elevated)
-      writeTextFileWithPrivilege(
-        filePath,
-        spec.service,
-        targetUser,
-        ownerGroup,
-        0o644,
-      );
-    else writeTextFile(filePath, spec.service, 0o644);
+    writeManagedServiceFile(filePath, spec.service, {
+      elevated,
+      ownerUser: targetUser,
+      ownerGroup,
+    });
   }
 }
 
@@ -400,38 +437,22 @@ export function reconcileSystemdUserService(
   if (process.platform !== "linux") return false;
   const { systemctl, userEnv, units } = systemdUserContext(targetUser, deps);
   if (!systemctl) return false;
-  if (elevated) {
-    return Boolean(
-      tryManagedSystemdAction(units, {
-        daemonReload: () =>
-          runCommandAsUser(
-            targetUser,
-            systemctl,
-            ["--user", "daemon-reload"],
-            userEnv,
-          ),
-        runAction: (unit) =>
-          runCommandAsUser(
-            targetUser,
-            systemctl,
-            ["--user", action, unit],
-            userEnv,
-          ),
-      }),
-    );
-  }
   return Boolean(
     tryManagedSystemdAction(units, {
       daemonReload: () =>
-        execFileSync(systemctl, ["--user", "daemon-reload"], {
-          stdio: "inherit",
-          env: { ...process.env, ...userEnv },
-        }),
+        runSystemdUserCommand(
+          targetUser,
+          { systemctl, userEnv },
+          ["daemon-reload"],
+          elevated,
+        ),
       runAction: (unit) =>
-        execFileSync(systemctl, ["--user", action, unit], {
-          stdio: "inherit",
-          env: { ...process.env, ...userEnv },
-        }),
+        runSystemdUserCommand(
+          targetUser,
+          { systemctl, userEnv },
+          [action, unit],
+          elevated,
+        ),
     }),
   );
 }
