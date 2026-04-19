@@ -165,6 +165,79 @@ test("token usage store ignores duplicate event ids", async () => {
   });
 });
 
+test("token usage store writes structured event fields through one DB mapping", async () => {
+  await withTempRoot(async (root) => {
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-db-row",
+        timestamp: "2026-04-10T09:20:00.000Z",
+        sessionId: "s1",
+        sessionFile: "/tmp/demo.jsonl",
+        sessionName: "demo session",
+        sessionPersisted: true,
+        cwd: "/work/demo",
+        eventType: "message_end",
+        source: "chat",
+        trigger: "manual",
+        turnIndex: 3,
+        phase: "turn",
+        provider: "openai",
+        model: "gpt-5.4",
+        thinkingLevel: "medium",
+        messageId: "msg-1",
+        messageRole: "assistant",
+        stopReason: "stop",
+        toolCallId: "tool-call-1",
+        toolName: "read",
+        toolCallCount: 2,
+        toolNames: ["write", "read", "read"],
+        capabilityKind: "assistant_tool_call",
+        capabilityKey: "tools:read+write",
+        inputTokens: 10,
+        outputTokens: 4,
+        cacheReadTokens: 2,
+        cacheWriteTokens: 1,
+        totalTokens: 17,
+        costInput: 0.01,
+        costOutput: 0.02,
+        costCacheRead: 0.003,
+        costCacheWrite: 0.004,
+        costTotal: 0.037,
+        contextTokens: 128,
+        isError: true,
+        metadata: { origin: "test", nested: { ok: true } },
+      },
+      root,
+    );
+
+    const db = store.openTokenUsageDb(root);
+    const row = db
+      .prepare(
+        `
+          SELECT
+            session_persisted,
+            tool_names_json,
+            is_error,
+            metadata_json,
+            total_tokens,
+            cost_total
+          FROM telemetry_events
+          WHERE id = ?
+        `,
+      )
+      .get("evt-db-row");
+
+    assert.equal(row.session_persisted, 1);
+    assert.equal(row.is_error, 1);
+    assert.equal(row.total_tokens, 17);
+    assert.equal(row.cost_total, 0.037);
+    assert.deepEqual(JSON.parse(row.tool_names_json), ["read", "write"]);
+    assert.deepEqual(JSON.parse(row.metadata_json), {
+      origin: "test",
+      nested: { ok: true },
+    });
+  });
+});
 
 test("token usage store derives stable ids and tolerates unserializable metadata", async () => {
   await withTempRoot(async (root) => {

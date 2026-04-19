@@ -93,6 +93,76 @@ const OVERVIEW_INT_FIELDS = [
   "model_count",
 ] as const;
 const OVERVIEW_FLOAT_FIELDS = ["cost_total"] as const;
+const TELEMETRY_EVENT_INSERT_COLUMNS = [
+  "id",
+  "timestamp",
+  "session_id",
+  "session_file",
+  "session_name",
+  "session_persisted",
+  "cwd",
+  "event_type",
+  "source",
+  "trigger",
+  "turn_index",
+  "phase",
+  "provider",
+  "model",
+  "thinking_level",
+  "message_id",
+  "message_role",
+  "stop_reason",
+  "tool_call_id",
+  "tool_name",
+  "tool_call_count",
+  "tool_names_json",
+  "capability_kind",
+  "capability_key",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cache_write_tokens",
+  "total_tokens",
+  "cost_input",
+  "cost_output",
+  "cost_cache_read",
+  "cost_cache_write",
+  "cost_total",
+  "context_tokens",
+  "is_error",
+  "metadata_json",
+] as const;
+const TELEMETRY_EVENT_INSERT_SQL = `
+  INSERT OR IGNORE INTO telemetry_events (
+    ${TELEMETRY_EVENT_INSERT_COLUMNS.join(",\n    ")}
+  ) VALUES (
+    ${TELEMETRY_EVENT_INSERT_COLUMNS.map((column) => `@${column}`).join(",\n    ")}
+  )
+`;
+const RECENT_EVENT_SELECT_COLUMNS = [
+  "timestamp",
+  "session_id",
+  "session_name",
+  "session_file",
+  "source",
+  "event_type",
+  "provider",
+  "model",
+  "thinking_level",
+  "message_role",
+  "stop_reason",
+  "tool_name",
+  "capability_kind",
+  "capability_key",
+  "input_tokens",
+  "output_tokens",
+  "cache_read_tokens",
+  "cache_write_tokens",
+  "total_tokens",
+  "cost_total",
+  "turn_index",
+  "is_error",
+] as const;
 
 export type NormalizedTokenTelemetryEvent = {
   id: string;
@@ -422,95 +492,8 @@ export function normalizeTokenTelemetryEvent(
   };
 }
 
-export function appendTokenTelemetryEvent(
-  event: TokenTelemetryEvent,
-  agentDir = "",
-): { id: string } {
-  const db = openTokenUsageDb(agentDir);
-  const normalized = normalizeTokenTelemetryEvent(event);
-  const insert = prepareCached(
-    db,
-    `
-    INSERT OR IGNORE INTO telemetry_events (
-      id,
-      timestamp,
-      session_id,
-      session_file,
-      session_name,
-      session_persisted,
-      cwd,
-      event_type,
-      source,
-      trigger,
-      turn_index,
-      phase,
-      provider,
-      model,
-      thinking_level,
-      message_id,
-      message_role,
-      stop_reason,
-      tool_call_id,
-      tool_name,
-      tool_call_count,
-      tool_names_json,
-      capability_kind,
-      capability_key,
-      input_tokens,
-      output_tokens,
-      cache_read_tokens,
-      cache_write_tokens,
-      total_tokens,
-      cost_input,
-      cost_output,
-      cost_cache_read,
-      cost_cache_write,
-      cost_total,
-      context_tokens,
-      is_error,
-      metadata_json
-    ) VALUES (
-      @id,
-      @timestamp,
-      @session_id,
-      @session_file,
-      @session_name,
-      @session_persisted,
-      @cwd,
-      @event_type,
-      @source,
-      @trigger,
-      @turn_index,
-      @phase,
-      @provider,
-      @model,
-      @thinking_level,
-      @message_id,
-      @message_role,
-      @stop_reason,
-      @tool_call_id,
-      @tool_name,
-      @tool_call_count,
-      @tool_names_json,
-      @capability_kind,
-      @capability_key,
-      @input_tokens,
-      @output_tokens,
-      @cache_read_tokens,
-      @cache_write_tokens,
-      @total_tokens,
-      @cost_input,
-      @cost_output,
-      @cost_cache_read,
-      @cost_cache_write,
-      @cost_total,
-      @context_tokens,
-      @is_error,
-      @metadata_json
-    )
-  `,
-  );
-  insert.run({
+function toTelemetryEventDbRow(normalized: NormalizedTokenTelemetryEvent) {
+  return {
     id: normalized.id,
     timestamp: normalized.timestamp,
     session_id: normalized.sessionId || null,
@@ -532,7 +515,9 @@ export function appendTokenTelemetryEvent(
     tool_call_id: normalized.toolCallId || null,
     tool_name: normalized.toolName || null,
     tool_call_count: normalized.toolCallCount,
-    tool_names_json: safeJsonStringify(normalized.toolNames.length ? normalized.toolNames : null),
+    tool_names_json: safeJsonStringify(
+      normalized.toolNames.length ? normalized.toolNames : null,
+    ),
     capability_kind: normalized.capabilityKind || null,
     capability_key: normalized.capabilityKey || null,
     input_tokens: normalized.inputTokens,
@@ -548,7 +533,18 @@ export function appendTokenTelemetryEvent(
     context_tokens: normalized.contextTokens,
     is_error: normalized.isError ? 1 : 0,
     metadata_json: safeJsonStringify(normalized.metadata),
-  });
+  } satisfies Record<(typeof TELEMETRY_EVENT_INSERT_COLUMNS)[number], unknown>;
+}
+
+export function appendTokenTelemetryEvent(
+  event: TokenTelemetryEvent,
+  agentDir = "",
+): { id: string } {
+  const db = openTokenUsageDb(agentDir);
+  const normalized = normalizeTokenTelemetryEvent(event);
+  prepareCached(db, TELEMETRY_EVENT_INSERT_SQL).run(
+    toTelemetryEventDbRow(normalized),
+  );
   return { id: normalized.id };
 }
 
@@ -678,28 +674,7 @@ export function queryTokenUsageEvents(options: TokenUsageQueryOptions = {}) {
     db,
     `
       SELECT
-        timestamp,
-        session_id,
-        session_name,
-        session_file,
-        source,
-        event_type,
-        provider,
-        model,
-        thinking_level,
-        message_role,
-        stop_reason,
-        tool_name,
-        capability_kind,
-        capability_key,
-        input_tokens,
-        output_tokens,
-        cache_read_tokens,
-        cache_write_tokens,
-        total_tokens,
-        cost_total,
-        turn_index,
-        is_error
+        ${RECENT_EVENT_SELECT_COLUMNS.join(",\n        ")}
       FROM telemetry_events
       ${whereSql}
       ORDER BY timestamp DESC
