@@ -7,6 +7,8 @@ export type { TaskResult, UsageStats };
 
 const DEFAULT_MODEL_LABEL = "(default model)";
 const FALLBACK_SESSION_LABEL = "persisted";
+const DEFAULT_PREVIEW_LENGTH = 180;
+const USER_PREVIEW_LENGTH = 220;
 
 export function formatTokens(value: number): string {
   if (!value) return "0";
@@ -74,7 +76,7 @@ export function getTaskModelLabel(
 
 export function getTaskPreview(
   result: Pick<TaskResult, "output" | "errorMessage">,
-  maxLength = 180,
+  maxLength = DEFAULT_PREVIEW_LENGTH,
 ): string {
   const preview = getTaskPrimaryText(result)
     .replace(/\s+/g, " ")
@@ -82,27 +84,65 @@ export function getTaskPreview(
   return `${preview.slice(0, maxLength)}${preview.length > maxLength ? "…" : ""}`;
 }
 
-function buildSingleResultText(result: TaskResult): string {
+function getTaskSessionDetails(
+  result: Pick<
+    TaskResult,
+    "sessionPersisted" | "sessionName" | "sessionId" | "sessionFile"
+  >,
+): string[] {
   const sessionLabel = getTaskSessionLabel(result);
+  if (!sessionLabel) return [];
+  return [
+    `Session: ${sessionLabel}`,
+    result.sessionFile ? `Path: ${result.sessionFile}` : "",
+  ].filter(Boolean);
+}
+
+function buildTaskHeading(
+  result: Pick<
+    TaskResult,
+    | "index"
+    | "status"
+    | "model"
+    | "requestedModel"
+    | "sessionPersisted"
+    | "sessionName"
+    | "sessionId"
+    | "sessionFile"
+  >,
+  options?: {
+    status?: string;
+    sessionFormat?: "equals" | "brackets";
+  },
+): string {
+  const parts = [`${result.index}.`];
+  if (options?.status) parts.push(`[${options.status}]`);
+  parts.push(getTaskModelLabel(result));
+  const sessionLabel = getTaskSessionLabel(result);
+  if (sessionLabel && options?.sessionFormat === "equals") {
+    parts.push(`session=${sessionLabel}`);
+  }
+  if (sessionLabel && options?.sessionFormat === "brackets") {
+    parts.push(`[session: ${sessionLabel}]`);
+  }
+  return parts.join(" ");
+}
+
+function buildSingleResultText(result: TaskResult): string {
+  const sessionDetails = getTaskSessionDetails(result);
   return [
     getTaskPrimaryText(result),
-    sessionLabel
-      ? [
-          "",
-          `Session: ${sessionLabel}`,
-          result.sessionFile ? `Path: ${result.sessionFile}` : "",
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : "",
+    sessionDetails.length > 0 ? sessionDetails.join("\n") : "",
   ]
     .filter(Boolean)
-    .join("\n");
+    .join("\n\n");
 }
 
 export function summarizeTaskResult(result: TaskResult): string {
-  const sessionLabel = getTaskSessionLabel(result);
-  return `${result.index}. [${result.status}] ${getTaskModelLabel(result)}${sessionLabel ? ` session=${sessionLabel}` : ""} — ${getTaskPreview(result)}`;
+  return `${buildTaskHeading(result, {
+    status: result.status,
+    sessionFormat: "equals",
+  })} — ${getTaskPreview(result)}`;
 }
 
 export function buildSubagentAgentText(results: TaskResult[]): string {
@@ -111,15 +151,12 @@ export function buildSubagentAgentText(results: TaskResult[]): string {
   }
 
   return results
-    .map((result) => {
-      const sessionLabel = getTaskSessionLabel(result);
-      return [
-        `${result.index}. ${getTaskModelLabel(result)}${sessionLabel ? ` [session: ${sessionLabel}]` : ""}`,
+    .map((result) =>
+      [
+        buildTaskHeading(result, { sessionFormat: "brackets" }),
         getTaskPrimaryText(result),
-      ]
-        .filter(Boolean)
-        .join("\n\n");
-    })
+      ].join("\n\n"),
+    )
     .join("\n\n");
 }
 
@@ -131,11 +168,11 @@ export function buildSubagentUserText(results: TaskResult[]): string {
 
   return [
     `Parallel subagents finished: ${results.length - failed.length}/${results.length} succeeded`,
-    ...results.map((result) => {
-      const status = result.exitCode === 0 ? "ok" : "failed";
-      const sessionLabel = getTaskSessionLabel(result);
-      const suffix = sessionLabel ? ` [session: ${sessionLabel}]` : "";
-      return `${result.index}. [${status}] ${getTaskModelLabel(result)}${suffix} — ${getTaskPreview(result, 220)}`;
-    }),
+    ...results.map((result) =>
+      `${buildTaskHeading(result, {
+        status: result.exitCode === 0 ? "ok" : "failed",
+        sessionFormat: "brackets",
+      })} — ${getTaskPreview(result, USER_PREVIEW_LENGTH)}`,
+    ),
   ].join("\n\n");
 }

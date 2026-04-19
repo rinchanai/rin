@@ -73,9 +73,10 @@ test("subagent format utils summarize results", () => {
   const userText = formatUtils.buildSubagentUserText([persistedResult]);
   const summary = formatUtils.summarizeTaskResult(persistedResult);
 
-  assert.ok(agentText.includes("hello world"));
-  assert.ok(agentText.includes("Session: auth-review"));
-  assert.ok(agentText.includes("Path: /tmp/auth-review.jsonl"));
+  assert.equal(
+    agentText,
+    "hello world\n\nSession: auth-review\nPath: /tmp/auth-review.jsonl",
+  );
   assert.equal(userText, agentText);
   assert.match(summary, /\[done\] \(default model\) session=auth-review — hello world$/);
   assert.ok(
@@ -145,6 +146,10 @@ test("subagent format utils share persisted fallback labels and final output par
   assert.match(userText, /Parallel subagents finished: 1\/2 succeeded/);
   assert.match(userText, /1\. \[ok\] \(default model\) \[session: persisted\] — first result/);
   assert.match(userText, /2\. \[failed\] openai\/gpt-5 — line one line two/);
+  assert.equal(
+    formatUtils.getTaskPreview({ output: "word ".repeat(60), errorMessage: "" }, 12),
+    "word word wo…",
+  );
   assert.equal(
     formatUtils.getFinalOutput([
       { role: "user", content: [{ type: "text", text: "ignore" }] },
