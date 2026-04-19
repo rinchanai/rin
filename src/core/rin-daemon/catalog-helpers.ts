@@ -29,14 +29,33 @@ function createSlashCommandEntry(
   description: unknown,
   source: string,
   sourceInfo?: unknown,
-): SlashCommandEntry {
+): SlashCommandEntry | null {
+  const trimmedName = trimText(name);
+  if (!trimmedName) return null;
   const entry: SlashCommandEntry = {
-    name: trimText(name),
+    name: trimmedName,
     description: trimText(description),
     source,
   };
   if (sourceInfo !== undefined) entry.sourceInfo = sourceInfo;
   return entry;
+}
+
+function collectSlashCommandEntries<T>(
+  values: T[],
+  mapValue: (value: T) => SlashCommandEntry | null,
+) {
+  const commands: SlashCommandEntry[] = [];
+  for (const value of values) {
+    const command = mapValue(value);
+    if (command) commands.push(command);
+  }
+  return commands;
+}
+
+function getSkillSlashCommandName(skill: any) {
+  const name = trimText(skill?.name);
+  return name ? `skill:${name}` : "";
 }
 
 export function dedupeSlashCommands(commands: SlashCommandEntry[]) {
@@ -50,54 +69,50 @@ export function dedupeSlashCommands(commands: SlashCommandEntry[]) {
 }
 
 export function getBuiltinSlashCommands() {
-  return BUILTIN_SLASH_COMMANDS.map((command) =>
+  return collectSlashCommandEntries(BUILTIN_SLASH_COMMANDS, (command) =>
     createSlashCommandEntry(command?.name, command?.description, "builtin"),
-  ).filter((command) => command.name);
+  );
 }
 
 export function getExtensionSlashCommands(commands: any[], source: string) {
-  return commands
-    .map((command) =>
-      createSlashCommandEntry(
-        command?.invocationName ?? command?.name,
-        command?.description,
-        source,
-        command?.sourceInfo,
-      ),
-    )
-    .filter((command) => command.name);
+  return collectSlashCommandEntries(commands, (command) =>
+    createSlashCommandEntry(
+      command?.invocationName ?? command?.name,
+      command?.description,
+      source,
+      command?.sourceInfo,
+    ),
+  );
 }
 
 export function getPromptSlashCommands(templates: any[]) {
-  return templates
-    .map((template) =>
-      createSlashCommandEntry(
-        template?.name,
-        template?.description,
-        "prompt",
-        template?.sourceInfo,
-      ),
-    )
-    .filter((command) => command.name);
+  return collectSlashCommandEntries(templates, (template) =>
+    createSlashCommandEntry(
+      template?.name,
+      template?.description,
+      "prompt",
+      template?.sourceInfo,
+    ),
+  );
 }
 
 export function getSkillSlashCommands(skills: any[]) {
-  return skills
-    .map((skill) =>
-      createSlashCommandEntry(
-        `skill:${trimText(skill?.name)}`,
-        skill?.description,
-        "skill",
-        skill?.sourceInfo,
-      ),
-    )
-    .filter((command) => command.name !== "skill:");
+  return collectSlashCommandEntries(skills, (skill) =>
+    createSlashCommandEntry(
+      getSkillSlashCommandName(skill),
+      skill?.description,
+      "skill",
+      skill?.sourceInfo,
+    ),
+  );
 }
 
 function collectSlashCommandSourceGroups(groups: SlashCommandSourceGroup[]) {
-  return groups.flatMap(({ commands, source }) =>
-    getExtensionSlashCommands(commands, source),
-  );
+  const commands: SlashCommandEntry[] = [];
+  for (const { commands: groupCommands, source } of groups) {
+    commands.push(...getExtensionSlashCommands(groupCommands, source));
+  }
+  return commands;
 }
 
 export function collectSlashCommands(
@@ -119,16 +134,20 @@ export function collectSlashCommands(
 function getRuntimeSlashCommandSourceGroups(
   options: RuntimeSlashCommandCollectionOptions,
 ) {
-  return [
-    {
-      commands: options.extensionCommands ?? [],
+  const groups: SlashCommandSourceGroup[] = [];
+  if (options.extensionCommands?.length) {
+    groups.push({
+      commands: options.extensionCommands,
       source: "extension",
-    },
-    {
-      commands: options.builtinModuleCommands ?? [],
+    });
+  }
+  if (options.builtinModuleCommands?.length) {
+    groups.push({
+      commands: options.builtinModuleCommands,
       source: "builtin_module",
-    },
-  ].filter(({ commands }) => commands.length > 0);
+    });
+  }
+  return groups;
 }
 
 export function collectRuntimeSlashCommands(
