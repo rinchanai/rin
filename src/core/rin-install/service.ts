@@ -14,14 +14,16 @@ import {
   writeTextFileWithPrivilege,
 } from "./fs-utils.js";
 import {
+  daemonSocketPathForHome,
   daemonStderrLogPath,
   daemonStdoutLogPath,
-  installedAppEntryPaths,
+  installedAppEntryCandidates,
   launchAgentPlistPathForHome,
   managedLaunchdLabel,
   managedSystemdUnitCandidates,
   managedSystemdUnitName,
-  systemdUserUnitDirForHome,
+  managedSystemdUnitPathsForHome,
+  resolveInstalledAppEntryPath,
   systemdUserUnitPathForHome,
 } from "./paths.js";
 import {
@@ -47,6 +49,54 @@ function firstExistingCommand(candidates: string[], fallback: string) {
     if (fs.existsSync(candidate)) return candidate;
   }
   return fallback;
+}
+
+function systemdQuote(value: string) {
+  let escaped = "";
+  for (const char of String(value)) {
+    switch (char) {
+      case "\\":
+        escaped += "\\\\";
+        break;
+      case '"':
+        escaped += '\\"';
+        break;
+      case "\u0007":
+        escaped += "\\a";
+        break;
+      case "\b":
+        escaped += "\\b";
+        break;
+      case "\f":
+        escaped += "\\f";
+        break;
+      case "\n":
+        escaped += "\\n";
+        break;
+      case "\r":
+        escaped += "\\r";
+        break;
+      case "\t":
+        escaped += "\\t";
+        break;
+      case "\v":
+        escaped += "\\v";
+        break;
+      default:
+        escaped += char;
+        break;
+    }
+  }
+  return `"${escaped}"`;
+}
+
+function escapeXmlText(value: string) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 function resolveTargetUserContext(
@@ -154,18 +204,14 @@ function runSystemdUserCommand(
   });
 }
 
-function managedSystemdUnitPaths(targetUser: string, targetHome: string) {
-  const unitDir = systemdUserUnitDirForHome(targetHome);
-  return managedSystemdUnitCandidates(targetUser).map((unit) =>
-    path.join(unitDir, unit),
-  );
-}
-
 export function resolveDaemonEntryForInstall(installDir: string) {
-  const { candidates } = installedAppEntryPaths(installDir, "rin-daemon");
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
+  const candidates = installedAppEntryCandidates(installDir, "rin-daemon");
+  const resolved = resolveInstalledAppEntryPath(
+    installDir,
+    "rin-daemon",
+    fs.existsSync,
+  );
+  if (resolved) return resolved;
   throw new Error(`rin_installed_daemon_entry_missing:${candidates.join(",")}`);
 }
 
@@ -181,9 +227,9 @@ export function buildLaunchdPlist(
   const stderrPath = daemonStderrLogPath(installDir);
   const plistPath = launchAgentPlistPathForHome(targetHome, label);
   const programArguments = [...nodeCommandArgs, daemonEntry]
-    .map((entry) => `      <string>${entry}</string>`)
+    .map((entry) => `      <string>${escapeXmlText(entry)}</string>`)
     .join("\n");
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n  <dict>\n    <key>Label</key>\n    <string>${label}</string>\n    <key>ProgramArguments</key>\n    <array>\n${programArguments}\n    </array>\n    <key>EnvironmentVariables</key>\n    <dict>\n      <key>PATH</key>\n      <string>${runtimePath}</string>\n      <key>RIN_DIR</key>\n      <string>${installDir}</string>\n    </dict>\n    <key>WorkingDirectory</key>\n    <string>${targetHome}</string>\n    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>StandardOutPath</key>\n    <string>${stdoutPath}</string>\n    <key>StandardErrorPath</key>\n    <string>${stderrPath}</string>\n  </dict>\n</plist>\n`;
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n  <dict>\n    <key>Label</key>\n    <string>${escapeXmlText(label)}</string>\n    <key>ProgramArguments</key>\n    <array>\n${programArguments}\n    </array>\n    <key>EnvironmentVariables</key>\n    <dict>\n      <key>PATH</key>\n      <string>${escapeXmlText(runtimePath)}</string>\n      <key>RIN_DIR</key>\n      <string>${escapeXmlText(installDir)}</string>\n    </dict>\n    <key>WorkingDirectory</key>\n    <string>${escapeXmlText(targetHome)}</string>\n    <key>RunAtLoad</key>\n    <true/>\n    <key>KeepAlive</key>\n    <true/>\n    <key>StandardOutPath</key>\n    <string>${escapeXmlText(stdoutPath)}</string>\n    <key>StandardErrorPath</key>\n    <string>${escapeXmlText(stderrPath)}</string>\n  </dict>\n</plist>\n`;
   return { label, plistPath, plist, stdoutPath, stderrPath };
 }
 
@@ -255,8 +301,10 @@ export function buildSystemdUserService(
     resolveDaemonLaunchContext(targetUser, installDir, targetHomeForUser);
   const unitName = managedSystemdUnitName(targetUser);
   const unitPath = systemdUserUnitPathForHome(targetHome, unitName);
-  const execStart = [...nodeCommandArgs, daemonEntry].join(" ");
-  const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=PATH=${runtimePath}\nEnvironment=RIN_DIR=${installDir}\nExecStart=${execStart}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
+  const execStart = [...nodeCommandArgs, daemonEntry]
+    .map((entry) => systemdQuote(entry))
+    .join(" ");
+  const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${systemdQuote(targetHome)}\nEnvironment=${systemdQuote(`PATH=${runtimePath}`)}\nEnvironment=${systemdQuote(`RIN_DIR=${installDir}`)}\nExecStart=${execStart}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
   return {
     kind: "systemd" as const,
     label: unitName,
@@ -325,9 +373,9 @@ export function refreshManagedServiceFiles(
     deps.targetHomeForUser,
   );
   const ownerGroup = deps.findSystemUser(targetUser)?.gid;
-  for (const filePath of managedSystemdUnitPaths(
-    targetUser,
+  for (const filePath of managedSystemdUnitPathsForHome(
     deps.targetHomeForUser(targetUser),
+    targetUser,
   )) {
     if (!fs.existsSync(filePath)) continue;
     writeManagedServiceFile(filePath, spec.service, {
@@ -367,17 +415,7 @@ export function daemonSocketPathForUser(
   },
 ) {
   const { uid, targetHome } = resolveTargetUserContext(targetUser, deps);
-  if (process.platform === "darwin")
-    return path.join(
-      targetHome,
-      "Library",
-      "Caches",
-      "rin-daemon",
-      "daemon.sock",
-    );
-  if (uid >= 0)
-    return path.join("/run/user", String(uid), "rin-daemon", "daemon.sock");
-  return path.join(targetHome, ".cache", "rin-daemon", "daemon.sock");
+  return daemonSocketPathForHome(targetHome, { uid });
 }
 
 export function collectDaemonFailureDetails(

@@ -307,6 +307,22 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
       "rin-daemon-demo.service",
     ),
   );
+  assert.deepEqual(pathsMod.managedSystemdUnitPathsForHome(linuxHome, "demo"), [
+    path.join(linuxHome, ".config", "systemd", "user", "rin-daemon-demo.service"),
+    path.join(linuxHome, ".config", "systemd", "user", "rin-daemon.service"),
+  ]);
+  assert.equal(
+    pathsMod.daemonSocketPathForHome(macHome, { platform: "darwin" }),
+    path.join(macHome, "Library", "Caches", "rin-daemon", "daemon.sock"),
+  );
+  assert.equal(
+    pathsMod.daemonSocketPathForHome(linuxHome, { uid: 123, platform: "linux" }),
+    path.join("/run/user", "123", "rin-daemon", "daemon.sock"),
+  );
+  assert.equal(
+    pathsMod.daemonSocketPathForHome(linuxHome, { uid: -1, platform: "linux" }),
+    path.join(linuxHome, ".cache", "rin-daemon", "daemon.sock"),
+  );
   assert.equal(
     pathsMod.daemonStdoutLogPath(installDir),
     path.join(installDir, "data", "logs", "daemon.stdout.log"),

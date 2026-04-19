@@ -340,6 +340,40 @@ export function systemdUserUnitPathForHome(home: string, unitName: string) {
   return path.join(systemdUserUnitDirForHome(home), unitName);
 }
 
+export function managedSystemdUnitPathsForHome(
+  home: string,
+  targetUser: string,
+) {
+  return managedSystemdUnitCandidates(targetUser).map((unit) =>
+    systemdUserUnitPathForHome(home, unit),
+  );
+}
+
+function userCacheDirForHome(home: string, platform = process.platform) {
+  if (platform === "darwin") {
+    return path.join(home, "Library", "Caches");
+  }
+  return path.join(home, ".cache");
+}
+
+export function daemonSocketPathForHome(
+  home: string,
+  options: {
+    uid?: number;
+    platform?: NodeJS.Platform;
+  } = {},
+) {
+  const platform = options.platform || process.platform;
+  const uid = Number(options.uid ?? -1);
+  if (platform === "darwin") {
+    return path.join(userCacheDirForHome(home, platform), "rin-daemon", "daemon.sock");
+  }
+  if (uid >= 0) {
+    return path.join("/run/user", String(uid), "rin-daemon", "daemon.sock");
+  }
+  return path.join(userCacheDirForHome(home, platform), "rin-daemon", "daemon.sock");
+}
+
 export function daemonLogsDir(installDir: string) {
   return path.join(installDir, "data", "logs");
 }

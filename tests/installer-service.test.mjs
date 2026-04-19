@@ -28,9 +28,24 @@ async function withTempDir(fn) {
   }
 }
 
-test("installer service helpers prefer current daemon entry and sanitize unit paths", async () => {
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function escapeXml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+test("installer service helpers prefer current daemon entry, quote systemd values, and escape plist XML", async () => {
   await withTempDir(async (dir) => {
-    const installDir = path.join(dir, "install");
+    const installDir = path.join(dir, "install & data");
+    const targetLinuxHome = "/home/demo space";
+    const targetMacHome = "/Users/demo & test";
     const currentDaemon = path.join(
       installDir,
       "app",
@@ -46,12 +61,12 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
     const spec = service.buildSystemdUserService(
       "demo.user+test",
       installDir,
-      () => "/home/demo",
+      () => targetLinuxHome,
     );
     const plist = service.buildLaunchdPlist(
       "demo.user+test",
       installDir,
-      () => "/Users/demo",
+      () => targetMacHome,
     );
 
     assert.equal(spec.kind, "systemd");
@@ -59,7 +74,7 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
     assert.ok(
       spec.servicePath.endsWith(
         path.join(
-          "/home/demo",
+          targetLinuxHome,
           ".config",
           "systemd",
           "user",
@@ -69,19 +84,20 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
     );
     assert.match(
       spec.service,
-      new RegExp(
-        `^Environment=RIN_DIR=${installDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
-        "m",
-      ),
+      new RegExp(`^WorkingDirectory="${escapeRegex(targetLinuxHome)}"$`, "m"),
+    );
+    assert.match(
+      spec.service,
+      new RegExp(`^Environment="RIN_DIR=${escapeRegex(installDir)}"$`, "m"),
     );
     assert.match(
       spec.service,
       new RegExp(
-        `^ExecStart=/usr/bin/env node ${currentDaemon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        `^ExecStart="/usr/bin/env" "node" "${escapeRegex(currentDaemon)}"$`,
         "m",
       ),
     );
-    assert.match(spec.service, /^Environment=PATH=.+$/m);
+    assert.match(spec.service, /^Environment="PATH=.+"$/m);
 
     assert.equal(plist.label, "com.rin.daemon.demo.user-test");
     assert.ok(
@@ -95,9 +111,10 @@ test("installer service helpers prefer current daemon entry and sanitize unit pa
     );
     assert.ok(plist.plist.includes(`<string>/usr/bin/env</string>`));
     assert.ok(plist.plist.includes(`<string>node</string>`));
-    assert.ok(plist.plist.includes(`<string>${currentDaemon}</string>`));
+    assert.ok(plist.plist.includes(`<string>${escapeXml(currentDaemon)}</string>`));
     assert.ok(plist.plist.includes(`<key>PATH</key>`));
-    assert.ok(plist.plist.includes(`<string>${installDir}</string>`));
+    assert.ok(plist.plist.includes(`<string>${escapeXml(installDir)}</string>`));
+    assert.ok(plist.plist.includes(`<string>${escapeXml(targetMacHome)}</string>`));
   });
 });
 
