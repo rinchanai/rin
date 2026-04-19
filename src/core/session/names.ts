@@ -9,6 +9,9 @@ export const DEFAULT_FIRST_USER_MESSAGE_MAX = 120;
 export const DEFAULT_SESSION_DISPLAY_NAME = "Untitled session";
 
 const SESSION_NAME_READ_CHUNK_SIZE = 64 * 1024;
+const EMPTY_BUFFER = new Uint8Array(0);
+
+type SessionLineReadDirection = "forward" | "backward";
 
 export type SessionDisplayNameParts = {
   currentName: string;
@@ -19,9 +22,7 @@ export function normalizeSessionNameDetail(
   value: unknown,
   max = DEFAULT_SESSION_NAME_DETAIL_MAX,
 ): string {
-  const text = safeString(value)
-    .replace(/\s+/g, " ")
-    .trim();
+  const text = safeString(value).replace(/\s+/g, " ").trim();
   if (!text) return "";
   if (text.length <= max) return text;
   return `${text.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
@@ -55,7 +56,9 @@ function extractFirstUserMessage(entry: any): string {
   if (!Array.isArray(content)) return "";
   return normalizeSessionNameDetail(
     content
-      .filter((part) => part && typeof part === "object" && part.type === "text")
+      .filter(
+        (part) => part && typeof part === "object" && part.type === "text",
+      )
       .map((part) => safeString((part as any).text))
       .join(" "),
     DEFAULT_FIRST_USER_MESSAGE_MAX,
@@ -72,90 +75,128 @@ function parseSessionEntryLine(lineBuffer: Uint8Array): any {
   }
 }
 
-function readForwardSessionValue(
-  filePath: string,
-  selectValue: (entry: any) => string,
-): string {
-  const fd = fs.openSync(filePath, "r");
-  const buffer = Buffer.alloc(SESSION_NAME_READ_CHUNK_SIZE);
-  let remainder = Buffer.alloc(0);
-
-  try {
-    while (true) {
-      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
-      if (!bytesRead) break;
-      const chunk = buffer.subarray(0, bytesRead);
-      let lineStart = 0;
-      for (let index = 0; index < chunk.length; index += 1) {
-        if (chunk[index] !== 0x0a) continue;
-        const line = remainder.length
-          ? Buffer.concat([remainder, chunk.subarray(lineStart, index)])
-          : chunk.subarray(lineStart, index);
-        remainder = Buffer.alloc(0);
-        lineStart = index + 1;
-        const entry = parseSessionEntryLine(line);
-        const value = entry ? selectValue(entry) : "";
-        if (value) return value;
-      }
-      const tail = chunk.subarray(lineStart);
-      remainder = remainder.length ? Buffer.concat([remainder, tail]) : Buffer.from(tail);
-    }
-    const entry = parseSessionEntryLine(remainder);
-    return entry ? selectValue(entry) : "";
-  } finally {
-    fs.closeSync(fd);
-  }
+function copyBufferSlice(
+  buffer: Uint8Array,
+  start: number,
+  end = buffer.length,
+): Uint8Array {
+  return start < end ? Buffer.from(buffer.subarray(start, end)) : EMPTY_BUFFER;
 }
 
-function readBackwardSessionValue(
+function combineSessionLineBuffers(
+  left: Uint8Array,
+  right: Uint8Array,
+): Uint8Array {
+  if (!left.length) return right;
+  if (!right.length) return left;
+  return Buffer.concat([Buffer.from(left), Buffer.from(right)]);
+}
+
+function selectSessionLineValue(
+  lineBuffer: Uint8Array,
+  selectValue: (entry: any) => string,
+): string {
+  const entry = parseSessionEntryLine(lineBuffer);
+  return entry ? selectValue(entry) : "";
+}
+
+function scanSessionLineBuffer(
+  buffer: Uint8Array,
+  direction: SessionLineReadDirection,
+  selectValue: (entry: any) => string,
+): { remainder: Uint8Array; value: string } {
+  if (direction === "forward") {
+    let lineStart = 0;
+    for (let index = 0; index < buffer.length; index += 1) {
+      if (buffer[index] !== 0x0a) continue;
+      const value = selectSessionLineValue(
+        buffer.subarray(lineStart, index),
+        selectValue,
+      );
+      if (value) return { remainder: EMPTY_BUFFER, value };
+      lineStart = index + 1;
+    }
+    return { remainder: copyBufferSlice(buffer, lineStart), value: "" };
+  }
+
+  let lineEnd = buffer.length;
+  for (let index = buffer.length - 1; index >= 0; index -= 1) {
+    if (buffer[index] !== 0x0a) continue;
+    const value = selectSessionLineValue(
+      buffer.subarray(index + 1, lineEnd),
+      selectValue,
+    );
+    if (value) return { remainder: EMPTY_BUFFER, value };
+    lineEnd = index;
+  }
+  return { remainder: copyBufferSlice(buffer, 0, lineEnd), value: "" };
+}
+
+function readSessionValue(
   filePath: string,
+  direction: SessionLineReadDirection,
   selectValue: (entry: any) => string,
 ): string {
   const fd = fs.openSync(filePath, "r");
   const buffer = Buffer.alloc(SESSION_NAME_READ_CHUNK_SIZE);
-  let remainder = Buffer.alloc(0);
+  let remainder: Uint8Array<ArrayBufferLike> = EMPTY_BUFFER;
 
   try {
+    if (direction === "forward") {
+      while (true) {
+        const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+        if (!bytesRead) break;
+        const scan = scanSessionLineBuffer(
+          combineSessionLineBuffers(remainder, buffer.subarray(0, bytesRead)),
+          direction,
+          selectValue,
+        );
+        if (scan.value) return scan.value;
+        remainder = scan.remainder;
+      }
+      return selectSessionLineValue(remainder, selectValue);
+    }
+
     let position = fs.fstatSync(fd).size;
     while (position > 0) {
       const readSize = Math.min(buffer.length, position);
       position -= readSize;
       fs.readSync(fd, buffer, 0, readSize, position);
-      const chunk = Buffer.from(buffer.subarray(0, readSize));
-      const combined = remainder.length ? Buffer.concat([chunk, remainder]) : chunk;
-      let lineEnd = combined.length;
-      for (let index = combined.length - 1; index >= 0; index -= 1) {
-        if (combined[index] !== 0x0a) continue;
-        const entry = parseSessionEntryLine(combined.subarray(index + 1, lineEnd));
-        const value = entry ? selectValue(entry) : "";
-        if (value) return value;
-        lineEnd = index;
-      }
-      remainder = Buffer.from(combined.subarray(0, lineEnd));
+      const scan = scanSessionLineBuffer(
+        combineSessionLineBuffers(buffer.subarray(0, readSize), remainder),
+        direction,
+        selectValue,
+      );
+      if (scan.value) return scan.value;
+      remainder = scan.remainder;
     }
-    const entry = parseSessionEntryLine(remainder);
-    return entry ? selectValue(entry) : "";
+    return selectSessionLineValue(remainder, selectValue);
   } finally {
     fs.closeSync(fd);
   }
 }
 
 function readSessionNameFromFile(filePath: string): string {
-  return readBackwardSessionValue(filePath, (entry) => {
+  return readSessionValue(filePath, "backward", (entry) => {
     if (entry?.type !== "session_info") return "";
-    return normalizeSessionNameDetail(entry?.name, DEFAULT_SESSION_NAME_DETAIL_MAX);
+    return normalizeSessionNameDetail(
+      entry?.name,
+      DEFAULT_SESSION_NAME_DETAIL_MAX,
+    );
   });
 }
 
 function readFirstUserMessageFromFile(filePath: string): string {
-  return readForwardSessionValue(filePath, extractFirstUserMessage);
+  return readSessionValue(filePath, "forward", extractFirstUserMessage);
 }
 
 export function readSessionDisplayNameParts(
   sessionFile: string,
 ): SessionDisplayNameParts {
   const normalizedSessionFile = normalizeSessionValue(sessionFile);
-  const filePath = normalizedSessionFile ? path.resolve(normalizedSessionFile) : "";
+  const filePath = normalizedSessionFile
+    ? path.resolve(normalizedSessionFile)
+    : "";
   if (!filePath || !fs.existsSync(filePath)) {
     return { currentName: "", firstUserMessage: "" };
   }
@@ -170,7 +211,8 @@ export function readSessionDisplayNameParts(
   }
 }
 
-export function readFirstUserMessageFromSessionFile(sessionFile: string): string {
+export function readFirstUserMessageFromSessionFile(
+  sessionFile: string,
+): string {
   return readSessionDisplayNameParts(sessionFile).firstUserMessage;
 }
-

@@ -10,16 +10,17 @@ const rootDir = path.resolve(
   "..",
 );
 const names = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "session", "names.js"))
-    .href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "session", "names.js")).href
 );
 const listing = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "session", "listing.js"))
-    .href,
+    .href
 );
 
 test("readSessionDisplayNameParts combines latest rename with first user message", async () => {
-  const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-session-names-"));
+  const sessionDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-session-names-"),
+  );
   const sessionFile = path.join(sessionDir, "demo.jsonl");
   await fs.writeFile(
     sessionFile,
@@ -43,6 +44,40 @@ test("readSessionDisplayNameParts combines latest rename with first user message
   assert.deepEqual(names.readSessionDisplayNameParts(sessionFile), {
     currentName: "Renamed title",
     firstUserMessage: "First question",
+  });
+
+  await fs.rm(sessionDir, { recursive: true, force: true });
+});
+
+test("readSessionDisplayNameParts handles chunk-spanning lines without a trailing newline", async () => {
+  const sessionDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-session-names-"),
+  );
+  const sessionFile = path.join(sessionDir, "chunked.jsonl");
+  const longUserMessage = "A".repeat(70_000);
+  const longRenamedTitle = "B".repeat(70_000);
+  await fs.writeFile(
+    sessionFile,
+    [
+      JSON.stringify({
+        type: "message",
+        message: { role: "assistant", content: "ignored" },
+      }),
+      JSON.stringify({
+        type: "message",
+        message: { role: "user", content: longUserMessage },
+      }),
+      JSON.stringify({ type: "session_info", name: longRenamedTitle }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(names.readSessionDisplayNameParts(sessionFile), {
+    currentName: names.normalizeSessionNameDetail(longRenamedTitle),
+    firstUserMessage: names.normalizeSessionNameDetail(
+      longUserMessage,
+      names.DEFAULT_FIRST_USER_MESSAGE_MAX,
+    ),
   });
 
   await fs.rm(sessionDir, { recursive: true, force: true });
