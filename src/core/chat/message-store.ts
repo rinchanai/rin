@@ -124,16 +124,40 @@ function getChatMessageStoreLayout(agentDir: string) {
   return detectChatMessageStoreLayout(path.resolve(agentDir));
 }
 
+function dedupeStrings(values: Iterable<unknown>) {
+  return [
+    ...new Set(
+      [...values].map((item) => safeString(item).trim()).filter(Boolean),
+    ),
+  ];
+}
+
+function sameStringLists(
+  left: string[] | null | undefined,
+  right: string[] | null | undefined,
+) {
+  const nextLeft = left || [];
+  const nextRight = right || [];
+  return (
+    nextLeft.length === nextRight.length &&
+    nextLeft.every((item, index) => item === nextRight[index])
+  );
+}
+
 function chatMessageStoreRoots(agentDir: string) {
   const layout = getChatMessageStoreLayout(agentDir);
-  return [layout.storeDir, layout.fallbackStoreDir].filter(
-    (item): item is string => Boolean(item),
-  );
+  return dedupeStrings([layout.storeDir, layout.fallbackStoreDir]);
 }
 
 function recordRoots(agentDir: string) {
   return chatMessageStoreRoots(agentDir).map((storeDir) =>
     recordsDirForStoreDir(storeDir),
+  );
+}
+
+function indexRoots(agentDir: string) {
+  return chatMessageStoreRoots(agentDir).map((storeDir) =>
+    indexesDirForStoreDir(storeDir),
   );
 }
 
@@ -185,11 +209,62 @@ export function chatMessageLogPath(
 
 function refsPathForIndexesDir(indexesRoot: string, messageId: string) {
   const key = hashKey(messageId);
-  return path.join(indexesRoot, "by-message-id", key.slice(0, 2), `${key}.json`);
+  return path.join(
+    indexesRoot,
+    "by-message-id",
+    key.slice(0, 2),
+    `${key}.json`,
+  );
 }
 
 function refsPath(agentDir: string, messageId: string) {
   return refsPathForIndexesDir(indexesDir(agentDir), messageId);
+}
+
+function normalizeRefs(value: unknown) {
+  return dedupeStrings(Array.isArray(value) ? value : []);
+}
+
+function readRefsForIndexesDir(indexesRoot: string, messageId: string) {
+  const stored = readJsonFile<string[] | null>(
+    refsPathForIndexesDir(indexesRoot, messageId),
+    null,
+  );
+  return stored === null ? null : normalizeRefs(stored);
+}
+
+function readPrimaryRefs(agentDir: string, messageId: string) {
+  return readRefsForIndexesDir(indexesDir(agentDir), messageId);
+}
+
+function readMessageRefs(agentDir: string, messageId: string) {
+  const nextMessageId = safeString(messageId).trim();
+  if (!nextMessageId) return [];
+  const refs: string[] = [];
+  for (const root of indexRoots(agentDir)) {
+    const current = readRefsForIndexesDir(root, nextMessageId);
+    if (current) refs.push(...current);
+  }
+  return normalizeRefs(refs);
+}
+
+function writeMessageRefs(agentDir: string, messageId: string, refs: string[]) {
+  const nextRefs = normalizeRefs(refs);
+  if (sameStringLists(readPrimaryRefs(agentDir, messageId), nextRefs)) return;
+  writeJsonFile(refsPath(agentDir, messageId), nextRefs);
+}
+
+function syncMessageRefs(
+  agentDir: string,
+  messageId: string,
+  relativePath: string,
+) {
+  const nextRelativePath = safeString(relativePath).trim();
+  if (!nextRelativePath) return;
+  writeMessageRefs(agentDir, messageId, [
+    ...readMessageRefs(agentDir, messageId),
+    nextRelativePath,
+  ]);
 }
 
 function recordPathForRecordsDir(recordsRoot: string, recordKey: string) {
@@ -228,9 +303,19 @@ function normalizeRecordKeys(value: unknown) {
     : Array.isArray((value as StoredChatDateIndex | null)?.recordKeys)
       ? (value as StoredChatDateIndex).recordKeys
       : [];
-  return [
-    ...new Set(list.map((item) => safeString(item).trim()).filter(Boolean)),
-  ];
+  return dedupeStrings(list);
+}
+
+function readChatDateIndexForIndexesDir(
+  indexesRoot: string,
+  chatKey: string,
+  date: string,
+) {
+  const stored = readJsonFile<StoredChatDateIndex | string[] | null>(
+    chatDateIndexPathForIndexesDir(indexesRoot, chatKey, date),
+    null,
+  );
+  return stored === null ? null : normalizeRecordKeys(stored);
 }
 
 function readPrimaryChatDateIndex(
@@ -238,11 +323,21 @@ function readPrimaryChatDateIndex(
   chatKey: string,
   date: string,
 ) {
-  const stored = readJsonFile<StoredChatDateIndex | string[] | null>(
-    chatDateIndexPath(agentDir, chatKey, date),
-    null,
-  );
-  return stored === null ? null : normalizeRecordKeys(stored);
+  return readChatDateIndexForIndexesDir(indexesDir(agentDir), chatKey, date);
+}
+
+function readChatDateIndex(agentDir: string, chatKey: string, date: string) {
+  const primary = readPrimaryChatDateIndex(agentDir, chatKey, date);
+  if (primary !== null) return primary;
+  const recordKeys: string[] = [];
+  let found = false;
+  for (const root of indexRoots(agentDir).slice(1)) {
+    const current = readChatDateIndexForIndexesDir(root, chatKey, date);
+    if (!current) continue;
+    found = true;
+    recordKeys.push(...current);
+  }
+  return found ? normalizeRecordKeys(recordKeys) : null;
 }
 
 function writeChatDateIndex(
@@ -251,9 +346,17 @@ function writeChatDateIndex(
   date: string,
   recordKeys: string[],
 ) {
+  const nextRecordKeys = normalizeRecordKeys(recordKeys);
+  const currentPrimary = readPrimaryChatDateIndex(agentDir, chatKey, date);
+  if (
+    currentPrimary !== null &&
+    sameStringLists(currentPrimary, nextRecordKeys)
+  ) {
+    return;
+  }
   writeJsonFile(chatDateIndexPath(agentDir, chatKey, date), {
     version: 1,
-    recordKeys: normalizeRecordKeys(recordKeys),
+    recordKeys: nextRecordKeys,
   } satisfies StoredChatDateIndex);
 }
 
@@ -267,7 +370,7 @@ function updateChatDateIndexRecord(
   const nextDate = normalizeLocalDateOnly(date);
   const nextRecordKey = safeString(recordKey).trim();
   if (!nextDate || !nextRecordKey) return;
-  const current = readPrimaryChatDateIndex(agentDir, chatKey, nextDate) || [];
+  const current = readChatDateIndex(agentDir, chatKey, nextDate) || [];
   const nextRecordKeys =
     action === "remove"
       ? current.filter((item) => item !== nextRecordKey)
@@ -405,13 +508,12 @@ export function saveChatMessage(
   const filePath = recordPath(agentDir, record.recordKey);
   writeJsonFile(filePath, record);
 
-  const refFilePath = refsPath(agentDir, record.messageId);
-  const refs = readJsonFile<string[]>(refFilePath, []);
   const storeLayout = getChatMessageStoreLayout(agentDir);
-  const relative = path.relative(storeLayout.storeDir, filePath);
-  if (!refs.includes(relative)) {
-    writeJsonFile(refFilePath, [...refs, relative]);
-  }
+  syncMessageRefs(
+    agentDir,
+    record.messageId,
+    path.relative(storeLayout.storeDir, filePath),
+  );
   syncChatDateIndex(agentDir, record, storedMessageDate(previous));
 
   return { record, filePath };
@@ -449,16 +551,13 @@ export function getChatMessagesByMessageId(
   if (!nextMessageId) return [] as StoredChatMessage[];
   const matches: StoredChatMessage[] = [];
   for (const storeDir of chatMessageStoreRoots(agentDir)) {
-    const refs = readJsonFile<string[]>(
-      refsPathForIndexesDir(indexesDirForStoreDir(storeDir), nextMessageId),
-      [],
-    );
+    const refs =
+      readRefsForIndexesDir(indexesDirForStoreDir(storeDir), nextMessageId) ||
+      [];
     for (const relativePath of refs) {
       const nextRelativePath = safeString(relativePath).trim();
       if (!nextRelativePath) continue;
-      const item = readStoredChatMessage(
-        path.join(storeDir, nextRelativePath),
-      );
+      const item = readStoredChatMessage(path.join(storeDir, nextRelativePath));
       if (item) matches.push(item);
     }
   }
@@ -496,7 +595,14 @@ export function updateChatMessage(
     platform: current.platform,
     chatId: current.chatId,
   };
-  writeJsonFile(recordPath(agentDir, current.recordKey), next);
+  const filePath = recordPath(agentDir, current.recordKey);
+  writeJsonFile(filePath, next);
+  const storeLayout = getChatMessageStoreLayout(agentDir);
+  syncMessageRefs(
+    agentDir,
+    current.messageId,
+    path.relative(storeLayout.storeDir, filePath),
+  );
   syncChatDateIndex(agentDir, next, previousDate);
   return next;
 }
@@ -550,12 +656,9 @@ export function listChatMessagesByChatAndDate(
   const nextDate = normalizeLocalDateOnly(date);
   if (!nextChatKey || !nextDate) return [];
 
-  const indexedRecordKeys = readPrimaryChatDateIndex(
-    agentDir,
-    nextChatKey,
-    nextDate,
-  );
+  const indexedRecordKeys = readChatDateIndex(agentDir, nextChatKey, nextDate);
   if (indexedRecordKeys) {
+    writeChatDateIndex(agentDir, nextChatKey, nextDate, indexedRecordKeys);
     return sortChatMessages(
       readChatMessagesByRecordKeys(agentDir, indexedRecordKeys).filter(
         (item) =>

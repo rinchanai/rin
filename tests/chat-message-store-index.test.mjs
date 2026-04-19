@@ -423,7 +423,9 @@ test("message store keeps legacy records readable after the preferred root appea
       "legacy",
     );
     assert.deepEqual(
-      messageStore.getChatMessagesByMessageId(root, "m1").map((item) => item.chatKey),
+      messageStore
+        .getChatMessagesByMessageId(root, "m1")
+        .map((item) => item.chatKey),
       ["telegram/123:456"],
     );
     assert.deepEqual(
@@ -436,6 +438,60 @@ test("message store keeps legacy records readable after the preferred root appea
       version: 1,
       recordKeys: [
         messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
+      ],
+    });
+  });
+});
+
+test("message store merges legacy day indexes before serving mixed-root history", async () => {
+  await withTempRoot(async (root) => {
+    await fs.mkdir(path.join(root, "data", "koishi-message-store"), {
+      recursive: true,
+    });
+
+    messageStore.saveChatMessage(root, {
+      messageId: "m1",
+      role: "user",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "2026-04-04T12:00:00.000Z",
+      text: "legacy",
+      rawContent: "legacy",
+      strippedContent: "legacy",
+    });
+
+    await fs.mkdir(path.join(root, "data", "chat-message-store"), {
+      recursive: true,
+    });
+
+    messageStore.saveChatMessage(root, {
+      messageId: "m2",
+      role: "assistant",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "2026-04-04T12:00:05.000Z",
+      text: "preferred",
+      rawContent: "preferred",
+      strippedContent: "preferred",
+    });
+
+    assert.deepEqual(
+      messageStore
+        .listChatMessagesByChatAndDate(root, "telegram/123:456", "2026-04-04")
+        .map((item) => item.messageId),
+      ["m1", "m2"],
+    );
+    assert.deepEqual(await readJson(chatDateIndexPath(root, "2026-04-04")), {
+      version: 1,
+      recordKeys: [
+        messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
+        messageStore.buildChatMessageRecordKey("telegram/123:456", "m2"),
       ],
     });
   });
@@ -465,14 +521,25 @@ test("message store updates legacy records into the preferred root without reviv
       recursive: true,
     });
 
-    const updated = messageStore.updateChatMessage(root, "telegram/123:456", "m1", {
-      receivedAt: "2026-04-05T09:30:00.000Z",
-      text: "updated",
-      rawContent: "updated",
-      strippedContent: "updated",
-    });
+    const updated = messageStore.updateChatMessage(
+      root,
+      "telegram/123:456",
+      "m1",
+      {
+        receivedAt: "2026-04-05T09:30:00.000Z",
+        text: "updated",
+        rawContent: "updated",
+        strippedContent: "updated",
+      },
+    );
 
     assert.equal(updated?.text, "updated");
+    assert.deepEqual(
+      messageStore
+        .getChatMessagesByMessageId(root, "m1")
+        .map((item) => item.text),
+      ["updated"],
+    );
     await fs.access(
       recordPath(root, "chat-message-store", "telegram/123:456", "m1"),
     );
@@ -485,6 +552,10 @@ test("message store updates legacy records into the preferred root without reviv
         .map((item) => item.messageId),
       [],
     );
+    assert.deepEqual(await readJson(chatDateIndexPath(root, "2026-04-04")), {
+      version: 1,
+      recordKeys: [],
+    });
     assert.deepEqual(
       messageStore
         .listChatMessagesByChatAndDate(root, "telegram/123:456", "2026-04-05")
@@ -497,11 +568,14 @@ test("message store updates legacy records into the preferred root without reviv
         messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
       ],
     });
-    assert.deepEqual(await readJson(legacyChatDateIndexPath(root, "2026-04-04")), {
-      version: 1,
-      recordKeys: [
-        messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
-      ],
-    });
+    assert.deepEqual(
+      await readJson(legacyChatDateIndexPath(root, "2026-04-04")),
+      {
+        version: 1,
+        recordKeys: [
+          messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
+        ],
+      },
+    );
   });
 });
