@@ -39,6 +39,9 @@ import {
 } from "./query.js";
 
 const START_TIMEOUT_MS = 90_000;
+const START_POLL_INTERVAL_MS = 100;
+const HEALTHCHECK_TIMEOUT_MS = 1_500;
+const SEARXNG_HEALTH_PATH = "/healthz";
 const RIN_WEB_SEARCH_BASE_URL_ENV = "RIN_WEB_SEARCH_BASE_URL";
 const SEARXNG_ARCHIVE_URL =
   "https://github.com/searxng/searxng/archive/refs/heads/master.tar.gz";
@@ -196,6 +199,58 @@ function runtimeCommandEnv(tmpDir: string): NodeJS.ProcessEnv {
     TEMP: tmpDir,
     TMP: tmpDir,
   };
+}
+
+async function probeSearxngHealth(
+  baseUrl: string,
+  timeoutMs = HEALTHCHECK_TIMEOUT_MS,
+): Promise<boolean> {
+  const target = trimString(baseUrl);
+  if (!target) return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`timeout:${timeoutMs}`)),
+    Math.max(1, timeoutMs),
+  );
+  try {
+    const response = await fetch(new URL(SEARXNG_HEALTH_PATH, `${target}/`), {
+      method: "GET",
+      headers: { Accept: "text/plain" },
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const body = safeText(await response.text());
+    return !body || body.toUpperCase() === "OK";
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForSearxngReady(
+  baseUrl: string,
+  pid: unknown,
+  timeoutMs: number,
+): Promise<number> {
+  const resolvedPid = toNumber(pid);
+  if (!(resolvedPid > 1)) {
+    throw new Error("searxng_start_failed");
+  }
+
+  const deadline = Date.now() + Math.max(1, timeoutMs);
+  while (Date.now() < deadline) {
+    if (!isLivePid(resolvedPid)) {
+      throw new Error("searxng_start_failed");
+    }
+    if (await probeSearxngHealth(baseUrl)) {
+      return resolvedPid;
+    }
+    await sleep(START_POLL_INTERVAL_MS);
+  }
+
+  throw new Error("searxng_start_timeout");
 }
 
 function removePathIfExists(targetPath: string): void {
@@ -452,6 +507,7 @@ async function ensureSearxngSidecar(
 
   let child: ChildProcess | null = null;
   let baseUrl = "";
+  let ready = false;
   try {
     const runtime = ensureSearxngRuntimeInstalled(stateRoot, logger);
     const port = await getFreePort();
@@ -488,8 +544,9 @@ async function ensureSearxngSidecar(
       child.unref();
     } catch {}
 
+    const pid = toNumber(child.pid);
     const nextState: WebSearchInstanceState = {
-      pid: toNumber(child.pid),
+      pid,
       port,
       baseUrl,
       pythonBin: runtime.pythonBin,
@@ -504,25 +561,27 @@ async function ensureSearxngSidecar(
       1,
       Number(options.timeoutMs ?? START_TIMEOUT_MS) || START_TIMEOUT_MS,
     );
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      if (isLivePid(child.pid)) {
-        process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = baseUrl;
-        return {
-          ok: true,
-          instanceId,
-          baseUrl,
-          pid: toNumber(child.pid),
-        };
-      }
-      await sleep(100);
-    }
-
-    throw new Error("searxng_start_timeout");
+    await waitForSearxngReady(baseUrl, pid, timeoutMs);
+    ready = true;
+    process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = baseUrl;
+    return {
+      ok: true,
+      instanceId,
+      baseUrl,
+      pid,
+    };
   } finally {
     try {
       release();
     } catch {}
+    if (!ready) {
+      if (child && isLivePid(child.pid)) {
+        try {
+          process.kill(toNumber(child.pid), "SIGTERM");
+        } catch {}
+      }
+      removeStoredInstance(stateRoot, instanceId, baseUrl);
+    }
     if (child && !isLivePid(child.pid)) {
       removeStoredInstance(stateRoot, instanceId, baseUrl);
     }

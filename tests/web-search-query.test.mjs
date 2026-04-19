@@ -38,6 +38,95 @@ async function writeExecutable(filePath, content) {
   await fs.chmod(filePath, 0o755);
 }
 
+function buildFakeSearxngNodeProgram({ readyServer = false } = {}) {
+  if (!readyServer) {
+    return "setInterval(() => {}, 60000);";
+  }
+  return [
+    'const http = require("node:http");',
+    'const port = Number(process.env.SEARXNG_PORT || 0);',
+    "const server = http.createServer((req, res) => {",
+    'if (req.url === "/healthz") {',
+    'res.writeHead(200, { "Content-Type": "text/plain" });',
+    'res.end("OK");',
+    "return;",
+    "}",
+    "res.writeHead(404);",
+    'res.end("not found");',
+    "});",
+    'server.listen(port, "127.0.0.1");',
+    "setInterval(() => {}, 60000);",
+  ].join(" ");
+}
+
+async function installArchiveFallbackToolchain(
+  binDir,
+  { readyServer = false } = {},
+) {
+  const nodeBin = JSON.stringify(process.execPath);
+  const nodeProgram = JSON.stringify(
+    buildFakeSearxngNodeProgram({ readyServer }),
+  );
+  await writeExecutable(
+    path.join(binDir, "python3"),
+    `#!/bin/sh
+if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then
+  venv="$3"
+  /bin/mkdir -p "$venv/bin"
+  /bin/cat > "$venv/bin/python" <<'EOF'
+#!/bin/sh
+node_bin=${nodeBin}
+if [ "$1" = "-m" ] && [ "$2" = "searx.webapp" ]; then
+  exec "$node_bin" -e ${nodeProgram}
+fi
+exit 0
+EOF
+  /bin/cat > "$venv/bin/pip" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+  /bin/chmod +x "$venv/bin/python" "$venv/bin/pip"
+  exit 0
+fi
+exit 0
+`,
+  );
+  await writeExecutable(
+    path.join(binDir, "curl"),
+    `#!/bin/sh
+out=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+: > "$out"
+exit 0
+`,
+  );
+  await writeExecutable(
+    path.join(binDir, "tar"),
+    `#!/bin/sh
+target=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-C" ]; then
+    target="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+/bin/mkdir -p "$target/searx"
+printf 'flask\n' > "$target/requirements.txt"
+printf '# test package\n' > "$target/searx/__init__.py"
+exit 0
+`,
+  );
+}
+
 test("web search query helpers normalize request", () => {
   const req = query.normalizeSearchRequest({
     q: "  hello ",
@@ -129,65 +218,7 @@ test("web search sidecar bootstrap falls back to archive download without git", 
   await withTempDir(async (dir) => {
     const binDir = path.join(dir, "bin");
     await fs.mkdir(binDir, { recursive: true });
-    await writeExecutable(
-      path.join(binDir, "python3"),
-      `#!/bin/sh
-if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then
-  venv="$3"
-  /bin/mkdir -p "$venv/bin"
-  cat > "$venv/bin/python" <<'EOF'
-#!/bin/sh
-if [ "$1" = "-m" ] && [ "$2" = "searx.webapp" ]; then
-  while true; do
-    /bin/sleep 60
-  done
-fi
-exit 0
-EOF
-  cat > "$venv/bin/pip" <<'EOF'
-#!/bin/sh
-exit 0
-EOF
-  /bin/chmod +x "$venv/bin/python" "$venv/bin/pip"
-  exit 0
-fi
-exit 0
-`,
-    );
-    await writeExecutable(
-      path.join(binDir, "curl"),
-      `#!/bin/sh
-out=""
-while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    out="$2"
-    shift 2
-    continue
-  fi
-  shift
-done
-: > "$out"
-exit 0
-`,
-    );
-    await writeExecutable(
-      path.join(binDir, "tar"),
-      `#!/bin/sh
-target=""
-while [ $# -gt 0 ]; do
-  if [ "$1" = "-C" ]; then
-    target="$2"
-    shift 2
-    continue
-  fi
-  shift
-done
-/bin/mkdir -p "$target/searx"
-printf 'flask\n' > "$target/requirements.txt"
-printf '# test package\n' > "$target/searx/__init__.py"
-exit 0
-`,
-    );
+    await installArchiveFallbackToolchain(binDir, { readyServer: true });
 
     const previousPath = process.env.PATH;
     const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
@@ -213,6 +244,43 @@ exit 0
       await service.stopSearxngSidecar(dir, {
         instanceId: "archive-fallback",
       });
+      if (previousPath == null) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousBaseUrl == null) {
+        delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+      } else {
+        process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV] = previousBaseUrl;
+      }
+    }
+  });
+});
+
+test("web search sidecar waits for a healthy endpoint before succeeding", async () => {
+  await withTempDir(async (dir) => {
+    const binDir = path.join(dir, "bin");
+    await fs.mkdir(binDir, { recursive: true });
+    await installArchiveFallbackToolchain(binDir, { readyServer: false });
+
+    const previousPath = process.env.PATH;
+    const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+    delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+    process.env.PATH = binDir;
+
+    try {
+      await assert.rejects(
+        service.ensureSearxngSidecar(dir, {
+          instanceId: "not-ready",
+          timeoutMs: 300,
+        }),
+        /searxng_start_timeout/,
+      );
+
+      const status = service.getSearxngSidecarStatus(dir);
+      assert.equal(status.instances.length, 0);
+      await assert.rejects(
+        fs.stat(paths.instanceRootForState(dir, "not-ready")),
+      );
+    } finally {
       if (previousPath == null) delete process.env.PATH;
       else process.env.PATH = previousPath;
       if (previousBaseUrl == null) {
