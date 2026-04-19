@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 
 import {
   type ChatMessageStoreLayout,
+  type ChatMessageStoreRoot,
   chatScopedDatePath,
   getChatMessageStoreLayout,
   sanitizePathSegment,
@@ -104,6 +105,29 @@ function readRefs(indexesRoot: string, messageId: string) {
   return stored === null ? null : normalizeRefs(stored);
 }
 
+function findInStoreRoots<T>(
+  roots: ChatMessageStoreRoot[],
+  read: (root: ChatMessageStoreRoot) => T | null | undefined,
+) {
+  for (const root of roots) {
+    const value = read(root);
+    if (value !== null && value !== undefined) return value;
+  }
+  return null;
+}
+
+function collectStoreRootValues<T>(
+  roots: ChatMessageStoreRoot[],
+  read: (root: ChatMessageStoreRoot) => T[] | null | undefined,
+) {
+  const out: T[] = [];
+  for (const root of roots) {
+    const current = read(root);
+    if (current?.length) out.push(...current);
+  }
+  return out;
+}
+
 function readPrimaryRefs(layout: ChatMessageStoreLayout, messageId: string) {
   return readRefs(layout.indexesDir, messageId);
 }
@@ -111,12 +135,11 @@ function readPrimaryRefs(layout: ChatMessageStoreLayout, messageId: string) {
 function readMessageRefs(layout: ChatMessageStoreLayout, messageId: string) {
   const nextMessageId = safeString(messageId).trim();
   if (!nextMessageId) return [];
-  const refs: string[] = [];
-  for (const root of layout.readRoots) {
-    const current = readRefs(root.indexesDir, nextMessageId);
-    if (current) refs.push(...current);
-  }
-  return normalizeRefs(refs);
+  return normalizeRefs(
+    collectStoreRootValues(layout.readRoots, (root) =>
+      readRefs(root.indexesDir, nextMessageId),
+    ),
+  );
 }
 
 function writeMessageRefs(
@@ -200,15 +223,11 @@ function readChatDateIndex(
 ) {
   const primary = readPrimaryChatDateIndex(layout, chatKey, date);
   if (primary !== null) return primary;
-  const recordKeys: string[] = [];
-  let found = false;
-  for (const root of fallbackReadRoots(layout)) {
-    const current = readChatDateIndexEntry(root.indexesDir, chatKey, date);
-    if (!current) continue;
-    found = true;
-    recordKeys.push(...current);
-  }
-  return found ? normalizeRecordKeys(recordKeys) : null;
+  const recordKeys = collectStoreRootValues(
+    fallbackReadRoots(layout),
+    (root) => readChatDateIndexEntry(root.indexesDir, chatKey, date),
+  );
+  return recordKeys.length ? normalizeRecordKeys(recordKeys) : null;
 }
 
 function writeChatDateIndex(
@@ -289,11 +308,20 @@ function findChatMessageByRecordKey(
 ) {
   const nextRecordKey = safeString(recordKey).trim();
   if (!nextRecordKey) return null;
-  for (const root of layout.readRoots) {
-    const item = readStoredChatMessage(recordPath(root.recordsDir, nextRecordKey));
-    if (item) return item;
-  }
-  return null;
+  return findInStoreRoots(layout.readRoots, (root) =>
+    readStoredChatMessage(recordPath(root.recordsDir, nextRecordKey)),
+  );
+}
+
+function findChatMessageByRelativePath(
+  layout: ChatMessageStoreLayout,
+  relativePath: string,
+) {
+  const nextRelativePath = safeString(relativePath).trim();
+  if (!nextRelativePath) return null;
+  return findInStoreRoots(layout.readRoots, (root) =>
+    readStoredChatMessage(path.join(root.storeDir, nextRelativePath)),
+  );
 }
 
 function readChatMessagesByRecordKeys(
@@ -390,17 +418,11 @@ function getChatMessagesByMessageIdWithLayout(
 ) {
   const nextMessageId = safeString(messageId).trim();
   if (!nextMessageId) return [] as StoredChatMessage[];
-  const matches: StoredChatMessage[] = [];
-  for (const root of layout.readRoots) {
-    const refs = readRefs(root.indexesDir, nextMessageId) || [];
-    for (const relativePath of refs) {
-      const nextRelativePath = safeString(relativePath).trim();
-      if (!nextRelativePath) continue;
-      const item = readStoredChatMessage(path.join(root.storeDir, nextRelativePath));
-      if (item) matches.push(item);
-    }
-  }
-  return uniqueChatMessages(matches);
+  return uniqueChatMessages(
+    readMessageRefs(layout, nextMessageId)
+      .map((relativePath) => findChatMessageByRelativePath(layout, relativePath))
+      .filter((item): item is StoredChatMessage => Boolean(item)),
+  );
 }
 
 function getChatMessageWithLayout(
