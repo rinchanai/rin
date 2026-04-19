@@ -50,21 +50,93 @@ function hashKey(value: string) {
   return createHash("sha1").update(value).digest("hex");
 }
 
+type ChatMessageStoreLayout = {
+  preferredStoreDir: string;
+  legacyStoreDir: string;
+  storeDir: string;
+  recordsDir: string;
+  indexesDir: string;
+  logDir: string;
+  source: "preferred" | "legacy" | "implicit-preferred";
+};
+
+const chatMessageStoreLayoutCache = new Map<string, ChatMessageStoreLayout>();
+
+function buildChatMessageStoreLayout(
+  preferredStoreDir: string,
+  legacyStoreDir: string,
+  storeDir: string,
+  source: ChatMessageStoreLayout["source"],
+): ChatMessageStoreLayout {
+  return {
+    preferredStoreDir,
+    legacyStoreDir,
+    storeDir,
+    recordsDir: path.join(storeDir, "records"),
+    indexesDir: path.join(storeDir, "indexes"),
+    logDir: path.join(storeDir, "chat-log-view"),
+    source,
+  };
+}
+
+function detectChatMessageStoreLayout(rootDir: string) {
+  const preferredStoreDir = path.join(rootDir, "data", "chat-message-store");
+  const legacyStoreDir = path.join(rootDir, "data", "koishi-message-store");
+  if (fs.existsSync(preferredStoreDir)) {
+    return buildChatMessageStoreLayout(
+      preferredStoreDir,
+      legacyStoreDir,
+      preferredStoreDir,
+      "preferred",
+    );
+  }
+  if (fs.existsSync(legacyStoreDir)) {
+    return buildChatMessageStoreLayout(
+      preferredStoreDir,
+      legacyStoreDir,
+      legacyStoreDir,
+      "legacy",
+    );
+  }
+  return buildChatMessageStoreLayout(
+    preferredStoreDir,
+    legacyStoreDir,
+    preferredStoreDir,
+    "implicit-preferred",
+  );
+}
+
+function getChatMessageStoreLayout(agentDir: string) {
+  const rootDir = path.resolve(agentDir);
+  const cached = chatMessageStoreLayoutCache.get(rootDir);
+  if (cached) {
+    if (cached.source === "preferred") return cached;
+    if (cached.source === "legacy") {
+      if (!fs.existsSync(cached.preferredStoreDir)) return cached;
+    } else {
+      if (fs.existsSync(cached.storeDir)) {
+        const next = { ...cached, source: "preferred" as const };
+        chatMessageStoreLayoutCache.set(rootDir, next);
+        return next;
+      }
+      if (!fs.existsSync(cached.legacyStoreDir)) return cached;
+    }
+  }
+  const next = detectChatMessageStoreLayout(rootDir);
+  chatMessageStoreLayoutCache.set(rootDir, next);
+  return next;
+}
+
 export function chatMessageStoreDir(agentDir: string) {
-  const root = path.resolve(agentDir);
-  const preferred = path.join(root, "data", "chat-message-store");
-  if (fs.existsSync(preferred)) return preferred;
-  const legacy = path.join(root, "data", "koishi-message-store");
-  if (fs.existsSync(legacy)) return legacy;
-  return preferred;
+  return getChatMessageStoreLayout(agentDir).storeDir;
 }
 
 function recordsDir(agentDir: string) {
-  return path.join(chatMessageStoreDir(agentDir), "records");
+  return getChatMessageStoreLayout(agentDir).recordsDir;
 }
 
 function indexesDir(agentDir: string) {
-  return path.join(chatMessageStoreDir(agentDir), "indexes");
+  return getChatMessageStoreLayout(agentDir).indexesDir;
 }
 
 function chatScopedDatePath(
@@ -90,7 +162,7 @@ function chatScopedDatePath(
 }
 
 export function chatMessageLogDir(agentDir: string) {
-  return path.join(chatMessageStoreDir(agentDir), "chat-log-view");
+  return getChatMessageStoreLayout(agentDir).logDir;
 }
 
 export function chatMessageLogPath(
@@ -293,7 +365,8 @@ export function saveChatMessage(
 
   const refFilePath = refsPath(agentDir, record.messageId);
   const refs = readJsonFile<string[]>(refFilePath, []);
-  const relative = path.relative(chatMessageStoreDir(agentDir), filePath);
+  const storeLayout = getChatMessageStoreLayout(agentDir);
+  const relative = path.relative(storeLayout.storeDir, filePath);
   if (!refs.includes(relative)) {
     writeJsonFile(refFilePath, [...refs, relative]);
   }
@@ -334,11 +407,11 @@ export function getChatMessagesByMessageId(
   if (!nextMessageId) return [] as StoredChatMessage[];
   const refFilePath = refsPath(agentDir, nextMessageId);
   const refs = readJsonFile<string[]>(refFilePath, []);
-  const storeRoot = chatMessageStoreDir(agentDir);
+  const storeLayout = getChatMessageStoreLayout(agentDir);
   return refs
     .map((relativePath) =>
       readJsonFile<StoredChatMessage | null>(
-        path.join(storeRoot, relativePath),
+        path.join(storeLayout.storeDir, relativePath),
         null,
       ),
     )

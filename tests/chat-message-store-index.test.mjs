@@ -324,3 +324,42 @@ test("message store log view path follows the legacy store root when needed", as
     );
   });
 });
+
+test("message store root switches to legacy when it appears before the preferred root exists", async () => {
+  await withTempRoot(async (root) => {
+    assert.equal(
+      messageStore.chatMessageStoreDir(root),
+      path.join(root, "data", "chat-message-store"),
+    );
+
+    await fs.mkdir(path.join(root, "data", "koishi-message-store"), {
+      recursive: true,
+    });
+
+    assert.equal(
+      messageStore.chatMessageStoreDir(root),
+      path.join(root, "data", "koishi-message-store"),
+    );
+  });
+});
+
+test("message store root switches back to the preferred path once it exists", async () => {
+  await withTempRoot(async (root) => {
+    await fs.mkdir(path.join(root, "data", "koishi-message-store"), {
+      recursive: true,
+    });
+    assert.equal(
+      messageStore.chatMessageStoreDir(root),
+      path.join(root, "data", "koishi-message-store"),
+    );
+
+    await fs.mkdir(path.join(root, "data", "chat-message-store"), {
+      recursive: true,
+    });
+
+    assert.equal(
+      messageStore.chatMessageStoreDir(root),
+      path.join(root, "data", "chat-message-store"),
+    );
+  });
+});
