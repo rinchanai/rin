@@ -1,10 +1,12 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import WebSocket from "ws";
 
 import {
   compactObject,
+  createPrefixedLogger,
+  downloadToFile,
+  emitBotStatus,
   ensureDir,
   ensureExtension,
   ensureFileName,
@@ -17,40 +19,8 @@ import {
   renderPlainTextFromNodes,
   safeString,
   sleep,
+  stripMentionTokens,
 } from "./common.js";
-
-function emitBotStatus(app: any, bot: any, status: number) {
-  if (Number(bot?.status) === status) return;
-  bot.status = status;
-  app.emit("bot-status-updated", bot);
-}
-
-function stripMentionToken(text: string, tokens: string[]) {
-  let next = safeString(text);
-  for (const token of tokens.filter(Boolean)) {
-    next = next.replace(
-      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
-      " ",
-    );
-  }
-  return next.replace(/^[\s,:，\-—]+/, "").trim();
-}
-
-async function downloadToCache(
-  filePath: string,
-  url: string,
-  headers?: Record<string, string>,
-) {
-  const response = await fetch(url, {
-    headers,
-  });
-  if (!response.ok) {
-    throw new Error(`download_failed:${response.status}`);
-  }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.promises.writeFile(filePath, buffer);
-  return buffer;
-}
 
 export class DiscordAdapter {
   private readonly app: any;
@@ -68,7 +38,7 @@ export class DiscordAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = logger;
+    this.logger = createPrefixedLogger("chat-runtime:discord", logger);
     this.cacheDir = path.join(dataDir, "chat-runtime-cache", "discord");
     ensureDir(this.cacheDir);
     const internal: any = {
@@ -171,7 +141,7 @@ export class DiscordAdapter {
     this.client.on(Discord.Events.MessageCreate, (message: any) => {
       void this.handleMessage(message).catch((error: any) => {
         this.logger?.warn?.(
-          `[chat-runtime:discord] message handling failed err=${safeString(error?.message || error)}`,
+          `message handling failed err=${safeString(error?.message || error)}`,
         );
       });
     });
@@ -181,7 +151,7 @@ export class DiscordAdapter {
     });
     this.client.on(Discord.Events.Error, (error: any) => {
       this.logger?.warn?.(
-        `[chat-runtime:discord] client error err=${safeString(error?.message || error)}`,
+        `client error err=${safeString(error?.message || error)}`,
       );
     });
 
@@ -255,7 +225,7 @@ export class DiscordAdapter {
     );
     const rawText = safeString(message?.content || "").trim();
     const strippedContent = mentionSelf
-      ? stripMentionToken(rawText, [
+      ? stripMentionTokens(rawText, [
           `<@${safeString(this.bot?.selfId).trim()}>`,
           `<@!${safeString(this.bot?.selfId).trim()}>`,
         ])
@@ -355,7 +325,7 @@ export class SlackAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = logger;
+    this.logger = createPrefixedLogger("chat-runtime:slack", logger);
     this.cacheDir = path.join(dataDir, "chat-runtime-cache", "slack");
     ensureDir(this.cacheDir);
     const internal: any = {
@@ -420,13 +390,13 @@ export class SlackAdapter {
     });
     this.socket.on("error", (error: any) => {
       this.logger?.warn?.(
-        `[chat-runtime:slack] socket error err=${safeString(error?.message || error)}`,
+        `socket error err=${safeString(error?.message || error)}`,
       );
     });
     this.socket.on("slack_event", (envelope: any) => {
       void this.handleSlackEvent(envelope).catch((error: any) => {
         this.logger?.warn?.(
-          `[chat-runtime:slack] event handling failed type=${safeString(envelope?.type || "") || "unknown"} err=${safeString(error?.message || error)}`,
+          `event handling failed type=${safeString(envelope?.type || "") || "unknown"} err=${safeString(error?.message || error)}`,
         );
       });
     });
@@ -461,7 +431,7 @@ export class SlackAdapter {
       mimeType,
     );
     const fullPath = path.join(this.cacheDir, `${Date.now()}-${name}`);
-    await downloadToCache(fullPath, url, {
+    await downloadToFile(fullPath, url, {
       Authorization: `Bearer ${safeString(this.config?.botToken).trim()}`,
     });
     return { path: fullPath, name, mimeType };
@@ -544,7 +514,7 @@ export class SlackAdapter {
     const mentionToken = `<@${safeString(this.bot?.selfId).trim()}>`;
     const mentionSelf = Boolean(mentionToken && rawText.includes(mentionToken));
     const strippedContent = mentionSelf
-      ? stripMentionToken(rawText, [mentionToken])
+      ? stripMentionTokens(rawText, [mentionToken])
       : rawText;
     const isDirect = safeString(event?.channel).startsWith("D");
     const elements: any[] = [];
@@ -653,7 +623,7 @@ export class QQAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = logger;
+    this.logger = createPrefixedLogger("chat-runtime:qq", logger);
     const internal: any = {
       openapi: null,
       wsClient: null,
@@ -743,7 +713,7 @@ export class QQAdapter {
     });
     this.wsClient.on("ERROR", (error: any) => {
       this.logger?.warn?.(
-        `[chat-runtime:qq] ws error err=${safeString(error?.message || error)}`,
+        `ws error err=${safeString(error?.message || error)}`,
       );
     });
     for (const eventName of [
@@ -755,7 +725,7 @@ export class QQAdapter {
       this.wsClient.on(eventName, (payload: any) => {
         void this.handleIncomingEvent(payload).catch((error: any) => {
           this.logger?.warn?.(
-            `[chat-runtime:qq] event handling failed event=${eventName} err=${safeString(error?.message || error)}`,
+            `event handling failed event=${eventName} err=${safeString(error?.message || error)}`,
           );
         });
       });
@@ -893,7 +863,7 @@ export class QQAdapter {
 
     const mentionToken = `<@!${safeString(this.bot?.selfId).trim()}>`;
     const strippedContent = mentionSelf
-      ? stripMentionToken(rawText, [
+      ? stripMentionTokens(rawText, [
           mentionToken,
           `<@${safeString(this.bot?.selfId).trim()}>`,
         ])
@@ -965,7 +935,7 @@ export class LarkAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = logger;
+    this.logger = createPrefixedLogger("chat-runtime:lark", logger);
     const internal: any = {
       client: null,
       wsClient: null,
@@ -1184,7 +1154,7 @@ export class MinecraftAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = logger;
+    this.logger = createPrefixedLogger("chat-runtime:minecraft", logger);
     const internal: any = {
       ws: null,
       broadcast: async (message: string) =>
@@ -1251,7 +1221,7 @@ export class MinecraftAdapter {
       } catch (error: any) {
         if (!this.stopped) {
           this.logger?.warn?.(
-            `[chat-runtime:minecraft] connect failed err=${safeString(error?.message || error)}`,
+            `connect failed err=${safeString(error?.message || error)}`,
           );
         }
       } finally {
@@ -1397,7 +1367,7 @@ export class MinecraftAdapter {
       rawText && selfToken && rawText.includes(`@${selfToken}`),
     );
     const strippedContent = mentionSelf
-      ? stripMentionToken(rawText, [`@${selfToken}`])
+      ? stripMentionTokens(rawText, [`@${selfToken}`])
       : rawText;
     return {
       platform: "minecraft",

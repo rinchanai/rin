@@ -13,6 +13,8 @@ import {
 import { composeChatKey } from "../chat/support.js";
 import {
   compactObject,
+  createPrefixedLogger,
+  emitBotStatus,
   ensureDir,
   ensureExtension,
   ensureFileName,
@@ -106,25 +108,6 @@ function createNodeBuilder() {
   return h;
 }
 
-function createLogger(name: string, fallback: any) {
-  return {
-    debug: (...args: any[]) =>
-      fallback?.debug ? fallback.debug(`[${name}]`, ...args) : undefined,
-    info: (...args: any[]) =>
-      fallback?.info ? fallback.info(`[${name}]`, ...args) : undefined,
-    warn: (...args: any[]) =>
-      fallback?.warn ? fallback.warn(`[${name}]`, ...args) : undefined,
-    error: (...args: any[]) =>
-      fallback?.error ? fallback.error(`[${name}]`, ...args) : undefined,
-  };
-}
-
-function emitBotStatus(app: ChatRuntimeApp, bot: any, status: number) {
-  if (Number(bot?.status) === status) return;
-  bot.status = status;
-  app.emit("bot-status-updated", bot);
-}
-
 export class ChatRuntimeApp extends EventEmitter {
   bots: any[] = [];
   private readonly adapters = new Set<any>();
@@ -205,7 +188,7 @@ class TelegramAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = createLogger("chat-runtime:telegram", logger);
+    this.logger = createPrefixedLogger("chat-runtime:telegram", logger);
     this.cacheDir = path.join(dataDir, "chat-runtime-cache", "telegram");
     const cursorKey =
       safeString(config?.token).trim().split(":")[0]?.replace(/[^A-Za-z0-9._-]+/g, "_") ||
@@ -840,7 +823,7 @@ class OneBotAdapter {
   ) {
     this.app = app;
     this.config = config;
-    this.logger = createLogger("chat-runtime:onebot", logger);
+    this.logger = createPrefixedLogger("chat-runtime:onebot", logger);
     this.cacheDir = path.join(dataDir, "chat-runtime-cache", "onebot");
     ensureDir(this.cacheDir);
     this.bot = {

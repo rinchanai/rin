@@ -31,6 +31,51 @@ export function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function createPrefixedLogger(name: string, fallback: any) {
+  const prefix = `[${safeString(name).trim() || "chat-runtime"}]`;
+  return {
+    debug: (...args: any[]) =>
+      fallback?.debug ? fallback.debug(prefix, ...args) : undefined,
+    info: (...args: any[]) =>
+      fallback?.info ? fallback.info(prefix, ...args) : undefined,
+    warn: (...args: any[]) =>
+      fallback?.warn ? fallback.warn(prefix, ...args) : undefined,
+    error: (...args: any[]) =>
+      fallback?.error ? fallback.error(prefix, ...args) : undefined,
+  };
+}
+
+export function emitBotStatus(app: any, bot: any, status: number) {
+  if (Number(bot?.status) === status) return;
+  bot.status = status;
+  app.emit("bot-status-updated", bot);
+}
+
+export function stripMentionTokens(text: string, tokens: string[]) {
+  let next = safeString(text);
+  for (const token of tokens.filter(Boolean)) {
+    next = next.replace(
+      new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+      " ",
+    );
+  }
+  return next.replace(/^[\s,:，\-—]+/, "").trim();
+}
+
+export async function downloadToFile(
+  filePath: string,
+  url: string,
+  headers?: Record<string, string>,
+) {
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`download_failed:${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fs.promises.writeFile(filePath, buffer);
+  return buffer;
+}
+
 export function compactObject<T extends Record<string, any>>(value: T) {
   const next: Record<string, any> = {};
   for (const [key, item] of Object.entries(value)) {
