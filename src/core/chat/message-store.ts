@@ -130,7 +130,7 @@ function collectStoreRootValues<T>(
 }
 
 function readPrimaryRefs(layout: ChatMessageStoreLayout, messageId: string) {
-  return readRefs(layout.indexesDir, messageId);
+  return readRefs(layout.primaryRoot.indexesDir, messageId);
 }
 
 function readMessageRefs(layout: ChatMessageStoreLayout, messageId: string) {
@@ -150,7 +150,7 @@ function writeMessageRefs(
 ) {
   const nextRefs = normalizeRefs(refs);
   if (sameStringLists(readPrimaryRefs(layout, messageId), nextRefs)) return;
-  writeJsonFile(refsPath(layout.indexesDir, messageId), nextRefs);
+  writeJsonFile(refsPath(layout.primaryRoot.indexesDir, messageId), nextRefs);
 }
 
 function syncMessageRefs(
@@ -205,28 +205,27 @@ function readChatDateIndexEntry(
   return stored === null ? null : normalizeRecordKeys(stored);
 }
 
-function readPrimaryChatDateIndex(
-  layout: ChatMessageStoreLayout,
-  chatKey: string,
-  date: string,
-) {
-  return readChatDateIndexEntry(layout.indexesDir, chatKey, date);
-}
-
-function fallbackReadRoots(layout: ChatMessageStoreLayout) {
-  return layout.readRoots.slice(1);
-}
-
 function readChatDateIndex(
   layout: ChatMessageStoreLayout,
   chatKey: string,
   date: string,
 ) {
-  const primary = readPrimaryChatDateIndex(layout, chatKey, date);
-  if (primary !== null) return primary;
-  const recordKeys = collectStoreRootValues(
-    fallbackReadRoots(layout),
-    (root) => readChatDateIndexEntry(root.indexesDir, chatKey, date),
+  const primary = readChatDateIndexEntry(
+    layout.primaryRoot.indexesDir,
+    chatKey,
+    date,
+  );
+  if (primary !== null) {
+    if (primary.length === 0) return [];
+    return normalizeRecordKeys([
+      ...primary,
+      ...collectStoreRootValues(layout.readRoots.slice(1), (root) =>
+        readChatDateIndexEntry(root.indexesDir, chatKey, date),
+      ),
+    ]);
+  }
+  const recordKeys = collectStoreRootValues(layout.readRoots, (root) =>
+    readChatDateIndexEntry(root.indexesDir, chatKey, date),
   );
   return recordKeys.length ? normalizeRecordKeys(recordKeys) : null;
 }
@@ -238,17 +237,24 @@ function writeChatDateIndex(
   recordKeys: string[],
 ) {
   const nextRecordKeys = normalizeRecordKeys(recordKeys);
-  const currentPrimary = readPrimaryChatDateIndex(layout, chatKey, date);
+  const currentPrimary = readChatDateIndexEntry(
+    layout.primaryRoot.indexesDir,
+    chatKey,
+    date,
+  );
   if (
     currentPrimary !== null &&
     sameStringLists(currentPrimary, nextRecordKeys)
   ) {
     return;
   }
-  writeJsonFile(chatDateIndexPath(layout.indexesDir, chatKey, date), {
-    version: 1,
-    recordKeys: nextRecordKeys,
-  } satisfies StoredChatDateIndex);
+  writeJsonFile(
+    chatDateIndexPath(layout.primaryRoot.indexesDir, chatKey, date),
+    {
+      version: 1,
+      recordKeys: nextRecordKeys,
+    } satisfies StoredChatDateIndex,
+  );
 }
 
 function updateChatDateIndexRecord(
@@ -455,12 +461,12 @@ function persistChatMessageRecord(
   record: StoredChatMessage,
   previousDate?: string,
 ) {
-  const filePath = recordPath(layout.recordsDir, record.recordKey);
+  const filePath = recordPath(layout.primaryRoot.recordsDir, record.recordKey);
   writeJsonFile(filePath, record);
   syncMessageRefs(
     layout,
     record.messageId,
-    path.relative(layout.storeDir, filePath),
+    path.relative(layout.primaryRoot.storeDir, filePath),
   );
   syncChatDateIndex(layout, record, previousDate);
   return filePath;
@@ -652,13 +658,19 @@ export function listChatMessagesByChatAndDate(
 
   const indexedRecordKeys = readChatDateIndex(layout, nextChatKey, nextDate);
   if (indexedRecordKeys) {
-    writeChatDateIndex(layout, nextChatKey, nextDate, indexedRecordKeys);
-    return sortChatMessages(
+    const records = sortChatMessages(
       readChatMessagesByRecordKeys(layout, indexedRecordKeys).filter(
         (item) =>
           item.chatKey === nextChatKey && storedMessageDate(item) === nextDate,
       ),
     );
+    writeChatDateIndex(
+      layout,
+      nextChatKey,
+      nextDate,
+      records.map((item) => item.recordKey),
+    );
+    return records;
   }
 
   const records = sortChatMessages(
