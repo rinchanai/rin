@@ -5,6 +5,13 @@ import { normalizeLocalDateOnly } from "./date.js";
 import { parseChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
 
+export type ChatMessageStoreRoot = {
+  storeDir: string;
+  recordsDir: string;
+  indexesDir: string;
+  logDir: string;
+};
+
 export type ChatMessageStoreLayout = {
   preferredStoreDir: string;
   legacyStoreDir: string;
@@ -13,6 +20,9 @@ export type ChatMessageStoreLayout = {
   recordsDir: string;
   indexesDir: string;
   logDir: string;
+  primaryRoot: ChatMessageStoreRoot;
+  fallbackRoot?: ChatMessageStoreRoot;
+  readRoots: ChatMessageStoreRoot[];
   source: "preferred" | "legacy" | "implicit-preferred";
 };
 
@@ -31,6 +41,27 @@ export function indexesDirForStoreDir(storeDir: string) {
   return path.join(storeDir, "indexes");
 }
 
+function buildChatMessageStoreRoot(storeDir: string): ChatMessageStoreRoot {
+  return {
+    storeDir,
+    recordsDir: recordsDirForStoreDir(storeDir),
+    indexesDir: indexesDirForStoreDir(storeDir),
+    logDir: path.join(storeDir, "chat-log-view"),
+  };
+}
+
+function dedupeStoreRoots(values: Array<ChatMessageStoreRoot | undefined>) {
+  const out: ChatMessageStoreRoot[] = [];
+  const seen = new Set<string>();
+  for (const value of values) {
+    const storeDir = safeString(value?.storeDir).trim();
+    if (!storeDir || seen.has(storeDir) || !value) continue;
+    seen.add(storeDir);
+    out.push(value);
+  }
+  return out;
+}
+
 function buildChatMessageStoreLayout(
   preferredStoreDir: string,
   legacyStoreDir: string,
@@ -38,14 +69,21 @@ function buildChatMessageStoreLayout(
   fallbackStoreDir: string | undefined,
   source: ChatMessageStoreLayout["source"],
 ): ChatMessageStoreLayout {
+  const primaryRoot = buildChatMessageStoreRoot(storeDir);
+  const fallbackRoot = fallbackStoreDir
+    ? buildChatMessageStoreRoot(fallbackStoreDir)
+    : undefined;
   return {
     preferredStoreDir,
     legacyStoreDir,
     storeDir,
     fallbackStoreDir,
-    recordsDir: recordsDirForStoreDir(storeDir),
-    indexesDir: indexesDirForStoreDir(storeDir),
-    logDir: path.join(storeDir, "chat-log-view"),
+    recordsDir: primaryRoot.recordsDir,
+    indexesDir: primaryRoot.indexesDir,
+    logDir: primaryRoot.logDir,
+    primaryRoot,
+    fallbackRoot,
+    readRoots: dedupeStoreRoots([primaryRoot, fallbackRoot]),
     source,
   };
 }
@@ -86,26 +124,21 @@ export function getChatMessageStoreLayout(agentDir: string) {
   return detectChatMessageStoreLayout(path.resolve(agentDir));
 }
 
-function dedupeStoreDirs(values: Array<string | undefined>) {
-  return [
-    ...new Set(values.map((item) => safeString(item).trim()).filter(Boolean)),
-  ];
-}
-
 export function chatMessageStoreRoots(agentDir: string) {
-  const layout = getChatMessageStoreLayout(agentDir);
-  return dedupeStoreDirs([layout.storeDir, layout.fallbackStoreDir]);
+  return getChatMessageStoreLayout(agentDir).readRoots.map(
+    (root) => root.storeDir,
+  );
 }
 
 export function recordRoots(agentDir: string) {
-  return chatMessageStoreRoots(agentDir).map((storeDir) =>
-    recordsDirForStoreDir(storeDir),
+  return getChatMessageStoreLayout(agentDir).readRoots.map(
+    (root) => root.recordsDir,
   );
 }
 
 export function indexRoots(agentDir: string) {
-  return chatMessageStoreRoots(agentDir).map((storeDir) =>
-    indexesDirForStoreDir(storeDir),
+  return getChatMessageStoreLayout(agentDir).readRoots.map(
+    (root) => root.indexesDir,
   );
 }
 

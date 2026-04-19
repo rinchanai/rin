@@ -3,13 +3,9 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 import {
-  chatMessageStoreRoots,
+  type ChatMessageStoreLayout,
   chatScopedDatePath,
   getChatMessageStoreLayout,
-  indexRoots,
-  indexesDirForStoreDir,
-  recordRoots,
-  recordsDirForStoreDir,
   sanitizePathSegment,
 } from "./message-store-layout.js";
 import { normalizeLocalDateOnly } from "./date.js";
@@ -73,20 +69,16 @@ function sameStringLists(
   );
 }
 
+function messageStoreLayout(agentDir: string) {
+  return getChatMessageStoreLayout(agentDir);
+}
+
 export function chatMessageStoreDir(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).storeDir;
-}
-
-function recordsDir(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).recordsDir;
-}
-
-function indexesDir(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).indexesDir;
+  return messageStoreLayout(agentDir).storeDir;
 }
 
 export function chatMessageLogDir(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).logDir;
+  return messageStoreLayout(agentDir).logDir;
 }
 
 export function chatMessageLogPath(
@@ -94,75 +86,64 @@ export function chatMessageLogPath(
   chatKey: string,
   date: string,
 ) {
-  return chatScopedDatePath(chatMessageLogDir(agentDir), chatKey, date, ".txt");
+  const layout = messageStoreLayout(agentDir);
+  return chatScopedDatePath(layout.logDir, chatKey, date, ".txt");
 }
 
-function refsPathForIndexesDir(indexesRoot: string, messageId: string) {
+function refsPath(indexesRoot: string, messageId: string) {
   const key = hashKey(messageId);
-  return path.join(
-    indexesRoot,
-    "by-message-id",
-    key.slice(0, 2),
-    `${key}.json`,
-  );
-}
-
-function refsPath(agentDir: string, messageId: string) {
-  return refsPathForIndexesDir(indexesDir(agentDir), messageId);
+  return path.join(indexesRoot, "by-message-id", key.slice(0, 2), `${key}.json`);
 }
 
 function normalizeRefs(value: unknown) {
   return dedupeStrings(Array.isArray(value) ? value : []);
 }
 
-function readRefsForIndexesDir(indexesRoot: string, messageId: string) {
-  const stored = readJsonFile<string[] | null>(
-    refsPathForIndexesDir(indexesRoot, messageId),
-    null,
-  );
+function readRefs(indexesRoot: string, messageId: string) {
+  const stored = readJsonFile<string[] | null>(refsPath(indexesRoot, messageId), null);
   return stored === null ? null : normalizeRefs(stored);
 }
 
-function readPrimaryRefs(agentDir: string, messageId: string) {
-  return readRefsForIndexesDir(indexesDir(agentDir), messageId);
+function readPrimaryRefs(layout: ChatMessageStoreLayout, messageId: string) {
+  return readRefs(layout.indexesDir, messageId);
 }
 
-function readMessageRefs(agentDir: string, messageId: string) {
+function readMessageRefs(layout: ChatMessageStoreLayout, messageId: string) {
   const nextMessageId = safeString(messageId).trim();
   if (!nextMessageId) return [];
   const refs: string[] = [];
-  for (const root of indexRoots(agentDir)) {
-    const current = readRefsForIndexesDir(root, nextMessageId);
+  for (const root of layout.readRoots) {
+    const current = readRefs(root.indexesDir, nextMessageId);
     if (current) refs.push(...current);
   }
   return normalizeRefs(refs);
 }
 
-function writeMessageRefs(agentDir: string, messageId: string, refs: string[]) {
+function writeMessageRefs(
+  layout: ChatMessageStoreLayout,
+  messageId: string,
+  refs: string[],
+) {
   const nextRefs = normalizeRefs(refs);
-  if (sameStringLists(readPrimaryRefs(agentDir, messageId), nextRefs)) return;
-  writeJsonFile(refsPath(agentDir, messageId), nextRefs);
+  if (sameStringLists(readPrimaryRefs(layout, messageId), nextRefs)) return;
+  writeJsonFile(refsPath(layout.indexesDir, messageId), nextRefs);
 }
 
 function syncMessageRefs(
-  agentDir: string,
+  layout: ChatMessageStoreLayout,
   messageId: string,
   relativePath: string,
 ) {
   const nextRelativePath = safeString(relativePath).trim();
   if (!nextRelativePath) return;
-  writeMessageRefs(agentDir, messageId, [
-    ...readMessageRefs(agentDir, messageId),
+  writeMessageRefs(layout, messageId, [
+    ...readMessageRefs(layout, messageId),
     nextRelativePath,
   ]);
 }
 
-function recordPathForRecordsDir(recordsRoot: string, recordKey: string) {
+function recordPath(recordsRoot: string, recordKey: string) {
   return path.join(recordsRoot, recordKey.slice(0, 2), `${recordKey}.json`);
-}
-
-function recordPath(agentDir: string, recordKey: string) {
-  return recordPathForRecordsDir(recordsDir(agentDir), recordKey);
 }
 
 type StoredChatDateIndex = {
@@ -170,21 +151,13 @@ type StoredChatDateIndex = {
   recordKeys: string[];
 };
 
-function chatDateIndexPathForIndexesDir(
-  indexesRoot: string,
-  chatKey: string,
-  date: string,
-) {
+function chatDateIndexPath(indexesRoot: string, chatKey: string, date: string) {
   return chatScopedDatePath(
     path.join(indexesRoot, "by-chat-date"),
     chatKey,
     date,
     ".json",
   );
-}
-
-function chatDateIndexPath(agentDir: string, chatKey: string, date: string) {
-  return chatDateIndexPathForIndexesDir(indexesDir(agentDir), chatKey, date);
 }
 
 function normalizeRecordKeys(value: unknown) {
@@ -196,33 +169,41 @@ function normalizeRecordKeys(value: unknown) {
   return dedupeStrings(list);
 }
 
-function readChatDateIndexForIndexesDir(
+function readChatDateIndexEntry(
   indexesRoot: string,
   chatKey: string,
   date: string,
 ) {
   const stored = readJsonFile<StoredChatDateIndex | string[] | null>(
-    chatDateIndexPathForIndexesDir(indexesRoot, chatKey, date),
+    chatDateIndexPath(indexesRoot, chatKey, date),
     null,
   );
   return stored === null ? null : normalizeRecordKeys(stored);
 }
 
 function readPrimaryChatDateIndex(
-  agentDir: string,
+  layout: ChatMessageStoreLayout,
   chatKey: string,
   date: string,
 ) {
-  return readChatDateIndexForIndexesDir(indexesDir(agentDir), chatKey, date);
+  return readChatDateIndexEntry(layout.indexesDir, chatKey, date);
 }
 
-function readChatDateIndex(agentDir: string, chatKey: string, date: string) {
-  const primary = readPrimaryChatDateIndex(agentDir, chatKey, date);
+function fallbackReadRoots(layout: ChatMessageStoreLayout) {
+  return layout.readRoots.slice(1);
+}
+
+function readChatDateIndex(
+  layout: ChatMessageStoreLayout,
+  chatKey: string,
+  date: string,
+) {
+  const primary = readPrimaryChatDateIndex(layout, chatKey, date);
   if (primary !== null) return primary;
   const recordKeys: string[] = [];
   let found = false;
-  for (const root of indexRoots(agentDir).slice(1)) {
-    const current = readChatDateIndexForIndexesDir(root, chatKey, date);
+  for (const root of fallbackReadRoots(layout)) {
+    const current = readChatDateIndexEntry(root.indexesDir, chatKey, date);
     if (!current) continue;
     found = true;
     recordKeys.push(...current);
@@ -231,27 +212,27 @@ function readChatDateIndex(agentDir: string, chatKey: string, date: string) {
 }
 
 function writeChatDateIndex(
-  agentDir: string,
+  layout: ChatMessageStoreLayout,
   chatKey: string,
   date: string,
   recordKeys: string[],
 ) {
   const nextRecordKeys = normalizeRecordKeys(recordKeys);
-  const currentPrimary = readPrimaryChatDateIndex(agentDir, chatKey, date);
+  const currentPrimary = readPrimaryChatDateIndex(layout, chatKey, date);
   if (
     currentPrimary !== null &&
     sameStringLists(currentPrimary, nextRecordKeys)
   ) {
     return;
   }
-  writeJsonFile(chatDateIndexPath(agentDir, chatKey, date), {
+  writeJsonFile(chatDateIndexPath(layout.indexesDir, chatKey, date), {
     version: 1,
     recordKeys: nextRecordKeys,
   } satisfies StoredChatDateIndex);
 }
 
 function updateChatDateIndexRecord(
-  agentDir: string,
+  layout: ChatMessageStoreLayout,
   chatKey: string,
   date: string,
   recordKey: string,
@@ -260,13 +241,13 @@ function updateChatDateIndexRecord(
   const nextDate = normalizeLocalDateOnly(date);
   const nextRecordKey = safeString(recordKey).trim();
   if (!nextDate || !nextRecordKey) return;
-  const current = readChatDateIndex(agentDir, chatKey, nextDate) || [];
+  const current = readChatDateIndex(layout, chatKey, nextDate) || [];
   const nextRecordKeys =
     action === "remove"
       ? current.filter((item) => item !== nextRecordKey)
       : [...current, nextRecordKey];
   if (action === "remove" && current.length === 0) return;
-  writeChatDateIndex(agentDir, chatKey, nextDate, nextRecordKeys);
+  writeChatDateIndex(layout, chatKey, nextDate, nextRecordKeys);
 }
 
 function storedMessageDate(
@@ -302,28 +283,32 @@ function readStoredChatMessage(filePath: string) {
   return item && safeString(item.messageId).trim() ? item : null;
 }
 
-function findChatMessageByRecordKey(agentDir: string, recordKey: string) {
+function findChatMessageByRecordKey(
+  layout: ChatMessageStoreLayout,
+  recordKey: string,
+) {
   const nextRecordKey = safeString(recordKey).trim();
   if (!nextRecordKey) return null;
-  for (const root of recordRoots(agentDir)) {
-    const item = readStoredChatMessage(
-      recordPathForRecordsDir(root, nextRecordKey),
-    );
+  for (const root of layout.readRoots) {
+    const item = readStoredChatMessage(recordPath(root.recordsDir, nextRecordKey));
     if (item) return item;
   }
   return null;
 }
 
-function readChatMessagesByRecordKeys(agentDir: string, recordKeys: string[]) {
+function readChatMessagesByRecordKeys(
+  layout: ChatMessageStoreLayout,
+  recordKeys: string[],
+) {
   return uniqueChatMessages(
     normalizeRecordKeys(recordKeys)
-      .map((recordKey) => findChatMessageByRecordKey(agentDir, recordKey))
+      .map((recordKey) => findChatMessageByRecordKey(layout, recordKey))
       .filter((item): item is StoredChatMessage => Boolean(item)),
   );
 }
 
 function syncChatDateIndex(
-  agentDir: string,
+  layout: ChatMessageStoreLayout,
   record: StoredChatMessage,
   previousDate?: string,
 ) {
@@ -332,20 +317,14 @@ function syncChatDateIndex(
   if (!nextChatKey || !record.recordKey) return;
   if (previousDate && previousDate !== nextDate) {
     updateChatDateIndexRecord(
-      agentDir,
+      layout,
       nextChatKey,
       previousDate,
       record.recordKey,
       "remove",
     );
   }
-  updateChatDateIndexRecord(
-    agentDir,
-    nextChatKey,
-    nextDate,
-    record.recordKey,
-    "add",
-  );
+  updateChatDateIndexRecord(layout, nextChatKey, nextDate, record.recordKey, "add");
 }
 
 function normalizeStoredRole(value: unknown) {
@@ -390,130 +369,66 @@ function definedStoredChatMessagePatch(
 }
 
 function persistChatMessageRecord(
-  agentDir: string,
+  layout: ChatMessageStoreLayout,
   record: StoredChatMessage,
   previousDate?: string,
 ) {
-  const filePath = recordPath(agentDir, record.recordKey);
+  const filePath = recordPath(layout.recordsDir, record.recordKey);
   writeJsonFile(filePath, record);
   syncMessageRefs(
-    agentDir,
+    layout,
     record.messageId,
-    path.relative(chatMessageStoreDir(agentDir), filePath),
+    path.relative(layout.storeDir, filePath),
   );
-  syncChatDateIndex(agentDir, record, previousDate);
+  syncChatDateIndex(layout, record, previousDate);
   return filePath;
 }
 
-export function saveChatMessage(
-  agentDir: string,
-  input: Omit<StoredChatMessage, "version" | "recordKey">,
-) {
-  const record = buildStoredChatMessage(input);
-  const previous = getChatMessage(agentDir, record.chatKey, record.messageId);
-  const filePath = persistChatMessageRecord(
-    agentDir,
-    record,
-    storedMessageDate(previous),
-  );
-  return { record, filePath };
-}
-
-export function upsertChatMessage(
-  agentDir: string,
-  input: Omit<StoredChatMessage, "version" | "recordKey">,
-) {
-  const normalized = buildStoredChatMessage(input);
-  const existing = findChatMessageByChatAndId(
-    agentDir,
-    normalized.chatKey,
-    normalized.messageId,
-  );
-  if (!existing) {
-    return saveChatMessage(agentDir, toStoredChatMessageInput(normalized))
-      .record;
-  }
-  return (
-    updateChatMessage(
-      agentDir,
-      normalized.chatKey,
-      normalized.messageId,
-      definedStoredChatMessagePatch(toStoredChatMessageInput(normalized)),
-    ) || existing
-  );
-}
-
-export function getChatMessagesByMessageId(
-  agentDir: string,
+function getChatMessagesByMessageIdWithLayout(
+  layout: ChatMessageStoreLayout,
   messageId: string,
 ) {
   const nextMessageId = safeString(messageId).trim();
   if (!nextMessageId) return [] as StoredChatMessage[];
   const matches: StoredChatMessage[] = [];
-  for (const storeDir of chatMessageStoreRoots(agentDir)) {
-    const refs =
-      readRefsForIndexesDir(indexesDirForStoreDir(storeDir), nextMessageId) ||
-      [];
+  for (const root of layout.readRoots) {
+    const refs = readRefs(root.indexesDir, nextMessageId) || [];
     for (const relativePath of refs) {
       const nextRelativePath = safeString(relativePath).trim();
       if (!nextRelativePath) continue;
-      const item = readStoredChatMessage(path.join(storeDir, nextRelativePath));
+      const item = readStoredChatMessage(path.join(root.storeDir, nextRelativePath));
       if (item) matches.push(item);
     }
   }
   return uniqueChatMessages(matches);
 }
 
-export function getChatMessage(
-  agentDir: string,
+function getChatMessageWithLayout(
+  layout: ChatMessageStoreLayout,
   chatKey: string,
   messageId: string,
 ) {
   return findChatMessageByRecordKey(
-    agentDir,
+    layout,
     buildChatMessageRecordKey(chatKey, messageId),
   );
 }
 
-export function updateChatMessage(
-  agentDir: string,
-  chatKey: string,
-  messageId: string,
-  patch: Partial<StoredChatMessage>,
-) {
-  const current = getChatMessage(agentDir, chatKey, messageId);
-  if (!current) return null;
-  const previousDate = storedMessageDate(current);
-  const next: StoredChatMessage = {
-    ...current,
-    ...patch,
-    version: 1,
-    recordKey: current.recordKey,
-    chatKey: current.chatKey,
-    messageId: current.messageId,
-    role: normalizeStoredRole(patch.role) || current.role,
-    platform: current.platform,
-    chatId: current.chatId,
-  };
-  persistChatMessageRecord(agentDir, next, previousDate);
-  return next;
-}
-
-export function findChatMessageByChatAndId(
-  agentDir: string,
+function findChatMessageByChatAndIdWithLayout(
+  layout: ChatMessageStoreLayout,
   chatKey: string,
   messageId: string,
 ) {
-  const direct = getChatMessage(agentDir, chatKey, messageId);
+  const direct = getChatMessageWithLayout(layout, chatKey, messageId);
   if (direct) return direct;
   return (
-    getChatMessagesByMessageId(agentDir, messageId).find(
+    getChatMessagesByMessageIdWithLayout(layout, messageId).find(
       (item) => item.chatKey === chatKey,
     ) || null
   );
 }
 
-export function listChatMessages(agentDir: string) {
+function listChatMessagesWithLayout(layout: ChatMessageStoreLayout) {
   const out = new Map<string, StoredChatMessage>();
   const visit = (dir: string) => {
     let entries: fs.Dirent[] = [];
@@ -533,10 +448,120 @@ export function listChatMessages(agentDir: string) {
       if (item && !out.has(item.recordKey)) out.set(item.recordKey, item);
     }
   };
-  for (const root of recordRoots(agentDir)) {
-    visit(root);
+  for (const root of layout.readRoots) {
+    visit(root.recordsDir);
   }
   return [...out.values()];
+}
+
+function saveChatMessageWithLayout(
+  layout: ChatMessageStoreLayout,
+  input: Omit<StoredChatMessage, "version" | "recordKey">,
+) {
+  const record = buildStoredChatMessage(input);
+  const previous = getChatMessageWithLayout(layout, record.chatKey, record.messageId);
+  const filePath = persistChatMessageRecord(layout, record, storedMessageDate(previous));
+  return { record, filePath };
+}
+
+function updateChatMessageWithLayout(
+  layout: ChatMessageStoreLayout,
+  chatKey: string,
+  messageId: string,
+  patch: Partial<StoredChatMessage>,
+) {
+  const current = getChatMessageWithLayout(layout, chatKey, messageId);
+  if (!current) return null;
+  const previousDate = storedMessageDate(current);
+  const next: StoredChatMessage = {
+    ...current,
+    ...patch,
+    version: 1,
+    recordKey: current.recordKey,
+    chatKey: current.chatKey,
+    messageId: current.messageId,
+    role: normalizeStoredRole(patch.role) || current.role,
+    platform: current.platform,
+    chatId: current.chatId,
+  };
+  persistChatMessageRecord(layout, next, previousDate);
+  return next;
+}
+
+export function saveChatMessage(
+  agentDir: string,
+  input: Omit<StoredChatMessage, "version" | "recordKey">,
+) {
+  return saveChatMessageWithLayout(messageStoreLayout(agentDir), input);
+}
+
+export function upsertChatMessage(
+  agentDir: string,
+  input: Omit<StoredChatMessage, "version" | "recordKey">,
+) {
+  const layout = messageStoreLayout(agentDir);
+  const normalized = buildStoredChatMessage(input);
+  const existing = findChatMessageByChatAndIdWithLayout(
+    layout,
+    normalized.chatKey,
+    normalized.messageId,
+  );
+  if (!existing) {
+    return saveChatMessageWithLayout(layout, toStoredChatMessageInput(normalized)).record;
+  }
+  return (
+    updateChatMessageWithLayout(
+      layout,
+      normalized.chatKey,
+      normalized.messageId,
+      definedStoredChatMessagePatch(toStoredChatMessageInput(normalized)),
+    ) || existing
+  );
+}
+
+export function getChatMessagesByMessageId(
+  agentDir: string,
+  messageId: string,
+) {
+  return getChatMessagesByMessageIdWithLayout(messageStoreLayout(agentDir), messageId);
+}
+
+export function getChatMessage(
+  agentDir: string,
+  chatKey: string,
+  messageId: string,
+) {
+  return getChatMessageWithLayout(messageStoreLayout(agentDir), chatKey, messageId);
+}
+
+export function updateChatMessage(
+  agentDir: string,
+  chatKey: string,
+  messageId: string,
+  patch: Partial<StoredChatMessage>,
+) {
+  return updateChatMessageWithLayout(
+    messageStoreLayout(agentDir),
+    chatKey,
+    messageId,
+    patch,
+  );
+}
+
+export function findChatMessageByChatAndId(
+  agentDir: string,
+  chatKey: string,
+  messageId: string,
+) {
+  return findChatMessageByChatAndIdWithLayout(
+    messageStoreLayout(agentDir),
+    chatKey,
+    messageId,
+  );
+}
+
+export function listChatMessages(agentDir: string) {
+  return listChatMessagesWithLayout(messageStoreLayout(agentDir));
 }
 
 export function listChatMessagesByChatAndDate(
@@ -544,15 +569,16 @@ export function listChatMessagesByChatAndDate(
   chatKey: string,
   date: string,
 ) {
+  const layout = messageStoreLayout(agentDir);
   const nextChatKey = safeString(chatKey).trim();
   const nextDate = normalizeLocalDateOnly(date);
   if (!nextChatKey || !nextDate) return [];
 
-  const indexedRecordKeys = readChatDateIndex(agentDir, nextChatKey, nextDate);
+  const indexedRecordKeys = readChatDateIndex(layout, nextChatKey, nextDate);
   if (indexedRecordKeys) {
-    writeChatDateIndex(agentDir, nextChatKey, nextDate, indexedRecordKeys);
+    writeChatDateIndex(layout, nextChatKey, nextDate, indexedRecordKeys);
     return sortChatMessages(
-      readChatMessagesByRecordKeys(agentDir, indexedRecordKeys).filter(
+      readChatMessagesByRecordKeys(layout, indexedRecordKeys).filter(
         (item) =>
           item.chatKey === nextChatKey && storedMessageDate(item) === nextDate,
       ),
@@ -560,13 +586,13 @@ export function listChatMessagesByChatAndDate(
   }
 
   const records = sortChatMessages(
-    listChatMessages(agentDir).filter(
+    listChatMessagesWithLayout(layout).filter(
       (item) =>
         item.chatKey === nextChatKey && storedMessageDate(item) === nextDate,
     ),
   );
   writeChatDateIndex(
-    agentDir,
+    layout,
     nextChatKey,
     nextDate,
     records.map((item) => item.recordKey),
@@ -579,17 +605,18 @@ export function normalizeChatMessageLookup(
   messageId: string,
   chatKey?: string,
 ) {
+  const layout = messageStoreLayout(agentDir);
   const nextChatKey = safeString(chatKey).trim();
   const matches = nextChatKey
     ? (() => {
-        const found = findChatMessageByChatAndId(
-          agentDir,
+        const found = findChatMessageByChatAndIdWithLayout(
+          layout,
           nextChatKey,
           messageId,
         );
         return found ? [found] : [];
       })()
-    : getChatMessagesByMessageId(agentDir, messageId);
+    : getChatMessagesByMessageIdWithLayout(layout, messageId);
 
   return matches.map((item) => ({
     ...item,
