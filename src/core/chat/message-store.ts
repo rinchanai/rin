@@ -129,6 +129,23 @@ function collectStoreRootValues<T>(
   return out;
 }
 
+function readMergedStoreRootStrings(
+  layout: ChatMessageStoreLayout,
+  read: (root: ChatMessageStoreRoot) => string[] | null | undefined,
+) {
+  const primary = read(layout.primaryRoot);
+  const fallback = collectStoreRootValues(
+    primary === null || primary === undefined
+      ? layout.readRoots
+      : layout.readRoots.slice(1),
+    read,
+  );
+  if (primary === null || primary === undefined) {
+    return fallback.length ? dedupeStrings(fallback) : null;
+  }
+  return dedupeStrings([...primary, ...fallback]);
+}
+
 function readPrimaryRefs(layout: ChatMessageStoreLayout, messageId: string) {
   return readRefs(layout.primaryRoot.indexesDir, messageId);
 }
@@ -136,10 +153,10 @@ function readPrimaryRefs(layout: ChatMessageStoreLayout, messageId: string) {
 function readMessageRefs(layout: ChatMessageStoreLayout, messageId: string) {
   const nextMessageId = safeString(messageId).trim();
   if (!nextMessageId) return [];
-  return normalizeRefs(
-    collectStoreRootValues(layout.readRoots, (root) =>
+  return (
+    readMergedStoreRootStrings(layout, (root) =>
       readRefs(root.indexesDir, nextMessageId),
-    ),
+    ) || []
   );
 }
 
@@ -210,24 +227,9 @@ function readChatDateIndex(
   chatKey: string,
   date: string,
 ) {
-  const primary = readChatDateIndexEntry(
-    layout.primaryRoot.indexesDir,
-    chatKey,
-    date,
-  );
-  if (primary !== null) {
-    if (primary.length === 0) return [];
-    return normalizeRecordKeys([
-      ...primary,
-      ...collectStoreRootValues(layout.readRoots.slice(1), (root) =>
-        readChatDateIndexEntry(root.indexesDir, chatKey, date),
-      ),
-    ]);
-  }
-  const recordKeys = collectStoreRootValues(layout.readRoots, (root) =>
+  return readMergedStoreRootStrings(layout, (root) =>
     readChatDateIndexEntry(root.indexesDir, chatKey, date),
   );
-  return recordKeys.length ? normalizeRecordKeys(recordKeys) : null;
 }
 
 function writeChatDateIndex(
