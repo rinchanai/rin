@@ -1,23 +1,24 @@
-// @ts-nocheck
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import net from "node:net";
-import { spawn, spawnSync } from "node:child_process";
+import {
+  spawn,
+  spawnSync,
+  type ChildProcess,
+} from "node:child_process";
 
-import { ensureDir, ensurePrivateDir } from "../platform/fs.js";
+import { ensurePrivateDir } from "../platform/fs.js";
 import { acquireProcessLock } from "../sidecar/common.js";
 import { isPidAlive, safeString, sleep } from "../platform/process.js";
 import {
   dataRootForState,
-  instanceRootForState,
   instanceSettingsFileForState,
   instanceStateFileForState,
   listInstanceIds,
   readInstanceState,
   readRuntimeBootstrapState,
-  removeInstanceState,
+  removeInstanceRoot,
   runtimeLockPathForState,
   runtimePipBinForState,
   runtimePythonBinForState,
@@ -27,6 +28,8 @@ import {
   runtimeVenvDirForState,
   writeInstanceState,
   writeRuntimeBootstrapState,
+  type RuntimeBootstrapState,
+  type WebSearchInstanceState,
 } from "./paths.js";
 import {
   searchWeb as performWebSearch,
@@ -38,8 +41,115 @@ import {
 const START_TIMEOUT_MS = 90_000;
 const RIN_WEB_SEARCH_BASE_URL_ENV = "RIN_WEB_SEARCH_BASE_URL";
 
+type LoggerLike = {
+  info?: (message: string) => void;
+};
+
+type EnsureSearxngSidecarOptions = {
+  logger?: LoggerLike;
+  timeoutMs?: number;
+  instanceId?: string;
+};
+
+type StopSearxngSidecarOptions = {
+  logger?: LoggerLike;
+  instanceId?: string;
+};
+
+type CleanupSearxngSidecarsOptions = {
+  logger?: LoggerLike;
+};
+
+type SearxngRuntimeInstall = {
+  sourceDir: string;
+  pythonBin: string;
+  pipBin: string;
+  reused: boolean;
+};
+
+type NormalizedInstanceState = {
+  pid: number;
+  ownerPid: number;
+  alive: boolean;
+  baseUrl: string;
+  port?: number;
+  pythonBin: string;
+  sourceDir: string;
+  settingsPath: string;
+  startedAt: string;
+  statePath: string;
+};
+
+function logInfo(logger: LoggerLike | undefined, message: string): void {
+  try {
+    logger?.info?.(message);
+  } catch {}
+}
+
+function toNumber(value: unknown): number {
+  const numberValue = Number(value || 0);
+  return Number.isFinite(numberValue) ? numberValue : 0;
+}
+
+function trimString(value: unknown): string {
+  return safeString(value).trim();
+}
+
+function isLivePid(pid: unknown): boolean {
+  const numberValue = toNumber(pid);
+  return numberValue > 1 && isPidAlive(numberValue);
+}
+
+function normalizeInstanceState(
+  stateRoot: string,
+  instanceId: string,
+  state: WebSearchInstanceState | null | undefined,
+): NormalizedInstanceState {
+  const pid = toNumber(state?.pid);
+  const ownerPid = toNumber(state?.ownerPid);
+  const port = toNumber(state?.port);
+  return {
+    pid,
+    ownerPid,
+    alive: isLivePid(pid),
+    baseUrl: trimString(state?.baseUrl),
+    port: port > 0 ? port : undefined,
+    pythonBin: trimString(state?.pythonBin),
+    sourceDir: trimString(state?.sourceDir),
+    settingsPath: trimString(state?.settingsPath),
+    startedAt: trimString(state?.startedAt),
+    statePath: instanceStateFileForState(stateRoot, instanceId),
+  };
+}
+
+function readNormalizedInstanceState(
+  stateRoot: string,
+  instanceId: string,
+): NormalizedInstanceState {
+  return normalizeInstanceState(
+    stateRoot,
+    instanceId,
+    readInstanceState(stateRoot, instanceId),
+  );
+}
+
+function clearResolvedBaseUrl(baseUrl: string): void {
+  if (baseUrl && resolveWebSearchBaseUrl() === baseUrl) {
+    delete process.env[RIN_WEB_SEARCH_BASE_URL_ENV];
+  }
+}
+
+function removeStoredInstance(
+  stateRoot: string,
+  instanceId: string,
+  baseUrl = "",
+): void {
+  removeInstanceRoot(stateRoot, instanceId);
+  clearResolvedBaseUrl(baseUrl);
+}
+
 function findExecutableOnPath(name: string): string {
-  const raw = safeString(process.env.PATH);
+  const raw = trimString(process.env.PATH);
   const parts = raw ? raw.split(path.delimiter) : [];
   for (const dir of parts) {
     if (!dir) continue;
@@ -52,7 +162,11 @@ function findExecutableOnPath(name: string): string {
   return "";
 }
 
-function runCommandSync(command: string, args: string[], options: any = {}) {
+function runCommandSync(
+  command: string,
+  args: string[],
+  options: Parameters<typeof spawnSync>[2] = {},
+): ReturnType<typeof spawnSync> {
   const result = spawnSync(command, args, {
     stdio: "pipe",
     encoding: "utf8",
@@ -69,7 +183,7 @@ function runCommandSync(command: string, args: string[], options: any = {}) {
   throw new Error(`${path.basename(command)}:${detail}`);
 }
 
-async function getFreePort() {
+async function getFreePort(): Promise<number> {
   return await new Promise<number>((resolve, reject) => {
     const server = net.createServer();
     server.listen(0, "127.0.0.1", () => {
@@ -87,7 +201,7 @@ function writeSearxngSettingsForInstance(
   instanceId: string,
   baseUrl: string,
   port: number,
-) {
+): string {
   const settingsPath = instanceSettingsFileForState(stateRoot, instanceId);
   ensurePrivateDir(path.dirname(settingsPath));
   const secret = crypto
@@ -122,7 +236,10 @@ function writeSearxngSettingsForInstance(
   return settingsPath;
 }
 
-function ensureSearxngRuntimeInstalled(stateRoot: string, logger?: any) {
+function ensureSearxngRuntimeInstalled(
+  stateRoot: string,
+  logger?: LoggerLike,
+): SearxngRuntimeInstall {
   const runtimeDir = runtimeRootForState(stateRoot);
   const sourceDir = runtimeSourceDirForState(stateRoot);
   const venvDir = runtimeVenvDirForState(stateRoot);
@@ -152,9 +269,7 @@ function ensureSearxngRuntimeInstalled(stateRoot: string, logger?: any) {
     try {
       fs.rmSync(sourceDir, { recursive: true, force: true });
     } catch {}
-    try {
-      logger?.info?.("web-search: cloning searxng source");
-    } catch {}
+    logInfo(logger, "web-search: cloning searxng source");
     runCommandSync(
       git,
       [
@@ -169,18 +284,14 @@ function ensureSearxngRuntimeInstalled(stateRoot: string, logger?: any) {
   }
 
   if (!fs.existsSync(pythonBin)) {
-    try {
-      logger?.info?.("web-search: creating searxng virtualenv");
-    } catch {}
+    logInfo(logger, "web-search: creating searxng virtualenv");
     runCommandSync(python, ["-m", "venv", venvDir], {
       cwd: runtimeDir,
       env: { ...process.env, TMPDIR: tmpDir },
     });
   }
 
-  try {
-    logger?.info?.("web-search: installing searxng runtime dependencies");
-  } catch {}
+  logInfo(logger, "web-search: installing searxng runtime dependencies");
   runCommandSync(
     pipBin,
     ["install", "--upgrade", "pip", "wheel", "setuptools"],
@@ -196,65 +307,65 @@ function ensureSearxngRuntimeInstalled(stateRoot: string, logger?: any) {
     env: { ...process.env, TMPDIR: tmpDir },
   });
 
-  writeRuntimeBootstrapState(stateRoot, {
+  const nextState: RuntimeBootstrapState = {
     ready: true,
     sourceDir,
     pythonBin,
     pipBin,
     installedAt: new Date().toISOString(),
-  });
+  };
+  writeRuntimeBootstrapState(stateRoot, nextState);
   return { sourceDir, pythonBin, pipBin, reused: false };
 }
 
-function resolveWebSearchBaseUrl() {
-  return safeString(process.env[RIN_WEB_SEARCH_BASE_URL_ENV]).trim();
+function resolveWebSearchBaseUrl(): string {
+  return trimString(process.env[RIN_WEB_SEARCH_BASE_URL_ENV]);
 }
 
-function createInstanceId(prefix = "ws") {
+function createInstanceId(prefix = "ws"): string {
   const rand = crypto.randomBytes(6).toString("hex");
   return `${prefix}-${process.pid}-${rand}`;
 }
 
 async function ensureSearxngSidecar(
   stateRoot: string,
-  options: { logger?: any; timeoutMs?: number; instanceId?: string } = {},
+  options: EnsureSearxngSidecarOptions = {},
 ) {
   const logger = options.logger;
-  const instanceId =
-    safeString(options.instanceId).trim() || createInstanceId("searxng");
-  const existing = readInstanceState(stateRoot, instanceId);
-  if (
-    existing?.pid &&
-    isPidAlive(Number(existing.pid)) &&
-    safeString(existing.baseUrl).trim()
-  ) {
-    process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = safeString(
-      existing.baseUrl,
-    ).trim();
+  const instanceId = trimString(options.instanceId) || createInstanceId("searxng");
+  const existing = readNormalizedInstanceState(stateRoot, instanceId);
+  if (existing.alive && existing.baseUrl) {
+    process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = existing.baseUrl;
     return {
       ok: true,
       instanceId,
-      baseUrl: safeString(existing.baseUrl).trim(),
+      baseUrl: existing.baseUrl,
       reused: true,
     };
+  }
+  if (existing.pid > 0 || existing.baseUrl || existing.settingsPath) {
+    removeStoredInstance(stateRoot, instanceId, existing.baseUrl);
   }
 
   const release = await acquireProcessLock(
     runtimeLockPathForState(stateRoot),
-  ).catch((error: any) => {
+  ).catch((error: unknown) => {
     throw new Error(
       String(
-        error?.message ||
-          error ||
-          `web_search_lock_timeout:${runtimeLockPathForState(stateRoot)}`,
+        error instanceof Error
+          ? error.message
+          : error ||
+              `web_search_lock_timeout:${runtimeLockPathForState(stateRoot)}`,
       ),
     );
   });
-  let child: ReturnType<typeof spawn> | null = null;
+
+  let child: ChildProcess | null = null;
+  let baseUrl = "";
   try {
     const runtime = ensureSearxngRuntimeInstalled(stateRoot, logger);
     const port = await getFreePort();
-    const baseUrl = `http://127.0.0.1:${port}`;
+    baseUrl = `http://127.0.0.1:${port}`;
     const settingsPath = writeSearxngSettingsForInstance(
       stateRoot,
       instanceId,
@@ -264,11 +375,10 @@ async function ensureSearxngSidecar(
     const tmpDir = runtimeTmpDirForState(stateRoot);
     ensurePrivateDir(tmpDir);
 
-    try {
-      logger?.info?.(
-        `web-search: starting searxng instance=${instanceId} baseUrl=${baseUrl}`,
-      );
-    } catch {}
+    logInfo(
+      logger,
+      `web-search: starting searxng instance=${instanceId} baseUrl=${baseUrl}`,
+    );
     child = spawn(runtime.pythonBin, ["-m", "searx.webapp"], {
       cwd: runtime.sourceDir,
       detached: true,
@@ -288,8 +398,8 @@ async function ensureSearxngSidecar(
       child.unref();
     } catch {}
 
-    writeInstanceState(stateRoot, instanceId, {
-      pid: Number(child.pid || 0),
+    const nextState: WebSearchInstanceState = {
+      pid: toNumber(child.pid),
       port,
       baseUrl,
       pythonBin: runtime.pythonBin,
@@ -297,14 +407,23 @@ async function ensureSearxngSidecar(
       settingsPath,
       startedAt: new Date().toISOString(),
       ownerPid: process.pid,
-    });
+    };
+    writeInstanceState(stateRoot, instanceId, nextState);
 
-    const deadline =
-      Date.now() + Math.max(1, Number(options.timeoutMs || START_TIMEOUT_MS));
+    const timeoutMs = Math.max(
+      1,
+      Number(options.timeoutMs ?? START_TIMEOUT_MS) || START_TIMEOUT_MS,
+    );
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      if (Number(child.pid || 0) > 1 && isPidAlive(child.pid)) {
+      if (isLivePid(child.pid)) {
         process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = baseUrl;
-        return { ok: true, instanceId, baseUrl, pid: Number(child.pid || 0) };
+        return {
+          ok: true,
+          instanceId,
+          baseUrl,
+          pid: toNumber(child.pid),
+        };
       }
       await sleep(100);
     }
@@ -314,70 +433,58 @@ async function ensureSearxngSidecar(
     try {
       release();
     } catch {}
-    if (child && !(Number(child.pid || 0) > 1 && isPidAlive(child.pid))) {
-      removeInstanceState(stateRoot, instanceId);
+    if (child && !isLivePid(child.pid)) {
+      removeStoredInstance(stateRoot, instanceId, baseUrl);
     }
   }
 }
 
 async function stopSearxngSidecar(
   stateRoot: string,
-  options: { logger?: any; instanceId?: string } = {},
+  options: StopSearxngSidecarOptions = {},
 ) {
   const logger = options.logger;
-  const instanceId = safeString(options.instanceId).trim();
+  const instanceId = trimString(options.instanceId);
   if (!instanceId) return { ok: false, error: "web_search_instance_required" };
-  const current = readInstanceState(stateRoot, instanceId) || {};
-  if (Number(current.pid || 0) > 1 && isPidAlive(current.pid)) {
+
+  const current = readNormalizedInstanceState(stateRoot, instanceId);
+  if (current.alive) {
     try {
-      process.kill(Number(current.pid), "SIGTERM");
+      process.kill(current.pid, "SIGTERM");
     } catch {}
   }
-  try {
-    fs.rmSync(instanceRootForState(stateRoot, instanceId), {
-      recursive: true,
-      force: true,
-    });
-  } catch {}
-  try {
-    logger?.info?.(`web-search: stopped searxng instance=${instanceId}`);
-  } catch {}
-  if (resolveWebSearchBaseUrl() === safeString(current.baseUrl).trim())
-    delete process.env[RIN_WEB_SEARCH_BASE_URL_ENV];
-  return { ok: true, pid: Number(current.pid || 0) };
+  removeStoredInstance(stateRoot, instanceId, current.baseUrl);
+  logInfo(logger, `web-search: stopped searxng instance=${instanceId}`);
+  return { ok: true, pid: current.pid };
 }
 
 async function cleanupOrphanSearxngSidecars(
   stateRoot: string,
-  options: { logger?: any } = {},
+  options: CleanupSearxngSidecarsOptions = {},
 ) {
   const logger = options.logger;
   const cleaned: Array<{ instanceId: string; pid: number; ownerPid?: number }> =
     [];
   for (const instanceId of listInstanceIds(stateRoot)) {
-    const state = readInstanceState(stateRoot, instanceId) || {};
-    const ownerPid = Number(state?.ownerPid || 0);
-    const pid = Number(state?.pid || 0);
-    if (!(ownerPid > 1)) continue;
-    if (isPidAlive(ownerPid)) continue;
-    if (pid > 1 && isPidAlive(pid)) {
+    const state = readNormalizedInstanceState(stateRoot, instanceId);
+    if (!(state.ownerPid > 1)) continue;
+    if (isPidAlive(state.ownerPid)) continue;
+    if (state.alive) {
       try {
-        process.kill(pid, "SIGTERM");
+        process.kill(state.pid, "SIGTERM");
       } catch {}
       await sleep(150);
     }
-    try {
-      fs.rmSync(instanceRootForState(stateRoot, instanceId), {
-        recursive: true,
-        force: true,
-      });
-    } catch {}
-    cleaned.push({ instanceId, pid, ownerPid });
-    try {
-      logger?.info?.(
-        `web-search: cleaned orphan instance=${instanceId} pid=${pid} ownerPid=${ownerPid}`,
-      );
-    } catch {}
+    removeStoredInstance(stateRoot, instanceId, state.baseUrl);
+    cleaned.push({
+      instanceId,
+      pid: state.pid,
+      ownerPid: state.ownerPid || undefined,
+    });
+    logInfo(
+      logger,
+      `web-search: cleaned orphan instance=${instanceId} pid=${state.pid} ownerPid=${state.ownerPid}`,
+    );
   }
   return { ok: true, cleaned };
 }
@@ -401,27 +508,26 @@ async function searchWeb({
 function getSearxngSidecarStatus(stateRoot: string) {
   const runtime = readRuntimeBootstrapState(stateRoot) || {};
   const instances = listInstanceIds(stateRoot).map((instanceId) => {
-    const state = readInstanceState(stateRoot, instanceId) || {};
-    const pid = Number(state?.pid || 0);
+    const state = readNormalizedInstanceState(stateRoot, instanceId);
     return {
       instanceId,
-      pid,
-      alive: isPidAlive(pid),
-      baseUrl: safeString(state?.baseUrl).trim(),
-      port: Number(state?.port || 0) || undefined,
-      startedAt: safeString(state?.startedAt).trim(),
-      ownerPid: Number(state?.ownerPid || 0) || undefined,
-      statePath: instanceStateFileForState(stateRoot, instanceId),
-      settingsPath: safeString(state?.settingsPath).trim(),
+      pid: state.pid,
+      alive: state.alive,
+      baseUrl: state.baseUrl,
+      port: state.port,
+      startedAt: state.startedAt,
+      ownerPid: state.ownerPid || undefined,
+      statePath: state.statePath,
+      settingsPath: state.settingsPath,
     };
   });
   return {
     root: dataRootForState(stateRoot),
     runtime: {
       ready: Boolean(runtime?.ready),
-      installedAt: safeString(runtime?.installedAt).trim(),
-      pythonBin: safeString(runtime?.pythonBin).trim(),
-      sourceDir: safeString(runtime?.sourceDir).trim(),
+      installedAt: trimString(runtime?.installedAt),
+      pythonBin: trimString(runtime?.pythonBin),
+      sourceDir: trimString(runtime?.sourceDir),
     },
     instances,
   };
