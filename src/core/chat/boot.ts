@@ -1,9 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import { chatOutboxDir } from "../rin-lib/chat-outbox.js";
-import { listJsonFiles, safeString } from "./chat-helpers.js";
-import { readJsonFile } from "./support.js";
+import {
+  claimFileToDir,
+  listJsonFiles,
+  moveFileToDir,
+  readJsonFile,
+  removeFileIfExists,
+} from "../platform/fs.js";
+import { safeString } from "./chat-helpers.js";
 import { sendOutboxPayload } from "./transport.js";
 
 export type ChatCommandRow = {
@@ -109,30 +114,18 @@ export async function drainChatOutbox(
   const failedDir = path.join(outboxDir, "failed");
   const processingDir = path.join(outboxDir, "processing");
   for (const filePath of listJsonFiles(outboxDir)) {
-    let payload: any = null;
-    let claimedPath = "";
+    const claimedPath = claimFileToDir(filePath, processingDir);
+    if (!claimedPath) continue;
     try {
-      fs.mkdirSync(processingDir, { recursive: true });
-      claimedPath = path.join(processingDir, path.basename(filePath));
-      fs.renameSync(filePath, claimedPath);
-    } catch {
-      continue;
-    }
-    try {
-      payload = readJsonFile<any>(claimedPath, null);
+      const payload = readJsonFile<any>(claimedPath, null);
       await sendOutboxPayload(app, agentDir, payload, h);
-      fs.rmSync(claimedPath, { force: true });
+      removeFileIfExists(claimedPath);
     } catch (error: any) {
       logger.warn(
         `chat outbox failed file=${claimedPath || filePath} err=${safeString(error?.message || error)}`,
       );
       try {
-        fs.mkdirSync(failedDir, { recursive: true });
-        const failedPath = path.join(
-          failedDir,
-          path.basename(claimedPath || filePath),
-        );
-        fs.renameSync(claimedPath || filePath, failedPath);
+        moveFileToDir(claimedPath || filePath, failedDir);
       } catch {}
     }
   }

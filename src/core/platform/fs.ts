@@ -58,3 +58,43 @@ export function writeJsonAtomic(
     fs.chmodSync(filePath, mode);
   } catch {}
 }
+
+export function listJsonFiles(dir: string) {
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith(".json"))
+      .sort()
+      .map((name) => path.join(dir, name));
+  } catch {
+    return [] as string[];
+  }
+}
+
+export function claimFileToDir(filePath: string, dir: string) {
+  try {
+    ensureDir(dir);
+    const claimedPath = path.join(dir, path.basename(filePath));
+    fs.renameSync(filePath, claimedPath);
+    return claimedPath;
+  } catch {
+    return "";
+  }
+}
+
+export function moveFileToDir(
+  filePath: string,
+  dir: string,
+  fileName = path.basename(filePath),
+) {
+  ensureDir(dir);
+  const targetPath = path.join(dir, fileName);
+  fs.renameSync(filePath, targetPath);
+  return targetPath;
+}
+
+export function removeFileIfExists(filePath: string) {
+  try {
+    fs.rmSync(filePath, { force: true });
+  } catch {}
+}

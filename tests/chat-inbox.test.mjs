@@ -160,3 +160,47 @@ test("chat inbox can claim, restore, and reschedule a queued envelope", async ()
   assert.equal(rescheduled.itemId, next.item.itemId);
   assert.ok(Date.parse(rescheduled.nextAttemptAt) > Date.now());
 });
+
+
+test("chat inbox moves failed envelopes into failed storage with updated metadata", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-inbox-"));
+  const session = {
+    platform: "telegram",
+    selfId: "1",
+    channelId: "2",
+    userId: "3",
+    messageId: "m-fail",
+    timestamp: Date.now(),
+    content: "hello failure",
+    stripped: { content: "hello failure" },
+  };
+  const elements = [{ type: "text", attrs: { content: "hello failure" } }];
+
+  const { item } = inbox.enqueueChatInboxItem(agentDir, {
+    chatKey: "telegram/1:2",
+    messageId: "m-fail",
+    session,
+    elements,
+  });
+  const [filePath] = inbox.listPendingChatInboxFiles(agentDir);
+  const claimedPath = inbox.claimChatInboxFile(agentDir, filePath);
+  const claimed = inbox.readChatInboxItem(claimedPath);
+  const failed = inbox.failChatInboxFile(
+    agentDir,
+    claimedPath,
+    claimed,
+    "fatal_failure",
+  );
+
+  assert.equal(inbox.listPendingChatInboxFiles(agentDir).length, 0);
+  assert.equal(inbox.listProcessingChatInboxFiles(agentDir).length, 0);
+  assert.equal(failed.item.itemId, item.itemId);
+  assert.equal(failed.item.attemptCount, 1);
+  assert.equal(failed.item.lastError, "fatal_failure");
+  assert.ok(failed.filePath.endsWith(`${item.itemId}.json`));
+
+  const loaded = inbox.readChatInboxItem(failed.filePath);
+  assert.equal(loaded.itemId, item.itemId);
+  assert.equal(loaded.attemptCount, 1);
+  assert.equal(loaded.lastError, "fatal_failure");
+});

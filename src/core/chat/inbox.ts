@@ -1,9 +1,14 @@
-import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
 import { cloneJson, cloneJsonIfObject } from "../json-utils.js";
-import { writeJsonAtomic } from "../platform/fs.js";
+import {
+  claimFileToDir,
+  listJsonFiles,
+  moveFileToDir,
+  removeFileIfExists,
+  writeJsonAtomic,
+} from "../platform/fs.js";
 import {
   buildChatInboxRouting,
   serializeChatInboxSession,
@@ -96,24 +101,12 @@ export function enqueueChatInboxItem(
   return { item, filePath };
 }
 
-function listInboxFiles(dir: string) {
-  try {
-    return fs
-      .readdirSync(dir)
-      .filter((name) => name.endsWith(".json"))
-      .sort()
-      .map((name) => path.join(dir, name));
-  } catch {
-    return [] as string[];
-  }
-}
-
 export function listPendingChatInboxFiles(agentDir: string) {
-  return listInboxFiles(pendingDir(agentDir));
+  return listJsonFiles(pendingDir(agentDir));
 }
 
 export function listProcessingChatInboxFiles(agentDir: string) {
-  return listInboxFiles(processingDir(agentDir));
+  return listJsonFiles(processingDir(agentDir));
 }
 
 export function readChatInboxItem(filePath: string) {
@@ -174,20 +167,11 @@ export function restoreChatInboxSession(item: ChatInboxItem, bot?: any) {
 }
 
 export function claimChatInboxFile(agentDir: string, filePath: string) {
-  try {
-    fs.mkdirSync(processingDir(agentDir), { recursive: true });
-    const claimedPath = path.join(processingDir(agentDir), path.basename(filePath));
-    fs.renameSync(filePath, claimedPath);
-    return claimedPath;
-  } catch {
-    return "";
-  }
+  return claimFileToDir(filePath, processingDir(agentDir));
 }
 
 export function completeChatInboxFile(filePath: string) {
-  try {
-    fs.rmSync(filePath, { force: true });
-  } catch {}
+  removeFileIfExists(filePath);
 }
 
 export function restoreChatInboxFile(
@@ -195,9 +179,11 @@ export function restoreChatInboxFile(
   filePath: string,
   item: ChatInboxItem,
 ) {
-  const targetPath = path.join(pendingDir(agentDir), itemFileName(item.itemId));
-  writeJsonAtomic(targetPath, item);
-  completeChatInboxFile(filePath);
+  const targetPath = moveFileToDir(
+    filePath,
+    pendingDir(agentDir),
+    itemFileName(item.itemId),
+  );
   return { item, filePath: targetPath };
 }
 

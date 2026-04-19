@@ -90,18 +90,6 @@ export {
   summarizeQuote,
 } from "./inbound-normalization.js";
 
-export function listJsonFiles(dir: string) {
-  try {
-    return fs
-      .readdirSync(dir)
-      .filter((name) => name.endsWith(".json"))
-      .sort()
-      .map((name) => path.join(dir, name));
-  } catch {
-    return [] as string[];
-  }
-}
-
 export function hasMediaElements(elements: any[]) {
   if (!Array.isArray(elements) || !elements.length) return false;
   return elements.some((element) => {

@@ -145,3 +145,51 @@ test("chat boot claims outbox files before sending so concurrent drains do not d
     assert.equal(sends.length, 1);
   });
 });
+
+
+test("chat boot moves failed outbox deliveries into failed storage", async () => {
+  await withTempDir(async (agentDir) => {
+    const outboxDir = path.join(agentDir, "data", "chat-outbox");
+    await fs.mkdir(outboxDir, { recursive: true });
+    await fs.writeFile(
+      path.join(outboxDir, "one.json"),
+      JSON.stringify({
+        type: "text_delivery",
+        chatKey: "telegram/1:2",
+        text: "hello",
+      }),
+    );
+
+    const warnings = [];
+    const app = {
+      bots: [
+        {
+          platform: "telegram",
+          selfId: "1",
+          async sendMessage() {
+            throw new Error("boom");
+          },
+        },
+      ],
+    };
+    const h = {
+      text(content) {
+        return { type: "text", attrs: { content } };
+      },
+      quote(id) {
+        return { type: "quote", attrs: { id } };
+      },
+    };
+
+    await boot.drainChatOutbox(app, agentDir, h, {
+      warn(message) {
+        warnings.push(String(message));
+      },
+    });
+
+    const failedDir = path.join(outboxDir, "failed");
+    const failedFiles = await fs.readdir(failedDir);
+    assert.deepEqual(failedFiles, ["one.json"]);
+    assert.ok(warnings.some((message) => message.includes("chat outbox failed")));
+  });
+});
