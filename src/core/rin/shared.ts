@@ -62,6 +62,55 @@ type InstallConfig = {
 
 export { repoRootFromHere, runCommand, safeString };
 
+const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user", "-t", "--tmux"]);
+const RIN_WRAPPER_FLAGS = new Set(["--std", "--tmux-list"]);
+
+export function stripRinWrapperArgs(rawArgv: string[]) {
+  const args: string[] = [];
+  for (let index = 0; index < rawArgv.length; index += 1) {
+    const arg = safeString(rawArgv[index]).trim();
+    if (!arg) continue;
+    if (RIN_WRAPPER_FLAGS_WITH_VALUE.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (RIN_WRAPPER_FLAGS.has(arg)) continue;
+    args.push(arg);
+  }
+  return args;
+}
+
+export function extractSubcommandArgv(rawArgv: string[], command: string) {
+  const args = stripRinWrapperArgs(rawArgv);
+  const commandIndex = args.indexOf(command);
+  if (commandIndex < 0) return args;
+  return args.slice(commandIndex + 1);
+}
+
+export function hasSubcommandHelpFlag(rawArgv: string[], command: string) {
+  const args = stripRinWrapperArgs(rawArgv);
+  const commandIndex = args.indexOf(command);
+  if (commandIndex < 0) return false;
+  return args
+    .slice(commandIndex + 1)
+    .some((arg) => arg === "--help" || arg === "-h");
+}
+
+export function captureInternalRinCommand(
+  context: Pick<TargetExecutionContext, "repoRoot" | "capture">,
+  internalCommand: string,
+  rawArgv: string[],
+  command: string,
+) {
+  const entry = path.join(context.repoRoot, "dist", "app", "rin", "main.js");
+  return context.capture([
+    process.execPath,
+    entry,
+    internalCommand,
+    ...extractSubcommandArgv(rawArgv, command),
+  ]);
+}
+
 export function installConfigPath() {
   return launcherMetadataPathForHome(os.homedir());
 }
@@ -323,17 +372,7 @@ function daemonControlContext(parsed: ParsedArgs) {
 }
 
 export function collectTuiPassthroughArgs(argv: string[]) {
-  const passthrough: string[] = [];
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === "--user" || arg === "-u" || arg === "--tmux" || arg === "-t") {
-      i += 1;
-      continue;
-    }
-    if (arg === "--std" || arg === "--tmux-list") continue;
-    passthrough.push(arg);
-  }
-  return passthrough;
+  return stripRinWrapperArgs(argv);
 }
 
 export function resolveParsedArgs(

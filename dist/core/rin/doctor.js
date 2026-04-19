@@ -1,4 +1,4 @@
-import { managedSystemdUnitCandidates } from "../rin-install/paths.js";
+import { findManagedSystemdJournalSnapshot, findManagedSystemdStatusSnapshot, } from "../rin-install/managed-service.js";
 import { createTargetExecutionContext } from "./shared.js";
 export async function runDoctor(parsed) {
     const context = createTargetExecutionContext(parsed);
@@ -35,44 +35,28 @@ export async function runDoctor(parsed) {
         lines.push(...workerLines);
     }
     if (context.systemctl) {
-        for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
-            try {
-                const status = context.capture([
-                    context.systemctl,
-                    "--user",
-                    "status",
-                    unit,
-                    "--no-pager",
-                    "-l",
-                ]);
-                lines.push(`serviceUnit=${unit}`, "serviceStatus:", ...String(status).trim().split(/\r?\n/).slice(0, 20));
-                break;
-            }
-            catch (error) {
-                const text = String(error?.stdout || error?.stderr || error?.message || "").trim();
-                if (text) {
-                    lines.push(`serviceUnit=${unit}`, "serviceStatus:", ...text.split(/\r?\n/).slice(0, 20));
-                    break;
-                }
-            }
+        const status = findManagedSystemdStatusSnapshot(context.managedServiceUnits, (unit) => context.capture([
+            context.systemctl,
+            "--user",
+            "status",
+            unit,
+            "--no-pager",
+            "-l",
+        ]));
+        if (status) {
+            lines.push(`serviceUnit=${status.unit}`, "serviceStatus:", ...status.lines);
         }
-        for (const unit of managedSystemdUnitCandidates(context.targetUser)) {
-            try {
-                const journal = context.capture([
-                    "journalctl",
-                    "--user",
-                    "-u",
-                    unit,
-                    "-n",
-                    "20",
-                    "--no-pager",
-                ]);
-                if (String(journal || "").trim()) {
-                    lines.push(`serviceJournal=${unit}`, ...String(journal).trim().split(/\r?\n/).slice(-20));
-                    break;
-                }
-            }
-            catch { }
+        const journal = findManagedSystemdJournalSnapshot(context.managedServiceUnits, (unit) => context.capture([
+            "journalctl",
+            "--user",
+            "-u",
+            unit,
+            "-n",
+            "20",
+            "--no-pager",
+        ]));
+        if (journal) {
+            lines.push(`serviceJournal=${journal.unit}`, ...journal.lines);
         }
     }
     console.log(lines.join("\n"));

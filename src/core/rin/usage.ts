@@ -1,7 +1,7 @@
-import path from "node:path";
-
 import {
+  captureInternalRinCommand,
   createTargetExecutionContext,
+  extractSubcommandArgv,
   ParsedArgs,
   safeString,
 } from "./shared.js";
@@ -86,8 +86,7 @@ function normalizeTimeArg(input: string | undefined, boundary: "start" | "end") 
 }
 
 export function parseUsageArgs(argv: string[]): UsageCliOptions {
-  const args = [...argv];
-  if (args[0] === "usage") args.shift();
+  const args = extractSubcommandArgv(argv, "usage");
   const result: UsageCliOptions = {
     groupBy: [],
     filters: [],
@@ -101,11 +100,6 @@ export function parseUsageArgs(argv: string[]): UsageCliOptions {
   };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
-    if (arg === "-u" || arg === "--user" || arg === "-t" || arg === "--tmux") {
-      i += 1;
-      continue;
-    }
-    if (arg === "--std" || arg === "--tmux-list") continue;
     if (arg === "--help" || arg === "-h") {
       result.help = true;
       continue;
@@ -409,13 +403,12 @@ export async function runUsage(parsed: ParsedArgs, rawArgv: string[]) {
   }
   const context = createTargetExecutionContext(parsed);
   if (!context.isTargetUser) {
-    const entry = path.join(context.repoRoot, "dist", "app", "rin", "main.js");
-    const forwarded = context.capture([
-      process.execPath,
-      entry,
+    const forwarded = captureInternalRinCommand(
+      context,
       "__usage_internal",
-      ...rawArgv.slice(1),
-    ]);
+      rawArgv,
+      "usage",
+    );
     process.stdout.write(forwarded);
     return;
   }

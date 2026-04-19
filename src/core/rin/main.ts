@@ -6,12 +6,39 @@ import { runDoctor } from "./doctor.js";
 import { launchDefaultRin } from "./launch.js";
 import { runMemoryIndex, runMemoryIndexInternal } from "./memory-index.js";
 import {
+  hasSubcommandHelpFlag,
   ParsedArgs,
   resolveParsedArgs,
   runUpdate,
   safeString,
 } from "./shared.js";
 import { runUsage, runUsageInternal } from "./usage.js";
+
+const RIN_COMMANDS = [
+  [
+    "update",
+    "Update the installed Rin core runtime for the target user (does not update the CLI launcher)",
+  ],
+  ["start", "Start the target user daemon"],
+  ["stop", "Stop the target user daemon"],
+  ["restart", "Restart the target user daemon"],
+  ["doctor", "Show daemon/socket diagnostics for the target user"],
+  ["usage", "Show token telemetry dashboard and grouped usage stats"],
+  ["memory-index", "Repair the memory search index from archived transcripts"],
+] as const satisfies ReadonlyArray<readonly [ParsedArgs["command"], string]>;
+
+const INTERNAL_COMMANDS = [
+  {
+    marker: "__usage_internal",
+    command: "usage",
+    run: runUsageInternal,
+  },
+  {
+    marker: "__memory_index_internal",
+    command: "memory-index",
+    run: runMemoryIndexInternal,
+  },
+] as const;
 
 function createCli() {
   const cli = cac("rin");
@@ -26,47 +53,35 @@ function createCli() {
     .option("--tmux-list", "List hidden Rin tmux sessions")
     .help();
 
-  cli.command(
-    "update",
-    "Update the installed Rin core runtime for the target user (does not update the CLI launcher)",
-  );
-  cli.command("start", "Start the target user daemon");
-  cli.command("stop", "Stop the target user daemon");
-  cli.command("restart", "Restart the target user daemon");
-  cli.command("doctor", "Show daemon/socket diagnostics for the target user");
-  cli.command("usage", "Show token telemetry dashboard and grouped usage stats");
-  cli.command("memory-index", "Repair the memory search index from archived transcripts");
+  for (const [name, description] of RIN_COMMANDS) {
+    cli.command(name, description);
+  }
 
   return cli;
 }
 
 function parseCommandName(name: string): ParsedArgs["command"] {
-  return ["update", "start", "stop", "restart", "doctor", "usage", "memory-index"].includes(name)
+  return RIN_COMMANDS.some(([command]) => command === name)
     ? (name as ParsedArgs["command"])
     : "";
 }
 
+export function resolveInternalRinDispatch(rawArgv: string[]) {
+  for (const handler of INTERNAL_COMMANDS) {
+    if (rawArgv[0] === handler.marker) {
+      return { run: handler.run, args: rawArgv.slice(1) };
+    }
+    if (hasSubcommandHelpFlag(rawArgv, handler.command)) {
+      return { run: handler.run, args: ["--help"] };
+    }
+  }
+  return undefined;
+}
+
 export async function startRinCli() {
-  if (process.argv[2] === "__usage_internal") {
-    await runUsageInternal(process.argv.slice(3));
-    return;
-  }
-  if (process.argv[2] === "__memory_index_internal") {
-    await runMemoryIndexInternal(process.argv.slice(3));
-    return;
-  }
-  if (
-    process.argv[2] === "usage" &&
-    process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")
-  ) {
-    await runUsageInternal(["--help"]);
-    return;
-  }
-  if (
-    process.argv[2] === "memory-index" &&
-    process.argv.slice(3).some((arg) => arg === "--help" || arg === "-h")
-  ) {
-    await runMemoryIndexInternal(["--help"]);
+  const internalDispatch = resolveInternalRinDispatch(process.argv.slice(2));
+  if (internalDispatch) {
+    await internalDispatch.run(internalDispatch.args);
     return;
   }
 

@@ -2,7 +2,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
+  captureInternalRinCommand,
   createTargetExecutionContext,
+  extractSubcommandArgv,
   ParsedArgs,
   repoRootFromHere,
   safeString,
@@ -35,19 +37,13 @@ function printMemoryIndexHelp() {
 }
 
 export function parseMemoryIndexArgs(rawArgv: string[]): MemoryIndexCliOptions {
-  const args = [...rawArgv];
-  if (args[0] === "memory-index") args.shift();
+  const args = extractSubcommandArgv(rawArgv, "memory-index");
   let action = "repair" as const;
   let help = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = safeString(args[index]).trim();
     if (!arg) continue;
-    if (arg === "-u" || arg === "--user" || arg === "-t" || arg === "--tmux") {
-      index += 1;
-      continue;
-    }
-    if (arg === "--std" || arg === "--tmux-list") continue;
     if (arg === "--help" || arg === "-h") {
       help = true;
       continue;
@@ -98,13 +94,12 @@ export async function runMemoryIndex(parsed: ParsedArgs, rawArgv: string[]) {
 
   const context = createTargetExecutionContext(parsed);
   if (!context.isTargetUser) {
-    const entry = path.join(context.repoRoot, "dist", "app", "rin", "main.js");
-    const forwarded = context.capture([
-      process.execPath,
-      entry,
+    const forwarded = captureInternalRinCommand(
+      context,
       "__memory_index_internal",
-      ...rawArgv.slice(1),
-    ]);
+      rawArgv,
+      "memory-index",
+    );
     process.stdout.write(forwarded);
     return;
   }
