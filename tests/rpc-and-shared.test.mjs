@@ -15,6 +15,10 @@ const rpc = await import(
 const shared = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "shared.js")).href
 );
+const installCommon = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "common.js"))
+    .href
+);
 const launch = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "launch.js")).href
 );
@@ -56,6 +60,14 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.equal(
     shared.resolveInstallDirForTarget({ ...parsed, installDir: "" }),
     installPaths.defaultInstallDirForHome(os.homedir()),
+  );
+});
+
+test("shared reuses installer common repo helpers", async () => {
+  assert.equal(shared.repoRootFromHere(), installCommon.repoRootFromHere());
+  assert.equal(
+    await shared.runCommand(process.execPath, ["-e", ""], { stdio: "ignore" }),
+    0,
   );
 });
 

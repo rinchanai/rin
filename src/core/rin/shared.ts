@@ -2,7 +2,6 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { safeString } from "../text-utils.js";
 
 import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
@@ -18,7 +17,12 @@ import {
   socketPathForUser,
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
-import { detectCurrentUser, finalizeCoreUpdate } from "../rin-install/main.js";
+import {
+  detectCurrentUser,
+  repoRootFromHere,
+  runCommand,
+} from "../rin-install/common.js";
+import { finalizeCoreUpdate } from "../rin-install/finalize.js";
 import { loadInstallRecordFromCandidates } from "../rin-install/install-record.js";
 import {
   defaultInstallDirForHome,
@@ -53,27 +57,7 @@ type InstallConfig = {
   defaultInstallDir?: string;
 };
 
-export { safeString };
-
-export function repoRootFromHere() {
-  return path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "..",
-    "..",
-  );
-}
-
-export function runCommand(command: string, args: string[], options: any = {}) {
-  return new Promise<number>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: "inherit", ...options });
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (signal) return reject(new Error(`terminated:${signal}`));
-      resolve(code ?? 0);
-    });
-  });
-}
+export { repoRootFromHere, runCommand, safeString };
 
 export function installConfigPath() {
   return launcherMetadataPathForHome(os.homedir());
