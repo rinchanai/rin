@@ -226,11 +226,12 @@ test("discoverInstalledTargets scans manifest, launcher, systemd, and launchd ho
   });
 });
 
-test("discoverInstalledTargets dedupes identical targets while keeping earlier source precedence", async () => {
+test("discoverInstalledTargets dedupes identical targets with explicit source precedence", async () => {
   await withTempDir(async (dir) => {
     const homeRoot = path.join(dir, "home");
     const ivanHome = path.join(homeRoot, "ivan");
     const judyHome = path.join(homeRoot, "judy");
+    const malloryHome = path.join(homeRoot, "mallory");
 
     await fs.mkdir(path.join(ivanHome, ".rin"), { recursive: true });
     await fs.writeFile(
@@ -293,6 +294,41 @@ test("discoverInstalledTargets dedupes identical targets while keeping earlier s
       "utf8",
     );
 
+    await fs.mkdir(path.join(malloryHome, ".config", "systemd", "user"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        malloryHome,
+        ".config",
+        "systemd",
+        "user",
+        "rin-daemon-mallory.service",
+      ),
+      "Environment=RIN_DIR=/srv/rin-mallory\n",
+      "utf8",
+    );
+    await fs.mkdir(path.join(malloryHome, "Library", "LaunchAgents"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        malloryHome,
+        "Library",
+        "LaunchAgents",
+        "com.rin.daemon.mallory.plist",
+      ),
+      [
+        "<plist>",
+        "  <dict>",
+        "    <key>RIN_DIR</key>",
+        "    <string>/srv/rin-mallory</string>",
+        "  </dict>",
+        "</plist>",
+      ].join("\n"),
+      "utf8",
+    );
+
     assert.deepEqual(updateTargets.discoverInstalledTargets([homeRoot]), [
       {
         targetUser: "ivan",
@@ -305,6 +341,12 @@ test("discoverInstalledTargets dedupes identical targets while keeping earlier s
         installDir: "/srv/rin-judy",
         ownerHome: judyHome,
         source: "launcher",
+      },
+      {
+        targetUser: "mallory",
+        installDir: "/srv/rin-mallory",
+        ownerHome: malloryHome,
+        source: "systemd",
       },
     ]);
   });

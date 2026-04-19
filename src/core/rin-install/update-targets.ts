@@ -33,6 +33,13 @@ type ManagedInstallDiscovery = {
   installDirFromText: (text: string) => string;
 };
 
+const INSTALLED_TARGET_SOURCE_PRIORITY = {
+  manifest: 0,
+  launcher: 1,
+  systemd: 2,
+  launchd: 3,
+} as const satisfies Record<InstalledTarget["source"], number>;
+
 const MANAGED_INSTALL_DISCOVERY: ManagedInstallDiscovery[] = [
   {
     source: "systemd",
@@ -70,16 +77,25 @@ function installedTargetKey(target: InstalledTarget) {
   return `${target.targetUser}\t${target.installDir}\t${target.ownerHome}`;
 }
 
+function installedTargetSourcePriority(source: InstalledTarget["source"]) {
+  return INSTALLED_TARGET_SOURCE_PRIORITY[source];
+}
+
 function addInstalledTarget(
-  rows: InstalledTarget[],
-  seen: Set<string>,
+  rowsByKey: Map<string, InstalledTarget>,
   target: InstalledTarget | null,
 ) {
   if (!target) return;
   const key = installedTargetKey(target);
-  if (seen.has(key)) return;
-  seen.add(key);
-  rows.push(target);
+  const existing = rowsByKey.get(key);
+  if (
+    existing &&
+    installedTargetSourcePriority(existing.source) <=
+      installedTargetSourcePriority(target.source)
+  ) {
+    return;
+  }
+  rowsByKey.set(key, target);
 }
 
 function readDirectoryNames(dir: string) {
@@ -160,8 +176,7 @@ function compareInstalledTargets(a: InstalledTarget, b: InstalledTarget) {
 export function discoverInstalledTargets(
   homeRoots = installDiscoveryHomeRoots(),
 ) {
-  const rows: InstalledTarget[] = [];
-  const seen = new Set<string>();
+  const rowsByKey = new Map<string, InstalledTarget>();
 
   for (const root of homeRoots) {
     for (const entry of readDirectoryEntries(root)) {
@@ -173,8 +188,7 @@ export function discoverInstalledTargets(
         homeDir,
       )) {
         addInstalledTarget(
-          rows,
-          seen,
+          rowsByKey,
           discoverInstallRecordTarget(homeDir, userName, source, filePaths),
         );
       }
@@ -185,11 +199,11 @@ export function discoverInstalledTargets(
           userName,
           discovery,
         )) {
-          addInstalledTarget(rows, seen, target);
+          addInstalledTarget(rowsByKey, target);
         }
       }
     }
   }
 
-  return rows.sort(compareInstalledTargets);
+  return Array.from(rowsByKey.values()).sort(compareInstalledTargets);
 }
