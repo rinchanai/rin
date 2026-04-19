@@ -15,16 +15,25 @@ import {
 import { ensureDir } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
 
+const ALL_TEXT_MIME_EXTENSION_OPTIONS = {
+  allTextMimeTypes: true,
+} as const;
+
 export { ensureDir, ensureFileName, isImageMimeType, isImageName, safeString };
 
 export function extensionFromMimeType(mimeType: string) {
-  return extensionFromSharedMimeType(mimeType, { allTextMimeTypes: true });
+  return extensionFromSharedMimeType(
+    mimeType,
+    ALL_TEXT_MIME_EXTENSION_OPTIONS,
+  );
 }
 
 export function ensureExtension(fileName: string, mimeType = "") {
-  return ensureSharedExtension(fileName, mimeType, {
-    allTextMimeTypes: true,
-  });
+  return ensureSharedExtension(
+    fileName,
+    mimeType,
+    ALL_TEXT_MIME_EXTENSION_OPTIONS,
+  );
 }
 
 export function sleep(ms: number) {

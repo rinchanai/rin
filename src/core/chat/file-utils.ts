@@ -6,20 +6,43 @@ export type MimeExtensionOptions = {
   allTextMimeTypes?: boolean;
 };
 
+const MIME_EXTENSION_BY_TYPE = new Map<string, string>([
+  ["application/pdf", ".pdf"],
+  ["image/gif", ".gif"],
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+  ["image/webp", ".webp"],
+  ["text/plain", ".txt"],
+]);
+
+function normalizeMimeType(mimeType: string) {
+  return safeString(mimeType).toLowerCase().trim();
+}
+
+function decodeFileNameSegment(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function fileNameFromPathLike(value: string, fallback: string) {
+  return ensureFileName(
+    decodeFileNameSegment(path.basename(safeString(value).split(/[?#]/, 1)[0])),
+    fallback,
+  );
+}
+
 export function extensionFromMimeType(
   mimeType: string,
   options: MimeExtensionOptions = {},
 ) {
-  const mime = safeString(mimeType).toLowerCase().trim();
+  const mime = normalizeMimeType(mimeType);
   if (!mime) return "";
-  if (mime === "image/jpeg") return ".jpg";
-  if (mime === "image/png") return ".png";
-  if (mime === "image/webp") return ".webp";
-  if (mime === "image/gif") return ".gif";
-  if (mime === "application/pdf") return ".pdf";
-  if (mime === "text/plain") return ".txt";
-  if (options.allTextMimeTypes && mime.startsWith("text/")) return ".txt";
-  return "";
+  const direct = MIME_EXTENSION_BY_TYPE.get(mime);
+  if (direct) return direct;
+  return options.allTextMimeTypes && mime.startsWith("text/") ? ".txt" : "";
 }
 
 export function ensureFileName(name: string, fallback = "attachment") {
@@ -31,12 +54,11 @@ export function ensureFileName(name: string, fallback = "attachment") {
 }
 
 export function fileNameFromUrl(url: string, fallback = "attachment") {
+  const nextFallback = safeString(fallback) || "attachment";
   try {
-    const pathname = new URL(url).pathname;
-    const name = decodeURIComponent(path.basename(pathname));
-    return ensureFileName(name, fallback);
+    return fileNameFromPathLike(new URL(url).pathname, nextFallback);
   } catch {
-    return ensureFileName(path.basename(url), fallback);
+    return fileNameFromPathLike(url, nextFallback);
   }
 }
 
@@ -45,13 +67,14 @@ export function ensureExtension(
   mimeType = "",
   options: MimeExtensionOptions = {},
 ) {
-  if (path.extname(fileName)) return fileName;
+  const nextFileName = safeString(fileName);
+  if (path.extname(nextFileName)) return nextFileName;
   const ext = extensionFromMimeType(mimeType, options);
-  return ext ? `${fileName}${ext}` : fileName;
+  return ext ? `${nextFileName}${ext}` : nextFileName;
 }
 
 export function isImageMimeType(mimeType: string) {
-  return safeString(mimeType).toLowerCase().startsWith("image/");
+  return normalizeMimeType(mimeType).startsWith("image/");
 }
 
 export function isImageName(name: string) {

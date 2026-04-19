@@ -35,6 +35,12 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
     assert.equal(chatRuntimeCommon.extensionFromMimeType(mimeType), expected);
   }
 
+  assert.equal(
+    chatSupport.extensionFromMimeType,
+    chatFileUtils.extensionFromMimeType,
+  );
+  assert.equal(chatSupport.ensureExtension, chatFileUtils.ensureExtension);
+
   assert.equal(chatFileUtils.extensionFromMimeType('text/markdown'), '');
   assert.equal(chatSupport.extensionFromMimeType('text/markdown'), '');
   assert.equal(chatRuntimeCommon.extensionFromMimeType('text/markdown'), '.txt');
@@ -49,6 +55,17 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
       'fallback',
     ),
     'hello world.txt',
+  );
+  assert.equal(
+    chatFileUtils.fileNameFromUrl('demo.txt?download=1#view', 'fallback'),
+    'demo.txt',
+  );
+  assert.equal(
+    chatFileUtils.fileNameFromUrl(
+      'https://example.com/files/%E0%A4%A.txt',
+      'fallback',
+    ),
+    '%E0%A4%A.txt',
   );
   assert.equal(chatSupport.ensureExtension('notes', 'text/markdown'), 'notes');
   assert.equal(

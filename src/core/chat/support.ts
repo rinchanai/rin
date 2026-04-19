@@ -4,20 +4,14 @@ import { createHash } from "node:crypto";
 
 import { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
-import {
-  ensureExtension as ensureSharedExtension,
+
+export { ensureDir, readJsonFile, writeJsonFile } from "../platform/fs.js";
+export {
+  ensureExtension,
   ensureFileName,
-  extensionFromMimeType as extensionFromSharedMimeType,
+  extensionFromMimeType,
   fileNameFromUrl,
 } from "./file-utils.js";
-
-export {
-  ensureDir,
-  readJsonFile,
-  writeJsonFile,
-  ensureFileName,
-  fileNameFromUrl,
-};
 export {
   buildChatConfigFromSettings,
   buildChatRuntimePackageJson,
@@ -27,14 +21,6 @@ export {
   shouldInstallChatRuntimeDependencies,
 } from "./runtime-config.js";
 export type { ChatRuntimeAdapterEntry } from "./runtime-config.js";
-
-export function extensionFromMimeType(mimeType: string) {
-  return extensionFromSharedMimeType(mimeType);
-}
-
-export function ensureExtension(fileName: string, mimeType = "") {
-  return ensureSharedExtension(fileName, mimeType);
-}
 
 export type ParsedChatKey = {
   platform: string;
