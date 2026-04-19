@@ -6,6 +6,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
+import { normalizeChatKey } from "../chat/support.js";
 import {
   getToolResultUserText,
   prepareTruncatedAgentUserText,
@@ -13,12 +14,47 @@ import {
 } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { createCronTaskId } from "../rin-daemon/cron-utils.js";
-import { normalizeChatKey } from "../chat/support.js";
+import type { CronTaskInput, CronTaskRecord } from "../rin-daemon/cron.js";
 import { readSessionMetadata } from "../session/metadata.js";
 
-function wrapAgentPrompt(prompt: string) {
-  return String(prompt || "").trim();
-}
+const NO_SCHEDULED_TASKS_TEXT = "No scheduled tasks.";
+const TASK_MUTATION_COMMANDS = {
+  delete: "cron_delete_task",
+  pause: "cron_pause_task",
+  resume: "cron_resume_task",
+} as const;
+
+type TaskAction = "get" | "save" | keyof typeof TASK_MUTATION_COMMANDS;
+type TaskRecordLike = Partial<CronTaskRecord>;
+type TaskCommandResponse = {
+  task?: TaskRecordLike;
+  tasks?: TaskRecordLike[];
+  deleted?: boolean;
+  [key: string]: unknown;
+};
+type TaskToolTexts = {
+  agentText: string;
+  userText: string;
+};
+type TaskTheme = {
+  fg: (token: string, text: string) => string;
+  bold: (text: string) => string;
+};
+type TaskRenderOptions = Parameters<typeof renderTextToolResult>[1];
+type TaskRenderTheme = Parameters<typeof renderTextToolResult>[2];
+type TaskRenderResult = Parameters<typeof renderTextToolResult>[0];
+type TaskGetParams = {
+  taskId?: unknown;
+};
+type TaskManageParams = {
+  action?: unknown;
+  taskId?: unknown;
+};
+type TaskSaveCallArgs = {
+  name?: unknown;
+  trigger?: { kind?: unknown } | null;
+  target?: { kind?: unknown } | null;
+};
 
 type TaskSaveDefaults = {
   sessionFile?: string;
@@ -27,7 +63,11 @@ type TaskSaveDefaults = {
   chatKey?: string;
 };
 
-function readTaskSaveDefaults(ctx: any): TaskSaveDefaults {
+function wrapAgentPrompt(prompt: string) {
+  return String(prompt || "").trim();
+}
+
+function readTaskSaveDefaults(ctx: unknown): TaskSaveDefaults {
   const session = readSessionMetadata(ctx);
   const sessionName = session.sessionName || undefined;
   return {
@@ -38,101 +78,137 @@ function readTaskSaveDefaults(ctx: any): TaskSaveDefaults {
   };
 }
 
-function buildTaskForSave(input: any, defaults: TaskSaveDefaults) {
-  const taskId = String(input?.id || "").trim() || createCronTaskId();
-  const session = input?.session || { mode: "dedicated" };
-  const chatKey = input?.chatKey !== undefined ? input.chatKey : defaults.chatKey;
-  const target =
-    input?.target?.kind === "agent_prompt"
-      ? {
-          kind: "agent_prompt",
-          prompt: wrapAgentPrompt(String(input?.target?.prompt || "")),
-        }
-      : input?.target
-        ? {
-            kind: "shell_command",
-            command: String(input?.target?.command || ""),
-          }
-        : undefined;
+function buildTaskTarget(target: CronTaskInput["target"]) {
+  if (target?.kind === "agent_prompt") {
+    return {
+      kind: "agent_prompt" as const,
+      prompt: wrapAgentPrompt(String(target.prompt || "")),
+    };
+  }
+  if (target) {
+    return {
+      kind: "shell_command" as const,
+      command: String(target.command || ""),
+    };
+  }
+  return undefined;
+}
+
+function buildTaskForSave(input: CronTaskInput, defaults: TaskSaveDefaults) {
+  const taskId = String(input.id || "").trim() || createCronTaskId();
+  const session = input.session ?? { mode: "dedicated" as const };
+  const chatKey = input.chatKey !== undefined ? input.chatKey : defaults.chatKey;
   return {
     ...input,
     id: taskId,
     chatKey,
     session,
-    target,
+    target: buildTaskTarget(input.target),
   };
 }
 
-const NO_SCHEDULED_TASKS_TEXT = "No scheduled tasks.";
-const TASK_MUTATION_COMMANDS = {
-  delete: "cron_delete_task",
-  pause: "cron_pause_task",
-  resume: "cron_resume_task",
-} as const;
+function renderTaskLabel(task: TaskRecordLike) {
+  const id = String(task.id || "").trim();
+  const name = String(task.name || "").trim();
+  return name ? `${id} (${name})` : id;
+}
 
-function renderTask(task: any) {
-  const target =
-    task?.target?.kind === "shell_command"
-      ? `command: ${String(task?.target?.command || "")}`
-      : `agent: ${String(task?.target?.prompt || "")}`;
-  const trigger =
-    task?.trigger?.kind === "interval"
-      ? `every ${String(task?.trigger?.intervalMs || 0)}ms`
-      : task?.trigger?.kind === "cron"
-        ? `cron ${String(task?.trigger?.expression || "")}`
-        : `once ${String(task?.trigger?.runAt || "")}`;
+function renderTaskTrigger(trigger: TaskRecordLike["trigger"]) {
+  if (trigger?.kind === "interval") {
+    return `every ${String(trigger.intervalMs || 0)}ms`;
+  }
+  if (trigger?.kind === "cron") {
+    return `cron ${String(trigger.expression || "")}`;
+  }
+  return `once ${String(trigger?.runAt || "")}`;
+}
+
+function renderTaskTarget(target: TaskRecordLike["target"]) {
+  if (target?.kind === "shell_command") {
+    return `command: ${String(target.command || "")}`;
+  }
+  return `agent: ${String(target?.prompt || "")}`;
+}
+
+function renderTaskSession(task: TaskRecordLike) {
+  const sessionFile = task.session?.sessionFile
+    ? String(task.session.sessionFile)
+    : task.dedicatedSessionFile
+      ? String(task.dedicatedSessionFile)
+      : "";
+  return `session=${String(task.session?.mode || "")}${sessionFile ? `:${sessionFile}` : ""}`;
+}
+
+function renderTaskState(task: TaskRecordLike) {
+  if (task.completedAt) return `completed=${String(task.completedAt)}`;
+  if (task.enabled === false) return "disabled";
+  return `next=${String(task.nextRunAt || "pending")}`;
+}
+
+function renderTask(task: TaskRecordLike) {
   return [
-    `${String(task?.id || "")}${task?.name ? ` (${String(task.name)})` : ""}`,
-    trigger,
-    target,
-    task?.chatKey ? `chat=${String(task.chatKey)}` : "",
-    `session=${String(task?.session?.mode || "")}${task?.session?.sessionFile ? `:${String(task.session.sessionFile)}` : task?.dedicatedSessionFile ? `:${String(task.dedicatedSessionFile)}` : ""}`,
-    task?.completedAt
-      ? `completed=${String(task.completedAt)}`
-      : task?.enabled === false
-        ? "disabled"
-        : `next=${String(task?.nextRunAt || "pending")}`,
+    renderTaskLabel(task),
+    renderTaskTrigger(task.trigger),
+    renderTaskTarget(task.target),
+    task.chatKey ? `chat=${String(task.chatKey)}` : "",
+    renderTaskSession(task),
+    renderTaskState(task),
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-function renderTaskList(tasks: any[]) {
+function renderTaskList(tasks: TaskRecordLike[]) {
   if (!tasks.length) return NO_SCHEDULED_TASKS_TEXT;
   return tasks.map((task) => renderTask(task)).join("\n\n");
 }
 
-function formatTaskLabel(task: any) {
-  const id = String(task?.id || "").trim();
-  const name = String(task?.name || "").trim();
-  return name ? `${id} (${name})` : id || "unnamed_task";
+function formatTaskLabel(task: TaskRecordLike) {
+  return renderTaskLabel(task) || "unnamed_task";
 }
 
-function buildTexts(action: string, data: any, params: any) {
+function readTaskId(params: unknown) {
+  return String((params as TaskGetParams | TaskManageParams | null | undefined)?.taskId || "").trim();
+}
+
+function readManageTaskAction(params: unknown) {
+  return String((params as TaskManageParams | null | undefined)?.action || "").trim();
+}
+
+function buildFallbackTexts(
+  action: Exclude<TaskAction, "get" | "save">,
+  data: TaskCommandResponse,
+  params: unknown,
+): TaskToolTexts {
+  const deletedText = `Deleted task: ${readTaskId(params)}`;
+  const renderedTask = data.task ? renderTask(data.task) : "";
+  return {
+    agentText:
+      renderedTask || (data.deleted ? deletedText : `scheduled_task ${action}`),
+    userText:
+      renderedTask ||
+      (data.deleted ? deletedText : JSON.stringify(data, null, 2)),
+  };
+}
+
+function buildTexts(
+  action: TaskAction,
+  data: TaskCommandResponse,
+  params: unknown,
+): TaskToolTexts {
   if (action === "get") {
-    const text = data?.task
+    const text = data.task
       ? renderTask(data.task)
-      : renderTaskList(Array.isArray(data?.tasks) ? data.tasks : []);
+      : renderTaskList(Array.isArray(data.tasks) ? data.tasks : []);
     return { agentText: text, userText: text };
   }
 
-  if (action === "save" && data?.task) {
+  if (action === "save" && data.task) {
     const text = `Saved task: ${formatTaskLabel(data.task)}`;
     return { agentText: text, userText: text };
   }
 
-  const deletedText = `Deleted task: ${String(params?.taskId || "")}`;
-  const userText = data?.task
-    ? renderTask(data.task)
-    : data?.deleted
-      ? deletedText
-      : JSON.stringify(data, null, 2);
-  const agentText = data?.task
-    ? renderTask(data.task)
-    : data?.deleted
-      ? deletedText
-      : `scheduled_task ${action}`;
-  return { agentText, userText };
+  return buildFallbackTexts(action as Exclude<TaskAction, "get" | "save">, data, params);
 }
 
 const taskSchema = Type.Object({
@@ -248,7 +324,7 @@ const manageTaskSchema = Type.Object({
 });
 
 type TaskActionDetails = {
-  action: string;
+  action: TaskAction;
   userText?: string;
   fullOutputPath?: string;
   truncated?: boolean;
@@ -256,9 +332,9 @@ type TaskActionDetails = {
 };
 
 function formatListTaskResult(
-  result: any,
-  options: { expanded: boolean },
-  theme: any,
+  result: TaskRenderResult,
+  options: TaskRenderOptions,
+  theme: TaskRenderTheme,
   showImages: boolean,
 ) {
   return renderTextToolResult(result, options, theme, showImages, {
@@ -266,27 +342,32 @@ function formatListTaskResult(
   });
 }
 
-async function executeTaskAction(action: string, params: any, ctx: any) {
+function isTaskMutationAction(action: string): action is keyof typeof TASK_MUTATION_COMMANDS {
+  return Object.prototype.hasOwnProperty.call(TASK_MUTATION_COMMANDS, action);
+}
+
+async function executeTaskAction(action: TaskAction, params: unknown, ctx: unknown) {
   const defaults = readTaskSaveDefaults(ctx);
 
-  let data: any;
+  let data: TaskCommandResponse;
   if (action === "get") {
-    data = await requestDaemonCommand(
-      String(params?.taskId || "").trim()
-        ? { type: "cron_get_task", taskId: params?.taskId }
+    const taskId = readTaskId(params);
+    data = (await requestDaemonCommand(
+      taskId
+        ? { type: "cron_get_task", taskId }
         : { type: "cron_list_tasks" },
-    );
+    )) as TaskCommandResponse;
   } else if (action === "save") {
-    data = await requestDaemonCommand({
+    data = (await requestDaemonCommand({
       type: "cron_upsert_task",
-      task: buildTaskForSave(params, defaults),
+      task: buildTaskForSave((params || {}) as CronTaskInput, defaults),
       defaults,
-    });
-  } else if (action in TASK_MUTATION_COMMANDS) {
-    data = await requestDaemonCommand({
-      type: TASK_MUTATION_COMMANDS[action as keyof typeof TASK_MUTATION_COMMANDS],
-      taskId: params?.taskId,
-    });
+    })) as TaskCommandResponse;
+  } else if (isTaskMutationAction(action)) {
+    data = (await requestDaemonCommand({
+      type: TASK_MUTATION_COMMANDS[action],
+      taskId: readTaskId(params),
+    })) as TaskCommandResponse;
   } else {
     throw new Error(`Unsupported action: ${action}`);
   }
@@ -314,22 +395,23 @@ async function executeTaskAction(action: string, params: any, ctx: any) {
       ...data,
       action,
       userText: texts.userText,
+      truncation: undefined,
     } satisfies TaskActionDetails,
   };
 }
 
-function formatGetTaskCall(args: any, theme: any) {
-  const taskId = String(args?.taskId || "").trim();
+function formatGetTaskCall(args: TaskGetParams, theme: TaskTheme) {
+  const taskId = readTaskId(args);
   return [
     theme.fg("toolTitle", theme.bold("get_task")),
     taskId ? ` ${theme.fg("accent", taskId)}` : "",
   ].join("");
 }
 
-function formatSaveTaskCall(args: any, theme: any) {
-  const name = String(args?.name || "").trim();
-  const trigger = String(args?.trigger?.kind || "").trim();
-  const target = String(args?.target?.kind || "").trim();
+function formatSaveTaskCall(args: TaskSaveCallArgs, theme: TaskTheme) {
+  const name = String(args.name || "").trim();
+  const trigger = String(args.trigger?.kind || "").trim();
+  const target = String(args.target?.kind || "").trim();
   const parts = [
     theme.fg("toolTitle", theme.bold("save_task")),
     name ? ` ${theme.fg("accent", name)}` : "",
@@ -339,9 +421,9 @@ function formatSaveTaskCall(args: any, theme: any) {
   return parts.join("");
 }
 
-function formatManageTaskCall(args: any, theme: any) {
-  const action = String(args?.action || "").trim();
-  const taskId = String(args?.taskId || "").trim();
+function formatManageTaskCall(args: TaskManageParams, theme: TaskTheme) {
+  const action = readManageTaskAction(args);
+  const taskId = readTaskId(args);
   return [
     theme.fg("toolTitle", theme.bold("manage_task")),
     action ? ` ${theme.fg("muted", action)}` : "",
@@ -349,7 +431,12 @@ function formatManageTaskCall(args: any, theme: any) {
   ].join("");
 }
 
-function renderTaskResult(result: any, options: any, theme: any, context: any) {
+function renderTaskResult(
+  result: TaskRenderResult,
+  options: TaskRenderOptions,
+  theme: TaskRenderTheme,
+  context: { showImages: boolean },
+) {
   const details = result.details as TaskActionDetails | undefined;
   if (details?.action === "get") {
     return new Text(
@@ -402,7 +489,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     promptGuidelines: [],
     parameters: manageTaskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
-      await executeTaskAction(String((params as any)?.action || "").trim(), params, ctx),
+      await executeTaskAction(readManageTaskAction(params) as TaskAction, params, ctx),
     renderCall: (args, theme) => new Text(formatManageTaskCall(args, theme), 0, 0),
     renderResult: renderTaskResult,
   });

@@ -14,15 +14,20 @@ const taskIndex = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "task", "index.js")).href,
 );
 
-test("save_task exposes in-place update id and dedicated default read-and-burn semantics", () => {
+function getTaskTool(name) {
   const tools = [];
   taskIndex.default({
     registerTool(tool) {
       tools.push(tool);
     },
   });
-  const saveTool = tools.find((tool) => tool.name === "save_task");
-  assert.ok(saveTool);
+  const tool = tools.find((entry) => entry.name === name);
+  assert.ok(tool);
+  return tool;
+}
+
+test("save_task exposes in-place update id and dedicated default read-and-burn semantics", () => {
+  const saveTool = getTaskTool("save_task");
   assert.equal(saveTool.parameters.properties.id.type, "string");
   assert.equal(
     saveTool.parameters.properties.session.properties.sessionFile.type,
@@ -86,14 +91,7 @@ test("get_task returns a requested task instead of falling back to 'No scheduled
     server.listen(socketPath, () => resolve());
   });
 
-  const tools = [];
-  taskIndex.default({
-    registerTool(tool) {
-      tools.push(tool);
-    },
-  });
-  const getTool = tools.find((tool) => tool.name === "get_task");
-  assert.ok(getTool);
+  const getTool = getTaskTool("get_task");
 
   const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
   process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
@@ -163,14 +161,7 @@ test("get_task respects RIN_DAEMON_SOCKET_PATH over legacy runtime dir lookup", 
     server.listen(socketPath, () => resolve());
   });
 
-  const tools = [];
-  taskIndex.default({
-    registerTool(tool) {
-      tools.push(tool);
-    },
-  });
-  const getTool = tools.find((tool) => tool.name === "get_task");
-  assert.ok(getTool);
+  const getTool = getTaskTool("get_task");
 
   const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
   const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
@@ -254,14 +245,7 @@ test("get_task without taskId lists scheduled tasks via cron_list_tasks", async 
     server.listen(socketPath, () => resolve());
   });
 
-  const tools = [];
-  taskIndex.default({
-    registerTool(tool) {
-      tools.push(tool);
-    },
-  });
-  const getTool = tools.find((tool) => tool.name === "get_task");
-  assert.ok(getTool);
+  const getTool = getTaskTool("get_task");
 
   const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
   process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
@@ -328,14 +312,7 @@ test("save_task only auto-binds valid current chat session names", async () => {
     server.listen(socketPath, () => resolve());
   });
 
-  const tools = [];
-  taskIndex.default({
-    registerTool(tool) {
-      tools.push(tool);
-    },
-  });
-  const saveTool = tools.find((tool) => tool.name === "save_task");
-  assert.ok(saveTool);
+  const saveTool = getTaskTool("save_task");
 
   const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
   process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
@@ -379,6 +356,86 @@ test("save_task only auto-binds valid current chat session names", async () => {
     assert.equal(requests[0].task?.chatKey, undefined);
     assert.equal(requests[1].defaults?.chatKey, "telegram/777:1");
     assert.equal(requests[1].task?.chatKey, "telegram/777:1");
+  } finally {
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test("save_task normalizes prompt and shell targets before sending them to the daemon", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-task-runtime-"));
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  await fs.mkdir(socketDir, { recursive: true });
+
+  const requests = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        requests.push(payload);
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: true,
+            data: { task: payload.task },
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => resolve());
+  });
+
+  const saveTool = getTaskTool("save_task");
+
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
+  try {
+    await saveTool.execute(
+      "tool-agent",
+      {
+        trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+        target: { kind: "agent_prompt", prompt: "  hello world  " },
+      },
+      undefined,
+      undefined,
+      {},
+    );
+    await saveTool.execute(
+      "tool-shell",
+      {
+        chatKey: null,
+        trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+        session: { mode: "current", sessionFile: "/tmp/demo.jsonl" },
+        target: { kind: "shell_command", command: "echo hello" },
+      },
+      undefined,
+      undefined,
+      {},
+    );
+
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].task?.session?.mode, "dedicated");
+    assert.equal(requests[0].task?.target?.kind, "agent_prompt");
+    assert.equal(requests[0].task?.target?.prompt, "hello world");
+    assert.equal(requests[1].task?.chatKey, null);
+    assert.equal(requests[1].task?.session?.mode, "current");
+    assert.equal(requests[1].task?.session?.sessionFile, "/tmp/demo.jsonl");
+    assert.equal(requests[1].task?.target?.kind, "shell_command");
+    assert.equal(requests[1].task?.target?.command, "echo hello");
   } finally {
     process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
     await new Promise((resolve) => server.close(() => resolve()));
@@ -435,14 +492,7 @@ test("manage_task maps public actions to daemon task commands", async () => {
     server.listen(socketPath, () => resolve());
   });
 
-  const tools = [];
-  taskIndex.default({
-    registerTool(tool) {
-      tools.push(tool);
-    },
-  });
-  const manageTool = tools.find((tool) => tool.name === "manage_task");
-  assert.ok(manageTool);
+  const manageTool = getTaskTool("manage_task");
 
   const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
   process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
