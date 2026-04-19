@@ -25,8 +25,9 @@ import {
   getTranscriptArchivePath,
   loadTranscriptSessionEntries,
 } from "../memory/transcripts.js";
-import { safeString } from "./core/utils.js";
+import { nowIso, safeString } from "./core/utils.js";
 import { resolveAgentDir } from "./lib.js";
+import { selfImprovePromptsDir, selfImproveSkillsDir } from "./paths.js";
 
 type ExtensionCtxLike = {
   model?: Model<any> | null;
@@ -55,8 +56,8 @@ async function collectManagedFiles(dir: string): Promise<string[]> {
 async function captureManagedArtifactSnapshot(agentDir: string) {
   const root = path.resolve(agentDir);
   const paths = [
-    ...(await collectManagedFiles(path.join(root, "self_improve", "prompts"))),
-    ...(await collectManagedFiles(path.join(root, "self_improve", "skills"))),
+    ...(await collectManagedFiles(selfImprovePromptsDir(root))),
+    ...(await collectManagedFiles(selfImproveSkillsDir(root))),
   ].sort();
   const snapshot = new Map<string, string>();
   for (const filePath of paths) {
@@ -209,7 +210,7 @@ async function storeSessionSummaryInTranscriptArchive(options: {
       .reverse()
       .find((entry) => isSessionSummaryEntry(entry))?.text || "",
   );
-  const timestamp = new Date().toISOString();
+  const timestamp = nowIso();
   const archivePath = getTranscriptArchivePath(
     {
       timestamp,

@@ -1,18 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const INIT_STATE_FILE = "init-state.json";
+import { nowIso } from "./core/utils.js";
+import { initStatePath } from "./paths.js";
+
 const REQUIRED_INIT_SLOTS = ["agent_profile", "user_profile"];
 const OPTIONAL_INIT_SLOTS = ["core_doctrine", "core_facts"];
 
-function initStatePath(resolveAgentDir: () => string) {
-  return path.join(resolveAgentDir(), "self_improve", "state", INIT_STATE_FILE);
+function resolveInitStatePath(resolveAgentDir: () => string) {
+  return initStatePath(resolveAgentDir());
 }
 
 function readInitState(resolveAgentDir: () => string) {
   try {
     const parsed = JSON.parse(
-      fs.readFileSync(initStatePath(resolveAgentDir), "utf8"),
+      fs.readFileSync(resolveInitStatePath(resolveAgentDir), "utf8"),
     ) as Record<string, any>;
     return {
       version: 2,
@@ -37,11 +39,11 @@ function writeInitState(
   resolveAgentDir: () => string,
   next: Record<string, any>,
 ) {
-  fs.mkdirSync(path.dirname(initStatePath(resolveAgentDir)), {
+  fs.mkdirSync(path.dirname(resolveInitStatePath(resolveAgentDir)), {
     recursive: true,
   });
   fs.writeFileSync(
-    initStatePath(resolveAgentDir),
+    resolveInitStatePath(resolveAgentDir),
     JSON.stringify(next, null, 2),
     "utf8",
   );
@@ -107,7 +109,7 @@ export async function markOnboardingPrompted(
   const next = {
     ...state,
     version: 2,
-    promptedAt: new Date().toISOString(),
+    promptedAt: nowIso(),
     completedAt: "",
     lastTrigger: trigger,
     pending: true,
@@ -128,7 +130,7 @@ export async function refreshOnboardingCompletion(
     const next = {
       ...status.state,
       version: 2,
-      completedAt: new Date().toISOString(),
+      completedAt: nowIso(),
       pending: false,
     };
     writeInitState(resolveAgentDir, next);

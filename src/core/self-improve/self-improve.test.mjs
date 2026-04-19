@@ -31,6 +31,11 @@ const asyncJobs = await import(
     path.join(rootDir, "dist", "core", "self-improve", "async-jobs.js"),
   ).href
 );
+const selfImprovePaths = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "self-improve", "paths.js"),
+  ).href
+);
 const processing = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "self-improve", "processing.js"),
@@ -45,6 +50,34 @@ async function withTempRoot(fn) {
     await fs.rm(dir, { recursive: true, force: true });
   }
 }
+
+function queuePath(root) {
+  return selfImprovePaths.maintenanceQueuePath(root);
+}
+
+function historyPath(root) {
+  return selfImprovePaths.maintenanceHistoryPath(root);
+}
+
+function selfImproveRoot(root) {
+  return selfImprovePaths.resolveSelfImproveRoot(root);
+}
+
+test("self-improve paths resolve under the agent root", () => {
+  const root = "/tmp/rin-agent";
+  assert.equal(
+    selfImproveRoot(root),
+    path.join(root, "self_improve"),
+  );
+  assert.equal(
+    queuePath(root),
+    path.join(root, "self_improve", "state", "maintenance-queue.json"),
+  );
+  assert.equal(
+    historyPath(root),
+    path.join(root, "self_improve", "state", "maintenance-history.jsonl"),
+  );
+});
 
 test("buildOnboardingPrompt keeps init instructions hidden and language-first", () => {
   const prompt = lib.buildOnboardingPrompt("manual");
@@ -148,13 +181,7 @@ test("queued memory maintenance jobs deduplicate by session file", async () => {
       trigger: "second",
     });
 
-    const queuePath = path.join(
-      root,
-      "self_improve",
-      "state",
-      "maintenance-queue.json",
-    );
-    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
     assert.equal(queue.length, 1);
     assert.equal(queue[0].kind, "self_improve_review");
     assert.equal(queue[0].trigger, "second");
@@ -173,13 +200,7 @@ test("queued maintenance jobs use core self-improve trigger names by default", a
       sessionFile: "/tmp/session-b.jsonl",
     });
 
-    const queuePath = path.join(
-      root,
-      "self_improve",
-      "state",
-      "maintenance-queue.json",
-    );
-    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
     assert.equal(queue[0].trigger, "self_improve:review");
     assert.equal(queue[1].trigger, "session_summary:review");
   });
@@ -198,22 +219,10 @@ test("queued maintenance drops invalid session jobs into history instead of bloc
     assert.equal(result.failed, 1);
     assert.equal(result.processed, 0);
 
-    const queuePath = path.join(
-      root,
-      "self_improve",
-      "state",
-      "maintenance-queue.json",
-    );
-    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
     assert.equal(queue.length, 0);
 
-    const historyPath = path.join(
-      root,
-      "self_improve",
-      "state",
-      "maintenance-history.jsonl",
-    );
-    const history = (await fs.readFile(historyPath, "utf8"))
+    const history = (await fs.readFile(historyPath(root), "utf8"))
       .trim()
       .split(/\r?\n/g)
       .filter(Boolean)
@@ -241,13 +250,7 @@ test("session summary jobs stay distinct from self-improve review jobs", async (
       trigger: "summary",
     });
 
-    const queuePath = path.join(
-      root,
-      "self_improve",
-      "state",
-      "maintenance-queue.json",
-    );
-    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
     assert.equal(queue.length, 2);
     assert.deepEqual(
       queue.map((item) => item.kind),
@@ -273,13 +276,7 @@ test("compaction snapshot jobs stay distinct for the same session", async () => 
       snapshotKey: "compaction:first-kept-b",
     });
 
-    const queuePath = path.join(
-      root,
-      "self_improve",
-      "state",
-      "maintenance-queue.json",
-    );
-    const queue = JSON.parse(await fs.readFile(queuePath, "utf8"));
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
     assert.equal(queue.length, 2);
     assert.equal(queue[0].snapshotKey, "compaction:first-kept-a");
     assert.equal(queue[1].snapshotKey, "compaction:first-kept-b");
@@ -330,8 +327,7 @@ test("compileSelfImprove includes saved self-improve prompts from markdown sourc
 
 test("self-improve doc loading uses prompt slot filenames and ignores skill docs", async () => {
   await withTempRoot(async (root) => {
-    const selfImproveRoot = path.join(root, "self_improve");
-    const skillDir = path.join(selfImproveRoot, "skills", "demo-skill");
+    const skillDir = path.join(selfImproveRoot(root), "skills", "demo-skill");
     await fs.mkdir(path.join(skillDir, "references"), { recursive: true });
     await fs.writeFile(
       path.join(skillDir, "SKILL.md"),
@@ -349,21 +345,21 @@ test("self-improve doc loading uses prompt slot filenames and ignores skill docs
       "# Guide\n",
       "utf8",
     );
-    await fs.mkdir(path.join(selfImproveRoot, "prompts"), {
+    await fs.mkdir(path.join(selfImproveRoot(root), "prompts"), {
       recursive: true,
     });
     await fs.writeFile(
-      path.join(selfImproveRoot, "prompts", "agent_profile.md"),
+      path.join(selfImproveRoot(root), "prompts", "agent_profile.md"),
       "- Speak concise Chinese by default.\n",
       "utf8",
     );
     await fs.writeFile(
-      path.join(selfImproveRoot, "prompts", "notes.md"),
+      path.join(selfImproveRoot(root), "prompts", "notes.md"),
       "This should be ignored.\n",
       "utf8",
     );
 
-    const docs = await memoryDocs.loadMemoryDocs(selfImproveRoot);
+    const docs = await memoryDocs.loadMemoryDocs(selfImproveRoot(root));
     assert.equal(docs.length, 1);
     assert.match(String(docs[0].path || ""), /agent_profile\.md$/);
     assert.equal(
@@ -394,7 +390,7 @@ test("saveSelfImprovePromptDoc supports core_facts with fact kind by default", a
     assert.equal(saved.doc.kind, "fact");
     assert.equal(
       await fs.readFile(
-        path.join(root, "self_improve", "prompts", "core_facts.md"),
+        path.join(selfImproveRoot(root), "prompts", "core_facts.md"),
         "utf8",
       ),
       "- User prefers concise Chinese replies. Project repo is /srv/app.\n",

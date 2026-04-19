@@ -12,7 +12,13 @@ import {
   writeJsonAtomic,
 } from "../platform/fs.js";
 import { normalizeSessionValue } from "../session/metadata.js";
-import { safeString } from "./core/utils.js";
+import { nowIso, safeString } from "./core/utils.js";
+import {
+  maintenanceHistoryPath,
+  maintenanceLockPath,
+  maintenanceQueuePath,
+  selfImproveStateDir,
+} from "./paths.js";
 
 export type MaintenanceJob = {
   id: string;
@@ -52,32 +58,12 @@ type MaintenanceHistoryRecord = {
   changedFiles?: MaintenanceChangedFile[];
 };
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function stateDir(agentDir: string) {
-  return path.join(path.resolve(agentDir), "self_improve", "state");
-}
-
-function queuePath(agentDir: string) {
-  return path.join(stateDir(agentDir), "maintenance-queue.json");
-}
-
-function historyPath(agentDir: string) {
-  return path.join(stateDir(agentDir), "maintenance-history.jsonl");
-}
-
-function lockPath(agentDir: string) {
-  return path.join(stateDir(agentDir), "maintenance-worker.lock");
-}
-
 async function ensureStateDir(agentDir: string) {
-  await fs.mkdir(stateDir(agentDir), { recursive: true });
+  await fs.mkdir(selfImproveStateDir(agentDir), { recursive: true });
 }
 
 async function loadQueue(agentDir: string): Promise<MaintenanceJob[]> {
-  const parsed = readJsonFile<unknown>(queuePath(agentDir), []);
+  const parsed = readJsonFile<unknown>(maintenanceQueuePath(agentDir), []);
   return Array.isArray(parsed)
     ? parsed.filter((item) => item && typeof item === "object")
     : [];
@@ -85,7 +71,7 @@ async function loadQueue(agentDir: string): Promise<MaintenanceJob[]> {
 
 async function saveQueue(agentDir: string, jobs: MaintenanceJob[]) {
   await ensureStateDir(agentDir);
-  writeJsonAtomic(queuePath(agentDir), jobs);
+  writeJsonAtomic(maintenanceQueuePath(agentDir), jobs);
 }
 
 function sameJob(a: Partial<MaintenanceJob>, b: Partial<MaintenanceJob>) {
@@ -197,7 +183,7 @@ function processExists(pid: number) {
 
 async function acquireWorkerLock(agentDir: string) {
   await ensureStateDir(agentDir);
-  const filePath = lockPath(agentDir);
+  const filePath = maintenanceLockPath(agentDir);
   try {
     const handle = await fs.open(filePath, "wx");
     await handle.writeFile(
@@ -233,7 +219,7 @@ async function releaseWorkerLock(
     await handle?.close();
   } catch {}
   try {
-    await fs.rm(lockPath(agentDir), { force: true });
+    await fs.rm(maintenanceLockPath(agentDir), { force: true });
   } catch {}
 }
 
@@ -298,7 +284,7 @@ async function appendHistoryRecord(
   agentDir: string,
   record: MaintenanceHistoryRecord,
 ) {
-  await appendJsonLine(historyPath(agentDir), record);
+  await appendJsonLine(maintenanceHistoryPath(agentDir), record);
 }
 
 async function assertUsableSessionFile(sessionFile: string) {

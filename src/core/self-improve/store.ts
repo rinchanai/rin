@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import fssync from "node:fs";
-import path from "node:path";
 
 import { MemoryDoc, MEMORY_PROMPT_SLOTS } from "./core/types.js";
 import {
@@ -20,31 +19,31 @@ import {
 } from "./docs.js";
 import { activeDocsOnly } from "./relevance.js";
 import { normalizePromptListContent } from "./processing.js";
+import { normalizeList, nowIso, safeString, slugify } from "./core/utils.js";
 import {
-  normalizeList,
-  nowIso,
-  resolveAgentDir,
-  safeString,
-  slugify,
-} from "./core/utils.js";
+  resolveSelfImproveRoot,
+  selfImprovePromptsDir,
+  selfImproveSkillsDir,
+  selfImproveStateDir,
+} from "./paths.js";
 
-export function resolveSelfImproveRoot(rootOverride = ""): string {
-  if (safeString(rootOverride).trim()) {
-    return path.join(path.resolve(rootOverride), "self_improve");
-  }
-  return path.join(resolveAgentDir(), "self_improve");
-}
+export { resolveSelfImproveRoot } from "./paths.js";
 
-export async function ensureSelfImproveLayout(rootDir: string): Promise<void> {
+export async function ensureSelfImproveLayout(rootOverride = ""): Promise<string> {
+  const rootDir = resolveSelfImproveRoot(rootOverride);
   await fs.mkdir(rootDir, { recursive: true });
-  for (const rel of ["prompts", "skills", "state"]) {
-    await fs.mkdir(path.join(rootDir, rel), { recursive: true });
-  }
+  await Promise.all(
+    [
+      selfImprovePromptsDir(rootOverride),
+      selfImproveSkillsDir(rootOverride),
+      selfImproveStateDir(rootOverride),
+    ].map((dir) => fs.mkdir(dir, { recursive: true })),
+  );
+  return rootDir;
 }
 
 export async function loadActiveSelfImproveDocs(rootOverride = "") {
-  const root = resolveSelfImproveRoot(rootOverride);
-  await ensureSelfImproveLayout(root);
+  const root = await ensureSelfImproveLayout(rootOverride);
   return activeDocsOnly(await loadMemoryDocs(root));
 }
 
@@ -52,8 +51,7 @@ export async function saveSelfImprovePromptDoc(
   params: Record<string, any> = {},
   rootOverride = "",
 ) {
-  const root = resolveSelfImproveRoot(rootOverride);
-  await ensureSelfImproveLayout(root);
+  const root = await ensureSelfImproveLayout(rootOverride);
   const content = normalizePromptListContent(safeString(params.content || ""));
   if (!content) throw new Error("self_improve_content_required");
   const selfImprovePromptSlot = safeString(
@@ -104,8 +102,7 @@ export async function removeSelfImprovePromptDoc(
   params: Record<string, any> = {},
   rootOverride = "",
 ) {
-  const root = resolveSelfImproveRoot(rootOverride);
-  await ensureSelfImproveLayout(root);
+  const root = await ensureSelfImproveLayout(rootOverride);
   const slot = safeString(
     params.selfImprovePromptSlot || params.residentSlot || "",
   ).trim();
@@ -128,8 +125,7 @@ export async function compileSelfImprove(
   params: Record<string, any> = {},
   rootOverride = "",
 ) {
-  const root = resolveSelfImproveRoot(rootOverride);
-  await ensureSelfImproveLayout(root);
+  const root = await ensureSelfImproveLayout(rootOverride);
   const docs = activeDocsOnly(await loadMemoryDocs(root));
   return compileFromDocsAndEvents(
     docs,
