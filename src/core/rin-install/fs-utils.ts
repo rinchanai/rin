@@ -13,7 +13,7 @@ import { pickPrivilegeCommand, shellQuote } from "../rin-lib/system.js";
 import {
   appConfigDirForHome,
   currentRuntimeRoot,
-  installedAppEntryCandidates,
+  installedAppEntryPaths,
   installedBuiltinSkillRoot,
   installedPiDocsRoot,
   installedReleaseRoot,
@@ -108,8 +108,8 @@ export function launcherScript(candidates: string[]) {
 
 export function launcherTargetsForInstallDir(installDir: string) {
   return {
-    rin: installedAppEntryCandidates(installDir, "rin"),
-    rinInstall: installedAppEntryCandidates(installDir, "rin-install"),
+    rin: installedAppEntryPaths(installDir, "rin").candidates,
+    rinInstall: installedAppEntryPaths(installDir, "rin-install").candidates,
   };
 }
 

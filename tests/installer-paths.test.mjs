@@ -35,10 +35,22 @@ test("installer path helpers keep installed runtime roots stable", () => {
 test("installer path helpers centralize installed entrypoints", () => {
   const installDir = "/tmp/rin";
 
-  assert.deepEqual(pathsMod.installedAppEntryCandidates(installDir, "rin"), [
-    path.join(installDir, "app", "current", "dist", "app", "rin", "main.js"),
-    path.join(installDir, "app", "current", "dist", "index.js"),
-  ]);
+  assert.deepEqual(pathsMod.installedAppEntryPaths(installDir, "rin"), {
+    currentPath: path.join(
+      installDir,
+      "app",
+      "current",
+      "dist",
+      "app",
+      "rin",
+      "main.js",
+    ),
+    legacyPath: path.join(installDir, "app", "current", "dist", "index.js"),
+    candidates: [
+      path.join(installDir, "app", "current", "dist", "app", "rin", "main.js"),
+      path.join(installDir, "app", "current", "dist", "index.js"),
+    ],
+  });
   assert.deepEqual(
     pathsMod.installedAppEntryCandidates(installDir, "rin-install"),
     [
@@ -54,9 +66,9 @@ test("installer path helpers centralize installed entrypoints", () => {
     ],
   );
   assert.deepEqual(
-    pathsMod.installedAppEntryCandidates(installDir, "rin-daemon"),
-    [
-      path.join(
+    pathsMod.installedAppEntryPaths(installDir, "rin-daemon"),
+    {
+      currentPath: path.join(
         installDir,
         "app",
         "current",
@@ -65,8 +77,20 @@ test("installer path helpers centralize installed entrypoints", () => {
         "rin-daemon",
         "daemon.js",
       ),
-      path.join(installDir, "app", "current", "dist", "daemon.js"),
-    ],
+      legacyPath: path.join(installDir, "app", "current", "dist", "daemon.js"),
+      candidates: [
+        path.join(
+          installDir,
+          "app",
+          "current",
+          "dist",
+          "app",
+          "rin-daemon",
+          "daemon.js",
+        ),
+        path.join(installDir, "app", "current", "dist", "daemon.js"),
+      ],
+    },
   );
 
   const daemonCandidates = pathsMod.installedAppEntryCandidates(
@@ -196,6 +220,14 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     linuxHome,
     process.platform === "darwin" ? "linux" : "darwin",
   );
+  assert.deepEqual(pathsMod.launcherMetadataPathsForHome(linuxHome), {
+    currentPlatformPath: pathsMod.launcherMetadataPathForHome(linuxHome),
+    alternatePlatformPath: alternateLauncherMetadataPath,
+    recoveryPaths: [
+      pathsMod.launcherMetadataPathForHome(linuxHome),
+      alternateLauncherMetadataPath,
+    ],
+  });
   assert.deepEqual(pathsMod.launcherMetadataCandidatesForHome(linuxHome), [
     pathsMod.launcherMetadataPathForHome(linuxHome),
     alternateLauncherMetadataPath,

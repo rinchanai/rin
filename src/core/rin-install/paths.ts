@@ -92,6 +92,13 @@ function installedAppDistRoot(installDir: string) {
   return path.join(currentRuntimeRoot(installDir), "dist");
 }
 
+function buildPathCandidates(
+  primaryPath: string,
+  fallbackPaths: Array<string | undefined | null>,
+) {
+  return uniqueNonEmptyStrings([primaryPath, ...fallbackPaths]);
+}
+
 function installedAppEntryPathFromSegments(
   installDir: string,
   segments?: readonly string[],
@@ -101,35 +108,45 @@ function installedAppEntryPathFromSegments(
     : "";
 }
 
+export function installedAppEntryPaths(
+  installDir: string,
+  app: InstalledAppKey,
+) {
+  const layout = INSTALLED_APP_ENTRY_LAYOUT[app];
+  const currentPath = installedAppEntryPathFromSegments(
+    installDir,
+    layout.current,
+  );
+  const legacyPath = installedAppEntryPathFromSegments(
+    installDir,
+    "legacy" in layout ? layout.legacy : undefined,
+  );
+  return {
+    currentPath,
+    legacyPath,
+    candidates: buildPathCandidates(currentPath, [legacyPath]),
+  };
+}
+
 export function currentInstalledAppEntryPath(
   installDir: string,
   app: InstalledAppKey,
 ) {
-  return installedAppEntryPathFromSegments(
-    installDir,
-    INSTALLED_APP_ENTRY_LAYOUT[app].current,
-  );
+  return installedAppEntryPaths(installDir, app).currentPath;
 }
 
 export function legacyInstalledAppEntryPath(
   installDir: string,
   app: InstalledAppKey,
 ) {
-  const layout = INSTALLED_APP_ENTRY_LAYOUT[app];
-  return installedAppEntryPathFromSegments(
-    installDir,
-    "legacy" in layout ? layout.legacy : undefined,
-  );
+  return installedAppEntryPaths(installDir, app).legacyPath;
 }
 
 export function installedAppEntryCandidates(
   installDir: string,
   app: InstalledAppKey,
 ) {
-  return uniqueNonEmptyStrings([
-    currentInstalledAppEntryPath(installDir, app),
-    legacyInstalledAppEntryPath(installDir, app),
-  ]);
+  return installedAppEntryPaths(installDir, app).candidates;
 }
 
 export function resolveInstalledAppEntryPath(
@@ -137,7 +154,7 @@ export function resolveInstalledAppEntryPath(
   app: InstalledAppKey,
   pathExists: (candidate: string) => boolean,
 ) {
-  for (const candidate of installedAppEntryCandidates(installDir, app)) {
+  for (const candidate of installedAppEntryPaths(installDir, app).candidates) {
     if (pathExists(candidate)) return candidate;
   }
   return null;
@@ -160,26 +177,25 @@ export function legacyInstallerLocatorPathForHome(home: string) {
 }
 
 export function installerManifestPaths(installDir: string, home: string) {
-  const manifestPath = installerManifestPath(installDir);
-  const locatorManifestPath = installerLocatorPathForHome(home);
-  const legacyManifestPath = legacyInstallerManifestPath(installDir);
-  const legacyLocatorManifestPath = legacyInstallerLocatorPathForHome(home);
+  const manifestFiles = {
+    manifestPath: installerManifestPath(installDir),
+    locatorManifestPath: installerLocatorPathForHome(home),
+    legacyManifestPath: legacyInstallerManifestPath(installDir),
+    legacyLocatorManifestPath: legacyInstallerLocatorPathForHome(home),
+  };
+  const writePaths = uniqueNonEmptyStrings([
+    manifestFiles.manifestPath,
+    manifestFiles.locatorManifestPath,
+  ]);
+  const cleanupPaths = uniqueNonEmptyStrings([
+    manifestFiles.legacyManifestPath,
+    manifestFiles.legacyLocatorManifestPath,
+  ]);
   return {
-    manifestPath,
-    locatorManifestPath,
-    legacyManifestPath,
-    legacyLocatorManifestPath,
-    writePaths: uniqueNonEmptyStrings([manifestPath, locatorManifestPath]),
-    cleanupPaths: uniqueNonEmptyStrings([
-      legacyManifestPath,
-      legacyLocatorManifestPath,
-    ]),
-    recoveryPaths: uniqueNonEmptyStrings([
-      manifestPath,
-      locatorManifestPath,
-      legacyManifestPath,
-      legacyLocatorManifestPath,
-    ]),
+    ...manifestFiles,
+    writePaths,
+    cleanupPaths,
+    recoveryPaths: uniqueNonEmptyStrings([...writePaths, ...cleanupPaths]),
   };
 }
 
@@ -217,14 +233,21 @@ export function launcherMetadataPathForHome(
   return path.join(appConfigDirForHome(home, platform), "install.json");
 }
 
+export function launcherMetadataPathsForHome(home: string) {
+  const currentPlatformPath = launcherMetadataPathForHome(home);
+  const alternatePlatformPath = launcherMetadataPathForHome(
+    home,
+    process.platform === "darwin" ? "linux" : "darwin",
+  );
+  return {
+    currentPlatformPath,
+    alternatePlatformPath,
+    recoveryPaths: buildPathCandidates(currentPlatformPath, [alternatePlatformPath]),
+  };
+}
+
 export function launcherMetadataCandidatesForHome(home: string) {
-  return uniqueNonEmptyStrings([
-    launcherMetadataPathForHome(home),
-    launcherMetadataPathForHome(
-      home,
-      process.platform === "darwin" ? "linux" : "darwin",
-    ),
-  ]);
+  return launcherMetadataPathsForHome(home).recoveryPaths;
 }
 
 export type InstallRecordSource = "manifest" | "launcher";
@@ -237,11 +260,9 @@ export type InstallRecordSourceCandidate = {
 export function installRecordSourcesForHome(
   home: string,
 ): InstallRecordSourceCandidate[] {
-  const manifestFilePaths = installerLocatorCandidatesForHome(home);
-  const launcherFilePaths = launcherMetadataCandidatesForHome(home);
   return [
-    { source: "manifest", filePaths: manifestFilePaths },
-    { source: "launcher", filePaths: launcherFilePaths },
+    { source: "manifest", filePaths: installerLocatorCandidatesForHome(home) },
+    { source: "launcher", filePaths: launcherMetadataCandidatesForHome(home) },
   ];
 }
 
