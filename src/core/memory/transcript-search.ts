@@ -518,27 +518,47 @@ function rowToEntry(row: {
   }
 }
 
-function loadSessionEntriesByKey(
+function loadSessionEntriesByKeys(
   db: Database,
-  sessionKey: string,
-): TranscriptArchiveEntry[] {
+  sessionKeys: string[],
+): Map<string, TranscriptArchiveEntry[]> {
+  const normalizedKeys = uniqueStrings(
+    sessionKeys.map((sessionKey) => safeString(sessionKey).trim()).filter(Boolean),
+  );
+  const grouped = new Map<string, TranscriptArchiveEntry[]>(
+    normalizedKeys.map((sessionKey) => [sessionKey, []]),
+  );
+  if (!normalizedKeys.length) return grouped;
+
+  const placeholders = normalizedKeys.map(() => "?").join(",");
   const rows = db
     .prepare(
       `
-      SELECT entry_json, line_number, archive_path
+      SELECT session_key, entry_json, line_number, archive_path
       FROM entries
-      WHERE session_key = ?
+      WHERE session_key IN (${placeholders})
       ORDER BY timestamp_ms ASC, line_number ASC, row_key ASC
     `,
     )
-    .all(sessionKey) as Array<{
+    .all(...normalizedKeys) as Array<{
+    session_key: string;
     entry_json: string;
     line_number: number;
     archive_path: string;
   }>;
-  return rows
-    .map((row) => rowToEntry(row))
-    .filter(Boolean) as TranscriptArchiveEntry[];
+  for (const row of rows) {
+    const entry = rowToEntry(row);
+    if (!entry) continue;
+    grouped.get(row.session_key)?.push(entry);
+  }
+  return grouped;
+}
+
+function loadSessionEntriesByKey(
+  db: Database,
+  sessionKey: string,
+): TranscriptArchiveEntry[] {
+  return loadSessionEntriesByKeys(db, [sessionKey]).get(sessionKey) || [];
 }
 
 export async function loadTranscriptSessionEntries(
@@ -600,9 +620,13 @@ export async function loadRecentTranscriptSessions(
       session_key: string;
       latest_timestamp_ms: number;
     }>;
+    const sessionEntries = loadSessionEntriesByKeys(
+      db,
+      sessionRows.map((row) => row.session_key),
+    );
     return sessionRows
       .map((row, index) => {
-        const entries = loadSessionEntriesByKey(db, row.session_key);
+        const entries = sessionEntries.get(row.session_key) || [];
         const result = presentSessionResult(
           entries,
           Math.max(1, limit - index),
@@ -788,9 +812,14 @@ function aggregateSearchResults(
     })
     .slice(0, limit);
 
+  const sessionEntries = loadSessionEntriesByKeys(
+    db,
+    rankedSessions.map((bucket) => bucket.sessionKey),
+  );
+
   return rankedSessions
     .map((bucket) => {
-      const entries = loadSessionEntriesByKey(db, bucket.sessionKey);
+      const entries = sessionEntries.get(bucket.sessionKey) || [];
       const result = presentSessionResult(entries, bucket.score, rootOverride, {
         hitCount: bucket.hitCount,
         messages: bucket.messages,
