@@ -83,6 +83,61 @@ test("readSessionDisplayNameParts handles chunk-spanning lines without a trailin
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
 
+test("readSessionDisplayNameParts extracts first user text from structured content", async () => {
+  const sessionDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-session-names-"),
+  );
+  const sessionFile = path.join(sessionDir, "structured.jsonl");
+  await fs.writeFile(
+    sessionFile,
+    [
+      JSON.stringify({
+        type: "message",
+        message: { role: "assistant", content: "ignored" },
+      }),
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "user",
+          content: [
+            { type: "image", image_url: "https://example.com/demo.png" },
+            { type: "text", text: "  First" },
+            { type: "text", text: "question  " },
+          ],
+        },
+      }),
+      JSON.stringify({ type: "session_info", name: "Structured title" }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(names.readSessionDisplayNameParts(sessionFile), {
+    currentName: "Structured title",
+    firstUserMessage: "First question",
+  });
+  assert.equal(
+    names.readFirstUserMessageFromSessionFile(sessionFile),
+    "First question",
+  );
+
+  await fs.rm(sessionDir, { recursive: true, force: true });
+});
+
+test("session display readers return empty parts for blank or missing paths", () => {
+  assert.deepEqual(names.readSessionDisplayNameParts(""), {
+    currentName: "",
+    firstUserMessage: "",
+  });
+  assert.deepEqual(
+    names.readSessionDisplayNameParts(path.join(os.tmpdir(), "missing.jsonl")),
+    {
+      currentName: "",
+      firstUserMessage: "",
+    },
+  );
+  assert.equal(names.readFirstUserMessageFromSessionFile(""), "");
+});
+
 test("session display helpers keep name fallback rules consistent", () => {
   assert.equal(
     listing.getBoundSessionDisplayTitle({

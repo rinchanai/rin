@@ -9,7 +9,7 @@ export const DEFAULT_FIRST_USER_MESSAGE_MAX = 120;
 export const DEFAULT_SESSION_DISPLAY_NAME = "Untitled session";
 
 const SESSION_NAME_READ_CHUNK_SIZE = 64 * 1024;
-const EMPTY_BUFFER = new Uint8Array(0);
+const EMPTY_BUFFER: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 
 type SessionLineReadDirection = "forward" | "backward";
 
@@ -17,6 +17,10 @@ export type SessionDisplayNameParts = {
   currentName: string;
   firstUserMessage: string;
 };
+
+function emptySessionDisplayNameParts(): SessionDisplayNameParts {
+  return { currentName: "", firstUserMessage: "" };
+}
 
 export function normalizeSessionNameDetail(
   value: unknown,
@@ -65,8 +69,8 @@ function extractFirstUserMessage(entry: any): string {
   );
 }
 
-function parseSessionEntryLine(lineBuffer: Uint8Array): any {
-  const trimmed = Buffer.from(lineBuffer).toString("utf8").trim();
+function parseSessionEntryLine(lineBuffer: Buffer<ArrayBufferLike>): any {
+  const trimmed = lineBuffer.toString("utf8").trim();
   if (!trimmed) return null;
   try {
     return JSON.parse(trimmed) as any;
@@ -76,24 +80,24 @@ function parseSessionEntryLine(lineBuffer: Uint8Array): any {
 }
 
 function copyBufferSlice(
-  buffer: Uint8Array,
+  buffer: Buffer<ArrayBufferLike>,
   start: number,
   end = buffer.length,
-): Uint8Array {
+): Buffer<ArrayBufferLike> {
   return start < end ? Buffer.from(buffer.subarray(start, end)) : EMPTY_BUFFER;
 }
 
 function combineSessionLineBuffers(
-  left: Uint8Array,
-  right: Uint8Array,
-): Uint8Array {
+  left: Buffer<ArrayBufferLike>,
+  right: Buffer<ArrayBufferLike>,
+): Buffer<ArrayBufferLike> {
   if (!left.length) return right;
   if (!right.length) return left;
-  return Buffer.concat([Buffer.from(left), Buffer.from(right)]);
+  return Buffer.concat([left, right]);
 }
 
 function selectSessionLineValue(
-  lineBuffer: Uint8Array,
+  lineBuffer: Buffer<ArrayBufferLike>,
   selectValue: (entry: any) => string,
 ): string {
   const entry = parseSessionEntryLine(lineBuffer);
@@ -101,10 +105,10 @@ function selectSessionLineValue(
 }
 
 function scanSessionLineBuffer(
-  buffer: Uint8Array,
+  buffer: Buffer<ArrayBufferLike>,
   direction: SessionLineReadDirection,
   selectValue: (entry: any) => string,
-): { remainder: Uint8Array; value: string } {
+): { remainder: Buffer<ArrayBufferLike>; value: string } {
   if (direction === "forward") {
     let lineStart = 0;
     for (let index = 0; index < buffer.length; index += 1) {
@@ -132,45 +136,56 @@ function scanSessionLineBuffer(
   return { remainder: copyBufferSlice(buffer, 0, lineEnd), value: "" };
 }
 
+function readSessionChunk(
+  fd: number,
+  buffer: Buffer<ArrayBufferLike>,
+  direction: SessionLineReadDirection,
+  position: number,
+): { chunk: Buffer<ArrayBufferLike>; position: number } {
+  if (direction === "forward") {
+    const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, position);
+    return {
+      chunk: bytesRead ? buffer.subarray(0, bytesRead) : EMPTY_BUFFER,
+      position: position + bytesRead,
+    };
+  }
+
+  if (position <= 0) return { chunk: EMPTY_BUFFER, position: 0 };
+  const readSize = Math.min(buffer.length, position);
+  const nextPosition = position - readSize;
+  fs.readSync(fd, buffer, 0, readSize, nextPosition);
+  return { chunk: buffer.subarray(0, readSize), position: nextPosition };
+}
+
 function readSessionValue(
   filePath: string,
   direction: SessionLineReadDirection,
   selectValue: (entry: any) => string,
 ): string {
   const fd = fs.openSync(filePath, "r");
-  const buffer = Buffer.alloc(SESSION_NAME_READ_CHUNK_SIZE);
-  let remainder: Uint8Array<ArrayBufferLike> = EMPTY_BUFFER;
+  const buffer: Buffer<ArrayBufferLike> = Buffer.alloc(
+    SESSION_NAME_READ_CHUNK_SIZE,
+  );
+  let remainder = EMPTY_BUFFER;
 
   try {
-    if (direction === "forward") {
-      while (true) {
-        const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
-        if (!bytesRead) break;
-        const scan = scanSessionLineBuffer(
-          combineSessionLineBuffers(remainder, buffer.subarray(0, bytesRead)),
-          direction,
-          selectValue,
-        );
-        if (scan.value) return scan.value;
-        remainder = scan.remainder;
+    let position = direction === "backward" ? fs.fstatSync(fd).size : 0;
+    while (true) {
+      const nextChunk = readSessionChunk(fd, buffer, direction, position);
+      if (!nextChunk.chunk.length) {
+        return selectSessionLineValue(remainder, selectValue);
       }
-      return selectSessionLineValue(remainder, selectValue);
-    }
-
-    let position = fs.fstatSync(fd).size;
-    while (position > 0) {
-      const readSize = Math.min(buffer.length, position);
-      position -= readSize;
-      fs.readSync(fd, buffer, 0, readSize, position);
+      position = nextChunk.position;
       const scan = scanSessionLineBuffer(
-        combineSessionLineBuffers(buffer.subarray(0, readSize), remainder),
+        direction === "forward"
+          ? combineSessionLineBuffers(remainder, nextChunk.chunk)
+          : combineSessionLineBuffers(nextChunk.chunk, remainder),
         direction,
         selectValue,
       );
       if (scan.value) return scan.value;
       remainder = scan.remainder;
     }
-    return selectSessionLineValue(remainder, selectValue);
   } finally {
     fs.closeSync(fd);
   }
@@ -194,12 +209,8 @@ export function readSessionDisplayNameParts(
   sessionFile: string,
 ): SessionDisplayNameParts {
   const normalizedSessionFile = normalizeSessionValue(sessionFile);
-  const filePath = normalizedSessionFile
-    ? path.resolve(normalizedSessionFile)
-    : "";
-  if (!filePath || !fs.existsSync(filePath)) {
-    return { currentName: "", firstUserMessage: "" };
-  }
+  if (!normalizedSessionFile) return emptySessionDisplayNameParts();
+  const filePath = path.resolve(normalizedSessionFile);
 
   try {
     return {
@@ -207,7 +218,7 @@ export function readSessionDisplayNameParts(
       firstUserMessage: readFirstUserMessageFromFile(filePath),
     };
   } catch {
-    return { currentName: "", firstUserMessage: "" };
+    return emptySessionDisplayNameParts();
   }
 }
 
