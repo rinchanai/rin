@@ -120,6 +120,99 @@ test("get_task returns a requested task instead of falling back to 'No scheduled
   }
 });
 
+test("get_task without taskId lists scheduled tasks via cron_list_tasks", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-task-runtime-"));
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  await fs.mkdir(socketDir, { recursive: true });
+
+  const requests = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        requests.push(payload);
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: true,
+            data: {
+              tasks: [
+                {
+                  id: "cron_alpha",
+                  enabled: true,
+                  trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+                  session: { mode: "dedicated" },
+                  target: { kind: "agent_prompt", prompt: "alpha" },
+                  nextRunAt: "2026-04-18T00:00:00.000Z",
+                },
+                {
+                  id: "cron_beta",
+                  name: "Beta Task",
+                  enabled: false,
+                  trigger: { kind: "cron", expression: "0 * * * *" },
+                  session: { mode: "current", sessionFile: "/tmp/demo.jsonl" },
+                  target: { kind: "shell_command", command: "echo beta" },
+                },
+              ],
+            },
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => resolve());
+  });
+
+  const tools = [];
+  taskIndex.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+  });
+  const getTool = tools.find((tool) => tool.name === "get_task");
+  assert.ok(getTool);
+
+  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
+  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  try {
+    const result = await getTool.execute(
+      "tool-2",
+      {},
+      undefined,
+      undefined,
+      {
+        sessionManager: {
+          getSessionFile: () => undefined,
+          getSessionId: () => undefined,
+          getSessionName: () => undefined,
+        },
+      },
+    );
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].type, "cron_list_tasks");
+    assert.match(String(result.content?.[0]?.text || ""), /cron_alpha/);
+    assert.match(String(result.content?.[0]?.text || ""), /cron_beta \(Beta Task\)/);
+    assert.match(String(result.content?.[0]?.text || ""), /disabled/);
+    assert.doesNotMatch(String(result.content?.[0]?.text || ""), /No scheduled tasks\./);
+  } finally {
+    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
+
 test("save_task only auto-binds valid current chat session names", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-task-runtime-"));
   const socketDir = path.join(runtimeDir, "rin-daemon");
@@ -207,6 +300,103 @@ test("save_task only auto-binds valid current chat session names", async () => {
     assert.equal(requests[0].task?.chatKey, undefined);
     assert.equal(requests[1].defaults?.chatKey, "telegram/777:1");
     assert.equal(requests[1].task?.chatKey, "telegram/777:1");
+  } finally {
+    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test("manage_task maps public actions to daemon task commands", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-task-runtime-"));
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  await fs.mkdir(socketDir, { recursive: true });
+
+  const requests = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        requests.push(payload);
+        const data =
+          payload.type === "cron_delete_task"
+            ? { deleted: true }
+            : {
+                task: {
+                  id: payload.taskId,
+                  enabled: payload.type === "cron_resume_task",
+                  trigger: { kind: "once", runAt: "2026-04-18T00:00:00.000Z" },
+                  session: { mode: "dedicated" },
+                  target: { kind: "agent_prompt", prompt: "hello" },
+                  nextRunAt: "2026-04-18T00:00:00.000Z",
+                },
+              };
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: true,
+            data,
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => resolve());
+  });
+
+  const tools = [];
+  taskIndex.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+  });
+  const manageTool = tools.find((tool) => tool.name === "manage_task");
+  assert.ok(manageTool);
+
+  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
+  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  try {
+    const deleted = await manageTool.execute(
+      "tool-delete",
+      { action: "delete", taskId: "cron_demo" },
+      undefined,
+      undefined,
+      {},
+    );
+    const paused = await manageTool.execute(
+      "tool-pause",
+      { action: "pause", taskId: "cron_demo" },
+      undefined,
+      undefined,
+      {},
+    );
+    const resumed = await manageTool.execute(
+      "tool-resume",
+      { action: "resume", taskId: "cron_demo" },
+      undefined,
+      undefined,
+      {},
+    );
+
+    assert.deepEqual(
+      requests.map((request) => request.type),
+      ["cron_delete_task", "cron_pause_task", "cron_resume_task"],
+    );
+    assert.match(String(deleted.content?.[0]?.text || ""), /Deleted task: cron_demo/);
+    assert.match(String(paused.content?.[0]?.text || ""), /disabled/);
+    assert.match(String(resumed.content?.[0]?.text || ""), /next=2026-04-18T00:00:00.000Z/);
   } finally {
     process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
     await new Promise((resolve) => server.close(() => resolve()));
