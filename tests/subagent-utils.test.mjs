@@ -170,6 +170,53 @@ test("subagent service can hide builtin modules from worker runtime", () => {
   assert.equal(disabled.includes("rules"), false);
 });
 
+test("subagent service aggregates task state from current-run assistant messages", () => {
+  const state = subagentService.collectTaskResultState([
+    { role: "user", content: [{ type: "text", text: "ignore" }] },
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "first answer" }],
+      provider: "openai",
+      model: "gpt-5",
+      stopReason: "tool_use",
+      usage: {
+        input: 10,
+        output: 20,
+        cacheRead: 30,
+        cacheWrite: 40,
+        totalTokens: 50,
+        cost: { total: 0.1 },
+      },
+    },
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "final answer" }],
+      provider: "openai",
+      model: "gpt-5-mini",
+      stopReason: "end_turn",
+      usage: {
+        input: 1,
+        output: 2,
+        cacheRead: 3,
+        cacheWrite: 4,
+        totalTokens: 60,
+        cost: { total: 0.02 },
+      },
+    },
+  ]);
+
+  assert.equal(state.output, "final answer");
+  assert.equal(state.stopReason, "end_turn");
+  assert.equal(state.model, "openai/gpt-5-mini");
+  assert.equal(state.usage.input, 11);
+  assert.equal(state.usage.output, 22);
+  assert.equal(state.usage.cacheRead, 33);
+  assert.equal(state.usage.cacheWrite, 44);
+  assert.equal(state.usage.contextTokens, 60);
+  assert.equal(state.usage.turns, 2);
+  assert.ok(Math.abs(state.usage.cost - 0.12) < 1e-9);
+});
+
 test("run_subagent exposes disabledExtensions in both single and task modes", () => {
   const tools = [];
   subagentIndex.default({

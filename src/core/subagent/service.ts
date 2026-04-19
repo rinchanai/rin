@@ -321,6 +321,62 @@ function validateTasks(
   return undefined;
 }
 
+function createEmptyUsageStats(): TaskResult["usage"] {
+  return {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+    contextTokens: 0,
+    turns: 0,
+  };
+}
+
+function getSessionMessages(session: any): Message[] {
+  return Array.isArray(session?.messages)
+    ? (session.messages as Message[])
+    : Array.isArray(session?.agent?.state?.messages)
+      ? (session.agent.state.messages as Message[])
+      : [];
+}
+
+export function collectTaskResultState(
+  messages: Message[],
+): Pick<TaskResult, "output" | "stopReason" | "errorMessage" | "model" | "usage"> {
+  const usage = createEmptyUsageStats();
+  let stopReason: TaskResult["stopReason"];
+  let errorMessage: TaskResult["errorMessage"];
+  let model: TaskResult["model"];
+
+  for (const rawMessage of messages) {
+    const message = rawMessage as any;
+    if (message?.role !== "assistant") continue;
+    stopReason = message.stopReason;
+    errorMessage = message.errorMessage;
+    if (message.model) {
+      model = `${message.provider}/${message.model}`;
+    }
+    const currentUsage = message.usage;
+    if (!currentUsage) continue;
+    usage.turns += 1;
+    usage.input += currentUsage.input || 0;
+    usage.output += currentUsage.output || 0;
+    usage.cacheRead += currentUsage.cacheRead || 0;
+    usage.cacheWrite += currentUsage.cacheWrite || 0;
+    usage.cost += currentUsage.cost?.total || 0;
+    usage.contextTokens = currentUsage.totalTokens || usage.contextTokens;
+  }
+
+  return {
+    output: getFinalOutput(messages),
+    stopReason,
+    errorMessage,
+    model,
+    usage,
+  };
+}
+
 function syncSessionMetadata(session: any, result: TaskResult): void {
   const manager = session?.sessionManager;
   result.sessionPersisted = Boolean(
@@ -333,44 +389,34 @@ function syncSessionMetadata(session: any, result: TaskResult): void {
     safeString(manager?.getSessionName?.() || "").trim() || undefined;
 }
 
-function syncResultFromSession(session: any, result: TaskResult): void {
-  const sessionMessages = Array.isArray(session?.messages)
-    ? (session.messages as Message[])
-    : Array.isArray(session?.agent?.state?.messages)
-      ? (session.agent.state.messages as Message[])
-      : [];
-
-  result.messages.length = 0;
-  result.messages.push(...sessionMessages);
-  result.output = safeString(session?.getLastAssistantText?.() || "").trim();
-  syncSessionMetadata(session, result);
-
-  for (let i = sessionMessages.length - 1; i >= 0; i -= 1) {
-    const message = sessionMessages[i] as any;
-    if (message?.role !== "assistant") continue;
-    result.stopReason = message.stopReason;
-    result.errorMessage = message.errorMessage;
-    if (message.model) {
-      result.model = `${message.provider}/${message.model}`;
-    }
-    const usage = message.usage;
-    result.usage = {
-      input: usage?.input || 0,
-      output: usage?.output || 0,
-      cacheRead: usage?.cacheRead || 0,
-      cacheWrite: usage?.cacheWrite || 0,
-      cost: usage?.cost?.total || 0,
-      contextTokens: usage?.totalTokens || 0,
-      turns: usage ? 1 : 0,
-    };
-    break;
-  }
+function syncResultFromMessages(messages: Message[], result: TaskResult): void {
+  const state = collectTaskResultState(messages);
+  result.output = state.output;
+  result.stopReason = state.stopReason;
+  result.errorMessage = state.errorMessage;
+  result.model = state.model;
+  result.usage = state.usage;
 }
 
-function makePendingResult(
+function syncResultFromSession(
+  session: any,
+  result: TaskResult,
+  sinceMessageIndex = 0,
+): void {
+  const sessionMessages = getSessionMessages(session).slice(sinceMessageIndex);
+  const resultMessages =
+    sessionMessages.length > 0 ? sessionMessages : [...result.messages];
+
+  result.messages.length = 0;
+  result.messages.push(...resultMessages);
+  syncSessionMetadata(session, result);
+  syncResultFromMessages(result.messages, result);
+}
+
+function createTaskResult(
   task: SubagentTask,
   index: number,
-  _defaultCwd: string,
+  messages: Message[] = [],
 ): TaskResult {
   const sessionConfig = normalizeSessionConfig(task.session);
   return {
@@ -381,19 +427,35 @@ function makePendingResult(
     status: "pending",
     exitCode: 0,
     output: "",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      cost: 0,
-      contextTokens: 0,
-      turns: 0,
-    },
-    messages: [] as Message[],
+    usage: createEmptyUsageStats(),
+    messages,
     sessionMode: sessionConfig.mode,
     sessionPersisted: isPersistedMode(sessionConfig),
   };
+}
+
+function snapshotTaskResult(result: TaskResult): TaskResult {
+  return {
+    ...result,
+    usage: { ...result.usage },
+    messages: [...result.messages],
+  };
+}
+
+function emitTaskProgress(
+  result: TaskResult,
+  onProgress?: (result: TaskResult) => void,
+): void {
+  onProgress?.(snapshotTaskResult(result));
+}
+
+function setTaskResultError(result: TaskResult, error: unknown, session?: any): void {
+  result.exitCode = 1;
+  result.status = "error";
+  result.errorMessage = String((error as any)?.message || error || "subagent_failed");
+  if (session) {
+    syncSessionMetadata(session, result);
+  }
 }
 
 export async function executeSubagentRun(options: {
@@ -425,29 +487,19 @@ export async function executeSubagentRun(options: {
   }
 
   const progressResults = built.tasks.map((task, index) =>
-    makePendingResult(task, index + 1, HOME_DIR),
+    createTaskResult(task, index + 1),
   );
-  options.onProgress?.(
-    progressResults.map((item) => ({ ...item })),
-    details,
-  );
+  options.onProgress?.(progressResults.map(snapshotTaskResult), details);
 
   const results = await Promise.all(
     built.tasks.map((task, index) =>
       runSubagentTask(
         task,
         index + 1,
-        HOME_DIR,
         options.signal,
         (partial) => {
           progressResults[index] = partial;
-          options.onProgress?.(
-            progressResults.map((item) => ({
-              ...item,
-              messages: [...item.messages],
-            })),
-            details,
-          );
+          options.onProgress?.(progressResults.map(snapshotTaskResult), details);
         },
       ),
     ),
@@ -459,73 +511,37 @@ export async function executeSubagentRun(options: {
 export async function runSubagentTask(
   task: SubagentTask,
   index: number,
-  _defaultCwd: string,
   signal?: AbortSignal,
   onProgress?: (result: TaskResult) => void,
 ): Promise<TaskResult> {
   const messages: Message[] = [];
-  const sessionConfig = normalizeSessionConfig(task.session);
-  const result: TaskResult = {
-    index,
-    prompt: task.prompt,
-    requestedModel: task.model,
-    requestedThinkingLevel: task.thinkingLevel,
-    status: "pending",
-    exitCode: 0,
-    output: "",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      cost: 0,
-      contextTokens: 0,
-      turns: 0,
-    },
-    messages,
-    sessionMode: sessionConfig.mode,
-    sessionPersisted: isPersistedMode(sessionConfig),
-  };
+  const result = createTaskResult(task, index, messages);
 
   let session: any;
   let runtime: any;
+  let initialMessageCount = 0;
   try {
     const created = await createManagedSession(task);
     session = created.session;
     runtime = created.runtime;
+    initialMessageCount = getSessionMessages(session).length;
     syncSessionMetadata(session, result);
   } catch (error: any) {
-    result.exitCode = 1;
-    result.status = "error";
-    result.errorMessage = String(error?.message || error || "subagent_failed");
-    onProgress?.({ ...result, messages: [...result.messages] });
+    setTaskResultError(result, error);
+    emitTaskProgress(result, onProgress);
     return result;
   }
 
   result.status = "running";
-  onProgress?.({ ...result, messages: [...result.messages] });
+  emitTaskProgress(result, onProgress);
   const unsubscribe = session.subscribe((event: any) => {
     if (event?.type !== "message_end" || !event.message) return;
     const message = event.message as Message;
     messages.push(message);
     if (message.role !== "assistant") return;
-    result.output = getFinalOutput(messages);
-    result.stopReason = message.stopReason;
-    result.errorMessage = message.errorMessage;
     syncSessionMetadata(session, result);
-    if (message.model) result.model = `${message.provider}/${message.model}`;
-    const usage = message.usage;
-    if (usage) {
-      result.usage.turns += 1;
-      result.usage.input += usage.input || 0;
-      result.usage.output += usage.output || 0;
-      result.usage.cacheRead += usage.cacheRead || 0;
-      result.usage.cacheWrite += usage.cacheWrite || 0;
-      result.usage.cost += usage.cost?.total || 0;
-      result.usage.contextTokens =
-        usage.totalTokens || result.usage.contextTokens;
-    }
-    onProgress?.({ ...result, messages: [...result.messages] });
+    syncResultFromMessages(messages, result);
+    emitTaskProgress(result, onProgress);
   });
 
   let abortListener: (() => void) | undefined;
@@ -546,20 +562,16 @@ export async function runSubagentTask(
       source: "extension",
     });
     await session.agent.waitForIdle();
-    syncResultFromSession(session, result);
-    result.output = result.output || getFinalOutput(messages);
+    syncResultFromSession(session, result, initialMessageCount);
     const failed =
       result.stopReason === "error" || result.stopReason === "aborted";
     result.exitCode = failed ? 1 : 0;
     result.status = failed ? "error" : "done";
-    onProgress?.({ ...result, messages: [...result.messages] });
+    emitTaskProgress(result, onProgress);
     return result;
   } catch (error: any) {
-    result.exitCode = 1;
-    result.status = "error";
-    result.errorMessage = String(error?.message || error || "subagent_failed");
-    syncSessionMetadata(session, result);
-    onProgress?.({ ...result, messages: [...result.messages] });
+    setTaskResultError(result, error, session);
+    emitTaskProgress(result, onProgress);
     return result;
   } finally {
     abortListener?.();
