@@ -28,6 +28,11 @@ const subagentService = await import(
     path.join(rootDir, "dist", "core", "subagent", "service.js"),
   ).href
 );
+const sessionUtils = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "subagent", "session-utils.js"),
+  ).href
+);
 const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 
 test("subagent model utils normalize and sort model refs", () => {
@@ -220,7 +225,67 @@ test("subagent service aggregates task state from current-run assistant messages
   assert.ok(Math.abs(state.usage.cost - 0.12) < 1e-9);
 });
 
-test("run_subagent exposes disabledExtensions in both single and task modes", () => {
+test("subagent service resolves session refs with stable precedence", () => {
+  const sessions = [
+    { id: "target", path: "/tmp/sessions/target.jsonl" },
+    { id: "/tmp/sessions/target.jsonl", path: "/tmp/sessions/by-id.jsonl" },
+    { id: "alpha123", path: "/tmp/sessions/alpha123.jsonl" },
+    { id: "alpha999", path: "/tmp/sessions/alpha999.jsonl" },
+  ];
+
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "/tmp/sessions/target.jsonl",
+      sessions,
+      directMatchPath: "/tmp/sessions/target.jsonl",
+    }),
+    { kind: "match", path: "/tmp/sessions/target.jsonl" },
+  );
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "target",
+      sessions,
+    }),
+    { kind: "match", path: "/tmp/sessions/target.jsonl" },
+  );
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "/tmp/sessions/by-id.jsonl",
+      sessions,
+    }),
+    { kind: "match", path: "/tmp/sessions/by-id.jsonl" },
+  );
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "alpha1",
+      sessions,
+    }),
+    { kind: "match", path: "/tmp/sessions/alpha123.jsonl" },
+  );
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "alpha",
+      sessions,
+    }),
+    { kind: "ambiguous" },
+  );
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "missing",
+      sessions,
+    }),
+    { kind: "not_found" },
+  );
+  assert.deepEqual(
+    subagentService.selectSessionReferencePath({
+      ref: "   ",
+      sessions,
+    }),
+    { kind: "required" },
+  );
+});
+
+test("run_subagent exposes consistent session ref discovery hints", () => {
   const tools = [];
   subagentIndex.default({
     registerTool(tool) {
@@ -241,6 +306,18 @@ test("run_subagent exposes disabledExtensions in both single and task modes", ()
   assert.equal(
     runTool.parameters.properties.tasks.items.properties.session.properties.keep.type,
     "boolean",
+  );
+  assert.match(
+    runTool.parameters.properties.session.properties.ref.description,
+    new RegExp(sessionUtils.getDefaultSubagentSessionDir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+  assert.match(
+    sessionUtils.formatSubagentSessionRefHint(),
+    new RegExp(sessionUtils.getDefaultSubagentSessionDir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+  assert.match(
+    sessionUtils.formatSubagentSessionRefRequiredError("resume"),
+    /Session ref is required when session.mode is resume\./,
   );
 });
 

@@ -20,6 +20,13 @@ import {
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import {
+  formatSubagentSessionRefAmbiguousError,
+  formatSubagentSessionRefNotFoundError,
+  formatSubagentSessionRefRequiredError,
+  normalizeSubagentSessionConfig,
+  type NormalizedSubagentSessionConfig,
+} from "./session-utils.js";
+import {
   buildModelLookup,
   getProviderSummaries,
   normalizeModelRef,
@@ -61,18 +68,20 @@ export function resolveSubagentDisabledBuiltinModules(
   return BUILTIN_MODULE_ORDER.filter((name) => blocked.has(name));
 }
 
-function normalizeSessionConfig(
-  session: SubagentSessionConfig | undefined,
-): Required<Pick<SubagentSessionConfig, "mode">> & SubagentSessionConfig {
-  const mode = (session?.mode || "memory") as SubagentSessionMode;
-  return {
-    mode,
-    ref: String(session?.ref || "").trim() || undefined,
-    name: String(session?.name || "").trim() || undefined,
-    keep:
-      typeof session?.keep === "boolean" ? session.keep : undefined,
-  };
-}
+type NormalizedSubagentTask = Omit<
+  SubagentTask,
+  "session" | "disabledExtensions"
+> & {
+  session: NormalizedSubagentSessionConfig;
+  disabledExtensions: string[];
+};
+
+type SessionReferenceCandidate = {
+  id?: string;
+  normalizedId?: string;
+  path: string;
+  normalizedPath: string;
+};
 
 function isPersistedMode(
   session: Pick<SubagentSessionConfig, "mode" | "keep">,
@@ -88,18 +97,86 @@ async function loadSessionManagerModule() {
   return { SessionManager: (codingAgentModule as any).SessionManager };
 }
 
-function getDefaultSessionDir() {
-  const profile = resolveRuntimeProfile({ cwd: HOME_DIR });
-  return getRuntimeSessionDir(profile.cwd, profile.agentDir);
+function toSessionReferenceCandidates(
+  sessions: Array<{ id?: unknown; path?: unknown }>,
+): SessionReferenceCandidate[] {
+  const candidates: SessionReferenceCandidate[] = [];
+  for (const info of sessions) {
+    const sessionPath = safeString(info?.path || "").trim();
+    if (!sessionPath) continue;
+    const sessionId = safeString(info?.id || "").trim() || undefined;
+    candidates.push({
+      id: sessionId,
+      normalizedId: sessionId?.toLowerCase(),
+      path: sessionPath,
+      normalizedPath: path.resolve(sessionPath).toLowerCase(),
+    });
+  }
+  return candidates;
+}
+
+export function selectSessionReferencePath(options: {
+  ref: string;
+  sessions: Array<{ id?: unknown; path?: unknown }>;
+  directMatchPath?: string;
+}):
+  | { kind: "match"; path: string }
+  | { kind: "required" | "ambiguous" | "not_found" } {
+  const wanted = String(options.ref || "").trim();
+  if (!wanted) return { kind: "required" };
+
+  const candidates = toSessionReferenceCandidates(options.sessions);
+  const normalizedWanted = wanted.toLowerCase();
+  const normalizedDirectPath = options.directMatchPath
+    ? path.resolve(options.directMatchPath).toLowerCase()
+    : undefined;
+
+  let exactIdMatch: SessionReferenceCandidate | undefined;
+  let exactPathTextMatch: SessionReferenceCandidate | undefined;
+  const prefixMatches: SessionReferenceCandidate[] = [];
+
+  for (const candidate of candidates) {
+    if (
+      normalizedDirectPath &&
+      candidate.normalizedPath === normalizedDirectPath
+    ) {
+      return { kind: "match", path: candidate.path };
+    }
+    if (!exactIdMatch && candidate.normalizedId === normalizedWanted) {
+      exactIdMatch = candidate;
+    }
+    if (
+      !exactPathTextMatch &&
+      candidate.normalizedPath === normalizedWanted
+    ) {
+      exactPathTextMatch = candidate;
+    }
+    if (candidate.normalizedId?.startsWith(normalizedWanted)) {
+      prefixMatches.push(candidate);
+    }
+  }
+
+  if (exactIdMatch) return { kind: "match", path: exactIdMatch.path };
+  if (exactPathTextMatch) {
+    return { kind: "match", path: exactPathTextMatch.path };
+  }
+  if (prefixMatches.length === 1) {
+    return { kind: "match", path: prefixMatches[0].path };
+  }
+  if (prefixMatches.length > 1) {
+    return { kind: "ambiguous" };
+  }
+  return { kind: "not_found" };
 }
 
 async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   const wanted = String(ref || "").trim();
-  if (!wanted) throw new Error("session_ref_required");
 
-  const directCandidates = path.isAbsolute(wanted)
-    ? [wanted]
-    : [path.resolve(HOME_DIR, wanted)];
+  const directCandidates = wanted
+    ? path.isAbsolute(wanted)
+      ? [wanted]
+      : [path.resolve(HOME_DIR, wanted)]
+    : [];
   const directMatchPath = directCandidates.find((candidate) => {
     try {
       return fs.existsSync(candidate);
@@ -113,50 +190,29 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
     cwd: HOME_DIR,
     SessionManager,
   });
-  const normalizedWanted = wanted.toLowerCase();
-  const normalizedDirectPath = directMatchPath
-    ? path.resolve(directMatchPath).toLowerCase()
-    : undefined;
+  const match = selectSessionReferencePath({
+    ref: wanted,
+    sessions,
+    directMatchPath,
+  });
 
-  const exactPath = sessions.find(
-    (info: any) =>
-      normalizedDirectPath &&
-      path.resolve(String(info?.path || "")).toLowerCase() === normalizedDirectPath,
-  );
-  if (exactPath) return { path: String(exactPath.path || "") };
-
-  const exactId = sessions.find(
-    (info: any) => String(info?.id || "").toLowerCase() === normalizedWanted,
-  );
-  if (exactId) return { path: String(exactId.path || "") };
-
-  const exactPathText = sessions.find(
-    (info: any) => path.resolve(String(info?.path || "")).toLowerCase() === normalizedWanted,
-  );
-  if (exactPathText) return { path: String(exactPathText.path || "") };
-
-  const prefixMatches = sessions.filter((info: any) =>
-    String(info?.id || "").toLowerCase().startsWith(normalizedWanted),
-  );
-  if (prefixMatches.length === 1) {
-    return { path: String(prefixMatches[0]?.path || "") };
+  if (match.kind === "match") {
+    return { path: match.path };
   }
-  if (prefixMatches.length > 1) {
-    throw new Error(
-      `Session ref is ambiguous: ${wanted}. Inspect ${getDefaultSessionDir()} and use an exact path or a less ambiguous id prefix.`,
-    );
+  if (match.kind === "required") {
+    throw new Error("session_ref_required");
   }
-
-  throw new Error(
-    `Session not found: ${wanted}. Inspect ${getDefaultSessionDir()} and use a session file path, exact id, or unique id prefix.`,
-  );
+  if (match.kind === "ambiguous") {
+    throw new Error(formatSubagentSessionRefAmbiguousError(wanted));
+  }
+  throw new Error(formatSubagentSessionRefNotFoundError(wanted));
 }
 
 export { forkSessionManagerCompat } from "../session/fork.js";
 
-async function createManagedSession(task: SubagentTask) {
+async function createManagedSession(task: NormalizedSubagentTask) {
   const cwd = HOME_DIR;
-  const sessionConfig = normalizeSessionConfig(task.session);
+  const sessionConfig = task.session;
   const profile = resolveRuntimeProfile({ cwd });
   const sessionDir = getRuntimeSessionDir(cwd, profile.agentDir);
   const { SessionManager } = await loadSessionManagerModule();
@@ -233,11 +289,27 @@ export async function getSubagentBackendInfo(
   };
 }
 
+function normalizeSubagentTask(
+  task: SubagentTask,
+  defaults: {
+    model?: string;
+    thinkingLevel?: ThinkingLevel;
+  } = {},
+): NormalizedSubagentTask {
+  return {
+    prompt: String(task.prompt || ""),
+    model: normalizeModelRef(task.model) || defaults.model,
+    thinkingLevel: task.thinkingLevel || defaults.thinkingLevel,
+    session: normalizeSubagentSessionConfig(task.session),
+    disabledExtensions: normalizeDisabledExtensions(task.disabledExtensions),
+  };
+}
+
 function buildTasks(
   params: RunSubagentParams,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
-): { ok: true; tasks: SubagentTask[] } | { ok: false; error: string } {
+): { ok: true; tasks: NormalizedSubagentTask[] } | { ok: false; error: string } {
   const hasTasks = Array.isArray(params.tasks) && params.tasks.length > 0;
   const hasSingle = Boolean(String(params.prompt || "").trim());
   if (Number(hasTasks) + Number(hasSingle) !== 1) {
@@ -258,33 +330,29 @@ function buildTasks(
   return {
     ok: true,
     tasks: hasTasks
-      ? (params.tasks || []).map((task) => ({
-          prompt: task.prompt,
-          model: normalizeModelRef(task.model),
-          thinkingLevel: task.thinkingLevel,
-          session: normalizeSessionConfig(task.session),
-          disabledExtensions: normalizeDisabledExtensions(
-            task.disabledExtensions,
-          ),
-        }))
+      ? (params.tasks || []).map((task) => normalizeSubagentTask(task))
       : [
-          {
-            prompt: String(params.prompt || ""),
-            model:
-              normalizeModelRef(params.model) ||
-              (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined),
-            thinkingLevel: params.thinkingLevel || currentThinkingLevel,
-            session: normalizeSessionConfig(params.session),
-            disabledExtensions: normalizeDisabledExtensions(
-              params.disabledExtensions,
-            ),
-          },
+          normalizeSubagentTask(
+            {
+              prompt: String(params.prompt || ""),
+              model: params.model,
+              thinkingLevel: params.thinkingLevel,
+              session: params.session,
+              disabledExtensions: params.disabledExtensions,
+            },
+            {
+              model: ctx.model
+                ? `${ctx.model.provider}/${ctx.model.id}`
+                : undefined,
+              thinkingLevel: currentThinkingLevel,
+            },
+          ),
         ],
   };
 }
 
 function validateTasks(
-  tasks: SubagentTask[],
+  tasks: NormalizedSubagentTask[],
   details: SubagentBackendInfo,
 ): string | undefined {
   const availableModels = buildModelLookup(details.providers);
@@ -295,12 +363,12 @@ function validateTasks(
     if (task.model && !availableModels.has(task.model)) {
       return `Unknown or unavailable model: ${task.model}`;
     }
-    const sessionConfig = normalizeSessionConfig(task.session);
+    const sessionConfig = task.session;
     if (
       (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
       !sessionConfig.ref
     ) {
-      return `Session ref is required when session.mode is ${sessionConfig.mode}. Inspect ${getDefaultSessionDir()} and use a session file path, exact id, or unique id prefix.`;
+      return formatSubagentSessionRefRequiredError(sessionConfig.mode);
     }
     if (
       (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
@@ -411,11 +479,11 @@ function syncResultFromSession(
 }
 
 function createTaskResult(
-  task: SubagentTask,
+  task: NormalizedSubagentTask,
   index: number,
   messages: Message[] = [],
 ): TaskResult {
-  const sessionConfig = normalizeSessionConfig(task.session);
+  const sessionConfig = task.session;
   return {
     index,
     prompt: task.prompt,
@@ -506,7 +574,7 @@ export async function executeSubagentRun(options: {
 }
 
 export async function runSubagentTask(
-  task: SubagentTask,
+  task: NormalizedSubagentTask,
   index: number,
   signal?: AbortSignal,
   onProgress?: (result: TaskResult) => void,
