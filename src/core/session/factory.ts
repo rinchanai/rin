@@ -5,6 +5,11 @@ import {
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import { normalizeBoundSessionList } from "./listing.js";
+import {
+  requireSessionFile,
+  readSessionFile,
+  type SessionFileInput,
+} from "./ref.js";
 
 export async function openBoundSession(options: {
   cwd: string;
@@ -16,10 +21,11 @@ export async function openBoundSession(options: {
 }) {
   const { SessionManager } = await loadRinSessionManagerModule();
   const sessionDir = getRuntimeSessionDir(options.cwd, options.agentDir);
+  const sessionFile = readSessionFile(options.sessionFile);
   const sessionManager =
     options.sessionManager ||
-    (options.sessionFile
-      ? SessionManager.open(options.sessionFile, sessionDir)
+    (sessionFile
+      ? SessionManager.open(sessionFile, sessionDir)
       : SessionManager.create(options.cwd, sessionDir));
   return await createConfiguredAgentSession({
     cwd: options.cwd,
@@ -46,15 +52,16 @@ export async function listBoundSessions(options: {
 }
 
 export async function renameBoundSession(
-  sessionPath: string,
+  session: SessionFileInput,
   name: string,
   options: { SessionManager?: any } = {},
 ) {
+  const sessionFile = requireSessionFile(session);
   const nextName = String(name || "").trim();
   if (!nextName) throw new Error("Session name cannot be empty");
   const { SessionManager } = options.SessionManager
     ? { SessionManager: options.SessionManager }
     : await loadRinSessionManagerModule();
-  const manager = SessionManager.open(sessionPath);
+  const manager = SessionManager.open(sessionFile);
   manager.appendSessionInfo(nextName);
 }

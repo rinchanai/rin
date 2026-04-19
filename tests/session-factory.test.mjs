@@ -95,23 +95,46 @@ test("listBoundSessions normalizes legacy session metadata into canonical fields
 
 test("renameBoundSession delegates to SessionManager.open once", async () => {
   const renamed = [];
-  await factory.renameBoundSession("/tmp/demo.jsonl", "Renamed", {
-    SessionManager: {
-      open(sessionPath) {
-        renamed.push(["open", sessionPath]);
-        return {
-          appendSessionInfo(name) {
-            renamed.push(["rename", name]);
-          },
-        };
+  await factory.renameBoundSession(
+    { sessionPath: " /tmp/demo.jsonl " },
+    "Renamed",
+    {
+      SessionManager: {
+        open(sessionPath) {
+          renamed.push(["open", sessionPath]);
+          return {
+            appendSessionInfo(name) {
+              renamed.push(["rename", name]);
+            },
+          };
+        },
       },
     },
-  });
+  );
 
   assert.deepEqual(renamed, [
     ["open", "/tmp/demo.jsonl"],
     ["rename", "Renamed"],
   ]);
+});
+
+
+test("renameBoundSession rejects missing session file selectors", async () => {
+  await assert.rejects(
+    () =>
+      factory.renameBoundSession(
+        { sessionId: "memory-only" },
+        "Renamed",
+        {
+          SessionManager: {
+            open() {
+              throw new Error("should not reach open");
+            },
+          },
+        },
+      ),
+    /Session file is required/,
+  );
 });
 
 test("session listing helpers derive presentation and active state consistently", () => {

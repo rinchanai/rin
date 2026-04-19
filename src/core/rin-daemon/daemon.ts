@@ -32,6 +32,7 @@ import {
 import {
   hasSessionRef as hasSessionSelector,
   normalizeSessionRef as sessionSelectorFromCommand,
+  readSessionFile,
 } from "../session/ref.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
@@ -51,13 +52,13 @@ function loadRestartState(agentDir: string) {
     const pendingResume = Array.isArray(parsed?.pendingResume)
       ? parsed.pendingResume
           .map((item: any) => ({
-            sessionFile:
-              typeof item?.sessionFile === "string" && item.sessionFile
-                ? item.sessionFile
-                : undefined,
+            sessionFile: readSessionFile(item),
             resumeTurn: Boolean(item?.resumeTurn),
           }))
-          .filter((item: any) => item.sessionFile)
+          .filter(
+            (item): item is { sessionFile: string; resumeTurn: boolean } =>
+              Boolean(item.sessionFile),
+          )
       : [];
     return { pendingResume };
   } catch {
@@ -379,13 +380,9 @@ export async function startDaemon(
     if (type === "rename_session") {
       try {
         const { SessionManager } = await sessionManagerModulePromise;
-        await renameBoundSession(
-          String(command.sessionPath || ""),
-          command.name,
-          {
-            SessionManager,
-          },
-        );
+        await renameBoundSession(command, command.name, {
+          SessionManager,
+        });
         writeLine(connection.socket, response(id, type, true));
       } catch (error: any) {
         writeLine(

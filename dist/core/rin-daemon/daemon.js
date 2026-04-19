@@ -12,7 +12,7 @@ import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
-import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, } from "../session/ref.js";
+import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, readSessionFile, } from "../session/ref.js";
 import { WorkerPool } from "./worker-pool.js";
 function writeLine(socket, payload) {
     if (!socket.destroyed)
@@ -27,12 +27,10 @@ function loadRestartState(agentDir) {
         const pendingResume = Array.isArray(parsed?.pendingResume)
             ? parsed.pendingResume
                 .map((item) => ({
-                sessionFile: typeof item?.sessionFile === "string" && item.sessionFile
-                    ? item.sessionFile
-                    : undefined,
+                sessionFile: readSessionFile(item),
                 resumeTurn: Boolean(item?.resumeTurn),
             }))
-                .filter((item) => item.sessionFile)
+                .filter((item) => Boolean(item.sessionFile))
             : [];
         return { pendingResume };
     }
@@ -228,7 +226,7 @@ export async function startDaemon(options = {}) {
         if (type === "rename_session") {
             try {
                 const { SessionManager } = await sessionManagerModulePromise;
-                await renameBoundSession(String(command.sessionPath || ""), command.name, {
+                await renameBoundSession(command, command.name, {
                     SessionManager,
                 });
                 writeLine(connection.socket, response(id, type, true));

@@ -60,6 +60,13 @@ function responseError(commandId: string, commandType: string, error: string) {
   };
 }
 
+function createSwitchSessionCommand(sessionFile: string) {
+  return {
+    type: "switch_session",
+    sessionPath: sessionFile,
+  };
+}
+
 export class WorkerPool {
   private workers = new Set<WorkerHandle>();
   private workersBySessionFile = new Map<string, WorkerHandle>();
@@ -248,10 +255,10 @@ export class WorkerPool {
     this.setWorkerSessionRefs(worker, wanted);
     this.attachWorker(connection, worker);
     try {
-      await this.sendInternalCommand(worker, {
-        type: "switch_session",
-        sessionPath: wanted.sessionFile,
-      });
+      await this.sendInternalCommand(
+        worker,
+        createSwitchSessionCommand(wanted.sessionFile),
+      );
       return worker;
     } catch (error) {
       this.destroyWorker(worker);
@@ -349,7 +356,7 @@ export class WorkerPool {
     const worker = this.createWorker();
     this.setWorkerSessionRefs(worker, selector);
     worker.child.stdin.write(
-      `${JSON.stringify({ type: "switch_session", sessionPath: selector.sessionFile })}\n`,
+      `${JSON.stringify(createSwitchSessionCommand(selector.sessionFile))}\n`,
     );
     if (item?.resumeTurn) {
       worker.child.stdin.write(
@@ -713,10 +720,10 @@ export class WorkerPool {
 
     void (async () => {
       try {
-        await this.sendInternalCommand(replacement, {
-          type: "switch_session",
-          sessionPath: selector.sessionFile,
-        });
+        await this.sendInternalCommand(
+          replacement,
+          createSwitchSessionCommand(selector.sessionFile),
+        );
         if (resumeTurn) {
           await this.sendInternalCommand(replacement, {
             type: "resume_interrupted_turn",

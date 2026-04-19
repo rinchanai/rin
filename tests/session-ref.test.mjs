@@ -78,4 +78,22 @@ test("session ref helpers normalize shared command/state shapes and resolve cons
     ),
     false,
   );
+
+  assert.equal(
+    sessionRef.readSessionFile({ sessionPath: " /tmp/legacy.jsonl " }),
+    "/tmp/legacy.jsonl",
+  );
+  assert.equal(
+    sessionRef.readSessionFile(" /tmp/direct.jsonl "),
+    "/tmp/direct.jsonl",
+  );
+  assert.equal(sessionRef.readSessionFile({ sessionId: "memory-only" }), undefined);
+  assert.equal(
+    sessionRef.requireSessionFile({ sessionFile: " /tmp/required.jsonl " }),
+    "/tmp/required.jsonl",
+  );
+  assert.throws(
+    () => sessionRef.requireSessionFile({ sessionId: "memory-only" }),
+    /Session file is required/,
+  );
 });

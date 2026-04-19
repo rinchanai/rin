@@ -11,6 +11,8 @@ export type SessionRefInput = {
   sessionPath?: unknown;
 };
 
+export type SessionFileInput = string | SessionRefInput;
+
 export function normalizeSessionValue(value: unknown) {
   const text = safeString(value).trim();
   return text || undefined;
@@ -27,6 +29,22 @@ export function normalizeSessionRef(
 
 export function hasSessionRef(value: SessionRef | null | undefined) {
   return Boolean(value?.sessionFile || value?.sessionId);
+}
+
+export function readSessionFile(
+  value: SessionFileInput | null | undefined,
+): string | undefined {
+  if (typeof value === "string") return normalizeSessionValue(value);
+  return normalizeSessionRef(value).sessionFile;
+}
+
+export function requireSessionFile(
+  value: SessionFileInput | null | undefined,
+  error = "Session file is required",
+): string {
+  const sessionFile = readSessionFile(value);
+  if (sessionFile) return sessionFile;
+  throw new Error(error);
 }
 
 export function resolveSessionRef(primary: SessionRef, fallback: SessionRef) {

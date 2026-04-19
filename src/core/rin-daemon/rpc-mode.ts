@@ -3,6 +3,7 @@ import { parseJsonl } from "../rin-lib/common.js";
 import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
+import { requireSessionFile } from "../session/ref.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
 import {
   getOAuthState,
@@ -491,19 +492,19 @@ export async function runCustomRpcMode(
           },
           (value) => value,
         );
-      case "switch_session":
+      case "switch_session": {
+        const sessionFile = requireSessionFile(command);
         return run(
           id,
           type,
           () =>
-            runtime
-              .switchSession(command.sessionPath)
-              .then(async (value: any) => {
-                await bindCurrentSession();
-                return value;
-              }),
+            runtime.switchSession(sessionFile).then(async (value: any) => {
+              await bindCurrentSession();
+              return value;
+            }),
           (value) => ({ cancelled: Boolean(value?.cancelled) }),
         );
+      }
       case "fork":
         return run(
           id,
@@ -533,7 +534,7 @@ export async function runCustomRpcMode(
         return done(id, type, model);
       }
       case "rename_session": {
-        await renameBoundSession(String(command.sessionPath || ""), command.name, {
+        await renameBoundSession(command, command.name, {
           SessionManager,
         });
         return done(id, type);
