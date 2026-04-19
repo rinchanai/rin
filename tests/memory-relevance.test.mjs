@@ -18,8 +18,8 @@ const compile = await import(
   ).href
 );
 
-test("memory relevance scores docs and relations", () => {
-  const docA = {
+function buildDoc(overrides = {}) {
+  return {
     id: "a",
     name: "SearXNG search",
     description: "search stack searxng",
@@ -32,17 +32,63 @@ test("memory relevance scores docs and relations", () => {
     exposure: "self_improve_prompts",
     status: "active",
     canonical: false,
+    ...overrides,
   };
-  const docB = {
-    ...docA,
+}
+
+function buildEvent(overrides = {}) {
+  return {
+    id: "event-1",
+    created_at: new Date().toISOString(),
+    kind: "tool_result",
+    session_id: "session-1",
+    session_file: "/tmp/session-1.jsonl",
+    chat_key: "",
+    source: "test",
+    tool_name: "web_search",
+    is_error: false,
+    summary: "search results arrived",
+    text: "SearXNG search adapter updated",
+    tags: ["search"],
+    ...overrides,
+  };
+}
+
+test("memory relevance scores docs, events, and relations consistently", () => {
+  const docA = buildDoc();
+  const docB = buildDoc({
     id: "b",
     name: "Search notes",
     content: "SearXNG tuning notes",
     description: "Use SearXNG",
-  };
+  });
+  const inactiveDoc = buildDoc({ status: "superseded" });
+  const chronicleDoc = buildDoc({ tags: ["search", "chronicle"] });
+  const recentEvent = buildEvent();
+  const staleEvent = buildEvent({
+    created_at: new Date(Date.now() - 72 * 3_600_000).toISOString(),
+  });
+
   assert.ok(relevance.lexicalScore("searxng", docA) > 0);
+  assert.ok(
+    relevance.lexicalScore("searxng", inactiveDoc) <
+      relevance.lexicalScore("searxng", docA),
+  );
+  assert.ok(
+    relevance.lexicalScore("search", chronicleDoc) <
+      relevance.lexicalScore("search", docA),
+  );
+  assert.ok(
+    relevance.lexicalScore("recent search history", chronicleDoc) > 0,
+  );
+  assert.ok(
+    relevance.eventScore("search", recentEvent) >
+      relevance.eventScore("search", staleEvent),
+  );
   assert.ok(relevance.relationScore(docA, docB).score > 0);
+  assert.equal(relevance.relationScore(docA, docB).reason, "shared-tags");
   assert.equal(relevance.shouldInjectRecentHistory("what happened recently"), true);
+  assert.equal(relevance.shouldInjectRecentHistory("why did we roll back"), true);
 });
 
 test("self-improve compile renders prompt slots", () => {
