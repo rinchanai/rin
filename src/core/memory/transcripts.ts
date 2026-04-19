@@ -13,7 +13,7 @@ import {
 import { appendJsonLine } from "../platform/fs.js";
 import {
   normalizeSessionNameDetail,
-  readFirstUserMessageFromSessionFile,
+  readSessionDisplayNameParts,
 } from "../session/names.js";
 import { normalizeSessionValue } from "../session/metadata.js";
 
@@ -128,23 +128,11 @@ function resolveSessionDisplayName(
     return normalizeSessionNameDetail(fallbackPreview, 180);
   }
 
-  let currentName = "";
-  try {
-    if (fssync.existsSync(normalizedSessionFile)) {
-      const raw = fssync.readFileSync(normalizedSessionFile, "utf8");
-      for (const line of raw.split(/\r?\n/g)) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const entry = JSON.parse(trimmed) as any;
-        if (entry?.type !== "session_info") continue;
-        currentName = normalizeSessionNameDetail(entry?.name || "", 180);
-      }
-    }
-  } catch {}
-
+  const { currentName, firstUserMessage } =
+    readSessionDisplayNameParts(normalizedSessionFile);
   return (
     currentName ||
-    readFirstUserMessageFromSessionFile(normalizedSessionFile) ||
+    firstUserMessage ||
     normalizeSessionNameDetail(fallbackPreview, 180)
   );
 }

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -638,6 +639,67 @@ test("search_memory falls back to the first user message when no stored session 
     );
     assert.equal(rows[0].summary, undefined);
     assert.equal(rows[0].name, "Need help debugging the outbound chat routing bug");
+  });
+});
+
+test("search_memory derives the display name with a single session file read", async () => {
+  await withTempRoot(async (root) => {
+    const sessionFile = await writeSessionFile(root, "single-read-session.jsonl", [
+      {
+        type: "session",
+        version: 3,
+        id: "single-read-session",
+        timestamp: "2026-04-08T09:00:00.000Z",
+        cwd: "/tmp/project",
+      },
+      {
+        type: "message",
+        id: "msg1",
+        parentId: null,
+        timestamp: "2026-04-08T09:02:00.000Z",
+        message: {
+          role: "user",
+          content: [{ type: "text", text: "Need help debugging the outbound chat routing bug" }],
+        },
+      },
+    ]);
+
+    await transcripts.appendTranscriptArchiveEntry(
+      {
+        timestamp: "2026-04-08T09:09:09.000Z",
+        sessionId: "single-read-session",
+        sessionFile,
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Verified the affected bridge path and confirmed outbound send recovery.",
+          },
+        ],
+      },
+      root,
+    );
+
+    const originalReadFileSync = fsSync.readFileSync;
+    let sessionFileReadCount = 0;
+    fsSync.readFileSync = function patchedReadFileSync(filePath, ...args) {
+      if (path.resolve(String(filePath)) === path.resolve(sessionFile)) {
+        sessionFileReadCount += 1;
+      }
+      return originalReadFileSync.call(this, filePath, ...args);
+    };
+
+    try {
+      const rows = await transcripts.searchTranscriptArchive(
+        "outbound send recovery",
+        { limit: 8 },
+        root,
+      );
+      assert.equal(rows[0].name, "Need help debugging the outbound chat routing bug");
+      assert.equal(sessionFileReadCount, 1);
+    } finally {
+      fsSync.readFileSync = originalReadFileSync;
+    }
   });
 });
 
