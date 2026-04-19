@@ -16,8 +16,13 @@ export type SessionDisplayNameParts = {
   firstUserMessage: string;
 };
 
+const EMPTY_SESSION_DISPLAY_NAME_PARTS: SessionDisplayNameParts = {
+  currentName: "",
+  firstUserMessage: "",
+};
+
 function emptySessionDisplayNameParts(): SessionDisplayNameParts {
-  return { currentName: "", firstUserMessage: "" };
+  return { ...EMPTY_SESSION_DISPLAY_NAME_PARTS };
 }
 
 export function normalizeSessionNameDetail(
@@ -47,11 +52,7 @@ export function resolveSessionDisplayName(
   );
 }
 
-function extractFirstUserMessage(entry: any): string {
-  if (entry?.type !== "message") return "";
-  const message = entry?.message;
-  if (safeString(message?.role).trim() !== "user") return "";
-  const content = message?.content;
+function normalizeFirstUserMessageContent(content: unknown): string {
   if (typeof content === "string") {
     return normalizeSessionNameDetail(content, DEFAULT_FIRST_USER_MESSAGE_MAX);
   }
@@ -67,6 +68,13 @@ function extractFirstUserMessage(entry: any): string {
   );
 }
 
+function extractFirstUserMessage(entry: any): string {
+  if (entry?.type !== "message") return "";
+  const message = entry?.message;
+  if (safeString(message?.role).trim() !== "user") return "";
+  return normalizeFirstUserMessageContent(message?.content);
+}
+
 function parseSessionEntryLine(lineBuffer: Buffer<ArrayBufferLike>): any {
   const trimmed = lineBuffer.toString("utf8").trim();
   if (!trimmed) return null;
@@ -77,35 +85,16 @@ function parseSessionEntryLine(lineBuffer: Buffer<ArrayBufferLike>): any {
   }
 }
 
-function copyBufferSlice(
-  buffer: Buffer<ArrayBufferLike>,
-  start: number,
-  end = buffer.length,
-): Buffer<ArrayBufferLike> {
-  return start < end ? Buffer.from(buffer.subarray(start, end)) : EMPTY_BUFFER;
-}
-
-function combineSessionLineBuffers(
-  left: Buffer<ArrayBufferLike>,
-  right: Buffer<ArrayBufferLike>,
-): Buffer<ArrayBufferLike> {
-  if (!left.length) return right;
-  if (!right.length) return left;
-  return Buffer.concat([left, right]);
-}
-
-function collectSessionDisplayNameParts(
-  lineBuffer: Buffer<ArrayBufferLike>,
+function updateSessionDisplayNameParts(
   parts: SessionDisplayNameParts,
+  lineBuffer: Buffer<ArrayBufferLike>,
 ): void {
   const entry = parseSessionEntryLine(lineBuffer);
   if (!entry) return;
 
   if (!parts.firstUserMessage) {
     const firstUserMessage = extractFirstUserMessage(entry);
-    if (firstUserMessage) {
-      parts.firstUserMessage = firstUserMessage;
-    }
+    if (firstUserMessage) parts.firstUserMessage = firstUserMessage;
   }
 
   if (entry?.type !== "session_info") return;
@@ -113,21 +102,7 @@ function collectSessionDisplayNameParts(
     entry?.name,
     DEFAULT_SESSION_NAME_DETAIL_MAX,
   );
-  if (currentName) {
-    parts.currentName = currentName;
-  }
-}
-
-function readSessionChunk(
-  fd: number,
-  buffer: Buffer<ArrayBufferLike>,
-  position: number,
-): { chunk: Buffer<ArrayBufferLike>; position: number } {
-  const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, position);
-  return {
-    chunk: bytesRead ? buffer.subarray(0, bytesRead) : EMPTY_BUFFER,
-    position: position + bytesRead,
-  };
+  if (currentName) parts.currentName = currentName;
 }
 
 function readSessionDisplayNamePartsFromFile(
@@ -143,23 +118,32 @@ function readSessionDisplayNamePartsFromFile(
   try {
     let position = 0;
     while (true) {
-      const nextChunk = readSessionChunk(fd, buffer, position);
-      if (!nextChunk.chunk.length) {
-        if (remainder.length) {
-          collectSessionDisplayNameParts(remainder, parts);
-        }
-        return parts;
-      }
-      position = nextChunk.position;
-      const chunk = combineSessionLineBuffers(remainder, nextChunk.chunk);
+      const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, position);
+      if (!bytesRead) break;
+      position += bytesRead;
+      const nextChunk = buffer.subarray(0, bytesRead);
+      const chunk = remainder.length
+        ? Buffer.concat([remainder, nextChunk])
+        : nextChunk;
       let lineStart = 0;
-      for (let index = 0; index < chunk.length; index += 1) {
-        if (chunk[index] !== 0x0a) continue;
-        collectSessionDisplayNameParts(chunk.subarray(lineStart, index), parts);
-        lineStart = index + 1;
+      while (lineStart < chunk.length) {
+        const newlineIndex = chunk.indexOf(0x0a, lineStart);
+        if (newlineIndex === -1) break;
+        updateSessionDisplayNameParts(
+          parts,
+          chunk.subarray(lineStart, newlineIndex),
+        );
+        lineStart = newlineIndex + 1;
       }
-      remainder = copyBufferSlice(chunk, lineStart);
+      remainder =
+        lineStart < chunk.length
+          ? Buffer.from(chunk.subarray(lineStart))
+          : EMPTY_BUFFER;
     }
+    if (remainder.length) {
+      updateSessionDisplayNameParts(parts, remainder);
+    }
+    return parts;
   } finally {
     fs.closeSync(fd);
   }
