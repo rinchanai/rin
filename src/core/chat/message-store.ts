@@ -54,26 +54,35 @@ type ChatMessageStoreLayout = {
   preferredStoreDir: string;
   legacyStoreDir: string;
   storeDir: string;
+  fallbackStoreDir?: string;
   recordsDir: string;
   indexesDir: string;
   logDir: string;
   source: "preferred" | "legacy" | "implicit-preferred";
 };
 
-const chatMessageStoreLayoutCache = new Map<string, ChatMessageStoreLayout>();
+function recordsDirForStoreDir(storeDir: string) {
+  return path.join(storeDir, "records");
+}
+
+function indexesDirForStoreDir(storeDir: string) {
+  return path.join(storeDir, "indexes");
+}
 
 function buildChatMessageStoreLayout(
   preferredStoreDir: string,
   legacyStoreDir: string,
   storeDir: string,
+  fallbackStoreDir: string | undefined,
   source: ChatMessageStoreLayout["source"],
 ): ChatMessageStoreLayout {
   return {
     preferredStoreDir,
     legacyStoreDir,
     storeDir,
-    recordsDir: path.join(storeDir, "records"),
-    indexesDir: path.join(storeDir, "indexes"),
+    fallbackStoreDir,
+    recordsDir: recordsDirForStoreDir(storeDir),
+    indexesDir: indexesDirForStoreDir(storeDir),
     logDir: path.join(storeDir, "chat-log-view"),
     source,
   };
@@ -82,19 +91,23 @@ function buildChatMessageStoreLayout(
 function detectChatMessageStoreLayout(rootDir: string) {
   const preferredStoreDir = path.join(rootDir, "data", "chat-message-store");
   const legacyStoreDir = path.join(rootDir, "data", "koishi-message-store");
-  if (fs.existsSync(preferredStoreDir)) {
+  const hasPreferred = fs.existsSync(preferredStoreDir);
+  const hasLegacy = fs.existsSync(legacyStoreDir);
+  if (hasPreferred) {
     return buildChatMessageStoreLayout(
       preferredStoreDir,
       legacyStoreDir,
       preferredStoreDir,
+      hasLegacy ? legacyStoreDir : undefined,
       "preferred",
     );
   }
-  if (fs.existsSync(legacyStoreDir)) {
+  if (hasLegacy) {
     return buildChatMessageStoreLayout(
       preferredStoreDir,
       legacyStoreDir,
       legacyStoreDir,
+      undefined,
       "legacy",
     );
   }
@@ -102,29 +115,26 @@ function detectChatMessageStoreLayout(rootDir: string) {
     preferredStoreDir,
     legacyStoreDir,
     preferredStoreDir,
+    undefined,
     "implicit-preferred",
   );
 }
 
 function getChatMessageStoreLayout(agentDir: string) {
-  const rootDir = path.resolve(agentDir);
-  const cached = chatMessageStoreLayoutCache.get(rootDir);
-  if (cached) {
-    if (cached.source === "preferred") return cached;
-    if (cached.source === "legacy") {
-      if (!fs.existsSync(cached.preferredStoreDir)) return cached;
-    } else {
-      if (fs.existsSync(cached.storeDir)) {
-        const next = { ...cached, source: "preferred" as const };
-        chatMessageStoreLayoutCache.set(rootDir, next);
-        return next;
-      }
-      if (!fs.existsSync(cached.legacyStoreDir)) return cached;
-    }
-  }
-  const next = detectChatMessageStoreLayout(rootDir);
-  chatMessageStoreLayoutCache.set(rootDir, next);
-  return next;
+  return detectChatMessageStoreLayout(path.resolve(agentDir));
+}
+
+function chatMessageStoreRoots(agentDir: string) {
+  const layout = getChatMessageStoreLayout(agentDir);
+  return [layout.storeDir, layout.fallbackStoreDir].filter(
+    (item): item is string => Boolean(item),
+  );
+}
+
+function recordRoots(agentDir: string) {
+  return chatMessageStoreRoots(agentDir).map((storeDir) =>
+    recordsDirForStoreDir(storeDir),
+  );
 }
 
 export function chatMessageStoreDir(agentDir: string) {
@@ -173,22 +183,21 @@ export function chatMessageLogPath(
   return chatScopedDatePath(chatMessageLogDir(agentDir), chatKey, date, ".txt");
 }
 
-function refsPath(agentDir: string, messageId: string) {
+function refsPathForIndexesDir(indexesRoot: string, messageId: string) {
   const key = hashKey(messageId);
-  return path.join(
-    indexesDir(agentDir),
-    "by-message-id",
-    key.slice(0, 2),
-    `${key}.json`,
-  );
+  return path.join(indexesRoot, "by-message-id", key.slice(0, 2), `${key}.json`);
+}
+
+function refsPath(agentDir: string, messageId: string) {
+  return refsPathForIndexesDir(indexesDir(agentDir), messageId);
+}
+
+function recordPathForRecordsDir(recordsRoot: string, recordKey: string) {
+  return path.join(recordsRoot, recordKey.slice(0, 2), `${recordKey}.json`);
 }
 
 function recordPath(agentDir: string, recordKey: string) {
-  return path.join(
-    recordsDir(agentDir),
-    recordKey.slice(0, 2),
-    `${recordKey}.json`,
-  );
+  return recordPathForRecordsDir(recordsDir(agentDir), recordKey);
 }
 
 type StoredChatDateIndex = {
@@ -196,13 +205,21 @@ type StoredChatDateIndex = {
   recordKeys: string[];
 };
 
-function chatDateIndexPath(agentDir: string, chatKey: string, date: string) {
+function chatDateIndexPathForIndexesDir(
+  indexesRoot: string,
+  chatKey: string,
+  date: string,
+) {
   return chatScopedDatePath(
-    path.join(indexesDir(agentDir), "by-chat-date"),
+    path.join(indexesRoot, "by-chat-date"),
     chatKey,
     date,
     ".json",
   );
+}
+
+function chatDateIndexPath(agentDir: string, chatKey: string, date: string) {
+  return chatDateIndexPathForIndexesDir(indexesDir(agentDir), chatKey, date);
 }
 
 function normalizeRecordKeys(value: unknown) {
@@ -216,7 +233,11 @@ function normalizeRecordKeys(value: unknown) {
   ];
 }
 
-function readChatDateIndex(agentDir: string, chatKey: string, date: string) {
+function readPrimaryChatDateIndex(
+  agentDir: string,
+  chatKey: string,
+  date: string,
+) {
   const stored = readJsonFile<StoredChatDateIndex | string[] | null>(
     chatDateIndexPath(agentDir, chatKey, date),
     null,
@@ -246,7 +267,7 @@ function updateChatDateIndexRecord(
   const nextDate = normalizeLocalDateOnly(date);
   const nextRecordKey = safeString(recordKey).trim();
   if (!nextDate || !nextRecordKey) return;
-  const current = readChatDateIndex(agentDir, chatKey, nextDate) || [];
+  const current = readPrimaryChatDateIndex(agentDir, chatKey, nextDate) || [];
   const nextRecordKeys =
     action === "remove"
       ? current.filter((item) => item !== nextRecordKey)
@@ -274,17 +295,38 @@ function sortChatMessages(messages: StoredChatMessage[]) {
   });
 }
 
-function readChatMessagesByRecordKeys(agentDir: string, recordKeys: string[]) {
-  return normalizeRecordKeys(recordKeys)
-    .map((recordKey) =>
-      readJsonFile<StoredChatMessage | null>(
-        recordPath(agentDir, recordKey),
-        null,
-      ),
-    )
-    .filter((item): item is StoredChatMessage =>
-      Boolean(item && safeString(item.messageId).trim()),
+function uniqueChatMessages(messages: StoredChatMessage[]) {
+  const out = new Map<string, StoredChatMessage>();
+  for (const item of messages) {
+    if (!item?.recordKey || out.has(item.recordKey)) continue;
+    out.set(item.recordKey, item);
+  }
+  return [...out.values()];
+}
+
+function readStoredChatMessage(filePath: string) {
+  const item = readJsonFile<StoredChatMessage | null>(filePath, null);
+  return item && safeString(item.messageId).trim() ? item : null;
+}
+
+function findChatMessageByRecordKey(agentDir: string, recordKey: string) {
+  const nextRecordKey = safeString(recordKey).trim();
+  if (!nextRecordKey) return null;
+  for (const root of recordRoots(agentDir)) {
+    const item = readStoredChatMessage(
+      recordPathForRecordsDir(root, nextRecordKey),
     );
+    if (item) return item;
+  }
+  return null;
+}
+
+function readChatMessagesByRecordKeys(agentDir: string, recordKeys: string[]) {
+  return uniqueChatMessages(
+    normalizeRecordKeys(recordKeys)
+      .map((recordKey) => findChatMessageByRecordKey(agentDir, recordKey))
+      .filter((item): item is StoredChatMessage => Boolean(item)),
+  );
 }
 
 function syncChatDateIndex(
@@ -405,19 +447,22 @@ export function getChatMessagesByMessageId(
 ) {
   const nextMessageId = safeString(messageId).trim();
   if (!nextMessageId) return [] as StoredChatMessage[];
-  const refFilePath = refsPath(agentDir, nextMessageId);
-  const refs = readJsonFile<string[]>(refFilePath, []);
-  const storeLayout = getChatMessageStoreLayout(agentDir);
-  return refs
-    .map((relativePath) =>
-      readJsonFile<StoredChatMessage | null>(
-        path.join(storeLayout.storeDir, relativePath),
-        null,
-      ),
-    )
-    .filter((item): item is StoredChatMessage =>
-      Boolean(item && safeString(item.messageId).trim()),
+  const matches: StoredChatMessage[] = [];
+  for (const storeDir of chatMessageStoreRoots(agentDir)) {
+    const refs = readJsonFile<string[]>(
+      refsPathForIndexesDir(indexesDirForStoreDir(storeDir), nextMessageId),
+      [],
     );
+    for (const relativePath of refs) {
+      const nextRelativePath = safeString(relativePath).trim();
+      if (!nextRelativePath) continue;
+      const item = readStoredChatMessage(
+        path.join(storeDir, nextRelativePath),
+      );
+      if (item) matches.push(item);
+    }
+  }
+  return uniqueChatMessages(matches);
 }
 
 export function getChatMessage(
@@ -425,10 +470,9 @@ export function getChatMessage(
   chatKey: string,
   messageId: string,
 ) {
-  const recordKey = buildChatMessageRecordKey(chatKey, messageId);
-  return readJsonFile<StoredChatMessage | null>(
-    recordPath(agentDir, recordKey),
-    null,
+  return findChatMessageByRecordKey(
+    agentDir,
+    buildChatMessageRecordKey(chatKey, messageId),
   );
 }
 
@@ -472,8 +516,7 @@ export function findChatMessageByChatAndId(
 }
 
 export function listChatMessages(agentDir: string) {
-  const root = recordsDir(agentDir);
-  const out: StoredChatMessage[] = [];
+  const out = new Map<string, StoredChatMessage>();
   const visit = (dir: string) => {
     let entries: fs.Dirent[] = [];
     try {
@@ -488,12 +531,14 @@ export function listChatMessages(agentDir: string) {
         continue;
       }
       if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
-      const item = readJsonFile<StoredChatMessage | null>(filePath, null);
-      if (item && safeString(item.messageId).trim()) out.push(item);
+      const item = readStoredChatMessage(filePath);
+      if (item && !out.has(item.recordKey)) out.set(item.recordKey, item);
     }
   };
-  visit(root);
-  return out;
+  for (const root of recordRoots(agentDir)) {
+    visit(root);
+  }
+  return [...out.values()];
 }
 
 export function listChatMessagesByChatAndDate(
@@ -505,7 +550,11 @@ export function listChatMessagesByChatAndDate(
   const nextDate = normalizeLocalDateOnly(date);
   if (!nextChatKey || !nextDate) return [];
 
-  const indexedRecordKeys = readChatDateIndex(agentDir, nextChatKey, nextDate);
+  const indexedRecordKeys = readPrimaryChatDateIndex(
+    agentDir,
+    nextChatKey,
+    nextDate,
+  );
   if (indexedRecordKeys) {
     return sortChatMessages(
       readChatMessagesByRecordKeys(agentDir, indexedRecordKeys).filter(
