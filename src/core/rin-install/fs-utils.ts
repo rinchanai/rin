@@ -266,9 +266,38 @@ export function writeJsonFileWithPrivilege(
 }
 
 export function syncTree(sourcePath: string, destPath: string) {
-  execFileSync("rm", ["-rf", destPath], { stdio: "inherit" });
-  ensureDir(path.dirname(destPath));
-  execFileSync("cp", ["-a", sourcePath, destPath], { stdio: "inherit" });
+  const destParent = path.dirname(destPath);
+  const baseName = path.basename(destPath);
+  const uniqueSuffix = `${process.pid}-${Date.now()}`;
+  const tempPath = path.join(destParent, `.${baseName}.sync-${uniqueSuffix}`);
+  const backupPath = fs.existsSync(destPath)
+    ? path.join(destParent, `.${baseName}.backup-${uniqueSuffix}`)
+    : null;
+
+  ensureDir(destParent);
+  try {
+    execFileSync("rm", ["-rf", tempPath], { stdio: "inherit" });
+  } catch {}
+  execFileSync("cp", ["-a", sourcePath, tempPath], { stdio: "inherit" });
+  if (backupPath) fs.renameSync(destPath, backupPath);
+  try {
+    fs.renameSync(tempPath, destPath);
+  } catch (error) {
+    try {
+      execFileSync("rm", ["-rf", tempPath], { stdio: "inherit" });
+    } catch {}
+    if (backupPath && !fs.existsSync(destPath) && fs.existsSync(backupPath)) {
+      try {
+        fs.renameSync(backupPath, destPath);
+      } catch {}
+    }
+    throw error;
+  }
+  if (backupPath) {
+    try {
+      execFileSync("rm", ["-rf", backupPath], { stdio: "inherit" });
+    } catch {}
+  }
 }
 
 export function syncInstalledDocTree(

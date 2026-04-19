@@ -148,6 +148,20 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
     "utf8",
   );
 
+  await fs.mkdir(path.join(installDir, "docs", "rin", "builtin-skills", "legacy"), {
+    recursive: true,
+  });
+  await fs.writeFile(
+    path.join(installDir, "docs", "rin", "builtin-skills", "legacy", "OLD.md"),
+    "# Old\n",
+    "utf8",
+  );
+  await fs.writeFile(
+    path.join(installDir, "docs", "rin", "obsolete.md"),
+    "obsolete\n",
+    "utf8",
+  );
+
   const installedDocs = fsUtils.syncInstalledDocs(
     tempRoot,
     installDir,
@@ -171,6 +185,12 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
       "skill-creator",
       "SKILL.md",
     ),
+  );
+  await assert.rejects(
+    fs.access(path.join(installDir, "docs", "rin", "builtin-skills", "legacy", "OLD.md")),
+  );
+  await assert.rejects(
+    fs.access(path.join(installDir, "docs", "rin", "obsolete.md")),
   );
 });
 
