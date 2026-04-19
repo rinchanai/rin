@@ -271,6 +271,84 @@ test("token usage store returns recent events in reverse time order", async () =
   });
 });
 
+test("token usage store supports shared provider_model and yes/no dimensions", async () => {
+  await withTempRoot(async (root) => {
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-model-1",
+        timestamp: "2026-04-10T08:00:00.000Z",
+        sessionId: "s1",
+        sessionPersisted: true,
+        eventType: "message_end",
+        provider: "openai",
+        model: "gpt-5.4",
+        totalTokens: 30,
+      },
+      root,
+    );
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-model-2",
+        timestamp: "2026-04-10T08:01:00.000Z",
+        sessionId: "s2",
+        eventType: "message_end",
+        model: "gpt-5.4-mini",
+        totalTokens: 20,
+      },
+      root,
+    );
+    store.appendTokenTelemetryEvent(
+      {
+        id: "evt-model-3",
+        timestamp: "2026-04-10T08:02:00.000Z",
+        sessionId: "s3",
+        eventType: "message_end",
+        isError: true,
+        totalTokens: 5,
+      },
+      root,
+    );
+
+    const byModel = store.queryTokenUsageAggregate({
+      agentDir: root,
+      groupBy: ["provider_model"],
+      includeZero: true,
+      limit: 10,
+    });
+    assert.deepEqual(
+      byModel.map((row) => row.provider_model),
+      ["openai/gpt-5.4", "gpt-5.4-mini", "(none)"],
+    );
+
+    const filteredByModel = store.queryTokenUsageEvents({
+      agentDir: root,
+      filters: [{ key: "provider_model", value: "openai/gpt-5.4" }],
+      limit: 10,
+    });
+    assert.equal(filteredByModel.length, 1);
+    assert.equal(filteredByModel[0].session_id, "s1");
+
+    const persistedRows = store.queryTokenUsageEvents({
+      agentDir: root,
+      filters: [{ key: "session_persisted", value: "yes" }],
+      limit: 10,
+    });
+    assert.equal(persistedRows.length, 1);
+    assert.equal(persistedRows[0].session_id, "s1");
+
+    const erroredRows = store.queryTokenUsageEvents({
+      agentDir: root,
+      filters: [{ key: "is_error", value: "yes" }],
+      limit: 10,
+    });
+    assert.equal(erroredRows.length, 1);
+    assert.equal(erroredRows[0].session_id, "s3");
+
+    const overview = store.getTokenUsageOverview({ agentDir: root });
+    assert.equal(overview.model_count, 2);
+  });
+});
+
 test("token usage store handles repeated cached queries with varying limits", async () => {
   await withTempRoot(async (root) => {
     store.appendTokenTelemetryEvent(

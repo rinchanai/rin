@@ -186,6 +186,49 @@ function normalizeOverviewRow(row: any) {
   return normalized;
 }
 
+type DimensionDef = {
+  select: string;
+  filter?: string;
+};
+
+function coalescedTextDimensionExpr(valueExpr: string): string {
+  return `COALESCE(NULLIF(${valueExpr}, ''), '(none)')`;
+}
+
+function yesNoDimensionExpr(condition: string): string {
+  return `CASE WHEN ${condition} THEN 'yes' ELSE 'no' END`;
+}
+
+function buildDimension(select: string, filter = select): DimensionDef {
+  return { select, filter };
+}
+
+function textDimension(column: string): DimensionDef {
+  return buildDimension(coalescedTextDimensionExpr(column));
+}
+
+function yesNoDimension(condition: string): DimensionDef {
+  return buildDimension(yesNoDimensionExpr(condition));
+}
+
+const PROVIDER_MODEL_VALUE_EXPR = [
+  `CASE`,
+  `  WHEN COALESCE(provider, '') <> '' AND COALESCE(model, '') <> '' THEN provider || '/' || model`,
+  `  WHEN COALESCE(model, '') <> '' THEN model`,
+  `  ELSE ''`,
+  `END`,
+].join(" ");
+const PROVIDER_MODEL_DIMENSION_EXPR = coalescedTextDimensionExpr(PROVIDER_MODEL_VALUE_EXPR);
+
+function resolveDimensionDef(
+  key: string,
+  errorPrefix: "unsupported_filter" | "unsupported_group_by",
+): Required<DimensionDef> {
+  const def = DIMENSIONS[key];
+  if (!def) throw new Error(`${errorPrefix}:${key}`);
+  return { select: def.select, filter: def.filter || def.select };
+}
+
 export function resolveAgentDir(agentDir = ""): string {
   const fromEnv = safeString(process.env.PI_CODING_AGENT_DIR || process.env.RIN_DIR).trim();
   if (safeString(agentDir).trim()) return path.resolve(agentDir);
@@ -520,11 +563,7 @@ export function getTokenUsageOverview(
           SUM(total_tokens) AS total_tokens,
           SUM(cost_total) AS cost_total,
           COUNT(DISTINCT NULLIF(session_id, '')) AS session_count,
-          COUNT(DISTINCT CASE
-            WHEN COALESCE(provider, '') <> '' AND COALESCE(model, '') <> '' THEN provider || '/' || model
-            WHEN COALESCE(model, '') <> '' THEN model
-            ELSE NULL
-          END) AS model_count,
+          COUNT(DISTINCT NULLIF(${PROVIDER_MODEL_VALUE_EXPR}, '')) AS model_count,
           MIN(timestamp) AS first_timestamp,
           MAX(timestamp) AS last_timestamp
         FROM telemetry_events
@@ -534,97 +573,29 @@ export function getTokenUsageOverview(
   );
 }
 
-type DimensionDef = {
-  select: string;
-  filter: string;
-};
-
-const DIMENSIONS: Record<string, DimensionDef> = {
-  day: {
-    select: `substr(timestamp, 1, 10)`,
-    filter: `substr(timestamp, 1, 10)`,
-  },
-  hour: {
-    select: `substr(timestamp, 1, 13) || ':00'`,
-    filter: `substr(timestamp, 1, 13) || ':00'`,
-  },
-  session_id: {
-    select: `COALESCE(NULLIF(session_id, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(session_id, ''), '(none)')`,
-  },
-  session_name: {
-    select: `COALESCE(NULLIF(session_name, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(session_name, ''), '(none)')`,
-  },
-  session_file: {
-    select: `COALESCE(NULLIF(session_file, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(session_file, ''), '(none)')`,
-  },
-  session_persisted: {
-    select: `CASE WHEN session_persisted = 1 THEN 'yes' ELSE 'no' END`,
-    filter: `CASE WHEN session_persisted = 1 THEN 'yes' ELSE 'no' END`,
-  },
-  cwd: {
-    select: `COALESCE(NULLIF(cwd, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(cwd, ''), '(none)')`,
-  },
-  event_type: {
-    select: `COALESCE(NULLIF(event_type, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(event_type, ''), '(none)')`,
-  },
-  source: {
-    select: `COALESCE(NULLIF(source, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(source, ''), '(none)')`,
-  },
-  trigger: {
-    select: `COALESCE(NULLIF(trigger, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(trigger, ''), '(none)')`,
-  },
-  provider: {
-    select: `COALESCE(NULLIF(provider, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(provider, ''), '(none)')`,
-  },
-  model: {
-    select: `COALESCE(NULLIF(model, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(model, ''), '(none)')`,
-  },
-  provider_model: {
-    select: `COALESCE(NULLIF(CASE WHEN COALESCE(provider, '') <> '' AND COALESCE(model, '') <> '' THEN provider || '/' || model WHEN COALESCE(model, '') <> '' THEN model ELSE '' END, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(CASE WHEN COALESCE(provider, '') <> '' AND COALESCE(model, '') <> '' THEN provider || '/' || model WHEN COALESCE(model, '') <> '' THEN model ELSE '' END, ''), '(none)')`,
-  },
-  thinking_level: {
-    select: `COALESCE(NULLIF(thinking_level, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(thinking_level, ''), '(none)')`,
-  },
-  message_role: {
-    select: `COALESCE(NULLIF(message_role, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(message_role, ''), '(none)')`,
-  },
-  stop_reason: {
-    select: `COALESCE(NULLIF(stop_reason, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(stop_reason, ''), '(none)')`,
-  },
-  tool_name: {
-    select: `COALESCE(NULLIF(tool_name, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(tool_name, ''), '(none)')`,
-  },
-  capability: {
-    select: `COALESCE(NULLIF(capability_key, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(capability_key, ''), '(none)')`,
-  },
-  capability_kind: {
-    select: `COALESCE(NULLIF(capability_kind, ''), '(none)')`,
-    filter: `COALESCE(NULLIF(capability_kind, ''), '(none)')`,
-  },
-  turn_index: {
-    select: `COALESCE(CAST(turn_index AS TEXT), '(none)')`,
-    filter: `COALESCE(CAST(turn_index AS TEXT), '(none)')`,
-  },
-  is_error: {
-    select: `CASE WHEN is_error = 1 THEN 'yes' ELSE 'no' END`,
-    filter: `CASE WHEN is_error = 1 THEN 'yes' ELSE 'no' END`,
-  },
-};
+const DIMENSIONS = {
+  day: buildDimension(`substr(timestamp, 1, 10)`),
+  hour: buildDimension(`substr(timestamp, 1, 13) || ':00'`),
+  session_id: textDimension(`session_id`),
+  session_name: textDimension(`session_name`),
+  session_file: textDimension(`session_file`),
+  session_persisted: yesNoDimension(`session_persisted = 1`),
+  cwd: textDimension(`cwd`),
+  event_type: textDimension(`event_type`),
+  source: textDimension(`source`),
+  trigger: textDimension(`trigger`),
+  provider: textDimension(`provider`),
+  model: textDimension(`model`),
+  provider_model: buildDimension(PROVIDER_MODEL_DIMENSION_EXPR),
+  thinking_level: textDimension(`thinking_level`),
+  message_role: textDimension(`message_role`),
+  stop_reason: textDimension(`stop_reason`),
+  tool_name: textDimension(`tool_name`),
+  capability: textDimension(`capability_key`),
+  capability_kind: textDimension(`capability_kind`),
+  turn_index: buildDimension(`COALESCE(CAST(turn_index AS TEXT), '(none)')`),
+  is_error: yesNoDimension(`is_error = 1`),
+} satisfies Record<string, DimensionDef>;
 
 export function listTokenUsageDimensions(): string[] {
   return Object.keys(DIMENSIONS).sort();
@@ -645,11 +616,11 @@ function buildWhereClause(options: TokenUsageQueryOptions, forAggregate: boolean
     clauses.push(`total_tokens > 0`);
   }
   for (const [index, filter] of (options.filters || []).entries()) {
-    const def = DIMENSIONS[safeString(filter.key).trim()];
-    if (!def) throw new Error(`unsupported_filter:${filter.key}`);
+    const key = normalizeText(filter.key);
+    const def = resolveDimensionDef(key, "unsupported_filter");
     const paramKey = `filter_${index}`;
     clauses.push(`${def.filter} = @${paramKey}`);
-    params[paramKey] = safeString(filter.value).trim();
+    params[paramKey] = normalizeText(filter.value);
   }
   return {
     whereSql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "",
@@ -660,11 +631,10 @@ function buildWhereClause(options: TokenUsageQueryOptions, forAggregate: boolean
 export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
   const db = openTokenUsageDb(options.agentDir || "");
   const groupBy = Array.isArray(options.groupBy) ? options.groupBy : [];
-  const dims = groupBy.map((key) => {
-    const def = DIMENSIONS[key];
-    if (!def) throw new Error(`unsupported_group_by:${key}`);
-    return { key, ...def };
-  });
+  const dims = groupBy.map((key) => ({
+    key,
+    ...resolveDimensionDef(key, "unsupported_group_by"),
+  }));
   const { whereSql, params } = buildWhereClause(options, true);
   const selectDims = dims.map((dim) => `${dim.select} AS "${dim.key}"`);
   const groupSql = dims.length
