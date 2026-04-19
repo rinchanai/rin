@@ -60,27 +60,58 @@ export function formatHiddenResultsNotice(totalResults: number, hiddenCount: num
   return `[Showing top ${Math.max(totalResults - hiddenCount, 0)} of ${totalResults} results.]`;
 }
 
+type ToolContentEntry = {
+  type?: string;
+  text?: string;
+  data?: string;
+  mimeType?: string;
+};
+
 type TextToolContent = {
-  content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
+  content?: ToolContentEntry[];
+};
+
+type TextToolResult = TextToolContent & {
+  details?: { truncation?: TruncationResult; emptyMessage?: string };
 };
 
 export const NO_OUTPUT_TEXT = "(no output)";
+
+function collectTextOutput(
+  result: TextToolContent | null | undefined,
+): { outputText: string; imageBlocks: ToolContentEntry[] } {
+  const textParts: string[] = [];
+  const imageBlocks: ToolContentEntry[] = [];
+  if (!Array.isArray(result?.content)) {
+    return { outputText: "", imageBlocks };
+  }
+
+  for (const entry of result.content) {
+    if (entry?.type === "text") {
+      textParts.push(
+        sanitizeBinaryOutput(stripAnsi(String(entry.text || ""))).replace(/\r/g, ""),
+      );
+      continue;
+    }
+    if (entry?.type === "image") imageBlocks.push(entry);
+  }
+
+  return {
+    outputText: textParts.join("\n"),
+    imageBlocks,
+  };
+}
 
 export function getTextOutput(
   result: TextToolContent | null | undefined,
   showImages: boolean,
 ) {
-  if (!result || !Array.isArray(result.content)) return "";
-  const textBlocks = result.content.filter((entry) => entry?.type === "text");
-  const imageBlocks = result.content.filter((entry) => entry?.type === "image");
-  let output = textBlocks
-    .map((entry) =>
-      sanitizeBinaryOutput(stripAnsi(String(entry?.text || ""))).replace(/\r/g, ""),
-    )
-    .join("\n");
+  const { outputText, imageBlocks } = collectTextOutput(result);
+  let output = outputText;
 
-  const caps = getCapabilities();
-  if (imageBlocks.length > 0 && (!caps.images || !showImages)) {
+  if (imageBlocks.length > 0) {
+    const caps = getCapabilities();
+    if (caps.images && showImages) return output;
     const imageIndicators = imageBlocks
       .map((img) => {
         const mimeType = img?.mimeType ?? "image/unknown";
@@ -154,24 +185,32 @@ export function formatToolDuration(startedAt: number | undefined, endedAt: numbe
   return `${label} ${formatDuration(endTime - startedAt)}`;
 }
 
-export function formatTruncationWarningMessage(truncation: TruncationResult) {
+function describeTruncation(truncation: TruncationResult) {
+  const byteLimit = formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES);
   if (truncation.firstLineExceedsLimit) {
-    return `First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`;
+    return {
+      warning: `First line exceeds ${byteLimit} limit`,
+      notice: `First line exceeds ${byteLimit} limit`,
+    };
   }
   if (truncation.truncatedBy === "lines") {
-    return `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)`;
+    return {
+      warning: `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)`,
+      notice: `Showing ${truncation.outputLines} of ${truncation.totalLines} lines`,
+    };
   }
-  return `Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)`;
+  return {
+    warning: `Truncated: ${truncation.outputLines} lines shown (${byteLimit} limit)`,
+    notice: `Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${byteLimit} limit)`,
+  };
+}
+
+export function formatTruncationWarningMessage(truncation: TruncationResult) {
+  return describeTruncation(truncation).warning;
 }
 
 export function formatTruncationNotice(truncation: TruncationResult) {
-  if (truncation.firstLineExceedsLimit) {
-    return `[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit.]`;
-  }
-  if (truncation.truncatedBy === "lines") {
-    return `[Showing ${truncation.outputLines} of ${truncation.totalLines} lines.]`;
-  }
-  return `[Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit).]`;
+  return `[${describeTruncation(truncation).notice}.]`;
 }
 
 export function appendTruncationNotice(text: string, truncation: TruncationResult | undefined) {
@@ -305,10 +344,7 @@ export function rebuildExpandableTextResultComponent(
 }
 
 export function renderTextToolResult(
-  result: {
-    content?: Array<{ type?: string; text?: string; data?: string; mimeType?: string }>;
-    details?: { truncation?: TruncationResult; emptyMessage?: string };
-  },
+  result: TextToolResult,
   options: { expanded: boolean; isPartial?: boolean },
   theme: any,
   showImages: boolean,

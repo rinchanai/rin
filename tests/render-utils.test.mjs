@@ -181,6 +181,22 @@ test("render utils normalize shared user-facing text fallbacks", () => {
   );
 });
 
+test("render utils sanitize shared text output blocks in order", () => {
+  assert.equal(
+    renderUtils.getTextOutput(
+      {
+        content: [
+          { type: "text", text: "alpha\u0000\u001b[31mred\u001b[39m" },
+          { type: "other", text: "ignored" },
+          { type: "text", text: "beta\r\ngamma" },
+        ],
+      },
+      false,
+    ),
+    "alphared\nbeta\ngamma",
+  );
+});
+
 test("prepareTruncatedText leaves short text unchanged", () => {
   const result = renderUtils.prepareTruncatedText("hello world");
   assert.equal(result.outputText, "hello world");
