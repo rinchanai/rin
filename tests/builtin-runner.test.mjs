@@ -11,6 +11,10 @@ const { BuiltinModuleHost, CompositeBuiltinRunner } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "host.js"))
     .href
 );
+const builtinRegistry = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "registry.js"))
+    .href
+);
 
 test("composite builtin runner exposes a merged createContext", () => {
   const builtinHost = new BuiltinModuleHost(
@@ -63,4 +67,16 @@ test("composite builtin runner returns wrapped builtin tools for registry refres
       },
     },
   ]);
+});
+
+test("builtin registry normalizes disabled module names once", () => {
+  assert.deepEqual(
+    builtinRegistry.normalizeBuiltinModuleNames([
+      " rules ",
+      "RULES",
+      " fetch ",
+      "",
+    ]),
+    ["rules", "fetch"],
+  );
 });

@@ -10,7 +10,14 @@ export function trimText(value: unknown, max = 280): string {
   return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 
-export function uniqueStrings(values: string[]): string[] {
+export type NormalizeStringListOptions = {
+  lowercase?: boolean;
+};
+
+export function normalizeStringList(
+  values: Iterable<unknown>,
+  options: NormalizeStringListOptions = {},
+): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const value of values) {
@@ -19,9 +26,13 @@ export function uniqueStrings(values: string[]): string[] {
     const key = normalized.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(normalized);
+    out.push(options.lowercase ? key : normalized);
   }
   return out;
+}
+
+export function uniqueStrings(values: string[]): string[] {
+  return normalizeStringList(values);
 }
 
 export function normalizeNeedle(value: string): string {

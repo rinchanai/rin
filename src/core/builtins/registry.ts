@@ -1,3 +1,5 @@
+import { normalizeStringList } from "../text-utils.js";
+
 export const BUILTIN_MODULE_ORDER = [
   "rules",
   "web-search",
@@ -36,12 +38,9 @@ const BUILTIN_MODULE_PATHS: Record<BuiltinModuleName, string> = {
 };
 
 export function normalizeBuiltinModuleNames(values: unknown): string[] {
-  if (!Array.isArray(values)) return [];
-  return [...new Set(
-    values
-      .map((value) => String(value || "").trim().toLowerCase())
-      .filter(Boolean),
-  )];
+  return Array.isArray(values)
+    ? normalizeStringList(values, { lowercase: true })
+    : [];
 }
 
 export function getBuiltinModuleNames(

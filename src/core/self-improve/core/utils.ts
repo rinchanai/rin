@@ -1,28 +1,28 @@
 import {
   latinTokens,
   normalizeNeedle,
+  normalizeStringList,
   safeString,
   trimText,
   uniqueStrings,
 } from "../../text-utils.js";
 
-export { latinTokens, normalizeNeedle, safeString, trimText, uniqueStrings };
+export {
+  latinTokens,
+  normalizeNeedle,
+  normalizeStringList,
+  safeString,
+  trimText,
+  uniqueStrings,
+};
 
 export function nowIso(): string {
   return new Date().toISOString();
 }
 
 export function normalizeList(value: unknown): string[] {
-  if (Array.isArray(value))
-    return uniqueStrings(
-      value.map((item) => safeString(item).trim()).filter(Boolean),
-    );
-  return uniqueStrings(
-    safeString(value)
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean),
-  );
+  if (Array.isArray(value)) return normalizeStringList(value);
+  return normalizeStringList(safeString(value).split(","));
 }
 
 export function slugify(input: string, fallback = "memory"): string {

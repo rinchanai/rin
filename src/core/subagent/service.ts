@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { safeString } from "../text-utils.js";
+import { normalizeStringList, safeString } from "../text-utils.js";
 
 const HOME_DIR = os.homedir();
 
@@ -48,12 +48,9 @@ function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 function normalizeDisabledExtensions(values: unknown): string[] {
-  if (!Array.isArray(values)) return [];
-  return [...new Set(
-    values
-      .map((value) => String(value || "").trim().toLowerCase())
-      .filter(Boolean),
-  )];
+  return Array.isArray(values)
+    ? normalizeStringList(values, { lowercase: true })
+    : [];
 }
 
 export function resolveSubagentDisabledBuiltinModules(

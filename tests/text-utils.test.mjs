@@ -22,6 +22,16 @@ test("text utils normalize strings consistently", () => {
     textUtils.uniqueStrings([" Alpha ", "alpha", "Beta", "beta ", ""]),
     ["Alpha", "Beta"],
   );
+  assert.deepEqual(
+    textUtils.normalizeStringList([" Alpha ", "alpha", " 42 ", 42, ""]),
+    ["Alpha", "42"],
+  );
+  assert.deepEqual(
+    textUtils.normalizeStringList([" Rules ", "rules", "FETCH"], {
+      lowercase: true,
+    }),
+    ["rules", "fetch"],
+  );
   assert.equal(
     textUtils.normalizeNeedle("  Hello\nWORLD  "),
     "hello world",

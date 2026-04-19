@@ -163,10 +163,13 @@ test("subagent task preferences are construction-time only", async () => {
 });
 
 test("subagent service can hide builtin modules from worker runtime", () => {
-  const disabled =
-    subagentService.resolveSubagentDisabledBuiltinModules(["memory"]);
-  assert.equal(disabled.includes("memory"), true);
-  assert.equal(disabled.includes("subagent"), true);
+  const disabled = subagentService.resolveSubagentDisabledBuiltinModules([
+    " memory ",
+    "MEMORY",
+    "",
+    "SubAgent",
+  ]);
+  assert.deepEqual(disabled, ["memory", "subagent"]);
   assert.equal(disabled.includes("rules"), false);
 });
 
