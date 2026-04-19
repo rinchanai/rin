@@ -8,7 +8,12 @@ import type {
   ChatMessagePart,
   ChatOutboxPayload,
 } from "../rin-lib/chat-outbox.js";
-import { findBot, parseChatKey } from "./support.js";
+import {
+  findBot,
+  inferChatType,
+  isPrivateChat,
+  parseChatKey,
+} from "./support.js";
 import { appendChatLog } from "./chat-log.js";
 import {
   findChatMessageByChatAndId,
@@ -91,6 +96,10 @@ export async function rotateWorkingReaction(
     }
   }
 
+  if (parsed.platform === "onebot" && isPrivateChat(parsed)) {
+    return previousEmoji || "";
+  }
+
   if (typeof bot?.createReaction !== "function") {
     return previousEmoji || "";
   }
@@ -126,6 +135,7 @@ export async function clearWorkingReaction(
   const { parsed, bot } = target;
   const nextEmoji = safeString(emoji).trim();
   if (!nextEmoji) return false;
+  if (parsed.platform === "onebot" && isPrivateChat(parsed)) return false;
 
   if (typeof bot?.deleteReaction === "function") {
     try {
@@ -216,13 +226,6 @@ function normalizeDeliveredMessageIds(result: unknown) {
 
 async function sendBotMessage(bot: any, chatId: string, content: any) {
   return normalizeDeliveredMessageIds(await bot.sendMessage(chatId, content));
-}
-
-function inferChatType(parsed: { platform: string; chatId: string }) {
-  if (parsed.platform === "telegram")
-    return parsed.chatId.startsWith("-") ? "group" : "private";
-  if (parsed.chatId.startsWith("private:")) return "private";
-  return "group";
 }
 
 function resolveSessionContext(

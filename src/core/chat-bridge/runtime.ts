@@ -6,6 +6,7 @@ import { readChatLog } from "../chat/chat-log.js";
 import { normalizeChatMessageLookup } from "../chat/message-store.js";
 import {
   findBot,
+  inferChatType,
   loadIdentity,
   parseChatKey,
   setIdentityTrust,
@@ -16,14 +17,6 @@ import { sendOutboxPayload } from "../chat/transport.js";
 import { readSessionMetadata } from "../session/metadata.js";
 import { serializeBridgeValue } from "./eval.js";
 import { safeString } from "../text-utils.js";
-
-function inferChatType(parsed: { platform: string; chatId: string }) {
-  if (parsed.platform === "telegram") {
-    return parsed.chatId.startsWith("-") ? "group" : "private";
-  }
-  if (parsed.chatId.startsWith("private:")) return "private";
-  return "group";
-}
 
 function normalizeMessageParts(input: unknown): ChatMessagePart[] {
   if (typeof input === "string") {

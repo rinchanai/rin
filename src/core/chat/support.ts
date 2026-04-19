@@ -36,9 +36,33 @@ export function ensureExtension(fileName: string, mimeType = "") {
   return ensureSharedExtension(fileName, mimeType);
 }
 
+export type ParsedChatKey = {
+  platform: string;
+  botId: string;
+  chatId: string;
+};
+
+export type ChatType = "private" | "group";
+
 function platformRequiresBotId(platform: string) {
   const nextPlatform = safeString(platform).trim().toLowerCase();
   return nextPlatform === "telegram" || nextPlatform === "onebot";
+}
+
+export function inferChatType(target: {
+  platform: string;
+  chatId: string;
+}): ChatType {
+  const platform = safeString(target?.platform).trim();
+  const chatId = safeString(target?.chatId).trim();
+  if (platform === "telegram") {
+    return chatId.startsWith("-") ? "group" : "private";
+  }
+  return chatId.startsWith("private:") ? "private" : "group";
+}
+
+export function isPrivateChat(target: { platform: string; chatId: string }) {
+  return inferChatType(target) === "private";
 }
 
 export function composeChatKey(platform: string, chatId: string, botId = "") {
@@ -50,7 +74,7 @@ export function composeChatKey(platform: string, chatId: string, botId = "") {
   return `${nextPlatform}/${nextBotId}:${nextChatId}`;
 }
 
-export function parseChatKey(chatKey: string) {
+export function parseChatKey(chatKey: string): ParsedChatKey | null {
   const match = safeString(chatKey)
     .trim()
     .match(/^([^/:]+)(?:\/([^:]+))?:(.+)$/);

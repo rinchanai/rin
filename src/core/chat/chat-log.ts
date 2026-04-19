@@ -8,7 +8,7 @@ import {
   type StoredChatMessage,
 } from "./message-store.js";
 import { normalizeLocalDateOnly } from "./date.js";
-import { parseChatKey } from "./support.js";
+import { inferChatType, parseChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
 import { normalizeSessionRef } from "../session/ref.js";
 
@@ -31,13 +31,6 @@ function normalizeRole(value: unknown) {
   return text === "user" || text === "assistant"
     ? (text as "user" | "assistant")
     : null;
-}
-
-function inferChatType(parsed: { platform: string; chatId: string }) {
-  if (parsed.platform === "telegram")
-    return parsed.chatId.startsWith("-") ? "group" : "private";
-  if (parsed.chatId.startsWith("private:")) return "private";
-  return "group";
 }
 
 function normalizeStoredText(record: StoredChatMessage) {

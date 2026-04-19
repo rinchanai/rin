@@ -466,16 +466,17 @@ test("chat transport uses bot reaction helpers for onebot working reactions", as
 });
 
 test("chat transport skips onebot working reactions in private chats", async () => {
+  const calls = [];
   const app = {
     bots: [
       {
         platform: "onebot",
         selfId: "2301401877",
         async createReaction() {
-          throw new Error("onebot_reaction_requires_group_chat");
+          calls.push("create");
         },
         async deleteReaction() {
-          throw new Error("onebot_reaction_requires_group_chat");
+          calls.push("delete");
         },
       },
     ],
@@ -497,4 +498,5 @@ test("chat transport skips onebot working reactions in private chats", async () 
 
   assert.equal(first, "");
   assert.equal(cleared, false);
+  assert.deepEqual(calls, []);
 });

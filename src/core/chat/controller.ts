@@ -11,7 +11,12 @@ import {
 } from "../session/turn-result.js";
 import { normalizeSessionRef } from "../session/ref.js";
 import { chatStatePath } from "../chat-bridge/session-binding.js";
-import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
+import {
+  isPrivateChat,
+  parseChatKey,
+  readJsonFile,
+  writeJsonFile,
+} from "./support.js";
 import {
   ChatState,
   SavedAttachment,
@@ -302,7 +307,7 @@ export class ChatController {
       return { typing: true, reaction: false, notice: false };
     }
     if (parsed.platform === "onebot") {
-      return parsed.chatId.startsWith("private:")
+      return isPrivateChat(parsed)
         ? { typing: false, reaction: false, notice: true }
         : { typing: false, reaction: true, notice: false };
     }
