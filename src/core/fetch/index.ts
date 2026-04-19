@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
 import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
@@ -32,6 +36,7 @@ type FetchDetails = {
   charset?: string;
   bytes: number;
   title?: string;
+  fullOutputPath?: string;
   truncation?: TruncationResult;
 };
 
@@ -197,17 +202,26 @@ function formatTextResponse(details: FetchDetails, bodyText: string) {
   return lines.join("\n");
 }
 
+async function writeFetchFullOutput(text: string) {
+  const dir = await mkdtemp(path.join(tmpdir(), "rin-fetch-"));
+  const filePath = path.join(dir, "fetch.txt");
+  await writeFile(filePath, `${text}\n`, "utf8");
+  return filePath;
+}
+
 function formatFetchResult(
   result: {
     content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-    details?: { truncation?: TruncationResult };
+    details?: { truncation?: TruncationResult; fullOutputPath?: string };
   },
   options: { expanded: boolean; isPartial?: boolean },
   theme: any,
   showImages: boolean,
 ) {
+  const fullOutputPath = String(result.details?.fullOutputPath || "").trim();
   return renderTextToolResult(result, options, theme, showImages, {
     partialText: "Fetching...",
+    extraMutedLines: fullOutputPath ? [`Full output: ${fullOutputPath}`] : undefined,
   });
 }
 
@@ -309,6 +323,9 @@ export default function fetchExtension(pi: ExtensionAPI) {
 
       if (truncated.truncation) {
         details.truncation = truncated.truncation;
+        details.fullOutputPath = await writeFetchFullOutput(fullText).catch(
+          () => undefined,
+        );
       }
 
       return {

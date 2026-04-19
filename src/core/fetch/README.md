@@ -17,5 +17,6 @@ Inject a narrow `fetch` tool for direct URL retrieval.
 - returns concise metadata plus readable page/body text
 - pretty-prints JSON and normalizes plain-text responses when possible
 - rejects non-text responses instead of downloading files
+- when truncation happens, saves the full response to a temp file and surfaces that path in the tool result
 
 Text output is truncated to the normal tool limits, with the full response saved to a temp file when needed.
