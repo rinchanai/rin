@@ -1,12 +1,20 @@
 import path from "node:path";
 
-const INSTALLED_APP_ENTRY_FILES = {
-  rin: ["rin", "main.js"],
-  "rin-daemon": ["rin-daemon", "daemon.js"],
-  "rin-install": ["rin-install", "main.js"],
+const INSTALLED_APP_ENTRY_LAYOUT = {
+  rin: {
+    current: ["app", "rin", "main.js"],
+    legacy: ["index.js"],
+  },
+  "rin-daemon": {
+    current: ["app", "rin-daemon", "daemon.js"],
+    legacy: ["daemon.js"],
+  },
+  "rin-install": {
+    current: ["app", "rin-install", "main.js"],
+  },
 } as const;
 
-export type InstalledAppKey = keyof typeof INSTALLED_APP_ENTRY_FILES;
+export type InstalledAppKey = keyof typeof INSTALLED_APP_ENTRY_LAYOUT;
 
 function uniqueNonEmptyStrings(values: Array<string | undefined | null>) {
   return Array.from(
@@ -80,15 +88,26 @@ export function installedPiDocsRoot(installDir: string) {
   return path.join(installedDocsRoot(installDir), "pi");
 }
 
+function installedAppDistRoot(installDir: string) {
+  return path.join(currentRuntimeRoot(installDir), "dist");
+}
+
+function installedAppEntryPathFromSegments(
+  installDir: string,
+  segments?: readonly string[],
+) {
+  return segments?.length
+    ? path.join(installedAppDistRoot(installDir), ...segments)
+    : "";
+}
+
 export function currentInstalledAppEntryPath(
   installDir: string,
   app: InstalledAppKey,
 ) {
-  return path.join(
-    currentRuntimeRoot(installDir),
-    "dist",
-    "app",
-    ...INSTALLED_APP_ENTRY_FILES[app],
+  return installedAppEntryPathFromSegments(
+    installDir,
+    INSTALLED_APP_ENTRY_LAYOUT[app].current,
   );
 }
 
@@ -96,13 +115,11 @@ export function legacyInstalledAppEntryPath(
   installDir: string,
   app: InstalledAppKey,
 ) {
-  if (app === "rin") {
-    return path.join(currentRuntimeRoot(installDir), "dist", "index.js");
-  }
-  if (app === "rin-daemon") {
-    return path.join(currentRuntimeRoot(installDir), "dist", "daemon.js");
-  }
-  return "";
+  const layout = INSTALLED_APP_ENTRY_LAYOUT[app];
+  return installedAppEntryPathFromSegments(
+    installDir,
+    "legacy" in layout ? layout.legacy : undefined,
+  );
 }
 
 export function installedAppEntryCandidates(
@@ -113,6 +130,17 @@ export function installedAppEntryCandidates(
     currentInstalledAppEntryPath(installDir, app),
     legacyInstalledAppEntryPath(installDir, app),
   ]);
+}
+
+export function resolveInstalledAppEntryPath(
+  installDir: string,
+  app: InstalledAppKey,
+  pathExists: (candidate: string) => boolean,
+) {
+  for (const candidate of installedAppEntryCandidates(installDir, app)) {
+    if (pathExists(candidate)) return candidate;
+  }
+  return null;
 }
 
 export function installerManifestPath(installDir: string) {

@@ -18,6 +18,7 @@ import {
   daemonStdoutLogPath,
   installedAppEntryCandidates,
   launchAgentPlistPathForHome,
+  resolveInstalledAppEntryPath,
   managedLaunchdLabel,
   managedSystemdUnitCandidates,
   managedSystemdUnitName,
@@ -163,9 +164,12 @@ function managedSystemdUnitPaths(targetUser: string, targetHome: string) {
 
 export function resolveDaemonEntryForInstall(installDir: string) {
   const candidates = installedAppEntryCandidates(installDir, "rin-daemon");
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
-  }
+  const daemonEntry = resolveInstalledAppEntryPath(
+    installDir,
+    "rin-daemon",
+    (candidate) => fs.existsSync(candidate),
+  );
+  if (daemonEntry) return daemonEntry;
   throw new Error(`rin_installed_daemon_entry_missing:${candidates.join(",")}`);
 }
 

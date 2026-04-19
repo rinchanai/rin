@@ -68,6 +68,28 @@ test("installer path helpers centralize installed entrypoints", () => {
       path.join(installDir, "app", "current", "dist", "daemon.js"),
     ],
   );
+
+  const daemonCandidates = pathsMod.installedAppEntryCandidates(
+    installDir,
+    "rin-daemon",
+  );
+  const seen = [];
+  assert.equal(
+    pathsMod.resolveInstalledAppEntryPath(
+      installDir,
+      "rin-daemon",
+      (candidate) => {
+        seen.push(candidate);
+        return candidate === daemonCandidates[1];
+      },
+    ),
+    daemonCandidates[1],
+  );
+  assert.deepEqual(seen, daemonCandidates);
+  assert.equal(
+    pathsMod.resolveInstalledAppEntryPath(installDir, "rin-install", () => false),
+    null,
+  );
 });
 
 test("installer path helpers centralize home, manifest, config, service, doc, and log locations", () => {
