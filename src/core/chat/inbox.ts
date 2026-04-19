@@ -113,56 +113,88 @@ export function readChatInboxItem(filePath: string) {
   return readJsonFile<ChatInboxItem | null>(filePath, null);
 }
 
+function asRecord(value: unknown) {
+  return value && typeof value === "object"
+    ? (value as Record<string, any>)
+    : ({} as Record<string, any>);
+}
+
+function pickTrimmedString(...values: unknown[]) {
+  for (const value of values) {
+    const text = safeString(value).trim();
+    if (text) return text;
+  }
+  return undefined;
+}
+
+function mergeSessionRecord(
+  session: Record<string, any>,
+  key: string,
+  patch: Record<string, unknown>,
+) {
+  const next = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined),
+  );
+  if (!Object.keys(next).length) return;
+  session[key] = {
+    ...asRecord(session[key]),
+    ...next,
+  };
+}
+
+function updateChatInboxItem(
+  item: ChatInboxItem,
+  patch: Partial<ChatInboxItem>,
+): ChatInboxItem {
+  return {
+    ...item,
+    attemptCount: Number(item.attemptCount || 0) + 1,
+    updatedAt: new Date().toISOString(),
+    ...patch,
+  };
+}
+
 export function restoreChatInboxSession(item: ChatInboxItem, bot?: any) {
-  const session = (cloneJsonIfObject(item?.session) ?? {}) as Record<
-    string,
-    any
-  >;
+  const session = asRecord(cloneJsonIfObject(item?.session) ?? {});
   const routing =
     item?.routing && typeof item.routing === "object" ? item.routing : null;
   if (bot) session.bot = bot;
-  if (routing) {
-    session.isDirect = Boolean(routing.isDirect);
-    session.userId = safeString(session.userId || routing.userId).trim() || undefined;
-    if (routing.text) {
-      session.stripped = {
-        ...(session?.stripped && typeof session.stripped === "object"
-          ? session.stripped
-          : {}),
-        content: safeString(session?.stripped?.content || routing.text).trim() || undefined,
-        appel: Boolean(routing.mentionLike) || undefined,
-      };
-    } else if (routing.mentionLike) {
-      session.stripped = {
-        ...(session?.stripped && typeof session.stripped === "object"
-          ? session.stripped
-          : {}),
-        appel: true,
-      };
-    }
-    if (routing.replyToMessageId) {
-      session.quote = {
-        ...(session?.quote && typeof session.quote === "object"
-          ? session.quote
-          : {}),
-        messageId:
-          safeString(session?.quote?.messageId || routing.replyToMessageId).trim() ||
-          undefined,
-      };
-    }
-    if (routing.nickname) {
-      session.author = {
-        ...(session?.author && typeof session.author === "object"
-          ? session.author
-          : {}),
-        name: safeString(session?.author?.name || routing.nickname).trim() || undefined,
-      };
-    }
-    if (routing.chatName) {
-      session.channelName =
-        safeString(session?.channelName || routing.chatName).trim() || undefined;
-    }
+  if (!routing) return session;
+
+  session.isDirect = Boolean(routing.isDirect);
+  session.userId = pickTrimmedString(session.userId, routing.userId);
+
+  if (routing.text || routing.mentionLike) {
+    mergeSessionRecord(session, "stripped", {
+      content: routing.text
+        ? pickTrimmedString(session?.stripped?.content, routing.text)
+        : undefined,
+      appel: routing.mentionLike ? true : undefined,
+    });
   }
+
+  if (routing.replyToMessageId) {
+    mergeSessionRecord(session, "quote", {
+      messageId: pickTrimmedString(
+        session?.quote?.messageId,
+        routing.replyToMessageId,
+      ),
+    });
+  }
+
+  if (routing.nickname) {
+    mergeSessionRecord(session, "author", {
+      name: pickTrimmedString(session?.author?.name, routing.nickname),
+    });
+  }
+
+  if (routing.chatName) {
+    session.channelName = pickTrimmedString(
+      session?.channelName,
+      routing.chatName,
+    );
+  }
+
   return session;
 }
 
@@ -194,13 +226,10 @@ export function requeueChatInboxFile(
   options: { delayMs: number; error?: string },
 ) {
   const delayMs = Math.max(0, Number(options.delayMs || 0));
-  const next: ChatInboxItem = {
-    ...item,
-    attemptCount: Number(item.attemptCount || 0) + 1,
-    updatedAt: new Date().toISOString(),
+  const next = updateChatInboxItem(item, {
     nextAttemptAt: new Date(Date.now() + delayMs).toISOString(),
     lastError: safeString(options.error).trim() || undefined,
-  };
+  });
   const targetPath = path.join(pendingDir(agentDir), itemFileName(next.itemId));
   writeJsonAtomic(targetPath, next);
   completeChatInboxFile(filePath);
@@ -213,12 +242,9 @@ export function failChatInboxFile(
   item: ChatInboxItem,
   error?: string,
 ) {
-  const next: ChatInboxItem = {
-    ...item,
-    attemptCount: Number(item.attemptCount || 0) + 1,
-    updatedAt: new Date().toISOString(),
+  const next = updateChatInboxItem(item, {
     lastError: safeString(error).trim() || undefined,
-  };
+  });
   const targetPath = path.join(failedDir(agentDir), itemFileName(next.itemId));
   writeJsonAtomic(targetPath, next);
   completeChatInboxFile(filePath);

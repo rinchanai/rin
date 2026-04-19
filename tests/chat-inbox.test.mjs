@@ -82,6 +82,58 @@ test("chat inbox preserves normalized mention routing hints needed for queued gr
   assert.equal(restored.stripped?.appel, true);
 });
 
+test("chat inbox restore backfills routing hints without clobbering existing session metadata", () => {
+  const bot = { id: "bot-demo" };
+  const restored = inbox.restoreChatInboxSession(
+    {
+      version: 1,
+      itemId: "item-1",
+      chatKey: "telegram/1:-100123",
+      messageId: "m-route",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      attemptCount: 0,
+      routing: {
+        chatType: "group",
+        isDirect: false,
+        mentionLike: true,
+        text: "routing text",
+        userId: "routing-user",
+        nickname: "Routing Nick",
+        chatName: "Routing Chat",
+        replyToMessageId: "routing-reply",
+      },
+      session: {
+        userId: "session-user",
+        stripped: { content: "session text", extra: true },
+        quote: { messageId: "session-reply", keep: "yes" },
+        author: { name: "Session Nick", role: "member" },
+        channelName: "Session Chat",
+      },
+      elements: [],
+    },
+    bot,
+  );
+
+  assert.equal(restored.bot, bot);
+  assert.equal(restored.isDirect, false);
+  assert.equal(restored.userId, "session-user");
+  assert.deepEqual(restored.stripped, {
+    content: "session text",
+    extra: true,
+    appel: true,
+  });
+  assert.deepEqual(restored.quote, {
+    messageId: "session-reply",
+    keep: "yes",
+  });
+  assert.deepEqual(restored.author, {
+    name: "Session Nick",
+    role: "member",
+  });
+  assert.equal(restored.channelName, "Session Chat");
+});
+
 test("chat inbox restores stranded processing envelopes back to pending on startup", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-inbox-"));
   const session = {
