@@ -1,13 +1,9 @@
-import path from "node:path";
-
 import {
-  findChatMessageByChatAndId,
+  chatMessageLogPath,
   listChatMessagesByChatAndDate,
-  saveChatMessage,
-  updateChatMessage,
+  upsertChatMessage,
   type StoredChatMessage,
 } from "./message-store.js";
-import { normalizeLocalDateOnly } from "./date.js";
 import { inferChatType, parseChatKey } from "./support.js";
 import { safeString } from "../text-utils.js";
 import { normalizeSessionRef } from "../session/ref.js";
@@ -96,34 +92,10 @@ function buildStoredMessageFromChatLogEntry(
   };
 }
 
-export function chatLogDir(agentDir: string) {
-  return path.join(
-    path.resolve(agentDir),
-    "data",
-    "chat-message-store",
-    "chat-log-view",
-  );
-}
-
-export function chatLogPath(agentDir: string, chatKey: string, date: string) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const day = normalizeLocalDateOnly(date, new Date());
-  return parsed.botId
-    ? path.join(
-        chatLogDir(agentDir),
-        parsed.platform,
-        parsed.botId,
-        parsed.chatId,
-        `${day}.txt`,
-      )
-    : path.join(
-        chatLogDir(agentDir),
-        parsed.platform,
-        parsed.chatId,
-        `${day}.txt`,
-      );
-}
+export {
+  chatMessageLogDir as chatLogDir,
+  chatMessageLogPath as chatLogPath,
+} from "./message-store.js";
 
 export function appendChatLog(
   agentDir: string,
@@ -131,44 +103,18 @@ export function appendChatLog(
 ) {
   const normalized = buildStoredMessageFromChatLogEntry(input);
   if (!normalized) return null;
-  const existing = findChatMessageByChatAndId(
-    agentDir,
-    normalized.chatKey,
-    normalized.messageId,
+  const entry = storedMessageToChatLogEntry(
+    upsertChatMessage(agentDir, normalized),
   );
-  const patch = Object.fromEntries(
-    Object.entries({
-      role: normalized.role,
-      replyToMessageId: normalized.replyToMessageId,
-      sessionId: normalized.sessionId,
-      sessionFile: normalized.sessionFile,
-      processedAt: normalized.processedAt,
-      receivedAt: normalized.receivedAt,
-      userId: normalized.userId,
-      nickname: normalized.nickname,
-      text: normalized.text,
-      rawContent: normalized.rawContent,
-      strippedContent: normalized.strippedContent,
-    }).filter(([, value]) => value !== undefined),
-  );
-  const record = existing
-    ? updateChatMessage(
-        agentDir,
-        normalized.chatKey,
-        normalized.messageId,
-        patch,
-      ) || existing
-    : saveChatMessage(agentDir, normalized).record;
-  const entry = storedMessageToChatLogEntry(record);
   if (!entry) return null;
   return {
     entry,
-    filePath: chatLogPath(agentDir, entry.chatKey, entry.timestamp),
+    filePath: chatMessageLogPath(agentDir, entry.chatKey, entry.timestamp),
   };
 }
 
 export function readChatLog(agentDir: string, chatKey: string, date: string) {
-  const filePath = chatLogPath(agentDir, chatKey, date);
+  const filePath = chatMessageLogPath(agentDir, chatKey, date);
   const entries = listChatMessagesByChatAndDate(agentDir, chatKey, date)
     .map((record) => storedMessageToChatLogEntry(record))
     .filter((item): item is ChatLogEntry => Boolean(item));

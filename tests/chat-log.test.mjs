@@ -44,7 +44,7 @@ test("chat chat log appends into unified message store and reads one day chat hi
       rawContent: "Good morning",
       strippedContent: "Good morning",
     });
-    chatLog.appendChatLog(root, {
+    const appended = chatLog.appendChatLog(root, {
       timestamp: "2026-04-04T12:00:00.000Z",
       chatKey: "telegram/123:456",
       role: "user",
@@ -66,6 +66,15 @@ test("chat chat log appends into unified message store and reads one day chat hi
       rawContent: "Good morning!",
       strippedContent: "Good morning!",
     });
+
+    assert.equal(
+      appended?.filePath,
+      messageStore.chatMessageLogPath(
+        root,
+        "telegram/123:456",
+        "2026-04-04T12:00:00.000Z",
+      ),
+    );
 
     const stored = messageStore.getChatMessage(root, "telegram/123:456", "m1");
     assert.equal(stored?.role, "user");

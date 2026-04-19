@@ -67,6 +67,40 @@ function indexesDir(agentDir: string) {
   return path.join(chatMessageStoreDir(agentDir), "indexes");
 }
 
+function chatScopedDatePath(
+  rootDir: string,
+  chatKey: string,
+  date: string,
+  extension: ".json" | ".txt",
+) {
+  const parsed = parseChatKey(chatKey);
+  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
+  const day = normalizeLocalDateOnly(date, new Date());
+  const platform = sanitizePathSegment(parsed.platform, "platform");
+  const chatId = sanitizePathSegment(parsed.chatId, "chat");
+  return parsed.botId
+    ? path.join(
+        rootDir,
+        platform,
+        sanitizePathSegment(parsed.botId, "bot"),
+        chatId,
+        `${day}${extension}`,
+      )
+    : path.join(rootDir, platform, chatId, `${day}${extension}`);
+}
+
+export function chatMessageLogDir(agentDir: string) {
+  return path.join(chatMessageStoreDir(agentDir), "chat-log-view");
+}
+
+export function chatMessageLogPath(
+  agentDir: string,
+  chatKey: string,
+  date: string,
+) {
+  return chatScopedDatePath(chatMessageLogDir(agentDir), chatKey, date, ".txt");
+}
+
 function refsPath(agentDir: string, messageId: string) {
   const key = hashKey(messageId);
   return path.join(
@@ -91,27 +125,12 @@ type StoredChatDateIndex = {
 };
 
 function chatDateIndexPath(agentDir: string, chatKey: string, date: string) {
-  const parsed = parseChatKey(chatKey);
-  if (!parsed) throw new Error(`invalid_chatKey:${chatKey}`);
-  const day = normalizeLocalDateOnly(date, new Date());
-  const platform = sanitizePathSegment(parsed.platform, "platform");
-  const chatId = sanitizePathSegment(parsed.chatId, "chat");
-  return parsed.botId
-    ? path.join(
-        indexesDir(agentDir),
-        "by-chat-date",
-        platform,
-        sanitizePathSegment(parsed.botId, "bot"),
-        chatId,
-        `${day}.json`,
-      )
-    : path.join(
-        indexesDir(agentDir),
-        "by-chat-date",
-        platform,
-        chatId,
-        `${day}.json`,
-      );
+  return chatScopedDatePath(
+    path.join(indexesDir(agentDir), "by-chat-date"),
+    chatKey,
+    date,
+    ".json",
+  );
 }
 
 function normalizeRecordKeys(value: unknown) {
@@ -250,6 +269,19 @@ export function buildStoredChatMessage(
   };
 }
 
+function toStoredChatMessageInput(record: StoredChatMessage) {
+  const { version: _version, recordKey: _recordKey, ...input } = record;
+  return input;
+}
+
+function definedStoredChatMessagePatch(
+  input: Partial<Omit<StoredChatMessage, "version" | "recordKey">>,
+) {
+  return Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined),
+  ) as Partial<StoredChatMessage>;
+}
+
 export function saveChatMessage(
   agentDir: string,
   input: Omit<StoredChatMessage, "version" | "recordKey">,
@@ -268,6 +300,30 @@ export function saveChatMessage(
   syncChatDateIndex(agentDir, record, storedMessageDate(previous));
 
   return { record, filePath };
+}
+
+export function upsertChatMessage(
+  agentDir: string,
+  input: Omit<StoredChatMessage, "version" | "recordKey">,
+) {
+  const normalized = buildStoredChatMessage(input);
+  const existing = findChatMessageByChatAndId(
+    agentDir,
+    normalized.chatKey,
+    normalized.messageId,
+  );
+  if (!existing) {
+    return saveChatMessage(agentDir, toStoredChatMessageInput(normalized))
+      .record;
+  }
+  return (
+    updateChatMessage(
+      agentDir,
+      normalized.chatKey,
+      normalized.messageId,
+      definedStoredChatMessagePatch(toStoredChatMessageInput(normalized)),
+    ) || existing
+  );
 }
 
 export function getChatMessagesByMessageId(

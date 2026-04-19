@@ -62,6 +62,11 @@ test("chat local-day storage stays aligned with explicit chat-log dates", async 
         "telegram/123:456",
         "2026-04-05T00:30:00+08:00",
       );
+      const storeViewPath = messageStore.chatMessageLogPath(
+        root,
+        "telegram/123:456",
+        "2026-04-05T00:30:00+08:00",
+      );
       const sameDay = messageStore
         .listChatMessagesByChatAndDate(root, "telegram/123:456", "2026-04-05")
         .map((item) => item.messageId);
@@ -69,12 +74,13 @@ test("chat local-day storage stays aligned with explicit chat-log dates", async 
         .listChatMessagesByChatAndDate(root, "telegram/123:456", "2026-04-04")
         .map((item) => item.messageId);
 
-      console.log(JSON.stringify({ filePath, sameDay, previousDay }));
+      console.log(JSON.stringify({ filePath, storeViewPath, sameDay, previousDay }));
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
   `);
 
+  assert.equal(result.filePath, result.storeViewPath);
   assert.match(result.filePath, /2026-04-05\.txt$/);
   assert.deepEqual(result.sameDay, ["m1"]);
   assert.deepEqual(result.previousDay, []);

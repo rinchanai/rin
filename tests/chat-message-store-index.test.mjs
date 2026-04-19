@@ -234,3 +234,93 @@ test("message store removes stale chat-date index entries when indexed records m
     });
   });
 });
+
+test("message store upsert keeps existing metadata while moving a record to a new day", async () => {
+  await withTempRoot(async (root) => {
+    messageStore.saveChatMessage(root, {
+      messageId: "m1",
+      role: "user",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "2026-04-04T12:00:00.000Z",
+      nickname: "Alice",
+      trust: "OWNER",
+      chatName: "Demo Chat",
+      text: "first",
+      rawContent: "first",
+      strippedContent: "first",
+    });
+
+    const updated = messageStore.upsertChatMessage(root, {
+      messageId: "m1",
+      role: "user",
+      chatKey: "telegram/123:456",
+      platform: "telegram",
+      botId: "123",
+      chatId: "456",
+      chatType: "private",
+      receivedAt: "2026-04-05T09:30:00.000Z",
+      text: "updated",
+      rawContent: "updated",
+      strippedContent: "updated",
+    });
+
+    assert.equal(updated.receivedAt, "2026-04-05T09:30:00.000Z");
+    assert.equal(updated.nickname, "Alice");
+    assert.equal(updated.trust, "OWNER");
+    assert.equal(updated.chatName, "Demo Chat");
+    assert.equal(
+      messageStore.listChatMessagesByChatAndDate(
+        root,
+        "telegram/123:456",
+        "2026-04-04",
+      ).length,
+      0,
+    );
+    assert.deepEqual(
+      messageStore
+        .listChatMessagesByChatAndDate(root, "telegram/123:456", "2026-04-05")
+        .map((item) => item.messageId),
+      ["m1"],
+    );
+    assert.deepEqual(await readJson(chatDateIndexPath(root, "2026-04-04")), {
+      version: 1,
+      recordKeys: [],
+    });
+    assert.deepEqual(await readJson(chatDateIndexPath(root, "2026-04-05")), {
+      version: 1,
+      recordKeys: [
+        messageStore.buildChatMessageRecordKey("telegram/123:456", "m1"),
+      ],
+    });
+  });
+});
+
+test("message store log view path follows the legacy store root when needed", async () => {
+  await withTempRoot(async (root) => {
+    await fs.mkdir(path.join(root, "data", "koishi-message-store"), {
+      recursive: true,
+    });
+
+    assert.equal(
+      messageStore.chatMessageLogPath(
+        root,
+        "telegram/123:456",
+        "2026-04-04T12:00:00.000Z",
+      ),
+      path.join(
+        root,
+        "data",
+        "koishi-message-store",
+        "chat-log-view",
+        "telegram",
+        "123",
+        "456",
+        "2026-04-04.txt",
+      ),
+    );
+  });
+});
