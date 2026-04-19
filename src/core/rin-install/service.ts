@@ -24,7 +24,10 @@ import {
   systemdUserUnitDirForHome,
   systemdUserUnitPathForHome,
 } from "./paths.js";
-import { canConnectDaemonSocket } from "../rin-daemon/client.js";
+import {
+  buildDaemonSocketProbeScript,
+  canConnectDaemonSocket,
+} from "../rin-daemon/client.js";
 import {
   findManagedSystemdJournalSnapshot,
   findManagedSystemdStatusSnapshot,
@@ -490,7 +493,7 @@ export async function waitForSocket(
         try {
           const probe = captureCommandAsUser(targetUser, process.execPath, [
             "-e",
-            `const net=require('node:net');const s=net.createConnection(${JSON.stringify(socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),300);`,
+            buildDaemonSocketProbeScript(socketPath, 300),
           ]);
           void probe;
           resolve(true);

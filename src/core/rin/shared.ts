@@ -6,6 +6,8 @@ import { safeString } from "../text-utils.js";
 
 import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
 import {
+  buildDaemonSocketProbeScript,
+  buildDaemonStatusScript,
   canConnectDaemonSocket,
   requestDaemonCommand,
 } from "../rin-daemon/client.js";
@@ -121,7 +123,7 @@ export function createTargetExecutionContext(
         [
           process.execPath,
           "-e",
-          `const net=require('node:net');const s=net.createConnection(${JSON.stringify(base.socketPath)});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),500);`,
+          buildDaemonSocketProbeScript(base.socketPath, 500),
         ],
         { stdio: "ignore" },
       );
@@ -137,7 +139,7 @@ export function createTargetExecutionContext(
         const raw = capture([
           process.execPath,
           "-e",
-          `const net=require('node:net');const socketPath=${JSON.stringify(base.socketPath)};const socket=net.createConnection(socketPath);let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'){finish(payload.success===true?payload.data:undefined);return;}}catch{}}});socket.once('connect',()=>{socket.write(JSON.stringify({id:'doctor_1',type:'daemon_status'})+'\\n');setTimeout(()=>finish(undefined),1500);});`,
+          buildDaemonStatusScript(base.socketPath, 1500, "doctor_1"),
         ]);
         const decoded = JSON.parse(String(raw || "null"));
         return decoded == null ? undefined : decoded;
