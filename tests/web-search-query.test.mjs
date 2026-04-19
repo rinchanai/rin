@@ -33,6 +33,11 @@ async function withTempDir(fn) {
   }
 }
 
+async function writeExecutable(filePath, content) {
+  await fs.writeFile(filePath, content, { encoding: "utf8", mode: 0o755 });
+  await fs.chmod(filePath, 0o755);
+}
+
 test("web search query helpers normalize request", () => {
   const req = query.normalizeSearchRequest({
     q: "  hello ",
@@ -92,5 +97,129 @@ test("web search orphan cleanup removes full instance root", async () => {
       { instanceId: "demo", pid: 0, ownerPid: 999999 },
     ]);
     await assert.rejects(fs.stat(instanceRoot));
+  });
+});
+
+test("web search cleanup removes stale dead instances owned by a live process", async () => {
+  await withTempDir(async (dir) => {
+    const instanceRoot = paths.instanceRootForState(dir, "stale");
+    await fs.mkdir(instanceRoot, { recursive: true });
+    await fs.writeFile(
+      path.join(instanceRoot, "settings.yml"),
+      "demo: true\n",
+      "utf8",
+    );
+    paths.writeInstanceState(dir, "stale", {
+      pid: 999999,
+      ownerPid: process.pid,
+      baseUrl: "http://127.0.0.1:9999",
+      settingsPath: path.join(instanceRoot, "settings.yml"),
+    });
+
+    const result = await service.cleanupOrphanSearxngSidecars(dir);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.cleaned, [
+      { instanceId: "stale", pid: 999999, ownerPid: process.pid },
+    ]);
+    await assert.rejects(fs.stat(instanceRoot));
+  });
+});
+
+test("web search sidecar bootstrap falls back to archive download without git", async () => {
+  await withTempDir(async (dir) => {
+    const binDir = path.join(dir, "bin");
+    await fs.mkdir(binDir, { recursive: true });
+    await writeExecutable(
+      path.join(binDir, "python3"),
+      `#!/bin/sh
+if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then
+  venv="$3"
+  /bin/mkdir -p "$venv/bin"
+  cat > "$venv/bin/python" <<'EOF'
+#!/bin/sh
+if [ "$1" = "-m" ] && [ "$2" = "searx.webapp" ]; then
+  while true; do
+    /bin/sleep 60
+  done
+fi
+exit 0
+EOF
+  cat > "$venv/bin/pip" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+  /bin/chmod +x "$venv/bin/python" "$venv/bin/pip"
+  exit 0
+fi
+exit 0
+`,
+    );
+    await writeExecutable(
+      path.join(binDir, "curl"),
+      `#!/bin/sh
+out=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-o" ]; then
+    out="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+: > "$out"
+exit 0
+`,
+    );
+    await writeExecutable(
+      path.join(binDir, "tar"),
+      `#!/bin/sh
+target=""
+while [ $# -gt 0 ]; do
+  if [ "$1" = "-C" ]; then
+    target="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+/bin/mkdir -p "$target/searx"
+printf 'flask\n' > "$target/requirements.txt"
+printf '# test package\n' > "$target/searx/__init__.py"
+exit 0
+`,
+    );
+
+    const previousPath = process.env.PATH;
+    const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+    delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+    process.env.PATH = binDir;
+
+    try {
+      const result = await service.ensureSearxngSidecar(dir, {
+        instanceId: "archive-fallback",
+        timeoutMs: 2_000,
+      });
+      assert.equal(result.ok, true);
+      assert.match(result.baseUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+
+      const status = service.getSearxngSidecarStatus(dir);
+      assert.equal(status.runtime.ready, true);
+      await fs.stat(path.join(status.runtime.sourceDir, "requirements.txt"));
+      await assert.rejects(fs.stat(path.join(status.runtime.sourceDir, ".git")));
+      assert.equal(status.instances.length, 1);
+      assert.equal(status.instances[0].instanceId, "archive-fallback");
+      assert.equal(status.instances[0].alive, true);
+    } finally {
+      await service.stopSearxngSidecar(dir, {
+        instanceId: "archive-fallback",
+      });
+      if (previousPath == null) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousBaseUrl == null) {
+        delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+      } else {
+        process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV] = previousBaseUrl;
+      }
+    }
   });
 });

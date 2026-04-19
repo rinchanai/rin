@@ -40,6 +40,8 @@ import {
 
 const START_TIMEOUT_MS = 90_000;
 const RIN_WEB_SEARCH_BASE_URL_ENV = "RIN_WEB_SEARCH_BASE_URL";
+const SEARXNG_ARCHIVE_URL =
+  "https://github.com/searxng/searxng/archive/refs/heads/master.tar.gz";
 
 type LoggerLike = {
   info?: (message: string) => void;
@@ -151,13 +153,17 @@ function removeStoredInstance(
 function findExecutableOnPath(name: string): string {
   const raw = trimString(process.env.PATH);
   const parts = raw ? raw.split(path.delimiter) : [];
+  const suffixes =
+    process.platform === "win32" ? ["", ".exe", ".cmd", ".bat"] : [""];
   for (const dir of parts) {
     if (!dir) continue;
-    const candidate = path.join(dir, name);
-    try {
-      fs.accessSync(candidate, fs.constants.X_OK);
-      return candidate;
-    } catch {}
+    for (const suffix of suffixes) {
+      const candidate = path.join(dir, `${name}${suffix}`);
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        return candidate;
+      } catch {}
+    }
   }
   return "";
 }
@@ -181,6 +187,108 @@ function runCommandSync(
       `exit_${result.status}`,
   );
   throw new Error(`${path.basename(command)}:${detail}`);
+}
+
+function runtimeCommandEnv(tmpDir: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    TMPDIR: tmpDir,
+    TEMP: tmpDir,
+    TMP: tmpDir,
+  };
+}
+
+function removePathIfExists(targetPath: string): void {
+  try {
+    fs.rmSync(targetPath, { recursive: true, force: true });
+  } catch {}
+}
+
+function hasSearxngSourceTree(sourceDir: string): boolean {
+  return (
+    fs.existsSync(path.join(sourceDir, "requirements.txt")) &&
+    fs.existsSync(path.join(sourceDir, "searx"))
+  );
+}
+
+function installSearxngSourceFromArchive(
+  runtimeDir: string,
+  sourceDir: string,
+  tmpDir: string,
+): void {
+  const tar = findExecutableOnPath("tar");
+  const curl = findExecutableOnPath("curl");
+  const wget = findExecutableOnPath("wget");
+  if (!tar || (!curl && !wget)) {
+    throw new Error("web_search_runtime_fetch_tools_not_found");
+  }
+
+  const archivePath = path.join(runtimeDir, "searxng-source.tar.gz");
+  ensurePrivateDir(sourceDir);
+  try {
+    if (curl) {
+      runCommandSync(curl, ["-fsSL", SEARXNG_ARCHIVE_URL, "-o", archivePath], {
+        cwd: runtimeDir,
+        env: runtimeCommandEnv(tmpDir),
+      });
+    } else {
+      runCommandSync(wget, ["-qO", archivePath, SEARXNG_ARCHIVE_URL], {
+        cwd: runtimeDir,
+        env: runtimeCommandEnv(tmpDir),
+      });
+    }
+    runCommandSync(
+      tar,
+      ["-xzf", archivePath, "-C", sourceDir, "--strip-components=1"],
+      {
+        cwd: runtimeDir,
+        env: runtimeCommandEnv(tmpDir),
+      },
+    );
+  } finally {
+    try {
+      fs.rmSync(archivePath, { force: true });
+    } catch {}
+  }
+}
+
+function ensureSearxngSourceInstalled(
+  runtimeDir: string,
+  sourceDir: string,
+  tmpDir: string,
+  logger?: LoggerLike,
+): void {
+  if (hasSearxngSourceTree(sourceDir)) return;
+
+  removePathIfExists(sourceDir);
+  const git = findExecutableOnPath("git");
+  try {
+    if (git) {
+      logInfo(logger, "web-search: cloning searxng source");
+      runCommandSync(
+        git,
+        [
+          "clone",
+          "--depth",
+          "1",
+          "https://github.com/searxng/searxng.git",
+          sourceDir,
+        ],
+        { cwd: runtimeDir, env: runtimeCommandEnv(tmpDir) },
+      );
+    } else {
+      logInfo(logger, "web-search: downloading searxng source archive");
+      installSearxngSourceFromArchive(runtimeDir, sourceDir, tmpDir);
+    }
+  } catch (error) {
+    removePathIfExists(sourceDir);
+    throw error;
+  }
+
+  if (!hasSearxngSourceTree(sourceDir)) {
+    removePathIfExists(sourceDir);
+    throw new Error("web_search_runtime_source_invalid");
+  }
 }
 
 async function getFreePort(): Promise<number> {
@@ -249,7 +357,7 @@ function ensureSearxngRuntimeInstalled(
   const current = readRuntimeBootstrapState(stateRoot);
   if (
     current?.ready &&
-    fs.existsSync(sourceDir) &&
+    hasSearxngSourceTree(sourceDir) &&
     fs.existsSync(pythonBin) &&
     fs.existsSync(pipBin)
   ) {
@@ -262,32 +370,14 @@ function ensureSearxngRuntimeInstalled(
   const python =
     findExecutableOnPath("python3") || findExecutableOnPath("python");
   if (!python) throw new Error("python_not_found");
-  const git = findExecutableOnPath("git");
-  if (!git) throw new Error("git_not_found");
 
-  if (!fs.existsSync(path.join(sourceDir, ".git"))) {
-    try {
-      fs.rmSync(sourceDir, { recursive: true, force: true });
-    } catch {}
-    logInfo(logger, "web-search: cloning searxng source");
-    runCommandSync(
-      git,
-      [
-        "clone",
-        "--depth",
-        "1",
-        "https://github.com/searxng/searxng.git",
-        sourceDir,
-      ],
-      { cwd: runtimeDir, env: { ...process.env, TMPDIR: tmpDir } },
-    );
-  }
+  ensureSearxngSourceInstalled(runtimeDir, sourceDir, tmpDir, logger);
 
   if (!fs.existsSync(pythonBin)) {
     logInfo(logger, "web-search: creating searxng virtualenv");
     runCommandSync(python, ["-m", "venv", venvDir], {
       cwd: runtimeDir,
-      env: { ...process.env, TMPDIR: tmpDir },
+      env: runtimeCommandEnv(tmpDir),
     });
   }
 
@@ -295,16 +385,16 @@ function ensureSearxngRuntimeInstalled(
   runCommandSync(
     pipBin,
     ["install", "--upgrade", "pip", "wheel", "setuptools"],
-    { cwd: runtimeDir, env: { ...process.env, TMPDIR: tmpDir } },
+    { cwd: runtimeDir, env: runtimeCommandEnv(tmpDir) },
   );
   runCommandSync(
     pipBin,
     ["install", "-r", path.join(sourceDir, "requirements.txt")],
-    { cwd: runtimeDir, env: { ...process.env, TMPDIR: tmpDir } },
+    { cwd: runtimeDir, env: runtimeCommandEnv(tmpDir) },
   );
   runCommandSync(pipBin, ["install", "--no-build-isolation", "-e", sourceDir], {
     cwd: runtimeDir,
-    env: { ...process.env, TMPDIR: tmpDir },
+    env: runtimeCommandEnv(tmpDir),
   });
 
   const nextState: RuntimeBootstrapState = {
@@ -458,6 +548,17 @@ async function stopSearxngSidecar(
   return { ok: true, pid: current.pid };
 }
 
+function cleanupReasonForInstanceState(state: NormalizedInstanceState): string {
+  const hasStoredState = Boolean(state.pid > 0 || state.baseUrl || state.settingsPath);
+  if (!hasStoredState) return "";
+  if (state.ownerPid > 1 && !isPidAlive(state.ownerPid)) return "owner_dead";
+  if (state.pid > 1 && !state.alive) return "pid_dead";
+  if (!(state.pid > 1) && (state.baseUrl || state.settingsPath)) {
+    return "stale_state";
+  }
+  return "";
+}
+
 async function cleanupOrphanSearxngSidecars(
   stateRoot: string,
   options: CleanupSearxngSidecarsOptions = {},
@@ -467,9 +568,9 @@ async function cleanupOrphanSearxngSidecars(
     [];
   for (const instanceId of listInstanceIds(stateRoot)) {
     const state = readNormalizedInstanceState(stateRoot, instanceId);
-    if (!(state.ownerPid > 1)) continue;
-    if (isPidAlive(state.ownerPid)) continue;
-    if (state.alive) {
+    const reason = cleanupReasonForInstanceState(state);
+    if (!reason) continue;
+    if (reason === "owner_dead" && state.alive) {
       try {
         process.kill(state.pid, "SIGTERM");
       } catch {}
@@ -483,7 +584,7 @@ async function cleanupOrphanSearxngSidecars(
     });
     logInfo(
       logger,
-      `web-search: cleaned orphan instance=${instanceId} pid=${state.pid} ownerPid=${state.ownerPid}`,
+      `web-search: cleaned stale instance=${instanceId} pid=${state.pid} ownerPid=${state.ownerPid} reason=${reason}`,
     );
   }
   return { ok: true, cleaned };
