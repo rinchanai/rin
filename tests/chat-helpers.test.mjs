@@ -125,6 +125,15 @@ test("chat chat helpers derive incoming text from elements", () => {
     helpers.hasMediaElements([{ type: "img", attrs: { file: "demo.png" } }]),
     true,
   );
+  assert.equal(
+    helpers.hasMediaElements([{ type: "image", attrs: { src: "demo.png" } }]),
+    true,
+  );
+  assert.equal(
+    helpers.hasMediaElements([{ type: "file", attrs: { src: "demo.txt" } }]),
+    true,
+  );
+  assert.equal(helpers.hasMediaElements([{ type: "text" }]), false);
 });
 
 test("chat chat helpers synthesize text elements only when upstream omitted elements", () => {
@@ -173,13 +182,50 @@ test("chat chat helpers save inbound media when a standard resource is present",
   await withTempDir(async (dir) => {
     const src = `data:text/plain;base64,${Buffer.from("demo").toString("base64")}`;
     const result = await helpers.extractInboundAttachments(
-      [{ type: "file", attrs: { src, file: "demo.txt" } }],
+      [
+        { type: "file", attrs: { src, file: "demo.txt" } },
+        { type: "image", attrs: { src, file: "demo.png", mime: "image/png" } },
+      ],
       dir,
     );
     assert.equal(result.failures.length, 0);
-    assert.equal(result.attachments.length, 1);
+    assert.equal(result.attachments.length, 2);
+    assert.equal(result.attachments[0].kind, "file");
+    assert.equal(result.attachments[1].kind, "image");
     const stat = await fs.stat(result.attachments[0].path);
     assert.ok(stat.isFile());
+  });
+});
+
+test("chat chat helpers report fetch failures consistently across media sources", async () => {
+  await withTempDir(async (dir) => {
+    const missingFileUrl = pathToFileURL(path.join(dir, "missing.txt")).href;
+    const result = await helpers.extractInboundAttachments(
+      [
+        { type: "image", attrs: { src: missingFileUrl } },
+        { type: "file" },
+      ],
+      dir,
+    );
+    assert.deepEqual(result.attachments, []);
+    assert.equal(result.failures.length, 2);
+    assert.deepEqual(result.failures[0], {
+      type: "image",
+      kind: "image",
+      reason: "fetch_failed",
+      resource: missingFileUrl,
+      detail: result.failures[0].detail,
+    });
+    assert.match(result.failures[0].detail, /no such file|ENOENT/i);
+    assert.deepEqual(result.failures[1], {
+      type: "file",
+      kind: "file",
+      reason: "unresolved_resource",
+    });
+    assert.match(
+      helpers.buildInboundAttachmentNotice(result.failures),
+      /could not be fetched.*did not resolve a downloadable resource|did not resolve a downloadable resource.*could not be fetched/i,
+    );
   });
 });
 

@@ -90,12 +90,15 @@ export {
   summarizeQuote,
 } from "./inbound-normalization.js";
 
+function isMediaElementType(type: string) {
+  return type === "img" || type === "image" || type === "file";
+}
+
 export function hasMediaElements(elements: any[]) {
   if (!Array.isArray(elements) || !elements.length) return false;
-  return elements.some((element) => {
-    const type = safeString(element?.type || "").toLowerCase();
-    return type === "img" || type === "image" || type === "file";
-  });
+  return elements.some((element) =>
+    isMediaElementType(safeString(element?.type || "").toLowerCase()),
+  );
 }
 
 export function extractTextFromContent(
@@ -188,24 +191,31 @@ export async function persistImageParts(
   return out;
 }
 
-function mediaKindFromElementType(type: string) {
-  return type === "img" || type === "image"
-    ? "image"
-    : type === "file"
-      ? "file"
-      : "";
+function mediaKindFromElementType(type: string): SavedAttachment["kind"] | "" {
+  if (!isMediaElementType(type)) return "";
+  return type === "file" ? "file" : "image";
+}
+
+function pushInboundAttachmentFailure(
+  failures: InboundAttachmentFailure[],
+  failure: InboundAttachmentFailure,
+) {
+  failures.push({
+    ...failure,
+    type: failure.type || "unknown",
+  });
 }
 
 export function buildInboundAttachmentNotice(
   failures: InboundAttachmentFailure[],
 ) {
   if (!Array.isArray(failures) || !failures.length) return "";
-  const unresolved = failures.filter(
-    (item) => item.reason === "unresolved_resource",
-  ).length;
-  const fetchFailed = failures.filter(
-    (item) => item.reason === "fetch_failed",
-  ).length;
+  let unresolved = 0;
+  let fetchFailed = 0;
+  for (const failure of failures) {
+    if (failure?.reason === "unresolved_resource") unresolved += 1;
+    if (failure?.reason === "fetch_failed") fetchFailed += 1;
+  }
   const parts: string[] = [];
   if (unresolved)
     parts.push(
@@ -236,9 +246,9 @@ export async function extractInboundAttachments(
     if (!kind) continue;
     const src = safeString(attrs.src || attrs.url || attrs.file || "").trim();
     if (!src) {
-      failures.push({
-        type: type || "unknown",
-        kind: kind as "image" | "file",
+      pushInboundAttachmentFailure(failures, {
+        type,
+        kind,
         reason: "unresolved_resource",
       });
       continue;
@@ -259,9 +269,9 @@ export async function extractInboundAttachments(
           .split(";", 1)[0]
           .trim();
       } catch (error: any) {
-        failures.push({
-          type: type || "unknown",
-          kind: kind as "image" | "file",
+        pushInboundAttachmentFailure(failures, {
+          type,
+          kind,
           reason: "fetch_failed",
           resource: src,
           detail: safeString(error?.message || error).trim() || undefined,
@@ -273,9 +283,9 @@ export async function extractInboundAttachments(
       try {
         response = await fetch(src);
       } catch (error: any) {
-        failures.push({
-          type: type || "unknown",
-          kind: kind as "image" | "file",
+        pushInboundAttachmentFailure(failures, {
+          type,
+          kind,
           reason: "fetch_failed",
           resource: src,
           detail: safeString(error?.message || error).trim() || undefined,
@@ -283,9 +293,9 @@ export async function extractInboundAttachments(
         continue;
       }
       if (!response.ok) {
-        failures.push({
-          type: type || "unknown",
-          kind: kind as "image" | "file",
+        pushInboundAttachmentFailure(failures, {
+          type,
+          kind,
           reason: "fetch_failed",
           resource: src,
           detail: `http_${response.status}`,
@@ -316,7 +326,7 @@ export async function extractInboundAttachments(
     const filePath = path.join(dir, `${Date.now()}-${index}-${fileName}`);
     await fs.promises.writeFile(filePath, Buffer.from(arrayBuffer));
     attachments.push({
-      kind: kind as "image" | "file",
+      kind,
       path: filePath,
       name: fileName,
       mimeType,
