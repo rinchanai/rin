@@ -211,6 +211,16 @@ test("chat inbox can claim, restore, and reschedule a queued envelope", async ()
   assert.equal(rescheduled.lastError, "temporary_failure");
   assert.equal(rescheduled.itemId, next.item.itemId);
   assert.ok(Date.parse(rescheduled.nextAttemptAt) > Date.now());
+
+  const rescheduledClaimPath = inbox.claimChatInboxFile(agentDir, rescheduledPath);
+  const rescheduledClaim = inbox.readChatInboxItem(rescheduledClaimPath);
+  const retried = inbox.requeueChatInboxFile(agentDir, rescheduledClaimPath, rescheduledClaim, {
+    delayMs: 0,
+  });
+  const retriedItem = inbox.readChatInboxItem(retried.filePath);
+  assert.equal(retriedItem.attemptCount, 2);
+  assert.equal(retriedItem.lastError, undefined);
+  assert.ok(Date.parse(retriedItem.nextAttemptAt) <= Date.now() + 1000);
 });
 
 
@@ -237,22 +247,30 @@ test("chat inbox moves failed envelopes into failed storage with updated metadat
   const [filePath] = inbox.listPendingChatInboxFiles(agentDir);
   const claimedPath = inbox.claimChatInboxFile(agentDir, filePath);
   const claimed = inbox.readChatInboxItem(claimedPath);
+  const delayed = inbox.requeueChatInboxFile(agentDir, claimedPath, claimed, {
+    delayMs: 5000,
+    error: "temporary_failure",
+  });
+  const delayedClaimPath = inbox.claimChatInboxFile(agentDir, delayed.filePath);
+  const delayedClaim = inbox.readChatInboxItem(delayedClaimPath);
   const failed = inbox.failChatInboxFile(
     agentDir,
-    claimedPath,
-    claimed,
+    delayedClaimPath,
+    delayedClaim,
     "fatal_failure",
   );
 
   assert.equal(inbox.listPendingChatInboxFiles(agentDir).length, 0);
   assert.equal(inbox.listProcessingChatInboxFiles(agentDir).length, 0);
   assert.equal(failed.item.itemId, item.itemId);
-  assert.equal(failed.item.attemptCount, 1);
+  assert.equal(failed.item.attemptCount, 2);
   assert.equal(failed.item.lastError, "fatal_failure");
+  assert.equal(failed.item.nextAttemptAt, undefined);
   assert.ok(failed.filePath.endsWith(`${item.itemId}.json`));
 
   const loaded = inbox.readChatInboxItem(failed.filePath);
   assert.equal(loaded.itemId, item.itemId);
-  assert.equal(loaded.attemptCount, 1);
+  assert.equal(loaded.attemptCount, 2);
   assert.equal(loaded.lastError, "fatal_failure");
+  assert.equal(loaded.nextAttemptAt, undefined);
 });

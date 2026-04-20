@@ -96,9 +96,10 @@ export function enqueueChatInboxItem(
   input: { chatKey: string; messageId: string; session: any; elements: any[] },
 ) {
   const item = buildChatInboxItem(input);
-  const filePath = path.join(pendingDir(agentDir), itemFileName(item.itemId));
-  writeJsonAtomic(filePath, item);
-  return { item, filePath };
+  return writeChatInboxItem(
+    path.join(pendingDir(agentDir), itemFileName(item.itemId)),
+    item,
+  );
 }
 
 export function listPendingChatInboxFiles(agentDir: string) {
@@ -152,6 +153,43 @@ function updateChatInboxItem(
     updatedAt: new Date().toISOString(),
     ...patch,
   };
+}
+
+function writeChatInboxItem(filePath: string, item: ChatInboxItem) {
+  writeJsonAtomic(filePath, item);
+  return { item, filePath };
+}
+
+function moveChatInboxItem(
+  filePath: string,
+  targetDir: string,
+  item: ChatInboxItem,
+) {
+  const targetPath = path.join(targetDir, itemFileName(item.itemId));
+  writeJsonAtomic(targetPath, item);
+  completeChatInboxFile(filePath);
+  return { item, filePath: targetPath };
+}
+
+function normalizeChatInboxError(value: unknown) {
+  return safeString(value).trim() || undefined;
+}
+
+function applyChatInboxAttemptState(
+  item: ChatInboxItem,
+  options: {
+    delayMs?: number;
+    error?: string;
+    clearNextAttemptAt?: boolean;
+  } = {},
+) {
+  const delayMs = Math.max(0, Number(options.delayMs || 0));
+  return updateChatInboxItem(item, {
+    nextAttemptAt: options.clearNextAttemptAt
+      ? undefined
+      : new Date(Date.now() + delayMs).toISOString(),
+    lastError: normalizeChatInboxError(options.error),
+  });
 }
 
 export function restoreChatInboxSession(item: ChatInboxItem, bot?: any) {
@@ -225,15 +263,11 @@ export function requeueChatInboxFile(
   item: ChatInboxItem,
   options: { delayMs: number; error?: string },
 ) {
-  const delayMs = Math.max(0, Number(options.delayMs || 0));
-  const next = updateChatInboxItem(item, {
-    nextAttemptAt: new Date(Date.now() + delayMs).toISOString(),
-    lastError: safeString(options.error).trim() || undefined,
-  });
-  const targetPath = path.join(pendingDir(agentDir), itemFileName(next.itemId));
-  writeJsonAtomic(targetPath, next);
-  completeChatInboxFile(filePath);
-  return { item: next, filePath: targetPath };
+  return moveChatInboxItem(
+    filePath,
+    pendingDir(agentDir),
+    applyChatInboxAttemptState(item, options),
+  );
 }
 
 export function failChatInboxFile(
@@ -242,13 +276,14 @@ export function failChatInboxFile(
   item: ChatInboxItem,
   error?: string,
 ) {
-  const next = updateChatInboxItem(item, {
-    lastError: safeString(error).trim() || undefined,
-  });
-  const targetPath = path.join(failedDir(agentDir), itemFileName(next.itemId));
-  writeJsonAtomic(targetPath, next);
-  completeChatInboxFile(filePath);
-  return { item: next, filePath: targetPath };
+  return moveChatInboxItem(
+    filePath,
+    failedDir(agentDir),
+    applyChatInboxAttemptState(item, {
+      error,
+      clearNextAttemptAt: true,
+    }),
+  );
 }
 
 export function restoreProcessingChatInboxFiles(agentDir: string) {
