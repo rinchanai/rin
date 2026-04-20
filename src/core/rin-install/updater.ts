@@ -1,5 +1,7 @@
 import { confirm, intro, note, outro, select } from "@clack/prompts";
 
+import { type InstalledReleaseInfo } from "../rin-lib/release.js";
+
 import { discoverInstalledTargets } from "./update-targets.js";
 import {
   runFinalizeInstallPlanInChild,
@@ -10,6 +12,7 @@ export async function startUpdater(deps: {
   detectCurrentUser: () => string;
   repoRootFromHere: () => string;
   ensureNotCancelled: <T>(value: T | symbol) => T;
+  release?: InstalledReleaseInfo;
 }) {
   const currentUser = deps.detectCurrentUser();
   intro("Rin Updater");
@@ -56,6 +59,9 @@ export async function startUpdater(deps: {
       `Install dir: ${installDir}`,
       `Discovered from: ${target.source}`,
       `Owner home: ${target.ownerHome}`,
+      deps.release?.sourceLabel
+        ? `Requested source: ${deps.release.sourceLabel}`
+        : "Requested source: stable latest",
       "",
       "Updater policy:",
       "- publish a new runtime release into the existing install dir",
@@ -84,6 +90,7 @@ export async function startUpdater(deps: {
       targetUser,
       installDir,
       sourceRoot: deps.repoRootFromHere(),
+      ...(deps.release ? { release: deps.release } : {}),
     } satisfies FinalizeInstallOptions,
     "Publishing runtime and refreshing the installed target...",
     {

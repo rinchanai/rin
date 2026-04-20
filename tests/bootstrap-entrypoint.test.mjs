@@ -40,22 +40,87 @@ async function createSourceArchive(tempDir) {
   return archivePath;
 }
 
+async function createReleaseManifest(tempDir) {
+  const manifestPath = path.join(tempDir, "release-manifest.json");
+  await fs.writeFile(
+    manifestPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      repoUrl: "https://example.invalid/rin",
+      bootstrapBranch: "stable-bootstrap",
+      stable: {
+        version: "1.2.3",
+        archiveUrl: "https://example.invalid/releases/stable-1.2.3.tar.gz",
+      },
+      beta: {
+        defaultBranch: "release/1.3",
+        branches: {
+          "release/1.3": {
+            version: "1.3.0-beta.2",
+            archiveUrl: "https://example.invalid/releases/release-1.3.tar.gz",
+          },
+        },
+      },
+      git: {
+        defaultBranch: "main",
+        repoUrl: "https://example.invalid/rin",
+      },
+    }),
+    "utf8",
+  );
+  return manifestPath;
+}
+
 async function createFakeBin(fakeBin, logPath) {
   await fs.mkdir(fakeBin, { recursive: true });
 
   await writeExecutable(
     path.join(fakeBin, "curl"),
-    `#!/bin/sh\necho "curl:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"\nOUT=\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    -o) OUT=$2; shift 2 ;;
-    *) shift ;;
-  esac\ndone\ncp "$RIN_BOOTSTRAP_TEST_ARCHIVE" "$OUT"\n`,
+    `#!/bin/sh
+echo "curl:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
+OUT=
+URL=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) OUT=$2; shift 2 ;;
+    *) URL=$1; shift ;;
+  esac
+done
+case "$URL" in
+  *release-manifest.json)
+    cp "$RIN_BOOTSTRAP_TEST_MANIFEST" "$OUT"
+    ;;
+  *)
+    cp "$RIN_BOOTSTRAP_TEST_ARCHIVE" "$OUT"
+    ;;
+esac
+`,
   );
   await writeExecutable(
     path.join(fakeBin, "npm"),
-    `#!/bin/sh\necho "npm:$PWD:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"\nif [ "$1" = "run" ] && [ "$2" = "build" ]; then\n  mkdir -p dist/app/rin-install\n  printf 'export {};\n' > dist/app/rin-install/main.js\nfi\n`,
+    `#!/bin/sh
+echo "npm:$PWD:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
+if [ "$1" = "run" ] && [ "$2" = "build" ]; then
+  mkdir -p dist/app/rin-install
+  printf 'export {};\n' > dist/app/rin-install/main.js
+fi
+`,
   );
   await writeExecutable(
     path.join(fakeBin, "node"),
-    `#!/bin/sh\necho "node:$PWD:RIN_INSTALL_MODE=\${RIN_INSTALL_MODE-}:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"\n`,
+    `#!/bin/sh
+echo "node:$PWD:RIN_INSTALL_MODE=\${RIN_INSTALL_MODE-}:RIN_RELEASE_CHANNEL=\${RIN_RELEASE_CHANNEL-}:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
+if [ "$1" = "-" ]; then
+  cat <<'EOF'
+CHANNEL='stable'
+ARCHIVE_URL='https://example.invalid/releases/stable-1.2.3.tar.gz'
+VERSION='1.2.3'
+BRANCH='stable'
+REF='1.2.3'
+SOURCE_LABEL='stable 1.2.3'
+EOF
+fi
+`,
   );
   await fs.writeFile(logPath, "", "utf8");
 }
@@ -67,9 +132,10 @@ async function runBootstrapWrapper(scriptName, env) {
   });
 }
 
-test("install and update wrappers share one bootstrap entrypoint without leaving temp work dirs", async () => {
+test("install and update wrappers resolve release metadata before fetching source and leave no temp work dirs", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
+    const manifestPath = await createReleaseManifest(tempDir);
     const fakeBin = path.join(tempDir, "bin");
     const logPath = path.join(tempDir, "invocations.log");
     const workRoot = path.join(tempDir, "work");
@@ -82,6 +148,7 @@ test("install and update wrappers share one bootstrap entrypoint without leaving
       RIN_INSTALL_REPO_URL: "https://example.invalid/rin",
       RIN_INSTALL_TMPDIR: workRoot,
       RIN_BOOTSTRAP_TEST_ARCHIVE: archivePath,
+      RIN_BOOTSTRAP_TEST_MANIFEST: manifestPath,
       RIN_BOOTSTRAP_TEST_LOG: logPath,
     };
 
@@ -91,17 +158,21 @@ test("install and update wrappers share one bootstrap entrypoint without leaving
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /curl:-fsSL https:\/\/example\.invalid\/rin\/archive\/refs\/heads\/main\.tar\.gz -o /,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/release-manifest\.json -o /,
+    );
+    assert.match(
+      log,
+      /curl:-fsSL https:\/\/example\.invalid\/releases\/stable-1\.2\.3\.tar\.gz -o /,
     );
     assert.match(log, /npm:.*:ci --no-fund --no-audit/);
     assert.match(log, /npm:.*:run build/);
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=:dist\/app\/rin-install\/main\.js/,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:dist\/app\/rin-install\/main\.js/,
     );
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=update:dist\/app\/rin-install\/main\.js/,
+      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:dist\/app\/rin-install\/main\.js/,
     );
 
     assert.deepEqual(await fs.readdir(workRoot), []);

@@ -5,6 +5,7 @@ import {
   normalizeStoredChatSettings,
 } from "../chat/settings.js";
 import { isNonArrayObject, loadFirstValidCandidate } from "./candidate-loader.js";
+import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 import {
   defaultHomeForUser,
   installAuthPath,
@@ -97,6 +98,33 @@ function normalizeInstalledManifest(manifestJson: any, chatConfig?: any) {
   return normalized;
 }
 
+function normalizeInstalledReleaseInfo(
+  release: InstalledReleaseInfo | undefined,
+): InstalledReleaseInfo | undefined {
+  if (!release || typeof release !== "object") return undefined;
+  const channel = String(release.channel || "stable").trim().toLowerCase();
+  const normalizedChannel =
+    channel === "beta" || channel === "git" ? channel : "stable";
+  const version = String(release.version || "").trim();
+  const branch = String(release.branch || "").trim();
+  const ref = String(release.ref || branch || version).trim();
+  const sourceLabel = String(release.sourceLabel || "").trim();
+  const archiveUrl = String(release.archiveUrl || "").trim();
+  const installedAt = String(release.installedAt || "").trim();
+  if (!version && !branch && !ref && !sourceLabel && !archiveUrl) return undefined;
+  return {
+    channel: normalizedChannel,
+    version: version || ref || branch || "unknown",
+    branch: branch || (normalizedChannel === "stable" ? "stable" : "main"),
+    ref: ref || branch || version || "main",
+    sourceLabel:
+      sourceLabel ||
+      `${normalizedChannel} ${version || branch || ref || "unknown"}`,
+    archiveUrl,
+    installedAt: installedAt || undefined,
+  };
+}
+
 export function reconcileInstallerManifest(
   options: {
     targetUser: string;
@@ -105,6 +133,7 @@ export function reconcileInstallerManifest(
     modelId?: string;
     thinkingLevel?: string;
     chatConfig?: any;
+    release?: InstalledReleaseInfo;
     elevated?: boolean;
   },
   deps: {
@@ -153,6 +182,18 @@ export function reconcileInstallerManifest(
   if (options.modelId) manifestJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     manifestJson.defaultThinkingLevel = options.thinkingLevel;
+  const normalizedRelease = normalizeInstalledReleaseInfo(options.release);
+  if (normalizedRelease) {
+    manifestJson.release = {
+      channel: normalizedRelease.channel,
+      version: normalizedRelease.version,
+      branch: normalizedRelease.branch,
+      ref: normalizedRelease.ref,
+      sourceLabel: normalizedRelease.sourceLabel,
+      archiveUrl: normalizedRelease.archiveUrl,
+      installedAt: normalizedRelease.installedAt || new Date().toISOString(),
+    };
+  }
   dropLegacyChatSettings(manifestJson);
   manifestJson.updatedAt = new Date().toISOString();
 
@@ -233,6 +274,7 @@ export async function persistInstallerOutputs(
     thinkingLevel: string;
     chatConfig: any;
     authData: any;
+    release?: InstalledReleaseInfo;
     elevated?: boolean;
   },
   deps: {
@@ -299,6 +341,7 @@ export async function persistInstallerOutputs(
       modelId: options.modelId,
       thinkingLevel: options.thinkingLevel,
       chatConfig: normalizeChatConfigRoot(options.chatConfig) || {},
+      release: options.release,
       elevated: options.elevated,
     },
     deps,

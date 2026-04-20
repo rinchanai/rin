@@ -55,6 +55,7 @@ async function applyInstalledRuntime(
   const sourceRoot =
     String(options.sourceRoot || "").trim() || repoRootFromHere();
   const persistInstallerState = Boolean(options.persistInstallerState);
+  const release = options.release;
 
   const ownership = describeOwnership(targetUser, installDir);
   const installServiceNow =
@@ -91,6 +92,7 @@ async function applyInstalledRuntime(
       modelId,
       thinkingLevel,
       chatConfig,
+      release,
       elevated: useElevatedWrite,
     },
     {
@@ -127,6 +129,7 @@ async function applyInstalledRuntime(
           thinkingLevel,
           chatConfig,
           authData,
+          release,
           elevated: useElevatedWrite,
         },
         {
@@ -224,6 +227,7 @@ export async function finalizeCoreUpdate(options: {
   targetUser: string;
   installDir: string;
   sourceRoot?: string;
+  release?: FinalizeInstallOptions["release"];
 }) {
   const result = await applyInstalledRuntime({
     ...options,

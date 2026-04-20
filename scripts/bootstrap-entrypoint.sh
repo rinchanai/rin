@@ -7,7 +7,8 @@ case "$MODE" in
     PREFIX=rin-install
     WORK_PREFIX=rin-install
     LOG_NAME=install.log
-    FETCH_LABEL='Fetching installer from GitHub main'
+    MANIFEST_LABEL='Fetching release manifest'
+    FETCH_LABEL='Fetching installer source'
     PREP_LABEL='Preparing installer source'
     BUILD_LABEL='Building installer'
     LAUNCH_LABEL='Launching installer...'
@@ -19,7 +20,8 @@ case "$MODE" in
     PREFIX=rin-update
     WORK_PREFIX=rin-update
     LOG_NAME=update.log
-    FETCH_LABEL='Fetching updater from GitHub main'
+    MANIFEST_LABEL='Fetching release manifest'
+    FETCH_LABEL='Fetching updater source'
     PREP_LABEL='Preparing updater source'
     BUILD_LABEL='Building updater'
     LAUNCH_LABEL='Launching updater...'
@@ -31,9 +33,11 @@ case "$MODE" in
     echo "unknown Rin bootstrap mode: $MODE" >&2
     exit 64
     ;;
- esac
+esac
+shift || true
 
 REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/rinchanai/rin}
+BOOTSTRAP_BRANCH=${RIN_BOOTSTRAP_BRANCH:-stable-bootstrap}
 CACHE_BASE=${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}
 TMPDIR_BASE=${RIN_INSTALL_TMPDIR:-$CACHE_BASE/rin-install}
 mkdir -p "$TMPDIR_BASE"
@@ -41,7 +45,25 @@ WORKDIR=$(mktemp -d "$TMPDIR_BASE/$WORK_PREFIX.XXXXXX")
 ARCHIVE="$WORKDIR/rin.tar.gz"
 SRC_DIR="$WORKDIR/src"
 LOGFILE="$WORKDIR/$LOG_NAME"
+MANIFEST_PATH="$WORKDIR/release-manifest.json"
 TTY=/dev/tty
+CHANNEL=stable
+BRANCH=
+VERSION=
+SOURCE_LABEL=
+ARCHIVE_URL=
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+LOCAL_MANIFEST_PATH="$REPO_ROOT/release-manifest.json"
+
+usage() {
+  cat <<'EOF'
+Usage: install.sh [--stable] [--beta|--git] [--branch <name>] [--version <value>]
+
+Defaults to the stable release channel.
+Beta and git builds must be selected explicitly.
+EOF
+}
 
 cleanup() {
   rm -rf "$WORKDIR"
@@ -125,9 +147,192 @@ fetch() {
   exit 1
 }
 
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --stable)
+        CHANNEL=stable
+        ;;
+      --beta)
+        CHANNEL=beta
+        ;;
+      --git)
+        CHANNEL=git
+        ;;
+      --branch)
+        [ "$#" -ge 2 ] || { echo "missing value for --branch" >&2; exit 1; }
+        BRANCH=$2
+        shift
+        ;;
+      --version)
+        [ "$#" -ge 2 ] || { echo "missing value for --version" >&2; exit 1; }
+        VERSION=$2
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "unknown argument: $1" >&2
+        usage >&2
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  if [ -n "$BRANCH" ] && [ -n "$VERSION" ]; then
+    echo "cannot combine --branch and --version" >&2
+    exit 1
+  fi
+  if [ "$CHANNEL" = stable ] && [ -n "$BRANCH" ]; then
+    echo "stable does not support --branch" >&2
+    exit 1
+  fi
+}
+
+fetch_manifest() {
+  RAW_BASE=$(printf '%s' "$REPO_URL" | sed -e 's#^https://github.com/#https://raw.githubusercontent.com/#' -e 's#\.git$##')
+  PRIMARY_URL="$RAW_BASE/$BOOTSTRAP_BRANCH/release-manifest.json"
+  FALLBACK_URL="$RAW_BASE/main/release-manifest.json"
+  if fetch "$PRIMARY_URL" "$MANIFEST_PATH"; then
+    return 0
+  fi
+  if fetch "$FALLBACK_URL" "$MANIFEST_PATH"; then
+    return 0
+  fi
+  if [ -r "$LOCAL_MANIFEST_PATH" ]; then
+    cp "$LOCAL_MANIFEST_PATH" "$MANIFEST_PATH"
+    return 0
+  fi
+  echo "failed to fetch release manifest" >&2
+  exit 1
+}
+
+resolve_release() {
+  node - "$MANIFEST_PATH" <<'NODE'
+const fs = require('node:fs');
+const manifestPath = process.argv[2];
+const safeString = (value) => (value == null ? '' : String(value));
+const trimValue = (value) => safeString(value).trim();
+const repoUrl = trimValue(process.env.RIN_INSTALL_REPO_URL || 'https://github.com/rinchanai/rin').replace(/\.git$/i, '');
+const packageName = trimValue(process.env.RIN_NPM_PACKAGE || '@rinchanai/rin');
+const channel = trimValue(process.env.RIN_RELEASE_CHANNEL || 'stable').toLowerCase() || 'stable';
+const branch = trimValue(process.env.RIN_RELEASE_BRANCH);
+const version = trimValue(process.env.RIN_RELEASE_VERSION);
+const buildNpmTarballUrl = (name, releaseVersion) => {
+  const encodedName = encodeURIComponent(name || '@rinchanai/rin');
+  const fileBase = String(name || '@rinchanai/rin').split('/').pop();
+  return `https://registry.npmjs.org/${encodedName}/-/${fileBase}-${releaseVersion || '0.0.0'}.tgz`;
+};
+const defaultManifest = {
+  packageName,
+  repoUrl,
+  bootstrapBranch: trimValue(process.env.RIN_BOOTSTRAP_BRANCH || 'stable-bootstrap') || 'stable-bootstrap',
+  stable: {
+    version: '0.0.0',
+    archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+  },
+  beta: {
+    defaultBranch: 'release/next',
+    branches: {
+      'release/next': {
+        version: '0.0.0-beta.0',
+        archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+      },
+    },
+    versions: {
+      '0.0.0-beta.0': {
+        branch: 'release/next',
+        archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+      },
+    },
+  },
+  git: {
+    defaultBranch: 'main',
+    repoUrl,
+  },
+};
+let manifest = defaultManifest;
+try {
+  manifest = { ...defaultManifest, ...JSON.parse(fs.readFileSync(manifestPath, 'utf8')) };
+} catch {}
+const releaseRepoUrl = trimValue(manifest.repoUrl || repoUrl).replace(/\.git$/i, '');
+const releasePackageName = trimValue(manifest.packageName || packageName) || '@rinchanai/rin';
+const buildRefArchiveUrl = (ref) => `${releaseRepoUrl}/archive/${String(ref || 'main').split('/').map(encodeURIComponent).join('/')}.tar.gz`;
+const buildBranchArchiveUrl = (name) => `${releaseRepoUrl}/archive/refs/heads/${String(name || 'main').split('/').map(encodeURIComponent).join('/')}.tar.gz`;
+const shellEscape = (value) => `'${String(value ?? '').replace(/'/g, `'"'"'`)}'`;
+let resolved;
+if (branch && version) throw new Error('rin_release_branch_and_version_conflict');
+if (channel === 'stable') {
+  if (branch) throw new Error('rin_stable_branch_not_supported');
+  const entry = version && manifest.stable && manifest.stable.versions ? manifest.stable.versions[version] : undefined;
+  const resolvedVersion = version || trimValue(manifest.stable && manifest.stable.version) || '0.0.0';
+  resolved = {
+    channel: 'stable',
+    archiveUrl: trimValue(entry && entry.archiveUrl) || trimValue(manifest.stable && manifest.stable.archiveUrl) || buildNpmTarballUrl(releasePackageName, resolvedVersion),
+    version: resolvedVersion,
+    branch: 'stable',
+    ref: version || trimValue(manifest.stable && manifest.stable.version) || 'main',
+    sourceLabel: version ? `stable version ${resolvedVersion}` : `stable ${resolvedVersion}`,
+  };
+} else if (channel === 'beta') {
+  const beta = manifest.beta || {};
+  if (version) {
+    const entry = beta.versions && beta.versions[version];
+    const resolvedBranch = trimValue(entry && entry.branch) || trimValue(beta.defaultBranch) || 'release/next';
+    resolved = {
+      channel: 'beta',
+      archiveUrl: trimValue(entry && entry.archiveUrl) || buildRefArchiveUrl(version),
+      version,
+      branch: resolvedBranch,
+      ref: version,
+      sourceLabel: `beta version ${version}`,
+    };
+  } else {
+    const resolvedBranch = branch || trimValue(beta.defaultBranch) || 'release/next';
+    const entry = beta.branches && beta.branches[resolvedBranch];
+    resolved = {
+      channel: 'beta',
+      archiveUrl: trimValue(entry && entry.archiveUrl) || buildBranchArchiveUrl(resolvedBranch),
+      version: trimValue(entry && entry.version) || '0.0.0-beta.0',
+      branch: resolvedBranch,
+      ref: resolvedBranch,
+      sourceLabel: `beta branch ${resolvedBranch}`,
+    };
+  }
+} else {
+  const git = manifest.git || {};
+  const resolvedBranch = branch || trimValue(git.defaultBranch) || 'main';
+  const resolvedRef = version || resolvedBranch;
+  resolved = {
+    channel: 'git',
+    archiveUrl: version ? buildRefArchiveUrl(resolvedRef) : buildBranchArchiveUrl(resolvedBranch),
+    version: version || resolvedRef,
+    branch: resolvedBranch,
+    ref: resolvedRef,
+    sourceLabel: version ? `git ref ${resolvedRef}` : `git branch ${resolvedRef}`,
+  };
+}
+for (const [key, value] of Object.entries({
+  CHANNEL: resolved.channel,
+  ARCHIVE_URL: resolved.archiveUrl,
+  VERSION: resolved.version,
+  BRANCH: resolved.branch,
+  REF: resolved.ref,
+  SOURCE_LABEL: resolved.sourceLabel,
+})) {
+  console.log(`${key}=${shellEscape(value)}`);
+}
+NODE
+}
+
 INSTALLER_ENTRY='dist/app/rin-install/main.js'
-ARCHIVE_URL="$REPO_URL/archive/refs/heads/main.tar.gz"
+parse_args "$@"
 : >"$LOGFILE"
+run_step "$MANIFEST_LABEL" fetch_manifest
+eval "$(RIN_RELEASE_CHANNEL=$CHANNEL RIN_RELEASE_BRANCH=$BRANCH RIN_RELEASE_VERSION=$VERSION RIN_INSTALL_REPO_URL=$REPO_URL resolve_release)"
 run_step "$FETCH_LABEL" fetch "$ARCHIVE_URL" "$ARCHIVE"
 mkdir -p "$SRC_DIR"
 run_step "$PREP_LABEL" tar -xzf "$ARCHIVE" -C "$SRC_DIR" --strip-components=1
@@ -148,8 +353,22 @@ run_step "$BUILD_LABEL" npm run build
 say "[$PREFIX] $LAUNCH_LABEL"
 
 if has_tty; then
-  sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY" </dev/tty >/dev/tty 2>&1
+  env \
+    RIN_RELEASE_CHANNEL="$CHANNEL" \
+    RIN_RELEASE_VERSION="$VERSION" \
+    RIN_RELEASE_BRANCH="$BRANCH" \
+    RIN_RELEASE_REF="$REF" \
+    RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
+    RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
+    sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY" </dev/tty >/dev/tty 2>&1
   exit $?
 fi
 
-sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY"
+env \
+  RIN_RELEASE_CHANNEL="$CHANNEL" \
+  RIN_RELEASE_VERSION="$VERSION" \
+  RIN_RELEASE_BRANCH="$BRANCH" \
+  RIN_RELEASE_REF="$REF" \
+  RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
+  RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
+  sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY"

@@ -6,6 +6,8 @@ import { spawn } from "node:child_process";
 
 import { isCancel, note, spinner } from "@clack/prompts";
 
+import { type InstalledReleaseInfo } from "../rin-lib/release.js";
+
 export type FinalizeInstallOptions = {
   currentUser: string;
   targetUser: string;
@@ -18,6 +20,7 @@ export type FinalizeInstallOptions = {
   chatConfig?: any;
   authData?: any;
   sourceRoot?: string;
+  release?: InstalledReleaseInfo;
 };
 
 export async function runFinalizeInstallPlanInChild(

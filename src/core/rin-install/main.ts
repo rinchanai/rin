@@ -30,6 +30,7 @@ import {
 } from "./interactive.js";
 import { detectCurrentUser, repoRootFromHere, runCommand } from "./common.js";
 import { finalizeInstallPlan } from "./finalize.js";
+import { releaseInfoFromEnv } from "../rin-lib/release.js";
 import {
   describeOwnership,
   listSystemUsers,
@@ -105,6 +106,7 @@ export async function startInstaller() {
       detectCurrentUser,
       repoRootFromHere,
       ensureNotCancelled,
+      release: releaseInfoFromEnv(),
     });
     return;
   }
@@ -214,6 +216,7 @@ export async function startInstaller() {
       chatDetail,
       chatConfig,
       authData: authResult.authData || {},
+      release: releaseInfoFromEnv(),
     },
     needsElevatedWrite
       ? "Publishing runtime and writing configuration with elevated permissions..."

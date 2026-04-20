@@ -34,6 +34,11 @@ import {
   managedSystemdUnitCandidates,
 } from "../rin-install/paths.js";
 import { tryManagedSystemdAction } from "../rin-install/managed-service.js";
+import {
+  type ReleaseChannel,
+  loadReleaseManifestForNetwork,
+  resolveReleaseRequest,
+} from "../rin-lib/release.js";
 
 export type ParsedArgs = {
   command:
@@ -53,6 +58,9 @@ export type ParsedArgs = {
   passthrough: string[];
   explicitUser: boolean;
   hasSavedInstall: boolean;
+  releaseChannel: ReleaseChannel;
+  releaseBranch: string;
+  releaseVersion: string;
 };
 
 type InstallConfig = {
@@ -382,6 +390,46 @@ export function collectTuiPassthroughArgs(argv: string[]) {
   return stripRinWrapperArgs(argv);
 }
 
+function resolveParsedReleaseArgs(
+  command: ParsedArgs["command"],
+  options: any,
+): Pick<ParsedArgs, "releaseChannel" | "releaseBranch" | "releaseVersion"> {
+  if (command !== "update") {
+    return {
+      releaseChannel: "stable",
+      releaseBranch: "",
+      releaseVersion: "",
+    };
+  }
+
+  const selectedChannels = [
+    options.stable ? "stable" : "",
+    options.beta ? "beta" : "",
+    options.git ? "git" : "",
+  ].filter(Boolean) as ReleaseChannel[];
+
+  if (selectedChannels.length > 1) {
+    throw new Error("rin_release_channel_conflict");
+  }
+
+  const releaseChannel = selectedChannels[0] || "stable";
+  const releaseBranch = safeString(options.branch).trim();
+  const releaseVersion = safeString(options.version).trim();
+
+  if (releaseBranch && releaseVersion) {
+    throw new Error("rin_release_branch_and_version_conflict");
+  }
+  if (releaseChannel === "stable" && releaseBranch) {
+    throw new Error("rin_stable_branch_not_supported");
+  }
+
+  return {
+    releaseChannel,
+    releaseBranch,
+    releaseVersion,
+  };
+}
+
 export function resolveParsedArgs(
   command: ParsedArgs["command"],
   options: any,
@@ -405,11 +453,18 @@ export function resolveParsedArgs(
       safeString(installConfig.defaultTargetUser).trim() ||
       safeString(installConfig.defaultInstallDir).trim(),
     ),
+    ...resolveParsedReleaseArgs(command, options),
   };
 }
 
 export async function runUpdate(parsed: ParsedArgs) {
   const installDir = resolveInstallDirForTarget(parsed);
+  const manifest = await loadReleaseManifestForNetwork();
+  const resolvedRelease = resolveReleaseRequest(manifest, {
+    channel: parsed.releaseChannel,
+    branch: parsed.releaseBranch,
+    version: parsed.releaseVersion,
+  });
 
   const curl =
     process.platform === "win32"
@@ -444,16 +499,12 @@ export async function runUpdate(parsed: ParsedArgs) {
     if (curl) {
       runCommandSync(curl, [
         "-fsSL",
-        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+        resolvedRelease.archiveUrl,
         "-o",
         archivePath,
       ]);
     } else if (wget) {
-      runCommandSync(wget, [
-        "-qO",
-        archivePath,
-        "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
-      ]);
+      runCommandSync(wget, ["-qO", archivePath, resolvedRelease.archiveUrl]);
     } else {
       throw new Error("rin_missing_required_tool:curl_or_wget");
     }
@@ -481,11 +532,15 @@ export async function runUpdate(parsed: ParsedArgs) {
     console.log(
       "rin update: updating core runtime only (CLI launcher and installer are unchanged)",
     );
+    console.log(
+      `rin update: source = ${resolvedRelease.sourceLabel} (${resolvedRelease.archiveUrl})`,
+    );
     const result = await finalizeCoreUpdate({
       currentUser: detectCurrentUser(),
       targetUser: parsed.targetUser,
       installDir,
       sourceRoot,
+      release: resolvedRelease,
     });
     console.log(`rin update complete: ${result.publishedRuntime.releaseRoot}`);
     if (result.installedDocsDir)

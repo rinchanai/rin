@@ -214,6 +214,52 @@ test("persist reconcileInstallerManifest writes primary and locator manifests fo
   });
 });
 
+test("persist reconcileInstallerManifest persists release metadata when provided", async () => {
+  await withTempDir(async (dir) => {
+    const installDir = path.join(dir, "srv", "rin-demo");
+    const ownerHome = path.join(dir, "home", "demo");
+    const writes = [];
+
+    persist.reconcileInstallerManifest(
+      {
+        targetUser: "demo",
+        installDir,
+        release: {
+          channel: "beta",
+          version: "1.3.0-beta.2",
+          branch: "release/1.3",
+          ref: "1.3.0-beta.2",
+          sourceLabel: "beta version 1.3.0-beta.2",
+          archiveUrl: "https://example.com/release-1.3-beta.2.tgz",
+          installedAt: "2026-04-20T10:00:00.000Z",
+        },
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: async () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        runPrivileged: () => {},
+      },
+    );
+
+    assert.equal(writes.length, 2);
+    for (const entry of writes) {
+      assert.deepEqual(entry.value.release, {
+        channel: "beta",
+        version: "1.3.0-beta.2",
+        branch: "release/1.3",
+        ref: "1.3.0-beta.2",
+        sourceLabel: "beta version 1.3.0-beta.2",
+        archiveUrl: "https://example.com/release-1.3-beta.2.tgz",
+        installedAt: "2026-04-20T10:00:00.000Z",
+      });
+    }
+  });
+});
+
 test("persist reconcileInstallerManifest skips malformed recovery candidates before reusing a prior manifest", async () => {
   await withTempDir(async (dir) => {
     const installDir = path.join(dir, "srv", "rin-demo");
@@ -394,6 +440,68 @@ test("persist persistInstallerOutputs normalizes malformed chat roots before mer
     const authWrite = writes.find((entry) => entry.filePath === result.authPath);
     assert.ok(authWrite);
     assert.deepEqual(authWrite.value, { existing: true, apiKey: "secret" });
+  });
+});
+
+test("persist persistInstallerOutputs forwards release metadata into installer manifests", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const writes = [];
+
+    await persist.persistInstallerOutputs(
+      {
+        currentUser: "operator",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        chatConfig: null,
+        authData: {},
+        release: {
+          channel: "git",
+          version: "deadbeef",
+          branch: "main",
+          ref: "deadbeef",
+          sourceLabel: "git ref deadbeef",
+          archiveUrl: "https://example.com/rin-deadbeef.tar.gz",
+          installedAt: "2026-04-20T11:00:00.000Z",
+        },
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        launcherMetadataPathForUser: () => path.join(dir, "launcher.json"),
+        readJsonFile: (_filePath, fallback) => fallback,
+        writeLaunchersForUser: () => ({
+          rinPath: "/tmp/rin",
+          rinInstallPath: "/tmp/rin-install",
+        }),
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    const manifestWrites = writes.filter((entry) =>
+      entry.filePath.endsWith(path.join(".rin", "installer.json")) ||
+      entry.filePath.endsWith(path.join(dir, "installer.json")),
+    );
+    assert.equal(manifestWrites.length >= 1, true);
+    for (const entry of manifestWrites) {
+      assert.deepEqual(entry.value.release, {
+        channel: "git",
+        version: "deadbeef",
+        branch: "main",
+        ref: "deadbeef",
+        sourceLabel: "git ref deadbeef",
+        archiveUrl: "https://example.com/rin-deadbeef.tar.gz",
+        installedAt: "2026-04-20T11:00:00.000Z",
+      });
+    }
   });
 });
 

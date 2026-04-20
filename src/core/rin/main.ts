@@ -51,6 +51,11 @@ function createCli() {
       "Create or attach a hidden Rin tmux session",
     )
     .option("--tmux-list", "List hidden Rin tmux sessions")
+    .option("--stable", "Use the stable release channel (default)")
+    .option("--beta", "Use the beta release channel")
+    .option("--git", "Use the git release channel")
+    .option("--branch <name>", "Use a specific beta/git branch")
+    .option("--version <value>", "Use a specific release version or git ref")
     .help();
 
   for (const [name, description] of RIN_COMMANDS) {

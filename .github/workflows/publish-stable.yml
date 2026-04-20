@@ -1,0 +1,81 @@
+name: publish-stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: Release train branch to publish from, for example release/0.69
+        required: true
+      version:
+        description: Stable version to publish, for example 0.69.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_branch }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci --no-fund --no-audit
+      - run: npm run build
+      - run: >-
+          node --test
+          tests/installer-modules.test.mjs
+          tests/rin-cli.test.mjs
+          tests/rpc-and-shared.test.mjs
+          tests/bootstrap-entrypoint.test.mjs
+          tests/release.test.mjs
+          tests/release-scripts.test.mjs
+      - name: Set stable version
+        run: npm version --no-git-tag-version '${{ inputs.version }}'
+      - name: Publish stable package
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --tag latest --access public
+      - name: Update release manifest
+        run: >-
+          npm run release:manifest --
+          --channel stable
+          --version '${{ inputs.version }}'
+      - name: Commit release metadata and tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json release-manifest.json docs/rin/CHANGELOG.md
+          git commit -m 'chore(release): prepare ${{ inputs.version }}' || true
+          git tag 'v${{ inputs.version }}' || true
+          git push origin HEAD:${{ inputs.release_branch }} --follow-tags
+      - name: Prepare bootstrap branch checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          bootstrap_dir="$RUNNER_TEMP/stable-bootstrap"
+          remote_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin stable-bootstrap >/dev/null 2>&1; then
+            git clone --depth 1 --branch stable-bootstrap "$remote_url" "$bootstrap_dir"
+          else
+            git init "$bootstrap_dir"
+            git -C "$bootstrap_dir" checkout --orphan stable-bootstrap
+            git -C "$bootstrap_dir" remote add origin "$remote_url"
+          fi
+          npm run release:bootstrap -- --output "$bootstrap_dir" --branch stable-bootstrap
+          git -C "$bootstrap_dir" config user.name 'github-actions[bot]'
+          git -C "$bootstrap_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$bootstrap_dir" add .
+          if git -C "$bootstrap_dir" diff --cached --quiet; then
+            echo 'No bootstrap changes to commit.'
+          else
+            git -C "$bootstrap_dir" commit -m 'chore(release): publish stable ${{ inputs.version }}'
+            git -C "$bootstrap_dir" push origin HEAD:stable-bootstrap
+          fi
