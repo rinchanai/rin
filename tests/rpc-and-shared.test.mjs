@@ -42,6 +42,34 @@ test("rpc helpers build success and failure envelopes", () => {
     success: false,
     error: "boom",
   });
+  assert.deepEqual(rpc.fail("3", "prompt", { error: "bad_state" }), {
+    id: "3",
+    type: "response",
+    command: "prompt",
+    success: false,
+    error: "bad_state",
+  });
+  assert.deepEqual(rpc.fail("4", "prompt", { message: "  " }), {
+    id: "4",
+    type: "response",
+    command: "prompt",
+    success: false,
+    error: "rin_request_failed",
+  });
+});
+
+test("rpc helpers normalize scoped commands and return fresh empty session state", () => {
+  assert.equal(rpc.isSessionScopedCommand(" reload "), true);
+  assert.equal(rpc.isSessionScopedCommand(" nope "), false);
+
+  const first = rpc.emptySessionState();
+  const second = rpc.emptySessionState();
+  first.pendingMessageCount = 9;
+  first.sessionId = "changed";
+
+  assert.equal(second.pendingMessageCount, 0);
+  assert.equal(second.sessionId, "");
+  assert.notEqual(first, second);
 });
 
 test("shared resolveParsedArgs keeps passthrough and install defaults coherent", () => {

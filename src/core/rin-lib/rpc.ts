@@ -3,7 +3,7 @@ export type BuiltinSlashCommand = {
   description: string;
 };
 
-export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
+export const BUILTIN_SLASH_COMMANDS = [
   { name: "abort", description: "Abort the current operation" },
   { name: "settings", description: "Open settings menu" },
   { name: "model", description: "Select model (opens selector UI)" },
@@ -37,9 +37,9 @@ export const BUILTIN_SLASH_COMMANDS: BuiltinSlashCommand[] = [
     description: "Reload keybindings, extensions, skills, prompts, and themes",
   },
   { name: "quit", description: "Quit pi" },
-];
+] satisfies BuiltinSlashCommand[];
 
-const SESSION_SCOPED_COMMANDS = new Set([
+const SESSION_SCOPED_COMMAND_NAMES = [
   "prompt",
   "resume_interrupted_turn",
   "steer",
@@ -82,10 +82,46 @@ const SESSION_SCOPED_COMMANDS = new Set([
   "oauth_login_cancel",
   "oauth_logout",
   "reload",
-]);
+] as const;
+
+const SESSION_SCOPED_COMMANDS = new Set<string>(SESSION_SCOPED_COMMAND_NAMES);
+
+const EMPTY_SESSION_STATE = {
+  model: null,
+  thinkingLevel: "medium",
+  isStreaming: false,
+  isCompacting: false,
+  steeringMode: "one-at-a-time",
+  followUpMode: "one-at-a-time",
+  sessionFile: undefined,
+  sessionId: "",
+  sessionName: undefined,
+  autoCompactionEnabled: true,
+  messageCount: 0,
+  pendingMessageCount: 0,
+};
+
+function normalizeCommandType(type: unknown) {
+  return String(type || "").trim();
+}
+
+function normalizeResponseError(payload: unknown) {
+  const message = String(
+    (payload as any)?.message || (payload as any)?.error || payload || "",
+  ).trim();
+  return message || "rin_request_failed";
+}
+
+function buildResponseEnvelope(
+  id: string | undefined,
+  command: string,
+  success: boolean,
+) {
+  return { id, type: "response", command, success };
+}
 
 export function isSessionScopedCommand(type: string) {
-  return SESSION_SCOPED_COMMANDS.has(type);
+  return SESSION_SCOPED_COMMANDS.has(normalizeCommandType(type));
 }
 
 export function response(
@@ -94,19 +130,9 @@ export function response(
   success: boolean,
   payload?: unknown,
 ) {
-  return success
-    ? payload === undefined
-      ? { id, type: "response", command, success: true }
-      : { id, type: "response", command, success: true, data: payload }
-    : {
-        id,
-        type: "response",
-        command,
-        success: false,
-        error: String(
-          (payload as any)?.message || payload || "rin_request_failed",
-        ),
-      };
+  const base = buildResponseEnvelope(id, command, success);
+  if (success) return payload === undefined ? base : { ...base, data: payload };
+  return { ...base, error: normalizeResponseError(payload) };
 }
 
 export function ok(id: string | undefined, command: string, data?: unknown) {
@@ -118,18 +144,5 @@ export function fail(id: string | undefined, command: string, error: unknown) {
 }
 
 export function emptySessionState() {
-  return {
-    model: null,
-    thinkingLevel: "medium",
-    isStreaming: false,
-    isCompacting: false,
-    steeringMode: "one-at-a-time",
-    followUpMode: "one-at-a-time",
-    sessionFile: undefined,
-    sessionId: "",
-    sessionName: undefined,
-    autoCompactionEnabled: true,
-    messageCount: 0,
-    pendingMessageCount: 0,
-  };
+  return { ...EMPTY_SESSION_STATE };
 }
