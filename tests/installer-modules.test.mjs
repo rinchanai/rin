@@ -81,6 +81,35 @@ test("install-record normalizes launcher metadata and installer manifests", () =
     },
   );
   assert.deepEqual(
+    installRecord.normalizeInstallRecord("/home/demo", {
+      defaultTargetUser: "launcher-demo",
+      installDir: "/srv/rin-demo",
+    }),
+    {
+      defaultTargetUser: "launcher-demo",
+      defaultInstallDir: "/srv/rin-demo",
+    },
+  );
+  assert.deepEqual(
+    installRecord.normalizeInstallRecord("/home/demo", {
+      targetUser: "manifest-demo",
+      defaultInstallDir: "/srv/rin-demo",
+    }),
+    {
+      defaultTargetUser: "manifest-demo",
+      defaultInstallDir: "/srv/rin-demo",
+    },
+  );
+  assert.deepEqual(
+    installRecord.normalizeInstallRecord("/home/demo", {
+      defaultTargetUser: "launcher-demo",
+    }),
+    {
+      defaultTargetUser: "launcher-demo",
+      defaultInstallDir: "/home/demo/.rin",
+    },
+  );
+  assert.deepEqual(
     installRecord.resolveInstallRecordTarget("/home/demo", "fallback-user", {
       defaultInstallDir: "/srv/rin-demo",
     }),
@@ -109,6 +138,21 @@ test("install-record normalizes launcher metadata and installer manifests", () =
     },
   );
   assert.deepEqual(readCalls, ["broken", "empty", "manifest"]);
+
+  assert.deepEqual(
+    installRecord.loadInstallRecordFromCandidates(
+      "/home/demo",
+      ["mixed", "unused"],
+      (filePath) =>
+        filePath === "mixed"
+          ? { defaultTargetUser: "launcher-demo", installDir: "/srv/rin-demo" }
+          : { targetUser: "unused-demo" },
+    ),
+    {
+      defaultTargetUser: "launcher-demo",
+      defaultInstallDir: "/srv/rin-demo",
+    },
+  );
 
   assert.deepEqual(
     installRecord.resolveInstallRecordTargetFromCandidates(

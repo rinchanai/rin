@@ -6,27 +6,30 @@ export type InstallRecord = {
   defaultInstallDir?: string;
 };
 
+function normalizeInstallRecordField(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function resolveInstallRecordFields(home: string, value: Record<string, unknown>) {
+  const defaultTargetUser =
+    normalizeInstallRecordField(value.defaultTargetUser) ||
+    normalizeInstallRecordField(value.targetUser);
+  const defaultInstallDir =
+    normalizeInstallRecordField(value.defaultInstallDir) ||
+    normalizeInstallRecordField(value.installDir);
+  if (!defaultTargetUser && !defaultInstallDir) return null;
+  return {
+    defaultTargetUser,
+    defaultInstallDir: defaultInstallDir || defaultInstallDirForHome(home),
+  };
+}
+
 export function normalizeInstallRecord(
   home: string,
   raw: unknown,
 ): InstallRecord | null {
   if (!raw || typeof raw !== "object") return null;
-  const value = raw as Record<string, unknown>;
-  const defaultTargetUser = String(value.defaultTargetUser || "").trim();
-  const defaultInstallDir = String(value.defaultInstallDir || "").trim();
-  if (defaultTargetUser || defaultInstallDir) {
-    return {
-      defaultTargetUser,
-      defaultInstallDir,
-    };
-  }
-  const targetUser = String(value.targetUser || "").trim();
-  const installDir = String(value.installDir || "").trim();
-  if (!targetUser && !installDir) return null;
-  return {
-    defaultTargetUser: targetUser,
-    defaultInstallDir: installDir || defaultInstallDirForHome(home),
-  };
+  return resolveInstallRecordFields(home, raw as Record<string, unknown>);
 }
 
 function resolveInstallRecordTargetFromRecord(
@@ -35,10 +38,12 @@ function resolveInstallRecordTargetFromRecord(
   record: InstallRecord | null,
 ) {
   if (!record) return null;
-  const targetUser = String(record.defaultTargetUser || fallbackUser).trim();
-  const installDir = String(
-    record.defaultInstallDir || defaultInstallDirForHome(home),
-  ).trim();
+  const targetUser =
+    normalizeInstallRecordField(record.defaultTargetUser) ||
+    normalizeInstallRecordField(fallbackUser);
+  const installDir =
+    normalizeInstallRecordField(record.defaultInstallDir) ||
+    defaultInstallDirForHome(home);
   if (!targetUser || !installDir) return null;
   return { targetUser, installDir };
 }
