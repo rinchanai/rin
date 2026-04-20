@@ -351,3 +351,60 @@ test("discoverInstalledTargets dedupes identical targets with explicit source pr
     ]);
   });
 });
+
+test("discoverInstalledTargets ignores invalid managed entries and non-file lookalikes", async () => {
+  await withTempDir(async (dir) => {
+    const homeRoot = path.join(dir, "home");
+    const oscarHome = path.join(homeRoot, "oscar");
+
+    await fs.mkdir(path.join(oscarHome, ".rin"), { recursive: true });
+    await fs.writeFile(
+      path.join(oscarHome, ".rin", "installer.json"),
+      JSON.stringify({ targetUser: "", installDir: "" }),
+      "utf8",
+    );
+    await fs.mkdir(path.join(oscarHome, ".config", "systemd", "user", "rin-daemon-oscar.service"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        oscarHome,
+        ".config",
+        "systemd",
+        "user",
+        "rin-daemon.service",
+      ),
+      "Environment=RIN_DIR=\n",
+      "utf8",
+    );
+    await fs.mkdir(path.join(oscarHome, "Library", "LaunchAgents"), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(
+        oscarHome,
+        "Library",
+        "LaunchAgents",
+        "com.rin.daemon.oscar.plist",
+      ),
+      [
+        "<plist>",
+        "  <dict>",
+        "    <key>RIN_DIR</key>",
+        "    <string>/srv/rin-oscar</string>",
+        "  </dict>",
+        "</plist>",
+      ].join("\n"),
+      "utf8",
+    );
+
+    assert.deepEqual(updateTargets.discoverInstalledTargets([homeRoot]), [
+      {
+        targetUser: "oscar",
+        installDir: "/srv/rin-oscar",
+        ownerHome: oscarHome,
+        source: "launchd",
+      },
+    ]);
+  });
+});

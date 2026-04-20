@@ -33,6 +33,10 @@ type ManagedInstallDiscovery = {
   installDirFromText: (text: string) => string;
 };
 
+type HomeInstallDiscovery = {
+  discover: (homeDir: string, userName: string) => InstalledTarget[];
+};
+
 const INSTALLED_TARGET_SOURCE_PRIORITY = {
   manifest: 0,
   launcher: 1,
@@ -142,6 +146,14 @@ function discoverInstallRecordTarget(
   );
 }
 
+function discoverInstallRecordTargets(homeDir: string, userName: string) {
+  return installRecordSourcesForHome(homeDir)
+    .map(({ source, filePaths }) =>
+      discoverInstallRecordTarget(homeDir, userName, source, filePaths),
+    )
+    .filter((target): target is InstalledTarget => Boolean(target));
+}
+
 function discoverManagedInstallTargets(
   homeDir: string,
   userName: string,
@@ -149,10 +161,11 @@ function discoverManagedInstallTargets(
 ) {
   const installDirPath = discovery.dirForHome(homeDir);
   const rows: InstalledTarget[] = [];
-  for (const entry of readDirectoryNames(installDirPath)) {
-    if (!discovery.isManagedName(entry)) continue;
+  for (const entry of readDirectoryEntries(installDirPath)) {
+    if (!entry.isFile()) continue;
+    if (!discovery.isManagedName(entry.name)) continue;
     const installDir = discovery.installDirFromText(
-      readUtf8File(path.join(installDirPath, entry)),
+      readUtf8File(path.join(installDirPath, entry.name)),
     );
     const target = normalizeInstalledTarget(
       userName,
@@ -163,6 +176,22 @@ function discoverManagedInstallTargets(
     if (target) rows.push(target);
   }
   return rows;
+}
+
+const HOME_INSTALL_DISCOVERY: HomeInstallDiscovery[] = [
+  {
+    discover: discoverInstallRecordTargets,
+  },
+  ...MANAGED_INSTALL_DISCOVERY.map((discovery) => ({
+    discover: (homeDir: string, userName: string) =>
+      discoverManagedInstallTargets(homeDir, userName, discovery),
+  })),
+];
+
+function discoverHomeInstalledTargets(homeDir: string, userName: string) {
+  return HOME_INSTALL_DISCOVERY.flatMap((discovery) =>
+    discovery.discover(homeDir, userName),
+  );
 }
 
 function compareInstalledTargets(a: InstalledTarget, b: InstalledTarget) {
@@ -182,25 +211,8 @@ export function discoverInstalledTargets(
     for (const entry of readDirectoryEntries(root)) {
       if (!entry.isDirectory()) continue;
       const homeDir = path.join(root, entry.name);
-      const userName = entry.name;
-
-      for (const { source, filePaths } of installRecordSourcesForHome(
-        homeDir,
-      )) {
-        addInstalledTarget(
-          rowsByKey,
-          discoverInstallRecordTarget(homeDir, userName, source, filePaths),
-        );
-      }
-
-      for (const discovery of MANAGED_INSTALL_DISCOVERY) {
-        for (const target of discoverManagedInstallTargets(
-          homeDir,
-          userName,
-          discovery,
-        )) {
-          addInstalledTarget(rowsByKey, target);
-        }
+      for (const target of discoverHomeInstalledTargets(homeDir, entry.name)) {
+        addInstalledTarget(rowsByKey, target);
       }
     }
   }
