@@ -211,6 +211,18 @@ async function sendChatNodes(app: any, chatKey: string, nodes: any[]) {
   return await sendBotMessage(bot, parsed.chatId, nodes);
 }
 
+function normalizeOutboxChatKey(chatKey: string) {
+  const nextChatKey = safeString(chatKey).trim();
+  if (!nextChatKey) throw new Error("invalid_chatKey:");
+  return nextChatKey;
+}
+
+function normalizeOutboxText(text: string) {
+  const nextText = safeString(text).trim();
+  if (!nextText) throw new Error("chat_outbox_empty_message");
+  return nextText;
+}
+
 function normalizeDeliveredMessageIds(result: unknown) {
   if (!Array.isArray(result) || !result.length) {
     throw new Error("chat_send_message_empty_result");
@@ -431,37 +443,30 @@ export async function messagePartToNode(part: ChatMessagePart, h: any) {
   if (part.type === "quote") return h.quote(part.id);
   if (part.type === "image") {
     const localPath = safeString(part.path).trim();
+    const remoteUrl = safeString(part.url).trim();
+    if (!localPath && !remoteUrl) {
+      throw new Error("chat_outbox_invalid_part:image");
+    }
     if (localPath) {
       return h("image", {
         src: localAssetUrl(localPath),
         mimeType: safeString(part.mimeType).trim() || "image/png",
       });
     }
-    return h.image(safeString(part.url).trim());
+    return h.image(remoteUrl);
   }
   const localPath = safeString(part.path).trim();
-  if (localPath) {
-    const buffer = await fs.promises.readFile(path.resolve(localPath));
-    return h.file(
-      buffer,
-      safeString(part.mimeType).trim() || "application/octet-stream",
-      {
-        name:
-          safeString(part.name).trim() ||
-          (safeString(part.path).trim()
-            ? path.basename(part.path!)
-            : undefined),
-      },
-    );
+  const remoteUrl = safeString(part.url).trim();
+  const name =
+    safeString(part.name).trim() ||
+    (localPath ? path.basename(localPath) : undefined);
+  if (!localPath && !remoteUrl) {
+    throw new Error("chat_outbox_invalid_part:file");
   }
   return h.file(
-    safeString(part.url).trim(),
+    localPath ? localAssetUrl(localPath) : remoteUrl,
     safeString(part.mimeType).trim() || undefined,
-    {
-      name:
-        safeString(part.name).trim() ||
-        (safeString(part.path).trim() ? path.basename(part.path!) : undefined),
-    },
+    name ? { name } : undefined,
   );
 }
 
@@ -492,8 +497,8 @@ export async function sendOutboxPayload(
   h: any,
 ) {
   if (payload?.type === "text_delivery") {
-    const chatKey = safeString(payload.chatKey).trim();
-    const text = safeString(payload.text).trim();
+    const chatKey = normalizeOutboxChatKey(payload.chatKey);
+    const text = normalizeOutboxText(payload.text);
     const replyToMessageId = safeString(payload.replyToMessageId).trim();
     const session = normalizeSessionRef(payload);
     const deliveryResult = await sendText(
@@ -503,7 +508,6 @@ export async function sendOutboxPayload(
       h,
       replyToMessageId,
     );
-    if (!chatKey || !text) return [] as string[];
     return finalizeDeliveredAssistantOutput(agentDir, {
       chatKey,
       deliveryResult,
@@ -516,7 +520,7 @@ export async function sendOutboxPayload(
     });
   }
   if (payload?.type !== "parts_delivery") return [] as string[];
-  const chatKey = safeString(payload.chatKey).trim();
+  const chatKey = normalizeOutboxChatKey(payload.chatKey);
   const session = normalizeSessionRef(payload);
   const rawParts = Array.isArray(payload.parts)
     ? payload.parts.filter(Boolean)

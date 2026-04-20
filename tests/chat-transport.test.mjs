@@ -218,10 +218,12 @@ test("chat transport stores explicit session binding for outbox text deliveries"
   });
 });
 
-test("chat transport keeps local image parts as file urls instead of inlining data urls", async () => {
+test("chat transport keeps local image and file parts as file urls", async () => {
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
+    const filePath = path.join(dir, "demo.txt");
     await fs.writeFile(imagePath, Buffer.from("abc"));
+    await fs.writeFile(filePath, "hello\n");
     const h = Object.assign((type, attrs) => ({ type, attrs }), {
       image(src) {
         return { type: "img", attrs: { src } };
@@ -236,13 +238,21 @@ test("chat transport keeps local image parts as file urls instead of inlining da
         return { type: "file", attrs: { src, mimeType, ...options } };
       },
     });
-    const node = await transport.messagePartToNode(
+    const imageNode = await transport.messagePartToNode(
       { type: "image", path: imagePath, mimeType: "image/png" },
       h,
     );
-    assert.equal(node.type, "image");
-    assert.match(node.attrs.src, /^file:\/\//);
-    assert.equal(node.attrs.mimeType, "image/png");
+    const fileNode = await transport.messagePartToNode(
+      { type: "file", path: filePath, mimeType: "text/plain", name: "demo.txt" },
+      h,
+    );
+    assert.equal(imageNode.type, "image");
+    assert.match(imageNode.attrs.src, /^file:\/\//);
+    assert.equal(imageNode.attrs.mimeType, "image/png");
+    assert.equal(fileNode.type, "file");
+    assert.match(fileNode.attrs.src, /^file:\/\//);
+    assert.equal(fileNode.attrs.mimeType, "text/plain");
+    assert.equal(fileNode.attrs.name, "demo.txt");
   });
 });
 
@@ -310,8 +320,48 @@ test("chat transport direct send helpers prepend quotes and reuse file urls", as
   });
 });
 
-test("chat transport treats empty bot send results as delivery failures", async () => {
+test("chat transport rejects invalid parts and empty deliveries early", async () => {
   await withTempDir(async (dir) => {
+    await assert.rejects(
+      transport.messagePartToNode({ type: "image" }, {
+        image(src) {
+          return { type: "image", attrs: { src } };
+        },
+      }),
+      /chat_outbox_invalid_part:image/,
+    );
+
+    await assert.rejects(
+      transport.sendOutboxPayload(
+        {
+          bots: [
+            {
+              platform: "telegram",
+              selfId: "1",
+              async sendMessage() {
+                return ["ignored"];
+              },
+            },
+          ],
+        },
+        dir,
+        {
+          type: "text_delivery",
+          chatKey: "telegram/1:2",
+          text: "   ",
+        },
+        {
+          text(content) {
+            return { type: "text", attrs: { content } };
+          },
+          quote(id) {
+            return { type: "quote", attrs: { id } };
+          },
+        },
+      ),
+      /chat_outbox_empty_message/,
+    );
+
     await assert.rejects(
       transport.sendOutboxPayload(
         {
