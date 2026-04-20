@@ -93,6 +93,62 @@ test("listBoundSessions normalizes legacy session metadata into canonical fields
   );
 });
 
+test("resolveBoundSessionReference resolves a session id to its canonical path", async () => {
+  const sessionDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-sessions-"));
+  const sessionPath = path.join(sessionDir, "session-1.jsonl");
+  await fs.writeFile(sessionPath, "", "utf8");
+  try {
+    const resolved = await factory.resolveBoundSessionReference("session-1", {
+      cwd: "/tmp/project",
+      sessionDir,
+      SessionManager: {
+        async list() {
+          return [
+            {
+              id: "session-1",
+              path: sessionPath,
+              modified: new Date("2026-04-18T00:00:00.000Z"),
+            },
+          ];
+        },
+      },
+    });
+
+    assert.deepEqual(resolved, {
+      path: sessionPath,
+      id: "session-1",
+    });
+  } finally {
+    await fs.rm(sessionDir, { recursive: true, force: true });
+  }
+});
+
+test("resolveBoundSessionReference rejects ambiguous id prefixes", async () => {
+  await assert.rejects(
+    factory.resolveBoundSessionReference("session", {
+      cwd: "/tmp/project",
+      sessionDir: "/tmp/sessions",
+      SessionManager: {
+        async list() {
+          return [
+            {
+              id: "session-a",
+              path: "/tmp/sessions/a.jsonl",
+              modified: new Date("2026-04-18T00:00:00.000Z"),
+            },
+            {
+              id: "session-b",
+              path: "/tmp/sessions/b.jsonl",
+              modified: new Date("2026-04-18T01:00:00.000Z"),
+            },
+          ];
+        },
+      },
+    }),
+    /Session ref is ambiguous: session/,
+  );
+});
+
 test("renameBoundSession delegates to SessionManager.open once", async () => {
   const renamed = [];
   await factory.renameBoundSession(

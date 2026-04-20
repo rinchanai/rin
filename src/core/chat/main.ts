@@ -423,10 +423,8 @@ export async function startChatBridge(
     }
 
     const controller = getController(chatKey);
-    if (replySession?.sessionFile) {
-      await controller
-        .resumeSessionFile(replySession.sessionFile)
-        .catch(() => {});
+    if (replySession) {
+      await controller.resumeSession(replySession).catch(() => {});
     }
 
     const text = `/${command.name}${command.argsText ? ` ${command.argsText}` : ""}`;
@@ -459,10 +457,8 @@ export async function startChatBridge(
       decision.chatKey,
       replyToMessageId,
     );
-    if (replySession?.sessionFile) {
-      await controller
-        .resumeSessionFile(replySession.sessionFile)
-        .catch(() => {});
+    if (replySession) {
+      await controller.resumeSession(replySession).catch(() => {});
     }
     const { attachments, failures } = await extractInboundAttachments(
       elements,

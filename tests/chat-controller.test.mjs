@@ -720,6 +720,7 @@ test("chat controller reattaches saved session file before bootstrapping a detac
   await controller.ensureSessionReady();
 
   assert.deepEqual(calls, [`switch:${savedSessionFile}`, "ensureSessionReady"]);
+  assert.equal(controller.state.piSessionId, "session-7");
   assert.equal(controller.state.piSessionFile, savedSessionFile);
 });
 
@@ -745,6 +746,42 @@ test("chat controller reattaches idle saved sessions during recovery so chat wor
   await controller.recoverIfNeeded();
 
   assert.deepEqual(calls, [`switch:${savedSessionFile}`]);
+});
+
+test("chat controller resolves a linked session id back to its session file before resuming", async () => {
+  const controller = await createController("telegram/7:9");
+  const calls = [];
+  const linkedSessionFile = path.join(controller.dataDir, "linked-chat.jsonl");
+  await fs.writeFile(linkedSessionFile, "", "utf8");
+  let currentSessionId = "current-session";
+  let currentSessionFile = "";
+
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => currentSessionFile || undefined,
+      getSessionId: () => currentSessionId,
+      getSessionName: () => "telegram/7:9",
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(`switch:${sessionPath}`);
+      currentSessionId = "session-linked";
+      currentSessionFile = linkedSessionFile;
+    },
+    setSessionName: async () => {},
+  };
+  controller.resolveSessionBinding = async () => ({
+    sessionId: "session-linked",
+    sessionFile: linkedSessionFile,
+  });
+
+  const resumed = await controller.resumeSession({ sessionId: "session-linked" });
+
+  assert.deepEqual(calls, [`switch:${linkedSessionFile}`]);
+  assert.equal(resumed.changed, true);
+  assert.equal(resumed.sessionId, "session-linked");
+  assert.equal(resumed.sessionFile, linkedSessionFile);
+  assert.equal(controller.state.piSessionId, "session-linked");
+  assert.equal(controller.state.piSessionFile, linkedSessionFile);
 });
 
 test("chat controller self-heals missing saved session binding before a chat turn", async () => {

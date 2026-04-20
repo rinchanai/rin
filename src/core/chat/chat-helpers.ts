@@ -41,6 +41,7 @@ export type InboundAttachmentFailure = {
 
 export type ChatState = {
   chatKey: string;
+  piSessionId?: string;
   piSessionFile?: string;
   processing?: {
     text: string;

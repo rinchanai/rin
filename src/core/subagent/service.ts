@@ -11,7 +11,7 @@ import type {
 } from "@mariozechner/pi-agent-core";
 
 import { BUILTIN_MODULE_ORDER } from "../builtins/registry.js";
-import { listBoundSessions } from "../session/factory.js";
+import { resolveBoundSessionReference } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import {
@@ -172,41 +172,25 @@ export function selectSessionReferencePath(options: {
 
 async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   const wanted = String(ref || "").trim();
-
-  const directCandidates = wanted
-    ? path.isAbsolute(wanted)
-      ? [wanted]
-      : [path.resolve(HOME_DIR, wanted)]
-    : [];
-  const directMatchPath = directCandidates.find((candidate) => {
-    try {
-      return fs.existsSync(candidate);
-    } catch {
-      return false;
-    }
-  });
-
   const { SessionManager } = await loadSessionManagerModule();
-  const sessions = await listBoundSessions({
-    cwd: HOME_DIR,
-    SessionManager,
-  });
-  const match = selectSessionReferencePath({
-    ref: wanted,
-    sessions,
-    directMatchPath,
-  });
-
-  if (match.kind === "match") {
-    return { path: match.path };
+  try {
+    return await resolveBoundSessionReference(wanted, {
+      cwd: HOME_DIR,
+      SessionManager,
+    });
+  } catch (error: any) {
+    const message = safeString(error?.message || error).trim();
+    if (message === "session_ref_required") {
+      throw new Error("session_ref_required");
+    }
+    if (message.startsWith("Session ref is ambiguous:")) {
+      throw new Error(formatSubagentSessionRefAmbiguousError(wanted));
+    }
+    if (message.startsWith("Session not found:")) {
+      throw new Error(formatSubagentSessionRefNotFoundError(wanted));
+    }
+    throw error;
   }
-  if (match.kind === "required") {
-    throw new Error("session_ref_required");
-  }
-  if (match.kind === "ambiguous") {
-    throw new Error(formatSubagentSessionRefAmbiguousError(wanted));
-  }
-  throw new Error(formatSubagentSessionRefNotFoundError(wanted));
 }
 
 export { forkSessionManagerCompat } from "../session/fork.js";

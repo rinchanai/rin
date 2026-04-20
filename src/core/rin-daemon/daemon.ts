@@ -21,7 +21,11 @@ import {
   applyRuntimeProfileEnvironment,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
-import { listBoundSessions, renameBoundSession } from "../session/factory.js";
+import {
+  listBoundSessions,
+  renameBoundSession,
+  resolveBoundSessionReference,
+} from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import {
@@ -174,6 +178,27 @@ export async function startDaemon(
   };
   const getSessionSelector = (command: any) =>
     sessionSelectorFromCommand(command);
+  const resolveCommandSessionSelector = async (command: any) => {
+    const selector = getSessionSelector(command);
+    const wantedSessionFile = safeString(selector.sessionFile || "").trim();
+    if (wantedSessionFile && fs.existsSync(wantedSessionFile)) return selector;
+    const wantedRef = safeString(
+      selector.sessionId || selector.sessionFile || "",
+    ).trim();
+    if (!wantedRef) return selector;
+    const { SessionManager } = await sessionManagerModulePromise;
+    const resolved = await resolveBoundSessionReference(wantedRef, {
+      cwd: runtime.cwd,
+      agentDir: runtime.agentDir,
+      SessionManager,
+    }).catch(() => null);
+    if (!resolved) return selector;
+    return {
+      sessionFile: safeString(resolved.path).trim() || undefined,
+      sessionId:
+        safeString(selector.sessionId || resolved.id || "").trim() || undefined,
+    };
+  };
   const commandHasSessionSelector = (command: any) =>
     hasSessionSelector(getSessionSelector(command));
   const hasSelectedSession = (connection: ConnectionState) =>
@@ -315,7 +340,7 @@ export async function startDaemon(
       type === "switch_session" ||
       type === "attach_session"
     ) {
-      const selector = getSessionSelector(command);
+      const selector = await resolveCommandSessionSelector(command);
       if (!selector.sessionFile && !selector.sessionId) {
         writeLine(
           connection.socket,

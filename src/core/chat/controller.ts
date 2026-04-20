@@ -7,6 +7,7 @@ import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
 import { normalizeSessionRef } from "../session/ref.js";
+import { resolveBoundSessionReference } from "../session/factory.js";
 import {
   chatStatePath,
   isPrivateChat,
@@ -128,9 +129,11 @@ export class ChatController {
     });
 
     if (options.restoreSession === false) return;
-    const wantedSessionFile = this.getRecoverableSessionFile();
+    const wantedSessionFile = await this.getRecoverableSessionFile();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
+      this.storeSessionBinding({ sessionFile: wantedSessionFile });
+      this.saveState();
     }
   }
 
@@ -259,11 +262,19 @@ export class ChatController {
     delete this.state.pendingDelivery;
     this.saveState();
   }
-  private getRecoverableSessionFile() {
-    const wanted = safeString(this.state.piSessionFile || "").trim();
-    if (!wanted) return "";
-    if (fs.existsSync(wanted)) return wanted;
-    delete this.state.piSessionFile;
+  private async getRecoverableSessionFile() {
+    const resolved = await this.resolveSessionBinding({
+      sessionId: this.state.piSessionId,
+      sessionFile: this.state.piSessionFile,
+    });
+    const wanted = safeString(resolved.sessionFile || "").trim();
+    if (wanted && fs.existsSync(wanted)) {
+      this.storeSessionBinding(resolved);
+      this.saveState();
+      return wanted;
+    }
+    if (!this.state.piSessionId && !this.state.piSessionFile) return "";
+    this.clearStoredSessionBinding();
     this.saveState();
     return "";
   }
@@ -562,7 +573,9 @@ export class ChatController {
   }
   currentSessionId() {
     return safeString(
-      this.session?.sessionManager?.getSessionId?.() || "",
+      this.session?.sessionManager?.getSessionId?.() ||
+        this.state.piSessionId ||
+        "",
     ).trim();
   }
   private currentSessionFile() {
@@ -581,12 +594,68 @@ export class ChatController {
     }
     return undefined;
   }
-  private updateStoredSessionFile(...candidates: unknown[]) {
-    this.state.piSessionFile = this.pickStoredValue(
-      ...candidates,
-      this.state.piSessionFile,
-    );
-    return this.state.piSessionFile;
+  private clearStoredSessionBinding() {
+    delete this.state.piSessionId;
+    delete this.state.piSessionFile;
+  }
+  private storeSessionBinding(
+    input:
+      | {
+          sessionId?: unknown;
+          sessionFile?: unknown;
+        }
+      | null
+      | undefined = undefined,
+  ) {
+    const sessionId =
+      this.pickStoredValue(
+        input?.sessionId,
+        this.session?.sessionManager?.getSessionId?.(),
+        this.state.piSessionId,
+      ) || undefined;
+    const sessionFile =
+      this.pickStoredValue(
+        input?.sessionFile,
+        this.session?.sessionManager?.getSessionFile?.(),
+        this.state.piSessionFile,
+      ) || undefined;
+    if (sessionId) this.state.piSessionId = sessionId;
+    else delete this.state.piSessionId;
+    if (sessionFile) this.state.piSessionFile = sessionFile;
+    else delete this.state.piSessionFile;
+  }
+  private async resolveSessionBinding(
+    selector:
+      | {
+          sessionId?: string;
+          sessionFile?: string;
+        }
+      | null
+      | undefined,
+  ) {
+    const wantedSessionId = safeString(selector?.sessionId || "").trim();
+    const wantedSessionFile = safeString(selector?.sessionFile || "").trim();
+    if (wantedSessionFile && fs.existsSync(wantedSessionFile)) {
+      return {
+        sessionId: wantedSessionId || undefined,
+        sessionFile: wantedSessionFile,
+      };
+    }
+    const wantedRef = wantedSessionId || wantedSessionFile;
+    if (!wantedRef) {
+      return {
+        sessionId: wantedSessionId || undefined,
+        sessionFile: undefined,
+      };
+    }
+    const resolved = await resolveBoundSessionReference(wantedRef, {
+      agentDir: this.agentDir,
+    }).catch(() => null);
+    return {
+      sessionId:
+        safeString(resolved?.id || wantedSessionId).trim() || undefined,
+      sessionFile: safeString(resolved?.path || "").trim() || undefined,
+    };
   }
   private buildAssistantDelivery(input: {
     text?: string;
@@ -656,10 +725,10 @@ export class ChatController {
     if (!canonicalCompletion.finalText) {
       throw new Error("rpc_turn_final_output_missing");
     }
-    this.updateStoredSessionFile(
-      completion?.sessionFile,
-      this.session?.sessionManager?.getSessionFile?.(),
-    );
+    this.storeSessionBinding({
+      sessionId: completion?.sessionId,
+      sessionFile: completion?.sessionFile,
+    });
     await this.deliverAssistantReply({
       text: canonicalCompletion.finalText,
       replyToMessageId: input.replyToMessageId,
@@ -729,6 +798,48 @@ export class ChatController {
       processedAt: new Date().toISOString(),
     });
   }
+  async resumeSession(
+    selector:
+      | {
+          sessionId?: string;
+          sessionFile?: string;
+        }
+      | null
+      | undefined,
+  ) {
+    const resolved = await this.resolveSessionBinding(selector);
+    const wantedSessionId = safeString(
+      resolved.sessionId || selector?.sessionId || "",
+    ).trim();
+    const wantedSessionFile = safeString(resolved.sessionFile || "").trim();
+    if (!wantedSessionFile)
+      return {
+        changed: false,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      };
+    const liveSessionId = safeString(
+      this.session?.sessionManager?.getSessionId?.() || "",
+    ).trim();
+    const liveSessionFile = safeString(
+      this.session?.sessionManager?.getSessionFile?.() || "",
+    ).trim();
+    if (
+      (wantedSessionId && liveSessionId === wantedSessionId) ||
+      (liveSessionFile && liveSessionFile === wantedSessionFile)
+    ) {
+      this.storeSessionBinding({
+        sessionId: wantedSessionId,
+        sessionFile: wantedSessionFile,
+      });
+      return {
+        changed: false,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      };
+    }
+    return await this.resumeSessionFile(wantedSessionFile);
+  }
   async resumeSessionFile(sessionFile: string) {
     const wanted = safeString(sessionFile).trim();
     if (!wanted)
@@ -737,7 +848,7 @@ export class ChatController {
         sessionId: this.currentSessionId() || undefined,
       };
     if (!fs.existsSync(wanted)) {
-      delete this.state.piSessionFile;
+      this.clearStoredSessionBinding();
       this.saveState();
       return {
         changed: false,
@@ -750,23 +861,17 @@ export class ChatController {
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
     if (before !== wanted) await this.session.switchSession(wanted);
-    this.updateStoredSessionFile(
-      this.session.sessionManager.getSessionFile?.(),
-      wanted,
-    );
+    this.storeSessionBinding({ sessionFile: wanted });
     this.saveState();
     return {
       changed: before !== wanted,
       sessionId: this.currentSessionId() || undefined,
-      sessionFile:
-        safeString(
-          this.session.sessionManager.getSessionFile?.() || "",
-        ).trim() || undefined,
+      sessionFile: this.currentSessionFile(),
     };
   }
   private async ensureSessionReady() {
     if (!this.session) throw new Error("chat_session_not_connected");
-    const wanted = this.getRecoverableSessionFile();
+    const wanted = await this.getRecoverableSessionFile();
     const current = safeString(
       this.session.sessionManager.getSessionFile?.() || "",
     ).trim();
@@ -774,10 +879,10 @@ export class ChatController {
       await this.session.switchSession(wanted);
     }
     const result = await this.session.ensureSessionReady();
-    this.updateStoredSessionFile(
-      this.session.sessionManager.getSessionFile?.(),
-      result?.sessionFile,
-    );
+    this.storeSessionBinding({
+      sessionId: result?.sessionId,
+      sessionFile: result?.sessionFile,
+    });
     this.saveState();
     return result;
   }
@@ -798,7 +903,7 @@ export class ChatController {
     }
     try {
       const data: any = await this.session.runCommand(commandLine);
-      this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
+      this.storeSessionBinding();
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
       await this.deliverAssistantReply({
@@ -915,7 +1020,7 @@ export class ChatController {
       startedAt: Date.now(),
     });
     this.state.chatKey = this.chatKey;
-    this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
+    this.storeSessionBinding();
     this.state.processing = {
       text: input.text,
       attachments,
@@ -988,7 +1093,7 @@ export class ChatController {
         return;
       }
       if (!this.state.processing) {
-        const wantedSessionFile = this.getRecoverableSessionFile();
+        const wantedSessionFile = await this.getRecoverableSessionFile();
         if (!wantedSessionFile) return;
         await this.connect();
         if (!this.session) return;
