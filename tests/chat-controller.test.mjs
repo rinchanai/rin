@@ -179,6 +179,34 @@ test("chat controller delivers a visible command error instead of failing silent
   assert.deepEqual(deliveries, ["Chat bridge error: boom"]);
 });
 
+test("chat controller keeps transient daemon command errors out of chat replies", async () => {
+  const controller = await createController();
+  const deliveries = [];
+  controller.commitPendingDelivery = async function () {
+    deliveries.push(this.state.pendingDelivery?.text || "");
+    delete this.state.pendingDelivery;
+    this.saveState();
+  };
+
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => "/tmp/fresh-chat.jsonl",
+      getSessionId: () => "session-1",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => {
+      throw new Error("connect ENOENT /run/user/1001/rin-daemon/daemon.sock");
+    },
+    runCommand: async () => ({ handled: true, text: "unreachable" }),
+  };
+
+  await assert.rejects(
+    controller.runCommand("/reload"),
+    /connect ENOENT \/run\/user\/1001\/rin-daemon\/daemon.sock/,
+  );
+  assert.deepEqual(deliveries, []);
+});
+
 test("chat controller polls typing and rotating reactions while a chat turn is still pending", async () => {
   const controller = await createController("telegram/1:2");
   const actions = [];
