@@ -1,4 +1,5 @@
 import { countToolCalls } from "../message-content.js";
+import { readUsageMetrics } from "../usage-metrics.js";
 import {
   calculateContextTokens,
   estimateContextTokens,
@@ -60,12 +61,12 @@ export function computeSessionStats(
     if (message.role === "user") userMessages += 1;
     if (message.role === "assistant") {
       assistantMessages += 1;
-      const usage = (message as any).usage || {};
-      input += Number(usage.input || 0);
-      output += Number(usage.output || 0);
-      cacheRead += Number(usage.cacheRead || 0);
-      cacheWrite += Number(usage.cacheWrite || 0);
-      cost += Number(usage.cost?.total || 0);
+      const usageMetrics = readUsageMetrics((message as any).usage);
+      input += usageMetrics.input;
+      output += usageMetrics.output;
+      cacheRead += usageMetrics.cacheRead;
+      cacheWrite += usageMetrics.cacheWrite;
+      cost += usageMetrics.costTotal;
       toolCalls += countToolCalls((message as any).content);
     }
     if (message.role === "toolResult") toolResults += 1;

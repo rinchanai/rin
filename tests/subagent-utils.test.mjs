@@ -230,6 +230,34 @@ test("subagent service aggregates task state from current-run assistant messages
   assert.ok(Math.abs(state.usage.cost - 0.12) < 1e-9);
 });
 
+
+test("subagent service derives context tokens when providers omit explicit totals", () => {
+  const state = subagentService.collectTaskResultState([
+    {
+      role: "assistant",
+      content: [{ type: "text", text: "answer" }],
+      provider: "openai",
+      model: "gpt-5-mini",
+      stopReason: "end_turn",
+      usage: {
+        input: 10,
+        output: 20,
+        cacheRead: 30,
+        cacheWrite: 40,
+        cost: { total: 0.1 },
+      },
+    },
+  ]);
+
+  assert.equal(state.usage.input, 10);
+  assert.equal(state.usage.output, 20);
+  assert.equal(state.usage.cacheRead, 30);
+  assert.equal(state.usage.cacheWrite, 40);
+  assert.equal(state.usage.contextTokens, 100);
+  assert.equal(state.usage.turns, 1);
+  assert.ok(Math.abs(state.usage.cost - 0.1) < 1e-9);
+});
+
 test("subagent service resolves session refs with stable precedence", () => {
   const sessions = [
     { id: "target", path: "/tmp/sessions/target.jsonl" },

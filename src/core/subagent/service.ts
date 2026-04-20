@@ -19,6 +19,7 @@ import {
   getRuntimeSessionDir,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
+import { readUsageMetrics } from "../usage-metrics.js";
 import {
   formatSubagentSessionRefAmbiguousError,
   formatSubagentSessionRefNotFoundError,
@@ -424,13 +425,14 @@ export function collectTaskResultState(
     }
     const currentUsage = message.usage;
     if (!currentUsage) continue;
+    const usageMetrics = readUsageMetrics(currentUsage);
     usage.turns += 1;
-    usage.input += currentUsage.input || 0;
-    usage.output += currentUsage.output || 0;
-    usage.cacheRead += currentUsage.cacheRead || 0;
-    usage.cacheWrite += currentUsage.cacheWrite || 0;
-    usage.cost += currentUsage.cost?.total || 0;
-    usage.contextTokens = currentUsage.totalTokens || usage.contextTokens;
+    usage.input += usageMetrics.input;
+    usage.output += usageMetrics.output;
+    usage.cacheRead += usageMetrics.cacheRead;
+    usage.cacheWrite += usageMetrics.cacheWrite;
+    usage.cost += usageMetrics.costTotal;
+    usage.contextTokens = usageMetrics.totalTokens || usage.contextTokens;
   }
 
   return {

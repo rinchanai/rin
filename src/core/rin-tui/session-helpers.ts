@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 
 import { extractMessageText } from "../message-content.js";
+import { calculateUsageTotalTokens } from "../usage-metrics.js";
 
 export { computeAvailableThinkingLevels } from "../model-thinking-levels.js";
 
@@ -20,13 +21,7 @@ export function getLastAssistantText(messages: AgentMessage[]) {
 
 export function calculateContextTokens(usage: any) {
   if (!usage || typeof usage !== "object") return 0;
-  return (
-    Number(usage.totalTokens || 0) ||
-    Number(usage.input || 0) +
-      Number(usage.output || 0) +
-      Number(usage.cacheRead || 0) +
-      Number(usage.cacheWrite || 0)
-  );
+  return calculateUsageTotalTokens(usage);
 }
 
 function estimateTextTokens(text: string) {

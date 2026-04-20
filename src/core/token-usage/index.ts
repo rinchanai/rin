@@ -7,6 +7,7 @@ import {
 import { extractToolCallNames } from "../message-content.js";
 import { readSessionMetadata } from "../session/metadata.js";
 import { safeString } from "../text-utils.js";
+import { readUsageMetrics } from "../usage-metrics.js";
 
 type SessionState = {
   seq: number;
@@ -298,13 +299,7 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
     const state = getSessionState(ctx);
     const toolNames = extractToolCallNames(message?.content);
     const capability = inferCapability("message_end", message, message?.toolName);
-    const usage = message?.usage || {};
-    const totalTokens =
-      Number(usage?.totalTokens || 0) ||
-      Number(usage?.input || 0) +
-        Number(usage?.output || 0) +
-        Number(usage?.cacheRead || 0) +
-        Number(usage?.cacheWrite || 0);
+    const usageMetrics = readUsageMetrics(message?.usage);
     recordEvent(ctx, {
       id:
         safeString(message?.id).trim()
@@ -323,17 +318,17 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
       toolNames,
       capabilityKind: capability.capabilityKind,
       capabilityKey: capability.capabilityKey,
-      inputTokens: Number(usage?.input || 0) || 0,
-      outputTokens: Number(usage?.output || 0) || 0,
-      cacheReadTokens: Number(usage?.cacheRead || 0) || 0,
-      cacheWriteTokens: Number(usage?.cacheWrite || 0) || 0,
-      totalTokens,
-      costInput: Number(usage?.cost?.input || 0) || 0,
-      costOutput: Number(usage?.cost?.output || 0) || 0,
-      costCacheRead: Number(usage?.cost?.cacheRead || 0) || 0,
-      costCacheWrite: Number(usage?.cost?.cacheWrite || 0) || 0,
-      costTotal: Number(usage?.cost?.total || 0) || 0,
-      contextTokens: Number(usage?.totalTokens || 0) || 0,
+      inputTokens: usageMetrics.input,
+      outputTokens: usageMetrics.output,
+      cacheReadTokens: usageMetrics.cacheRead,
+      cacheWriteTokens: usageMetrics.cacheWrite,
+      totalTokens: usageMetrics.totalTokens,
+      costInput: usageMetrics.costInput,
+      costOutput: usageMetrics.costOutput,
+      costCacheRead: usageMetrics.costCacheRead,
+      costCacheWrite: usageMetrics.costCacheWrite,
+      costTotal: usageMetrics.costTotal,
+      contextTokens: usageMetrics.totalTokens,
       isError:
         safeString(message?.stopReason).trim() === "error" ||
         safeString(message?.errorMessage).trim().length > 0,
