@@ -51,7 +51,7 @@ test("subagent format utils summarize results", () => {
     cwd: "/tmp",
     status: "done",
     exitCode: 0,
-    output: "hello world",
+    output: "  hello world\r\n",
     usage: {
       input: 1,
       output: 2,
@@ -65,8 +65,8 @@ test("subagent format utils summarize results", () => {
     sessionMode: "persist",
     sessionPersisted: true,
     sessionId: "abc123",
-    sessionName: "auth-review",
-    sessionFile: "/tmp/auth-review.jsonl",
+    sessionName: " auth-review ",
+    sessionFile: " /tmp/auth-review.jsonl ",
   };
 
   const agentText = formatUtils.buildSubagentAgentText([persistedResult]);
@@ -91,6 +91,22 @@ test("subagent format utils summarize results", () => {
         turns: 0,
       })
       .includes("↑1.2k"),
+  );
+  assert.equal(formatUtils.formatTokens(Number.NaN), "0");
+  assert.equal(
+    formatUtils.formatUsage(
+      {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        cost: 0,
+        contextTokens: 0,
+        turns: 0,
+      },
+      "  openai/gpt-5  ",
+    ),
+    "openai/gpt-5",
   );
 });
 
@@ -122,8 +138,8 @@ test("subagent format utils share persisted fallback labels and final output par
       status: "error",
       exitCode: 1,
       errorMessage: "line one\nline two",
-      output: "",
-      model: "openai/gpt-5",
+      output: "   ",
+      model: " openai/gpt-5 ",
       usage: {
         input: 0,
         output: 0,
@@ -149,6 +165,14 @@ test("subagent format utils share persisted fallback labels and final output par
   assert.equal(
     formatUtils.getTaskPreview({ output: "word ".repeat(60), errorMessage: "" }, 12),
     "word word wo…",
+  );
+  assert.equal(
+    formatUtils.getTaskPrimaryText({ output: "  \n  ", errorMessage: "\r\nfailed\r\n" }),
+    "failed",
+  );
+  assert.equal(
+    formatUtils.getTaskPrimaryText({ output: " ", errorMessage: " " }),
+    "(no output)",
   );
   assert.equal(
     formatUtils.getFinalOutput([

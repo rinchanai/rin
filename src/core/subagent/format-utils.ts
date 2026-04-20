@@ -10,8 +10,24 @@ const FALLBACK_SESSION_LABEL = "persisted";
 const DEFAULT_PREVIEW_LENGTH = 180;
 const USER_PREVIEW_LENGTH = 220;
 
+function trimText(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function normalizeMultilineText(value: unknown): string {
+  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+}
+
+function normalizePreviewText(value: unknown): string {
+  return normalizeMultilineText(value).replace(/\s+/g, " ");
+}
+
+function isPositiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
 export function formatTokens(value: number): string {
-  if (!value) return "0";
+  if (!isPositiveNumber(value)) return "0";
   if (value < 1000) return String(value);
   if (value < 10_000) return `${(value / 1000).toFixed(1)}k`;
   if (value < 1_000_000) return `${Math.round(value / 1000)}k`;
@@ -20,16 +36,22 @@ export function formatTokens(value: number): string {
 
 export function formatUsage(usage: UsageStats, model?: string): string {
   const parts: string[] = [];
-  if (usage.turns)
+  if (isPositiveNumber(usage.turns)) {
     parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
-  if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
-  if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-  if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
-  if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
-  if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
-  if (usage.contextTokens)
+  }
+  if (isPositiveNumber(usage.input)) parts.push(`↑${formatTokens(usage.input)}`);
+  if (isPositiveNumber(usage.output))
+    parts.push(`↓${formatTokens(usage.output)}`);
+  if (isPositiveNumber(usage.cacheRead))
+    parts.push(`R${formatTokens(usage.cacheRead)}`);
+  if (isPositiveNumber(usage.cacheWrite))
+    parts.push(`W${formatTokens(usage.cacheWrite)}`);
+  if (isPositiveNumber(usage.cost)) parts.push(`$${usage.cost.toFixed(4)}`);
+  if (isPositiveNumber(usage.contextTokens)) {
     parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-  if (model) parts.push(model);
+  }
+  const modelLabel = trimText(model);
+  if (modelLabel) parts.push(modelLabel);
   return parts.join(" ");
 }
 
@@ -37,11 +59,14 @@ export function getFinalOutput(messages: Message[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role !== "assistant") continue;
-    const text = msg.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n")
-      .trim();
+    const text = normalizeMultilineText(
+      Array.isArray(msg.content)
+        ? msg.content
+            .filter((part) => part.type === "text")
+            .map((part) => part.text)
+            .join("\n")
+        : "",
+    );
     if (text) return text;
   }
   return "";
@@ -50,7 +75,11 @@ export function getFinalOutput(messages: Message[]): string {
 export function getTaskPrimaryText(
   result: Pick<TaskResult, "output" | "errorMessage">,
 ): string {
-  return result.output || result.errorMessage || NO_OUTPUT_TEXT;
+  return (
+    normalizeMultilineText(result.output) ||
+    normalizeMultilineText(result.errorMessage) ||
+    NO_OUTPUT_TEXT
+  );
 }
 
 export function getTaskSessionLabel(
@@ -61,9 +90,9 @@ export function getTaskSessionLabel(
 ): string | undefined {
   if (!result.sessionPersisted) return undefined;
   return (
-    result.sessionName ||
-    result.sessionId ||
-    result.sessionFile ||
+    trimText(result.sessionName) ||
+    trimText(result.sessionId) ||
+    trimText(result.sessionFile) ||
     FALLBACK_SESSION_LABEL
   );
 }
@@ -71,16 +100,14 @@ export function getTaskSessionLabel(
 export function getTaskModelLabel(
   result: Pick<TaskResult, "model" | "requestedModel">,
 ): string {
-  return result.model || result.requestedModel || DEFAULT_MODEL_LABEL;
+  return trimText(result.model) || trimText(result.requestedModel) || DEFAULT_MODEL_LABEL;
 }
 
 export function getTaskPreview(
   result: Pick<TaskResult, "output" | "errorMessage">,
   maxLength = DEFAULT_PREVIEW_LENGTH,
 ): string {
-  const preview = getTaskPrimaryText(result)
-    .replace(/\s+/g, " ")
-    .trim();
+  const preview = normalizePreviewText(getTaskPrimaryText(result));
   return `${preview.slice(0, maxLength)}${preview.length > maxLength ? "…" : ""}`;
 }
 
@@ -91,10 +118,11 @@ function getTaskSessionDetails(
   >,
 ): string[] {
   const sessionLabel = getTaskSessionLabel(result);
+  const sessionFile = trimText(result.sessionFile);
   if (!sessionLabel) return [];
   return [
     `Session: ${sessionLabel}`,
-    result.sessionFile ? `Path: ${result.sessionFile}` : "",
+    sessionFile ? `Path: ${sessionFile}` : "",
   ].filter(Boolean);
 }
 
@@ -116,7 +144,8 @@ function buildTaskHeading(
   },
 ): string {
   const parts = [`${result.index}.`];
-  if (options?.status) parts.push(`[${options.status}]`);
+  const status = trimText(options?.status);
+  if (status) parts.push(`[${status}]`);
   parts.push(getTaskModelLabel(result));
   const sessionLabel = getTaskSessionLabel(result);
   if (sessionLabel && options?.sessionFormat === "equals") {
