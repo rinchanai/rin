@@ -988,6 +988,55 @@ test("chat controller rejects the owned turn on worker exit", async () => {
   assert.equal(controller.liveTurn, null);
 });
 
+test("chat controller keeps working indicators alive while unfinished processing is being recovered", async () => {
+  const controller = await createController("telegram/1:2");
+  const typingCalls = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        internal: {
+          async sendChatAction(payload) {
+            typingCalls.push(payload);
+          },
+        },
+      },
+    ],
+  };
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
+  };
+
+  assert.equal(await controller.pollTyping(), true);
+  assert.deepEqual(typingCalls, [{ chat_id: "2", action: "typing" }]);
+});
+
+test("chat controller does not clear its working reaction while unfinished processing still exists", async () => {
+  const controller = await createController("telegram/1:2");
+  const calls = [];
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
+  };
+  controller.clearWorkingReaction = async () => {
+    calls.push("clearWorkingReaction");
+    return true;
+  };
+  controller.recoverIfNeeded = async () => {
+    calls.push("recoverIfNeeded");
+  };
+
+  await controller.housekeep();
+
+  assert.deepEqual(calls, ["recoverIfNeeded"]);
+});
+
 test("chat controller keeps a quiet long-running turn alive while the session still reports streaming", async () => {
   const controller = await createController("telegram/1:2");
   let refreshCalls = 0;

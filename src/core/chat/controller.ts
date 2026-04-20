@@ -270,6 +270,9 @@ export class ChatController {
   hasActiveTurn() {
     return Boolean(this.liveTurn) && !this.isTurnStale();
   }
+  private hasOngoingProcessing() {
+    return this.hasActiveTurn() || Boolean(this.state.processing);
+  }
   private currentIncomingMessageId() {
     return safeString(this.state.processing?.incomingMessageId || "").trim();
   }
@@ -401,7 +404,7 @@ export class ChatController {
   }
   async pollTyping() {
     if (!this.deliveryEnabled) return false;
-    if (!this.hasActiveTurn()) return false;
+    if (!this.hasOngoingProcessing()) return false;
     const policy = this.getWorkingIndicatorPolicy();
     let sent = false;
     if (policy.typing) {
@@ -883,7 +886,7 @@ export class ChatController {
         this.failLiveTurn(new Error("chat_turn_stale"));
       }
     }
-    if (!this.hasActiveTurn()) {
+    if (!this.hasOngoingProcessing()) {
       await this.clearWorkingReaction().catch(() => {});
     }
     if (this.hasActiveTurn()) return;
