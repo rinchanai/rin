@@ -38,11 +38,12 @@ test("session ref helpers normalize shared command/state shapes and resolve cons
 
   assert.deepEqual(
     sessionRef.normalizeSessionRef({
-      sessionFile: " /tmp/state.jsonl ",
+      sessionFile: "   ",
+      sessionPath: " /tmp/fallback.jsonl ",
       sessionId: " state-session ",
     }),
     {
-      sessionFile: "/tmp/state.jsonl",
+      sessionFile: "/tmp/fallback.jsonl",
       sessionId: "state-session",
     },
   );
@@ -51,6 +52,7 @@ test("session ref helpers normalize shared command/state shapes and resolve cons
     sessionRef.hasSessionRef({ sessionId: undefined, sessionFile: undefined }),
     false,
   );
+  assert.equal(sessionRef.hasSessionRef({ sessionId: "   " }), false);
   assert.equal(
     sessionRef.hasSessionRef({ sessionId: "demo-session" }),
     true,
@@ -63,13 +65,27 @@ test("session ref helpers normalize shared command/state shapes and resolve cons
     ),
     { sessionFile: "/tmp/fallback.jsonl", sessionId: "fallback" },
   );
+  assert.deepEqual(
+    sessionRef.resolveSessionRef(
+      { sessionId: " primary-id " },
+      { sessionFile: " /tmp/fallback.jsonl ", sessionId: "fallback" },
+    ),
+    { sessionFile: "/tmp/fallback.jsonl", sessionId: "primary-id" },
+  );
 
   assert.equal(
     sessionRef.sessionRefMatches(
       { sessionFile: "/tmp/demo.jsonl", sessionId: "demo-session" },
-      { sessionFile: "/tmp/demo.jsonl" },
+      { sessionFile: " /tmp/demo.jsonl " },
     ),
     true,
+  );
+  assert.equal(
+    sessionRef.sessionRefMatches(
+      { sessionFile: "/tmp/demo.jsonl", sessionId: "demo-session" },
+      { sessionFile: "/tmp/other.jsonl", sessionId: "demo-session" },
+    ),
+    false,
   );
   assert.equal(
     sessionRef.sessionRefMatches(

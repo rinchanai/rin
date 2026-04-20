@@ -18,17 +18,22 @@ export function normalizeSessionValue(value: unknown) {
   return text || undefined;
 }
 
+export function resolveSessionValue(primary: unknown, fallback?: unknown) {
+  return normalizeSessionValue(primary) ?? normalizeSessionValue(fallback);
+}
+
 export function normalizeSessionRef(
   value: SessionRefInput | null | undefined,
 ): SessionRef {
   return {
     sessionId: normalizeSessionValue(value?.sessionId),
-    sessionFile: normalizeSessionValue(value?.sessionFile ?? value?.sessionPath),
+    sessionFile: resolveSessionValue(value?.sessionFile, value?.sessionPath),
   };
 }
 
-export function hasSessionRef(value: SessionRef | null | undefined) {
-  return Boolean(value?.sessionFile || value?.sessionId);
+export function hasSessionRef(value: SessionRefInput | null | undefined) {
+  const ref = normalizeSessionRef(value);
+  return Boolean(ref.sessionFile || ref.sessionId);
 }
 
 export function readSessionFile(
@@ -47,16 +52,33 @@ export function requireSessionFile(
   throw new Error(error);
 }
 
-export function resolveSessionRef(primary: SessionRef, fallback: SessionRef) {
-  return hasSessionRef(primary) ? primary : fallback;
+export function resolveSessionRef(
+  primary: SessionRefInput | null | undefined,
+  fallback: SessionRefInput | null | undefined,
+): SessionRef {
+  const primaryRef = normalizeSessionRef(primary);
+  const fallbackRef = normalizeSessionRef(fallback);
+  return {
+    sessionId: primaryRef.sessionId ?? fallbackRef.sessionId,
+    sessionFile: primaryRef.sessionFile ?? fallbackRef.sessionFile,
+  };
 }
 
-export function sessionRefMatches(current: SessionRef, selector: SessionRef) {
-  if (selector.sessionFile && current.sessionFile === selector.sessionFile) {
-    return true;
+export function sessionRefMatches(
+  current: SessionRefInput | null | undefined,
+  selector: SessionRefInput | null | undefined,
+) {
+  const currentRef = normalizeSessionRef(current);
+  const selectorRef = normalizeSessionRef(selector);
+  if (!hasSessionRef(selectorRef)) return false;
+  if (
+    selectorRef.sessionFile &&
+    currentRef.sessionFile !== selectorRef.sessionFile
+  ) {
+    return false;
   }
-  if (selector.sessionId && current.sessionId === selector.sessionId) {
-    return true;
+  if (selectorRef.sessionId && currentRef.sessionId !== selectorRef.sessionId) {
+    return false;
   }
-  return false;
+  return true;
 }

@@ -82,3 +82,30 @@ test("session metadata keeps non-persisted sessions detached from blank files", 
   assert.equal(normalized.sessionFile, "");
   assert.equal(normalized.sessionPersisted, false);
 });
+
+test("session metadata falls back when explicit values normalize to empty", () => {
+  const normalized = metadata.readSessionMetadata({
+    sessionManager: {
+      getSessionId: () => " manager-session ",
+      getSessionFile: () => " /tmp/manager.jsonl ",
+      getLeafId: () => " manager-leaf ",
+      getSessionName: () => " manager-name ",
+      getCwd: () => " /tmp/manager-cwd ",
+      isPersisted: () => true,
+    },
+    sessionId: "   ",
+    sessionFile: "   ",
+    leafId: "   ",
+    sessionName: "   ",
+    cwd: "   ",
+  });
+
+  assert.deepEqual(normalized, {
+    sessionId: "manager-session",
+    sessionFile: "/tmp/manager.jsonl",
+    leafId: "manager-leaf",
+    sessionName: "manager-name",
+    cwd: "/tmp/manager-cwd",
+    sessionPersisted: true,
+  });
+});

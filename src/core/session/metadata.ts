@@ -1,6 +1,16 @@
-import { normalizeSessionRef, normalizeSessionValue } from "./ref.js";
+import {
+  normalizeSessionRef,
+  normalizeSessionValue,
+  resolveSessionRef,
+  resolveSessionValue,
+} from "./ref.js";
 
-export { normalizeSessionRef, normalizeSessionValue } from "./ref.js";
+export {
+  normalizeSessionRef,
+  normalizeSessionValue,
+  resolveSessionRef,
+  resolveSessionValue,
+} from "./ref.js";
 
 export type SessionMetadata = {
   sessionId: string;
@@ -33,29 +43,39 @@ type SessionSourceLike = {
 export function readSessionMetadata(
   source: SessionSourceLike | SessionManagerLike | null | undefined,
 ): SessionMetadata {
-  const sessionSource = (source as SessionSourceLike | null | undefined) || undefined;
+  const sessionSource =
+    (source as SessionSourceLike | null | undefined) || undefined;
   const sessionManager = (sessionSource?.sessionManager || source || undefined) as
     | SessionManagerLike
     | undefined;
-  const { sessionId, sessionFile } = normalizeSessionRef({
-    sessionId: sessionSource?.sessionId ?? sessionManager?.getSessionId?.(),
-    sessionFile: sessionSource?.sessionFile ?? sessionManager?.getSessionFile?.(),
-  });
+  const { sessionId, sessionFile } = resolveSessionRef(
+    {
+      sessionId: sessionSource?.sessionId,
+      sessionFile: sessionSource?.sessionFile,
+    },
+    {
+      sessionId: sessionManager?.getSessionId?.(),
+      sessionFile: sessionManager?.getSessionFile?.(),
+    },
+  );
 
   return {
     sessionId: sessionId || "",
     sessionFile: sessionFile || "",
     leafId:
-      normalizeSessionValue(
-        sessionSource?.leafId ?? sessionManager?.getLeafId?.(),
+      resolveSessionValue(
+        sessionSource?.leafId,
+        sessionManager?.getLeafId?.(),
       ) || "",
     sessionName:
-      normalizeSessionValue(
-        sessionSource?.sessionName ?? sessionManager?.getSessionName?.(),
+      resolveSessionValue(
+        sessionSource?.sessionName,
+        sessionManager?.getSessionName?.(),
       ) || "",
     cwd:
-      normalizeSessionValue(
-        sessionSource?.cwd ?? sessionManager?.getCwd?.() ?? process.cwd(),
+      resolveSessionValue(
+        sessionSource?.cwd,
+        sessionManager?.getCwd?.() ?? process.cwd(),
       ) || "",
     sessionPersisted: Boolean(
       (sessionSource?.sessionPersisted ?? sessionManager?.isPersisted?.()) &&
