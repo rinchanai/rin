@@ -9,6 +9,9 @@ const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
 );
+const chatDate = await import(
+  new URL("../dist/core/chat/date.js", import.meta.url).href,
+);
 
 async function runInTimezone(source, timezone = "Asia/Shanghai") {
   const { stdout } = await execFileAsync(
@@ -84,4 +87,31 @@ test("chat local-day storage stays aligned with explicit chat-log dates", async 
   assert.match(result.filePath, /2026-04-05\.txt$/);
   assert.deepEqual(result.sameDay, ["m1"]);
   assert.deepEqual(result.previousDay, []);
+});
+
+test("chat local date normalization accepts canonical dates and rejects invalid noise", () => {
+  assert.equal(chatDate.normalizeLocalDateOnly("2026-04-20"), "2026-04-20");
+  assert.equal(
+    chatDate.normalizeLocalDateOnly("2026-04-20T00:30:00+08:00"),
+    "2026-04-20",
+  );
+  assert.equal(
+    chatDate.normalizeLocalDateOnly("2024-02-29T23:59:59Z"),
+    "2024-02-29",
+  );
+  assert.equal(
+    chatDate.normalizeLocalDateOnly(
+      "2026-04-20 trailing-noise",
+      new Date("2026-04-21T00:00:00Z"),
+    ),
+    "2026-04-21",
+  );
+  assert.equal(
+    chatDate.normalizeLocalDateOnly(
+      "2026-02-29",
+      new Date("2026-03-01T00:00:00Z"),
+    ),
+    "2026-03-01",
+  );
+  assert.equal(chatDate.normalizeLocalDateOnly("2026-13-01"), "");
 });
