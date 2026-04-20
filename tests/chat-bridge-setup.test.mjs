@@ -26,8 +26,11 @@ function createPromptHarness(answers) {
     async select() {
       return queues.select.shift();
     },
-    async text() {
-      return queues.text.shift();
+    async text(options) {
+      const value = queues.text.shift();
+      const validationError = options?.validate?.(String(value ?? ""));
+      if (validationError) throw new Error(String(validationError));
+      return value;
     },
     async confirm() {
       return queues.confirm.shift();
@@ -118,6 +121,19 @@ test("chat bridge setup infers OneBot HTTP mode and omits blank optional fields"
   });
 });
 
+test("chat bridge setup rejects unsupported OneBot URL protocols", async () => {
+  await assert.rejects(
+    setup.promptChatBridgeSetup(
+      createPromptHarness({
+        confirm: [true],
+        select: ["onebot"],
+        text: ["ftp://example.com/onebot", "", ""],
+      }),
+    ),
+    /Use an http\(s\):\/\/ or ws\(s\):\/\/ URL\./,
+  );
+});
+
 test("chat bridge setup configures Feishu / Lark with websocket defaults", async () => {
   const result = await setup.promptChatBridgeSetup(
     createPromptHarness({
@@ -159,6 +175,19 @@ test("chat bridge setup configures Minecraft / QueQiao with websocket defaults",
       token: "demo-token",
     },
   });
+});
+
+test("chat bridge setup rejects non-websocket Minecraft URLs", async () => {
+  await assert.rejects(
+    setup.promptChatBridgeSetup(
+      createPromptHarness({
+        confirm: [true],
+        select: ["minecraft"],
+        text: ["https://example.com/bridge", "minecraft", "Survival", "demo-token"],
+      }),
+    ),
+    /Use a ws:\/\/ or wss:\/\/ URL\./,
+  );
 });
 
 test("chat bridge setup can skip the installer yes-no gate", async () => {

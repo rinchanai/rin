@@ -112,8 +112,31 @@ function compactObject<T extends Record<string, any>>(value: T) {
   return next as T;
 }
 
-function getEndpointProtocol(endpoint: string | undefined) {
-  return /^https?:\/\//i.test(String(endpoint || "")) ? "http" : "ws";
+function normalizeUrlProtocol(value: unknown) {
+  const protocol = safeString(value).trim().toLowerCase();
+  if (!protocol) return undefined;
+  if (protocol === "http:" || protocol === "https:") return "http";
+  if (protocol === "ws:" || protocol === "wss:") return "ws";
+  return undefined;
+}
+
+export function getEndpointProtocol(endpoint: string | undefined) {
+  try {
+    return normalizeUrlProtocol(new URL(String(endpoint || "")).protocol);
+  } catch {
+    return undefined;
+  }
+}
+
+function validateUrlProtocol(
+  value: string,
+  allowedProtocols: readonly ("http" | "ws")[],
+  errorMessage: string,
+) {
+  const protocol = getEndpointProtocol(value);
+  if (!protocol) return errorMessage;
+  if (!allowedProtocols.includes(protocol)) return errorMessage;
+  return undefined;
 }
 
 function buildBuiltInAdapterConfig(
@@ -219,6 +242,12 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
             ),
             placeholder: "ws://127.0.0.1:3001",
             required: true,
+            validate: (value) =>
+              validateUrlProtocol(
+                value,
+                ["http", "ws"],
+                "Use an http(s):// or ws(s):// URL.",
+              ),
           }),
           textField("selfId", {
             message: withGuide(
@@ -238,13 +267,13 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
           }),
         ],
         detail: ({ endpoint }) => {
-          const protocol = getEndpointProtocol(endpoint);
+          const protocol = getEndpointProtocol(endpoint) || ONEBOT_DEFAULTS.protocol;
           return `Chat bridge mode: ${protocol} · endpoint: ${endpoint}`;
         },
         config: ({ endpoint, selfId, token }) =>
           buildBuiltInAdapterConfig("onebot", ONEBOT_DEFAULTS, {
             endpoint,
-            protocol: getEndpointProtocol(endpoint),
+            protocol: getEndpointProtocol(endpoint) || ONEBOT_DEFAULTS.protocol,
             selfId,
             token,
           }),
@@ -463,6 +492,12 @@ const CHAT_BRIDGE_ADAPTER_SPECS: readonly ChatBridgeAdapterSpec[] = [
             ),
             placeholder: "ws://127.0.0.1:8080",
             required: true,
+            validate: (value) =>
+              validateUrlProtocol(
+                value,
+                ["ws"],
+                "Use a ws:// or wss:// URL.",
+              ),
           }),
           textField("selfId", {
             message:
