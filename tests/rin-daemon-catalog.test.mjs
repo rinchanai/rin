@@ -29,34 +29,66 @@ async function createTestAgentDir() {
   return agentDir;
 }
 
-test("daemon catalog lists builtin and extension commands without session worker", async () => {
+async function withTestAgentDir(fn) {
   const agentDir = await createTestAgentDir();
-  const commands = await listCatalogCommands({
-    cwd: rootDir,
-    agentDir,
+  try {
+    await fn(agentDir);
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+}
+
+test("daemon catalog lists builtin and extension commands without session worker", async () => {
+  await withTestAgentDir(async (agentDir) => {
+    const commands = await listCatalogCommands({
+      cwd: rootDir,
+      agentDir,
+      additionalExtensionPaths: ["", "   "],
+    });
+    const names = new Set(commands.map((item) => item.name));
+    assert.equal(names.has("settings"), true);
+    assert.equal(names.has("model"), true);
+    assert.equal(names.has("init"), true);
   });
-  const names = new Set(commands.map((item) => item.name));
-  assert.equal(names.has("settings"), true);
-  assert.equal(names.has("model"), true);
-  assert.equal(names.has("init"), true);
 });
 
 test("daemon catalog lists available models directly", async () => {
-  const agentDir = await createTestAgentDir();
-  const models = await listCatalogModels({
-    cwd: rootDir,
-    agentDir,
+  await withTestAgentDir(async (agentDir) => {
+    const models = await listCatalogModels({
+      cwd: rootDir,
+      agentDir,
+    });
+    assert.equal(Array.isArray(models), true);
+    assert.equal(models.length > 0, true);
   });
-  assert.equal(Array.isArray(models), true);
-  assert.equal(models.length > 0, true);
 });
 
 test("daemon catalog reads oauth state directly", async () => {
-  const agentDir = await createTestAgentDir();
-  const state = await getCatalogOAuthState({
-    cwd: rootDir,
-    agentDir,
+  await withTestAgentDir(async (agentDir) => {
+    const state = await getCatalogOAuthState({
+      cwd: rootDir,
+      agentDir,
+    });
+    assert.equal(Array.isArray(state.providers), true);
+    assert.equal(typeof state.credentials, "object");
   });
-  assert.equal(Array.isArray(state.providers), true);
-  assert.equal(typeof state.credentials, "object");
+});
+
+test("daemon catalog restores process cwd after read-only queries", async () => {
+  await withTestAgentDir(async (agentDir) => {
+    const queryCwd = await fs.mkdtemp(path.join(os.tmpdir(), "rin-catalog-cwd-"));
+    const previousCwd = process.cwd();
+    try {
+      await listCatalogCommands({ cwd: queryCwd, agentDir });
+      assert.equal(process.cwd(), previousCwd);
+
+      await listCatalogModels({ cwd: queryCwd, agentDir });
+      assert.equal(process.cwd(), previousCwd);
+
+      await getCatalogOAuthState({ cwd: queryCwd, agentDir });
+      assert.equal(process.cwd(), previousCwd);
+    } finally {
+      await fs.rm(queryCwd, { recursive: true, force: true });
+    }
+  });
 });

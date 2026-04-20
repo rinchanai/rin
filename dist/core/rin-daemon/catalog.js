@@ -3,6 +3,40 @@ import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-l
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { BuiltinModuleHost } from "../builtins/host.js";
 import { collectRuntimeSlashCommands, getOAuthStateFromStorage, } from "./catalog-helpers.js";
+function normalizeAdditionalExtensionPaths(value) {
+    if (!Array.isArray(value))
+        return [];
+    return [...new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean))];
+}
+async function closeIfSupported(target) {
+    for (const method of [
+        "dispose",
+        "disconnect",
+        "close",
+        "stop",
+        "shutdown",
+        "destroy",
+    ]) {
+        if (typeof target?.[method] !== "function")
+            continue;
+        await target[method]();
+        return;
+    }
+}
+async function cleanupCatalogContext(context) {
+    if (!context)
+        return;
+    try {
+        await closeIfSupported(context.builtinHost).catch(() => { });
+        await closeIfSupported(context.extensionRunner).catch(() => { });
+        await closeIfSupported(context.resourceLoader).catch(() => { });
+    }
+    finally {
+        if (process.cwd() !== context.previousCwd) {
+            process.chdir(context.previousCwd);
+        }
+    }
+}
 async function createCatalogContext(options = {}) {
     const codingAgentModule = await loadRinCodingAgent();
     const { AuthStorage, DefaultResourceLoader, ModelRegistry, SettingsManager, ExtensionRunner, createEventBus, discoverAndLoadExtensions, } = codingAgentModule;
@@ -10,21 +44,23 @@ async function createCatalogContext(options = {}) {
         cwd: options.cwd,
         agentDir: options.agentDir,
     });
+    const previousCwd = process.cwd();
+    const additionalExtensionPaths = normalizeAdditionalExtensionPaths(options.additionalExtensionPaths);
     applyRuntimeProfileEnvironment({ agentDir });
-    if (process.cwd() !== cwd)
+    if (previousCwd !== cwd)
         process.chdir(cwd);
     const settingsManager = SettingsManager.create(cwd, agentDir);
     const resourceLoader = new DefaultResourceLoader({
         cwd,
         agentDir,
         settingsManager,
-        additionalExtensionPaths: options.additionalExtensionPaths ?? [],
+        additionalExtensionPaths,
     });
     await resourceLoader.reload();
     const authStorage = AuthStorage.create(path.join(agentDir, "auth.json"));
     const modelRegistry = new ModelRegistry(authStorage, path.join(agentDir, "models.json"));
     const eventBus = createEventBus();
-    const loadedExtensions = await discoverAndLoadExtensions(options.additionalExtensionPaths ?? [], cwd, agentDir, eventBus);
+    const loadedExtensions = await discoverAndLoadExtensions(additionalExtensionPaths, cwd, agentDir, eventBus);
     const extensionRunner = new ExtensionRunner(loadedExtensions.extensions, loadedExtensions.runtime, cwd, null, modelRegistry);
     const builtinHost = await BuiltinModuleHost.create({
         cwd,
@@ -32,7 +68,9 @@ async function createCatalogContext(options = {}) {
         modelRegistry,
     });
     return {
+        cwd,
         agentDir,
+        previousCwd,
         authStorage,
         modelRegistry,
         resourceLoader,
@@ -40,20 +78,32 @@ async function createCatalogContext(options = {}) {
         builtinHost,
     };
 }
+async function withCatalogContext(options, run) {
+    const context = await createCatalogContext(options);
+    try {
+        return await run(context);
+    }
+    finally {
+        await cleanupCatalogContext(context);
+    }
+}
 export async function listCatalogCommands(options = {}) {
-    const { resourceLoader, extensionRunner, builtinHost } = await createCatalogContext(options);
-    return collectRuntimeSlashCommands({
-        extensionCommands: extensionRunner.getRegisteredCommands(),
-        builtinModuleCommands: builtinHost.getRegisteredCommands(),
-        promptTemplates: resourceLoader.getPrompts().prompts,
-        skills: resourceLoader.getSkills().skills,
+    return withCatalogContext(options, async ({ resourceLoader, extensionRunner, builtinHost, }) => {
+        return collectRuntimeSlashCommands({
+            extensionCommands: extensionRunner.getRegisteredCommands(),
+            builtinModuleCommands: builtinHost.getRegisteredCommands(),
+            promptTemplates: resourceLoader.getPrompts().prompts,
+            skills: resourceLoader.getSkills().skills,
+        });
     });
 }
 export async function listCatalogModels(options = {}) {
-    const { modelRegistry } = await createCatalogContext(options);
-    return modelRegistry.getAvailable();
+    return withCatalogContext(options, async ({ modelRegistry }) => {
+        return modelRegistry.getAvailable();
+    });
 }
 export async function getCatalogOAuthState(options = {}) {
-    const { authStorage } = await createCatalogContext(options);
-    return getOAuthStateFromStorage(authStorage);
+    return withCatalogContext(options, async ({ authStorage }) => {
+        return getOAuthStateFromStorage(authStorage);
+    });
 }
