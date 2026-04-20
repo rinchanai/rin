@@ -22,15 +22,24 @@ function uniqueNonEmptyStrings(values: Array<string | undefined | null>) {
   );
 }
 
+const SUPPORTED_HOME_DISCOVERY_PLATFORMS = ["linux", "darwin"] as const;
+
+function pathCandidatesForPlatforms(
+  platforms: readonly NodeJS.Platform[],
+  buildPath: (platform: NodeJS.Platform) => string,
+) {
+  return uniqueNonEmptyStrings(platforms.map((platform) => buildPath(platform)));
+}
+
 export function defaultHomeRoot(platform = process.platform) {
   return platform === "darwin" ? "/Users" : "/home";
 }
 
 export function installDiscoveryHomeRoots() {
-  return uniqueNonEmptyStrings([
-    defaultHomeRoot("linux"),
-    defaultHomeRoot("darwin"),
-  ]);
+  return pathCandidatesForPlatforms(
+    SUPPORTED_HOME_DISCOVERY_PLATFORMS,
+    defaultHomeRoot,
+  );
 }
 
 export function defaultHomeForUser(user: string, platform = process.platform) {
@@ -235,10 +244,10 @@ export function launcherMetadataPathForHome(
 
 export function launcherMetadataPathsForHome(home: string) {
   const currentPlatformPath = launcherMetadataPathForHome(home);
-  const alternatePlatformPath = launcherMetadataPathForHome(
-    home,
-    process.platform === "darwin" ? "linux" : "darwin",
-  );
+  const alternatePlatformPath = pathCandidatesForPlatforms(
+    SUPPORTED_HOME_DISCOVERY_PLATFORMS,
+    (platform) => launcherMetadataPathForHome(home, platform),
+  ).find((candidate) => candidate !== currentPlatformPath);
   return {
     currentPlatformPath,
     alternatePlatformPath,
@@ -276,12 +285,16 @@ export function installRecordCandidatesForHome(home: string) {
 
 const LEGACY_MANAGED_SYSTEMD_UNIT_NAME = "rin-daemon.service";
 
+function normalizeManagedUserFragment(targetUser: string, pattern: RegExp) {
+  return String(targetUser).trim().replace(pattern, "-");
+}
+
 function managedSystemdUnitUserFragment(targetUser: string) {
-  return String(targetUser).replace(/[^A-Za-z0-9_.@-]+/g, "-");
+  return normalizeManagedUserFragment(targetUser, /[^A-Za-z0-9_.@-]+/g);
 }
 
 function managedLaunchdUserFragment(targetUser: string) {
-  return String(targetUser).replace(/[^A-Za-z0-9_.-]+/g, "-");
+  return normalizeManagedUserFragment(targetUser, /[^A-Za-z0-9_.-]+/g);
 }
 
 export function managedSystemdUnitName(targetUser: string) {
@@ -296,14 +309,17 @@ export function managedSystemdUnitCandidates(targetUser: string) {
 }
 
 export function isManagedSystemdUnitName(unitName: string) {
+  const normalizedUnitName = String(unitName || "").trim();
   return (
-    unitName === LEGACY_MANAGED_SYSTEMD_UNIT_NAME ||
-    /^rin-daemon(?:-.+)?\.service$/.test(unitName)
+    normalizedUnitName === LEGACY_MANAGED_SYSTEMD_UNIT_NAME ||
+    /^rin-daemon(?:-.+)?\.service$/.test(normalizedUnitName)
   );
 }
 
 export function installDirFromManagedSystemdUnit(text: string) {
-  const match = text.match(/^Environment=RIN_DIR=(.+)$/m);
+  const match = String(text || "")
+    .trim()
+    .match(/^Environment=(?:"|')?RIN_DIR=(.+?)(?:"|')?$/m);
   return String(match?.[1] || "").trim();
 }
 
@@ -316,11 +332,13 @@ export function managedLaunchdPlistName(targetUser: string) {
 }
 
 export function isManagedLaunchdPlistName(fileName: string) {
-  return /^com\.rin\.daemon\..+\.plist$/.test(fileName);
+  return /^com\.rin\.daemon\..+\.plist$/.test(String(fileName || "").trim());
 }
 
 export function installDirFromManagedLaunchdPlist(text: string) {
-  const match = text.match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/);
+  const match = String(text || "")
+    .trim()
+    .match(/<key>RIN_DIR<\/key>\s*<string>([^<]+)<\/string>/);
   return String(match?.[1] || "").trim();
 }
 

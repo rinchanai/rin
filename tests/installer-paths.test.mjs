@@ -270,10 +270,14 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     path.join(macHome, "Library", "LaunchAgents", "com.rin.daemon.demo.plist"),
   );
   assert.equal(pathsMod.isManagedLaunchdPlistName("com.rin.daemon.demo.plist"), true);
+  assert.equal(
+    pathsMod.isManagedLaunchdPlistName("  com.rin.daemon.demo.plist  "),
+    true,
+  );
   assert.equal(pathsMod.isManagedLaunchdPlistName("com.example.demo.plist"), false);
   assert.equal(
     pathsMod.installDirFromManagedLaunchdPlist(
-      "<key>RIN_DIR</key>\n<string>/Users/demo/.rin</string>",
+      "\n<key>RIN_DIR</key>\n<string>/Users/demo/.rin</string>\n",
     ),
     "/Users/demo/.rin",
   );
@@ -286,13 +290,19 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     "rin-daemon.service",
   ]);
   assert.equal(pathsMod.isManagedSystemdUnitName("rin-daemon-demo.service"), true);
-  assert.equal(pathsMod.isManagedSystemdUnitName("rin-daemon.service"), true);
+  assert.equal(pathsMod.isManagedSystemdUnitName("  rin-daemon.service  "), true);
   assert.equal(pathsMod.isManagedSystemdUnitName("other.service"), false);
   assert.equal(
     pathsMod.installDirFromManagedSystemdUnit(
       "Environment=RIN_DIR=/srv/rin-demo\nExecStart=node daemon.js\n",
     ),
     "/srv/rin-demo",
+  );
+  assert.equal(
+    pathsMod.installDirFromManagedSystemdUnit(
+      "\nEnvironment=\"RIN_DIR=/srv/rin-demo quoted\"\nExecStart=node daemon.js\n",
+    ),
+    "/srv/rin-demo quoted",
   );
   assert.equal(
     pathsMod.systemdUserUnitPathForHome(
