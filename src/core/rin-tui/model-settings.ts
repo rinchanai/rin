@@ -4,7 +4,50 @@ import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { computeAvailableThinkingLevels } from "./session-helpers.js";
 
+const RPC_MODE_VALUES = ["all", "one-at-a-time"] as const;
+const DEFAULT_RPC_MODE = "one-at-a-time";
+
 let persistentSettingsManagerPromise: Promise<any> | null = null;
+
+function setRpcTargetState(target: any, key: string, value: unknown) {
+  target[key] = value;
+  if (target?.state && typeof target.state === "object") {
+    target.state[key] = value;
+  }
+}
+
+function sendRpcClientMessage(target: any, payload: Record<string, unknown>) {
+  void target?.client?.send?.(payload).catch(() => {});
+}
+
+function normalizeRpcMode(
+  mode: string,
+  fallback: (typeof RPC_MODE_VALUES)[number] = DEFAULT_RPC_MODE,
+): (typeof RPC_MODE_VALUES)[number] {
+  return RPC_MODE_VALUES.includes(mode as (typeof RPC_MODE_VALUES)[number])
+    ? (mode as (typeof RPC_MODE_VALUES)[number])
+    : fallback;
+}
+
+function resolveRpcThinkingLevel(target: any, level: ThinkingLevel) {
+  const available = computeAvailableThinkingLevels(target?.model);
+  return (
+    available.find((item) => item === level) ??
+    available[available.length - 1] ??
+    target?.thinkingLevel ??
+    "off"
+  );
+}
+
+async function runRpcModelMutation(
+  target: any,
+  command: Record<string, unknown>,
+  refreshModels: () => Promise<any>,
+) {
+  const data = await target.call(command.type, command);
+  await refreshModels();
+  return data ?? undefined;
+}
 
 export async function getPersistentSettingsManager() {
   if (!persistentSettingsManagerPromise) {
@@ -37,11 +80,15 @@ export async function setRpcModel(
   model: any,
   refreshModels: () => Promise<any>,
 ) {
-  await target.call("set_model", {
-    provider: model.provider,
-    modelId: model.id,
-  });
-  await refreshModels();
+  await runRpcModelMutation(
+    target,
+    {
+      type: "set_model",
+      provider: model?.provider,
+      modelId: model?.id,
+    },
+    refreshModels,
+  );
 }
 
 export async function cycleRpcModel(
@@ -49,21 +96,17 @@ export async function cycleRpcModel(
   _direction: "forward" | "backward" | undefined,
   refreshModels: () => Promise<any>,
 ) {
-  const data = await target.call("cycle_model");
-  await refreshModels();
-  return data ?? undefined;
+  return await runRpcModelMutation(
+    target,
+    { type: "cycle_model" },
+    refreshModels,
+  );
 }
 
 export function setRpcThinkingLevel(target: any, level: ThinkingLevel) {
-  const available = computeAvailableThinkingLevels(target.model);
-  const next = available.includes(level)
-    ? level
-    : available[available.length - 1];
-  target.thinkingLevel = next;
-  target.state.thinkingLevel = next;
-  void target.client
-    .send({ type: "set_thinking_level", level: next })
-    .catch(() => {});
+  const next = resolveRpcThinkingLevel(target, level);
+  setRpcTargetState(target, "thinkingLevel", next);
+  sendRpcClientMessage(target, { type: "set_thinking_level", level: next });
 }
 
 export function cycleRpcThinkingLevel(target: any): ThinkingLevel | undefined {
@@ -78,20 +121,26 @@ export function cycleRpcThinkingLevel(target: any): ThinkingLevel | undefined {
 }
 
 export function setRpcSteeringMode(target: any, mode: "all" | "one-at-a-time") {
-  target.steeringMode = mode;
-  target.settingsManager.setSteeringMode(mode);
-  void target.client.send({ type: "set_steering_mode", mode }).catch(() => {});
+  const next = normalizeRpcMode(mode, normalizeRpcMode(target?.steeringMode, "all"));
+  setRpcTargetState(target, "steeringMode", next);
+  target?.settingsManager?.setSteeringMode?.(next);
+  sendRpcClientMessage(target, { type: "set_steering_mode", mode: next });
 }
 
 export function setRpcFollowUpMode(target: any, mode: "all" | "one-at-a-time") {
-  target.followUpMode = mode;
-  target.settingsManager.setFollowUpMode(mode);
-  void target.client.send({ type: "set_follow_up_mode", mode }).catch(() => {});
+  const next = normalizeRpcMode(
+    mode,
+    normalizeRpcMode(target?.followUpMode, DEFAULT_RPC_MODE),
+  );
+  setRpcTargetState(target, "followUpMode", next);
+  target?.settingsManager?.setFollowUpMode?.(next);
+  sendRpcClientMessage(target, { type: "set_follow_up_mode", mode: next });
 }
 
 export function setRpcAutoCompaction(target: any, enabled: boolean) {
-  target.autoCompactionEnabled = enabled;
-  void target.client
-    .send({ type: "set_auto_compaction", enabled })
-    .catch(() => {});
+  setRpcTargetState(target, "autoCompactionEnabled", Boolean(enabled));
+  sendRpcClientMessage(target, {
+    type: "set_auto_compaction",
+    enabled: Boolean(enabled),
+  });
 }
