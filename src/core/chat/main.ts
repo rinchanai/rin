@@ -65,6 +65,7 @@ import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { normalizeSessionRef } from "../session/ref.js";
+import { isTransientChatRuntimeError } from "./runtime-errors.js";
 
 function createLogger(name: string) {
   const prefix = `[${name}]`;
@@ -83,14 +84,6 @@ const TYPING_POLL_INTERVAL_MS = 4000;
 const CHAT_INBOX_POLL_INTERVAL_MS = 3000;
 const CHAT_INBOX_RETRY_MIN_MS = 2000;
 const CHAT_INBOX_RETRY_MAX_MS = 60_000;
-const TRANSIENT_CHAT_RUNTIME_ERROR_RE =
-  /rin_timeout:|rin_disconnected:|rin_tui_not_connected|chat_controller_disposed|rin_worker_exit:|chat_turn_stale/;
-
-function isTransientChatRuntimeError(error: unknown) {
-  return TRANSIENT_CHAT_RUNTIME_ERROR_RE.test(
-    safeString((error as any)?.message || error),
-  );
-}
 
 function computeChatInboxRetryDelay(attemptCount: number) {
   const attempt = Math.max(0, Number(attemptCount || 0));

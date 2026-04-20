@@ -33,6 +33,7 @@ import {
   sendOutboxPayload,
   sendTyping,
 } from "./transport.js";
+import { isTransientChatRuntimeError } from "./runtime-errors.js";
 
 const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
@@ -798,15 +799,17 @@ export class ChatController {
       });
       return data;
     } catch (error: any) {
-      const errorMessage =
-        safeString(error?.message || error).trim() || "chat_command_failed";
-      const text = `Chat bridge error: ${errorMessage}`;
-      this.stageAssistantDelivery({
-        text,
-        replyToMessageId: replyToMessageId || undefined,
-      });
-      this.saveState();
-      await this.commitPendingDelivery();
+      if (!isTransientChatRuntimeError(error)) {
+        const errorMessage =
+          safeString(error?.message || error).trim() || "chat_command_failed";
+        const text = `Chat bridge error: ${errorMessage}`;
+        this.stageAssistantDelivery({
+          text,
+          replyToMessageId: replyToMessageId || undefined,
+        });
+        this.saveState();
+        await this.commitPendingDelivery();
+      }
       throw error;
     } finally {
       await this.clearWorkingReaction().catch(() => {});
