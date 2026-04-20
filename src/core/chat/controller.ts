@@ -6,7 +6,11 @@ import prettyMilliseconds from "pretty-ms";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
-import { normalizeSessionRef } from "../session/ref.js";
+import {
+  normalizeSessionRef,
+  resolveStoredSessionFile,
+  toStoredSessionFile,
+} from "../session/ref.js";
 import {
   chatStatePath,
   isPrivateChat,
@@ -131,6 +135,8 @@ export class ChatController {
     const wantedSessionFile = this.getRecoverableSessionFile();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
+      this.updateStoredSessionFile(wantedSessionFile);
+      this.saveState();
     }
   }
 
@@ -260,7 +266,7 @@ export class ChatController {
     this.saveState();
   }
   private getRecoverableSessionFile() {
-    const wanted = safeString(this.state.piSessionFile || "").trim();
+    const wanted = resolveStoredSessionFile(this.agentDir, this.state.piSessionFile);
     if (!wanted) return "";
     if (fs.existsSync(wanted)) return wanted;
     delete this.state.piSessionFile;
@@ -326,7 +332,6 @@ export class ChatController {
         chatKey: this.chatKey,
         text: "Working……",
         replyToMessageId,
-        sessionId: this.currentSessionId() || undefined,
         sessionFile: this.currentSessionFile(),
         createdAt: new Date().toISOString(),
       },
@@ -358,10 +363,8 @@ export class ChatController {
     ].filter(Boolean);
     lines.push(`Indicators: ${indicators.join(", ") || "none"}`);
 
-    const sessionId = this.currentSessionId();
     const sessionFile = this.currentSessionFile();
-    if (sessionId) lines.push(`Session: ${sessionId}`);
-    else if (sessionFile) lines.push(`Session file: ${sessionFile}`);
+    if (sessionFile) lines.push(`Session file: ${sessionFile}`);
 
     const processing = this.state.processing;
     if (processing?.startedAt) {
@@ -391,7 +394,6 @@ export class ChatController {
         chatKey: this.chatKey,
         text,
         replyToMessageId: safeString(replyToMessageId).trim() || undefined,
-        sessionId: this.currentSessionId() || undefined,
         sessionFile: this.currentSessionFile(),
         createdAt: new Date().toISOString(),
       },
@@ -533,7 +535,6 @@ export class ChatController {
         chatKey: this.chatKey,
         text: `${INTERIM_PREFIX}${text}`,
         replyToMessageId: replyToMessageId || undefined,
-        sessionId: this.currentSessionId() || undefined,
         sessionFile: this.currentSessionFile(),
       },
       this.h,
@@ -566,13 +567,11 @@ export class ChatController {
     ).trim();
   }
   private currentSessionFile() {
-    return (
-      safeString(
-        this.session?.sessionManager?.getSessionFile?.() ||
-          this.state.piSessionFile ||
-          "",
-      ).trim() || undefined
-    );
+    const live = safeString(
+      this.session?.sessionManager?.getSessionFile?.() || "",
+    ).trim();
+    if (live) return live;
+    return resolveStoredSessionFile(this.agentDir, this.state.piSessionFile);
   }
   private pickStoredValue(...candidates: unknown[]) {
     for (const candidate of candidates) {
@@ -582,35 +581,32 @@ export class ChatController {
     return undefined;
   }
   private updateStoredSessionFile(...candidates: unknown[]) {
-    this.state.piSessionFile = this.pickStoredValue(
-      ...candidates,
-      this.state.piSessionFile,
-    );
+    const picked = this.pickStoredValue(...candidates, this.state.piSessionFile);
+    this.state.piSessionFile = toStoredSessionFile(this.agentDir, picked);
     return this.state.piSessionFile;
   }
   private buildAssistantDelivery(input: {
     text?: string;
     replyToMessageId?: string;
-    sessionId?: string;
     sessionFile?: string;
   }) {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
-    const session = normalizeSessionRef(input);
     return {
       type: "text_delivery" as const,
       chatKey: this.chatKey,
       text,
       replyToMessageId:
         safeString(input.replyToMessageId || "").trim() || undefined,
-      sessionId: session.sessionId,
-      sessionFile: session.sessionFile,
+      sessionFile: toStoredSessionFile(
+        this.agentDir,
+        input.sessionFile || this.currentSessionFile(),
+      ),
     };
   }
   private stageAssistantDelivery(input: {
     text?: string;
     replyToMessageId?: string;
-    sessionId?: string;
     sessionFile?: string;
   }) {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
@@ -619,7 +615,6 @@ export class ChatController {
     this.state.pendingDelivery = this.buildAssistantDelivery({
       text,
       replyToMessageId: input.replyToMessageId,
-      sessionId: this.pickStoredValue(input.sessionId, this.currentSessionId()),
       sessionFile: this.pickStoredValue(
         input.sessionFile,
         this.currentSessionFile(),
@@ -630,7 +625,6 @@ export class ChatController {
   private async deliverAssistantReply(input: {
     text?: string;
     replyToMessageId?: string;
-    sessionId?: string;
     sessionFile?: string;
     incomingMessageId?: string;
     clearProcessing?: boolean;
@@ -663,7 +657,6 @@ export class ChatController {
     await this.deliverAssistantReply({
       text: canonicalCompletion.finalText,
       replyToMessageId: input.replyToMessageId,
-      sessionId: completion?.sessionId,
       sessionFile: completion?.sessionFile,
       incomingMessageId: input.incomingMessageId,
       clearProcessing: input.clearProcessing,
@@ -702,11 +695,9 @@ export class ChatController {
     const nextMessageId = safeString(messageId || "").trim();
     if (!nextMessageId) return;
     const acceptedAt = new Date().toISOString();
-    const sessionId = this.currentSessionId() || undefined;
     const sessionFile = this.currentSessionFile();
-    if (!sessionId && !sessionFile) return;
+    if (!sessionFile) return;
     markProcessedChatMessage(this.agentDir, this.chatKey, nextMessageId, {
-      sessionId,
       sessionFile,
       acceptedAt,
     });
@@ -723,7 +714,6 @@ export class ChatController {
     const nextMessageId = safeString(messageId || "").trim();
     if (!nextMessageId) return;
     markProcessedChatMessage(this.agentDir, this.chatKey, nextMessageId, {
-      sessionId: this.currentSessionId() || undefined,
       sessionFile: this.currentSessionFile(),
       acceptedAt: new Date().toISOString(),
       processedAt: new Date().toISOString(),

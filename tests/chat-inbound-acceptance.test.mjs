@@ -78,16 +78,21 @@ test("chat controller does not accept an inbound prompt before the turn actually
     this.saveState();
   };
 
+  const acceptanceSessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "acceptance-chat.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
     sessionManager: {
-      getSessionFile: () => "/tmp/acceptance-chat.jsonl",
+      getSessionFile: () => acceptanceSessionFile,
       getSessionId: () => "session-acceptance",
       getSessionName: () => chatKey,
     },
     ensureSessionReady: async () => ({
-      sessionFile: "/tmp/acceptance-chat.jsonl",
+      sessionFile: acceptanceSessionFile,
       sessionId: "session-acceptance",
     }),
     prompt: async (_message, options = {}) => {
@@ -107,7 +112,7 @@ test("chat controller does not accept an inbound prompt before the turn actually
       );
       assert.ok(afterStart?.acceptedAt);
       assert.equal(afterStart?.processedAt, undefined);
-      assert.equal(afterStart?.sessionFile, "/tmp/acceptance-chat.jsonl");
+      assert.equal(afterStart?.sessionFile, "acceptance-chat.jsonl");
       controller.session.messages = [
         { role: "user", content: [{ type: "text", text: "hello" }] },
         {
@@ -126,7 +131,7 @@ test("chat controller does not accept an inbound prompt before the turn actually
           finalText: "accepted final",
           result: { messages: [{ type: "text", text: "accepted final" }] },
           sessionId: "session-acceptance",
-          sessionFile: "/tmp/acceptance-chat.jsonl",
+          sessionFile: acceptanceSessionFile,
         },
       });
     },
@@ -142,8 +147,7 @@ test("chat controller does not accept an inbound prompt before the turn actually
   const stored = getChatMessage(controller.agentDir, chatKey, "m-inbound");
   assert.ok(stored?.acceptedAt);
   assert.ok(stored?.processedAt);
-  assert.equal(stored?.sessionId, "session-acceptance");
-  assert.equal(stored?.sessionFile, "/tmp/acceptance-chat.jsonl");
+  assert.equal(stored?.sessionFile, "acceptance-chat.jsonl");
 });
 
 test("reply session lookup can continue from an accepted inbound message before final delivery", async () => {
@@ -162,16 +166,21 @@ test("reply session lookup can continue from an accepted inbound message before 
     text: "continue here",
   });
 
+  const replySessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "reply-session.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
     sessionManager: {
-      getSessionFile: () => "/tmp/reply-session.jsonl",
+      getSessionFile: () => replySessionFile,
       getSessionId: () => "session-reply",
       getSessionName: () => chatKey,
     },
     ensureSessionReady: async () => ({
-      sessionFile: "/tmp/reply-session.jsonl",
+      sessionFile: replySessionFile,
       sessionId: "session-reply",
     }),
     prompt: async (_message, options = {}) => {
@@ -182,8 +191,7 @@ test("reply session lookup can continue from an accepted inbound message before 
         chatKey,
         "m-reply",
       );
-      assert.equal(linked?.sessionId, "session-reply");
-      assert.equal(linked?.sessionFile, "/tmp/reply-session.jsonl");
+      assert.equal(linked?.sessionFile, replySessionFile);
       assert.equal(linked?.linked?.processedAt, undefined);
       assert.ok(linked?.linked?.acceptedAt);
       linkedDuringTurn = linked;
@@ -205,7 +213,7 @@ test("reply session lookup can continue from an accepted inbound message before 
           finalText: "continued",
           result: { messages: [{ type: "text", text: "continued" }] },
           sessionId: "session-reply",
-          sessionFile: "/tmp/reply-session.jsonl",
+          sessionFile: replySessionFile,
         },
       });
     },
@@ -219,10 +227,8 @@ test("reply session lookup can continue from an accepted inbound message before 
   );
 
   const stored = getChatMessage(controller.agentDir, chatKey, "m-reply");
-  assert.equal(linkedDuringTurn?.sessionId, "session-reply");
-  assert.equal(linkedDuringTurn?.sessionFile, "/tmp/reply-session.jsonl");
+  assert.equal(linkedDuringTurn?.sessionFile, replySessionFile);
   assert.ok(stored?.acceptedAt);
   assert.ok(stored?.processedAt);
-  assert.equal(stored?.sessionId, "session-reply");
-  assert.equal(stored?.sessionFile, "/tmp/reply-session.jsonl");
+  assert.equal(stored?.sessionFile, "reply-session.jsonl");
 });

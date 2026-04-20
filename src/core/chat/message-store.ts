@@ -11,7 +11,7 @@ import {
 } from "./message-store-layout.js";
 import { normalizeLocalDateOnly } from "./date.js";
 import { parseChatKey, readJsonFile, writeJsonFile } from "./support.js";
-import { normalizeSessionRef } from "../session/ref.js";
+import { normalizeSessionRef, toStoredSessionFile } from "../session/ref.js";
 import { safeString } from "../text-utils.js";
 
 export type StoredChatMessage = {
@@ -398,7 +398,6 @@ export type StoredChatLogProjection = {
   text: string;
   messageId?: string;
   replyToMessageId?: string;
-  sessionId?: string;
   sessionFile?: string;
   userId?: string;
   nickname?: string;
@@ -417,7 +416,6 @@ export function projectStoredChatMessageToChatLog(
     text,
     messageId: safeString(record.messageId).trim() || undefined,
     replyToMessageId: safeString(record.replyToMessageId).trim() || undefined,
-    sessionId: session.sessionId,
     sessionFile: session.sessionFile,
     userId: safeString(record.userId).trim() || undefined,
     nickname: safeString(record.nickname).trim() || undefined,
@@ -456,6 +454,20 @@ function definedStoredChatMessagePatch(
   return Object.fromEntries(
     Object.entries(input).filter(([, value]) => value !== undefined),
   ) as Partial<StoredChatMessage>;
+}
+
+function normalizeStoredSessionFields<T extends Record<string, any>>(
+  agentDir: string,
+  input: T,
+): T {
+  const normalized: Record<string, any> = { ...input };
+  if (Object.prototype.hasOwnProperty.call(normalized, "sessionFile")) {
+    normalized.sessionFile = toStoredSessionFile(agentDir, normalized.sessionFile);
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, "sessionId")) {
+    delete normalized.sessionId;
+  }
+  return normalized as T;
 }
 
 function persistChatMessageRecord(
@@ -576,7 +588,10 @@ export function saveChatMessage(
   agentDir: string,
   input: Omit<StoredChatMessage, "version" | "recordKey">,
 ) {
-  return saveChatMessageWithLayout(messageStoreLayout(agentDir), input);
+  return saveChatMessageWithLayout(
+    messageStoreLayout(agentDir),
+    normalizeStoredSessionFields(agentDir, input),
+  );
 }
 
 export function upsertChatMessage(
@@ -584,7 +599,9 @@ export function upsertChatMessage(
   input: Omit<StoredChatMessage, "version" | "recordKey">,
 ) {
   const layout = messageStoreLayout(agentDir);
-  const normalized = buildStoredChatMessage(input);
+  const normalized = buildStoredChatMessage(
+    normalizeStoredSessionFields(agentDir, input),
+  );
   const existing = findChatMessageByChatAndIdWithLayout(
     layout,
     normalized.chatKey,
@@ -628,7 +645,7 @@ export function updateChatMessage(
     messageStoreLayout(agentDir),
     chatKey,
     messageId,
-    patch,
+    normalizeStoredSessionFields(agentDir, patch),
   );
 }
 
@@ -740,11 +757,6 @@ const CHAT_MESSAGE_RECORD_FIELDS: ChatMessageRecordField[] = [
     detailLabel: "replyToMessageId",
     summaryLabel: "reply to",
     getValue: (record) => record.replyToMessageId,
-  },
-  {
-    detailLabel: "sessionId",
-    summaryLabel: "session id",
-    getValue: (record) => record.sessionId,
   },
   {
     detailLabel: "sessionFile",

@@ -25,7 +25,10 @@ import {
   extractTextFromContent,
   safeString,
 } from "./chat-helpers.js";
-import { normalizeSessionRef } from "../session/ref.js";
+import {
+  normalizeSessionRef,
+  resolveStoredSessionFile,
+} from "../session/ref.js";
 
 const DEFAULT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
 const ONEBOT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
@@ -244,10 +247,13 @@ function resolveSessionContext(
   agentDir: string,
   chatKey: string,
   replyToMessageId = "",
-  explicit: { sessionId?: string; sessionFile?: string } = {},
+  explicit: { sessionFile?: string } = {},
 ) {
-  const session = normalizeSessionRef(explicit);
-  if (session.sessionId || session.sessionFile) return session;
+  const explicitSessionFile = resolveStoredSessionFile(
+    agentDir,
+    explicit.sessionFile,
+  );
+  if (explicitSessionFile) return { sessionFile: explicitSessionFile };
   const nextReplyToMessageId = safeString(replyToMessageId).trim();
   if (!nextReplyToMessageId) return {};
   const linked = findChatMessageByChatAndId(
@@ -255,7 +261,9 @@ function resolveSessionContext(
     chatKey,
     nextReplyToMessageId,
   );
-  return normalizeSessionRef(linked);
+  return {
+    sessionFile: resolveStoredSessionFile(agentDir, linked?.sessionFile),
+  };
 }
 
 type DeliveredAssistantRecordInput = {
@@ -264,7 +272,6 @@ type DeliveredAssistantRecordInput = {
   text?: string;
   rawContent?: string;
   replyToMessageId?: string;
-  sessionId?: string;
   sessionFile?: string;
 };
 
@@ -291,7 +298,6 @@ export function recordDeliveredAssistantMessages(
     chatKey,
     safeString(input.replyToMessageId).trim(),
     {
-      sessionId: input.sessionId,
       sessionFile: input.sessionFile,
     },
   );
@@ -302,7 +308,6 @@ export function recordDeliveredAssistantMessages(
       messageId,
       role: "assistant",
       replyToMessageId: safeString(input.replyToMessageId).trim() || undefined,
-      sessionId: session.sessionId,
       sessionFile: session.sessionFile,
       processedAt: now,
       chatKey,
@@ -333,7 +338,6 @@ function finalizeDeliveredAssistantOutput(
   const replyToMessageId =
     safeString(input.replyToMessageId).trim() || undefined;
   const session = normalizeSessionRef({
-    sessionId: input.sessionId,
     sessionFile: input.sessionFile,
   });
   const logText = safeString(input.logText).trim();
@@ -345,7 +349,6 @@ function finalizeDeliveredAssistantOutput(
       role: "assistant",
       text: logText,
       replyToMessageId,
-      sessionId: session.sessionId,
       sessionFile: session.sessionFile,
     });
   }
@@ -356,7 +359,6 @@ function finalizeDeliveredAssistantOutput(
     text: input.text,
     rawContent: input.rawContent,
     replyToMessageId,
-    sessionId: session.sessionId,
     sessionFile: session.sessionFile,
   });
 }
@@ -515,7 +517,6 @@ export async function sendOutboxPayload(
       text,
       rawContent: text,
       replyToMessageId,
-      sessionId: session.sessionId,
       sessionFile: session.sessionFile,
     });
   }
@@ -537,7 +538,6 @@ export async function sendOutboxPayload(
   return finalizeDeliveredAssistantOutput(agentDir, {
     chatKey,
     deliveryResult,
-    sessionId: session.sessionId,
     sessionFile: session.sessionFile,
     ...buildPartsDeliveryRecord(rawParts),
   });

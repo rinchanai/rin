@@ -22,7 +22,7 @@ import {
   extractMessageText,
 } from "../message-content.js";
 import { safeString } from "../text-utils.js";
-import { normalizeSessionRef } from "../session/ref.js";
+import { resolveStoredSessionFile, toStoredSessionFile } from "../session/ref.js";
 
 export type SavedAttachment = {
   kind: "image" | "file";
@@ -56,7 +56,6 @@ export type ChatState = {
     chatKey: string;
     text: string;
     replyToMessageId?: string;
-    sessionId?: string;
     sessionFile?: string;
   };
 };
@@ -154,7 +153,7 @@ export function lookupReplySession(
   if (!linked) return null;
   return {
     linked,
-    ...normalizeSessionRef(linked),
+    sessionFile: resolveStoredSessionFile(agentDir, linked.sessionFile),
   };
 }
 
@@ -164,7 +163,14 @@ export function markProcessedChatMessage(
   messageId: string,
   update: Record<string, unknown>,
 ) {
-  updateChatMessage(agentDir, chatKey, messageId, update);
+  const normalized = { ...update };
+  if (Object.prototype.hasOwnProperty.call(normalized, "sessionFile")) {
+    normalized.sessionFile = toStoredSessionFile(agentDir, normalized.sessionFile);
+  }
+  if (Object.prototype.hasOwnProperty.call(normalized, "sessionId")) {
+    delete normalized.sessionId;
+  }
+  updateChatMessage(agentDir, chatKey, messageId, normalized);
 }
 
 export async function persistImageParts(

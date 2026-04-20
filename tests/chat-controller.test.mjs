@@ -90,7 +90,10 @@ test("chat controller uses RpcInteractiveSession session bootstrap before first 
     },
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
-      return { sessionFile: "/tmp/fresh-chat.jsonl", sessionId: "session-1" };
+      return {
+        sessionFile: path.join(controller.agentDir, "sessions", "fresh-chat.jsonl"),
+        sessionId: "session-1",
+      };
     },
     runCommand: async (commandLine) => {
       calls.push(`runCommand:${commandLine}`);
@@ -106,7 +109,7 @@ test("chat controller uses RpcInteractiveSession session bootstrap before first 
   assert.deepEqual(calls, ["ensureSessionReady", "runCommand:/session"]);
   assert.deepEqual(namedSessions, []);
   assert.deepEqual(deliveries, ["Session stats"]);
-  assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
+  assert.equal(controller.state.piSessionFile, "fresh-chat.jsonl");
 });
 
 test("chat controller skips session recovery bootstrap for /new", async () => {
@@ -123,13 +126,16 @@ test("chat controller skips session recovery bootstrap for /new", async () => {
     calls.push(`connect:${String(options.restoreSession)}`);
     this.session = {
       sessionManager: {
-        getSessionFile: () => "/tmp/new-chat.jsonl",
+        getSessionFile: () => path.join(controller.agentDir, "sessions", "new-chat.jsonl"),
         getSessionId: () => "session-2",
         getSessionName: () => this.chatKey,
       },
       ensureSessionReady: async () => {
         calls.push("ensureSessionReady");
-        return { sessionFile: "/tmp/new-chat.jsonl", sessionId: "session-2" };
+        return {
+          sessionFile: path.join(controller.agentDir, "sessions", "new-chat.jsonl"),
+          sessionId: "session-2",
+        };
       },
       runCommand: async (commandLine) => {
         calls.push(`runCommand:${commandLine}`);
@@ -142,7 +148,7 @@ test("chat controller skips session recovery bootstrap for /new", async () => {
 
   assert.deepEqual(calls, ["connect:false", "runCommand:/new"]);
   assert.deepEqual(deliveries, ["Started a new session."]);
-  assert.equal(controller.state.piSessionFile, "/tmp/new-chat.jsonl");
+  assert.equal(controller.state.piSessionFile, "new-chat.jsonl");
 });
 
 test("chat controller delivers a visible command error instead of failing silently", async () => {
@@ -565,13 +571,16 @@ test("chat controller uses RpcInteractiveSession prompt path for chat turns", as
       { role: "assistant", content: [{ type: "text", text: "hello" }] },
     ],
     sessionManager: {
-      getSessionFile: () => "/tmp/turn-chat.jsonl",
+      getSessionFile: () => path.join(controller.agentDir, "sessions", "turn-chat.jsonl"),
       getSessionId: () => "session-turn",
       getSessionName: () => "telegram/9:9",
     },
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
-      return { sessionFile: "/tmp/turn-chat.jsonl", sessionId: "session-turn" };
+      return {
+        sessionFile: path.join(controller.agentDir, "sessions", "turn-chat.jsonl"),
+        sessionId: "session-turn",
+      };
     },
     prompt: async (_message, options) => {
       calls.push(`prompt:${options?.streamingBehavior || "none"}`);
@@ -594,7 +603,7 @@ test("chat controller uses RpcInteractiveSession prompt path for chat turns", as
     "prompt:none",
     "deliver:final-text",
   ]);
-  assert.equal(controller.state.piSessionFile, "/tmp/turn-chat.jsonl");
+  assert.equal(controller.state.piSessionFile, "turn-chat.jsonl");
 });
 
 test("chat controller does not rename sessions based on chatKey", async () => {
@@ -697,9 +706,10 @@ test("chat controller resolves final output from rpc completion for prompt turns
 test("chat controller reattaches saved session file before bootstrapping a detached session", async () => {
   const controller = await createController("telegram/7:7");
   const calls = [];
-  const savedSessionFile = path.join(controller.dataDir, "saved-chat.jsonl");
+  const savedSessionFile = path.join(controller.agentDir, "sessions", "saved-chat.jsonl");
+  await fs.mkdir(path.dirname(savedSessionFile), { recursive: true });
   await fs.writeFile(savedSessionFile, "", "utf8");
-  controller.state.piSessionFile = savedSessionFile;
+  controller.state.piSessionFile = "saved-chat.jsonl";
 
   controller.session = {
     sessionManager: {
@@ -720,15 +730,16 @@ test("chat controller reattaches saved session file before bootstrapping a detac
   await controller.ensureSessionReady();
 
   assert.deepEqual(calls, [`switch:${savedSessionFile}`, "ensureSessionReady"]);
-  assert.equal(controller.state.piSessionFile, savedSessionFile);
+  assert.equal(controller.state.piSessionFile, "saved-chat.jsonl");
 });
 
 test("chat controller reattaches idle saved sessions during recovery so chat workers stay attached", async () => {
   const controller = await createController("telegram/7:7");
   const calls = [];
-  const savedSessionFile = path.join(controller.dataDir, "saved-chat.jsonl");
+  const savedSessionFile = path.join(controller.agentDir, "sessions", "saved-chat.jsonl");
+  await fs.mkdir(path.dirname(savedSessionFile), { recursive: true });
   await fs.writeFile(savedSessionFile, "", "utf8");
-  controller.state.piSessionFile = savedSessionFile;
+  controller.state.piSessionFile = "saved-chat.jsonl";
 
   controller.session = {
     sessionManager: {
@@ -756,7 +767,7 @@ test("chat controller self-heals missing saved session binding before a chat tur
     if (clearProcessing) delete this.state.processing;
     this.saveState();
   };
-  controller.state.piSessionFile = "/tmp/missing-chat.jsonl";
+  controller.state.piSessionFile = "missing-chat.jsonl";
 
   controller.session = {
     isStreaming: false,
@@ -768,7 +779,7 @@ test("chat controller self-heals missing saved session binding before a chat tur
       },
     ],
     sessionManager: {
-      getSessionFile: () => "/tmp/fresh-chat.jsonl",
+      getSessionFile: () => path.join(controller.agentDir, "sessions", "fresh-chat.jsonl"),
       getSessionId: () => "session-fresh",
       getSessionName: () => "telegram/7:8",
     },
@@ -778,7 +789,7 @@ test("chat controller self-heals missing saved session binding before a chat tur
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
       return {
-        sessionFile: "/tmp/fresh-chat.jsonl",
+        sessionFile: path.join(controller.agentDir, "sessions", "fresh-chat.jsonl"),
         sessionId: "session-fresh",
       };
     },
@@ -802,7 +813,7 @@ test("chat controller self-heals missing saved session binding before a chat tur
     "prompt",
     "deliver:fresh session final",
   ]);
-  assert.equal(controller.state.piSessionFile, "/tmp/fresh-chat.jsonl");
+  assert.equal(controller.state.piSessionFile, "fresh-chat.jsonl");
 });
 
 test("chat controller serves /status locally without disturbing an active turn", async () => {
