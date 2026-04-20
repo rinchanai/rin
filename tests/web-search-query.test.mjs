@@ -38,34 +38,44 @@ async function writeExecutable(filePath, content) {
   await fs.chmod(filePath, 0o755);
 }
 
-function buildFakeSearxngNodeProgram({ readyServer = false } = {}) {
-  if (!readyServer) {
-    return "setInterval(() => {}, 60000);";
-  }
+function buildFakeSearxngNodeProgram(
+  { readyServer = false, spawnCountFile = "", exitAfterMs = 0 } = {},
+) {
   return [
-    'const http = require("node:http");',
-    'const port = Number(process.env.SEARXNG_PORT || 0);',
-    "const server = http.createServer((req, res) => {",
-    'if (req.url === "/healthz") {',
-    'res.writeHead(200, { "Content-Type": "text/plain" });',
-    'res.end("OK");',
-    "return;",
-    "}",
-    "res.writeHead(404);",
-    'res.end("not found");',
-    "});",
-    'server.listen(port, "127.0.0.1");',
+    'const fs = require("node:fs");',
+    spawnCountFile
+      ? `fs.appendFileSync(${JSON.stringify(spawnCountFile)}, "spawn\\n");`
+      : "",
+    readyServer
+      ? [
+          'const http = require("node:http");',
+          'const port = Number(process.env.SEARXNG_PORT || 0);',
+          "const server = http.createServer((req, res) => {",
+          'if (req.url === "/healthz") {',
+          'res.writeHead(200, { "Content-Type": "text/plain" });',
+          'res.end("OK");',
+          "return;",
+          "}",
+          "res.writeHead(404);",
+          'res.end("not found");',
+          "});",
+          'server.listen(port, "127.0.0.1");',
+        ].join(" ")
+      : "",
+    exitAfterMs > 0 ? `setTimeout(() => process.exit(0), ${exitAfterMs});` : "",
     "setInterval(() => {}, 60000);",
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 async function installArchiveFallbackToolchain(
   binDir,
-  { readyServer = false } = {},
+  { readyServer = false, spawnCountFile = "", exitAfterMs = 0 } = {},
 ) {
   const nodeBin = JSON.stringify(process.execPath);
   const nodeProgram = JSON.stringify(
-    buildFakeSearxngNodeProgram({ readyServer }),
+    buildFakeSearxngNodeProgram({ readyServer, spawnCountFile, exitAfterMs }),
   );
   await writeExecutable(
     path.join(binDir, "python3"),
@@ -243,6 +253,56 @@ test("web search sidecar bootstrap falls back to archive download without git", 
     } finally {
       await service.stopSearxngSidecar(dir, {
         instanceId: "archive-fallback",
+      });
+      if (previousPath == null) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousBaseUrl == null) {
+        delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+      } else {
+        process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV] = previousBaseUrl;
+      }
+    }
+  });
+});
+
+test("web search sidecar reuses a ready instance after waiting for the lock", async () => {
+  await withTempDir(async (dir) => {
+    const binDir = path.join(dir, "bin");
+    const spawnCountFile = path.join(dir, "spawn-count.log");
+    await fs.mkdir(binDir, { recursive: true });
+    await installArchiveFallbackToolchain(binDir, {
+      readyServer: true,
+      spawnCountFile,
+      exitAfterMs: 1_500,
+    });
+
+    const previousPath = process.env.PATH;
+    const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+    delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
+    process.env.PATH = binDir;
+
+    try {
+      const [first, second] = await Promise.all([
+        service.ensureSearxngSidecar(dir, {
+          instanceId: "shared-instance",
+          timeoutMs: 2_000,
+        }),
+        service.ensureSearxngSidecar(dir, {
+          instanceId: "shared-instance",
+          timeoutMs: 2_000,
+        }),
+      ]);
+      assert.equal(first.ok, true);
+      assert.equal(second.ok, true);
+      assert.equal(first.baseUrl, second.baseUrl);
+
+      const spawnCount = (await fs.readFile(spawnCountFile, "utf8"))
+        .split("\n")
+        .filter(Boolean).length;
+      assert.equal(spawnCount, 1);
+    } finally {
+      await service.stopSearxngSidecar(dir, {
+        instanceId: "shared-instance",
       });
       if (previousPath == null) delete process.env.PATH;
       else process.env.PATH = previousPath;

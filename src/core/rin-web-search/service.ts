@@ -138,6 +138,33 @@ function readNormalizedInstanceState(
   );
 }
 
+function reuseExistingSearxngInstance(
+  stateRoot: string,
+  instanceId: string,
+):
+  | {
+      ok: true;
+      instanceId: string;
+      baseUrl: string;
+      reused: true;
+    }
+  | null {
+  const existing = readNormalizedInstanceState(stateRoot, instanceId);
+  if (existing.alive && existing.baseUrl) {
+    process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = existing.baseUrl;
+    return {
+      ok: true,
+      instanceId,
+      baseUrl: existing.baseUrl,
+      reused: true,
+    };
+  }
+  if (existing.pid > 0 || existing.baseUrl || existing.settingsPath) {
+    removeStoredInstance(stateRoot, instanceId, existing.baseUrl);
+  }
+  return null;
+}
+
 function clearResolvedBaseUrl(baseUrl: string): void {
   if (baseUrl && resolveWebSearchBaseUrl() === baseUrl) {
     delete process.env[RIN_WEB_SEARCH_BASE_URL_ENV];
@@ -478,19 +505,8 @@ async function ensureSearxngSidecar(
 ) {
   const logger = options.logger;
   const instanceId = trimString(options.instanceId) || createInstanceId("searxng");
-  const existing = readNormalizedInstanceState(stateRoot, instanceId);
-  if (existing.alive && existing.baseUrl) {
-    process.env[RIN_WEB_SEARCH_BASE_URL_ENV] = existing.baseUrl;
-    return {
-      ok: true,
-      instanceId,
-      baseUrl: existing.baseUrl,
-      reused: true,
-    };
-  }
-  if (existing.pid > 0 || existing.baseUrl || existing.settingsPath) {
-    removeStoredInstance(stateRoot, instanceId, existing.baseUrl);
-  }
+  const existing = reuseExistingSearxngInstance(stateRoot, instanceId);
+  if (existing) return existing;
 
   const release = await acquireProcessLock(
     runtimeLockPathForState(stateRoot),
@@ -509,6 +525,9 @@ async function ensureSearxngSidecar(
   let baseUrl = "";
   let ready = false;
   try {
+    const lockedExisting = reuseExistingSearxngInstance(stateRoot, instanceId);
+    if (lockedExisting) return lockedExisting;
+
     const runtime = ensureSearxngRuntimeInstalled(stateRoot, logger);
     const port = await getFreePort();
     baseUrl = `http://127.0.0.1:${port}`;
