@@ -29,18 +29,23 @@ export function readJsonFile<T>(filePath: string, fallback: T): T {
   }
 }
 
+function ensureParentDir(filePath: string, privateDir = false) {
+  const dir = path.dirname(filePath);
+  (privateDir ? ensurePrivateDir : ensureDir)(dir);
+}
+
 export function writeJsonFile(filePath: string, value: unknown) {
-  ensureDir(path.dirname(filePath));
+  ensureParentDir(filePath);
   fs.writeFileSync(filePath, stringifyJson(value), "utf8");
 }
 
 export function appendJsonLineSync(filePath: string, value: unknown) {
-  ensureDir(path.dirname(filePath));
+  ensureParentDir(filePath);
   fs.appendFileSync(filePath, stringifyJsonLine(value), "utf8");
 }
 
 export async function appendJsonLine(filePath: string, value: unknown) {
-  ensureDir(path.dirname(filePath));
+  ensureParentDir(filePath);
   await fs.promises.appendFile(filePath, stringifyJsonLine(value), "utf8");
 }
 
@@ -50,7 +55,7 @@ export function writeJsonAtomic(
   mode = 0o600,
   privateDir = false,
 ) {
-  (privateDir ? ensurePrivateDir : ensureDir)(path.dirname(filePath));
+  ensureParentDir(filePath, privateDir);
   const tmp = `${filePath}.tmp.${process.pid}.${Date.now()}`;
   fs.writeFileSync(tmp, stringifyJson(value), { mode });
   fs.renameSync(tmp, filePath);
@@ -62,8 +67,9 @@ export function writeJsonAtomic(
 export function listJsonFiles(dir: string) {
   try {
     return fs
-      .readdirSync(dir)
-      .filter((name) => name.endsWith(".json"))
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+      .map((entry) => entry.name)
       .sort()
       .map((name) => path.join(dir, name));
   } catch {
@@ -71,11 +77,28 @@ export function listJsonFiles(dir: string) {
   }
 }
 
+function moveFile(sourcePath: string, targetPath: string) {
+  try {
+    fs.renameSync(sourcePath, targetPath);
+    return;
+  } catch (error: any) {
+    if (error?.code !== "EXDEV") throw error;
+  }
+
+  fs.copyFileSync(sourcePath, targetPath);
+  try {
+    fs.unlinkSync(sourcePath);
+  } catch (error) {
+    removeFileIfExists(targetPath);
+    throw error;
+  }
+}
+
 export function claimFileToDir(filePath: string, dir: string) {
   try {
     ensureDir(dir);
     const claimedPath = path.join(dir, path.basename(filePath));
-    fs.renameSync(filePath, claimedPath);
+    moveFile(filePath, claimedPath);
     return claimedPath;
   } catch {
     return "";
@@ -89,7 +112,7 @@ export function moveFileToDir(
 ) {
   ensureDir(dir);
   const targetPath = path.join(dir, fileName);
-  fs.renameSync(filePath, targetPath);
+  moveFile(filePath, targetPath);
   return targetPath;
 }
 
