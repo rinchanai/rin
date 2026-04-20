@@ -29,7 +29,7 @@ function readUnixUserId(targetUser: string) {
 }
 
 export function shellQuote(value: string) {
-  return `'${String(value).replace(/'/g, `"'"'`)}'`;
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
 }
 
 export function pickPrivilegeCommand() {

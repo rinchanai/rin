@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -54,4 +55,23 @@ test("rin system trims user lookup inputs consistently", () => {
     system.homeForUser(" demo-user "),
     path.join(expectedHomeRoot, "demo-user"),
   );
+});
+
+test("shellQuote preserves embedded single quotes for sh -lc", () => {
+  const script =
+    "const value='node:net'; if (value !== 'node:net') process.exit(41);";
+  const command = `${system.shellQuote(process.execPath)} -e ${system.shellQuote(script)}`;
+  execFileSync("sh", ["-lc", command], { stdio: "inherit" });
+});
+
+test("shellQuote round-trips paths and event names used by daemon probes", () => {
+  const script = [
+    "const socketPath='/run/user/1001/rin-daemon/daemon.sock';",
+    "const eventName='connect';",
+    "if (socketPath !== '/run/user/1001/rin-daemon/daemon.sock') process.exit(42);",
+    "if (eventName !== 'connect') process.exit(43);",
+  ].join("");
+  const command = `${system.shellQuote(process.execPath)} -e ${system.shellQuote(script)}`;
+  execFileSync("sh", ["-lc", command], { stdio: "inherit" });
+  assert.ok(command.includes(`'"'"'connect'"'"'`));
 });
