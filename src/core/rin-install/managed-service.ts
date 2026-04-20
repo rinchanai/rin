@@ -1,16 +1,18 @@
+function normalizeCommandText(value: unknown) {
+  return String(value ?? "").trim();
+}
+
 function commandErrorText(error: unknown) {
-  const output = String(
+  return normalizeCommandText(
     (error as any)?.stdout ||
       (error as any)?.stderr ||
       (error as any)?.message ||
       "",
-  ).trim();
-  return output;
+  );
 }
 
 function nonEmptyLines(text: string, limit: number, fromEnd = false) {
-  const lines = String(text || "")
-    .trim()
+  const lines = normalizeCommandText(text)
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
     .filter(Boolean);
@@ -22,21 +24,85 @@ export type ManagedSystemdSnapshot = {
   lines: string[];
 };
 
+type ManagedSystemdSnapshotCandidate = ManagedSystemdSnapshot & {
+  score: number;
+};
+
+function pickBetterSnapshot(
+  current: ManagedSystemdSnapshotCandidate | null,
+  candidate: ManagedSystemdSnapshotCandidate | null,
+) {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  if (candidate.score > current.score) return candidate;
+  if (candidate.score < current.score) return current;
+  if (candidate.lines.length > current.lines.length) return candidate;
+  return current;
+}
+
+function buildManagedSystemdSnapshotCandidate(
+  unit: string,
+  text: string,
+  lineLimit: number,
+  options: { fromEnd?: boolean; score: number },
+): ManagedSystemdSnapshotCandidate | null {
+  const lines = nonEmptyLines(text, lineLimit, options.fromEnd);
+  if (!lines.length) return null;
+  return { unit, lines, score: options.score };
+}
+
+function findManagedSystemdSnapshot(
+  units: string[],
+  capture: (unit: string) => string,
+  options: {
+    lineLimit?: number;
+    fromEnd?: boolean;
+    includeErrors?: boolean;
+    successScore?: number;
+    errorScore?: number;
+  } = {},
+): ManagedSystemdSnapshot | null {
+  let best: ManagedSystemdSnapshotCandidate | null = null;
+  const lineLimit = options.lineLimit ?? 20;
+  for (const unit of units) {
+    try {
+      best = pickBetterSnapshot(
+        best,
+        buildManagedSystemdSnapshotCandidate(unit, capture(unit), lineLimit, {
+          fromEnd: options.fromEnd,
+          score: options.successScore ?? 1,
+        }),
+      );
+    } catch (error) {
+      if (!options.includeErrors) continue;
+      best = pickBetterSnapshot(
+        best,
+        buildManagedSystemdSnapshotCandidate(
+          unit,
+          commandErrorText(error),
+          lineLimit,
+          {
+            fromEnd: options.fromEnd,
+            score: options.errorScore ?? 0,
+          },
+        ),
+      );
+    }
+  }
+  return best ? { unit: best.unit, lines: best.lines } : null;
+}
+
 export function findManagedSystemdStatusSnapshot(
   units: string[],
   captureStatus: (unit: string) => string,
   lineLimit = 20,
 ): ManagedSystemdSnapshot | null {
-  for (const unit of units) {
-    try {
-      const lines = nonEmptyLines(captureStatus(unit), lineLimit);
-      if (lines.length > 0) return { unit, lines };
-    } catch (error) {
-      const lines = nonEmptyLines(commandErrorText(error), lineLimit);
-      if (lines.length > 0) return { unit, lines };
-    }
-  }
-  return null;
+  return findManagedSystemdSnapshot(units, captureStatus, {
+    lineLimit,
+    includeErrors: true,
+    successScore: 2,
+    errorScore: 1,
+  });
 }
 
 export function findManagedSystemdJournalSnapshot(
@@ -44,13 +110,10 @@ export function findManagedSystemdJournalSnapshot(
   captureJournal: (unit: string) => string,
   lineLimit = 20,
 ): ManagedSystemdSnapshot | null {
-  for (const unit of units) {
-    try {
-      const lines = nonEmptyLines(captureJournal(unit), lineLimit, true);
-      if (lines.length > 0) return { unit, lines };
-    } catch {}
-  }
-  return null;
+  return findManagedSystemdSnapshot(units, captureJournal, {
+    lineLimit,
+    fromEnd: true,
+  });
 }
 
 export function tryManagedSystemdAction(

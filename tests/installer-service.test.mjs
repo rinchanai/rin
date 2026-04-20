@@ -195,7 +195,7 @@ test("systemdUserContext keeps managed unit candidates ordered", () => {
   assert.deepEqual(context.userEnv, {});
 });
 
-test("managed systemd helpers keep first matching unit semantics", () => {
+test("managed systemd helpers prefer richer successful snapshots while keeping action probe order", () => {
   const units = [
     "missing.service",
     "rin-daemon-demo.service",
@@ -215,8 +215,11 @@ test("managed systemd helpers keep first matching unit semantics", () => {
     },
   );
   assert.deepEqual(status, {
-    unit: "missing.service",
-    lines: ["Unit missing.service could not be found"],
+    unit: "rin-daemon-demo.service",
+    lines: [
+      "● rin-daemon-demo.service - Demo",
+      "   Active: active (running)",
+    ],
   });
 
   const journal = managedService.findManagedSystemdJournalSnapshot(
@@ -226,7 +229,7 @@ test("managed systemd helpers keep first matching unit semantics", () => {
       if (unit === "missing.service") return "";
       if (unit === "rin-daemon-demo.service")
         return "older\nrecent one\nrecent two";
-      return "";
+      return "oldest\nlegacy one\nlegacy two";
     },
     2,
   );
@@ -246,8 +249,11 @@ test("managed systemd helpers keep first matching unit semantics", () => {
   assert.equal(actionUnit, "rin-daemon-demo.service");
   assert.deepEqual(calls, [
     "status:missing.service",
+    "status:rin-daemon-demo.service",
+    "status:rin-daemon.service",
     "journal:missing.service",
     "journal:rin-daemon-demo.service",
+    "journal:rin-daemon.service",
     "reload",
     "probe:missing.service",
     "probe:rin-daemon-demo.service",
