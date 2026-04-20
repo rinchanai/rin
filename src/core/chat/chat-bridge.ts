@@ -19,7 +19,7 @@ import {
 } from "../pi/render-utils.js";
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { readSessionMetadata } from "../session/metadata.js";
-import { normalizeChatKey } from "./support.js";
+import { resolveChatKeyForSession } from "./support.js";
 import { safeString } from "../text-utils.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
@@ -96,10 +96,15 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
       const requestId =
         safeString(toolCallId).trim() ||
         `chat_bridge_${Date.now().toString(36)}`;
-      const currentChatKey = normalizeChatKey(
-        ctx.sessionManager?.getSessionName?.() || "",
-      );
       const session = readSessionMetadata(ctx);
+      const agentDir = safeString((ctx as any)?.agentDir).trim();
+      const currentChatKey = resolveChatKeyForSession(
+        agentDir ? path.join(agentDir, "data") : "",
+        {
+          sessionName: session.sessionName,
+          sessionFile: session.sessionFile,
+        },
+      );
       const result = await requestDaemonCommand(
         {
           type: "chat_bridge_eval",

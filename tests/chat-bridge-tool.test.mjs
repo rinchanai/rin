@@ -13,6 +13,99 @@ const rootDir = path.resolve(
 const chatBridgeModule = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "chat-bridge.js")).href,
 );
+const support = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href,
+);
+
+test("chat_bridge falls back to chat state binding when the session name is not a chat key", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-bridge-runtime-"));
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  const agentDir = path.join(runtimeDir, "agent");
+  const dataDir = path.join(agentDir, "data");
+  const sessionFile = path.join(runtimeDir, "session.jsonl");
+  const statePath = support.chatStatePath(dataDir, "telegram/777:1");
+  await fs.mkdir(socketDir, { recursive: true });
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.writeFile(sessionFile, "", "utf8");
+  await fs.writeFile(
+    statePath,
+    JSON.stringify({ chatKey: "telegram/777:1", piSessionFile: sessionFile }),
+    "utf8",
+  );
+
+  const requests = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        requests.push(payload);
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: true,
+            data: {
+              text: "ok",
+              durationMs: 5,
+            },
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => resolve());
+  });
+
+  const tools = [];
+  chatBridgeModule.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+  });
+  const chatBridgeTool = tools.find((tool) => tool.name === "chat_bridge");
+  assert.ok(chatBridgeTool);
+
+  const previousRuntimeDir = process.env.XDG_RUNTIME_DIR;
+  const previousSocketPath = process.env.RIN_DAEMON_SOCKET_PATH;
+  process.env.XDG_RUNTIME_DIR = runtimeDir;
+  process.env.RIN_DAEMON_SOCKET_PATH = socketPath;
+  try {
+    await chatBridgeTool.execute(
+      "bridge-session-file",
+      { code: "return 'ok';" },
+      undefined,
+      undefined,
+      {
+        agentDir,
+        sessionManager: {
+          getSessionName: () => "plain session name",
+          getSessionId: () => undefined,
+          getSessionFile: () => sessionFile,
+        },
+      },
+    );
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].type, "chat_bridge_eval");
+    assert.equal(requests[0].payload?.currentChatKey, "telegram/777:1");
+  } finally {
+    process.env.XDG_RUNTIME_DIR = previousRuntimeDir;
+    process.env.RIN_DAEMON_SOCKET_PATH = previousSocketPath;
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
 
 test("chat_bridge only forwards valid current chat session names", async () => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-bridge-runtime-"));

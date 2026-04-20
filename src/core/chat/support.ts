@@ -152,6 +152,24 @@ export function listChatStateFiles(chatsRoot: string) {
   return out;
 }
 
+export function resolveChatKeyForSession(
+  dataDir: string,
+  session: { sessionName?: unknown; sessionFile?: unknown },
+) {
+  const fromName = normalizeChatKey(session?.sessionName);
+  if (fromName) return fromName;
+  const wantedSessionFile = safeString(session?.sessionFile).trim();
+  if (!wantedSessionFile || !safeString(dataDir).trim()) return undefined;
+  const wantedResolved = path.resolve(wantedSessionFile);
+  for (const item of listChatStateFiles(path.join(dataDir, "chats"))) {
+    const state = readJsonFile<any>(item.statePath, {}) || {};
+    const stateSessionFile = safeString(state?.piSessionFile).trim();
+    if (!stateSessionFile) continue;
+    if (path.resolve(stateSessionFile) === wantedResolved) return item.chatKey;
+  }
+  return undefined;
+}
+
 export function listDetachedControllerStateFiles(cronTurnsRoot: string) {
   const out: Array<{
     controllerKey: string;

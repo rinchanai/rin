@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -72,6 +74,33 @@ test("chat support keeps compose, parse, and normalize symmetric across bot requ
     support.normalizeChatKey(" telegram/8623230033:-100123 "),
     "telegram/8623230033:-100123",
   );
+});
+
+test("chat support resolves current chat from session file when the session name is not a chat key", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-support-"));
+  const dataDir = path.join(agentDir, "data");
+  const sessionFile = path.join(agentDir, "sessions", "chat-session.jsonl");
+  const statePath = support.chatStatePath(dataDir, "telegram/777:group-1");
+  await fs.mkdir(path.dirname(statePath), { recursive: true });
+  await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+  await fs.writeFile(sessionFile, "", "utf8");
+  await fs.writeFile(
+    statePath,
+    JSON.stringify({ chatKey: "telegram/777:group-1", piSessionFile: sessionFile }),
+    "utf8",
+  );
+
+  try {
+    assert.equal(
+      support.resolveChatKeyForSession(dataDir, {
+        sessionName: "normal session name",
+        sessionFile,
+      }),
+      "telegram/777:group-1",
+    );
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
 });
 
 test("chat support normalizes trust lookup and bot selection over dirty metadata", () => {
