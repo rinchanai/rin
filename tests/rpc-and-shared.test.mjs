@@ -53,6 +53,17 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.equal(parsed.targetUser, "demo");
   assert.equal(parsed.std, true);
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
+  assert.deepEqual(
+    shared.stripRinWrapperArgs([
+      "--user=demo",
+      "--tmux=rin-hidden",
+      "--std",
+      "usage",
+      "--limit",
+      "5",
+    ]),
+    ["usage", "--limit", "5"],
+  );
   assert.equal(
     shared.installConfigPath(),
     installPaths.launcherMetadataPathForHome(os.homedir()),

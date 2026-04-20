@@ -48,6 +48,28 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
   );
 
   assert.deepEqual(
+    usage.parseUsageArgs([
+      "--user=rin",
+      "usage",
+      "--events",
+      "--tmux=rin-hidden",
+      "--limit",
+      "5",
+    ]),
+    {
+      groupBy: [],
+      filters: [],
+      limit: 5,
+      orderBy: "total_tokens",
+      direction: "desc",
+      events: true,
+      includeZero: false,
+      dimensions: false,
+      help: false,
+    },
+  );
+
+  assert.deepEqual(
     memoryIndex.parseMemoryIndexArgs([
       "memory-index",
       "repair",
@@ -55,6 +77,20 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
       "rin-hidden",
       "-u",
       "rin",
+      "--help",
+    ]),
+    {
+      action: "repair",
+      help: true,
+    },
+  );
+
+  assert.deepEqual(
+    memoryIndex.parseMemoryIndexArgs([
+      "--user=rin",
+      "memory-index",
+      "repair",
+      "--tmux=rin-hidden",
       "--help",
     ]),
     {
@@ -75,7 +111,7 @@ test("captureInternalRinCommand forwards only subcommand args", () => {
       },
     },
     "__usage_internal",
-    ["-u", "rin", "usage", "--events", "--limit", "5"],
+    ["--user=rin", "usage", "--events", "--tmux=rin-hidden", "--limit", "5"],
     "usage",
   );
 

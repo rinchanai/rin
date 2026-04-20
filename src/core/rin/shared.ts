@@ -65,6 +65,10 @@ export { repoRootFromHere, runCommand, safeString };
 const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user", "-t", "--tmux"]);
 const RIN_WRAPPER_FLAGS = new Set(["--std", "--tmux-list"]);
 
+function hasInlineWrapperValue(arg: string) {
+  return arg.startsWith("--user=") || arg.startsWith("--tmux=");
+}
+
 export function stripRinWrapperArgs(rawArgv: string[]) {
   const args: string[] = [];
   for (let index = 0; index < rawArgv.length; index += 1) {
@@ -74,7 +78,7 @@ export function stripRinWrapperArgs(rawArgv: string[]) {
       index += 1;
       continue;
     }
-    if (RIN_WRAPPER_FLAGS.has(arg)) continue;
+    if (hasInlineWrapperValue(arg) || RIN_WRAPPER_FLAGS.has(arg)) continue;
     args.push(arg);
   }
   return args;
@@ -284,11 +288,13 @@ function runCommandSync(command: string, args: string[], options: any = {}) {
   execFileSync(command, args, { stdio: "inherit", ...options });
 }
 
-function updateWorkRoot() {
+export function updateWorkRoot() {
+  const explicitRoot = safeString(process.env.RIN_INSTALL_TMPDIR).trim();
   const base =
+    explicitRoot ||
     safeString(process.env.XDG_CACHE_HOME).trim() ||
     path.join(os.homedir(), ".cache");
-  const dir = path.join(base, "rin-update");
+  const dir = explicitRoot ? path.resolve(base) : path.join(base, "rin-update");
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -301,6 +307,7 @@ export function cleanupStaleUpdateWorkDirs(
     staleAfterMs?: number;
   } = {},
 ) {
+  const rootPath = path.resolve(workRoot);
   const keepPaths = new Set(
     (options.keepPaths || []).map((item) => path.resolve(item)),
   );
@@ -313,14 +320,14 @@ export function cleanupStaleUpdateWorkDirs(
   const removed: string[] = [];
   let entries: fs.Dirent[] = [];
   try {
-    entries = fs.readdirSync(workRoot, { withFileTypes: true });
+    entries = fs.readdirSync(rootPath, { withFileTypes: true });
   } catch {
     return removed;
   }
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (!entry.name.startsWith("work-")) continue;
-    const fullPath = path.join(workRoot, entry.name);
+    const fullPath = path.join(rootPath, entry.name);
     if (keepPaths.has(path.resolve(fullPath))) continue;
     try {
       const stat = fs.statSync(fullPath);

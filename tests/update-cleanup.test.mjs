@@ -26,8 +26,8 @@ test("cleanupStaleUpdateWorkDirs prunes only stale work dirs", async () => {
   await fs.utimes(staleDir, oldTime, oldTime);
   await fs.utimes(otherDir, oldTime, oldTime);
 
-  const removed = shared.cleanupStaleUpdateWorkDirs(workRoot, {
-    keepPaths: [keepDir],
+  const removed = shared.cleanupStaleUpdateWorkDirs(path.join(workRoot, "."), {
+    keepPaths: [path.join(workRoot, ".", "work-keep")],
     staleAfterMs: 5_000,
     nowMs: Date.now(),
   });
@@ -36,4 +36,17 @@ test("cleanupStaleUpdateWorkDirs prunes only stale work dirs", async () => {
   await assert.doesNotReject(fs.access(keepDir));
   await assert.doesNotReject(fs.access(otherDir));
   await assert.rejects(fs.access(staleDir));
+});
+
+test("updateWorkRoot prefers explicit installer tmpdir", async () => {
+  const previous = process.env.RIN_INSTALL_TMPDIR;
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "rin-install-explicit-"));
+  try {
+    process.env.RIN_INSTALL_TMPDIR = path.join(root, " custom ", "..");
+    assert.equal(shared.updateWorkRoot(), path.resolve(root));
+  } finally {
+    if (previous == null) delete process.env.RIN_INSTALL_TMPDIR;
+    else process.env.RIN_INSTALL_TMPDIR = previous;
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
