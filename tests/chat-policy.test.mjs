@@ -30,3 +30,36 @@ test("chat policy keeps non-help commands restricted while owners retain full co
   assert.equal(support.canRunCommand("OWNER", "abort"), true);
   assert.equal(support.canRunCommand("OWNER", "resume"), true);
 });
+
+test("chat policy normalizes trust values for input access and command checks", () => {
+  assert.equal(
+    support.canAccessAgentInput({
+      chatType: "private",
+      trust: " owner ",
+      mentionLike: false,
+      commandLike: false,
+    }),
+    true,
+  );
+  assert.equal(
+    support.canAccessAgentInput({
+      chatType: "group",
+      trust: " trusted ",
+      mentionLike: true,
+      commandLike: false,
+    }),
+    true,
+  );
+  assert.equal(
+    support.canAccessAgentInput({
+      chatType: "group",
+      trust: "trusted",
+      mentionLike: true,
+      commandLike: true,
+    }),
+    false,
+  );
+  assert.equal(support.canRunCommand(" trusted ", "/status"), true);
+  assert.equal(support.canRunCommand(" owner ", "/resume"), true);
+  assert.equal(support.canRunCommand("invalid", "/status"), false);
+});

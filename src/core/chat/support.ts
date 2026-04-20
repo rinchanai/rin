@@ -30,8 +30,23 @@ export type ParsedChatKey = {
 
 export type ChatType = "private" | "group";
 
+function normalizeChatPlatform(platform: unknown) {
+  return safeString(platform).trim();
+}
+
+function normalizeChatId(chatId: unknown) {
+  return safeString(chatId).trim();
+}
+
+function normalizeTrust(value: unknown) {
+  const nextTrust = safeString(value).trim().toUpperCase();
+  return nextTrust === "OWNER" || nextTrust === "TRUSTED"
+    ? nextTrust
+    : "OTHER";
+}
+
 function platformRequiresBotId(platform: string) {
-  const nextPlatform = safeString(platform).trim().toLowerCase();
+  const nextPlatform = normalizeChatPlatform(platform).toLowerCase();
   return nextPlatform === "telegram" || nextPlatform === "onebot";
 }
 
@@ -52,12 +67,14 @@ export function isPrivateChat(target: { platform: string; chatId: string }) {
 }
 
 export function composeChatKey(platform: string, chatId: string, botId = "") {
-  const nextPlatform = safeString(platform).trim();
-  const nextChatId = safeString(chatId).trim();
-  const nextBotId = safeString(botId).trim();
+  const nextPlatform = normalizeChatPlatform(platform);
+  const nextChatId = normalizeChatId(chatId);
+  const nextBotId = normalizeChatId(botId);
   if (!nextPlatform || !nextChatId) return "";
-  if (platformRequiresBotId(nextPlatform) && !nextBotId) return "";
-  return `${nextPlatform}/${nextBotId}:${nextChatId}`;
+  if (platformRequiresBotId(nextPlatform)) {
+    return nextBotId ? `${nextPlatform}/${nextBotId}:${nextChatId}` : "";
+  }
+  return `${nextPlatform}:${nextChatId}`;
 }
 
 export function parseChatKey(chatKey: string): ParsedChatKey | null {
@@ -65,15 +82,19 @@ export function parseChatKey(chatKey: string): ParsedChatKey | null {
     .trim()
     .match(/^([^/:]+)(?:\/([^:]+))?:(.+)$/);
   if (!match) return null;
-  const [, platform, botId = "", chatId] = match;
+  const platform = normalizeChatPlatform(match[1]);
+  const botId = normalizeChatId(match[2] || "");
+  const chatId = normalizeChatId(match[3]);
   if (!platform || !chatId) return null;
-  if (platformRequiresBotId(platform) && !safeString(botId).trim()) return null;
+  if (platformRequiresBotId(platform) && !botId) return null;
   return { platform, botId, chatId };
 }
 
 export function normalizeChatKey(value: unknown) {
-  const chatKey = safeString(value).trim();
-  return parseChatKey(chatKey) ? chatKey : undefined;
+  const parsed = parseChatKey(safeString(value).trim());
+  return parsed
+    ? composeChatKey(parsed.platform, parsed.chatId, parsed.botId)
+    : undefined;
 }
 
 export function chatStateDir(dataDir: string, chatKey: string) {
@@ -266,18 +287,18 @@ export function setIdentityTrust(options: {
 }
 
 export function trustOf(identity: any, platform: string, userId: string) {
-  const nextPlatform = safeString(platform).trim();
-  const nextUserId = safeString(userId).trim();
+  const nextPlatform = normalizeChatPlatform(platform);
+  const nextUserId = normalizeChatId(userId);
   if (!nextPlatform || !nextUserId) return "OTHER";
   const alias = (Array.isArray(identity?.aliases) ? identity.aliases : []).find(
     (entry: any) =>
       entry &&
-      entry.platform === nextPlatform &&
-      String(entry.userId) === nextUserId,
+      normalizeChatPlatform(entry.platform) === nextPlatform &&
+      normalizeChatId(entry.userId) === nextUserId,
   );
   const personId = safeString(alias?.personId).trim();
   if (!personId) return "OTHER";
-  return safeString(identity?.persons?.[personId]?.trust || "OTHER") || "OTHER";
+  return normalizeTrust(identity?.persons?.[personId]?.trust);
 }
 
 export function canAccessAgentInput({
@@ -291,15 +312,16 @@ export function canAccessAgentInput({
   mentionLike?: boolean;
   commandLike?: boolean;
 }) {
+  const nextTrust = normalizeTrust(trust);
   if (commandLike) return false;
-  if (chatType === "private") return trust === "OWNER";
-  return Boolean(mentionLike) && (trust === "OWNER" || trust === "TRUSTED");
+  if (chatType === "private") return nextTrust === "OWNER";
+  return Boolean(mentionLike) && (nextTrust === "OWNER" || nextTrust === "TRUSTED");
 }
 
 const TRUSTED_COMMANDS = new Set(["new", "abort", "status"]);
 
 export function canRunCommand(trust: string, commandName: string) {
-  const nextTrust = safeString(trust).trim();
+  const nextTrust = normalizeTrust(trust);
   const nextName = safeString(commandName).trim().replace(/^\//, "");
   if (!nextName) return false;
   if (nextTrust === "OWNER") return true;
@@ -309,17 +331,18 @@ export function canRunCommand(trust: string, commandName: string) {
 
 export function findBot(app: any, platform: string, botId = "") {
   const bots = Array.isArray(app?.bots) ? app.bots : [];
-  const nextPlatform = safeString(platform).trim();
-  const nextBotId = safeString(botId).trim();
+  const nextPlatform = normalizeChatPlatform(platform);
+  const nextBotId = normalizeChatId(botId);
   if (!nextPlatform) return null;
   const matches = bots.filter(
-    (bot: any) => bot && bot.platform === nextPlatform,
+    (bot: any) => normalizeChatPlatform(bot?.platform) === nextPlatform,
   );
   if (!matches.length) return null;
-  if (!nextBotId)
+  if (!nextBotId) {
     return platformRequiresBotId(nextPlatform) ? null : matches[0];
+  }
   return (
-    matches.find((bot: any) => safeString(bot?.selfId).trim() === nextBotId) ||
+    matches.find((bot: any) => normalizeChatId(bot?.selfId) === nextBotId) ||
     null
   );
 }

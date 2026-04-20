@@ -44,3 +44,76 @@ test("chat support parses shared chat targets for private detection", () => {
   });
   assert.equal(support.isPrivateChat(parsed), true);
 });
+
+test("chat support keeps compose, parse, and normalize symmetric across bot requirements", () => {
+  assert.equal(
+    support.composeChatKey("discord", " channel-1 "),
+    "discord:channel-1",
+  );
+  assert.equal(
+    support.composeChatKey(" telegram ", " -100123 ", " 8623230033 "),
+    "telegram/8623230033:-100123",
+  );
+  assert.equal(support.composeChatKey("telegram", "-100123"), "");
+  assert.deepEqual(support.parseChatKey(" discord:channel-1 "), {
+    platform: "discord",
+    botId: "",
+    chatId: "channel-1",
+  });
+  assert.equal(
+    support.normalizeChatKey(" discord/:channel-1 "),
+    undefined,
+  );
+  assert.equal(
+    support.normalizeChatKey(" discord:channel-1 "),
+    "discord:channel-1",
+  );
+  assert.equal(
+    support.normalizeChatKey(" telegram/8623230033:-100123 "),
+    "telegram/8623230033:-100123",
+  );
+});
+
+test("chat support normalizes trust lookup and bot selection over dirty metadata", () => {
+  assert.equal(
+    support.trustOf(
+      {
+        aliases: [
+          { platform: " telegram ", userId: " 42 ", personId: " owner " },
+          { platform: "telegram", userId: "99", personId: "missing" },
+        ],
+        persons: {
+          owner: { trust: " owner " },
+        },
+      },
+      "telegram",
+      "42",
+    ),
+    "OWNER",
+  );
+  assert.equal(
+    support.trustOf(
+      {
+        aliases: [{ platform: "telegram", userId: "99", personId: "missing" }],
+        persons: {},
+      },
+      "telegram",
+      "99",
+    ),
+    "OTHER",
+  );
+
+  const app = {
+    bots: [
+      { platform: " telegram ", selfId: " 8623230033 ", name: "tg" },
+      { platform: "discord", selfId: "1", name: "dc" },
+    ],
+  };
+  assert.equal(
+    support.findBot(app, "telegram", "8623230033")?.name,
+    "tg",
+  );
+  assert.equal(support.findBot(app, "telegram") , null);
+  assert.equal(support.findBot(app, "discord")?.name, "dc");
+  assert.equal(support.findBot(app, "onebot", "1"), null);
+});
