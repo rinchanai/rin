@@ -69,15 +69,31 @@ function removeFile(
   } catch {}
 }
 
+function normalizeInstallerRecord(value: unknown) {
+  return isNonArrayObject(value) ? value : {};
+}
+
+function normalizeChatConfigRoot(chatConfig: unknown) {
+  return isNonArrayObject(chatConfig) ? chatConfig : null;
+}
+
 function mergeInstalledChatSettings(settingsJson: any, chatConfig?: any) {
+  const normalizedChatConfig = normalizeChatConfigRoot(chatConfig);
   const normalized = normalizeStoredChatSettings(settingsJson, {
-    ensureChat: Boolean(chatConfig && typeof chatConfig === "object"),
+    ensureChat: Boolean(normalizedChatConfig),
   });
-  if (!chatConfig || typeof chatConfig !== "object") return normalized;
-  for (const [adapterKey, adapterConfig] of Object.entries(chatConfig)) {
+  if (!normalizedChatConfig) return normalized;
+  for (const [adapterKey, adapterConfig] of Object.entries(normalizedChatConfig)) {
     if (adapterConfig === undefined) continue;
     normalized.chat[adapterKey] = adapterConfig;
   }
+  return normalized;
+}
+
+function normalizeInstalledManifest(manifestJson: any, chatConfig?: any) {
+  const normalized = normalizeStoredChatSettings(manifestJson);
+  const normalizedChatConfig = normalizeChatConfigRoot(chatConfig);
+  if (normalizedChatConfig) normalized.chat = normalizedChatConfig;
   return normalized;
 }
 
@@ -122,20 +138,21 @@ export function reconcileInstallerManifest(
     legacyManifestPath,
     legacyLocatorManifestPath,
   } = manifestPaths;
-  const manifestJson: any =
+  const manifestJson: any = normalizeInstalledManifest(
     loadFirstValidCandidate(
       manifestPaths.recoveryPaths,
       (filePath) =>
         deps.readInstallerJson<any>(filePath, null, Boolean(options.elevated)),
       (value) => (isNonArrayObject(value) ? value : null),
-    ) || {};
+    ) || {},
+    options.chatConfig,
+  );
   manifestJson.targetUser = options.targetUser;
   manifestJson.installDir = options.installDir;
   if (options.provider) manifestJson.defaultProvider = options.provider;
   if (options.modelId) manifestJson.defaultModel = options.modelId;
   if (options.thinkingLevel)
     manifestJson.defaultThinkingLevel = options.thinkingLevel;
-  if (options.chatConfig) manifestJson.chat = options.chatConfig;
   dropLegacyChatSettings(manifestJson);
   manifestJson.updatedAt = new Date().toISOString();
 
@@ -257,15 +274,18 @@ export async function persistInstallerOutputs(
     settingsJson.defaultThinkingLevel = options.thinkingLevel;
 
   const authPath = installAuthPath(options.installDir);
-  const authJson = deps.readInstallerJson<any>(
-    authPath,
-    {},
-    Boolean(options.elevated),
+  const authJson = normalizeInstallerRecord(
+    deps.readInstallerJson<any>(authPath, {}, Boolean(options.elevated)),
   );
-  const nextAuthJson = { ...authJson, ...(options.authData || {}) };
+  const nextAuthJson = {
+    ...authJson,
+    ...normalizeInstallerRecord(options.authData),
+  };
 
   const launcherPath = deps.launcherMetadataPathForUser(options.currentUser);
-  const launcherJson = deps.readJsonFile<any>(launcherPath, {});
+  const launcherJson = normalizeInstallerRecord(
+    deps.readJsonFile<any>(launcherPath, {}),
+  );
   launcherJson.defaultTargetUser = options.targetUser;
   launcherJson.defaultInstallDir = options.installDir;
   launcherJson.updatedAt = new Date().toISOString();
@@ -278,7 +298,7 @@ export async function persistInstallerOutputs(
       provider: options.provider,
       modelId: options.modelId,
       thinkingLevel: options.thinkingLevel,
-      chatConfig: options.chatConfig || {},
+      chatConfig: normalizeChatConfigRoot(options.chatConfig) || {},
       elevated: options.elevated,
     },
     deps,
