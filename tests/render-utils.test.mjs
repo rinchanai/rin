@@ -93,7 +93,7 @@ test("render utils render shared text tool previews", () => {
   assert.equal(
     renderUtils.renderTextToolResult(
       {
-        content: [{ type: "text", text: "alpha\nbeta" }],
+        content: [{ type: "text", text: "alpha\tbeta\n\n" }],
         details: {
           emptyMessage: "Nothing here.",
         },
@@ -106,7 +106,7 @@ test("render utils render shared text tool previews", () => {
         truncation,
       },
     ),
-    "\n<toolOutput>alpha</toolOutput>\n<toolOutput>beta</toolOutput>\n<muted>[Showing top 3 of 5 results.]</muted>\n<warning>[Truncated: showing 2 of 4 lines (2 line limit)]</warning>",
+    "\n<toolOutput>alpha   beta</toolOutput>\n<muted>[Showing top 3 of 5 results.]</muted>\n<warning>[Truncated: showing 2 of 4 lines (2 line limit)]</warning>",
   );
 
   assert.equal(
@@ -194,6 +194,17 @@ test("render utils sanitize shared text output blocks in order", () => {
       false,
     ),
     "alphared\nbeta\ngamma",
+  );
+});
+
+test("render utils user text fallback ignores non-string overrides", () => {
+  assert.equal(
+    renderUtils.getToolResultUserText(
+      { content: [{ type: "text", text: "agent text" }] },
+      false,
+      { text: "ignored" },
+    ),
+    "agent text",
   );
 });
 

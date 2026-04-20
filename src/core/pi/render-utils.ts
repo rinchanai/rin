@@ -55,6 +55,26 @@ export function trimTrailingEmptyLines(lines: string[]): string[] {
   return lines.slice(0, end);
 }
 
+function normalizeRenderedOutputText(text: string) {
+  return trimTrailingEmptyLines(replaceTabs(String(text || "")).split("\n"))
+    .join("\n")
+    .trim();
+}
+
+function formatToolWarnings(
+  theme: any,
+  config: { fullOutputPath?: string; truncation?: TruncationResult },
+) {
+  const warnings: string[] = [];
+  if (config.fullOutputPath) warnings.push(`Full output: ${config.fullOutputPath}`);
+  if (config.truncation?.truncated) {
+    warnings.push(formatTruncationWarningMessage(config.truncation));
+  }
+  return warnings.length
+    ? `\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`
+    : "";
+}
+
 export function formatHiddenResultsNotice(totalResults: number, hiddenCount: number) {
   if (!(hiddenCount > 0)) return "";
   return `[Showing top ${Math.max(totalResults - hiddenCount, 0)} of ${totalResults} results.]`;
@@ -283,7 +303,7 @@ export function rebuildExpandableTextResultComponent(
   const state = component.state;
   component.clear();
 
-  const output = String(config.outputText || "").trim();
+  const output = normalizeRenderedOutputText(config.outputText);
   if (output) {
     const styledOutput = output
       .split("\n")
@@ -326,15 +346,12 @@ export function rebuildExpandableTextResultComponent(
     }
   }
 
-  if (config.truncation?.truncated || config.fullOutputPath) {
-    const warnings: string[] = [];
-    if (config.fullOutputPath) warnings.push(`Full output: ${config.fullOutputPath}`);
-    if (config.truncation?.truncated) {
-      warnings.push(formatTruncationWarningMessage(config.truncation));
-    }
-    component.addChild(
-      new Text(`\n${theme.fg("warning", `[${warnings.join(". ")}]`)}`, 0, 0),
-    );
+  const warnings = formatToolWarnings(theme, {
+    fullOutputPath: config.fullOutputPath,
+    truncation: config.truncation,
+  });
+  if (warnings) {
+    component.addChild(new Text(warnings, 0, 0));
   }
 
   const duration = formatToolDuration(config.startedAt, config.endedAt);
@@ -360,8 +377,8 @@ export function renderTextToolResult(
     return theme.fg("warning", config.partialText);
   }
 
-  const output = getTextOutput(result, showImages);
-  const lines = trimTrailingEmptyLines(replaceTabs(output).split("\n"));
+  const output = normalizeRenderedOutputText(getTextOutput(result, showImages));
+  const lines = output ? output.split("\n") : [];
   const maxLines = options.expanded ? lines.length : (config.previewLines ?? 10);
   const displayLines = lines.slice(0, maxLines);
   const remaining = lines.length - maxLines;
@@ -384,10 +401,9 @@ export function renderTextToolResult(
     text += `\n${theme.fg("muted", line)}`;
   }
 
-  const truncation = config.truncation ?? result.details?.truncation;
-  if (truncation?.truncated) {
-    text += `\n${theme.fg("warning", `[${formatTruncationWarningMessage(truncation)}]`)}`;
-  }
+  text += formatToolWarnings(theme, {
+    truncation: config.truncation ?? result.details?.truncation,
+  });
 
   return text;
 }
