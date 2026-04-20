@@ -2,6 +2,7 @@ import { CHRONICLE_TAG, MemoryDoc, MemoryEvent } from "./core/types.js";
 import {
   cjkBigrams,
   conceptTokens,
+  normalizeList,
   normalizeNeedle,
   nowIso,
   safeString,
@@ -34,6 +35,24 @@ function normalizeHaystack(parts: Array<string | undefined>): string {
   return normalizeNeedle(parts.filter(Boolean).join(" \n "));
 }
 
+function normalizeDocTags(doc: Partial<MemoryDoc>): string[] {
+  return normalizeList(doc?.tags);
+}
+
+function normalizeDocAliases(doc: Partial<MemoryDoc>): string[] {
+  return normalizeList(doc?.aliases);
+}
+
+function normalizeEventTags(event: Partial<MemoryEvent>): string[] {
+  return normalizeList(event?.tags);
+}
+
+function normalizeEventAgeHours(value: unknown): number {
+  const timestamp = Date.parse(safeString(value).trim() || nowIso());
+  if (!Number.isFinite(timestamp)) return 0;
+  return Math.max(0, (Date.now() - timestamp) / 3_600_000);
+}
+
 function scoreTextMatches(
   query: NormalizedRelevanceQuery,
   haystack: string,
@@ -60,16 +79,18 @@ function scoreTextMatches(
 
 export function lexicalScore(query: string, doc: MemoryDoc): number {
   const normalizedQuery = normalizeRelevanceQuery(query);
+  const tags = normalizeDocTags(doc);
+  const aliases = normalizeDocAliases(doc);
   const haystack = normalizeHaystack([
-    doc.name,
-    doc.description,
-    doc.content,
-    doc.id,
-    doc.self_improve_prompt_slot,
-    doc.scope,
-    doc.kind,
-    ...doc.tags,
-    ...doc.aliases,
+    safeString(doc?.name),
+    safeString(doc?.description),
+    safeString(doc?.content),
+    safeString(doc?.id),
+    safeString(doc?.self_improve_prompt_slot),
+    safeString(doc?.scope),
+    safeString(doc?.kind),
+    ...tags,
+    ...aliases,
   ]);
   if (!normalizedQuery.normalized || !haystack) return 0;
   let score = scoreTextMatches(normalizedQuery, haystack, {
@@ -78,14 +99,11 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
     shortToken: 0.6,
     cjkBigram: 0.45,
   });
-  if (doc.id === normalizedQuery.normalized) score += 6;
-  if (doc.self_improve_prompt_slot === normalizedQuery.normalized) score += 6;
-  if (doc.exposure === "self_improve_prompts") score += 0.2;
-  if (doc.status !== "active") score -= 8;
-  if (
-    doc.tags.includes(CHRONICLE_TAG) &&
-    !shouldInjectRecentHistory(query)
-  ) {
+  if (safeString(doc?.id) === normalizedQuery.normalized) score += 6;
+  if (safeString(doc?.self_improve_prompt_slot) === normalizedQuery.normalized) score += 6;
+  if (doc?.exposure === "self_improve_prompts") score += 0.2;
+  if (doc?.status !== "active") score -= 8;
+  if (tags.includes(CHRONICLE_TAG) && !shouldInjectRecentHistory(query)) {
     score -= 1.4;
   }
   return score;
@@ -94,11 +112,11 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
 export function eventScore(query: string, event: MemoryEvent): number {
   const normalizedQuery = normalizeRelevanceQuery(query);
   const haystack = normalizeHaystack([
-    event.kind,
-    event.summary,
-    event.text,
-    event.tool_name,
-    ...event.tags,
+    safeString(event?.kind),
+    safeString(event?.summary),
+    safeString(event?.text),
+    safeString(event?.tool_name),
+    ...normalizeEventTags(event),
   ]);
   if (!normalizedQuery.normalized || !haystack) return 0;
   let score = scoreTextMatches(normalizedQuery, haystack, {
@@ -107,10 +125,7 @@ export function eventScore(query: string, event: MemoryEvent): number {
     shortToken: 0.5,
     cjkBigram: 0.35,
   });
-  const ageHours = Math.max(
-    0,
-    (Date.now() - Date.parse(event.created_at || nowIso())) / 3_600_000,
-  );
+  const ageHours = normalizeEventAgeHours(event?.created_at);
   score += Math.max(0, 2 - ageHours / 24);
   return score;
 }
@@ -137,19 +152,19 @@ export function excerptForRecall(
 }
 
 function memoryRelationFeatures(doc: MemoryDoc): string[] {
-  const contentSample = safeString(doc.content)
+  const contentSample = safeString(doc?.content)
     .split(/\n+/)
     .slice(0, 12)
     .join("\n");
   return uniqueStrings(
     [
-      ...conceptTokens(doc.name),
-      ...conceptTokens(doc.description),
+      ...conceptTokens(safeString(doc?.name)),
+      ...conceptTokens(safeString(doc?.description)),
       ...conceptTokens(contentSample),
-      ...doc.tags.map((item) => normalizeNeedle(item)),
-      ...doc.aliases.map((item) => normalizeNeedle(item)),
-      normalizeNeedle(doc.scope),
-      normalizeNeedle(doc.kind),
+      ...normalizeDocTags(doc).map((item) => normalizeNeedle(item)),
+      ...normalizeDocAliases(doc).map((item) => normalizeNeedle(item)),
+      normalizeNeedle(safeString(doc?.scope)),
+      normalizeNeedle(safeString(doc?.kind)),
     ].filter(Boolean),
   );
 }
@@ -164,16 +179,16 @@ export function relationScore(
   for (const feature of aFeatures) {
     if (bFeatures.has(feature)) overlap += 1;
   }
-  const bTagSet = new Set(
-    b.tags.map((item) => normalizeNeedle(item)).filter(Boolean),
-  );
-  const sharedTags = uniqueStrings(a.tags).filter((item) =>
+  const aTags = normalizeDocTags(a);
+  const bTags = normalizeDocTags(b);
+  const bTagSet = new Set(bTags.map((item) => normalizeNeedle(item)).filter(Boolean));
+  const sharedTags = uniqueStrings(aTags).filter((item) =>
     bTagSet.has(normalizeNeedle(item)),
   );
   let score = Math.min(6, overlap) * 0.7 + sharedTags.length * 1.3;
-  if (a.scope && a.scope === b.scope) score += 0.5;
-  if (a.kind && a.kind === b.kind) score += 0.35;
-  if (a.exposure !== b.exposure) score += 0.25;
+  if (safeString(a?.scope) && a.scope === b.scope) score += 0.5;
+  if (safeString(a?.kind) && a.kind === b.kind) score += 0.35;
+  if (a?.exposure !== b?.exposure) score += 0.25;
   const reason = sharedTags.length
     ? "shared-tags"
     : overlap >= 3
@@ -187,9 +202,11 @@ export function relationScore(
 }
 
 export function shouldInjectRecentHistory(query: string): boolean {
-  return RECENT_HISTORY_QUERY_RE.test(query);
+  return RECENT_HISTORY_QUERY_RE.test(safeString(query));
 }
 
 export function activeDocsOnly(docs: MemoryDoc[]): MemoryDoc[] {
-  return docs.filter((doc) => doc.status === "active");
+  return Array.isArray(docs)
+    ? docs.filter((doc) => doc?.status === "active")
+    : [];
 }

@@ -64,10 +64,12 @@ test("memory relevance scores docs, events, and relations consistently", () => {
   });
   const inactiveDoc = buildDoc({ status: "superseded" });
   const chronicleDoc = buildDoc({ tags: ["search", "chronicle"] });
+  const malformedDoc = buildDoc({ tags: "search,chronicle", aliases: "search stack" });
   const recentEvent = buildEvent();
   const staleEvent = buildEvent({
     created_at: new Date(Date.now() - 72 * 3_600_000).toISOString(),
   });
+  const invalidEvent = buildEvent({ created_at: "not-a-date", tags: "search" });
 
   assert.ok(relevance.lexicalScore("searxng", docA) > 0);
   assert.ok(
@@ -81,14 +83,29 @@ test("memory relevance scores docs, events, and relations consistently", () => {
   assert.ok(
     relevance.lexicalScore("recent search history", chronicleDoc) > 0,
   );
+  assert.ok(relevance.lexicalScore("search stack", malformedDoc) > 0);
   assert.ok(
     relevance.eventScore("search", recentEvent) >
       relevance.eventScore("search", staleEvent),
   );
+  assert.ok(Number.isFinite(relevance.eventScore("search", invalidEvent)));
   assert.ok(relevance.relationScore(docA, docB).score > 0);
   assert.equal(relevance.relationScore(docA, docB).reason, "shared-tags");
   assert.equal(relevance.shouldInjectRecentHistory("what happened recently"), true);
   assert.equal(relevance.shouldInjectRecentHistory("why did we roll back"), true);
+  assert.equal(relevance.shouldInjectRecentHistory(null), false);
+});
+
+test("activeDocsOnly tolerates non-array inputs and skips non-active entries", () => {
+  assert.deepEqual(relevance.activeDocsOnly(null), []);
+  assert.deepEqual(
+    relevance.activeDocsOnly([
+      buildDoc(),
+      buildDoc({ id: "b", status: "superseded" }),
+      null,
+    ]),
+    [buildDoc()],
+  );
 });
 
 test("self-improve compile renders prompt slots", () => {
