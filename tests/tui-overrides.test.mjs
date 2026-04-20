@@ -109,6 +109,9 @@ test("local session selector reuses bound session helpers for canonicalized list
         name: sessions[0]?.name,
         firstMessage: sessions[0]?.firstMessage,
         modified: sessions[0]?.modified?.toISOString(),
+        messageCount: sessions[0]?.messageCount,
+        cwd: sessions[0]?.cwd,
+        allMessagesText: sessions[0]?.allMessagesText,
       },
       {
         id: "session-1",
@@ -116,6 +119,9 @@ test("local session selector reuses bound session helpers for canonicalized list
         name: undefined,
         firstMessage: "Legacy title",
         modified: "2026-04-18T00:00:00.000Z",
+        messageCount: 0,
+        cwd: undefined,
+        allMessagesText: "Legacy title",
       },
     );
     assert.deepEqual(renamed, [["/tmp/demo.jsonl", "renamed"]]);
@@ -149,6 +155,9 @@ test("rpc session selector loads sessions through the daemon instead of local Se
             path: "/tmp/demo.jsonl",
             firstMessage: "demo",
             modified: new Date("2026-04-16T00:00:00.000Z"),
+            messageCount: 3,
+            cwd: "/tmp",
+            allMessagesText: "demo follow up",
           },
         ];
       },
@@ -181,6 +190,9 @@ test("rpc session selector loads sessions through the daemon instead of local Se
   assert.equal(sessions[0].name, undefined);
   assert.equal(sessions[0].firstMessage, "demo");
   assert.equal(sessions[0].modified instanceof Date, true);
+  assert.equal(sessions[0].messageCount, 3);
+  assert.equal(sessions[0].cwd, "/tmp");
+  assert.equal(sessions[0].allMessagesText, "demo follow up");
   assert.deepEqual(renamed, [["/tmp/demo.jsonl", "renamed"]]);
 });
 

@@ -313,6 +313,9 @@ test("rpc runtime normalizes daemon session listings into canonical session meta
       name: sessions[0]?.name,
       firstMessage: sessions[0]?.firstMessage,
       modified: sessions[0]?.modified?.toISOString(),
+      messageCount: sessions[0]?.messageCount,
+      cwd: sessions[0]?.cwd,
+      allMessagesText: sessions[0]?.allMessagesText,
     },
     {
       id: "session-1",
@@ -320,6 +323,9 @@ test("rpc runtime normalizes daemon session listings into canonical session meta
       name: undefined,
       firstMessage: "Legacy title",
       modified: "2026-04-18T00:00:00.000Z",
+      messageCount: 0,
+      cwd: undefined,
+      allMessagesText: "Legacy title",
     },
   );
 });

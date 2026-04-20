@@ -12,6 +12,9 @@ export type BoundSessionListItem = {
   name?: string;
   firstMessage: string;
   modified: Date;
+  messageCount: number;
+  cwd?: string;
+  allMessagesText: string;
 };
 
 export type BoundSessionListPresentation = BoundSessionListItem & {
@@ -28,6 +31,9 @@ type BoundSessionSource = {
   title?: unknown;
   modified?: unknown;
   subtitle?: unknown;
+  messageCount?: unknown;
+  cwd?: unknown;
+  allMessagesText?: unknown;
 };
 
 type NormalizedBoundSessionDetails = {
@@ -46,7 +52,11 @@ function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
       typeof (value as BoundSessionListItem).name === "string") &&
     typeof (value as BoundSessionListItem).firstMessage === "string" &&
     (value as BoundSessionListItem).modified instanceof Date &&
-    Number.isFinite((value as BoundSessionListItem).modified.getTime()),
+    Number.isFinite((value as BoundSessionListItem).modified.getTime()) &&
+    Number.isFinite((value as BoundSessionListItem).messageCount) &&
+    ((value as BoundSessionListItem).cwd === undefined ||
+      typeof (value as BoundSessionListItem).cwd === "string") &&
+    typeof (value as BoundSessionListItem).allMessagesText === "string",
   );
 }
 
@@ -68,6 +78,14 @@ function normalizeSessionDate(value: unknown): Date | undefined {
   const candidate =
     value instanceof Date ? value : new Date(normalizeSessionText(value));
   return Number.isFinite(candidate.getTime()) ? candidate : undefined;
+}
+
+function normalizeSessionCount(value: unknown): number {
+  const candidate =
+    typeof value === "number"
+      ? value
+      : Number.parseInt(normalizeSessionText(value), 10);
+  return Number.isFinite(candidate) && candidate >= 0 ? candidate : 0;
 }
 
 function resolveNormalizedSessionPath(sessionPath: string): string {
@@ -132,16 +150,20 @@ function normalizeBoundSessionDetails(
   const sessionPath = normalizeSessionText(source?.path, source?.id);
   if (!sessionPath) return null;
 
+  const firstMessage = normalizeSessionText(
+    source?.firstMessage,
+    source?.title,
+    sessionPath,
+  );
   const item = {
     id: normalizeSessionText(source?.id, sessionPath),
     path: sessionPath,
     name: normalizeSessionValue(source?.name),
-    firstMessage: normalizeSessionText(
-      source?.firstMessage,
-      source?.title,
-      sessionPath,
-    ),
+    firstMessage,
     modified: resolveBoundSessionModified(source),
+    messageCount: normalizeSessionCount(source?.messageCount),
+    cwd: normalizeSessionValue(source?.cwd),
+    allMessagesText: normalizeSessionText(source?.allMessagesText, firstMessage),
   } satisfies BoundSessionListItem;
 
   return {

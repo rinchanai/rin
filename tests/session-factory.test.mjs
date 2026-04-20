@@ -82,6 +82,9 @@ test("listBoundSessions normalizes legacy session metadata into canonical fields
       name: sessions[0]?.name,
       firstMessage: sessions[0]?.firstMessage,
       modified: sessions[0]?.modified?.toISOString(),
+      messageCount: sessions[0]?.messageCount,
+      cwd: sessions[0]?.cwd,
+      allMessagesText: sessions[0]?.allMessagesText,
     },
     {
       id: "session-1",
@@ -89,6 +92,9 @@ test("listBoundSessions normalizes legacy session metadata into canonical fields
       name: undefined,
       firstMessage: "Legacy title",
       modified: "2026-04-18T00:00:00.000Z",
+      messageCount: 0,
+      cwd: undefined,
+      allMessagesText: "Legacy title",
     },
   );
 });
@@ -143,6 +149,9 @@ test("session listing helpers derive presentation and active state consistently"
     path: "/tmp/session-1.jsonl",
     firstMessage: "Hello",
     modified: new Date("2026-04-18T00:00:00.000Z"),
+    messageCount: 0,
+    cwd: undefined,
+    allMessagesText: "Hello",
   };
 
   assert.deepEqual(
@@ -216,12 +225,35 @@ test("session listing normalization trims legacy values and preserves normalized
     name: undefined,
     firstMessage: "Hello",
     modified: new Date("2026-04-18T00:00:00.000Z"),
+    messageCount: 0,
+    cwd: undefined,
+    allMessagesText: "Hello",
   });
   assert.equal(listing.normalizeBoundSessionListItem(normalized), normalized);
-  assert.equal(
-    listing.normalizeBoundSessionListItem({ id: " legacy-session " })
-      ?.firstMessage,
-    "legacy-session",
+  const legacyNormalized = listing.normalizeBoundSessionListItem({
+    id: " legacy-session ",
+  });
+  assert.deepEqual(
+    {
+      id: legacyNormalized?.id,
+      path: legacyNormalized?.path,
+      name: legacyNormalized?.name,
+      firstMessage: legacyNormalized?.firstMessage,
+      messageCount: legacyNormalized?.messageCount,
+      cwd: legacyNormalized?.cwd,
+      allMessagesText: legacyNormalized?.allMessagesText,
+      modifiedIsDate: legacyNormalized?.modified instanceof Date,
+    },
+    {
+      id: "legacy-session",
+      path: "legacy-session",
+      name: undefined,
+      firstMessage: "legacy-session",
+      messageCount: 0,
+      cwd: undefined,
+      allMessagesText: "legacy-session",
+      modifiedIsDate: true,
+    },
   );
   assert.deepEqual(
     listing
