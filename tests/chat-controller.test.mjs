@@ -1302,6 +1302,85 @@ test("chat controller delivers completed assistant text during recovery when pro
   ]);
 });
 
+test("chat controller does not redeliver the previous assistant reply when recovery state belongs to a newer inbound message", async () => {
+  const controller = await createController("telegram/1:2");
+  const delivered = [];
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/1:2",
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-recover-newer",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "继续",
+  });
+  controller.state.processing = {
+    text: "继续",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "43",
+    incomingMessageId: "m-recover-newer",
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push({
+      text: this.state.pendingDelivery?.text || "",
+      replyToMessageId: this.state.pendingDelivery?.replyToMessageId,
+    });
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "旧问题" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "旧回答" }],
+      },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/recover-newer.jsonl",
+      getSessionId: () => "session-recover-newer",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/recover-newer.jsonl",
+      sessionId: "session-recover-newer",
+    }),
+    prompt: async (message, options) => {
+      assert.equal(message, "继续");
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      controller.session.messages = [
+        { role: "user", content: [{ type: "text", text: "继续" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "新的继续结果" }],
+        },
+      ];
+      controller.session.isStreaming = false;
+      emitRpcTurnComplete(controller, options, "新的继续结果");
+      controller.handleSessionEvent({ type: "agent_end" });
+    },
+  };
+
+  await controller.recoverIfNeeded();
+
+  const stored = getChatMessage(
+    controller.agentDir,
+    "telegram/1:2",
+    "m-recover-newer",
+  );
+  assert.equal(controller.state.processing, undefined);
+  assert.ok(stored?.processedAt);
+  assert.deepEqual(delivered, [
+    { text: "新的继续结果", replyToMessageId: "43" },
+  ]);
+});
+
 test("chat controller resumes interrupted chat turns through the shared final delivery path", async () => {
   const controller = await createController("telegram/1:2");
   const delivered = [];

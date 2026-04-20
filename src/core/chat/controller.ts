@@ -1005,9 +1005,6 @@ export class ChatController {
         .slice(lastUserIndex + 1)
         .reverse()
         .find((message: any) => message?.role === "assistant");
-      const deliveredCompletedText = lastAssistantAfterUser
-        ? this.collectFinalAssistantText()
-        : "";
       const currentLastUser = [...messages]
         .reverse()
         .find((message: any) => message?.role === "user");
@@ -1015,9 +1012,15 @@ export class ChatController {
         (currentLastUser as any)?.content,
       );
       const pending = this.state.processing;
+      const pendingPromptText = safeString(
+        buildPromptText(pending.text, pending.attachments),
+      ).trim();
       const shouldResumeInternally =
-        safeString(lastUserText).trim() ===
-        safeString(buildPromptText(pending.text, pending.attachments)).trim();
+        safeString(lastUserText).trim() === pendingPromptText;
+      const deliveredCompletedText =
+        shouldResumeInternally && lastAssistantAfterUser
+          ? this.collectFinalAssistantText()
+          : "";
       await this.pollTyping().catch(() => {});
       this.logger.info(`resume interrupted chat turn chatKey=${this.chatKey}`);
       if (deliveredCompletedText && !this.session.isStreaming) {
@@ -1062,6 +1065,7 @@ export class ChatController {
           text: pending.text,
           attachments: pending.attachments,
           replyToMessageId: pending.replyToMessageId,
+          incomingMessageId: pending.incomingMessageId,
         },
         "prompt",
       );
