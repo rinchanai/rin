@@ -980,8 +980,8 @@ export class ChatController {
         await this.commitPendingDelivery(true);
         return;
       }
+      const wantedSessionFile = this.getRecoverableSessionFile();
       if (!this.state.processing) {
-        const wantedSessionFile = this.getRecoverableSessionFile();
         if (!wantedSessionFile) return;
         await this.connect();
         if (!this.session) return;
@@ -995,6 +995,14 @@ export class ChatController {
       }
       await this.connect();
       if (!this.session) return;
+      if (wantedSessionFile) {
+        const currentSessionFile = safeString(
+          this.session.sessionManager.getSessionFile?.() || "",
+        ).trim();
+        if (currentSessionFile !== wantedSessionFile) {
+          await this.resumeSessionFile(wantedSessionFile);
+        }
+      }
       await this.refreshSessionMessages().catch(() => {});
       const messages = Array.isArray(this.session.messages)
         ? this.session.messages
@@ -1008,20 +1016,19 @@ export class ChatController {
         .slice(lastUserIndex + 1)
         .reverse()
         .find((message: any) => message?.role === "assistant");
+      const pending = this.state.processing;
       const currentLastUser = [...messages]
         .reverse()
         .find((message: any) => message?.role === "user");
       const lastUserText = extractTextFromContent(
         (currentLastUser as any)?.content,
       );
-      const pending = this.state.processing;
       const pendingPromptText = safeString(
         buildPromptText(pending.text, pending.attachments),
       ).trim();
-      const shouldResumeInternally =
-        safeString(lastUserText).trim() === pendingPromptText;
       const deliveredCompletedText =
-        shouldResumeInternally && lastAssistantAfterUser
+        lastAssistantAfterUser &&
+        safeString(lastUserText).trim() === pendingPromptText
           ? this.collectFinalAssistantText()
           : "";
       await this.pollTyping().catch(() => {});
@@ -1036,42 +1043,30 @@ export class ChatController {
         });
         return;
       }
-      if (shouldResumeInternally) {
-        this.latestAssistantText = "";
-        const requestTag = this.createTurnRequestTag();
-        const liveTurn = this.startLiveTurn(requestTag);
-        await this.pollTyping().catch(() => {});
-        try {
-          await this.session.resumeInterruptedTurn({
-            source: "chat-bridge",
-            requestTag,
-          });
-        } catch (error: any) {
-          this.failLiveTurn(
-            error instanceof Error
-              ? error
-              : new Error(String(error || "chat_turn_failed")),
-          );
-          throw error;
-        }
-        await this.finishLiveTurn({
-          liveTurn,
-          replyToMessageId:
-            safeString(pending.replyToMessageId || "").trim() || undefined,
-          incomingMessageId: pending.incomingMessageId,
-          clearProcessing: true,
+      this.latestAssistantText = "";
+      const requestTag = this.createTurnRequestTag();
+      const liveTurn = this.startLiveTurn(requestTag);
+      await this.pollTyping().catch(() => {});
+      try {
+        await this.session.resumeInterruptedTurn({
+          source: "chat-bridge",
+          requestTag,
         });
-        return;
+      } catch (error: any) {
+        this.failLiveTurn(
+          error instanceof Error
+            ? error
+            : new Error(String(error || "chat_turn_failed")),
+        );
+        throw error;
       }
-      await this.runTurnNow(
-        {
-          text: pending.text,
-          attachments: pending.attachments,
-          replyToMessageId: pending.replyToMessageId,
-          incomingMessageId: pending.incomingMessageId,
-        },
-        "prompt",
-      );
+      await this.finishLiveTurn({
+        liveTurn,
+        replyToMessageId:
+          safeString(pending.replyToMessageId || "").trim() || undefined,
+        incomingMessageId: pending.incomingMessageId,
+        clearProcessing: true,
+      });
     });
   }
 }
