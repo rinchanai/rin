@@ -8,20 +8,34 @@ type SlashCommandEntry = {
 };
 
 type SlashCommandSourceGroup = {
-  commands: any[];
+  commands: unknown[];
   source: string;
 };
 
 type RuntimeSlashCommandCollectionOptions = {
   includeBuiltin?: boolean;
-  extensionCommands?: any[];
-  builtinModuleCommands?: any[];
-  promptTemplates?: any[];
-  skills?: any[];
+  extensionCommands?: unknown[];
+  builtinModuleCommands?: unknown[];
+  promptTemplates?: unknown[];
+  skills?: unknown[];
+};
+
+type OAuthCredentialSummary = {
+  type: string;
+};
+
+type OAuthProviderSummary = {
+  id: string;
+  name: string;
+  usesCallbackServer: boolean;
 };
 
 function trimText(value: unknown) {
   return String(value ?? "").trim();
+}
+
+function asArray<T>(value: unknown) {
+  return Array.isArray(value) ? (value as T[]) : [];
 }
 
 function createSlashCommandEntry(
@@ -42,11 +56,11 @@ function createSlashCommandEntry(
 }
 
 function collectSlashCommandEntries<T>(
-  values: T[],
+  values: unknown,
   mapValue: (value: T) => SlashCommandEntry | null,
 ) {
   const commands: SlashCommandEntry[] = [];
-  for (const value of values) {
+  for (const value of asArray<T>(values)) {
     const command = mapValue(value);
     if (command) commands.push(command);
   }
@@ -69,13 +83,13 @@ export function dedupeSlashCommands(commands: SlashCommandEntry[]) {
 }
 
 export function getBuiltinSlashCommands() {
-  return collectSlashCommandEntries(BUILTIN_SLASH_COMMANDS, (command) =>
+  return collectSlashCommandEntries<any>(BUILTIN_SLASH_COMMANDS, (command) =>
     createSlashCommandEntry(command?.name, command?.description, "builtin"),
   );
 }
 
-export function getExtensionSlashCommands(commands: any[], source: string) {
-  return collectSlashCommandEntries(commands, (command) =>
+export function getExtensionSlashCommands(commands: unknown[], source: string) {
+  return collectSlashCommandEntries<any>(commands, (command) =>
     createSlashCommandEntry(
       command?.invocationName ?? command?.name,
       command?.description,
@@ -85,8 +99,8 @@ export function getExtensionSlashCommands(commands: any[], source: string) {
   );
 }
 
-export function getPromptSlashCommands(templates: any[]) {
-  return collectSlashCommandEntries(templates, (template) =>
+export function getPromptSlashCommands(templates: unknown[]) {
+  return collectSlashCommandEntries<any>(templates, (template) =>
     createSlashCommandEntry(
       template?.name,
       template?.description,
@@ -96,8 +110,8 @@ export function getPromptSlashCommands(templates: any[]) {
   );
 }
 
-export function getSkillSlashCommands(skills: any[]) {
-  return collectSlashCommandEntries(skills, (skill) =>
+export function getSkillSlashCommands(skills: unknown[]) {
+  return collectSlashCommandEntries<any>(skills, (skill) =>
     createSlashCommandEntry(
       getSkillSlashCommandName(skill),
       skill?.description,
@@ -107,10 +121,12 @@ export function getSkillSlashCommands(skills: any[]) {
   );
 }
 
-function collectSlashCommandSourceGroups(groups: SlashCommandSourceGroup[]) {
+function collectSlashCommandSourceGroups(groups: unknown) {
   const commands: SlashCommandEntry[] = [];
-  for (const { commands: groupCommands, source } of groups) {
-    commands.push(...getExtensionSlashCommands(groupCommands, source));
+  for (const group of asArray<SlashCommandSourceGroup>(groups)) {
+    const source = trimText(group?.source);
+    if (!source) continue;
+    commands.push(...getExtensionSlashCommands(group?.commands ?? [], source));
   }
   return commands;
 }
@@ -131,23 +147,24 @@ export function collectSlashCommands(
   ]);
 }
 
+const RUNTIME_SLASH_COMMAND_GROUP_DEFINITIONS = [
+  { key: "extensionCommands", source: "extension" },
+  { key: "builtinModuleCommands", source: "builtin_module" },
+] as const satisfies Array<{
+  key: keyof Pick<
+    RuntimeSlashCommandCollectionOptions,
+    "extensionCommands" | "builtinModuleCommands"
+  >;
+  source: string;
+}>;
+
 function getRuntimeSlashCommandSourceGroups(
   options: RuntimeSlashCommandCollectionOptions,
 ) {
-  const groups: SlashCommandSourceGroup[] = [];
-  if (options.extensionCommands?.length) {
-    groups.push({
-      commands: options.extensionCommands,
-      source: "extension",
-    });
-  }
-  if (options.builtinModuleCommands?.length) {
-    groups.push({
-      commands: options.builtinModuleCommands,
-      source: "builtin_module",
-    });
-  }
-  return groups;
+  return RUNTIME_SLASH_COMMAND_GROUP_DEFINITIONS.flatMap(({ key, source }) => {
+    const commands = asArray(options[key]);
+    return commands.length ? [{ commands, source }] : [];
+  });
 }
 
 export function collectRuntimeSlashCommands(
@@ -161,28 +178,61 @@ export function collectRuntimeSlashCommands(
   });
 }
 
+function getSessionSkills(session: any) {
+  return asArray(session?.resourceLoader?.getSkills?.()?.skills);
+}
+
 export function getSessionSlashCommands(session: any) {
   return collectRuntimeSlashCommands({
-    extensionCommands: session.extensionRunner?.getRegisteredCommands?.() ?? [],
-    promptTemplates: session.promptTemplates ?? [],
-    skills: session.resourceLoader?.getSkills?.().skills ?? [],
+    extensionCommands: session?.extensionRunner?.getRegisteredCommands?.() ?? [],
+    promptTemplates: asArray(session?.promptTemplates),
+    skills: getSessionSkills(session),
   });
 }
 
+function normalizeOAuthCredentialType(value: unknown) {
+  return trimText(value);
+}
+
+function buildOAuthCredentialSummary(credential: any): OAuthCredentialSummary | undefined {
+  const type = normalizeOAuthCredentialType(credential?.type);
+  return type ? { type } : undefined;
+}
+
+function normalizeProviderId(value: unknown) {
+  return trimText(value);
+}
+
+function normalizeOAuthProvider(provider: any): OAuthProviderSummary | null {
+  const id = normalizeProviderId(provider?.id);
+  if (!id) return null;
+  return {
+    id,
+    name: trimText(provider?.name),
+    usesCallbackServer: Boolean(provider?.usesCallbackServer),
+  };
+}
+
 export function getOAuthStateFromStorage(authStorage: any) {
-  const credentials = Object.fromEntries(
-    (authStorage?.list?.() ?? []).map((providerId: string) => {
-      const credential = authStorage.get(providerId);
-      return [providerId, credential ? { type: credential.type } : undefined];
-    }),
-  );
-  const providers = (authStorage?.getOAuthProviders?.() ?? []).map(
-    (provider: any) => ({
-      id: provider.id,
-      name: provider.name,
-      usesCallbackServer: Boolean(provider.usesCallbackServer),
-    }),
-  );
+  const credentials: Record<string, OAuthCredentialSummary | undefined> = {};
+  for (const providerId of asArray<string>(authStorage?.list?.())) {
+    const normalizedProviderId = normalizeProviderId(providerId);
+    if (!normalizedProviderId || normalizedProviderId in credentials) continue;
+    credentials[normalizedProviderId] = buildOAuthCredentialSummary(
+      authStorage?.get?.(providerId),
+    );
+  }
+
+  const providers: OAuthProviderSummary[] = [];
+  const seenProviderIds = new Set<string>();
+  for (const provider of asArray(authStorage?.getOAuthProviders?.())) {
+    const normalizedProvider = normalizeOAuthProvider(provider);
+    if (!normalizedProvider) continue;
+    if (seenProviderIds.has(normalizedProvider.id)) continue;
+    seenProviderIds.add(normalizedProvider.id);
+    providers.push(normalizedProvider);
+  }
+
   return { credentials, providers };
 }
 

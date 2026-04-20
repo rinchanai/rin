@@ -24,7 +24,7 @@ test("catalog helpers normalize and dedupe slash commands", () => {
     includeBuiltin: false,
     commandGroups: [
       {
-        source: "extension",
+        source: " extension ",
         commands: [
           {
             invocationName: "  resume  ",
@@ -36,6 +36,10 @@ test("catalog helpers normalize and dedupe slash commands", () => {
             description: "duplicate entry should be ignored",
           },
         ],
+      },
+      {
+        source: "   ",
+        commands: [{ name: "ignored", description: "missing source" }],
       },
     ],
     promptTemplates: [
@@ -101,13 +105,26 @@ test("catalog helpers collect runtime slash commands in source order", () => {
 
 test("catalog helpers read oauth state from auth storage", () => {
   const state = getOAuthStateFromStorage({
-    list: () => ["gemini", "missing"],
-    get: (providerId) =>
-      providerId === "gemini" ? { type: "api_key", key: "secret" } : null,
+    list: () => [" gemini ", "missing", "", "gemini"],
+    get: (providerId) => {
+      const normalized = String(providerId).trim();
+      if (normalized === "gemini") return { type: " api_key ", key: "secret" };
+      return null;
+    },
     getOAuthProviders: () => [
       {
         id: "gemini",
         name: "Gemini",
+        usesCallbackServer: 1,
+      },
+      {
+        id: " gemini ",
+        name: "Duplicate",
+        usesCallbackServer: 0,
+      },
+      {
+        id: " ",
+        name: "Ignored",
         usesCallbackServer: 1,
       },
     ],
