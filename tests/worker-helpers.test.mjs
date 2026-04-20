@@ -66,6 +66,10 @@ test("worker helpers split command args and format stats", () => {
     workerHelpers.splitCommandArgs(`model openai/gpt-5 "high detail"`),
     ["model", "openai/gpt-5", "high detail"],
   );
+  assert.deepEqual(
+    workerHelpers.splitCommandArgs(`  resume   'session one'  ""  `),
+    ["resume", "session one", ""],
+  );
   const text = workerHelpers.formatSessionStats({
     sessionId: "s1",
     sessionFile: "",
@@ -135,9 +139,18 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
         getCwd: () => "/tmp/project",
         getSessionDir: () => "/tmp/sessions",
       },
-      modelRegistry: { getAvailable: async () => [] },
-      setModel: async () => {},
-      setThinkingLevel: async () => {},
+      modelRegistry: {
+        getAvailable: async () => [
+          { provider: "openai", id: "gpt-5" },
+          { provider: "anthropic", id: "claude-sonnet" },
+        ],
+      },
+      setModel: async (model) => {
+        calls.push(["setModel", `${model.provider}/${model.id}`]);
+      },
+      setThinkingLevel: async (level) => {
+        calls.push(["setThinkingLevel", level]);
+      },
     },
     newSession: async () => {
       calls.push(["newSession"]);
@@ -171,9 +184,33 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
   assert.equal(resultResume.handled, true);
   assert.match(resultResume.text, /Resumed session: abc/);
 
+  const resultListModels = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/model",
+    { SessionManager: { list: async () => [] } },
+  );
+  assert.match(resultListModels.text, /Available models:/);
+  assert.match(resultListModels.text, /openai\/gpt-5/);
+
+  const resultSetModel = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/model openai/gpt-5 high",
+    { SessionManager: { list: async () => [] } },
+  );
+  assert.match(resultSetModel.text, /Model set to: openai\/gpt-5 \(high\)/);
+
+  const resultMissingModel = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/model missing",
+    { SessionManager: { list: async () => [] } },
+  );
+  assert.match(resultMissingModel.text, /Usage: \/model/);
+
   assert.deepEqual(calls, [
     ["abort"],
     ["newSession"],
     ["switchSession", "/tmp/sessions/abc.jsonl"],
+    ["setModel", "openai/gpt-5"],
+    ["setThinkingLevel", "high"],
   ]);
 });

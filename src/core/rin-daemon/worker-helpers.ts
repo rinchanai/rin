@@ -32,38 +32,81 @@ export function splitCommandArgs(text: string) {
   const args: string[] = [];
   let current = "";
   let quote: string | null = null;
+  let tokenStarted = false;
+  const pushCurrent = () => {
+    if (!tokenStarted) return;
+    args.push(current);
+    current = "";
+    tokenStarted = false;
+  };
   for (const char of String(text || "")) {
     if (quote) {
-      if (char === quote) quote = null;
-      else current += char;
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      tokenStarted = true;
       continue;
     }
     if (char === '"' || char === "'") {
       quote = char;
+      tokenStarted = true;
       continue;
     }
     if (char === " " || char === "\t") {
-      if (current) {
-        args.push(current);
-        current = "";
-      }
+      pushCurrent();
       continue;
     }
     current += char;
+    tokenStarted = true;
   }
-  if (current) args.push(current);
+  pushCurrent();
   return args;
+}
+
+function formatSessionStatsLine(label: string, value: string) {
+  return `${label}: ${value}`;
 }
 
 export function formatSessionStats(stats: any) {
   return [
-    `Session ID: ${String(stats?.sessionId || "")}`,
-    `Session File: ${String(stats?.sessionFile || "In-memory")}`,
-    `Messages: ${String(stats?.totalMessages || 0)} (user=${String(stats?.userMessages || 0)}, assistant=${String(stats?.assistantMessages || 0)}, toolResults=${String(stats?.toolResults || 0)})`,
-    `Tool Calls: ${String(stats?.toolCalls || 0)}`,
-    `Tokens: ${String(stats?.tokens?.total || 0)} (input=${String(stats?.tokens?.input || 0)}, output=${String(stats?.tokens?.output || 0)}, cacheRead=${String(stats?.tokens?.cacheRead || 0)}, cacheWrite=${String(stats?.tokens?.cacheWrite || 0)})`,
-    `Cost: ${String(stats?.cost || 0)}`,
+    formatSessionStatsLine("Session ID", String(stats?.sessionId || "")),
+    formatSessionStatsLine(
+      "Session File",
+      String(stats?.sessionFile || "In-memory"),
+    ),
+    formatSessionStatsLine(
+      "Messages",
+      `${String(stats?.totalMessages || 0)} (user=${String(stats?.userMessages || 0)}, assistant=${String(stats?.assistantMessages || 0)}, toolResults=${String(stats?.toolResults || 0)})`,
+    ),
+    formatSessionStatsLine("Tool Calls", String(stats?.toolCalls || 0)),
+    formatSessionStatsLine(
+      "Tokens",
+      `${String(stats?.tokens?.total || 0)} (input=${String(stats?.tokens?.input || 0)}, output=${String(stats?.tokens?.output || 0)}, cacheRead=${String(stats?.tokens?.cacheRead || 0)}, cacheWrite=${String(stats?.tokens?.cacheWrite || 0)})`,
+    ),
+    formatSessionStatsLine("Cost", String(stats?.cost || 0)),
   ].join("\n");
+}
+
+function formatBuiltinList(title: string, lines: string[], emptyText: string) {
+  return lines.length ? [title, ...lines].join("\n") : emptyText;
+}
+
+function formatSessionListItem(item: any) {
+  const id = String(item?.id || "").trim();
+  const label = String(item?.name || item?.id || "").trim() || id;
+  return `${id} — ${label}`;
+}
+
+function formatModelRef(model: any) {
+  const provider = String(model?.provider || "").trim();
+  const id = String(model?.id || "").trim();
+  return provider && id ? `${provider}/${id}` : "";
+}
+
+function findModelByRef(models: any[], targetRef: string) {
+  return models.find((model: any) => formatModelRef(model) === targetRef);
 }
 
 export async function runBuiltinCommand(
@@ -128,64 +171,56 @@ export async function runBuiltinCommand(
         SessionManager: deps.SessionManager,
       });
       if (!argsText) {
-        const lines = sessions.slice(0, 20).map((item: any) => {
-          const label =
-            String(item?.name || item?.id || "").trim() ||
-            String(item?.id || "");
-          return `${String(item?.id || "")} — ${label}`;
-        });
         return {
           handled: true,
-          text: lines.length
-            ? ["Available sessions:", ...lines].join("\n")
-            : "No sessions available.",
+          text: formatBuiltinList(
+            "Available sessions:",
+            sessions.slice(0, 20).map(formatSessionListItem),
+            "No sessions available.",
+          ),
         };
       }
       const match = sessions.find(
-        (item: any) => String(item?.id || "") === argsText,
+        (item: any) => String(item?.id || "").trim() === argsText,
       );
-      if (!match)
+      if (!match) {
         return { handled: true, text: `Session not found: ${argsText}` };
+      }
       await runtime.switchSession(String(match.path || ""));
       return {
         handled: true,
-        text: `Resumed session: ${String(match.id || "")}`,
+        text: `Resumed session: ${String(match.id || "").trim()}`,
       };
     }
     case "model": {
+      const models = await session.modelRegistry.getAvailable();
       if (!rest.length) {
-        const models = await session.modelRegistry.getAvailable();
-        const lines = models
-          .slice(0, 50)
-          .map(
-            (model: any) =>
-              `${String(model.provider || "")}/${String(model.id || "")}`,
-          );
         return {
           handled: true,
-          text: lines.length
-            ? ["Available models:", ...lines].join("\n")
-            : "No models available.",
+          text: formatBuiltinList(
+            "Available models:",
+            models.slice(0, 50).map(formatModelRef).filter(Boolean),
+            "No models available.",
+          ),
         };
       }
       const [targetRef = "", thinkingLevel = ""] = rest;
-      const [provider = "", modelId = ""] = String(targetRef).split("/", 2);
-      if (!provider || !modelId)
+      const nextTargetRef = String(targetRef || "").trim();
+      if (!nextTargetRef.includes("/")) {
         return {
           handled: true,
           text: "Usage: /model <provider/model> [thinking-level]",
         };
-      const models = await session.modelRegistry.getAvailable();
-      const match = models.find(
-        (model: any) => model.provider === provider && model.id === modelId,
-      );
-      if (!match)
-        return { handled: true, text: `Model not found: ${targetRef}` };
+      }
+      const match = findModelByRef(models, nextTargetRef);
+      if (!match) {
+        return { handled: true, text: `Model not found: ${nextTargetRef}` };
+      }
       await session.setModel(match);
       if (thinkingLevel) await session.setThinkingLevel(thinkingLevel);
       return {
         handled: true,
-        text: `Model set to: ${provider}/${modelId}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
+        text: `Model set to: ${formatModelRef(match)}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
       };
     }
     default:
