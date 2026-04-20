@@ -66,6 +66,31 @@ test("fetch tool pretty prints JSON responses", async () => {
   );
 });
 
+test("fetch tool normalizes visible plain-text whitespace once", async () => {
+  await withServer(
+    (request, response) => {
+      assert.equal(request.url, "/plain.txt");
+      response.writeHead(200, {
+        "content-type": "text/plain; charset=utf-8",
+      });
+      response.end("alpha  \n   beta\t\n\n\n gamma");
+    },
+    async (baseUrl) => {
+      const result = await getFetchTool().execute(
+        "tool-fetch-plain-whitespace",
+        { url: `${baseUrl}/plain.txt` },
+        undefined,
+        undefined,
+      );
+      const text = String(result.content?.[0]?.text || "");
+      assert.match(text, /alpha\nbeta\n\ngamma/);
+      assert.doesNotMatch(text, /alpha {2}\n/);
+      assert.doesNotMatch(text, /\n {3}beta/);
+      assert.equal(result.details?.mimeType, "text/plain");
+    },
+  );
+});
+
 test("fetch tool extracts HTML title and strips non-visible markup", async () => {
   await withServer(
     (request, response) => {

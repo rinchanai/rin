@@ -124,12 +124,12 @@ function createFetchDetails(
   mode: FetchMode,
   response: Response,
   buffer: Buffer,
-) {
+): FetchDetails {
   const { mimeType, charset: headerCharset } = parseContentType(
     response.headers.get("content-type"),
   );
   const charset = sniffHtmlCharset(buffer, mimeType, headerCharset);
-  const details: FetchDetails = {
+  return {
     url,
     finalUrl: response.url || url,
     mode,
@@ -140,7 +140,6 @@ function createFetchDetails(
     charset,
     bytes: buffer.byteLength,
   };
-  return { details, charset };
 }
 
 function resolveResponseBody(
@@ -177,6 +176,23 @@ function formatFailedFetch(
     .join("\n");
 }
 
+async function buildFetchOutputText(details: FetchDetails, bodyText: string) {
+  const fullText = formatTextResponse(details, bodyText);
+  const truncated = prepareTruncatedText(fullText, {
+    maxLines: DEFAULT_MAX_LINES,
+    maxBytes: DEFAULT_MAX_BYTES,
+  });
+
+  if (truncated.truncation) {
+    details.truncation = truncated.truncation;
+    details.fullOutputPath = await writeFetchFullOutput(fullText).catch(
+      () => undefined,
+    );
+  }
+
+  return truncated.outputText;
+}
+
 export default function fetchExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "fetch",
@@ -195,28 +211,16 @@ export default function fetchExtension(pi: ExtensionAPI) {
       });
 
       const { response, buffer } = await fetchResponseBuffer(url, signal);
-      const { details } = createFetchDetails(url, mode, response, buffer);
+      const details = createFetchDetails(url, mode, response, buffer);
 
       if (!response.ok) {
         throw new Error(formatFailedFetch(details, buffer));
       }
 
       const bodyText = resolveResponseBody(details, buffer);
-      const fullText = formatTextResponse(details, bodyText);
-      const truncated = prepareTruncatedText(fullText, {
-        maxLines: DEFAULT_MAX_LINES,
-        maxBytes: DEFAULT_MAX_BYTES,
-      });
-
-      if (truncated.truncation) {
-        details.truncation = truncated.truncation;
-        details.fullOutputPath = await writeFetchFullOutput(fullText).catch(
-          () => undefined,
-        );
-      }
 
       return {
-        content: [{ type: "text", text: truncated.outputText }],
+        content: [{ type: "text", text: await buildFetchOutputText(details, bodyText) }],
         details,
       };
     },

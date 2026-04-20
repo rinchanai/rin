@@ -1,3 +1,24 @@
+type RegexReplacement = readonly [RegExp, string];
+
+const HTML_ENTITY_REPLACEMENTS: RegexReplacement[] = [
+  [/&nbsp;/gi, " "],
+  [/&amp;/gi, "&"],
+  [/&lt;/gi, "<"],
+  [/&gt;/gi, ">"],
+  [/&quot;/gi, '"'],
+  [/&#39;|&apos;/gi, "'"],
+];
+
+function applyRegexReplacements(
+  text: string,
+  replacements: readonly RegexReplacement[],
+) {
+  return replacements.reduce(
+    (value, [pattern, replacement]) => value.replace(pattern, replacement),
+    String(text || ""),
+  );
+}
+
 function pickEncoding(charset?: string) {
   const normalized = String(charset || "")
     .trim()
@@ -29,13 +50,7 @@ export function decodeBuffer(buffer: Buffer, charset?: string) {
 }
 
 export function decodeHtmlEntities(text: string) {
-  return String(text || "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
+  return applyRegexReplacements(text, HTML_ENTITY_REPLACEMENTS)
     .replace(/&#(\d+);/g, (_match, code) => {
       const value = Number(code);
       return Number.isFinite(value) ? String.fromCodePoint(value) : _match;
@@ -56,6 +71,8 @@ export function normalizeRawText(text: string) {
 export function normalizePlainText(text: string) {
   return normalizeRawText(text)
     .replace(/\t/g, "  ")
+    .replace(/[ \f\v]+\n/g, "\n")
+    .replace(/\n[ \f\v]+/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

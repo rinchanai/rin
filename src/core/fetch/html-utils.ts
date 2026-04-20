@@ -3,6 +3,40 @@ import {
   normalizePlainText,
 } from "./text-utils.js";
 
+type RegexReplacement = readonly [RegExp, string];
+
+const HTML_PRE_HIDDEN_REPLACEMENTS: RegexReplacement[] = [
+  [/<!--[\s\S]*?-->/g, " "],
+  [/<head\b[^>]*>[\s\S]*?<\/head>/gi, " "],
+];
+const HTML_POST_HIDDEN_REPLACEMENTS: RegexReplacement[] = [
+  [/<script\b[^>]*>[\s\S]*?<\/script>/gi, " "],
+  [/<style\b[^>]*>[\s\S]*?<\/style>/gi, " "],
+  [/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " "],
+  [/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, " "],
+  [/<canvas\b[^>]*>[\s\S]*?<\/canvas>/gi, " "],
+  [/<template\b[^>]*>[\s\S]*?<\/template>/gi, " "],
+];
+const HTML_TEXT_REPLACEMENTS: RegexReplacement[] = [
+  [/<(br|hr)\b[^>]*\/?\s*>/gi, "\n"],
+  [
+    /<\/(p|div|section|article|main|aside|header|footer|nav|li|ul|ol|h[1-6]|tr|table|blockquote)>/gi,
+    "\n",
+  ],
+  [/<li\b[^>]*>/gi, "\n- "],
+  [/<[^>]+>/g, " "],
+];
+
+function applyRegexReplacements(
+  text: string,
+  replacements: readonly RegexReplacement[],
+) {
+  return replacements.reduce(
+    (value, [pattern, replacement]) => value.replace(pattern, replacement),
+    String(text || ""),
+  );
+}
+
 function parseHtmlTagAttributes(tag: string) {
   const attributes = new Map<string, string>();
   for (const match of tag.matchAll(
@@ -33,21 +67,23 @@ function findHtmlMetaTagContent(
   return "";
 }
 
+function extractCharsetFromMetaTag(attributes: Map<string, string>) {
+  const declaredCharset = String(attributes.get("charset") || "").trim();
+  if (declaredCharset) return declaredCharset;
+  const httpEquiv = String(attributes.get("http-equiv") || "")
+    .trim()
+    .toLowerCase();
+  if (httpEquiv !== "content-type") return "";
+  const content = String(attributes.get("content") || "");
+  const match = /charset\s*=\s*([^;]+)/i.exec(content);
+  return match?.[1]?.trim().replace(/^"|"$/g, "") || "";
+}
+
 function extractHtmlDeclaredCharset(html: string) {
   return findHtmlMetaTagContent(html, (attributes) => {
-    const declaredCharset = String(attributes.get("charset") || "").trim();
-    if (declaredCharset) {
-      attributes.set("content", declaredCharset);
-      return true;
-    }
-    const httpEquiv = String(attributes.get("http-equiv") || "")
-      .trim()
-      .toLowerCase();
-    if (httpEquiv !== "content-type") return false;
-    const content = String(attributes.get("content") || "");
-    const match = /charset\s*=\s*([^;]+)/i.exec(content);
-    if (!match?.[1]) return false;
-    attributes.set("content", match[1].trim().replace(/^"|"$/g, ""));
+    const charset = extractCharsetFromMetaTag(attributes);
+    if (!charset) return false;
+    attributes.set("content", charset);
     return true;
   });
 }
@@ -72,8 +108,9 @@ export function sniffHtmlCharset(
 
 export function extractHtmlTitle(html: string) {
   const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
-  if (titleMatch?.[1])
+  if (titleMatch?.[1]) {
     return normalizePlainText(decodeHtmlEntities(titleMatch[1]));
+  }
   const ogTitle = findHtmlMetaTagContent(html, (attributes) => {
     return (
       String(attributes.get("property") || "")
@@ -104,25 +141,12 @@ function stripHiddenHtmlElements(html: string) {
 }
 
 export function htmlToText(html: string) {
-  let text = String(html || "");
-  text = text.replace(/<!--[\s\S]*?-->/g, " ");
-  text = text.replace(/<head\b[^>]*>[\s\S]*?<\/head>/gi, " ");
-  text = stripHiddenHtmlElements(text);
-  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
-  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
-  text = text.replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ");
-  text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, " ");
-  text = text.replace(/<canvas\b[^>]*>[\s\S]*?<\/canvas>/gi, " ");
-  text = text.replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, " ");
-  text = text.replace(/<(br|hr)\b[^>]*\/?\s*>/gi, "\n");
-  text = text.replace(
-    /<\/(p|div|section|article|main|aside|header|footer|nav|li|ul|ol|h[1-6]|tr|table|blockquote)>/gi,
-    "\n",
+  const stripped = applyRegexReplacements(
+    stripHiddenHtmlElements(
+      applyRegexReplacements(html, HTML_PRE_HIDDEN_REPLACEMENTS),
+    ),
+    HTML_POST_HIDDEN_REPLACEMENTS,
   );
-  text = text.replace(/<li\b[^>]*>/gi, "\n- ");
-  text = text.replace(/<[^>]+>/g, " ");
-  text = decodeHtmlEntities(text);
-  text = normalizePlainText(text);
-  text = text.replace(/[ \f\v]+\n/g, "\n").replace(/\n[ \f\v]+/g, "\n");
-  return text;
+  const text = applyRegexReplacements(stripped, HTML_TEXT_REPLACEMENTS);
+  return normalizePlainText(decodeHtmlEntities(text));
 }
