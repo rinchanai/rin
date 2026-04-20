@@ -412,6 +412,41 @@ test("run_subagent exposes consistent session ref discovery hints", () => {
     sessionUtils.formatSubagentSessionRefRequiredError("resume"),
     /Session ref is required when session.mode is resume\./,
   );
+  assert.match(
+    sessionUtils.formatSubagentSessionModeInvalidError("broken"),
+    /Invalid session.mode: broken\. Allowed values: memory, persist, resume, fork\./,
+  );
+});
+
+
+test("subagent session utils normalize invalid session modes and trim refs", () => {
+  assert.deepEqual(
+    sessionUtils.normalizeSubagentSessionConfig({
+      mode: " RESUME ",
+      ref: "  /tmp/demo.jsonl  ",
+      name: " demo ",
+    }),
+    {
+      mode: "resume",
+      ref: "/tmp/demo.jsonl",
+      name: "demo",
+      keep: undefined,
+    },
+  );
+  assert.deepEqual(
+    sessionUtils.normalizeSubagentSessionConfig({
+      mode: "broken",
+      ref: "   ",
+      keep: true,
+    }),
+    {
+      mode: "memory",
+      invalidMode: "broken",
+      ref: undefined,
+      name: undefined,
+      keep: true,
+    },
+  );
 });
 
 test("session manager can create ephemeral forks without writing a session file", async () => {

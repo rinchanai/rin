@@ -21,6 +21,7 @@ import {
 } from "../rin-lib/runtime.js";
 import { readUsageMetrics } from "../usage-metrics.js";
 import {
+  formatSubagentSessionModeInvalidError,
   formatSubagentSessionRefAmbiguousError,
   formatSubagentSessionRefNotFoundError,
   formatSubagentSessionRefRequiredError,
@@ -37,7 +38,6 @@ import type {
   RunSubagentParams,
   SubagentBackendInfo,
   SubagentSessionConfig,
-  SubagentSessionMode,
   SubagentTask,
   TaskResult,
 } from "./types.js";
@@ -87,9 +87,9 @@ type SessionReferenceCandidate = {
 function isPersistedMode(
   session: Pick<SubagentSessionConfig, "mode" | "keep">,
 ): boolean {
-  const mode = (session?.mode || "memory") as SubagentSessionMode;
-  if (mode === "memory") return false;
-  if (mode === "fork") return session?.keep !== false;
+  const sessionConfig = normalizeSubagentSessionConfig(session);
+  if (sessionConfig.mode === "memory") return false;
+  if (sessionConfig.mode === "fork") return sessionConfig.keep !== false;
   return true;
 }
 
@@ -219,28 +219,39 @@ async function createManagedSession(task: NormalizedSubagentTask) {
   const { SessionManager } = await loadSessionManagerModule();
 
   let sessionManager: any;
-  if (sessionConfig.mode === "memory") {
-    sessionManager = SessionManager.inMemory(cwd);
-  } else if (sessionConfig.mode === "persist") {
-    sessionManager = SessionManager.create(cwd, sessionDir);
-  } else if (sessionConfig.mode === "resume") {
-    const source = await resolveSessionReference(sessionConfig.ref || "");
-    sessionManager = SessionManager.open(
-      source.path,
-      sessionDir,
-      undefined,
-    );
-  } else {
-    const source = await resolveSessionReference(sessionConfig.ref || "");
-    sessionManager = forkSessionManagerCompat(
-      SessionManager,
-      source.path,
-      cwd,
-      sessionDir,
-      {
-        persist: sessionConfig.keep !== false,
-      },
-    );
+  switch (sessionConfig.mode) {
+    case "memory":
+      sessionManager = SessionManager.inMemory(cwd);
+      break;
+    case "persist":
+      sessionManager = SessionManager.create(cwd, sessionDir);
+      break;
+    case "resume": {
+      const source = await resolveSessionReference(sessionConfig.ref || "");
+      sessionManager = SessionManager.open(
+        source.path,
+        sessionDir,
+        undefined,
+      );
+      break;
+    }
+    case "fork": {
+      const source = await resolveSessionReference(sessionConfig.ref || "");
+      sessionManager = forkSessionManagerCompat(
+        SessionManager,
+        source.path,
+        cwd,
+        sessionDir,
+        {
+          persist: sessionConfig.keep !== false,
+        },
+      );
+      break;
+    }
+    default:
+      throw new Error(
+        formatSubagentSessionModeInvalidError(String(sessionConfig.mode || "")),
+      );
   }
 
   const created = await withSessionCreationLock(async () => {
@@ -365,6 +376,9 @@ function validateTasks(
       return `Unknown or unavailable model: ${task.model}`;
     }
     const sessionConfig = task.session;
+    if (sessionConfig.invalidMode) {
+      return formatSubagentSessionModeInvalidError(sessionConfig.invalidMode);
+    }
     if (
       (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
       !sessionConfig.ref
