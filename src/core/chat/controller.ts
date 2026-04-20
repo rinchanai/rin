@@ -790,39 +790,41 @@ export class ChatController {
     if (commandName === "status") {
       return await this.runLocalStatusCommand(replyToMessageId, incomingMessageId);
     }
-    const skipSessionRecovery = commandName === "new";
-    await this.connect({ restoreSession: !skipSessionRecovery });
-    if (!this.session) throw new Error("chat_session_not_connected");
-    if (!skipSessionRecovery) {
-      await this.ensureSessionReady();
-    }
-    try {
-      const data: any = await this.session.runCommand(commandLine);
-      this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
-      const text = safeString(data?.text || "").trim();
-      if (!text) throw new Error("chat_command_text_missing");
-      await this.deliverAssistantReply({
-        text,
-        replyToMessageId: replyToMessageId || undefined,
-        incomingMessageId,
-      });
-      return data;
-    } catch (error: any) {
-      const errorMessage =
-        safeString(error?.message || error).trim() || "chat_command_failed";
-      const text = `Chat bridge error: ${errorMessage}`;
-      this.stageAssistantDelivery({
-        text,
-        replyToMessageId: replyToMessageId || undefined,
-      });
-      this.saveState();
-      await this.commitPendingDelivery();
-      throw error;
-    } finally {
-      await this.clearWorkingReaction().catch(() => {});
-      delete this.state.processing;
-      this.saveState();
-    }
+    return await this.runExclusiveTurn(async () => {
+      const skipSessionRecovery = commandName === "new";
+      await this.connect({ restoreSession: !skipSessionRecovery });
+      if (!this.session) throw new Error("chat_session_not_connected");
+      if (!skipSessionRecovery) {
+        await this.ensureSessionReady();
+      }
+      try {
+        const data: any = await this.session.runCommand(commandLine);
+        this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
+        const text = safeString(data?.text || "").trim();
+        if (!text) throw new Error("chat_command_text_missing");
+        await this.deliverAssistantReply({
+          text,
+          replyToMessageId: replyToMessageId || undefined,
+          incomingMessageId,
+        });
+        return data;
+      } catch (error: any) {
+        const errorMessage =
+          safeString(error?.message || error).trim() || "chat_command_failed";
+        const text = `Chat bridge error: ${errorMessage}`;
+        this.stageAssistantDelivery({
+          text,
+          replyToMessageId: replyToMessageId || undefined,
+        });
+        this.saveState();
+        await this.commitPendingDelivery();
+        throw error;
+      } finally {
+        await this.clearWorkingReaction().catch(() => {});
+        delete this.state.processing;
+        this.saveState();
+      }
+    });
   }
   private async runSteerNow(input: {
     text: string;

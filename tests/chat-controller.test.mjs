@@ -145,6 +145,46 @@ test("chat controller skips session recovery bootstrap for /new", async () => {
   assert.equal(controller.state.piSessionFile, "/tmp/new-chat.jsonl");
 });
 
+test("chat controller does not duplicate command delivery when housekeeping recovery races", async () => {
+  const controller = await createController();
+  const deliveries = [];
+  let startFirstCommit;
+  const firstCommitStarted = new Promise((resolve) => {
+    startFirstCommit = resolve;
+  });
+  let releaseFirstCommit;
+  const firstCommitGate = new Promise((resolve) => {
+    releaseFirstCommit = resolve;
+  });
+  controller.commitPendingDelivery = async function () {
+    deliveries.push(this.state.pendingDelivery?.text || "");
+    if (deliveries.length === 1) {
+      startFirstCommit();
+      await firstCommitGate;
+    }
+    delete this.state.pendingDelivery;
+    this.saveState();
+  };
+  controller.connect = async function () {
+    this.session = {
+      sessionManager: {
+        getSessionFile: () => "/tmp/new-chat.jsonl",
+        getSessionId: () => "session-2",
+        getSessionName: () => this.chatKey,
+      },
+      runCommand: async () => ({ handled: true, text: "Started a new session." }),
+    };
+  };
+
+  const runPromise = controller.runCommand("/new", "m1", "m1");
+  await firstCommitStarted;
+  const housekeepPromise = controller.housekeep();
+  releaseFirstCommit();
+  await Promise.all([runPromise, housekeepPromise]);
+
+  assert.deepEqual(deliveries, ["Started a new session."]);
+});
+
 test("chat controller delivers a visible command error instead of failing silently", async () => {
   const controller = await createController();
   const deliveries = [];
