@@ -42,6 +42,36 @@ test("tui stats compute session stats from entries", () => {
   assert.equal(result.toolCalls, 1);
   assert.equal(result.toolResults, 1);
   assert.equal(result.tokens.total, 33);
+
+  const emptyResult = stats.computeSessionStats(
+    { contextWindow: 1000 },
+    undefined,
+    "sid",
+    undefined,
+    undefined,
+  );
+  assert.equal(emptyResult.totalMessages, 0);
+  assert.equal(emptyResult.tokens.total, 0);
+});
+
+test("tui stats get context usage preserves post-compaction unknown state", () => {
+  const usage = stats.getContextUsage(
+    { contextWindow: 1000 },
+    [],
+    [
+      { type: "message", message: { role: "user" } },
+      { type: "compaction" },
+      {
+        type: "message",
+        message: { role: "assistant", stopReason: "aborted", usage: { input: 1 } },
+      },
+    ],
+  );
+  assert.deepEqual(usage, {
+    tokens: null,
+    contextWindow: 1000,
+    percent: null,
+  });
 });
 
 test("tui stats reconcile pending queues trims oldest queued messages", () => {
@@ -50,4 +80,10 @@ test("tui stats reconcile pending queues trims oldest queued messages", () => {
   stats.reconcilePendingQueues(steering, follow, 2);
   assert.deepEqual(steering, []);
   assert.deepEqual(follow, ["c", "d"]);
+
+  const steeringOnly = ["x"];
+  const followOnly = ["y", "z"];
+  stats.reconcilePendingQueues(steeringOnly, followOnly, -1.8);
+  assert.deepEqual(steeringOnly, []);
+  assert.deepEqual(followOnly, []);
 });

@@ -5,13 +5,33 @@ import {
   estimateContextTokens,
 } from "./session-helpers.js";
 
+function normalizeList<T>(value: T[] | undefined | null) {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeNonNegativeInteger(value: unknown) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return 0;
+  return Math.max(0, Math.trunc(count));
+}
+
+function trimQueuedMessages(queue: string[], removeCount: number) {
+  if (removeCount <= 0 || queue.length === 0) return 0;
+  const nextRemoveCount = Math.min(queue.length, removeCount);
+  queue.splice(0, nextRemoveCount);
+  return nextRemoveCount;
+}
+
 export function getContextUsage(model: any, messages: any[], branch: any[]) {
   const contextWindow = Number(model?.contextWindow || 0);
   if (contextWindow <= 0) return undefined;
 
+  const nextMessages = normalizeList(messages);
+  const nextBranch = normalizeList(branch);
+
   let latestCompactionIndex = -1;
-  for (let i = branch.length - 1; i >= 0; i--) {
-    if (branch[i]?.type === "compaction") {
+  for (let i = nextBranch.length - 1; i >= 0; i--) {
+    if (nextBranch[i]?.type === "compaction") {
       latestCompactionIndex = i;
       break;
     }
@@ -19,8 +39,8 @@ export function getContextUsage(model: any, messages: any[], branch: any[]) {
 
   if (latestCompactionIndex >= 0) {
     let hasPostCompactionUsage = false;
-    for (let i = branch.length - 1; i > latestCompactionIndex; i--) {
-      const entry = branch[i];
+    for (let i = nextBranch.length - 1; i > latestCompactionIndex; i--) {
+      const entry = nextBranch[i];
       const message: any = entry?.type === "message" ? entry.message : null;
       const usage = message?.role === "assistant" ? message?.usage : undefined;
       const stopReason = String(message?.stopReason || "");
@@ -34,7 +54,7 @@ export function getContextUsage(model: any, messages: any[], branch: any[]) {
     }
   }
 
-  const tokens = estimateContextTokens(messages);
+  const tokens = Number(estimateContextTokens(nextMessages) || 0);
   return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 };
 }
 
@@ -55,7 +75,7 @@ export function computeSessionStats(
   let cacheWrite = 0;
   let cost = 0;
 
-  for (const entry of entries) {
+  for (const entry of normalizeList(entries)) {
     if (entry?.type !== "message" || !entry.message) continue;
     const message = entry.message;
     if (message.role === "user") userMessages += 1;
@@ -92,13 +112,11 @@ export function reconcilePendingQueues(
   followUpMessages: string[],
   targetCount: number,
 ) {
-  let total = steeringMessages.length + followUpMessages.length;
-  while (total > targetCount && steeringMessages.length > 0) {
-    steeringMessages.shift();
-    total -= 1;
-  }
-  while (total > targetCount && followUpMessages.length > 0) {
-    followUpMessages.shift();
-    total -= 1;
-  }
+  const nextTargetCount = normalizeNonNegativeInteger(targetCount);
+  let overflow =
+    normalizeList(steeringMessages).length +
+    normalizeList(followUpMessages).length -
+    nextTargetCount;
+  overflow -= trimQueuedMessages(steeringMessages, overflow);
+  trimQueuedMessages(followUpMessages, overflow);
 }
