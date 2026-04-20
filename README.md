@@ -151,6 +151,16 @@ Normally, use `rin`.
 
 `rin --std` is mainly a troubleshooting fallback when the default RPC mode has problems and you need a foreground session to recover or debug.
 
+## Testing
+
+Rin keeps repository tests in three buckets:
+
+- `tests/unit`: fast isolated checks for one module or behavior
+- `tests/e2e`: cross-process flows that still run in a disposable environment
+- `tests/interactive`: opt-in smoke coverage for terminal interaction paths
+
+The placement and design rules for new tests live in [`tests/README.md`](tests/README.md).
+
 ## Docs
 
 If you want more detail, start here:
