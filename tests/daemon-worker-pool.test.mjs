@@ -494,3 +494,94 @@ test("worker session ref updates clear stale attached connection selectors", asy
   pool.destroyAll();
   await fs.rm(dir, { recursive: true, force: true });
 });
+
+test("internal worker commands time out cleanly without leaking late responses", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    String.raw`process.stdin.setEncoding('utf8');
+let buffer='';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf('\n');
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({
+        id: command.id,
+        type: 'response',
+        command: command.type,
+        success: true,
+        data: { sessionFile: '/tmp/delayed.jsonl', sessionId: 'delayed-session' },
+      }) + '\n');
+    }, 80);
+  }
+});
+setInterval(() => {}, 1000);
+`,
+  );
+
+  const writes = [];
+  const connection = {
+    socket: {
+      destroyed: false,
+      write(value) {
+        writes.push(String(value));
+      },
+    },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({
+    workerPath,
+    cwd: dir,
+    gcIdleMs: 50,
+    internalCommandTimeoutMs: 20,
+  });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
+  pool.attachWorker(connection, worker);
+
+  await assert.rejects(
+    pool.sendInternalCommand(worker, {
+      type: "switch_session",
+      sessionPath: "/tmp/delayed.jsonl",
+    }),
+    /rin_internal_timeout:switch_session/,
+  );
+  await sleep(150);
+
+  assert.equal(worker.pendingResponses.size, 0);
+  assert.deepEqual(writes, []);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("worker status snapshot exposes graceful shutdown state", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  const worker = pool.resolveWorkerForCommand(
+    { socket: { destroyed: false, write() {} }, clientBuffer: "" },
+    { type: "new_session" },
+  );
+
+  pool.terminateWorkerGracefully(worker);
+
+  assert.equal(pool.getStatusSnapshot().workers[0]?.gracefulShutdownRequested, true);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});

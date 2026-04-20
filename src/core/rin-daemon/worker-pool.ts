@@ -28,6 +28,7 @@ type PendingResponse = {
   connection?: ConnectionState;
   resolve?: (payload: any) => void;
   reject?: (error: Error) => void;
+  finalize?: () => void;
 };
 
 export type WorkerHandle = {
@@ -37,6 +38,7 @@ export type WorkerHandle = {
   stderrBuffer: { buffer: string };
   connections: Set<ConnectionState>;
   pendingResponses: Map<string, PendingResponse>;
+  ignoredResponseIds: Set<string>;
   sessionFile?: string;
   sessionId?: string;
   isStreaming: boolean;
@@ -75,6 +77,7 @@ export class WorkerPool {
   private internalRequestSeq = 0;
   private shuttingDown = false;
   private readonly gcIdleMs: number;
+  private readonly internalCommandTimeoutMs: number;
   private readonly reaper: NodeJS.Timeout;
 
   constructor(
@@ -87,9 +90,14 @@ export class WorkerPool {
       ) => void;
       gcIdleMs?: number;
       sweepIntervalMs?: number;
+      internalCommandTimeoutMs?: number;
     },
   ) {
     this.gcIdleMs = Math.max(0, Number(options.gcIdleMs ?? 30_000));
+    this.internalCommandTimeoutMs = Math.max(
+      1,
+      Number(options.internalCommandTimeoutMs ?? 10_000),
+    );
     const sweepIntervalMs = Math.max(
       250,
       Number(options.sweepIntervalMs ?? Math.min(this.gcIdleMs || 250, 5_000)),
@@ -145,6 +153,7 @@ export class WorkerPool {
       });
     }
     for (const pending of Array.from(worker.pendingResponses.values())) {
+      pending.finalize?.();
       if (pending.reject) {
         pending.reject(new Error("rin_worker_exit"));
         continue;
@@ -157,6 +166,7 @@ export class WorkerPool {
       }
     }
     worker.pendingResponses.clear();
+    worker.ignoredResponseIds.clear();
     try {
       worker.child.stdin.end();
     } catch {}
@@ -302,6 +312,7 @@ export class WorkerPool {
         isCompacting: worker.isCompacting,
         lastUsedAt: worker.lastUsedAt,
         idleSince: worker.idleSince,
+        gracefulShutdownRequested: worker.gracefulShutdownRequested,
         role: "session",
       })),
     };
@@ -436,6 +447,7 @@ export class WorkerPool {
       stderrBuffer: { buffer: "" },
       connections: new Set(),
       pendingResponses: new Map(),
+      ignoredResponseIds: new Set(),
       isStreaming: false,
       isCompacting: false,
       lastUsedAt: Date.now(),
@@ -462,6 +474,14 @@ export class WorkerPool {
           return;
         }
 
+        if (
+          payload?.type === "response" &&
+          payload.id &&
+          worker.ignoredResponseIds.delete(String(payload.id))
+        ) {
+          return;
+        }
+
         this.updateWorkerMetadata(worker, payload);
 
         if (
@@ -477,6 +497,7 @@ export class WorkerPool {
               this.getWorkerSelector(worker),
             );
           }
+          pending.finalize?.();
           if (pending.resolve) pending.resolve(payload);
           if (pending.connection) writeLine(pending.connection.socket, payload);
           this.maybeReleaseWorker(worker);
@@ -500,6 +521,7 @@ export class WorkerPool {
     child.on("exit", (code, signal) => {
       const liveConnections = new Set<ConnectionState>(worker.connections);
       for (const pending of worker.pendingResponses.values()) {
+        pending.finalize?.();
         if (pending.connection) liveConnections.add(pending.connection);
       }
       const selector = this.getWorkerSelector(worker);
@@ -514,6 +536,7 @@ export class WorkerPool {
       worker.connections.clear();
       const pending = Array.from(worker.pendingResponses.values());
       worker.pendingResponses.clear();
+      worker.ignoredResponseIds.clear();
       if (shouldRecover) {
         this.recoverWorker(selector, worker, liveConnections, pending);
         return;
@@ -699,6 +722,7 @@ export class WorkerPool {
       });
     }
     for (const entry of pending) {
+      entry.finalize?.();
       if (entry.reject) {
         entry.reject(new Error("rin_session_recovering"));
         continue;
@@ -747,16 +771,32 @@ export class WorkerPool {
   private async sendInternalCommand(worker: WorkerHandle, command: any) {
     const id = `rin_internal_${++this.internalRequestSeq}`;
     return await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        worker.pendingResponses.delete(id);
+        worker.ignoredResponseIds.add(id);
+        this.maybeReleaseWorker(worker);
+        reject(
+          new Error(
+            `rin_internal_timeout:${String(command?.type || "unknown")}`,
+          ),
+        );
+      }, this.internalCommandTimeoutMs);
+      timeout.unref?.();
+
+      const finalize = () => clearTimeout(timeout);
       worker.pendingResponses.set(id, {
         id,
         commandType: String(command?.type || "unknown"),
         resolve,
         reject,
+        finalize,
       });
       try {
         worker.child.stdin.write(`${JSON.stringify({ ...command, id })}\n`);
       } catch (error: any) {
         worker.pendingResponses.delete(id);
+        worker.ignoredResponseIds.add(id);
+        finalize();
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
