@@ -128,17 +128,19 @@ test("buildOnboardingPrompt keeps init instructions hidden and language-first", 
   const languageIndex = prompt.indexOf(
     "- first establish the user's preferred language",
   );
-  const agentIndex = prompt.indexOf(
-    "- then ask the user to define the assistant's own name / identity / relationship framing",
+  const identityIndex = prompt.indexOf(
+    "- then ask the user to define the assistant's own name and identity",
   );
+  assert.equal(prompt.includes("relationship framing"), false);
+  assert.equal(prompt.includes("control over the user"), false);
   const ownerIndex = prompt.indexOf("- then ask how to address the user");
   const styleIndex = prompt.indexOf(
     "- finally ask for the assistant's default voice/style preferences",
   );
   assert.ok(
     languageIndex >= 0 &&
-      agentIndex > languageIndex &&
-      ownerIndex > agentIndex &&
+      identityIndex > languageIndex &&
+      ownerIndex > identityIndex &&
       styleIndex > ownerIndex,
   );
 });
