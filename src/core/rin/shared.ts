@@ -390,12 +390,6 @@ export function collectTuiPassthroughArgs(argv: string[]) {
   return stripRinWrapperArgs(argv);
 }
 
-function normalizeBetaTrainSelector(value: string) {
-  const normalized = safeString(value).trim();
-  if (!normalized) return "";
-  return normalized.startsWith("release/") ? normalized : `release/${normalized}`;
-}
-
 function looksLikeGitRefSelector(value: string) {
   const normalized = safeString(value).trim();
   return (
@@ -409,7 +403,7 @@ function looksLikeGitRefSelector(value: string) {
 function extractOptionalFlagSelector(
   rawArgv: string[],
   command: string,
-  flag: "--stable" | "--beta" | "--git",
+  flag: "--stable" | "--beta" | "--nightly" | "--git",
 ) {
   const args = extractSubcommandArgv(rawArgv, command);
   for (let index = 0; index < args.length; index += 1) {
@@ -447,6 +441,7 @@ function resolveParsedReleaseArgs(
   const selectedChannels = [
     options.stable ? "stable" : "",
     options.beta ? "beta" : "",
+    options.nightly ? "nightly" : "",
     options.git ? "git" : "",
   ].filter(Boolean) as ReleaseChannel[];
 
@@ -457,24 +452,20 @@ function resolveParsedReleaseArgs(
   const releaseChannel = selectedChannels[0] || "stable";
   let releaseBranch = safeString(options.branch).trim();
   let releaseVersion = safeString(options.version).trim();
-  const flagSelector =
-    releaseChannel === "stable"
-      ? extractOptionalFlagSelector(rawArgv, command, "--stable")
-      : releaseChannel === "beta"
-        ? extractOptionalFlagSelector(rawArgv, command, "--beta")
-        : extractOptionalFlagSelector(rawArgv, command, "--git");
+  const stableSelector = extractOptionalFlagSelector(rawArgv, command, "--stable");
+  const betaSelector = extractOptionalFlagSelector(rawArgv, command, "--beta");
+  const nightlySelector = extractOptionalFlagSelector(rawArgv, command, "--nightly");
+  const gitSelector = extractOptionalFlagSelector(rawArgv, command, "--git");
 
-  if (!releaseBranch && !releaseVersion && flagSelector) {
-    if (releaseChannel === "beta") {
-      releaseBranch = normalizeBetaTrainSelector(flagSelector);
-    } else if (releaseChannel === "git") {
-      if (looksLikeGitRefSelector(flagSelector)) {
-        releaseVersion = flagSelector;
-      } else {
-        releaseBranch = flagSelector;
-      }
+  if (stableSelector) throw new Error("rin_stable_selector_not_supported");
+  if (betaSelector) throw new Error("rin_beta_selector_not_supported");
+  if (nightlySelector) throw new Error("rin_nightly_selector_not_supported");
+
+  if (!releaseBranch && !releaseVersion && gitSelector) {
+    if (looksLikeGitRefSelector(gitSelector)) {
+      releaseVersion = gitSelector;
     } else {
-      throw new Error("rin_stable_selector_not_supported");
+      releaseBranch = gitSelector;
     }
   }
 
@@ -483,6 +474,12 @@ function resolveParsedReleaseArgs(
   }
   if (releaseChannel === "stable" && releaseBranch) {
     throw new Error("rin_stable_branch_not_supported");
+  }
+  if (releaseChannel === "beta" && (releaseBranch || releaseVersion)) {
+    throw new Error("rin_beta_selector_not_supported");
+  }
+  if (releaseChannel === "nightly" && (releaseBranch || releaseVersion)) {
+    throw new Error("rin_nightly_selector_not_supported");
   }
 
   return {

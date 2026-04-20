@@ -1,15 +1,15 @@
-name: publish-beta
+name: publish-nightly
 
 on:
   schedule:
-    - cron: '0 1 * * 1'
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: publish-beta
+  group: publish-nightly
   cancel-in-progress: false
 
 jobs:
@@ -24,17 +24,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Resolve beta source ref and version
+      - name: Resolve nightly source ref and version
         id: plan
         run: |
           set -eu
           release_ref=$(git rev-parse HEAD)
-          plan_json=$(node scripts/release/plan-release.mjs --channel beta --ref "$release_ref")
+          plan_json=$(node scripts/release/plan-release.mjs --channel nightly --ref "$release_ref")
           version=$(node -e 'const value = JSON.parse(process.argv[1]); process.stdout.write(value.version);' "$plan_json")
-          promotion_version=$(node -e 'const value = JSON.parse(process.argv[1]); process.stdout.write(value.promotionVersion);' "$plan_json")
           echo "release_ref=$release_ref" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "promotion_version=$promotion_version" >> "$GITHUB_OUTPUT"
       - run: npm ci --no-fund --no-audit
       - run: npm run build
       - run: >-
@@ -48,16 +46,16 @@ jobs:
       - name: Update release manifest
         run: >-
           npm run release:manifest --
-          --channel beta
+          --channel nightly
           --version '${{ steps.plan.outputs.version }}'
           --ref '${{ steps.plan.outputs.release_ref }}'
-          --promotion-version '${{ steps.plan.outputs.promotion_version }}'
-      - name: Commit beta metadata
+          --branch main
+      - name: Commit nightly metadata
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add release-manifest.json
-          git commit -m 'chore(release): cut beta ${{ steps.plan.outputs.version }}' || true
+          git commit -m 'chore(release): publish nightly ${{ steps.plan.outputs.version }}' || true
           git push origin HEAD:main
       - name: Prepare bootstrap branch checkout
         env:
@@ -80,6 +78,6 @@ jobs:
           if git -C "$bootstrap_dir" diff --cached --quiet; then
             echo 'No bootstrap changes to commit.'
           else
-            git -C "$bootstrap_dir" commit -m 'chore(release): cut beta ${{ steps.plan.outputs.version }}'
+            git -C "$bootstrap_dir" commit -m 'chore(release): publish nightly ${{ steps.plan.outputs.version }}'
             git -C "$bootstrap_dir" push origin HEAD:stable-bootstrap
           fi

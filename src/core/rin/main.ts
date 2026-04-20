@@ -43,7 +43,7 @@ const INTERNAL_COMMANDS = [
 function createCli() {
   const cli = cac("rin");
   cli
-    .usage("[command] [--beta [train]|--git [branch-or-ref]] [options] [-- passthrough]")
+    .usage("[command] [--beta|--nightly|--git [branch-or-ref]] [options] [-- passthrough]")
     .option("-u, --user <name>", "Run against a specific daemon user")
     .option("--std", "Start std TUI instead of RPC TUI")
     .option(
@@ -53,9 +53,10 @@ function createCli() {
     .option("--tmux-list", "List hidden Rin tmux sessions")
     .option("--stable", "Use the stable release channel (default)")
     .option("--beta", "Use the beta release channel")
+    .option("--nightly", "Use the nightly release channel")
     .option("--git", "Use the git release channel")
-    .option("--branch <name>", "Explicit beta/git branch selector")
-    .option("--version <value>", "Explicit release version or git ref selector")
+    .option("--branch <name>", "Explicit git branch selector")
+    .option("--version <value>", "Explicit stable version or git ref selector")
     .help();
 
   for (const [name, description] of RIN_COMMANDS) {

@@ -1,64 +1,94 @@
 # Releasing Rin
 
-This document describes the operator workflow for Rin release trains.
+This document describes the operator workflow for Rin's fixed-cadence release train.
 
 ## Preconditions
 
-- publish from a clean `release/<major>.<minor>` branch
-- keep `main` as the git-channel source of truth
+- keep `main` as the development source of truth
 - configure repository secret `NPM_TOKEN` for `@rinchanai/rin`
-- confirm the targeted release tests pass on the release branch
-- update `docs/rin/CHANGELOG.md` before the workflow if release notes changed
+- confirm the focused release validation set passes on `main`
+- update `docs/rin/CHANGELOG.md` before a promotion if release notes changed
+- keep `release-manifest.json -> train.series` aligned with the active `major.minor` line
 
 ## Channel contract
 
 - stable: default install and update channel, published to npm with dist-tag `latest`
-- beta: explicit opt-in only; plain `--beta` means the latest release train and `--beta 0.69` means `release/0.69`
-- git: explicit opt-in only; plain `--git` means `main` and `--git <name>` resolves that branch or ref directly
+- beta: explicit opt-in only; `--beta` means the current weekly beta candidate
+- nightly: explicit opt-in only; `--nightly` means the current nightly build pinned from `main`
+- git: explicit opt-in only; `--git` means `main` and `--git <name>` resolves that branch or ref directly
 
-## First stable release preparation
+## Cadence
 
-Before the first real stable publish:
+The default cadence is:
 
-1. ensure the npm package `@rinchanai/rin` exists and the publish token can write to it
-2. confirm `package.json` metadata is acceptable for public npm publication
-3. confirm `release-manifest.json` still uses only a temporary placeholder stable archive until the first publish succeeds
-4. after the first successful stable publish, let the workflow rewrite the stable manifest entry to the npm tarball
-5. use `docs/first-stable-release-checklist.md` as the operational readiness and post-publish verification checklist
+- nightly: daily scheduled cut from `main`
+- beta: weekly scheduled cut from `main`
+- stable: weekly scheduled promotion of the previous beta candidate
+- hotfix: manual patch release outside the fixed cadence
 
-## Beta release
+The stable workflow must promote the beta candidate's exact pinned ref.
+It must not silently replace that ref with newer `main` content.
 
-Use GitHub Actions `publish-beta` with:
+## Scheduled workflows
 
-- `release_branch`: `release/<major>.<minor>`
-- `version`: `<major>.<minor>.<patch>-beta.<n>`
+### Nightly
 
-The workflow will:
+`publish-nightly.yml` runs on a daily schedule and can also be started manually.
+It:
 
-1. check out the selected release branch
-2. install dependencies and run the targeted release validation set
-3. set `package.json` version to the requested beta version
-4. rewrite `release-manifest.json` beta metadata for that branch and version
-5. commit the updated package and manifest metadata back to the release branch
-6. regenerate and push the `stable-bootstrap` branch payload
+1. resolves the nightly source ref, defaulting to `main` HEAD
+2. computes a nightly version from the active train series and current date
+3. validates the focused release test set
+4. updates `release-manifest.json -> nightly`
+5. commits the manifest update back to `main`
+6. refreshes `stable-bootstrap`
 
-## Stable release
+### Beta
 
-Use GitHub Actions `publish-stable` with:
+`publish-beta.yml` runs on a weekly schedule and can also be started manually.
+It:
 
-- `release_branch`: `release/<major>.<minor>`
-- `version`: `<major>.<minor>.<patch>`
+1. resolves the beta source ref, defaulting to `main` HEAD
+2. computes the next promotion version from `train.series` and the current stable version
+3. creates the weekly beta version for that promotion target
+4. validates the focused release test set
+5. updates `release-manifest.json -> beta`
+6. commits the manifest update back to `main`
+7. refreshes `stable-bootstrap`
 
-The workflow will:
+### Stable
 
-1. check out the selected release branch
-2. install dependencies and run the targeted release validation set
-3. set `package.json` version to the requested stable version
-4. publish `@rinchanai/rin` to npm using dist-tag `latest`
-5. rewrite `release-manifest.json` stable metadata to the npm tarball
-6. commit the updated package and manifest metadata back to the release branch
-7. create and push tag `v<version>`
-8. regenerate and push the `stable-bootstrap` branch payload
+`publish-stable.yml` runs on a weekly schedule and can also be started manually.
+It:
+
+1. reads the current beta candidate ref and version from `release-manifest.json`
+2. computes the stable promotion version, normally by stripping the beta suffix
+3. if a hotfix already advanced stable past that version, bumps to the next available patch version
+4. checks out the beta candidate ref in a detached worktree
+5. validates that candidate with the focused release test set
+6. sets the package version only inside the candidate worktree
+7. publishes `@rinchanai/rin` to npm using dist-tag `latest`
+8. updates `release-manifest.json -> stable` with the promoted ref and beta provenance
+9. tags the promoted candidate ref as `v<version>`
+10. commits the manifest update back to `main`
+11. refreshes `stable-bootstrap`
+
+### Hotfix
+
+`publish-hotfix.yml` is manual only.
+It expects an explicit `ref` and patch `version`.
+Use it for urgent stable fixes outside the weekly train.
+It:
+
+1. checks out the requested ref in a detached worktree
+2. validates the candidate with the focused release test set
+3. sets the requested patch version in the candidate worktree
+4. publishes that patch to npm as `latest`
+5. updates `release-manifest.json -> stable`
+6. tags the hotfix ref as `v<version>`
+7. refreshes `stable-bootstrap`
+
+After a hotfix, merge or cherry-pick the fix back to `main` and into any still-relevant train work before the next regular cycle.
 
 ## Stable bootstrap branch
 
@@ -83,13 +113,31 @@ npm run release:bootstrap -- --output /path/to/stable-bootstrap-worktree
 Stable:
 
 ```bash
-npm run release:manifest -- --channel stable --version <x.y.z>
+node scripts/release/update-release-manifest.mjs \
+  --channel stable \
+  --version <x.y.z> \
+  --ref <sha> \
+  --from-beta-version <x.y.z-beta.yyyymmdd>
 ```
 
 Beta:
 
 ```bash
-npm run release:manifest -- --channel beta --branch release/<x.y> --version <x.y.z-beta.n>
+node scripts/release/update-release-manifest.mjs \
+  --channel beta \
+  --version <x.y.z-beta.yyyymmdd> \
+  --ref <sha> \
+  --promotion-version <x.y.z>
+```
+
+Nightly:
+
+```bash
+node scripts/release/update-release-manifest.mjs \
+  --channel nightly \
+  --version <x.y.z-nightly.yyyymmdd+sha> \
+  --ref <sha> \
+  --branch main
 ```
 
 ## Validation set used by release workflows

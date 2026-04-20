@@ -38,8 +38,8 @@ Install:
 
 ```bash
 ./install.sh              # stable release (default)
-./install.sh --beta       # latest release train
-./install.sh --beta 0.69
+./install.sh --beta       # current weekly beta candidate
+./install.sh --nightly    # current nightly build
 ./install.sh --git        # main
 ./install.sh --git main
 ./install.sh --git deadbeef
@@ -90,8 +90,8 @@ For a normal installed Rin update, use:
 
 ```bash
 rin update              # stable release (default)
-rin update --beta       # latest release train
-rin update --beta 0.69
+rin update --beta       # current weekly beta candidate
+rin update --nightly    # current nightly build
 rin update --git        # main
 rin update --git main
 rin update --git deadbeef
@@ -116,8 +116,8 @@ It does not replace the user-scoped CLI launcher or installer.
 
 Important release-channel rule:
 - stable is the default for install and update
-- `--beta` with no suffix means the latest release train
-- `--beta 0.69` means `release/0.69`
+- `--beta` means the current weekly beta candidate
+- `--nightly` means the current nightly build from `main`
 - `--git` with no suffix means `main`
 
 Avoid treating repo-local workflows like `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the default way to update an already installed Rin.

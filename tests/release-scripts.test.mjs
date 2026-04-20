@@ -20,11 +20,13 @@ test("update-release-manifest script writes stable npm tarball metadata", () => 
     fs.writeFileSync(
       manifestPath,
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         packageName: "@rinchanai/rin",
         repoUrl: "https://github.com/rinchanai/rin",
-        stable: { version: "0.0.0", archiveUrl: "https://example.com/old.tgz" },
-        beta: { defaultBranch: "release/next", branches: {}, versions: {} },
+        train: { series: "1.2", nightlyBranch: "main" },
+        stable: { version: "1.2.2", archiveUrl: "https://example.com/old.tgz" },
+        beta: { version: "1.2.3-beta.20260420", archiveUrl: "https://example.com/beta.tgz", ref: "abc1234", promotionVersion: "1.2.3" },
+        nightly: { version: "1.2.4-nightly.20260420+abc1234", archiveUrl: "https://example.com/nightly.tgz", ref: "abc1234", branch: "main" },
         git: { defaultBranch: "main" },
       }),
     );
@@ -38,12 +40,18 @@ test("update-release-manifest script writes stable npm tarball metadata", () => 
         "stable",
         "--version",
         "1.2.3",
+        "--ref",
+        "deadbeef",
+        "--from-beta-version",
+        "1.2.3-beta.20260420",
       ],
       { cwd: rootDir, stdio: "pipe" },
     );
     const next = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
     assert.equal(next.packageName, "@rinchanai/rin");
     assert.equal(next.stable.version, "1.2.3");
+    assert.equal(next.stable.ref, "deadbeef");
+    assert.equal(next.stable.promotedFromBetaVersion, "1.2.3-beta.20260420");
     assert.equal(
       next.stable.archiveUrl,
       "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-1.2.3.tgz",
@@ -57,18 +65,20 @@ test("update-release-manifest script writes stable npm tarball metadata", () => 
   }
 });
 
-test("update-release-manifest script writes beta GitHub branch metadata", () => {
+test("update-release-manifest script writes beta and nightly pinned ref metadata", () => {
   const tempDir = makeTempDir(".tmp-release-script-");
   try {
     const manifestPath = path.join(tempDir, "release-manifest.json");
     fs.writeFileSync(
       manifestPath,
       JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         packageName: "@rinchanai/rin",
         repoUrl: "https://github.com/rinchanai/rin",
+        train: { series: "1.2", nightlyBranch: "main" },
         stable: { version: "1.2.3", archiveUrl: "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-1.2.3.tgz" },
-        beta: { defaultBranch: "release/next", branches: {}, versions: {} },
+        beta: {},
+        nightly: {},
         git: { defaultBranch: "main" },
       }),
     );
@@ -80,24 +90,158 @@ test("update-release-manifest script writes beta GitHub branch metadata", () => 
         manifestPath,
         "--channel",
         "beta",
-        "--branch",
-        "release/1.3",
         "--version",
-        "1.3.0-beta.2",
+        "1.2.4-beta.20260420",
+        "--ref",
+        "deadbeef",
+        "--promotion-version",
+        "1.2.4",
+      ],
+      { cwd: rootDir, stdio: "pipe" },
+    );
+    execFileSync(
+      process.execPath,
+      [
+        path.join(rootDir, "scripts", "release", "update-release-manifest.mjs"),
+        "--manifest",
+        manifestPath,
+        "--channel",
+        "nightly",
+        "--version",
+        "1.2.5-nightly.20260420+deadbee",
+        "--ref",
+        "deadbeef",
+        "--branch",
+        "main",
       ],
       { cwd: rootDir, stdio: "pipe" },
     );
     const next = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    assert.equal(next.beta.branches["release/1.3"].version, "1.3.0-beta.2");
+    assert.equal(next.beta.version, "1.2.4-beta.20260420");
+    assert.equal(next.beta.ref, "deadbeef");
+    assert.equal(next.beta.promotionVersion, "1.2.4");
     assert.equal(
-      next.beta.branches["release/1.3"].archiveUrl,
-      "https://github.com/rinchanai/rin/archive/refs/heads/release/1.3.tar.gz",
+      next.beta.archiveUrl,
+      "https://github.com/rinchanai/rin/archive/deadbeef.tar.gz",
     );
-    assert.equal(next.beta.versions["1.3.0-beta.2"].branch, "release/1.3");
+    assert.equal(next.nightly.version, "1.2.5-nightly.20260420+deadbee");
+    assert.equal(next.nightly.ref, "deadbeef");
+    assert.equal(next.nightly.branch, "main");
     assert.equal(
-      next.beta.versions["1.3.0-beta.2"].archiveUrl,
-      "https://github.com/rinchanai/rin/archive/refs/heads/release/1.3.tar.gz",
+      next.nightly.archiveUrl,
+      "https://github.com/rinchanai/rin/archive/deadbeef.tar.gz",
     );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("plan-release script computes beta nightly and stable promotion versions", () => {
+  const tempDir = makeTempDir(".tmp-release-plan-");
+  try {
+    const manifestPath = path.join(tempDir, "release-manifest.json");
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        train: { series: "1.2", nightlyBranch: "main" },
+        stable: { version: "1.2.3" },
+        beta: { version: "1.2.4-beta.20260420" },
+      }),
+    );
+    const betaPlan = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          path.join(rootDir, "scripts", "release", "plan-release.mjs"),
+          "--manifest",
+          manifestPath,
+          "--channel",
+          "beta",
+          "--date",
+          "20260427",
+        ],
+        { cwd: rootDir, stdio: "pipe", encoding: "utf8" },
+      ),
+    );
+    assert.deepEqual(betaPlan, {
+      series: "1.2",
+      promotionVersion: "1.2.4",
+      version: "1.2.4-beta.20260427",
+    });
+
+    const nightlyPlan = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          path.join(rootDir, "scripts", "release", "plan-release.mjs"),
+          "--manifest",
+          manifestPath,
+          "--channel",
+          "nightly",
+          "--date",
+          "20260427",
+          "--ref",
+          "deadbeefcafebabe",
+        ],
+        { cwd: rootDir, stdio: "pipe", encoding: "utf8" },
+      ),
+    );
+    assert.deepEqual(nightlyPlan, {
+      series: "1.2",
+      promotionVersion: "1.2.4",
+      version: "1.2.4-nightly.20260427+deadbee",
+    });
+
+    const stablePlan = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          path.join(rootDir, "scripts", "release", "plan-release.mjs"),
+          "--manifest",
+          manifestPath,
+          "--channel",
+          "stable-promotion",
+          "--beta-version",
+          "1.2.4-beta.20260420",
+        ],
+        { cwd: rootDir, stdio: "pipe", encoding: "utf8" },
+      ),
+    );
+    assert.deepEqual(stablePlan, {
+      series: "1.2",
+      promotionVersion: "1.2.4",
+      version: "1.2.4",
+    });
+
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        train: { series: "1.2", nightlyBranch: "main" },
+        stable: { version: "1.2.4" },
+      }),
+    );
+    const hotfixAwareStablePlan = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          path.join(rootDir, "scripts", "release", "plan-release.mjs"),
+          "--manifest",
+          manifestPath,
+          "--channel",
+          "stable-promotion",
+          "--beta-version",
+          "1.2.4-beta.20260420",
+        ],
+        { cwd: rootDir, stdio: "pipe", encoding: "utf8" },
+      ),
+    );
+    assert.deepEqual(hotfixAwareStablePlan, {
+      series: "1.2",
+      promotionVersion: "1.2.4",
+      version: "1.2.5",
+    });
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

@@ -45,21 +45,29 @@ async function createReleaseManifest(tempDir) {
   await fs.writeFile(
     manifestPath,
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion: 2,
       repoUrl: "https://example.invalid/rin",
       bootstrapBranch: "stable-bootstrap",
+      train: {
+        series: "1.2",
+        nightlyBranch: "main",
+      },
       stable: {
         version: "1.2.3",
         archiveUrl: "https://example.invalid/releases/stable-1.2.3.tar.gz",
+        ref: "abc1234",
       },
       beta: {
-        defaultBranch: "release/1.3",
-        branches: {
-          "release/1.3": {
-            version: "1.3.0-beta.2",
-            archiveUrl: "https://example.invalid/releases/release-1.3.tar.gz",
-          },
-        },
+        version: "1.2.4-beta.20260420",
+        archiveUrl: "https://example.invalid/releases/beta-1.2.4-beta.20260420.tar.gz",
+        ref: "def5678",
+        promotionVersion: "1.2.4",
+      },
+      nightly: {
+        version: "1.2.5-nightly.20260420+deadbee",
+        archiveUrl: "https://example.invalid/releases/nightly-1.2.5-nightly.20260420.tar.gz",
+        ref: "deadbeef",
+        branch: "main",
       },
       git: {
         defaultBranch: "main",
@@ -115,11 +123,21 @@ if [ "$1" = "-" ]; then
     beta)
       cat <<'EOF'
 CHANNEL='beta'
-ARCHIVE_URL='https://example.invalid/releases/release-0.69.tar.gz'
-VERSION='0.69.0-beta.0'
-BRANCH='release/0.69'
-REF='release/0.69'
-SOURCE_LABEL='beta branch release/0.69'
+ARCHIVE_URL='https://example.invalid/releases/beta-1.2.4-beta.20260420.tar.gz'
+VERSION='1.2.4-beta.20260420'
+BRANCH='beta'
+REF='def5678'
+SOURCE_LABEL='beta 1.2.4-beta.20260420'
+EOF
+      ;;
+    nightly)
+      cat <<'EOF'
+CHANNEL='nightly'
+ARCHIVE_URL='https://example.invalid/releases/nightly-1.2.5-nightly.20260420.tar.gz'
+VERSION='1.2.5-nightly.20260420+deadbee'
+BRANCH='main'
+REF='deadbeef'
+SOURCE_LABEL='nightly 1.2.5-nightly.20260420+deadbee'
 EOF
       ;;
     git)
@@ -138,7 +156,7 @@ CHANNEL='stable'
 ARCHIVE_URL='https://example.invalid/releases/stable-1.2.3.tar.gz'
 VERSION='1.2.3'
 BRANCH='stable'
-REF='1.2.3'
+REF='abc1234'
 SOURCE_LABEL='stable 1.2.3'
 EOF
       ;;
@@ -203,7 +221,7 @@ test("install and update wrappers resolve release metadata before fetching sourc
   });
 });
 
-test("bootstrap wrappers forward optional selectors after beta and git flags", async () => {
+test("bootstrap wrappers forward beta nightly and git channel selections", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
     const manifestPath = await createReleaseManifest(tempDir);
@@ -223,13 +241,18 @@ test("bootstrap wrappers forward optional selectors after beta and git flags", a
       RIN_BOOTSTRAP_TEST_LOG: logPath,
     };
 
-    await runBootstrapWrapper("install.sh", ["--beta", "0.69"], env);
+    await runBootstrapWrapper("install.sh", ["--beta"], env);
+    await runBootstrapWrapper("install.sh", ["--nightly"], env);
     await runBootstrapWrapper("update.sh", ["--git", "main"], env);
 
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=beta:RIN_RELEASE_BRANCH=release\/0\.69:RIN_RELEASE_VERSION=0\.69\.0-beta\.0:dist\/app\/rin-install\/main\.js/,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=beta:RIN_RELEASE_BRANCH=beta:RIN_RELEASE_VERSION=1\.2\.4-beta\.20260420:dist\/app\/rin-install\/main\.js/,
+    );
+    assert.match(
+      log,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=nightly:RIN_RELEASE_BRANCH=main:RIN_RELEASE_VERSION=1\.2\.5-nightly\.20260420\+deadbee:dist\/app\/rin-install\/main\.js/,
     );
     assert.match(
       log,

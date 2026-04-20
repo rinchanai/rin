@@ -24,11 +24,11 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
 Release-channel default:
 
 - plain `rin update` targets the stable release channel
-- `rin update --beta` targets the manifest default release branch
-- `rin update --beta 0.69` means `release/0.69`
+- `rin update --beta` targets the current weekly beta candidate
+- `rin update --nightly` targets the current nightly build pinned from `main`
 - `rin update --git` targets `main`
 - `rin update --git <name>` targets that branch or ref directly
-- `--branch` / `--version` remain supported as explicit selectors
+- `--branch` / `--version` remain supported as explicit selectors for direct stable/git resolution when needed
 
 When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
 Prefer install recovery through the target manifest or managed service files.

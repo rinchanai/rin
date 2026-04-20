@@ -6,22 +6,30 @@ function parseArgs(argv) {
   const args = {
     manifest: "release-manifest.json",
     channel: "stable",
-    branch: "",
     version: "",
+    ref: "",
     packageName: "",
     repoUrl: "",
+    branch: "",
+    series: "",
+    fromBetaVersion: "",
+    promotionVersion: "",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--manifest") args.manifest = String(argv[++index] || "").trim();
     else if (arg === "--channel") args.channel = String(argv[++index] || "").trim();
-    else if (arg === "--branch") args.branch = String(argv[++index] || "").trim();
     else if (arg === "--version") args.version = String(argv[++index] || "").trim();
+    else if (arg === "--ref") args.ref = String(argv[++index] || "").trim();
     else if (arg === "--package-name") args.packageName = String(argv[++index] || "").trim();
     else if (arg === "--repo-url") args.repoUrl = String(argv[++index] || "").trim();
+    else if (arg === "--branch") args.branch = String(argv[++index] || "").trim();
+    else if (arg === "--series") args.series = String(argv[++index] || "").trim();
+    else if (arg === "--from-beta-version") args.fromBetaVersion = String(argv[++index] || "").trim();
+    else if (arg === "--promotion-version") args.promotionVersion = String(argv[++index] || "").trim();
     else if (arg === "-h" || arg === "--help") {
       console.log(
-        "Usage: node scripts/release/update-release-manifest.mjs --channel stable|beta [--branch <release/x.y>] --version <x.y.z> [--package-name <name>] [--repo-url <url>] [--manifest <path>]",
+        "Usage: node scripts/release/update-release-manifest.mjs --channel stable|beta|nightly --version <value> [--ref <sha>] [--branch <name>] [--series <major.minor>] [--from-beta-version <value>] [--promotion-version <x.y.z>] [--package-name <name>] [--repo-url <url>] [--manifest <path>]",
       );
       process.exit(0);
     } else {
@@ -49,14 +57,18 @@ function buildNpmTarballUrl(packageName, version) {
   return `https://registry.npmjs.org/${encodedName}/-/${fileBase}-${version}.tgz`;
 }
 
-function buildGitHubBranchArchiveUrl(repoUrl, branch) {
+function buildGitHubRefArchiveUrl(repoUrl, ref) {
   const normalizedRepo = trim(repoUrl).replace(/\.git$/i, "");
-  const normalizedBranch = trim(branch) || "main";
-  const encodedBranch = normalizedBranch
+  const normalizedRef = trim(ref) || "main";
+  const encodedRef = normalizedRef
     .split("/")
     .map((segment) => encodeURIComponent(segment))
     .join("/");
-  return `${normalizedRepo}/archive/refs/heads/${encodedBranch}.tar.gz`;
+  return `${normalizedRepo}/archive/${encodedRef}.tar.gz`;
+}
+
+function buildGitHubBranchArchiveUrl(repoUrl, branch) {
+  return buildGitHubRefArchiveUrl(repoUrl, `refs/heads/${trim(branch) || "main"}`);
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -64,7 +76,9 @@ const manifestPath = path.resolve(process.cwd(), args.manifest);
 const manifest = readJson(manifestPath);
 const channel = trim(args.channel || "stable");
 const version = trim(args.version);
+const ref = trim(args.ref);
 const branch = trim(args.branch);
+const series = trim(args.series);
 const packageName =
   trim(args.packageName) ||
   trim(process.env.RIN_NPM_PACKAGE) ||
@@ -77,21 +91,23 @@ const repoUrl =
   "https://github.com/rinchanai/rin";
 
 if (!version) throw new Error("missing_version");
-if (channel !== "stable" && channel !== "beta") {
+if (!["stable", "beta", "nightly"].includes(channel)) {
   throw new Error(`unsupported_channel:${channel}`);
 }
-if (channel === "beta" && !branch) {
-  throw new Error("beta_requires_branch");
+if ((channel === "beta" || channel === "nightly") && !ref) {
+  throw new Error(`${channel}_requires_ref`);
 }
 
-manifest.schemaVersion = 1;
+manifest.schemaVersion = 2;
 manifest.packageName = packageName;
 manifest.repoUrl = repoUrl;
 manifest.bootstrapBranch = trim(manifest.bootstrapBranch) || "stable-bootstrap";
+manifest.train ||= {};
+manifest.train.series = series || trim(manifest.train.series) || "0.0";
+manifest.train.nightlyBranch = branch || trim(manifest.train.nightlyBranch) || "main";
 manifest.stable ||= {};
-manifest.beta ||= { defaultBranch: "release/next", branches: {}, versions: {} };
-manifest.beta.branches ||= {};
-manifest.beta.versions ||= {};
+manifest.beta ||= {};
+manifest.nightly ||= {};
 manifest.git ||= {};
 manifest.git.defaultBranch = trim(manifest.git.defaultBranch) || "main";
 manifest.git.repoUrl = trim(manifest.git.repoUrl) || repoUrl;
@@ -100,19 +116,32 @@ if (channel === "stable") {
   const archiveUrl = buildNpmTarballUrl(packageName, version);
   manifest.stable.version = version;
   manifest.stable.archiveUrl = archiveUrl;
+  if (ref) manifest.stable.ref = ref;
+  if (trim(args.fromBetaVersion)) {
+    manifest.stable.promotedFromBetaVersion = trim(args.fromBetaVersion);
+  }
   manifest.stable.versions ||= {};
-  manifest.stable.versions[version] = { archiveUrl };
+  manifest.stable.versions[version] = {
+    archiveUrl,
+    ...(ref ? { ref } : {}),
+    ...(trim(args.fromBetaVersion)
+      ? { promotedFromBetaVersion: trim(args.fromBetaVersion) }
+      : {}),
+  };
+} else if (channel === "beta") {
+  manifest.beta.version = version;
+  manifest.beta.ref = ref;
+  manifest.beta.archiveUrl = buildGitHubRefArchiveUrl(repoUrl, ref);
+  manifest.beta.promotionVersion =
+    trim(args.promotionVersion) ||
+    trim(manifest.beta.promotionVersion) ||
+    version.replace(/-.*/, "") ||
+    version;
 } else {
-  const archiveUrl = buildGitHubBranchArchiveUrl(repoUrl, branch);
-  if (!trim(manifest.beta.defaultBranch)) manifest.beta.defaultBranch = branch;
-  manifest.beta.branches[branch] = {
-    version,
-    archiveUrl,
-  };
-  manifest.beta.versions[version] = {
-    branch,
-    archiveUrl,
-  };
+  manifest.nightly.version = version;
+  manifest.nightly.ref = ref;
+  manifest.nightly.branch = branch || trim(manifest.nightly.branch) || trim(manifest.train.nightlyBranch) || "main";
+  manifest.nightly.archiveUrl = buildGitHubRefArchiveUrl(repoUrl, ref);
 }
 
 writeJson(manifestPath, manifest);

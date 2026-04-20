@@ -58,10 +58,11 @@ LOCAL_MANIFEST_PATH="$REPO_ROOT/release-manifest.json"
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--stable] [--beta [0.69]] [--git [main|deadbeef]] [legacy flags]
+Usage: install.sh [--stable] [--beta] [--nightly] [--git [main|deadbeef]] [legacy flags]
 
 Defaults to the stable release channel.
-`--beta 0.69` means `release/0.69`.
+`--beta` installs the current weekly beta candidate.
+`--nightly` installs the current nightly build.
 `--git main` or `--git deadbeef` selects a branch or ref directly.
 Legacy flags such as --branch/--version remain supported.
 EOF
@@ -157,9 +158,9 @@ looks_like_git_ref() {
 }
 
 parse_args() {
-  FLAG_SELECTOR=
-  EXPECT_SELECTOR_FOR=
+  GIT_SELECTOR=
   EXPLICIT_CHANNEL=
+  EXPECT_GIT_SELECTOR=
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -170,7 +171,7 @@ parse_args() {
         fi
         CHANNEL=stable
         EXPLICIT_CHANNEL=stable
-        EXPECT_SELECTOR_FOR=stable
+        EXPECT_GIT_SELECTOR=
         ;;
       --beta)
         if [ -n "$EXPLICIT_CHANNEL" ] && [ "$EXPLICIT_CHANNEL" != beta ]; then
@@ -179,7 +180,16 @@ parse_args() {
         fi
         CHANNEL=beta
         EXPLICIT_CHANNEL=beta
-        EXPECT_SELECTOR_FOR=beta
+        EXPECT_GIT_SELECTOR=
+        ;;
+      --nightly)
+        if [ -n "$EXPLICIT_CHANNEL" ] && [ "$EXPLICIT_CHANNEL" != nightly ]; then
+          echo "cannot combine conflicting release channel selectors" >&2
+          exit 1
+        fi
+        CHANNEL=nightly
+        EXPLICIT_CHANNEL=nightly
+        EXPECT_GIT_SELECTOR=
         ;;
       --git)
         if [ -n "$EXPLICIT_CHANNEL" ] && [ "$EXPLICIT_CHANNEL" != git ]; then
@@ -188,16 +198,16 @@ parse_args() {
         fi
         CHANNEL=git
         EXPLICIT_CHANNEL=git
-        EXPECT_SELECTOR_FOR=git
+        EXPECT_GIT_SELECTOR=1
         ;;
       --branch)
-        EXPECT_SELECTOR_FOR=
+        EXPECT_GIT_SELECTOR=
         [ "$#" -ge 2 ] || { echo "missing value for --branch" >&2; exit 1; }
         BRANCH=$2
         shift
         ;;
       --version)
-        EXPECT_SELECTOR_FOR=
+        EXPECT_GIT_SELECTOR=
         [ "$#" -ge 2 ] || { echo "missing value for --version" >&2; exit 1; }
         VERSION=$2
         shift
@@ -207,9 +217,18 @@ parse_args() {
         exit 0
         ;;
       *)
-        if [ -n "$EXPECT_SELECTOR_FOR" ] && [ -z "$FLAG_SELECTOR" ] && [ "${1#-}" = "$1" ]; then
-          FLAG_SELECTOR=$1
-          EXPECT_SELECTOR_FOR=
+        if [ -n "$EXPECT_GIT_SELECTOR" ] && [ -z "$GIT_SELECTOR" ] && [ "${1#-}" = "$1" ]; then
+          GIT_SELECTOR=$1
+          EXPECT_GIT_SELECTOR=
+        elif [ "$CHANNEL" = stable ]; then
+          echo "stable does not support a flag selector" >&2
+          exit 1
+        elif [ "$CHANNEL" = beta ]; then
+          echo "beta does not support a flag selector" >&2
+          exit 1
+        elif [ "$CHANNEL" = nightly ]; then
+          echo "nightly does not support a flag selector" >&2
+          exit 1
         else
           echo "unknown argument: $1" >&2
           usage >&2
@@ -220,26 +239,12 @@ parse_args() {
     shift
   done
 
-  if [ -z "$BRANCH" ] && [ -z "$VERSION" ] && [ -n "$FLAG_SELECTOR" ]; then
-    case "$CHANNEL" in
-      beta)
-        case "$FLAG_SELECTOR" in
-          release/*) BRANCH=$FLAG_SELECTOR ;;
-          *) BRANCH="release/$FLAG_SELECTOR" ;;
-        esac
-        ;;
-      git)
-        if looks_like_git_ref "$FLAG_SELECTOR"; then
-          VERSION=$FLAG_SELECTOR
-        else
-          BRANCH=$FLAG_SELECTOR
-        fi
-        ;;
-      stable)
-        echo "stable does not support a flag selector" >&2
-        exit 1
-        ;;
-    esac
+  if [ -z "$BRANCH" ] && [ -z "$VERSION" ] && [ -n "$GIT_SELECTOR" ]; then
+    if looks_like_git_ref "$GIT_SELECTOR"; then
+      VERSION=$GIT_SELECTOR
+    else
+      BRANCH=$GIT_SELECTOR
+    fi
   fi
 
   if [ -n "$BRANCH" ] && [ -n "$VERSION" ]; then
@@ -248,6 +253,14 @@ parse_args() {
   fi
   if [ "$CHANNEL" = stable ] && [ -n "$BRANCH" ]; then
     echo "stable does not support --branch" >&2
+    exit 1
+  fi
+  if [ "$CHANNEL" = beta ] && { [ -n "$BRANCH" ] || [ -n "$VERSION" ]; }; then
+    echo "beta does not support explicit selectors" >&2
+    exit 1
+  fi
+  if [ "$CHANNEL" = nightly ] && { [ -n "$BRANCH" ] || [ -n "$VERSION" ]; }; then
+    echo "nightly does not support explicit selectors" >&2
     exit 1
   fi
 }
@@ -287,27 +300,30 @@ const buildNpmTarballUrl = (name, releaseVersion) => {
   return `https://registry.npmjs.org/${encodedName}/-/${fileBase}-${releaseVersion || '0.0.0'}.tgz`;
 };
 const defaultManifest = {
+  schemaVersion: 2,
   packageName,
   repoUrl,
   bootstrapBranch: trimValue(process.env.RIN_BOOTSTRAP_BRANCH || 'stable-bootstrap') || 'stable-bootstrap',
+  train: {
+    series: '0.0',
+    nightlyBranch: 'main',
+  },
   stable: {
     version: '0.0.0',
     archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+    ref: 'main',
   },
   beta: {
-    defaultBranch: 'release/next',
-    branches: {
-      'release/next': {
-        version: '0.0.0-beta.0',
-        archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
-      },
-    },
-    versions: {
-      '0.0.0-beta.0': {
-        branch: 'release/next',
-        archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
-      },
-    },
+    version: '0.0.1-beta.0',
+    archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+    ref: 'main',
+    promotionVersion: '0.0.1',
+  },
+  nightly: {
+    version: '0.0.1-nightly.0',
+    archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+    ref: 'main',
+    branch: 'main',
   },
   git: {
     defaultBranch: 'main',
@@ -322,7 +338,7 @@ const releaseRepoUrl = trimValue(manifest.repoUrl || repoUrl).replace(/\.git$/i,
 const releasePackageName = trimValue(manifest.packageName || packageName) || '@rinchanai/rin';
 const buildRefArchiveUrl = (ref) => `${releaseRepoUrl}/archive/${String(ref || 'main').split('/').map(encodeURIComponent).join('/')}.tar.gz`;
 const buildBranchArchiveUrl = (name) => `${releaseRepoUrl}/archive/refs/heads/${String(name || 'main').split('/').map(encodeURIComponent).join('/')}.tar.gz`;
-const shellEscape = (value) => `'${String(value ?? '').replace(/'/g, `'"'"'`)}'`;
+const shellEscape = (value) => `'${String(value ?? '').replace(/'/g, `"'"'"'`)}'`;
 let resolved;
 if (branch && version) throw new Error('rin_release_branch_and_version_conflict');
 if (channel === 'stable') {
@@ -334,34 +350,35 @@ if (channel === 'stable') {
     archiveUrl: trimValue(entry && entry.archiveUrl) || trimValue(manifest.stable && manifest.stable.archiveUrl) || buildNpmTarballUrl(releasePackageName, resolvedVersion),
     version: resolvedVersion,
     branch: 'stable',
-    ref: version || trimValue(manifest.stable && manifest.stable.version) || 'main',
+    ref: trimValue(entry && entry.ref) || trimValue(manifest.stable && manifest.stable.ref) || version || trimValue(manifest.stable && manifest.stable.version) || 'main',
     sourceLabel: version ? `stable version ${resolvedVersion}` : `stable ${resolvedVersion}`,
   };
 } else if (channel === 'beta') {
+  if (branch || version) throw new Error('rin_beta_selector_not_supported');
   const beta = manifest.beta || {};
-  if (version) {
-    const entry = beta.versions && beta.versions[version];
-    const resolvedBranch = trimValue(entry && entry.branch) || trimValue(beta.defaultBranch) || 'release/next';
-    resolved = {
-      channel: 'beta',
-      archiveUrl: trimValue(entry && entry.archiveUrl) || buildRefArchiveUrl(version),
-      version,
-      branch: resolvedBranch,
-      ref: version,
-      sourceLabel: `beta version ${version}`,
-    };
-  } else {
-    const resolvedBranch = branch || trimValue(beta.defaultBranch) || 'release/next';
-    const entry = beta.branches && beta.branches[resolvedBranch];
-    resolved = {
-      channel: 'beta',
-      archiveUrl: trimValue(entry && entry.archiveUrl) || buildBranchArchiveUrl(resolvedBranch),
-      version: trimValue(entry && entry.version) || '0.0.0-beta.0',
-      branch: resolvedBranch,
-      ref: resolvedBranch,
-      sourceLabel: `beta branch ${resolvedBranch}`,
-    };
-  }
+  const resolvedRef = trimValue(beta.ref) || 'main';
+  const resolvedVersion = trimValue(beta.version) || '0.0.1-beta.0';
+  resolved = {
+    channel: 'beta',
+    archiveUrl: trimValue(beta.archiveUrl) || buildRefArchiveUrl(resolvedRef),
+    version: resolvedVersion,
+    branch: 'beta',
+    ref: resolvedRef,
+    sourceLabel: `beta ${resolvedVersion}`,
+  };
+} else if (channel === 'nightly') {
+  if (branch || version) throw new Error('rin_nightly_selector_not_supported');
+  const nightly = manifest.nightly || {};
+  const resolvedBranch = trimValue(nightly.branch) || trimValue(manifest.train && manifest.train.nightlyBranch) || 'main';
+  const resolvedRef = trimValue(nightly.ref) || resolvedBranch;
+  resolved = {
+    channel: 'nightly',
+    archiveUrl: trimValue(nightly.archiveUrl) || (trimValue(nightly.ref) ? buildRefArchiveUrl(resolvedRef) : buildBranchArchiveUrl(resolvedBranch)),
+    version: trimValue(nightly.version) || '0.0.1-nightly.0',
+    branch: resolvedBranch,
+    ref: resolvedRef,
+    sourceLabel: `nightly ${trimValue(nightly.version) || '0.0.1-nightly.0'}`,
+  };
 } else {
   const git = manifest.git || {};
   const resolvedBranch = branch || trimValue(git.defaultBranch) || 'main';

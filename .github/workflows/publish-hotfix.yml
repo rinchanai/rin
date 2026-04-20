@@ -1,15 +1,20 @@
-name: publish-stable
+name: publish-hotfix
 
 on:
-  schedule:
-    - cron: '5 0 * * 1'
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to publish the hotfix from, typically a branch cut from the current stable tag.
+        required: true
+      version:
+        description: Stable patch version to publish, for example 0.69.4
+        required: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: publish-stable
+  group: publish-hotfix
   cancel-in-progress: false
 
 jobs:
@@ -25,34 +30,21 @@ jobs:
           node-version: 22
           cache: npm
           registry-url: https://registry.npmjs.org
-      - name: Resolve beta promotion target
-        id: plan
-        run: |
-          set -eu
-          beta_ref=$(node -e 'const manifest = require("./release-manifest.json"); process.stdout.write(String(manifest.beta?.ref || "").trim());')
-          beta_version=$(node -e 'const manifest = require("./release-manifest.json"); process.stdout.write(String(manifest.beta?.version || "").trim());')
-          if [ -z "$beta_ref" ] || [ -z "$beta_version" ]; then
-            echo 'Missing beta candidate in release-manifest.json' >&2
-            exit 1
-          fi
-          plan_json=$(node scripts/release/plan-release.mjs --channel stable-promotion --beta-version "$beta_version")
-          version=$(node -e 'const value = JSON.parse(process.argv[1]); process.stdout.write(value.version);' "$plan_json")
-          echo "beta_ref=$beta_ref" >> "$GITHUB_OUTPUT"
-          echo "beta_version=$beta_version" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Fetch hotfix ref
+        run: git fetch origin '${{ inputs.ref }}'
       - name: Prepare candidate worktree
         run: |
           set -eu
-          candidate_dir="$RUNNER_TEMP/stable-candidate"
-          git worktree add --detach "$candidate_dir" '${{ steps.plan.outputs.beta_ref }}'
+          candidate_dir="$RUNNER_TEMP/hotfix-candidate"
+          git worktree add --detach "$candidate_dir" '${{ inputs.ref }}'
       - name: Install candidate dependencies
-        working-directory: ${{ runner.temp }}/stable-candidate
+        working-directory: ${{ runner.temp }}/hotfix-candidate
         run: npm ci --no-fund --no-audit
       - name: Build candidate
-        working-directory: ${{ runner.temp }}/stable-candidate
+        working-directory: ${{ runner.temp }}/hotfix-candidate
         run: npm run build
       - name: Validate candidate
-        working-directory: ${{ runner.temp }}/stable-candidate
+        working-directory: ${{ runner.temp }}/hotfix-candidate
         run: >-
           node --test
           tests/installer-modules.test.mjs
@@ -61,11 +53,11 @@ jobs:
           tests/bootstrap-entrypoint.test.mjs
           tests/release.test.mjs
           tests/release-scripts.test.mjs
-      - name: Set stable version on candidate
-        working-directory: ${{ runner.temp }}/stable-candidate
-        run: npm version --no-git-tag-version '${{ steps.plan.outputs.version }}'
-      - name: Publish stable package
-        working-directory: ${{ runner.temp }}/stable-candidate
+      - name: Set hotfix version on candidate
+        working-directory: ${{ runner.temp }}/hotfix-candidate
+        run: npm version --no-git-tag-version '${{ inputs.version }}'
+      - name: Publish hotfix package
+        working-directory: ${{ runner.temp }}/hotfix-candidate
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag latest --access public
@@ -73,16 +65,15 @@ jobs:
         run: >-
           npm run release:manifest --
           --channel stable
-          --version '${{ steps.plan.outputs.version }}'
-          --ref '${{ steps.plan.outputs.beta_ref }}'
-          --from-beta-version '${{ steps.plan.outputs.beta_version }}'
-      - name: Commit stable metadata and tag
+          --version '${{ inputs.version }}'
+          --ref '${{ inputs.ref }}'
+      - name: Commit hotfix metadata and tag
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add release-manifest.json
-          git commit -m 'chore(release): promote beta ${{ steps.plan.outputs.beta_version }} to stable ${{ steps.plan.outputs.version }}' || true
-          git tag 'v${{ steps.plan.outputs.version }}' '${{ steps.plan.outputs.beta_ref }}' || true
+          git commit -m 'chore(release): publish hotfix ${{ inputs.version }}' || true
+          git tag 'v${{ inputs.version }}' '${{ inputs.ref }}' || true
           git push origin HEAD:main --follow-tags
       - name: Prepare bootstrap branch checkout
         env:
@@ -105,9 +96,9 @@ jobs:
           if git -C "$bootstrap_dir" diff --cached --quiet; then
             echo 'No bootstrap changes to commit.'
           else
-            git -C "$bootstrap_dir" commit -m 'chore(release): publish stable ${{ steps.plan.outputs.version }}'
+            git -C "$bootstrap_dir" commit -m 'chore(release): publish hotfix ${{ inputs.version }}'
             git -C "$bootstrap_dir" push origin HEAD:stable-bootstrap
           fi
       - name: Remove candidate worktree
         if: always()
-        run: git worktree remove --force "$RUNNER_TEMP/stable-candidate" || true
+        run: git worktree remove --force "$RUNNER_TEMP/hotfix-candidate" || true

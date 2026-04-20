@@ -1,26 +1,28 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "packageName": "@rinchanai/rin",
   "repoUrl": "https://github.com/rinchanai/rin",
   "bootstrapBranch": "stable-bootstrap",
+  "train": {
+    "series": "0.0",
+    "nightlyBranch": "main"
+  },
   "stable": {
     "version": "0.0.0",
-    "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz"
+    "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+    "ref": "main"
   },
   "beta": {
-    "defaultBranch": "release/next",
-    "branches": {
-      "release/next": {
-        "version": "0.0.0-beta.0",
-        "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz"
-      }
-    },
-    "versions": {
-      "0.0.0-beta.0": {
-        "branch": "release/next",
-        "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz"
-      }
-    }
+    "version": "0.0.1-beta.0",
+    "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+    "ref": "main",
+    "promotionVersion": "0.0.1"
+  },
+  "nightly": {
+    "version": "0.0.1-nightly.0",
+    "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+    "ref": "main",
+    "branch": "main"
   },
   "git": {
     "defaultBranch": "main",
