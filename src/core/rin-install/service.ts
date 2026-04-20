@@ -304,7 +304,7 @@ export function buildSystemdUserService(
   const execStart = [...nodeCommandArgs, daemonEntry]
     .map((entry) => systemdQuote(entry))
     .join(" ");
-  const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${systemdQuote(targetHome)}\nEnvironment=${systemdQuote(`PATH=${runtimePath}`)}\nEnvironment=${systemdQuote(`RIN_DIR=${installDir}`)}\nExecStart=${execStart}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
+  const service = `[Unit]\nDescription=Rin daemon for ${targetUser}\nAfter=network.target\n\n[Service]\nType=simple\nWorkingDirectory=${targetHome}\nEnvironment=${systemdQuote(`PATH=${runtimePath}`)}\nEnvironment=${systemdQuote(`RIN_DIR=${installDir}`)}\nExecStart=${execStart}\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=default.target\n`;
   return {
     kind: "systemd" as const,
     label: unitName,

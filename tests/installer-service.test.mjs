@@ -84,7 +84,7 @@ test("installer service helpers prefer current daemon entry, quote systemd value
     );
     assert.match(
       spec.service,
-      new RegExp(`^WorkingDirectory="${escapeRegex(targetLinuxHome)}"$`, "m"),
+      new RegExp(`^WorkingDirectory=${escapeRegex(targetLinuxHome)}$`, "m"),
     );
     assert.match(
       spec.service,
