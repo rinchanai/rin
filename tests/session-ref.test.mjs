@@ -113,3 +113,19 @@ test("session ref helpers normalize shared command/state shapes and resolve cons
     /Session file is required/,
   );
 });
+
+test("session ref helpers store session files relative to agent sessions dir and resolve them back", () => {
+  const agentDir = "/tmp/rin-agent";
+  assert.equal(
+    sessionRef.toStoredSessionFile(agentDir, "/tmp/rin-agent/sessions/chat/demo.jsonl"),
+    "chat/demo.jsonl",
+  );
+  assert.equal(
+    sessionRef.toStoredSessionFile(agentDir, "chat\\demo.jsonl"),
+    "chat/demo.jsonl",
+  );
+  assert.equal(
+    sessionRef.resolveStoredSessionFile(agentDir, "chat/demo.jsonl"),
+    path.join(agentDir, "sessions", "chat", "demo.jsonl"),
+  );
+});

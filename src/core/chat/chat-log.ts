@@ -18,7 +18,6 @@ export type ChatLogEntry = {
   text: string;
   messageId?: string;
   replyToMessageId?: string;
-  sessionId?: string;
   sessionFile?: string;
   userId?: string;
   nickname?: string;
@@ -54,7 +53,6 @@ function buildStoredMessageFromChatLogEntry(
     messageId,
     role,
     replyToMessageId: safeString(input.replyToMessageId).trim() || undefined,
-    sessionId: session.sessionId,
     sessionFile: session.sessionFile,
     processedAt: role === "assistant" ? timestamp : undefined,
     chatKey,

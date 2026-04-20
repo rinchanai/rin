@@ -67,6 +67,7 @@ test("chat transport forwards mixed parts as a single native chat send", async (
   await withTempDir(async (dir) => {
     const imagePath = path.join(dir, "demo.png");
     await fs.writeFile(imagePath, Buffer.from("abc"));
+    const sessionFile = path.join(dir, "sessions", "chat", "sess-42.jsonl");
     messageStore.saveChatMessage(dir, {
       messageId: "42",
       chatKey: "telegram/1:2",
@@ -75,8 +76,7 @@ test("chat transport forwards mixed parts as a single native chat send", async (
       chatId: "2",
       chatType: "private",
       receivedAt: "2026-04-07T00:00:00.000Z",
-      sessionId: "sess-42",
-      sessionFile: "/tmp/sess-42.jsonl",
+      sessionFile,
       text: "incoming",
     });
     const sends = [];
@@ -123,8 +123,7 @@ test("chat transport forwards mixed parts as a single native chat send", async (
     const stored = messageStore.getChatMessage(dir, "telegram/1:2", "m1");
     assert.equal(stored?.text, "intro");
     assert.equal(stored?.replyToMessageId, "42");
-    assert.equal(stored?.sessionId, "sess-42");
-    assert.equal(stored?.sessionFile, "/tmp/sess-42.jsonl");
+    assert.equal(stored?.sessionFile, "chat/sess-42.jsonl");
   });
 });
 
@@ -199,8 +198,7 @@ test("chat transport stores explicit session binding for outbox text deliveries"
         type: "text_delivery",
         chatKey: "telegram/1:2",
         text: "scheduled hello",
-        sessionId: " sess-task ",
-        sessionFile: " /tmp/task-session.jsonl ",
+        sessionFile: ` ${path.join(dir, "sessions", "scheduled", "task-session.jsonl")} `,
       },
       Object.assign((type, attrs) => ({ type, attrs }), {
         text(content) {
@@ -213,8 +211,7 @@ test("chat transport stores explicit session binding for outbox text deliveries"
     );
     const stored = messageStore.getChatMessage(dir, "telegram/1:2", "m-text");
     assert.equal(stored?.text, "scheduled hello");
-    assert.equal(stored?.sessionId, "sess-task");
-    assert.equal(stored?.sessionFile, "/tmp/task-session.jsonl");
+    assert.equal(stored?.sessionFile, "scheduled/task-session.jsonl");
   });
 });
 
