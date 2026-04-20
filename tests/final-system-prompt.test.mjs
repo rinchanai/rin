@@ -51,8 +51,14 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
 
   assert.ok(
     finalSystemPrompt.includes(
+      "You are Rin, a terminal-first local AI assistant.",
+    ),
+  );
+  assert.equal(
+    finalSystemPrompt.includes(
       "As the assistant, you must fulfill the user's requests.",
     ),
+    false,
   );
   assert.ok(!finalSystemPrompt.includes("# Self-improve guidance"));
   assert.ok(
