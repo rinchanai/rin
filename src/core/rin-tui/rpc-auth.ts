@@ -1,40 +1,150 @@
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 
+type OAuthCredentialSummary = { type: string } | undefined;
+type OAuthProviderSummary = {
+  id: string;
+  name: string;
+  usesCallbackServer?: boolean;
+};
+type LoginState = {
+  onAuth?: (info: { url: string; instructions?: string }) => void;
+  onPrompt?: (prompt: {
+    message: string;
+    placeholder?: string;
+  }) => Promise<string>;
+  onProgress?: (message: string) => void;
+  onManualCodeInput?: () => Promise<string>;
+  resolve: () => void;
+  reject: (error: Error) => void;
+  cleanup?: () => void;
+};
+
+function trimText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function normalizeProviderId(value: unknown) {
+  return trimText(value);
+}
+
+function normalizeLoginId(value: unknown) {
+  return trimText(value);
+}
+
+function normalizeRequestId(value: unknown) {
+  return trimText(value);
+}
+
+function normalizeCredentialSummary(value: any): OAuthCredentialSummary {
+  const type = trimText(value?.type);
+  return type ? { type } : undefined;
+}
+
+function normalizeCredentials(input: any) {
+  const credentials: Record<string, OAuthCredentialSummary> = {};
+  if (!input || typeof input !== "object") return credentials;
+  for (const [providerId, summary] of Object.entries(input)) {
+    const id = normalizeProviderId(providerId);
+    if (!id || id in credentials) continue;
+    credentials[id] = normalizeCredentialSummary(summary);
+  }
+  return credentials;
+}
+
+function normalizeProviders(input: any): OAuthProviderSummary[] {
+  if (!Array.isArray(input)) return [];
+  const providers: OAuthProviderSummary[] = [];
+  const seen = new Set<string>();
+  for (const item of input) {
+    const id = normalizeProviderId(item?.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    providers.push({
+      id,
+      name: trimText(item?.name) || id,
+      ...(typeof item?.usesCallbackServer === "undefined"
+        ? {}
+        : { usesCallbackServer: Boolean(item?.usesCallbackServer) }),
+    });
+  }
+  return providers;
+}
+
 export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
   const state = {
-    credentials: {} as Record<string, { type: string } | undefined>,
-    providers: [] as Array<{
-      id: string;
-      name: string;
-      usesCallbackServer?: boolean;
-    }>,
-    logins: new Map<
-      string,
-      {
-        onAuth?: (info: { url: string; instructions?: string }) => void;
-        onPrompt?: (prompt: {
-          message: string;
-          placeholder?: string;
-        }) => Promise<string>;
-        onProgress?: (message: string) => void;
-        onManualCodeInput?: () => Promise<string>;
-        resolve: () => void;
-        reject: (error: Error) => void;
-      }
-    >(),
+    credentials: {} as Record<string, OAuthCredentialSummary>,
+    providers: [] as OAuthProviderSummary[],
+    logins: new Map<string, LoginState>(),
   };
 
   const applyState = (data: any) => {
-    state.credentials =
-      data && typeof data.credentials === "object" && data.credentials
-        ? data.credentials
-        : {};
-    state.providers = Array.isArray(data?.providers) ? data.providers : [];
+    state.credentials = normalizeCredentials(data?.credentials);
+    state.providers = normalizeProviders(data?.providers);
+  };
+
+  const cleanupLogin = (loginId: string) => {
+    const login = state.logins.get(loginId);
+    if (!login) return undefined;
+    state.logins.delete(loginId);
+    try {
+      login.cleanup?.();
+    } catch {}
+    return login;
+  };
+
+  const sendLoginCancel = async (loginId: unknown) => {
+    const nextLoginId = normalizeLoginId(loginId);
+    if (!nextLoginId) return;
+    await client.send({ type: "oauth_login_cancel", loginId: nextLoginId }).catch(() => {});
+  };
+
+  const sendLoginResponse = async (
+    loginId: unknown,
+    requestId: unknown,
+    value: unknown,
+  ) => {
+    const nextLoginId = normalizeLoginId(loginId);
+    const nextRequestId = normalizeRequestId(requestId);
+    if (!nextLoginId || !nextRequestId) {
+      await sendLoginCancel(loginId);
+      return;
+    }
+    await client
+      .send({
+        type: "oauth_login_respond",
+        loginId: nextLoginId,
+        requestId: nextRequestId,
+        value: String(value ?? ""),
+      })
+      .catch(() => {});
+  };
+
+  const finishLogin = (loginId: unknown, payload: any) => {
+    const nextLoginId = normalizeLoginId(loginId);
+    if (!nextLoginId) return;
+    const login = cleanupLogin(nextLoginId);
+    if (!login) return;
+    if (payload?.state) applyState(payload.state);
+    if (payload?.success === true) {
+      login.resolve();
+      return;
+    }
+    login.reject(new Error(trimText(payload?.error) || "oauth_login_failed"));
+  };
+
+  const handleInteractiveEvent = (
+    payload: any,
+    handler: (() => Promise<string>) | undefined,
+  ) => {
+    Promise.resolve(handler?.() ?? "")
+      .then((value) => sendLoginResponse(payload?.loginId, payload?.requestId, value))
+      .catch(() => sendLoginCancel(payload?.loginId));
   };
 
   const handleEvent = (payload: any) => {
     if (!payload || payload.type !== "oauth_login_event") return;
-    const login = state.logins.get(String(payload.loginId || ""));
+    const loginId = normalizeLoginId(payload.loginId);
+    const login = loginId ? state.logins.get(loginId) : undefined;
     if (!login) return;
 
     if (payload.event === "auth") {
@@ -52,64 +162,28 @@ export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
       return;
     }
     if (payload.event === "prompt") {
-      Promise.resolve(
-        login.onPrompt?.({
-          message: String(payload.message || ""),
-          placeholder:
-            typeof payload.placeholder === "string"
-              ? payload.placeholder
-              : undefined,
-        }) ?? "",
-      )
-        .then((value) =>
-          client
-            .send({
-              type: "oauth_login_respond",
-              loginId: payload.loginId,
-              requestId: payload.requestId,
-              value,
-            })
-            .catch(() => {}),
-        )
-        .catch(() =>
-          client
-            .send({ type: "oauth_login_cancel", loginId: payload.loginId })
-            .catch(() => {}),
-        );
+      handleInteractiveEvent(payload, () => login.onPrompt?.({
+        message: String(payload.message || ""),
+        placeholder:
+          typeof payload.placeholder === "string"
+            ? payload.placeholder
+            : undefined,
+      }) ?? Promise.resolve(""));
       return;
     }
     if (payload.event === "manual_code") {
-      Promise.resolve(login.onManualCodeInput?.() ?? "")
-        .then((value) =>
-          client
-            .send({
-              type: "oauth_login_respond",
-              loginId: payload.loginId,
-              requestId: payload.requestId,
-              value,
-            })
-            .catch(() => {}),
-        )
-        .catch(() =>
-          client
-            .send({ type: "oauth_login_cancel", loginId: payload.loginId })
-            .catch(() => {}),
-        );
+      handleInteractiveEvent(payload, () => login.onManualCodeInput?.() ?? Promise.resolve(""));
       return;
     }
     if (payload.event === "complete") {
-      state.logins.delete(String(payload.loginId || ""));
-      if (payload.state) applyState(payload.state);
-      if (payload.success === true) login.resolve();
-      else
-        login.reject(new Error(String(payload.error || "oauth_login_failed")));
+      finishLogin(loginId, payload);
     }
   };
 
   return {
     list: () => Object.keys(state.credentials),
-    get: (providerId: string) => state.credentials[providerId],
-    getOAuthProviders: () => [...state.providers],
+    get: (providerId: string) => state.credentials[normalizeProviderId(providerId)],
+    getOAuthProviders: () => state.providers.map((provider) => ({ ...provider })),
     applyState,
     async sync() {
       const response: any = await client.send({ type: "get_oauth_state" });
@@ -118,45 +192,66 @@ export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
       applyState(data);
     },
     logout(providerId: string) {
-      delete state.credentials[providerId];
+      const nextProviderId = normalizeProviderId(providerId);
+      if (!nextProviderId) return;
+      const previous = state.credentials[nextProviderId];
+      delete state.credentials[nextProviderId];
       void client
-        .send({ type: "oauth_logout", providerId })
+        .send({ type: "oauth_logout", providerId: nextProviderId })
         .then((response: any) => {
-          if (response?.success === true) applyState(response.data);
+          if (response?.success === true) {
+            applyState(response.data);
+            return;
+          }
+          if (typeof previous !== "undefined") {
+            state.credentials[nextProviderId] = previous;
+          }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (typeof previous !== "undefined") {
+            state.credentials[nextProviderId] = previous;
+          }
+        });
     },
     async login(providerId: string, callbacks: any = {}) {
+      const nextProviderId = normalizeProviderId(providerId);
+      if (!nextProviderId) {
+        throw new Error("oauth_provider_id_required");
+      }
       const response: any = await client.send({
         type: "oauth_login_start",
-        providerId,
+        providerId: nextProviderId,
       });
-      if (!response || response.success !== true || !response.data?.loginId) {
+      const loginId = normalizeLoginId(response?.data?.loginId);
+      if (!response || response.success !== true || !loginId) {
         throw new Error(String(response?.error || "oauth_login_failed"));
       }
-      const loginId = String(response.data.loginId);
       await new Promise<void>((resolve, reject) => {
-        state.logins.set(loginId, {
+        const login: LoginState = {
           onAuth: callbacks.onAuth,
           onPrompt: callbacks.onPrompt,
           onProgress: callbacks.onProgress,
           onManualCodeInput: callbacks.onManualCodeInput,
           resolve,
           reject,
-        });
+        };
+        state.logins.set(loginId, login);
         if (callbacks.signal) {
           const abortHandler = () => {
-            void client
-              .send({ type: "oauth_login_cancel", loginId })
-              .catch(() => {});
-            state.logins.delete(loginId);
+            cleanupLogin(loginId);
+            void sendLoginCancel(loginId);
             reject(new Error("Login cancelled"));
           };
-          if (callbacks.signal.aborted) abortHandler();
-          else
-            callbacks.signal.addEventListener("abort", abortHandler, {
-              once: true,
-            });
+          login.cleanup = () => {
+            callbacks.signal.removeEventListener("abort", abortHandler);
+          };
+          if (callbacks.signal.aborted) {
+            abortHandler();
+            return;
+          }
+          callbacks.signal.addEventListener("abort", abortHandler, {
+            once: true,
+          });
         }
       });
     },
