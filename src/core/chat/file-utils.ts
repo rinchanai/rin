@@ -8,15 +8,27 @@ export type MimeExtensionOptions = {
 
 const MIME_EXTENSION_BY_TYPE = new Map<string, string>([
   ["application/pdf", ".pdf"],
+  ["application/x-zip-compressed", ".zip"],
+  ["application/zip", ".zip"],
   ["image/gif", ".gif"],
   ["image/jpeg", ".jpg"],
+  ["image/jpg", ".jpg"],
   ["image/png", ".png"],
+  ["image/svg+xml", ".svg"],
   ["image/webp", ".webp"],
+  ["text/markdown", ".md"],
   ["text/plain", ".txt"],
 ]);
 
+const IMAGE_EXTENSIONS = new Set<string>([
+  ".bmp",
+  ...Array.from(MIME_EXTENSION_BY_TYPE.entries())
+    .filter(([mimeType]) => mimeType.startsWith("image/"))
+    .map(([, extension]) => extension),
+]);
+
 function normalizeMimeType(mimeType: string) {
-  return safeString(mimeType).toLowerCase().trim();
+  return safeString(mimeType).split(";", 1)[0].toLowerCase().trim();
 }
 
 function decodeFileNameSegment(value: string) {
@@ -28,10 +40,11 @@ function decodeFileNameSegment(value: string) {
 }
 
 function fileNameFromPathLike(value: string, fallback: string) {
-  return ensureFileName(
-    decodeFileNameSegment(path.basename(safeString(value).split(/[?#]/, 1)[0])),
-    fallback,
-  );
+  const nextValue = safeString(value).split(/[?#]/, 1)[0];
+  const baseName = /(?:^|[\\/])$/.test(nextValue)
+    ? ""
+    : path.basename(nextValue);
+  return ensureFileName(decodeFileNameSegment(baseName), fallback);
 }
 
 export function extensionFromMimeType(
@@ -56,7 +69,8 @@ export function ensureFileName(name: string, fallback = "attachment") {
 export function fileNameFromUrl(url: string, fallback = "attachment") {
   const nextFallback = safeString(fallback) || "attachment";
   try {
-    return fileNameFromPathLike(new URL(url).pathname, nextFallback);
+    const parsed = new URL(url);
+    return fileNameFromPathLike(parsed.pathname, nextFallback);
   } catch {
     return fileNameFromPathLike(url, nextFallback);
   }
@@ -78,5 +92,7 @@ export function isImageMimeType(mimeType: string) {
 }
 
 export function isImageName(name: string) {
-  return /\.(?:png|jpe?g|gif|webp|bmp|svg)$/i.test(safeString(name));
+  return IMAGE_EXTENSIONS.has(
+    path.extname(safeString(name).split(/[?#]/, 1)[0]).toLowerCase(),
+  );
 }

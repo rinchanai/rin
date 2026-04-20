@@ -26,6 +26,7 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
     ["image/png", ".png"],
     ["application/pdf", ".pdf"],
     ["text/plain", ".txt"],
+    ["text/markdown; charset=utf-8", ".md"],
     ["application/octet-stream", ""],
   ];
 
@@ -41,9 +42,10 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
   );
   assert.equal(chatSupport.ensureExtension, chatFileUtils.ensureExtension);
 
-  assert.equal(chatFileUtils.extensionFromMimeType('text/markdown'), '');
-  assert.equal(chatSupport.extensionFromMimeType('text/markdown'), '');
-  assert.equal(chatRuntimeCommon.extensionFromMimeType('text/markdown'), '.txt');
+  assert.equal(chatFileUtils.extensionFromMimeType('text/markdown'), '.md');
+  assert.equal(chatSupport.extensionFromMimeType('text/markdown'), '.md');
+  assert.equal(chatRuntimeCommon.extensionFromMimeType('text/markdown'), '.md');
+  assert.equal(chatFileUtils.extensionFromMimeType(' IMAGE/JPG '), '.jpg');
 
   assert.equal(
     chatFileUtils.ensureFileName('bad:/\\name?*', 'fallback'),
@@ -62,15 +64,22 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
   );
   assert.equal(
     chatFileUtils.fileNameFromUrl(
+      'https://example.com/files/?download=1#view',
+      'fallback',
+    ),
+    'fallback',
+  );
+  assert.equal(
+    chatFileUtils.fileNameFromUrl(
       'https://example.com/files/%E0%A4%A.txt',
       'fallback',
     ),
     '%E0%A4%A.txt',
   );
-  assert.equal(chatSupport.ensureExtension('notes', 'text/markdown'), 'notes');
+  assert.equal(chatSupport.ensureExtension('notes', 'text/markdown'), 'notes.md');
   assert.equal(
     chatRuntimeCommon.ensureExtension('notes', 'text/markdown'),
-    'notes.txt',
+    'notes.md',
   );
   assert.equal(
     chatRuntimeCommon.ensureExtension('archive.tar.gz', 'image/png'),
@@ -79,5 +88,6 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
   assert.equal(chatFileUtils.isImageMimeType('image/webp'), true);
   assert.equal(chatRuntimeCommon.isImageMimeType('application/pdf'), false);
   assert.equal(chatFileUtils.isImageName('demo.SVG'), true);
+  assert.equal(chatRuntimeCommon.isImageName('demo.SVG?download=1'), true);
   assert.equal(chatRuntimeCommon.isImageName('document.txt'), false);
 });
