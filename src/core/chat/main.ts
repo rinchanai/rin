@@ -507,7 +507,11 @@ export async function startChatBridge(
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
     });
-    const mode = controller.hasActiveTurn() ? "steer" : "prompt";
+    const mode = replySession?.sessionFile
+      ? "prompt"
+      : controller.hasActiveTurn()
+        ? "steer"
+        : "prompt";
     const handleTurnFailure = async (error: any) => {
       const errorMessage = safeString((error as any)?.message || error);
       const transientFailure = isTransientChatRuntimeError(errorMessage);
@@ -539,6 +543,7 @@ export async function startChatBridge(
           attachments,
           replyToMessageId: messageId,
           incomingMessageId: messageId,
+          sessionFile: replySession?.sessionFile,
         },
         mode,
       );
