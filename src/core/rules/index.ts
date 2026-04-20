@@ -18,8 +18,65 @@ import {
   str,
 } from "../pi/render-utils.js";
 
+type RulesFile = {
+  path: string;
+  content: string;
+};
+
 function normalizeInputPath(input: string): string {
   return input.trim();
+}
+
+export function collectRuleAncestorDirs(targetDir: string) {
+  const ancestorDirs: string[] = [];
+  let current = resolve(targetDir);
+  const root = resolve("/");
+  while (true) {
+    ancestorDirs.push(current);
+    if (current === root) break;
+    const parent = resolve(current, "..");
+    if (parent === current) break;
+    current = parent;
+  }
+  return ancestorDirs;
+}
+
+export function collectRelevantRulesFiles(
+  targetDir: string,
+  agentsFiles: Array<{ path?: string; content?: string }>,
+) {
+  const ancestorDirs = new Set(collectRuleAncestorDirs(targetDir));
+  const filesByPath = new Map<string, RulesFile>();
+  for (const agentFile of Array.isArray(agentsFiles) ? agentsFiles : []) {
+    const filePath = normalizeInputPath(String(agentFile?.path || ""));
+    if (!filePath) continue;
+    const resolvedPath = resolve(filePath);
+    if (!ancestorDirs.has(dirname(resolvedPath))) continue;
+    filesByPath.set(resolvedPath, {
+      path: resolvedPath,
+      content: String(agentFile?.content || "").trim(),
+    });
+  }
+  return Array.from(filesByPath.values()).sort((a, b) =>
+    a.path.localeCompare(b.path),
+  );
+}
+
+export function formatRulesPrompt(contextFiles: RulesFile[]) {
+  if (!contextFiles.length) return "";
+  const lines = [
+    "# Project Context",
+    "",
+    "Project-specific instructions and guidelines:",
+    "",
+  ];
+  for (const { path: filePath, content } of contextFiles) {
+    lines.push(`## ${filePath}`);
+    lines.push("");
+    lines.push(content);
+    lines.push("");
+  }
+  return lines.join("\n").trim();
 }
 
 async function buildRulesPrompt(targetDir: string) {
@@ -35,32 +92,9 @@ async function buildRulesPrompt(targetDir: string) {
 
   await loader.reload();
 
-  const ancestorDirs = new Set<string>();
-  let current = resolve(targetDir);
-  const root = resolve("/");
-  while (true) {
-    ancestorDirs.add(current);
-    if (current === root) break;
-    const parent = resolve(current, "..");
-    if (parent === current) break;
-    current = parent;
-  }
-
-  const contextFiles = loader
-    .getAgentsFiles()
-    .agentsFiles.filter(({ path }) => ancestorDirs.has(dirname(path)));
-  if (contextFiles.length === 0) {
-    return "";
-  }
-
-  const blocks = [
-    "# Project Context\n\nProject-specific instructions and guidelines:\n",
-  ];
-  for (const { path, content } of contextFiles) {
-    blocks.push(`## ${path}\n\n${content}`);
-  }
-
-  return blocks.join("\n\n").trim();
+  return formatRulesPrompt(
+    collectRelevantRulesFiles(targetDir, loader.getAgentsFiles().agentsFiles),
+  );
 }
 
 function formatRulesCall(
