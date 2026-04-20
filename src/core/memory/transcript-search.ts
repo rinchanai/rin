@@ -32,6 +32,51 @@ import {
 } from "./transcript-archive.js";
 
 type Database = BetterSqlite3.Database;
+type Statement = BetterSqlite3.Statement;
+
+type IndexedEntryInsertValues = [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  number,
+  number,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
+
+type IndexedEntryFtsValues = [
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+  string,
+];
+
+type TranscriptSearchWriteStatements = {
+  selectArchiveRowKeys: Statement;
+  deleteTokenByRowKey: Statement;
+  deleteTrigramByRowKey: Statement;
+  deleteEntriesByArchivePath: Statement;
+  deleteFileStateByArchivePath: Statement;
+  insertEntry: Statement;
+  insertToken: Statement;
+  insertTrigram: Statement;
+  upsertFileState: Statement;
+  selectMaxLineNumberByArchivePath: Statement;
+};
+
+const transcriptSearchWriteStatementCache =
+  new WeakMap<Database, TranscriptSearchWriteStatements>();
 
 const SEARCH_DB_SCHEMA_VERSION = 2;
 const DEFAULT_RESULT_LIMIT = 8;
@@ -271,79 +316,121 @@ function toIndexedEntry(
   };
 }
 
-function removeIndexedArchiveEntries(db: Database, archivePath: string) {
-  const existing = db
-    .prepare("SELECT row_key FROM entries WHERE archive_path = ?")
-    .all(archivePath) as Array<{ row_key: string }>;
-  const deleteToken = db.prepare(
-    "DELETE FROM entries_fts_token WHERE row_key = ?",
-  );
-  const deleteTrigram = db.prepare(
-    "DELETE FROM entries_fts_trigram WHERE row_key = ?",
-  );
-  for (const row of existing) {
-    deleteToken.run(row.row_key);
-    deleteTrigram.run(row.row_key);
-  }
-  db.prepare("DELETE FROM entries WHERE archive_path = ?").run(archivePath);
-  db.prepare("DELETE FROM file_state WHERE archive_path = ?").run(archivePath);
+function getTranscriptSearchWriteStatements(
+  db: Database,
+): TranscriptSearchWriteStatements {
+  const cached = transcriptSearchWriteStatementCache.get(db);
+  if (cached) return cached;
+
+  const statements = {
+    selectArchiveRowKeys: db.prepare(
+      "SELECT row_key FROM entries WHERE archive_path = ?",
+    ),
+    deleteTokenByRowKey: db.prepare(
+      "DELETE FROM entries_fts_token WHERE row_key = ?",
+    ),
+    deleteTrigramByRowKey: db.prepare(
+      "DELETE FROM entries_fts_trigram WHERE row_key = ?",
+    ),
+    deleteEntriesByArchivePath: db.prepare(
+      "DELETE FROM entries WHERE archive_path = ?",
+    ),
+    deleteFileStateByArchivePath: db.prepare(
+      "DELETE FROM file_state WHERE archive_path = ?",
+    ),
+    insertEntry: db.prepare(
+      `
+      INSERT INTO entries(
+        row_key, archive_path, entry_id, session_key, session_id, session_file,
+        timestamp, timestamp_ms, line_number, role, tool_name, custom_type, text, preview, entry_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ),
+    insertToken: db.prepare(
+      `
+      INSERT INTO entries_fts_token(
+        row_key, session_id, session_file, role, tool_name, custom_type, text
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    ),
+    insertTrigram: db.prepare(
+      `
+      INSERT INTO entries_fts_trigram(
+        row_key, session_id, session_file, role, tool_name, custom_type, text
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    ),
+    upsertFileState: db.prepare(
+      "INSERT OR REPLACE INTO file_state(archive_path, mtime_ms, size) VALUES (?, ?, ?)",
+    ),
+    selectMaxLineNumberByArchivePath: db.prepare(
+      "SELECT MAX(line_number) AS max_line_number FROM entries WHERE archive_path = ?",
+    ),
+  } satisfies TranscriptSearchWriteStatements;
+
+  transcriptSearchWriteStatementCache.set(db, statements);
+  return statements;
 }
 
-function insertIndexedEntry(db: Database, item: IndexedTranscriptEntry) {
-  db.prepare(
-    `
-    INSERT INTO entries(
-      row_key, archive_path, entry_id, session_key, session_id, session_file,
-      timestamp, timestamp_ms, line_number, role, tool_name, custom_type, text, preview, entry_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `,
-  ).run(
+function buildIndexedEntryValues(item: IndexedTranscriptEntry): {
+  entryValues: IndexedEntryInsertValues;
+  ftsValues: IndexedEntryFtsValues;
+} {
+  const sessionId = safeString(item.entry.sessionId || "").trim();
+  const sessionFile = safeString(item.entry.sessionFile || "").trim();
+  const timestamp = safeString(item.entry.timestamp || "").trim();
+  const role = safeString(item.entry.role || "").trim();
+  const toolName = safeString(item.entry.toolName || "").trim();
+  const customType = safeString(item.entry.customType || "").trim();
+  const text = safeString(item.entry.text || "").trim();
+  const ftsValues: IndexedEntryFtsValues = [
+    item.rowKey,
+    sessionId,
+    sessionFile,
+    role,
+    toolName,
+    customType,
+    text,
+  ];
+  const entryValues: IndexedEntryInsertValues = [
     item.rowKey,
     item.archivePath,
     item.entry.id,
     item.sessionKey,
-    safeString(item.entry.sessionId || "").trim(),
-    safeString(item.entry.sessionFile || "").trim(),
-    safeString(item.entry.timestamp || "").trim(),
+    sessionId,
+    sessionFile,
+    timestamp,
     item.timestampMs,
     item.lineNumber,
-    safeString(item.entry.role || "").trim(),
-    safeString(item.entry.toolName || "").trim(),
-    safeString(item.entry.customType || "").trim(),
-    safeString(item.entry.text || "").trim(),
+    role,
+    toolName,
+    customType,
+    text,
     item.preview,
     JSON.stringify(item.entry),
-  );
-  db.prepare(
-    `
-    INSERT INTO entries_fts_token(
-      row_key, session_id, session_file, role, tool_name, custom_type, text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `,
-  ).run(
-    item.rowKey,
-    safeString(item.entry.sessionId || "").trim(),
-    safeString(item.entry.sessionFile || "").trim(),
-    safeString(item.entry.role || "").trim(),
-    safeString(item.entry.toolName || "").trim(),
-    safeString(item.entry.customType || "").trim(),
-    safeString(item.entry.text || "").trim(),
-  );
-  db.prepare(
-    `
-    INSERT INTO entries_fts_trigram(
-      row_key, session_id, session_file, role, tool_name, custom_type, text
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-  `,
-  ).run(
-    item.rowKey,
-    safeString(item.entry.sessionId || "").trim(),
-    safeString(item.entry.sessionFile || "").trim(),
-    safeString(item.entry.role || "").trim(),
-    safeString(item.entry.toolName || "").trim(),
-    safeString(item.entry.customType || "").trim(),
-    safeString(item.entry.text || "").trim(),
-  );
+  ];
+  return { entryValues, ftsValues };
+}
+
+function removeIndexedArchiveEntries(db: Database, archivePath: string) {
+  const statements = getTranscriptSearchWriteStatements(db);
+  const existing = statements.selectArchiveRowKeys.all(archivePath) as Array<{
+    row_key: string;
+  }>;
+  for (const row of existing) {
+    statements.deleteTokenByRowKey.run(row.row_key);
+    statements.deleteTrigramByRowKey.run(row.row_key);
+  }
+  statements.deleteEntriesByArchivePath.run(archivePath);
+  statements.deleteFileStateByArchivePath.run(archivePath);
+}
+
+function insertIndexedEntry(db: Database, item: IndexedTranscriptEntry) {
+  const statements = getTranscriptSearchWriteStatements(db);
+  const { entryValues, ftsValues } = buildIndexedEntryValues(item);
+  statements.insertEntry.run(...entryValues);
+  statements.insertToken.run(...ftsValues);
+  statements.insertTrigram.run(...ftsValues);
 }
 
 function replaceIndexedArchiveEntries(
@@ -354,12 +441,11 @@ function replaceIndexedArchiveEntries(
   const indexedEntries = entries.map((entry, index) =>
     toIndexedEntry(entry, state.archivePath, index),
   );
+  const statements = getTranscriptSearchWriteStatements(db);
   const tx = db.transaction(() => {
     removeIndexedArchiveEntries(db, state.archivePath);
     for (const item of indexedEntries) insertIndexedEntry(db, item);
-    db.prepare(
-      "INSERT OR REPLACE INTO file_state(archive_path, mtime_ms, size) VALUES (?, ?, ?)",
-    ).run(state.archivePath, state.mtimeMs, state.size);
+    statements.upsertFileState.run(state.archivePath, state.mtimeMs, state.size);
   });
   tx();
 }
@@ -369,18 +455,15 @@ function appendIndexedArchiveEntry(
   state: TranscriptFileState,
   entry: TranscriptArchiveEntry,
 ) {
+  const statements = getTranscriptSearchWriteStatements(db);
   const tx = db.transaction(() => {
-    const row = db
-      .prepare(
-        "SELECT MAX(line_number) AS max_line_number FROM entries WHERE archive_path = ?",
-      )
-      .get(state.archivePath) as { max_line_number?: number } | undefined;
+    const row = statements.selectMaxLineNumberByArchivePath.get(
+      state.archivePath,
+    ) as { max_line_number?: number } | undefined;
     const nextIndex = Math.max(0, Number(row?.max_line_number || 0));
     const item = toIndexedEntry(entry, state.archivePath, nextIndex);
     insertIndexedEntry(db, item);
-    db.prepare(
-      "INSERT OR REPLACE INTO file_state(archive_path, mtime_ms, size) VALUES (?, ?, ?)",
-    ).run(state.archivePath, state.mtimeMs, state.size);
+    statements.upsertFileState.run(state.archivePath, state.mtimeMs, state.size);
   });
   tx();
 }

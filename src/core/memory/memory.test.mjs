@@ -405,6 +405,55 @@ test("memory search requires explicit repair for transcript files written outsid
   });
 });
 
+test("memory search repair refreshes rewritten transcript archives without stale rows", async () => {
+  await withTempRoot(async (root) => {
+    const firstEntry = {
+      id: "manual-rewrite-1",
+      timestamp: "2026-04-08T09:09:09.000Z",
+      sessionId: "session-manual-rewrite",
+      sessionFile: "/tmp/session-manual-rewrite.jsonl",
+      role: "assistant",
+      text: "alpha rewrite marker",
+    };
+    const archivePath = transcripts.getTranscriptArchivePath(firstEntry, root);
+    await fs.mkdir(path.dirname(archivePath), { recursive: true });
+    await fs.writeFile(archivePath, `${JSON.stringify(firstEntry)}\n`);
+
+    await transcripts.repairTranscriptSearchIndex(root);
+    const firstResults = await transcripts.searchTranscriptArchive(
+      "alpha rewrite marker",
+      { limit: 8, fidelity: "exact" },
+      root,
+    );
+    assert.equal(firstResults.length, 1);
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const secondEntry = {
+      ...firstEntry,
+      id: "manual-rewrite-2",
+      text: "beta rewrite marker with longer text",
+    };
+    await fs.writeFile(archivePath, `${JSON.stringify(secondEntry)}\n`);
+
+    await transcripts.repairTranscriptSearchIndex(root);
+    const staleResults = await transcripts.searchTranscriptArchive(
+      "alpha rewrite marker",
+      { limit: 8, fidelity: "exact" },
+      root,
+    );
+    assert.equal(staleResults.length, 0);
+
+    const refreshedResults = await transcripts.searchTranscriptArchive(
+      "beta rewrite marker",
+      { limit: 8 },
+      root,
+    );
+    assert.equal(refreshedResults.length, 1);
+    assert.equal(refreshedResults[0].sessionId, secondEntry.sessionId);
+    assert.equal(refreshedResults[0].hitCount, 1);
+  });
+});
+
 test("memory transcript session loads can bypass search.db when result path is known", async () => {
   await withTempRoot(async (root) => {
     const entry = {
