@@ -51,6 +51,10 @@ export function buildTmuxListArgs(socketArgs: string[]) {
   return ["tmux", ...socketArgs, "list-sessions", "-F", "#S"];
 }
 
+export function buildTuiModeArg(std: boolean) {
+  return std ? "--std" : "--rpc";
+}
+
 export function buildTuiRuntimeEnv(
   targetUser: string,
   currentUser: string,
@@ -66,6 +70,38 @@ export function buildTuiRuntimeEnv(
     RIN_DAEMON_SOCKET_PATH: socketPathForUser(targetUser),
     RIN_INVOKING_SYSTEM_USER: currentUser,
   });
+}
+
+export function buildDirectTuiArgs(
+  tuiEntry: string,
+  options: { std: boolean; passthrough: string[] },
+) {
+  return [
+    process.execPath,
+    tuiEntry,
+    buildTuiModeArg(options.std),
+    ...options.passthrough,
+  ];
+}
+
+export function buildTmuxSessionArgs(
+  socketArgs: string[],
+  tmuxSession: string,
+  tuiArgv: string[],
+) {
+  return [
+    "tmux",
+    ...socketArgs,
+    "new-session",
+    "-A",
+    "-s",
+    tmuxSession,
+    ...tuiArgv,
+  ];
+}
+
+export function normalizeTmuxListExitCode(code: number, stderr: string) {
+  return isTmuxNoServerError(code, stderr) ? 0 : code;
 }
 
 async function runTargetCommandCapture(
@@ -94,12 +130,31 @@ async function runTargetCommand(
   });
 }
 
-export async function launchDefaultRin(parsed: ParsedArgs) {
+function resolveLaunchContext(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
   const currentUser = os.userInfo().username;
   const tmuxSocketArgs = buildTmuxSocketArgs(targetUser);
+  const runtimeEnv = buildTuiRuntimeEnv(
+    targetUser,
+    currentUser,
+    parsed.installDir,
+  );
+  const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
+  const tuiArgv = buildDirectTuiArgs(tuiEntry, {
+    std: parsed.std,
+    passthrough: parsed.passthrough,
+  });
+  return {
+    repoRoot,
+    targetUser,
+    tmuxSocketArgs,
+    runtimeEnv,
+    tuiArgv,
+  };
+}
 
+export async function launchDefaultRin(parsed: ParsedArgs) {
   if (!parsed.explicitUser && !parsed.hasSavedInstall) {
     throw new Error(
       `rin_not_installed: run rin-install first or pass --user/-u explicitly (expected ${installConfigPath()})`,
@@ -108,61 +163,30 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
   if (parsed.tmuxSession && parsed.tmuxList)
     throw new Error("rin_tmux_mode_conflict");
 
-  const runtimeEnv = buildTuiRuntimeEnv(
-    targetUser,
-    currentUser,
-    parsed.installDir,
-  );
+  const { repoRoot, targetUser, tmuxSocketArgs, runtimeEnv, tuiArgv } =
+    resolveLaunchContext(parsed);
 
   if (parsed.tmuxList) {
-    const commandEnv = runtimeEnv;
     const result = await runTargetCommandCapture(
       targetUser,
       buildTmuxListArgs(tmuxSocketArgs),
-      commandEnv as Record<string, string>,
+      runtimeEnv as Record<string, string>,
       repoRoot,
     );
     if (result.stdout) process.stdout.write(result.stdout);
-    if (!isTmuxNoServerError(result.code, result.stderr) && result.stderr) {
+    if (normalizeTmuxListExitCode(result.code, result.stderr) !== 0 && result.stderr) {
       process.stderr.write(result.stderr);
     }
-    process.exit(
-      isTmuxNoServerError(result.code, result.stderr) ? 0 : result.code,
-    );
+    process.exit(normalizeTmuxListExitCode(result.code, result.stderr));
   }
 
-  if (parsed.tmuxSession) {
-    const tuiEntry = path.join(repoRoot, "dist", "app", "rin-tui", "main.js");
-    const commandEnv = runtimeEnv;
-    const code = await runTargetCommand(
-      targetUser,
-      [
-        "tmux",
-        ...tmuxSocketArgs,
-        "new-session",
-        "-A",
-        "-s",
-        parsed.tmuxSession,
-        process.execPath,
-        tuiEntry,
-        parsed.std ? "--std" : "--rpc",
-        ...parsed.passthrough,
-      ],
-      commandEnv as Record<string, string>,
-      repoRoot,
-    );
-    process.exit(code);
-  }
-
+  const argv = parsed.tmuxSession
+    ? buildTmuxSessionArgs(tmuxSocketArgs, parsed.tmuxSession, tuiArgv)
+    : tuiArgv;
   const code = await runTargetCommand(
     targetUser,
-    [
-      process.execPath,
-      path.join(repoRoot, "dist", "app", "rin-tui", "main.js"),
-      parsed.std ? "--std" : "--rpc",
-      ...parsed.passthrough,
-    ],
-    runtimeEnv,
+    argv,
+    runtimeEnv as Record<string, string>,
     repoRoot,
   );
   process.exit(code);

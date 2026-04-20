@@ -154,6 +154,47 @@ test("shared loadInstallConfigForHome prefers launcher metadata candidates and r
 
 test("tmux socket args target the caller-owned hidden socket", () => {
   assert.deepEqual(launch.buildTmuxSocketArgs("demo"), ["-L", "rin-demo"]);
+  assert.equal(launch.buildTuiModeArg(true), "--std");
+  assert.equal(launch.buildTuiModeArg(false), "--rpc");
+  assert.deepEqual(
+    launch.buildDirectTuiArgs("/repo/dist/app/rin-tui/main.js", {
+      std: false,
+      passthrough: ["--foo", "bar"],
+    }),
+    [
+      process.execPath,
+      "/repo/dist/app/rin-tui/main.js",
+      "--rpc",
+      "--foo",
+      "bar",
+    ],
+  );
+  assert.deepEqual(
+    launch.buildTmuxSessionArgs(
+      ["-L", "rin-demo"],
+      "hidden-rin",
+      [process.execPath, "/repo/dist/app/rin-tui/main.js", "--std"],
+    ),
+    [
+      "tmux",
+      "-L",
+      "rin-demo",
+      "new-session",
+      "-A",
+      "-s",
+      "hidden-rin",
+      process.execPath,
+      "/repo/dist/app/rin-tui/main.js",
+      "--std",
+    ],
+  );
+  assert.equal(
+    launch.normalizeTmuxListExitCode(
+      1,
+      "no server running on /tmp/tmux-demo/default",
+    ),
+    0,
+  );
 });
 
 test("tui runtime env targets the target user's direct daemon socket", () => {
