@@ -35,13 +35,49 @@ const sessionUtils = await import(
 );
 const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 
-test("subagent model utils normalize and sort model refs", () => {
+test("subagent model utils normalize and sort model refs", async () => {
   assert.equal(modelUtils.normalizeModelRef("@openai/gpt-5"), "openai/gpt-5");
+  assert.equal(modelUtils.normalizeModelRef(" open ai/gpt-5 "), undefined);
   assert.deepEqual(modelUtils.splitModelRef("openai/gpt-5"), {
     provider: "openai",
     modelId: "gpt-5",
   });
+  assert.equal(modelUtils.splitModelRef("open ai/gpt-5"), undefined);
   assert.ok(modelUtils.compareModelIds("gpt-5-20260301", "gpt-5-20250101") < 0);
+
+  const summaries = await modelUtils.getProviderSummaries({
+    modelRegistry: {
+      getAvailable() {
+        return [
+          { provider: " openai ", id: " gpt-5-20250101 " },
+          { provider: "openai", id: "gpt-5-20260301" },
+          { provider: "openai", id: "gpt-5-20260301" },
+          { provider: "anthropic", id: " claude-sonnet " },
+          { provider: "", id: "ignored" },
+          { provider: "openai", id: "bad model" },
+        ];
+      },
+    },
+  });
+  assert.deepEqual(summaries, [
+    {
+      provider: "anthropic",
+      count: 1,
+      top3: ["claude-sonnet"],
+      all: ["claude-sonnet"],
+    },
+    {
+      provider: "openai",
+      count: 2,
+      top3: ["gpt-5-20260301", "gpt-5-20250101"],
+      all: ["gpt-5-20260301", "gpt-5-20250101"],
+    },
+  ]);
+  assert.deepEqual(Array.from(modelUtils.buildModelLookup(summaries)).sort(), [
+    "anthropic/claude-sonnet",
+    "openai/gpt-5-20250101",
+    "openai/gpt-5-20260301",
+  ]);
 });
 
 test("subagent format utils summarize results", () => {

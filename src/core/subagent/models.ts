@@ -11,20 +11,32 @@ export const VALID_SUBAGENT_THINKING_LEVELS = [
   "xhigh",
 ] as const satisfies ThinkingLevel[];
 
+function trimText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function normalizeModelSegment(value: unknown) {
+  const text = trimText(value);
+  return text && !/\s/.test(text) ? text : undefined;
+}
+
 export function normalizeModelRef(value?: string): string | undefined {
-  const text = String(value || "").trim();
-  if (!text) return undefined;
-  return text.replace(/^@/, "");
+  const text = trimText(value).replace(/^@/, "");
+  const parsed = splitModelRef(text);
+  return parsed ? `${parsed.provider}/${parsed.modelId}` : undefined;
 }
 
 export function splitModelRef(
   value: string,
 ): { provider: string; modelId: string } | undefined {
-  const text = normalizeModelRef(value);
+  const text = trimText(value).replace(/^@/, "");
   if (!text) return undefined;
   const slash = text.indexOf("/");
   if (slash <= 0 || slash === text.length - 1) return undefined;
-  return { provider: text.slice(0, slash), modelId: text.slice(slash + 1) };
+  const provider = normalizeModelSegment(text.slice(0, slash));
+  const modelId = normalizeModelSegment(text.slice(slash + 1));
+  if (!provider || !modelId) return undefined;
+  return { provider, modelId };
 }
 
 export function modelSortKey(id: string): string {
@@ -54,10 +66,13 @@ export async function getProviderSummaries(
   );
   const grouped = new Map<string, string[]>();
 
-  for (const model of availableModels) {
-    const list = grouped.get(model.provider) ?? [];
-    list.push(model.id);
-    grouped.set(model.provider, list);
+  for (const model of Array.isArray(availableModels) ? availableModels : []) {
+    const provider = normalizeModelSegment(model?.provider);
+    const modelId = normalizeModelSegment(model?.id);
+    if (!provider || !modelId) continue;
+    const list = grouped.get(provider) ?? [];
+    list.push(modelId);
+    grouped.set(provider, list);
   }
 
   return Array.from(grouped.entries())
@@ -72,9 +87,14 @@ export function buildModelLookup(
   providers: ProviderModelSummary[],
 ): Set<string> {
   const models = new Set<string>();
-  for (const provider of providers) {
-    for (const model of provider.all)
-      models.add(`${provider.provider}/${model}`);
+  for (const provider of Array.isArray(providers) ? providers : []) {
+    const providerName = normalizeModelSegment(provider?.provider);
+    if (!providerName) continue;
+    for (const model of Array.isArray(provider?.all) ? provider.all : []) {
+      const modelId = normalizeModelSegment(model);
+      if (!modelId) continue;
+      models.add(`${providerName}/${modelId}`);
+    }
   }
   return models;
 }
