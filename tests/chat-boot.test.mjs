@@ -49,8 +49,7 @@ test("chat boot clears common telegram scopes before syncing default commands", 
   };
 
   const rows = boot.getChatCommandRows();
-
-  assert.deepEqual(boot.buildTelegramCommandPayload(rows), [
+  const expectedPayload = [
     { command: "help", description: "Show available commands" },
     { command: "abort", description: "Abort current operation" },
     { command: "new", description: "Start a new session" },
@@ -63,7 +62,21 @@ test("chat boot clears common telegram scopes before syncing default commands", 
     { command: "session", description: "Show current session status" },
     { command: "resume", description: "Resume a previous session" },
     { command: "model", description: "Show or change the current model" },
-  ]);
+  ];
+
+  assert.deepEqual(boot.buildTelegramCommandPayload(rows), expectedPayload);
+  assert.deepEqual(
+    boot.buildTelegramCommandPayload([
+      { name: "HELP", description: "override" },
+      { name: "help", description: "ignored duplicate" },
+      { name: "bad name" },
+      { name: "status" },
+    ]),
+    [
+      { command: "help", description: "override" },
+      { command: "status", description: "status" },
+    ],
+  );
   assert.deepEqual(boot.buildTelegramCommandClearScopes(), [
     { type: "all_private_chats" },
     { type: "all_group_chats" },
@@ -83,20 +96,7 @@ test("chat boot clears common telegram scopes before syncing default commands", 
   ]);
   assert.deepEqual(sets, [
     {
-      commands: [
-        { command: "help", description: "Show available commands" },
-        { command: "abort", description: "Abort current operation" },
-        { command: "new", description: "Start a new session" },
-        { command: "compact", description: "Compact the current session" },
-        {
-          command: "reload",
-          description: "Reload extensions, prompts, skills, and themes",
-        },
-        { command: "status", description: "Show current chat processing status" },
-        { command: "session", description: "Show current session status" },
-        { command: "resume", description: "Resume a previous session" },
-        { command: "model", description: "Show or change the current model" },
-      ],
+      commands: expectedPayload,
     },
   ]);
 });
@@ -191,5 +191,36 @@ test("chat boot moves failed outbox deliveries into failed storage", async () =>
     const failedFiles = await fs.readdir(failedDir);
     assert.deepEqual(failedFiles, ["one.json"]);
     assert.ok(warnings.some((message) => message.includes("chat outbox failed")));
+  });
+});
+
+test("chat boot moves invalid outbox json into failed storage instead of dropping it", async () => {
+  await withTempDir(async (agentDir) => {
+    const outboxDir = path.join(agentDir, "data", "chat-outbox");
+    await fs.mkdir(outboxDir, { recursive: true });
+    await fs.writeFile(path.join(outboxDir, "bad.json"), "{not json\n");
+
+    const warnings = [];
+    await boot.drainChatOutbox(
+      { bots: [] },
+      agentDir,
+      {},
+      {
+        warn(message) {
+          warnings.push(String(message));
+        },
+      },
+    );
+
+    const failedDir = path.join(outboxDir, "failed");
+    const failedFiles = await fs.readdir(failedDir);
+    assert.deepEqual(failedFiles, ["bad.json"]);
+    assert.ok(
+      warnings.some(
+        (message) =>
+          message.includes("chat outbox failed") &&
+          message.includes("chat_outbox_invalid_json"),
+      ),
+    );
   });
 });

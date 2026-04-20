@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 import { chatOutboxDir } from "../rin-lib/chat-outbox.js";
@@ -5,7 +6,6 @@ import {
   claimFileToDir,
   listJsonFiles,
   moveFileToDir,
-  readJsonFile,
   removeFileIfExists,
 } from "../platform/fs.js";
 import { safeString } from "./chat-helpers.js";
@@ -35,22 +35,31 @@ export function getChatCommandRows(): ChatCommandRow[] {
   return KOISHI_CHAT_COMMAND_ROWS.map((item) => ({ ...item }));
 }
 
+function normalizeTelegramCommandName(value: unknown) {
+  const rawName = safeString(value).trim();
+  if (!/^[\w-]{1,32}$/.test(rawName)) return "";
+  return rawName.toLowerCase().replace(/[^\w]/g, "_");
+}
+
+function createTelegramCommandEntry(item: ChatCommandRow | undefined) {
+  const rawName = safeString(item?.name).trim();
+  const command = normalizeTelegramCommandName(rawName);
+  if (!command) return null;
+  return {
+    command,
+    description: safeString(item?.description).trim() || rawName,
+  };
+}
+
 export function buildTelegramCommandPayload(commandRows: ChatCommandRow[]) {
   const payload: Array<{ command: string; description: string }> = [];
   const seen = new Set<string>();
 
   for (const item of commandRows) {
-    const rawName = safeString(item?.name).trim();
-    if (!/^[\w-]{1,32}$/.test(rawName)) continue;
-
-    const command = rawName.toLowerCase().replace(/[^\w]/g, "_");
-    if (!command || seen.has(command)) continue;
-
-    payload.push({
-      command,
-      description: safeString(item?.description).trim() || rawName,
-    });
-    seen.add(command);
+    const entry = createTelegramCommandEntry(item);
+    if (!entry || seen.has(entry.command)) continue;
+    payload.push(entry);
+    seen.add(entry.command);
   }
 
   return payload;
@@ -62,6 +71,43 @@ export function buildTelegramCommandClearScopes() {
     { type: "all_group_chats" },
     { type: "all_chat_administrators" },
   ];
+}
+
+async function syncTelegramCommandsViaInternal(
+  bot: any,
+  payload: Array<{ command: string; description: string }>,
+  clearScopes: Array<{ type: string }>,
+) {
+  if (typeof bot?.internal?.setMyCommands !== "function") return false;
+  if (typeof bot?.internal?.deleteMyCommands === "function") {
+    for (const scope of clearScopes) {
+      await bot.internal.deleteMyCommands({ scope });
+    }
+  }
+  if (payload.length) {
+    await bot.internal.setMyCommands({ commands: payload });
+  }
+  return true;
+}
+
+async function syncTelegramCommandsForBot(
+  bot: any,
+  commander: any,
+  payload: Array<{ command: string; description: string }>,
+  clearScopes: Array<{ type: string }>,
+) {
+  if (await syncTelegramCommandsViaInternal(bot, payload, clearScopes)) {
+    return;
+  }
+  if (commander?.updateCommands && typeof bot?.updateCommands === "function") {
+    await commander.updateCommands(bot);
+  }
+}
+
+function warnTelegramCommandSyncFailure(logger: any, bot: any, error: unknown) {
+  logger.warn(
+    `chat command sync failed platform=${safeString(bot?.platform)} selfId=${safeString(bot?.selfId)} err=${safeString((error as any)?.message || error)}`,
+  );
 }
 
 export async function syncTelegramCommands(
@@ -77,30 +123,54 @@ export async function syncTelegramCommands(
     if (safeString(bot?.platform) !== "telegram") continue;
 
     try {
-      if (typeof bot?.internal?.setMyCommands === "function") {
-        if (typeof bot?.internal?.deleteMyCommands === "function") {
-          for (const scope of clearScopes) {
-            await bot.internal.deleteMyCommands({ scope });
-          }
-        }
-
-        if (payload.length) {
-          await bot.internal.setMyCommands({ commands: payload });
-        }
-        continue;
-      }
-
-      if (
-        commander?.updateCommands &&
-        typeof bot?.updateCommands === "function"
-      ) {
-        await commander.updateCommands(bot);
-      }
+      await syncTelegramCommandsForBot(bot, commander, payload, clearScopes);
     } catch (error: any) {
-      logger.warn(
-        `chat command sync failed platform=${safeString(bot?.platform)} selfId=${safeString(bot?.selfId)} err=${safeString(error?.message || error)}`,
-      );
+      warnTelegramCommandSyncFailure(logger, bot, error);
     }
+  }
+}
+
+function readClaimedOutboxPayload(claimedPath: string) {
+  try {
+    return JSON.parse(fs.readFileSync(claimedPath, "utf8"));
+  } catch (error: any) {
+    throw new Error(
+      `chat_outbox_invalid_json:${safeString(error?.message || error) || "parse_failed"}`,
+    );
+  }
+}
+
+function warnChatOutboxFailure(
+  logger: any,
+  filePath: string,
+  error: unknown,
+) {
+  logger.warn(
+    `chat outbox failed file=${filePath} err=${safeString((error as any)?.message || error)}`,
+  );
+}
+
+function failClaimedOutboxFile(claimedPath: string, failedDir: string) {
+  try {
+    moveFileToDir(claimedPath, failedDir);
+  } catch {}
+}
+
+async function drainClaimedOutboxFile(
+  app: any,
+  agentDir: string,
+  h: any,
+  claimedPath: string,
+  failedDir: string,
+  logger: any,
+) {
+  try {
+    const payload = readClaimedOutboxPayload(claimedPath);
+    await sendOutboxPayload(app, agentDir, payload, h);
+    removeFileIfExists(claimedPath);
+  } catch (error: any) {
+    warnChatOutboxFailure(logger, claimedPath, error);
+    failClaimedOutboxFile(claimedPath, failedDir);
   }
 }
 
@@ -116,17 +186,13 @@ export async function drainChatOutbox(
   for (const filePath of listJsonFiles(outboxDir)) {
     const claimedPath = claimFileToDir(filePath, processingDir);
     if (!claimedPath) continue;
-    try {
-      const payload = readJsonFile<any>(claimedPath, null);
-      await sendOutboxPayload(app, agentDir, payload, h);
-      removeFileIfExists(claimedPath);
-    } catch (error: any) {
-      logger.warn(
-        `chat outbox failed file=${claimedPath || filePath} err=${safeString(error?.message || error)}`,
-      );
-      try {
-        moveFileToDir(claimedPath || filePath, failedDir);
-      } catch {}
-    }
+    await drainClaimedOutboxFile(
+      app,
+      agentDir,
+      h,
+      claimedPath,
+      failedDir,
+      logger,
+    );
   }
 }
