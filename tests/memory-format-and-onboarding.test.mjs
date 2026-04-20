@@ -27,10 +27,98 @@ test("self-improve format builds compact compiled prompt", () => {
         path: "/tmp/agent_profile.md",
         content: "Concise",
       },
+      {
+        self_improve_prompt_slot: "core_facts",
+        preview: "Verified",
+      },
+      {
+        self_improve_prompt_slot: " ",
+        content: "ignored",
+      },
+    ],
+    self_improve_prompt_docs: [
+      {
+        id: "project_rules",
+        content: "Specific",
+      },
+      null,
     ],
   });
-  assert.ok(text.includes("Agent profile:"));
+  assert.match(text, /Agent profile:\nConcise/);
+  assert.match(text, /Core facts:\nVerified/);
+  assert.match(text, /Project rules:\nSpecific/);
+  assert.ok(!text.includes("ignored"));
   assert.ok(!text.includes("# Self-Improve Prompts"));
+  assert.equal(format.buildSystemPromptSelfImprove({ self_improve_prompt_docs: [] }), "");
+});
+
+test("self-improve format renders stable result variants", () => {
+  const response = {
+    query: " memory ",
+    results: [
+      {
+        id: "agent-profile",
+        name: "Agent Profile",
+        exposure: "always",
+        scope: "global",
+        kind: "instruction",
+        self_improve_prompt_slot: "agent_profile",
+        tags: ["core", " prompt "],
+        path: "/tmp/agent.md",
+        description: "Keep replies concise.",
+        score: 0.875,
+      },
+    ],
+    doc: {
+      name: "Agent Profile",
+      path: "/tmp/agent.md",
+    },
+    self_improve_prompt_docs: [{ path: "/tmp/agent.md" }],
+  };
+
+  const listText = format.formatSelfImproveResult("list", response);
+  assert.match(listText, /Self-improve prompts \(1\):/);
+  assert.match(listText, /tags=core,prompt/);
+
+  const searchText = format.formatSelfImproveResult("search", response);
+  assert.match(searchText, /Self-improve matches for: memory/);
+  assert.match(searchText, /score=0.88/);
+
+  const saveText = format.formatSelfImproveResult(
+    "save_self_improve_prompt",
+    response,
+  );
+  assert.match(saveText, /Saved self-improve prompt: Agent Profile/);
+  assert.match(saveText, /\/tmp\/agent.md/);
+
+  const compileText = format.formatSelfImproveResult("compile", {
+    self_improve_prompt_docs: [
+      { self_improve_prompt_slot: "agent_profile", content: "Concise" },
+    ],
+  });
+  assert.match(compileText, /Agent profile:\nConcise/);
+
+  assert.equal(
+    format.formatSelfImproveResult("unknown", {}),
+    "Self-improve action completed: unknown",
+  );
+
+  const agentListText = format.formatSelfImproveAgentResult("list", response);
+  assert.match(agentListText, /^self_improve list 1/m);
+  assert.match(agentListText, /1\. Agent Profile \| always \| global \| instruction \| slot=agent_profile \| path=\/tmp\/agent.md/);
+
+  const agentSearchText = format.formatSelfImproveAgentResult("search", response);
+  assert.match(agentSearchText, /^self_improve search memory \(1\)$/m);
+  assert.match(agentSearchText, /score=0.88/);
+
+  const agentCompileText = format.formatSelfImproveAgentResult("compile", response);
+  assert.match(agentCompileText, /^self_improve compile memory$/m);
+  assert.match(agentCompileText, /self_improve_prompts: 1/);
+
+  assert.equal(
+    format.formatSelfImproveAgentResult("", {}),
+    "self_improve result",
+  );
 });
 
 test("memory onboarding helper keeps hidden instructions and pending state", () => {

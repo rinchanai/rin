@@ -8,27 +8,125 @@ function toSentenceCaseLabel(text: string) {
   return parts.join(" ");
 }
 
-function buildPromptBlock(result: any): string {
-  const docs = Array.isArray(result?.self_improve_prompt_prompt_docs)
-    ? result.self_improve_prompt_prompt_docs
-    : Array.isArray(result?.self_improve_prompt_docs)
+function trimText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function collectPromptDocs(result: any) {
+  return [
+    ...(Array.isArray(result?.self_improve_prompt_prompt_docs)
+      ? result.self_improve_prompt_prompt_docs
+      : []),
+    ...(Array.isArray(result?.self_improve_prompt_docs)
       ? result.self_improve_prompt_docs
-      : [];
-  if (!docs.length) return "";
+      : []),
+  ];
+}
+
+function getPromptDocBody(doc: any) {
+  return trimText(doc?.content || doc?.preview);
+}
+
+function getPromptDocLabel(doc: any) {
+  return toSentenceCaseLabel(
+    trimText(doc?.self_improve_prompt_slot || doc?.id || doc?.name),
+  );
+}
+
+function getPromptDocPath(doc: any) {
+  return trimText(doc?.path);
+}
+
+function buildPromptBlock(result: any): string {
   const lines: string[] = [];
-  for (const doc of docs) {
-    const body = String(doc?.content || doc?.preview || "").trim();
-    const label = toSentenceCaseLabel(
-      String(
-        doc?.self_improve_prompt_slot || doc?.id || doc?.name || "",
-      ).trim(),
-    );
+  for (const doc of collectPromptDocs(result)) {
+    const body = getPromptDocBody(doc);
+    const label = getPromptDocLabel(doc);
     if (!body || !label) continue;
     lines.push(`${label}:`);
     lines.push(body);
     lines.push("");
   }
   return lines.join("\n").trim();
+}
+
+function normalizeResultRows(response: any) {
+  return Array.isArray(response?.results) ? response.results : [];
+}
+
+function formatMetaParts(parts: unknown[], separator: string) {
+  return parts.map((part) => trimText(part)).filter(Boolean).join(separator);
+}
+
+function formatTags(tags: unknown) {
+  return Array.isArray(tags)
+    ? tags.map((tag) => trimText(tag)).filter(Boolean).join(",")
+    : "";
+}
+
+function getItemName(item: any) {
+  return trimText(item?.name || item?.id) || "(untitled)";
+}
+
+function formatListRowText(item: any, index: number, compact: boolean) {
+  const exposure = trimText(item?.exposure);
+  const scope = trimText(item?.scope);
+  const kind = trimText(item?.kind);
+  const slot = trimText(item?.self_improve_prompt_slot);
+  const itemPath = getPromptDocPath(item);
+  const tags = formatTags(item?.tags);
+  const metaParts = compact
+    ? [
+        exposure,
+        scope,
+        kind,
+        slot ? `slot=${slot}` : "",
+        itemPath ? `path=${itemPath}` : "",
+      ]
+    : [
+        exposure ? `[${exposure}]` : "",
+        scope ? `scope=${scope}` : "",
+        kind ? `kind=${kind}` : "",
+        slot ? `slot=${slot}` : "",
+        tags ? `tags=${tags}` : "",
+        itemPath ? `path=${itemPath}` : "",
+      ];
+  const meta = formatMetaParts(metaParts, compact ? " | " : " ");
+  return compact
+    ? `${index + 1}. ${getItemName(item)}${meta ? ` | ${meta}` : ""}`
+    : `- ${getItemName(item)}${meta ? ` ${meta}` : ""}`;
+}
+
+function formatSearchRowText(item: any, index: number, compact: boolean) {
+  const meta = compact
+    ? formatMetaParts(
+        [
+          `score=${Number(item?.score || 0).toFixed(2)}`,
+          trimText(item?.exposure),
+          trimText(item?.scope),
+          getPromptDocPath(item) ? `path=${getPromptDocPath(item)}` : "",
+        ],
+        " | ",
+      )
+    : formatMetaParts(
+        [
+          `score=${Number(item?.score || 0).toFixed(2)}`,
+          trimText(item?.exposure),
+          trimText(item?.scope),
+        ],
+        " • ",
+      );
+  const summary = trimText(item?.description);
+  if (compact) {
+    return `${index + 1}. ${getItemName(item)}${meta ? ` | ${meta}` : ""}`;
+  }
+  return [
+    `${index + 1}. ${getItemName(item)}${meta ? ` — ${meta}` : ""}`,
+    getPromptDocPath(item),
+    summary,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function buildCompiledSelfImprovePrompt(result: any): string {
@@ -41,51 +139,37 @@ export function buildSystemPromptSelfImprove(result: any): string {
 
 export function formatSelfImproveResult(action: string, response: any): string {
   if (action === "list") {
-    const rows = Array.isArray(response?.results) ? response.results : [];
+    const rows = normalizeResultRows(response);
     if (!rows.length) return "No self-improve prompts found.";
     return [
       `Self-improve prompts (${rows.length}):`,
-      ...rows.map((item: any) => {
-        const slot = String(item?.self_improve_prompt_slot || "").trim();
-        const tags =
-          Array.isArray(item?.tags) && item.tags.length
-            ? ` tags=${item.tags.join(",")}`
-            : "";
-        const scope = String(item?.scope || "").trim();
-        const kind = String(item?.kind || "").trim();
-        return `- ${String(item?.name || item?.id || "(untitled)")} [${String(item?.exposure || "")}]${scope ? ` scope=${scope}` : ""}${kind ? ` kind=${kind}` : ""}${slot ? ` slot=${slot}` : ""}${tags} path=${String(item?.path || "")}`;
-      }),
+      ...rows.map((item: any, index: number) =>
+        formatListRowText(item, index, false),
+      ),
     ].join("\n");
   }
 
   if (action === "search") {
-    const rows = Array.isArray(response?.results) ? response.results : [];
-    if (!rows.length)
-      return `No self-improve matches for: ${String(response?.query || "")}`;
+    const rows = normalizeResultRows(response);
+    const query = trimText(response?.query);
+    if (!rows.length) {
+      return `No self-improve matches for: ${query}`;
+    }
     return [
-      `Self-improve matches for: ${String(response?.query || "")}`,
-      ...rows.map((item: any, index: number) => {
-        const summary = String(item?.description || "").trim();
-        const meta = [
-          `score=${Number(item?.score || 0).toFixed(2)}`,
-          String(item?.exposure || "").trim(),
-          String(item?.scope || "").trim(),
-        ]
-          .filter(Boolean)
-          .join(" • ");
-        return [
-          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")} — ${meta}`,
-          String(item?.path || ""),
-          summary,
-        ]
-          .filter(Boolean)
-          .join("\n");
-      }),
+      `Self-improve matches for: ${query}`,
+      ...rows.map((item: any, index: number) =>
+        formatSearchRowText(item, index, false),
+      ),
     ].join("\n\n");
   }
 
   if (action === "save_self_improve_prompt") {
-    return `Saved self-improve prompt: ${String(response?.doc?.name || response?.doc?.id || "")}\n${String(response?.doc?.path || "")}`;
+    return [
+      `Saved self-improve prompt: ${getItemName(response?.doc)}`,
+      getPromptDocPath(response?.doc),
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (action === "compile") {
@@ -95,7 +179,7 @@ export function formatSelfImproveResult(action: string, response: any): string {
     );
   }
 
-  return `Self-improve action completed: ${action || "unknown"}`;
+  return `Self-improve action completed: ${trimText(action) || "unknown"}`;
 }
 
 export function formatSelfImproveAgentResult(
@@ -103,64 +187,53 @@ export function formatSelfImproveAgentResult(
   response: any,
 ): string {
   if (action === "list") {
-    const rows = Array.isArray(response?.results) ? response.results : [];
+    const rows = normalizeResultRows(response);
     if (!rows.length) return "self_improve list 0";
     return [
       `self_improve list ${rows.length}`,
       ...rows.map((item: any, index: number) =>
-        [
-          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")}`,
-          String(item?.exposure || "").trim(),
-          String(item?.scope || "").trim(),
-          String(item?.kind || "").trim(),
-          item?.self_improve_prompt_slot
-            ? `slot=${String(item.self_improve_prompt_slot)}`
-            : "",
-          `path=${String(item?.path || "")}`,
-        ]
-          .filter(Boolean)
-          .join(" | "),
+        formatListRowText(item, index, true),
       ),
     ].join("\n");
   }
 
   if (action === "search") {
-    const rows = Array.isArray(response?.results) ? response.results : [];
-    if (!rows.length)
-      return `self_improve search ${String(response?.query || "")} (0)`;
+    const rows = normalizeResultRows(response);
+    const query = trimText(response?.query);
+    if (!rows.length) return `self_improve search ${query} (0)`;
     return [
-      `self_improve search ${String(response?.query || "")} (${rows.length})`,
+      `self_improve search ${query} (${rows.length})`,
       ...rows.map((item: any, index: number) =>
-        [
-          `${index + 1}. ${String(item?.name || item?.id || "(untitled)")}`,
-          `score=${Number(item?.score || 0).toFixed(2)}`,
-          String(item?.exposure || "").trim(),
-          String(item?.scope || "").trim(),
-          `path=${String(item?.path || "")}`,
-        ]
-          .filter(Boolean)
-          .join(" | "),
+        formatSearchRowText(item, index, true),
       ),
     ].join("\n");
   }
 
   if (action === "save_self_improve_prompt") {
-    return `self_improve save_self_improve_prompt\npath=${String(response?.doc?.path || "")}`;
+    return [
+      "self_improve save_self_improve_prompt",
+      getPromptDocPath(response?.doc)
+        ? `path=${getPromptDocPath(response?.doc)}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (action === "compile") {
-    const docs = Array.isArray(response?.self_improve_prompt_docs)
-      ? response.self_improve_prompt_docs
-      : [];
+    const query = trimText(response?.query) || "(no query)";
+    const docs = collectPromptDocs(response)
+      .map((doc: any, index: number) => {
+        const docPath = getPromptDocPath(doc);
+        return docPath ? `self_improve_prompts[${index + 1}] path=${docPath}` : "";
+      })
+      .filter(Boolean);
     return [
-      `self_improve compile ${String(response?.query || "").trim() || "(no query)"}`,
+      `self_improve compile ${query}`,
       `self_improve_prompts: ${docs.length}`,
-      ...docs.map(
-        (doc: any, index: number) =>
-          `self_improve_prompts[${index + 1}] path=${String(doc?.path || "")}`,
-      ),
+      ...docs,
     ].join("\n");
   }
 
-  return `self_improve ${action || "result"}`;
+  return `self_improve ${trimText(action) || "result"}`;
 }
