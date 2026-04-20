@@ -390,9 +390,51 @@ export function collectTuiPassthroughArgs(argv: string[]) {
   return stripRinWrapperArgs(argv);
 }
 
+function normalizeBetaTrainSelector(value: string) {
+  const normalized = safeString(value).trim();
+  if (!normalized) return "";
+  return normalized.startsWith("release/") ? normalized : `release/${normalized}`;
+}
+
+function looksLikeGitRefSelector(value: string) {
+  const normalized = safeString(value).trim();
+  return (
+    /^[0-9a-f]{7,40}$/i.test(normalized) ||
+    /^v\d/.test(normalized) ||
+    normalized.startsWith("refs/") ||
+    /[~^:]/.test(normalized)
+  );
+}
+
+function extractOptionalFlagSelector(
+  rawArgv: string[],
+  command: string,
+  flag: "--stable" | "--beta" | "--git",
+) {
+  const args = extractSubcommandArgv(rawArgv, command);
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = safeString(args[index]).trim();
+    if (!arg) continue;
+    if (arg === "--") break;
+    if (arg === flag) {
+      const next = safeString(args[index + 1]).trim();
+      if (!next || next.startsWith("-")) return "";
+      return next;
+    }
+    if (arg.startsWith(`${flag}=`)) {
+      return safeString(arg.slice(flag.length + 1)).trim();
+    }
+    if (arg === "--branch" || arg === "--version") {
+      index += 1;
+    }
+  }
+  return "";
+}
+
 function resolveParsedReleaseArgs(
   command: ParsedArgs["command"],
   options: any,
+  rawArgv: string[],
 ): Pick<ParsedArgs, "releaseChannel" | "releaseBranch" | "releaseVersion"> {
   if (command !== "update") {
     return {
@@ -413,8 +455,28 @@ function resolveParsedReleaseArgs(
   }
 
   const releaseChannel = selectedChannels[0] || "stable";
-  const releaseBranch = safeString(options.branch).trim();
-  const releaseVersion = safeString(options.version).trim();
+  let releaseBranch = safeString(options.branch).trim();
+  let releaseVersion = safeString(options.version).trim();
+  const flagSelector =
+    releaseChannel === "stable"
+      ? extractOptionalFlagSelector(rawArgv, command, "--stable")
+      : releaseChannel === "beta"
+        ? extractOptionalFlagSelector(rawArgv, command, "--beta")
+        : extractOptionalFlagSelector(rawArgv, command, "--git");
+
+  if (!releaseBranch && !releaseVersion && flagSelector) {
+    if (releaseChannel === "beta") {
+      releaseBranch = normalizeBetaTrainSelector(flagSelector);
+    } else if (releaseChannel === "git") {
+      if (looksLikeGitRefSelector(flagSelector)) {
+        releaseVersion = flagSelector;
+      } else {
+        releaseBranch = flagSelector;
+      }
+    } else {
+      throw new Error("rin_stable_selector_not_supported");
+    }
+  }
 
   if (releaseBranch && releaseVersion) {
     throw new Error("rin_release_branch_and_version_conflict");
@@ -453,7 +515,7 @@ export function resolveParsedArgs(
       safeString(installConfig.defaultTargetUser).trim() ||
       safeString(installConfig.defaultInstallDir).trim(),
     ),
-    ...resolveParsedReleaseArgs(command, options),
+    ...resolveParsedReleaseArgs(command, options, rawArgv),
   };
 }
 

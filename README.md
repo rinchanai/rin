@@ -37,11 +37,12 @@ If you want an assistant that stays useful over time, Rin is designed for that.
 Install:
 
 ```bash
-./install.sh                # stable release (default)
-./install.sh --beta        # explicit beta channel
-./install.sh --git         # explicit git channel
-./install.sh --beta --branch release/0.69
-./install.sh --git --version <tag-or-commit>
+./install.sh              # stable release (default)
+./install.sh --beta       # latest release train
+./install.sh --beta 0.69
+./install.sh --git        # main
+./install.sh --git main
+./install.sh --git deadbeef
 ```
 
 Then open Rin:
@@ -88,11 +89,12 @@ rin update     # update the installed Rin core runtime
 For a normal installed Rin update, use:
 
 ```bash
-rin update                 # stable release (default)
-rin update --beta          # explicit beta channel
-rin update --git           # explicit git channel
-rin update --beta --branch release/0.69
-rin update --git --version <tag-or-commit>
+rin update              # stable release (default)
+rin update --beta       # latest release train
+rin update --beta 0.69
+rin update --git        # main
+rin update --git main
+rin update --git deadbeef
 ```
 
 If `rin` is confirmed missing on the current account, treat that as “this is not the launcher-owning user”.
@@ -114,7 +116,9 @@ It does not replace the user-scoped CLI launcher or installer.
 
 Important release-channel rule:
 - stable is the default for install and update
-- beta and git must be requested explicitly
+- `--beta` with no suffix means the latest release train
+- `--beta 0.69` means `release/0.69`
+- `--git` with no suffix means `main`
 
 Avoid treating repo-local workflows like `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the default way to update an already installed Rin.
 

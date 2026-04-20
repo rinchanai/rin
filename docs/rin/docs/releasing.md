@@ -13,8 +13,8 @@ This document describes the operator workflow for Rin release trains.
 ## Channel contract
 
 - stable: default install and update channel, published to npm with dist-tag `latest`
-- beta: explicit opt-in only, published from release branches through GitHub archives
-- git: explicit opt-in only, resolved directly from GitHub refs
+- beta: explicit opt-in only; plain `--beta` means the latest release train and `--beta 0.69` means `release/0.69`
+- git: explicit opt-in only; plain `--git` means `main` and `--git <name>` resolves that branch or ref directly
 
 ## First stable release preparation
 

@@ -21,10 +21,13 @@ Rin uses a three-channel train model.
 ## User-facing rules
 
 - `./install.sh` and `rin update` target stable by default
-- beta requires `--beta`
-- git requires `--git`
-- beta supports `--branch <release/x.y>` and `--version <x.y.z-beta.n>`
-- git supports `--branch <name>` and `--version <tag-or-commit>`
+- `--beta` must be requested explicitly
+- `--beta` with no suffix means the latest release train from the manifest default branch
+- `--beta 0.69` means `release/0.69`
+- `--git` must be requested explicitly
+- `--git` with no suffix means `main`
+- `--git <name>` means that branch or ref directly
+- `--branch` / `--version` remain supported as explicit selectors
 
 ## Release manifest
 

@@ -24,9 +24,11 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
 Release-channel default:
 
 - plain `rin update` targets the stable release channel
-- use `rin update --beta` or `rin update --git` only when the user explicitly wants a non-stable channel
-- beta also supports `--branch <release/x.y>` or `--version <x.y.z-beta.n>`
-- git also supports `--branch <name>` or `--version <tag-or-commit>`
+- `rin update --beta` targets the manifest default release branch
+- `rin update --beta 0.69` means `release/0.69`
+- `rin update --git` targets `main`
+- `rin update --git <name>` targets that branch or ref directly
+- `--branch` / `--version` remain supported as explicit selectors
 
 When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
 Prefer install recovery through the target manifest or managed service files.

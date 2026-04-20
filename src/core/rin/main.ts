@@ -43,7 +43,7 @@ const INTERNAL_COMMANDS = [
 function createCli() {
   const cli = cac("rin");
   cli
-    .usage("[command] [options] [-- passthrough]")
+    .usage("[command] [--beta [train]|--git [branch-or-ref]] [options] [-- passthrough]")
     .option("-u, --user <name>", "Run against a specific daemon user")
     .option("--std", "Start std TUI instead of RPC TUI")
     .option(
@@ -54,8 +54,8 @@ function createCli() {
     .option("--stable", "Use the stable release channel (default)")
     .option("--beta", "Use the beta release channel")
     .option("--git", "Use the git release channel")
-    .option("--branch <name>", "Use a specific beta/git branch")
-    .option("--version <value>", "Use a specific release version or git ref")
+    .option("--branch <name>", "Explicit beta/git branch selector")
+    .option("--version <value>", "Explicit release version or git ref selector")
     .help();
 
   for (const [name, description] of RIN_COMMANDS) {

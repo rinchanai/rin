@@ -21,22 +21,40 @@ test("resolveParsedArgs defaults update channel to stable", () => {
   assert.equal(parsed.releaseVersion, "");
 });
 
-test("resolveParsedArgs accepts explicit beta branch and git version", () => {
+test("resolveParsedArgs accepts optional selectors after beta and git flags", () => {
   const betaParsed = shared.resolveParsedArgs(
     "update",
-    { beta: true, branch: "release/0.69" },
-    ["update", "--beta", "--branch", "release/0.69"],
+    { beta: true },
+    ["update", "--beta", "0.69"],
   );
   assert.equal(betaParsed.releaseChannel, "beta");
   assert.equal(betaParsed.releaseBranch, "release/0.69");
 
-  const gitParsed = shared.resolveParsedArgs(
+  const betaLatestParsed = shared.resolveParsedArgs(
     "update",
-    { git: true, version: "deadbeef" },
-    ["update", "--git", "--version", "deadbeef"],
+    { beta: true },
+    ["update", "--beta"],
   );
-  assert.equal(gitParsed.releaseChannel, "git");
-  assert.equal(gitParsed.releaseVersion, "deadbeef");
+  assert.equal(betaLatestParsed.releaseChannel, "beta");
+  assert.equal(betaLatestParsed.releaseBranch, "");
+  assert.equal(betaLatestParsed.releaseVersion, "");
+
+  const gitBranchParsed = shared.resolveParsedArgs(
+    "update",
+    { git: true },
+    ["update", "--git", "main"],
+  );
+  assert.equal(gitBranchParsed.releaseChannel, "git");
+  assert.equal(gitBranchParsed.releaseBranch, "main");
+  assert.equal(gitBranchParsed.releaseVersion, "");
+
+  const gitRefParsed = shared.resolveParsedArgs(
+    "update",
+    { git: true },
+    ["update", "--git", "deadbeef"],
+  );
+  assert.equal(gitRefParsed.releaseChannel, "git");
+  assert.equal(gitRefParsed.releaseVersion, "deadbeef");
 });
 
 test("resolveParsedArgs rejects conflicting release selectors", () => {
@@ -73,6 +91,15 @@ test("resolveParsedArgs rejects conflicting release selectors", () => {
         ],
       ),
     /rin_release_branch_and_version_conflict/,
+  );
+  assert.throws(
+    () =>
+      shared.resolveParsedArgs(
+        "update",
+        { stable: true },
+        ["update", "--stable", "1.2.3"],
+      ),
+    /rin_stable_selector_not_supported/,
   );
 });
 

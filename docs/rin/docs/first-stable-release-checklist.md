@@ -78,6 +78,15 @@ The workflow should:
 
 ## Post-publish verification
 
+Also verify the user-facing channel shortcuts still behave as intended:
+
+- `rin update` resolves stable
+- `rin update --beta` resolves the manifest default release branch
+- `rin update --beta 0.69` resolves `release/0.69`
+- `rin update --git` resolves `main`
+- `rin update --git main` resolves `main`
+
+
 Verify all of the following after the workflow succeeds:
 
 - npm package page for `@rinchanai/rin` shows the new version

@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
 
-exec sh "$(dirname "$0")/scripts/bootstrap-entrypoint.sh" update
+exec sh "$(dirname "$0")/scripts/bootstrap-entrypoint.sh" update "$@"

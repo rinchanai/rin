@@ -58,10 +58,12 @@ LOCAL_MANIFEST_PATH="$REPO_ROOT/release-manifest.json"
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--stable] [--beta|--git] [--branch <name>] [--version <value>]
+Usage: install.sh [--stable] [--beta [0.69]] [--git [main|deadbeef]] [legacy flags]
 
 Defaults to the stable release channel.
-Beta and git builds must be selected explicitly.
+`--beta 0.69` means `release/0.69`.
+`--git main` or `--git deadbeef` selects a branch or ref directly.
+Legacy flags such as --branch/--version remain supported.
 EOF
 }
 
@@ -147,24 +149,55 @@ fetch() {
   exit 1
 }
 
+looks_like_git_ref() {
+  case "$1" in
+    refs/*|v[0-9]*|*~*|*^*|*:*) return 0 ;;
+  esac
+  printf '%s' "$1" | grep -Eq '^[0-9a-fA-F]{7,40}$'
+}
+
 parse_args() {
+  FLAG_SELECTOR=
+  EXPECT_SELECTOR_FOR=
+  EXPLICIT_CHANNEL=
+
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --stable)
+        if [ -n "$EXPLICIT_CHANNEL" ] && [ "$EXPLICIT_CHANNEL" != stable ]; then
+          echo "cannot combine conflicting release channel selectors" >&2
+          exit 1
+        fi
         CHANNEL=stable
+        EXPLICIT_CHANNEL=stable
+        EXPECT_SELECTOR_FOR=stable
         ;;
       --beta)
+        if [ -n "$EXPLICIT_CHANNEL" ] && [ "$EXPLICIT_CHANNEL" != beta ]; then
+          echo "cannot combine conflicting release channel selectors" >&2
+          exit 1
+        fi
         CHANNEL=beta
+        EXPLICIT_CHANNEL=beta
+        EXPECT_SELECTOR_FOR=beta
         ;;
       --git)
+        if [ -n "$EXPLICIT_CHANNEL" ] && [ "$EXPLICIT_CHANNEL" != git ]; then
+          echo "cannot combine conflicting release channel selectors" >&2
+          exit 1
+        fi
         CHANNEL=git
+        EXPLICIT_CHANNEL=git
+        EXPECT_SELECTOR_FOR=git
         ;;
       --branch)
+        EXPECT_SELECTOR_FOR=
         [ "$#" -ge 2 ] || { echo "missing value for --branch" >&2; exit 1; }
         BRANCH=$2
         shift
         ;;
       --version)
+        EXPECT_SELECTOR_FOR=
         [ "$#" -ge 2 ] || { echo "missing value for --version" >&2; exit 1; }
         VERSION=$2
         shift
@@ -174,13 +207,40 @@ parse_args() {
         exit 0
         ;;
       *)
-        echo "unknown argument: $1" >&2
-        usage >&2
-        exit 1
+        if [ -n "$EXPECT_SELECTOR_FOR" ] && [ -z "$FLAG_SELECTOR" ] && [ "${1#-}" = "$1" ]; then
+          FLAG_SELECTOR=$1
+          EXPECT_SELECTOR_FOR=
+        else
+          echo "unknown argument: $1" >&2
+          usage >&2
+          exit 1
+        fi
         ;;
     esac
     shift
   done
+
+  if [ -z "$BRANCH" ] && [ -z "$VERSION" ] && [ -n "$FLAG_SELECTOR" ]; then
+    case "$CHANNEL" in
+      beta)
+        case "$FLAG_SELECTOR" in
+          release/*) BRANCH=$FLAG_SELECTOR ;;
+          *) BRANCH="release/$FLAG_SELECTOR" ;;
+        esac
+        ;;
+      git)
+        if looks_like_git_ref "$FLAG_SELECTOR"; then
+          VERSION=$FLAG_SELECTOR
+        else
+          BRANCH=$FLAG_SELECTOR
+        fi
+        ;;
+      stable)
+        echo "stable does not support a flag selector" >&2
+        exit 1
+        ;;
+    esac
+  fi
 
   if [ -n "$BRANCH" ] && [ -n "$VERSION" ]; then
     echo "cannot combine --branch and --version" >&2

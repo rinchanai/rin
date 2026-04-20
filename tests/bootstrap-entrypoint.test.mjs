@@ -109,9 +109,31 @@ fi
   await writeExecutable(
     path.join(fakeBin, "node"),
     `#!/bin/sh
-echo "node:$PWD:RIN_INSTALL_MODE=\${RIN_INSTALL_MODE-}:RIN_RELEASE_CHANNEL=\${RIN_RELEASE_CHANNEL-}:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
+echo "node:$PWD:RIN_INSTALL_MODE=\${RIN_INSTALL_MODE-}:RIN_RELEASE_CHANNEL=\${RIN_RELEASE_CHANNEL-}:RIN_RELEASE_BRANCH=\${RIN_RELEASE_BRANCH-}:RIN_RELEASE_VERSION=\${RIN_RELEASE_VERSION-}:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
 if [ "$1" = "-" ]; then
-  cat <<'EOF'
+  case "$RIN_RELEASE_CHANNEL" in
+    beta)
+      cat <<'EOF'
+CHANNEL='beta'
+ARCHIVE_URL='https://example.invalid/releases/release-0.69.tar.gz'
+VERSION='0.69.0-beta.0'
+BRANCH='release/0.69'
+REF='release/0.69'
+SOURCE_LABEL='beta branch release/0.69'
+EOF
+      ;;
+    git)
+      cat <<'EOF'
+CHANNEL='git'
+ARCHIVE_URL='https://example.invalid/releases/main.tar.gz'
+VERSION='main'
+BRANCH='main'
+REF='main'
+SOURCE_LABEL='git branch main'
+EOF
+      ;;
+    *)
+      cat <<'EOF'
 CHANNEL='stable'
 ARCHIVE_URL='https://example.invalid/releases/stable-1.2.3.tar.gz'
 VERSION='1.2.3'
@@ -119,14 +141,16 @@ BRANCH='stable'
 REF='1.2.3'
 SOURCE_LABEL='stable 1.2.3'
 EOF
+      ;;
+  esac
 fi
 `,
   );
   await fs.writeFile(logPath, "", "utf8");
 }
 
-async function runBootstrapWrapper(scriptName, env) {
-  await execFileAsync("sh", [path.join(rootDir, scriptName)], {
+async function runBootstrapWrapper(scriptName, args, env) {
+  await execFileAsync("sh", [path.join(rootDir, scriptName), ...args], {
     cwd: rootDir,
     env,
   });
@@ -152,8 +176,8 @@ test("install and update wrappers resolve release metadata before fetching sourc
       RIN_BOOTSTRAP_TEST_LOG: logPath,
     };
 
-    await runBootstrapWrapper("install.sh", env);
-    await runBootstrapWrapper("update.sh", env);
+    await runBootstrapWrapper("install.sh", [], env);
+    await runBootstrapWrapper("update.sh", [], env);
 
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
@@ -168,13 +192,48 @@ test("install and update wrappers resolve release metadata before fetching sourc
     assert.match(log, /npm:.*:run build/);
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:dist\/app\/rin-install\/main\.js/,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:dist\/app\/rin-install\/main\.js/,
     );
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:dist\/app\/rin-install\/main\.js/,
+      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:dist\/app\/rin-install\/main\.js/,
     );
 
     assert.deepEqual(await fs.readdir(workRoot), []);
+  });
+});
+
+test("bootstrap wrappers forward optional selectors after beta and git flags", async () => {
+  await withTempDir(async (tempDir) => {
+    const archivePath = await createSourceArchive(tempDir);
+    const manifestPath = await createReleaseManifest(tempDir);
+    const fakeBin = path.join(tempDir, "bin");
+    const logPath = path.join(tempDir, "invocations.log");
+    const workRoot = path.join(tempDir, "work");
+    await createFakeBin(fakeBin, logPath);
+    await fs.mkdir(workRoot, { recursive: true });
+
+    const env = {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      RIN_INSTALL_REPO_URL: "https://example.invalid/rin",
+      RIN_INSTALL_TMPDIR: workRoot,
+      RIN_BOOTSTRAP_TEST_ARCHIVE: archivePath,
+      RIN_BOOTSTRAP_TEST_MANIFEST: manifestPath,
+      RIN_BOOTSTRAP_TEST_LOG: logPath,
+    };
+
+    await runBootstrapWrapper("install.sh", ["--beta", "0.69"], env);
+    await runBootstrapWrapper("update.sh", ["--git", "main"], env);
+
+    const log = await fs.readFile(logPath, "utf8");
+    assert.match(
+      log,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=beta:RIN_RELEASE_BRANCH=release\/0\.69:RIN_RELEASE_VERSION=0\.69\.0-beta\.0:dist\/app\/rin-install\/main\.js/,
+    );
+    assert.match(
+      log,
+      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=git:RIN_RELEASE_BRANCH=main:RIN_RELEASE_VERSION=main:dist\/app\/rin-install\/main\.js/,
+    );
   });
 });
