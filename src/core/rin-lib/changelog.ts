@@ -9,36 +9,55 @@ function existingPath(...parts: string[]) {
   return fs.existsSync(filePath) ? filePath : undefined;
 }
 
+function changelogPathCandidates(agentDir: string) {
+  const homeAgentDir = path.join(os.homedir(), ".rin");
+  return [
+    path.join(agentDir, "docs", "pi", "CHANGELOG.md"),
+    path.join(homeAgentDir, "docs", "pi", "CHANGELOG.md"),
+  ].filter((item, index, list) => list.indexOf(item) === index);
+}
+
 export function getChangelogPath() {
   const { agentDir } = resolveRuntimeProfile();
-  return (
-    existingPath(agentDir, "docs", "pi", "CHANGELOG.md") ||
-    existingPath(os.homedir(), ".rin", "docs", "pi", "CHANGELOG.md") ||
-    path.join(agentDir, "docs", "pi", "CHANGELOG.md")
-  );
+  const candidates = changelogPathCandidates(agentDir);
+  return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0];
+}
+
+function normalizeChangelogText(text: string) {
+  return String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+}
+
+function formatChangelogEntry(heading: string, lines: string[]) {
+  const normalizedHeading = String(heading || "").trim();
+  const body = lines.join("\n").trim();
+  if (!normalizedHeading || !body) return null;
+  return {
+    heading: normalizedHeading,
+    content: `## ${normalizedHeading}\n${body}`,
+  };
 }
 
 export function parseChangelog(changelogPath: string) {
   if (!fs.existsSync(changelogPath)) return [];
-  const text = fs.readFileSync(changelogPath, "utf8");
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const lines = normalizeChangelogText(fs.readFileSync(changelogPath, "utf8")).split(
+    "\n",
+  );
   const entries: Array<{ heading: string; content: string }> = [];
   let currentHeading = "";
-  let current: string[] = [];
+  let currentBody: string[] = [];
   const flush = () => {
-    const content = current.join("\n").trim();
-    if (content) entries.push({ heading: currentHeading, content });
-    current = [];
+    const entry = formatChangelogEntry(currentHeading, currentBody);
+    if (entry) entries.push(entry);
+    currentBody = [];
   };
   for (const line of lines) {
-    if (/^##\s+/.test(line)) {
+    if (/^##\s+\S/.test(line)) {
       flush();
       currentHeading = line.replace(/^##\s+/, "").trim();
-      current.push(line);
       continue;
     }
     if (!currentHeading) continue;
-    current.push(line);
+    currentBody.push(line);
   }
   flush();
   return entries;
