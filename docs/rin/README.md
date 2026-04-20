@@ -26,6 +26,7 @@ Rin docs sit above upstream pi docs for Rin-operated behavior.
 - `docs/capabilities.md`: compact agent-facing behavior and conventions for Rin features
 - `docs/release-trains.md`: stable, beta, git release-channel rules and bootstrap branch flow
 - `docs/releasing.md`: operator workflow for beta and stable releases
+- `docs/first-stable-release-checklist.md`: first public stable npm release readiness and verification checklist
 
 ## Reading order
 

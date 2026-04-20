@@ -24,6 +24,7 @@ Before the first real stable publish:
 2. confirm `package.json` metadata is acceptable for public npm publication
 3. confirm `release-manifest.json` still uses only a temporary placeholder stable archive until the first publish succeeds
 4. after the first successful stable publish, let the workflow rewrite the stable manifest entry to the npm tarball
+5. use `docs/first-stable-release-checklist.md` as the operational readiness and post-publish verification checklist
 
 ## Beta release
 

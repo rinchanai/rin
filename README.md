@@ -144,6 +144,7 @@ If you want more detail, start here:
 - [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
 - [`docs/rin/docs/release-trains.md`](docs/rin/docs/release-trains.md)
 - [`docs/rin/docs/releasing.md`](docs/rin/docs/releasing.md)
+- [`docs/rin/docs/first-stable-release-checklist.md`](docs/rin/docs/first-stable-release-checklist.md)
 - [`upstream/pi/README.md`](upstream/pi/README.md) for the tracked upstream Pi mirror used by Rin
 - [`upstream/skill-creator/SKILL.md`](upstream/skill-creator/SKILL.md) for the tracked upstream builtin skill mirror used by Rin
 
