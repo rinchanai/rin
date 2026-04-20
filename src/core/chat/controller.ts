@@ -1002,6 +1002,13 @@ export class ChatController {
       }
       await this.connect();
       if (!this.session) return;
+      const wantedSessionFile = this.getRecoverableSessionFile();
+      const currentSessionFile = safeString(
+        this.session.sessionManager?.getSessionFile?.() || "",
+      ).trim();
+      if (wantedSessionFile && currentSessionFile !== wantedSessionFile) {
+        await this.resumeSessionFile(wantedSessionFile);
+      }
       await this.refreshSessionMessages().catch(() => {});
       const messages = Array.isArray(this.session.messages)
         ? this.session.messages
@@ -1072,6 +1079,8 @@ export class ChatController {
           text: pending.text,
           attachments: pending.attachments,
           replyToMessageId: pending.replyToMessageId,
+          incomingMessageId: pending.incomingMessageId,
+          sessionFile: this.currentSessionFile() || wantedSessionFile || undefined,
         },
         "prompt",
       );

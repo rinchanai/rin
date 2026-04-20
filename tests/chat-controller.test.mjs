@@ -1367,6 +1367,110 @@ test("chat controller resumes interrupted chat turns through the shared final de
   ]);
 });
 
+test("chat controller rebinds the saved session before recovery history inspection", async () => {
+  const controller = await createController("telegram/1:2");
+  const calls = [];
+  const savedSessionFile = path.join(controller.dataDir, "recover-chat.jsonl");
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = savedSessionFile;
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "42",
+    incomingMessageId: "m-rebind-recover",
+  };
+  let currentSessionFile = "";
+  controller.collectFinalAssistantText = () => "final from rebound session";
+  controller.deliverAssistantReply = async function (input) {
+    calls.push(`deliver:${input.text}`);
+    if (input.clearProcessing) delete this.state.processing;
+  };
+  controller.refreshSessionMessages = async function () {
+    calls.push(`refresh:${currentSessionFile || "none"}`);
+    this.session.messages = [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "final from rebound session" }],
+      },
+    ];
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => currentSessionFile,
+      getSessionId: () => "session-rebind",
+      getSessionName: () => "telegram/1:2",
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(`switch:${sessionPath}`);
+      currentSessionFile = sessionPath;
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.deepEqual(calls, [
+    `switch:${savedSessionFile}`,
+    `refresh:${savedSessionFile}`,
+    "deliver:final from rebound session",
+  ]);
+});
+
+test("chat controller preserves incoming message and rebound session on recovery rerun", async () => {
+  const controller = await createController("telegram/1:2");
+  const savedSessionFile = path.join(controller.dataDir, "recover-rerun-chat.jsonl");
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = savedSessionFile;
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "42",
+    incomingMessageId: "m-recover-rerun",
+  };
+  let currentSessionFile = "";
+  let captured = null;
+  controller.pollTyping = async () => false;
+  controller.refreshSessionMessages = async function () {
+    this.session.messages = [
+      { role: "user", content: [{ type: "text", text: "different" }] },
+    ];
+  };
+  controller.runTurnNow = async function (input, mode) {
+    captured = { input, mode };
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => currentSessionFile,
+      getSessionId: () => "session-rerun",
+      getSessionName: () => "telegram/1:2",
+    },
+    switchSession: async (sessionPath) => {
+      currentSessionFile = sessionPath;
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.deepEqual(captured, {
+    input: {
+      text: "hello",
+      attachments: [],
+      replyToMessageId: "42",
+      incomingMessageId: "m-recover-rerun",
+      sessionFile: savedSessionFile,
+    },
+    mode: "prompt",
+  });
+});
+
 test("chat controller retries persisted final reply delivery on recovery", async () => {
   const controller = await createController("telegram/1:2");
   const sends = [];
