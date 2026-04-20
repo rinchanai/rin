@@ -285,7 +285,7 @@ const taskSchema = Type.Object({
       sessionFile: Type.Optional(
         Type.String({
           description:
-            "Optional session path override. When mode=current, bind to that current session. When mode=dedicated, tasks are read-and-burn by default; provide this only to seed or resume a persistent dedicated session explicitly.",
+            "Optional session path override. When mode=current, bind to that current session. When mode=dedicated, the first run creates a dedicated session automatically and later runs reuse it; provide this to seed or override that persistent dedicated session explicitly.",
         }),
       ),
     }),

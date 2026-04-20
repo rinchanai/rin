@@ -26,7 +26,7 @@ function getTaskTool(name) {
   return tool;
 }
 
-test("save_task exposes in-place update id and dedicated default read-and-burn semantics", () => {
+test("save_task exposes in-place update id and dedicated auto-reuse semantics", () => {
   const saveTool = getTaskTool("save_task");
   assert.equal(saveTool.parameters.properties.id.type, "string");
   assert.equal(
@@ -37,13 +37,13 @@ test("save_task exposes in-place update id and dedicated default read-and-burn s
     String(
       saveTool.parameters.properties.session.properties.sessionFile.description || "",
     ),
-    /read-and-burn by default/,
+    /first run creates a dedicated session automatically/,
   );
   assert.match(
     String(
       saveTool.parameters.properties.session.properties.sessionFile.description || "",
     ),
-    /seed or resume a persistent dedicated session explicitly/,
+    /later runs reuse it/,
   );
 });
 

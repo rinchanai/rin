@@ -85,7 +85,7 @@ test("cron scheduler can seed and preserve dedicated session files", async () =>
   }
 });
 
-test("cron scheduler drops unmarked dedicated session files on load", async () => {
+test("cron scheduler preserves dedicated session files on load", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
   const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
   await fs.mkdir(path.dirname(tasksFile), { recursive: true });
@@ -115,35 +115,27 @@ test("cron scheduler drops unmarked dedicated session files on load", async () =
     scheduler.start();
     const task = scheduler.getTask("cron_legacy_dedicated");
     assert.ok(task);
-    assert.equal(task.dedicatedSessionPersistent, undefined);
-    assert.equal(task.dedicatedSessionFile, undefined);
+    assert.equal(task.dedicatedSessionPersistent, true);
+    assert.equal(task.dedicatedSessionFile, "/tmp/legacy-dedicated.jsonl");
   } finally {
     scheduler.stop();
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
 
-test("cron dedicated agent task defaults to read-and-burn sessions", async () => {
+test("cron dedicated agent task creates and then preserves its bound session", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
-  const ephemeralSessionFile = path.join(agentDir, "ephemeral-session.jsonl");
-  const controllerStateDir = path.join(
-    agentDir,
-    "data",
-    "cron-turns",
-    "cron_ephemeral:run-1",
-  );
-  await fs.mkdir(controllerStateDir, { recursive: true });
-  await fs.writeFile(ephemeralSessionFile, "demo\n");
-  await fs.writeFile(path.join(controllerStateDir, "state.json"), "{}\n");
+  const firstSessionFile = path.join(agentDir, "dedicated-session.jsonl");
+  const secondSessionFile = path.join(agentDir, "dedicated-session-next.jsonl");
   const task = {
-    id: "cron_ephemeral",
+    id: "cron_dedicated",
     chatKey: "telegram/demo:1",
     session: { mode: "dedicated" },
     target: { kind: "agent_prompt", prompt: "hello" },
   };
   const calls = [];
   try {
-    const result = await execMod.executeCronAgentTask(task, {
+    const first = await execMod.executeCronAgentTask(task, {
       agentDir,
       runId: "run-1",
       chat: {
@@ -152,27 +144,53 @@ test("cron dedicated agent task defaults to read-and-burn sessions", async () =>
           return {
             finalText: "done",
             sessionId: "s1",
-            sessionFile: ephemeralSessionFile,
+            sessionFile: firstSessionFile,
           };
         },
       },
     });
-    assert.equal(result.text, "done");
-    assert.equal(result.sessionFile, undefined);
-    assert.equal(task.dedicatedSessionFile, undefined);
+    assert.equal(first.text, "done");
+    assert.equal(first.sessionFile, firstSessionFile);
+    assert.equal(task.dedicatedSessionFile, firstSessionFile);
+    assert.equal(task.dedicatedSessionPersistent, true);
+
+    const second = await execMod.executeCronAgentTask(task, {
+      agentDir,
+      runId: "run-2",
+      chat: {
+        runTurn: async (payload) => {
+          calls.push(payload);
+          return {
+            finalText: "done again",
+            sessionId: "s1",
+            sessionFile: secondSessionFile,
+          };
+        },
+      },
+    });
+    assert.equal(second.text, "done again");
+    assert.equal(second.sessionFile, secondSessionFile);
+    assert.equal(task.dedicatedSessionFile, secondSessionFile);
     assert.deepEqual(calls, [
       {
         chatKey: "telegram/demo:1",
-        controllerKey: "cron_ephemeral:run-1",
+        controllerKey: "cron_dedicated",
         deliveryEnabled: false,
         affectChatBinding: false,
-        disposeAfterTurn: true,
+        disposeAfterTurn: false,
         text: "hello",
         sessionFile: undefined,
       },
+      {
+        chatKey: "telegram/demo:1",
+        controllerKey: "cron_dedicated",
+        deliveryEnabled: false,
+        affectChatBinding: false,
+        disposeAfterTurn: false,
+        text: "hello",
+        sessionFile: firstSessionFile,
+      },
     ]);
-    assert.equal(await fs.stat(ephemeralSessionFile).catch(() => null), null);
-    assert.equal(await fs.stat(controllerStateDir).catch(() => null), null);
   } finally {
     await fs.rm(agentDir, { recursive: true, force: true });
   }
@@ -245,7 +263,8 @@ test("cron agent task falls back to canonical turn result text", async () => {
       },
     });
     assert.equal(result.text, "done from result");
-    assert.equal(task.dedicatedSessionFile, undefined);
+    assert.equal(result.sessionFile, "/tmp/cron-result-fallback.jsonl");
+    assert.equal(task.dedicatedSessionFile, "/tmp/cron-result-fallback.jsonl");
   } finally {
     await fs.rm(agentDir, { recursive: true, force: true });
   }
