@@ -3,6 +3,7 @@ import path from "node:path";
 
 import prettyMilliseconds from "pretty-ms";
 
+import { canConnectDaemonSocket } from "../rin-daemon/client.js";
 import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 import { RpcInteractiveSession } from "../rin-tui/runtime.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
@@ -34,6 +35,25 @@ const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
 const WORKING_REACTION_FRAME_INTERVAL_MS = 30_000;
 const INTERIM_PREFIX = "··· ";
+const CHAT_DAEMON_CONNECT_WAIT_MS = 6_000;
+const CHAT_DAEMON_CONNECT_POLL_MS = 150;
+
+export async function waitForChatDaemonSocket(
+  socketPath?: string,
+  timeoutMs = CHAT_DAEMON_CONNECT_WAIT_MS,
+  pollMs = CHAT_DAEMON_CONNECT_POLL_MS,
+) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < Math.max(0, Number(timeoutMs || 0))) {
+    if (await canConnectDaemonSocket(socketPath, Math.min(500, pollMs))) {
+      return true;
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(25, Number(pollMs || 0) || 150)),
+    );
+  }
+  return await canConnectDaemonSocket(socketPath, Math.min(500, pollMs));
+}
 
 function commandNameFromCommandLine(commandLine: string) {
   const trimmed = safeString(commandLine).trim();
@@ -115,6 +135,7 @@ export class ChatController {
     if (this.session && this.client) return;
     const client = new RinDaemonFrontendClient();
     const session = new RpcInteractiveSession(client);
+    await waitForChatDaemonSocket(client.socketPath).catch(() => false);
     await session.connect();
     this.client = client;
     this.session = session;

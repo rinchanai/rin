@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import net from "node:net";
 import { pathToFileURL } from "node:url";
 
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
 );
-const { ChatController } = await import(
+const { ChatController, waitForChatDaemonSocket } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js"))
     .href
 );
@@ -53,6 +54,49 @@ async function createController(chatKey = "telegram/1:2") {
   controller.saveState = () => {};
   return controller;
 }
+
+test("chat controller waits for a late daemon socket during startup races", async () => {
+  const runtimeDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-controller-socket-"),
+  );
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  await fs.mkdir(socketDir, { recursive: true });
+
+  const server = net.createServer();
+  const listenLater = new Promise((resolve, reject) => {
+    server.once("error", reject);
+    setTimeout(() => {
+      server.listen(socketPath, () => resolve());
+    }, 200);
+  });
+
+  try {
+    assert.equal(
+      await waitForChatDaemonSocket(socketPath, 2000, 50),
+      true,
+    );
+    await listenLater;
+  } finally {
+    await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test("chat controller times out cleanly when the daemon socket never appears", async () => {
+  const runtimeDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-controller-socket-"),
+  );
+  const socketPath = path.join(runtimeDir, "rin-daemon", "daemon.sock");
+  try {
+    assert.equal(
+      await waitForChatDaemonSocket(socketPath, 150, 50),
+      false,
+    );
+  } finally {
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
 
 function emitRpcTurnComplete(controller, options, finalText, result) {
   controller.handleClientEvent({
