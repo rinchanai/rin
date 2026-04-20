@@ -21,6 +21,13 @@ As an agent, prefer this decision order when the user asks you to upgrade Rin:
 4. then invoke the stable installed runtime entry directly:
    - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
 
+Release-channel default:
+
+- plain `rin update` targets the stable release channel
+- use `rin update --beta` or `rin update --git` only when the user explicitly wants a non-stable channel
+- beta also supports `--branch <release/x.y>` or `--version <x.y.z-beta.n>`
+- git also supports `--branch <name>` or `--version <tag-or-commit>`
+
 When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
 Prefer install recovery through the target manifest or managed service files.
 If those are unavailable but you are clearly operating as the launcher-owning account, the current account's launcher metadata is a valid last fallback for recovering `targetUser` and `installDir`.

@@ -24,6 +24,8 @@ Rin docs sit above upstream pi docs for Rin-operated behavior.
 - `docs/runtime-layout.md`: runtime layout, stable paths, launcher ownership, and which paths are safe to reference
 - `docs/builtin-extensions.md`: builtin capabilities and default extra capabilities provided by Rin core
 - `docs/capabilities.md`: compact agent-facing behavior and conventions for Rin features
+- `docs/release-trains.md`: stable, beta, git release-channel rules and bootstrap branch flow
+- `docs/releasing.md`: operator workflow for beta and stable releases
 
 ## Reading order
 

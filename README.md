@@ -37,7 +37,11 @@ If you want an assistant that stays useful over time, Rin is designed for that.
 Install:
 
 ```bash
-./install.sh
+./install.sh                # stable release (default)
+./install.sh --beta        # explicit beta channel
+./install.sh --git         # explicit git channel
+./install.sh --beta --branch release/0.69
+./install.sh --git --version <tag-or-commit>
 ```
 
 Then open Rin:
@@ -84,7 +88,11 @@ rin update     # update the installed Rin core runtime
 For a normal installed Rin update, use:
 
 ```bash
-rin update
+rin update                 # stable release (default)
+rin update --beta          # explicit beta channel
+rin update --git           # explicit git channel
+rin update --beta --branch release/0.69
+rin update --git --version <tag-or-commit>
 ```
 
 If `rin` is confirmed missing on the current account, treat that as “this is not the launcher-owning user”.
@@ -103,6 +111,10 @@ node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>
 This is the canonical update path for the installed runtime.
 It refreshes the core runtime and installed docs.
 It does not replace the user-scoped CLI launcher or installer.
+
+Important release-channel rule:
+- stable is the default for install and update
+- beta and git must be requested explicitly
 
 Avoid treating repo-local workflows like `git pull`, ad-hoc rebuilds, or rerunning `install.sh` as the default way to update an already installed Rin.
 
@@ -130,6 +142,8 @@ If you want more detail, start here:
 - [`docs/rin/docs/capabilities.md`](docs/rin/docs/capabilities.md)
 - [`docs/rin/docs/runtime-layout.md`](docs/rin/docs/runtime-layout.md)
 - [`docs/rin/docs/builtin-extensions.md`](docs/rin/docs/builtin-extensions.md)
+- [`docs/rin/docs/release-trains.md`](docs/rin/docs/release-trains.md)
+- [`docs/rin/docs/releasing.md`](docs/rin/docs/releasing.md)
 - [`upstream/pi/README.md`](upstream/pi/README.md) for the tracked upstream Pi mirror used by Rin
 - [`upstream/skill-creator/SKILL.md`](upstream/skill-creator/SKILL.md) for the tracked upstream builtin skill mirror used by Rin
 
