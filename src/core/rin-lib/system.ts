@@ -5,6 +5,29 @@ import { execFileSync } from "node:child_process";
 
 import { defaultDaemonSocketPath } from "./common.js";
 
+function normalizeUserName(value: unknown) {
+  return String(value || "").trim();
+}
+
+function defaultHomeForUser(targetUser: string) {
+  return path.join(process.platform === "darwin" ? "/Users" : "/home", targetUser);
+}
+
+function readUnixUserId(targetUser: string) {
+  const normalizedTargetUser = normalizeUserName(targetUser);
+  if (!normalizedTargetUser || process.platform === "darwin") return -1;
+  try {
+    return Number(
+      execFileSync("id", ["-u", normalizedTargetUser], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim() || "-1",
+    );
+  } catch {
+    return -1;
+  }
+}
+
 export function shellQuote(value: string) {
   return `'${String(value).replace(/'/g, `"'"'`)}'`;
 }
@@ -29,11 +52,20 @@ export function pickPrivilegeCommand() {
 }
 
 export function readPasswdUser(name: string) {
+  const normalizedName = normalizeUserName(name);
+  if (!normalizedName) return null;
+
   if (process.platform === "darwin") {
     try {
       const detail = execFileSync(
         "dscl",
-        [".", "-read", `/Users/${name}`, "NFSHomeDirectory", "UserShell"],
+        [
+          ".",
+          "-read",
+          `/Users/${normalizedName}`,
+          "NFSHomeDirectory",
+          "UserShell",
+        ],
         { encoding: "utf8" },
       );
       let home = "";
@@ -44,7 +76,7 @@ export function readPasswdUser(name: string) {
         if (line.startsWith("UserShell:"))
           shell = line.replace(/^UserShell:\s*/, "").trim();
       }
-      return { name, home, shell };
+      return { name: normalizedName, home, shell };
     } catch {}
     return null;
   }
@@ -53,7 +85,7 @@ export function readPasswdUser(name: string) {
     const raw = fs.readFileSync("/etc/passwd", "utf8");
     for (const line of raw.split(/\r?\n/)) {
       const [user = "", , , , , home = "", shell = ""] = line.split(":");
-      if (user !== name) continue;
+      if (user !== normalizedName) continue;
       return { name: user, home, shell };
     }
   } catch {}
@@ -61,30 +93,30 @@ export function readPasswdUser(name: string) {
 }
 
 export function homeForUser(targetUser: string) {
-  const target = readPasswdUser(targetUser);
-  return (
-    target?.home ||
-    path.join(process.platform === "darwin" ? "/Users" : "/home", targetUser)
-  );
+  const normalizedTargetUser = normalizeUserName(targetUser);
+  const target = readPasswdUser(normalizedTargetUser);
+  return target?.home || defaultHomeForUser(normalizedTargetUser);
 }
 
 export function socketPathForUser(targetUser: string) {
-  const currentUser = os.userInfo().username;
-  if (!targetUser || targetUser === currentUser)
+  const normalizedTargetUser = normalizeUserName(targetUser);
+  const currentUser = normalizeUserName(os.userInfo().username);
+  if (!normalizedTargetUser || normalizedTargetUser === currentUser) {
     return defaultDaemonSocketPath();
-  if (process.platform === "darwin")
+  }
+  if (process.platform === "darwin") {
     return path.join(
-      homeForUser(targetUser),
+      homeForUser(normalizedTargetUser),
       "Library",
       "Caches",
       "rin-daemon",
       "daemon.sock",
     );
-  const uid = Number(
-    execFileSync("id", ["-u", targetUser], { encoding: "utf8" }).trim() || "-1",
-  );
-  if (uid >= 0)
+  }
+  const uid = readUnixUserId(normalizedTargetUser);
+  if (uid >= 0) {
     return path.join("/run/user", String(uid), "rin-daemon", "daemon.sock");
+  }
   return defaultDaemonSocketPath();
 }
 
@@ -92,16 +124,7 @@ export function targetUserRuntimeEnv(
   targetUser: string,
   env: Record<string, string> = {},
 ) {
-  const target = readPasswdUser(targetUser);
-  const uid =
-    typeof process.platform === "string" &&
-    process.platform !== "darwin" &&
-    target?.name
-      ? Number(
-          execFileSync("id", ["-u", targetUser], { encoding: "utf8" }).trim() ||
-            "-1",
-        )
-      : -1;
+  const uid = readUnixUserId(targetUser);
   const runtimeDir = uid >= 0 ? `/run/user/${uid}` : "";
   const busPath = runtimeDir ? path.join(runtimeDir, "bus") : "";
   return {
@@ -130,8 +153,9 @@ export function buildUserShell(
   argv: string[],
   env: Record<string, string> = {},
 ) {
-  const currentUser = os.userInfo().username;
-  if (!targetUser || targetUser === currentUser) {
+  const normalizedTargetUser = normalizeUserName(targetUser);
+  const currentUser = normalizeUserName(os.userInfo().username);
+  if (!normalizedTargetUser || normalizedTargetUser === currentUser) {
     return {
       command: argv[0],
       args: argv.slice(1),
@@ -139,12 +163,10 @@ export function buildUserShell(
     };
   }
 
-  const target = readPasswdUser(targetUser);
-  if (!target) throw new Error(`target_user_not_found:${targetUser}`);
+  const target = readPasswdUser(normalizedTargetUser);
+  if (!target) throw new Error(`target_user_not_found:${normalizedTargetUser}`);
 
-  const targetHome =
-    target.home ||
-    `${process.platform === "darwin" ? "/Users" : "/home"}/${targetUser}`;
+  const targetHome = target.home || defaultHomeForUser(normalizedTargetUser);
   const mergedEnv = { ...process.env, HOME: targetHome, ...env };
   const envArgs = Object.entries(env).map(([key, value]) => `${key}=${value}`);
 
@@ -157,7 +179,7 @@ export function buildUserShell(
   ) {
     return {
       command: "/usr/sbin/runuser",
-      args: ["-u", targetUser, "--", "env", ...envArgs, ...argv],
+      args: ["-u", normalizedTargetUser, "--", "env", ...envArgs, ...argv],
       env: mergedEnv,
     };
   }
@@ -166,7 +188,7 @@ export function buildUserShell(
   if (privilegeCommand.endsWith("doas") || privilegeCommand.endsWith("sudo")) {
     return {
       command: privilegeCommand,
-      args: ["-u", targetUser, "env", ...envArgs, ...argv],
+      args: ["-u", normalizedTargetUser, "env", ...envArgs, ...argv],
       env: mergedEnv,
     };
   }
