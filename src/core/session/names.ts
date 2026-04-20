@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { normalizeSessionValue } from "./ref.js";
+import {
+  extractMessageText,
+  normalizeMessageText,
+} from "../message-content.js";
 import { safeString } from "../text-utils.js";
 
 export const DEFAULT_SESSION_NAME_DETAIL_MAX = 180;
@@ -53,17 +57,8 @@ export function resolveSessionDisplayName(
 }
 
 function normalizeFirstUserMessageContent(content: unknown): string {
-  if (typeof content === "string") {
-    return normalizeSessionNameDetail(content, DEFAULT_FIRST_USER_MESSAGE_MAX);
-  }
-  if (!Array.isArray(content)) return "";
   return normalizeSessionNameDetail(
-    content
-      .filter(
-        (part) => part && typeof part === "object" && part.type === "text",
-      )
-      .map((part) => safeString((part as any).text))
-      .join(" "),
+    normalizeMessageText(extractMessageText(content)),
     DEFAULT_FIRST_USER_MESSAGE_MAX,
   );
 }

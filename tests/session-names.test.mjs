@@ -83,7 +83,7 @@ test("readSessionDisplayNameParts handles chunk-spanning lines without a trailin
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
 
-test("readSessionDisplayNameParts extracts first user text from structured content", async () => {
+test("readSessionDisplayNameParts extracts first user text from structured rich content", async () => {
   const sessionDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "rin-session-names-"),
   );
@@ -100,9 +100,14 @@ test("readSessionDisplayNameParts extracts first user text from structured conte
         message: {
           role: "user",
           content: [
+            { type: "thinking", thinking: "hidden plan" },
             { type: "image", image_url: "https://example.com/demo.png" },
-            { type: "text", text: "  First" },
-            { type: "text", text: "question  " },
+            { type: "text", attrs: { content: "  First" } },
+            { type: "br" },
+            {
+              type: "paragraph",
+              children: [{ type: "text", text: "question  " }],
+            },
           ],
         },
       }),
@@ -119,6 +124,41 @@ test("readSessionDisplayNameParts extracts first user text from structured conte
     names.readFirstUserMessageFromSessionFile(sessionFile),
     "First question",
   );
+
+  await fs.rm(sessionDir, { recursive: true, force: true });
+});
+
+test("readSessionDisplayNameParts handles object-shaped rich message content", async () => {
+  const sessionDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-session-names-"),
+  );
+  const sessionFile = path.join(sessionDir, "object-rich-content.jsonl");
+  await fs.writeFile(
+    sessionFile,
+    [
+      JSON.stringify({
+        type: "message",
+        message: {
+          role: "user",
+          content: {
+            type: "paragraph",
+            children: [
+              { type: "text", attrs: { content: "  Solo" } },
+              { type: "br" },
+              { type: "text", text: "message  " },
+            ],
+          },
+        },
+      }),
+      JSON.stringify({ type: "session_info", name: "Object title" }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(names.readSessionDisplayNameParts(sessionFile), {
+    currentName: "Object title",
+    firstUserMessage: "Solo message",
+  });
 
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
