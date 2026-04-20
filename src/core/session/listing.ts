@@ -30,17 +30,23 @@ type BoundSessionSource = {
   subtitle?: unknown;
 };
 
+type NormalizedBoundSessionDetails = {
+  item: BoundSessionListItem;
+  source?: BoundSessionSource;
+  resolvedPath: string;
+};
+
 function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      typeof (value as BoundSessionListItem).id === "string" &&
-      typeof (value as BoundSessionListItem).path === "string" &&
-      ((value as BoundSessionListItem).name === undefined ||
-        typeof (value as BoundSessionListItem).name === "string") &&
-      typeof (value as BoundSessionListItem).firstMessage === "string" &&
-      (value as BoundSessionListItem).modified instanceof Date &&
-      Number.isFinite((value as BoundSessionListItem).modified.getTime()),
+    typeof value === "object" &&
+    typeof (value as BoundSessionListItem).id === "string" &&
+    typeof (value as BoundSessionListItem).path === "string" &&
+    ((value as BoundSessionListItem).name === undefined ||
+      typeof (value as BoundSessionListItem).name === "string") &&
+    typeof (value as BoundSessionListItem).firstMessage === "string" &&
+    (value as BoundSessionListItem).modified instanceof Date &&
+    Number.isFinite((value as BoundSessionListItem).modified.getTime()),
   );
 }
 
@@ -68,7 +74,16 @@ function resolveNormalizedSessionPath(sessionPath: string): string {
   return path.resolve(sessionPath);
 }
 
-function resolveBoundSessionModified(session: BoundSessionSource | undefined): Date {
+function resolveActiveSessionPath(activePath?: string): string | undefined {
+  const normalizedActivePath = normalizeSessionValue(activePath);
+  return normalizedActivePath
+    ? resolveNormalizedSessionPath(normalizedActivePath)
+    : undefined;
+}
+
+function resolveBoundSessionModified(
+  session: BoundSessionSource | undefined,
+): Date {
   return (
     normalizeSessionDate(session?.modified) ||
     normalizeSessionDate(session?.subtitle) ||
@@ -102,26 +117,77 @@ function resolveBoundSessionDisplayTitle(
   );
 }
 
+function normalizeBoundSessionDetails(
+  session: unknown,
+): NormalizedBoundSessionDetails | null {
+  if (isBoundSessionListItem(session)) {
+    return {
+      item: session,
+      source: getBoundSessionSource(session),
+      resolvedPath: resolveNormalizedSessionPath(session.path),
+    };
+  }
+
+  const source = getBoundSessionSource(session);
+  const sessionPath = normalizeSessionText(source?.path, source?.id);
+  if (!sessionPath) return null;
+
+  const item = {
+    id: normalizeSessionText(source?.id, sessionPath),
+    path: sessionPath,
+    name: normalizeSessionValue(source?.name),
+    firstMessage: normalizeSessionText(
+      source?.firstMessage,
+      source?.title,
+      sessionPath,
+    ),
+    modified: resolveBoundSessionModified(source),
+  } satisfies BoundSessionListItem;
+
+  return {
+    item,
+    source,
+    resolvedPath: resolveNormalizedSessionPath(item.path),
+  };
+}
+
+function normalizeBoundSessionDetailsList(
+  sessions: unknown,
+): NormalizedBoundSessionDetails[] {
+  const seen = new Set<string>();
+  return (Array.isArray(sessions) ? sessions : [])
+    .map(normalizeBoundSessionDetails)
+    .filter((details): details is NormalizedBoundSessionDetails =>
+      Boolean(details),
+    )
+    .filter((details) => {
+      if (seen.has(details.resolvedPath)) return false;
+      seen.add(details.resolvedPath);
+      return true;
+    })
+    .sort(
+      (left, right) =>
+        right.item.modified.getTime() - left.item.modified.getTime(),
+    );
+}
+
 function isNormalizedBoundSessionActive(
-  session: BoundSessionListItem,
+  session: NormalizedBoundSessionDetails,
   normalizedActivePath?: string,
 ): boolean {
   return Boolean(
-    normalizedActivePath &&
-      resolveNormalizedSessionPath(session.path) ===
-        resolveNormalizedSessionPath(normalizedActivePath),
+    normalizedActivePath && session.resolvedPath === normalizedActivePath,
   );
 }
 
 function describeNormalizedBoundSession(
-  session: BoundSessionListItem,
-  activePath?: string,
-  subtitle = session.modified.toISOString(),
+  session: NormalizedBoundSessionDetails,
+  normalizedActivePath?: string,
+  subtitle = resolveBoundSessionSubtitle(session.source, session.item),
 ): BoundSessionListPresentation {
-  const normalizedActivePath = normalizeSessionValue(activePath);
   return {
-    ...session,
-    title: resolveBoundSessionDisplayTitle(session),
+    ...session.item,
+    title: resolveBoundSessionDisplayTitle(session.item),
     subtitle,
     isActive: isNormalizedBoundSessionActive(session, normalizedActivePath),
   };
@@ -130,44 +196,24 @@ function describeNormalizedBoundSession(
 export function normalizeBoundSessionListItem(
   session: unknown,
 ): BoundSessionListItem | null {
-  if (isBoundSessionListItem(session)) return session;
-  const source = getBoundSessionSource(session);
-  const sessionPath = normalizeSessionText(source?.path, source?.id);
-  if (!sessionPath) return null;
-  const id = normalizeSessionText(source?.id, sessionPath);
-  return {
-    id,
-    path: sessionPath,
-    name: normalizeSessionValue(source?.name),
-    firstMessage: normalizeSessionText(source?.firstMessage, source?.title, id),
-    modified: resolveBoundSessionModified(source),
-  };
+  return normalizeBoundSessionDetails(session)?.item || null;
 }
 
-export function normalizeBoundSessionList(sessions: unknown): BoundSessionListItem[] {
-  const seen = new Set<string>();
-  return (Array.isArray(sessions) ? sessions : [])
-    .map(normalizeBoundSessionListItem)
-    .filter((item): item is BoundSessionListItem => Boolean(item))
-    .filter((item) => {
-      const resolvedPath = resolveNormalizedSessionPath(item.path);
-      if (seen.has(resolvedPath)) return false;
-      seen.add(resolvedPath);
-      return true;
-    })
-    .sort((a, b) => b.modified.getTime() - a.modified.getTime());
+export function normalizeBoundSessionList(
+  sessions: unknown,
+): BoundSessionListItem[] {
+  return normalizeBoundSessionDetailsList(sessions).map(({ item }) => item);
 }
 
 export function describeBoundSession(
   session: unknown,
   activePath?: string,
 ): BoundSessionListPresentation | null {
-  const normalized = normalizeBoundSessionListItem(session);
+  const normalized = normalizeBoundSessionDetails(session);
   if (!normalized) return null;
   return describeNormalizedBoundSession(
     normalized,
-    activePath,
-    resolveBoundSessionSubtitle(getBoundSessionSource(session), normalized),
+    resolveActiveSessionPath(activePath),
   );
 }
 
@@ -175,24 +221,34 @@ export function describeBoundSessions(
   sessions: unknown,
   activePath?: string,
 ): BoundSessionListPresentation[] {
-  return normalizeBoundSessionList(sessions).map((session) =>
-    describeNormalizedBoundSession(session, activePath),
+  const normalizedActivePath = resolveActiveSessionPath(activePath);
+  return normalizeBoundSessionDetailsList(sessions).map((session) =>
+    describeNormalizedBoundSession(session, normalizedActivePath),
   );
 }
 
 export function getBoundSessionDisplayTitle(session: unknown): string {
   return resolveBoundSessionDisplayTitle(
-    normalizeBoundSessionListItem(session),
+    normalizeBoundSessionDetails(session)?.item,
   );
 }
 
 export function getBoundSessionSubtitle(session: unknown): string | undefined {
-  return describeBoundSession(session)?.subtitle;
+  const normalized = normalizeBoundSessionDetails(session);
+  return normalized
+    ? resolveBoundSessionSubtitle(normalized.source, normalized.item)
+    : undefined;
 }
 
 export function isActiveBoundSession(
   session: unknown,
   activePath?: string,
 ): boolean {
-  return describeBoundSession(session, activePath)?.isActive || false;
+  const normalized = normalizeBoundSessionDetails(session);
+  return normalized
+    ? isNormalizedBoundSessionActive(
+        normalized,
+        resolveActiveSessionPath(activePath),
+      )
+    : false;
 }

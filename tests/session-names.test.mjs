@@ -231,5 +231,9 @@ test("session display helpers keep name fallback rules consistent", () => {
     }),
     "/tmp/demo.jsonl",
   );
+  assert.equal(
+    listing.getBoundSessionDisplayTitle({ id: " legacy-session " }),
+    "legacy-session",
+  );
   assert.equal(listing.getBoundSessionDisplayTitle({}), "Untitled session");
 });
