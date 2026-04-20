@@ -31,11 +31,13 @@ test("rpc state utils derive branch and apply state", () => {
   stateUtils.applyRpcSessionState(target, {
     sessionId: " s0 ",
     sessionFile: " /tmp/old ",
+    sessionName: " demo session ",
     model: { provider: "anthropic", id: "claude-sonnet-4-5" },
     thinkingLevel: "medium",
     steeringMode: "one-at-a-time",
     followUpMode: "all",
     autoCompactionEnabled: true,
+    pendingMessageCount: "2.9",
     isStreaming: false,
   });
   assert.equal(target.sessionId, "s0");
@@ -45,6 +47,8 @@ test("rpc state utils derive branch and apply state", () => {
   assert.equal(target.steeringMode, "one-at-a-time");
   assert.equal(target.followUpMode, "all");
   assert.equal(target.autoCompactionEnabled, true);
+  assert.equal(target.pendingMessageCount, 2);
+  assert.equal(target.sessionName, "demo session");
 
   stateUtils.applyRpcSessionState(target, {
     sessionId: " s1 ",
@@ -99,6 +103,81 @@ test("rpc state utils derive branch and apply state", () => {
   const branch = stateUtils.getSessionBranch(entryById, "2");
   assert.deepEqual(
     branch.map((x) => x.id),
+    ["1", "2"],
+  );
+});
+
+test("rpc state utils normalize session tree snapshots", () => {
+  const target = {
+    entries: [],
+    tree: [],
+    leafId: null,
+    entryById: new Map(),
+    labelsById: new Map(),
+  };
+
+  stateUtils.applyRpcSessionTree(
+    target,
+    {
+      entries: [
+        { id: " 1 ", type: "message" },
+        { id: " ", type: "message" },
+        { id: "2", parentId: " 1 ", type: "message" },
+      ],
+    },
+    {
+      tree: [
+        {
+          entry: { id: " 1 " },
+          label: "Root",
+          children: [
+            {
+              entry: { id: "2" },
+              label: "Child",
+              children: [{ entry: { id: "missing" }, label: "skip" }],
+            },
+            { entry: { id: " " }, label: "skip" },
+          ],
+        },
+        { entry: { id: "missing" }, label: "skip" },
+      ],
+      leafId: " 2 ",
+    },
+  );
+
+  assert.deepEqual(
+    target.entries.map((entry) => ({ id: entry.id, parentId: entry.parentId })),
+    [
+      { id: "1", parentId: undefined },
+      { id: "2", parentId: "1" },
+    ],
+  );
+  assert.equal(target.tree.length, 1);
+  assert.equal(target.tree[0].entry, target.entryById.get("1"));
+  assert.equal(target.tree[0].children[0].entry, target.entryById.get("2"));
+  assert.deepEqual(Array.from(target.labelsById.entries()), [
+    ["1", "Root"],
+    ["2", "Child"],
+  ]);
+  assert.equal(target.leafId, "2");
+
+  stateUtils.applyRpcSessionTree(
+    target,
+    { entries: [{ id: "3", type: "message" }] },
+    { tree: [{ entry: { id: "3" }, children: [] }], leafId: "missing" },
+  );
+  assert.equal(target.leafId, null);
+});
+
+test("rpc state utils stop branch traversal on parent cycles", () => {
+  const entryById = new Map([
+    ["1", { id: "1", parentId: "2" }],
+    ["2", { id: "2", parentId: "1" }],
+  ]);
+
+  const branch = stateUtils.getSessionBranch(entryById, "2");
+  assert.deepEqual(
+    branch.map((entry) => entry.id),
     ["1", "2"],
   );
 });

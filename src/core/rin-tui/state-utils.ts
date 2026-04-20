@@ -2,6 +2,61 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 import { normalizeSessionRef } from "../session/ref.js";
 
+function normalizeRpcText(value: unknown) {
+  const text = String(value ?? "").trim();
+  return text || undefined;
+}
+
+function normalizePendingMessageCount(value: unknown) {
+  const count = Number(value);
+  if (!Number.isFinite(count)) return 0;
+  return Math.max(0, Math.trunc(count));
+}
+
+function normalizeRpcEntries(entries: any[]) {
+  return entries.flatMap((entry: any) => {
+    const id = normalizeRpcText(entry?.id);
+    if (!id) return [];
+    const parentId = normalizeRpcText(entry?.parentId);
+    const { parentId: _ignoredParentId, ...rest } = entry ?? {};
+    return [
+      {
+        ...rest,
+        id,
+        ...(parentId ? { parentId } : {}),
+      },
+    ];
+  });
+}
+
+function normalizeRpcTree(
+  nodes: any[],
+  entryById: Map<string, any>,
+  labelsById: Map<string, string | undefined>,
+) {
+  return nodes.flatMap((node: any) => {
+    const entryId = normalizeRpcText(node?.entry?.id);
+    if (!entryId) return [];
+    const entry = entryById.get(entryId);
+    if (!entry) return [];
+    labelsById.set(
+      entryId,
+      typeof node?.label === "string" ? node.label : undefined,
+    );
+    return [
+      {
+        ...node,
+        entry,
+        children: normalizeRpcTree(
+          Array.isArray(node?.children) ? node.children : [],
+          entryById,
+          labelsById,
+        ),
+      },
+    ];
+  });
+}
+
 export function applyRpcSessionState(
   target: {
     model: any;
@@ -41,11 +96,12 @@ export function applyRpcSessionState(
     target.isStreaming = nextRemoteTurnRunning;
   }
   target.isCompacting = Boolean(state?.isCompacting);
-  target.pendingMessageCount = Number(state?.pendingMessageCount || 0);
+  target.pendingMessageCount = normalizePendingMessageCount(
+    state?.pendingMessageCount,
+  );
   target.sessionId = sessionId || "";
   target.sessionFile = sessionFile;
-  target.sessionName =
-    typeof state?.sessionName === "string" ? state.sessionName : undefined;
+  target.sessionName = normalizeRpcText(state?.sessionName);
   target.state.model = target.model;
   target.state.thinkingLevel = target.thinkingLevel;
 }
@@ -69,23 +125,20 @@ export function applyRpcSessionTree(
   entriesData: any,
   treeData: any,
 ) {
-  target.entries = Array.isArray(entriesData?.entries)
-    ? entriesData.entries
-    : [];
-  target.tree = Array.isArray(treeData?.tree) ? treeData.tree : [];
-  target.leafId = typeof treeData?.leafId === "string" ? treeData.leafId : null;
+  target.entries = normalizeRpcEntries(
+    Array.isArray(entriesData?.entries) ? entriesData.entries : [],
+  );
   target.entryById = new Map(
-    target.entries.map((entry: any) => [String(entry.id), entry]),
+    target.entries.map((entry: any) => [entry.id, entry]),
   );
   target.labelsById = new Map();
-  const visitTree = (nodes: any[]) => {
-    for (const node of nodes) {
-      if (node?.entry?.id)
-        target.labelsById.set(String(node.entry.id), node.label);
-      if (Array.isArray(node?.children)) visitTree(node.children);
-    }
-  };
-  visitTree(target.tree);
+  target.tree = normalizeRpcTree(
+    Array.isArray(treeData?.tree) ? treeData.tree : [],
+    target.entryById,
+    target.labelsById,
+  );
+  const leafId = normalizeRpcText(treeData?.leafId);
+  target.leafId = leafId && target.entryById.has(leafId) ? leafId : null;
 }
 
 export function getSessionBranch(
@@ -93,14 +146,17 @@ export function getSessionBranch(
   leafId: string | null,
   fromId?: string,
 ) {
-  const targetId = fromId ?? leafId;
+  const targetId = normalizeRpcText(fromId ?? leafId);
   if (!targetId) return [];
   const branch: any[] = [];
-  let current = entryById.get(targetId);
-  while (current) {
+  const visited = new Set<string>();
+  let currentId: string | undefined = targetId;
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const current = entryById.get(currentId);
+    if (!current) break;
     branch.push(current);
-    if (!current.parentId) break;
-    current = entryById.get(current.parentId);
+    currentId = normalizeRpcText(current.parentId);
   }
   return branch.reverse();
 }
