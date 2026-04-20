@@ -26,6 +26,7 @@ test("text utils normalize strings consistently", () => {
     textUtils.normalizeStringList([" Alpha ", "alpha", " 42 ", 42, ""]),
     ["Alpha", "42"],
   );
+  assert.deepEqual(textUtils.normalizeStringList(null), []);
   assert.deepEqual(
     textUtils.normalizeStringList([" Rules ", "rules", "FETCH"], {
       lowercase: true,
@@ -39,5 +40,9 @@ test("text utils normalize strings consistently", () => {
   assert.deepEqual(
     textUtils.latinTokens("Demo/path demo_path B x yz HTTP/API"),
     ["demo/path", "demo_path", "http/api"],
+  );
+  assert.deepEqual(
+    textUtils.latinTokens("foo//bar /baz/ gpt-5 gpt-5 __ cache__/tmp"),
+    ["foo", "bar", "baz", "gpt-5", "cache", "tmp"],
   );
 });
