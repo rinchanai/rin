@@ -1,20 +1,10 @@
 import { spinner, text } from "@clack/prompts";
 
+import { computeAvailableThinkingLevels } from "../model-thinking-levels.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import { installAuthPath } from "./paths.js";
 
-export function computeAvailableThinkingLevels(model: {
-  provider: string;
-  id: string;
-  reasoning: boolean;
-}) {
-  if (!model.reasoning) return ["off"];
-  const id = String(model.id || "").toLowerCase();
-  const provider = String(model.provider || "").toLowerCase();
-  return provider === "openai" && id.includes("codex-max")
-    ? ["off", "minimal", "low", "medium", "high", "xhigh"]
-    : ["off", "minimal", "low", "medium", "high"];
-}
+export { computeAvailableThinkingLevels };
 
 export async function loadModelChoices() {
   const { getProviders, getModels } = await import("@mariozechner/pi-ai");
