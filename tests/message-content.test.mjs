@@ -86,7 +86,7 @@ test("message content helpers extract valid image parts and default mime types",
   assert.deepEqual(
     messageContent.extractImageParts([
       { type: "text", text: "ignore" },
-      { type: "image", data: "aaa" },
+      { type: " IMAGE ", data: "aaa" },
       { type: "image", data: "bbb", mimeType: "image/webp" },
       { type: "image", data: "" },
     ]),
@@ -98,8 +98,8 @@ test("message content helpers extract valid image parts and default mime types",
 });
 
 test("message content helpers extract tool call parts, names, and counts", () => {
-  const bashCall = { type: "toolCall", id: "1", name: "bash" };
-  const readCall = { type: "toolCall", id: "2", toolName: "read" };
+  const bashCall = { type: " toolCall ", id: "1", name: "bash" };
+  const readCall = { type: "TOOLCALL", id: "2", toolName: "read" };
   const unnamedCall = { type: "toolCall", id: "3", name: "   " };
 
   assert.deepEqual(
@@ -141,21 +141,22 @@ test("message content helpers extract tool call parts, names, and counts", () =>
 test("message content helpers resolve only explicit existing file URLs", async () => {
   await withTempDir(async (dir) => {
     const first = path.join(dir, "first.txt");
-    const second = path.join(dir, "second.txt");
+    const spaced = path.join(dir, "spaced file.txt");
     await fs.writeFile(first, "one", "utf8");
-    await fs.writeFile(second, "two", "utf8");
+    await fs.writeFile(spaced, "two", "utf8");
 
     assert.deepEqual(
       messageContent.extractExistingFilePaths(
         [
           `file://${first}`,
           `file://${first}`,
-          `plain path ${second}`,
-          `file://${second}`,
+          `plain path ${spaced}`,
+          pathToFileURL(spaced).href,
+          `${pathToFileURL(spaced).href}?download=1#preview`,
           `file://${path.join(dir, "missing.txt")}`,
         ].join("\n"),
       ),
-      [first, second],
+      [first, spaced],
     );
   });
 });

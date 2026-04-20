@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { safeString } from "./text-utils.js";
 
@@ -8,6 +9,14 @@ export type RenderMessageTextOptions = {
   renderAt?: (attrs: Record<string, any>) => string;
   normalizeChildren?: (text: string) => string;
 };
+
+function getMessagePartType(content: any) {
+  return safeString(content?.type).trim().toLowerCase();
+}
+
+function getMessagePartAttrs(content: any) {
+  return content?.attrs && typeof content.attrs === "object" ? content.attrs : {};
+}
 
 export function renderMessageText(
   content: any,
@@ -32,9 +41,8 @@ export function renderMessageText(
   }
   if (typeof content !== "object") return "";
 
-  const type = safeString(content?.type).toLowerCase();
-  const attrs =
-    content?.attrs && typeof content.attrs === "object" ? content.attrs : {};
+  const type = getMessagePartType(content);
+  const attrs = getMessagePartAttrs(content);
   if (type === "text") {
     return safeString(content.text ?? attrs.content ?? "");
   }
@@ -82,10 +90,15 @@ export function normalizeMessageText(text: unknown) {
 }
 
 function extractMessageObjectParts(content: any, type: string) {
-  if (!Array.isArray(content)) return [] as Array<Record<string, any>>;
+  const normalizedType = safeString(type).trim().toLowerCase();
+  if (!Array.isArray(content) || !normalizedType) {
+    return [] as Array<Record<string, any>>;
+  }
   return content.filter(
     (part): part is Record<string, any> =>
-      Boolean(part) && typeof part === "object" && part.type === type,
+      Boolean(part) &&
+      typeof part === "object" &&
+      getMessagePartType(part) === normalizedType,
   );
 }
 
@@ -120,15 +133,27 @@ export function extractImageParts(content: any) {
   return out;
 }
 
+function normalizeFileUrlPath(rawUrl: string) {
+  const value = safeString(rawUrl).trim();
+  if (!value) return "";
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "file:") return "";
+    parsed.search = "";
+    parsed.hash = "";
+    return path.resolve(fileURLToPath(parsed));
+  } catch {
+    return "";
+  }
+}
+
 export function extractExistingFilePaths(text: string, max = 8) {
   const out: string[] = [];
   const seen = new Set<string>();
-  const pattern = /file:\/\/(\/[^\s'"`<>]+)/g;
-  for (const match of text.matchAll(pattern)) {
-    const raw = safeString(match[1] || "").trim();
-    if (!raw) continue;
-    const resolved = path.resolve(raw);
-    if (seen.has(resolved)) continue;
+  const pattern = /file:\/\/[^\s'"`<>]+/g;
+  for (const match of safeString(text).matchAll(pattern)) {
+    const resolved = normalizeFileUrlPath(match[0]);
+    if (!resolved || seen.has(resolved)) continue;
     if (!fs.existsSync(resolved)) continue;
     if (!fs.statSync(resolved).isFile()) continue;
     seen.add(resolved);
