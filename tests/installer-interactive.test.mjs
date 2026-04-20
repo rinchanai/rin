@@ -98,6 +98,18 @@ test("promptInstallerLanguage supports custom BCP 47 tags", async () => {
   assert.equal(result, "zh-Hans-CN");
 });
 
+test("createInstallerI18n exposes localized post-install path labels", () => {
+  const en = installerI18n.createInstallerI18n("en");
+  const zh = installerI18n.createInstallerI18n("zh-CN");
+
+  assert.equal(en.targetInstallDirLabel, "Target install dir");
+  assert.equal(en.writtenPathLabel, "Written");
+  assert.equal(en.serviceLabelLabel, "label");
+  assert.equal(zh.targetInstallDirLabel, "目标安装目录");
+  assert.equal(zh.writtenPathLabel, "已写入");
+  assert.equal(zh.serviceLabelLabel, "标签");
+});
+
 test("promptProviderSetup always requires choosing a provider", async () => {
   const selectCalls = [];
   const authCalls = [];
