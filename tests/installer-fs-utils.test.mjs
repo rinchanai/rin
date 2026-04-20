@@ -48,7 +48,7 @@ test("commandAsUserInvocation prefers runuser for root", () => {
     "--",
     "sh",
     "-lc",
-    'DEMO_ENV="hello world" "node" "--version"',
+    "DEMO_ENV='hello world' 'node' '--version'",
   ]);
 });
 
@@ -56,7 +56,7 @@ test("commandAsUserInvocation uses sudo style user switch when needed", () => {
   const invocation = fsUtils.commandAsUserInvocation(
     "demo",
     "node",
-    ["-e", "console.log('ok')"],
+    ["-e", "console.log($HOME)"],
     {},
     {
       isRoot: false,
@@ -71,7 +71,7 @@ test("commandAsUserInvocation uses sudo style user switch when needed", () => {
     "demo",
     "sh",
     "-lc",
-    `"node" "-e" ${JSON.stringify("console.log('ok')")}`,
+    "'node' '-e' 'console.log($HOME)'",
   ]);
 });
 
@@ -89,11 +89,25 @@ test("commandAsUserInvocation falls back to plain privilege shell command", () =
   );
 
   assert.equal(invocation.command, "/usr/bin/pkexec");
-  assert.deepEqual(invocation.args, [
-    "sh",
-    "-lc",
-    '"node" "--version"',
-  ]);
+  assert.deepEqual(invocation.args, ["sh", "-lc", "'node' '--version'"]);
+});
+
+test("installer fs utils prefer Rin temp roots deterministically", () => {
+  const previousRinTmpDir = process.env.RIN_TMP_DIR;
+  const previousTmpDir = process.env.TMPDIR;
+  try {
+    process.env.RIN_TMP_DIR = "/tmp/rin-custom-root";
+    process.env.TMPDIR = "/tmp/rin-custom-root";
+    assert.deepEqual(fsUtils.installerTempRootCandidates().slice(0, 2), [
+      path.resolve("/tmp/rin-custom-root"),
+      path.resolve("/home/rin/tmp"),
+    ]);
+  } finally {
+    if (previousRinTmpDir == null) delete process.env.RIN_TMP_DIR;
+    else process.env.RIN_TMP_DIR = previousRinTmpDir;
+    if (previousTmpDir == null) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previousTmpDir;
+  }
 });
 
 test("syncInstalledDocs copies upstream mirrors into installed doc locations", async () => {

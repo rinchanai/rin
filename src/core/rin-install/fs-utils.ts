@@ -106,6 +106,37 @@ export function launcherScript(candidates: string[]) {
   return `#!/usr/bin/env sh\nPATH=${shellQuote(runtimePath)}\nexport PATH\n${checks}\necho "rin: installed runtime entry not found" >&2\nexit 1\n`;
 }
 
+export function installerTempRootCandidates() {
+  return Array.from(
+    new Set(
+      [process.env.RIN_TMP_DIR, "/home/rin/tmp", process.env.TMPDIR, os.tmpdir()]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .map((value) => path.resolve(value)),
+    ),
+  );
+}
+
+function createInstallerTempDir(prefix: string) {
+  for (const root of installerTempRootCandidates()) {
+    try {
+      fs.mkdirSync(root, { recursive: true });
+      return fs.mkdtempSync(path.join(root, prefix));
+    } catch {}
+  }
+  throw new Error("rin_install_temp_dir_unavailable");
+}
+
+function shellCommandArgs(args: string[]) {
+  return args.map((value) => shellQuote(String(value))).join(" ");
+}
+
+function shellCommandEnv(extraEnv: Record<string, string>) {
+  return Object.entries(extraEnv).map(
+    ([key, value]) => `${key}=${shellQuote(String(value))}`,
+  );
+}
+
 export function launcherTargetsForInstallDir(installDir: string) {
   return {
     rin: installedAppEntryCandidates(installDir, "rin"),
@@ -157,13 +188,9 @@ export function commandAsUserInvocation(
     privilegeCommand?: string;
   } = {},
 ) {
-  const envArgs = Object.entries(extraEnv).map(
-    ([key, value]) => `${key}=${JSON.stringify(value)}`,
-  );
   const shellCommand = [
-    ...envArgs,
-    JSON.stringify(command),
-    ...args.map((arg) => JSON.stringify(arg)),
+    ...shellCommandEnv(extraEnv),
+    shellCommandArgs([command, ...args]),
   ].join(" ");
   const isRoot =
     deps.isRoot ??
@@ -228,7 +255,7 @@ export function writeTextFileWithPrivilege(
   ownerGroup?: string | number,
   mode = 0o600,
 ) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-write-"));
+  const tempDir = createInstallerTempDir("rin-install-write-");
   const tempFile = path.join(tempDir, "payload");
   try {
     fs.writeFileSync(tempFile, value, "utf8");
