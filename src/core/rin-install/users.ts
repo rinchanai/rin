@@ -4,14 +4,62 @@ import { execFileSync } from "node:child_process";
 
 import { defaultHomeForUser } from "./paths.js";
 
+type SystemUser = {
+  name: string;
+  uid: number;
+  gid: number;
+  home: string;
+  shell: string;
+};
+
+function normalizeUserName(value: unknown) {
+  return String(value || "").trim();
+}
+
+function isLoginShell(shell: string) {
+  return !/nologin|false/.test(shell);
+}
+
+function compareSystemUsers(a: SystemUser, b: SystemUser) {
+  return a.uid - b.uid || a.name.localeCompare(b.name);
+}
+
+function normalizeSystemUser(
+  input: Partial<SystemUser>,
+): SystemUser | undefined {
+  const name = normalizeUserName(input.name);
+  const uid = Number(input.uid ?? -1);
+  const gid = Number(input.gid ?? -1);
+  if (!name || !Number.isFinite(uid) || !Number.isFinite(gid)) return undefined;
+  return {
+    name,
+    uid,
+    gid,
+    home: String(input.home || "").trim() || defaultHomeForUser(name),
+    shell: String(input.shell || "").trim(),
+  };
+}
+
+function pushSystemUser(
+  users: SystemUser[],
+  input: Partial<SystemUser>,
+  minUid: number,
+) {
+  const normalized = normalizeSystemUser(input);
+  if (!normalized) return;
+  if (normalized.uid < minUid || normalized.name === "nobody") return;
+  if (!isLoginShell(normalized.shell)) return;
+  users.push(normalized);
+}
+
+function resolveUserHome(targetUser: string) {
+  const nextTargetUser = normalizeUserName(targetUser);
+  const matched = nextTargetUser ? findSystemUser(nextTargetUser) : undefined;
+  return matched?.home || defaultHomeForUser(nextTargetUser);
+}
+
 export function listSystemUsers() {
-  const users: Array<{
-    name: string;
-    uid: number;
-    gid: number;
-    home: string;
-    shell: string;
-  }> = [];
+  const users: SystemUser[] = [];
   if (process.platform === "darwin") {
     try {
       const raw = execFileSync("dscl", [".", "-list", "/Users", "UniqueID"], {
@@ -22,8 +70,7 @@ export function listSystemUsers() {
         if (!match) continue;
         const [, name, uidRaw] = match;
         const uid = Number(uidRaw || 0);
-        if (!name || !Number.isFinite(uid) || uid < 500 || name === "nobody")
-          continue;
+        if (!name || !Number.isFinite(uid)) continue;
         let home = "";
         let shell = "";
         let gid = 20;
@@ -51,11 +98,10 @@ export function listSystemUsers() {
               );
           }
         } catch {}
-        if (/nologin|false/.test(shell)) continue;
-        users.push({ name, uid, gid, home, shell });
+        pushSystemUser(users, { name, uid, gid, home, shell }, 500);
       }
     } catch {}
-    return users.sort((a, b) => a.uid - b.uid || a.name.localeCompare(b.name));
+    return users.sort(compareSystemUsers);
   }
 
   try {
@@ -66,32 +112,24 @@ export function listSystemUsers() {
         line.split(":");
       const uid = Number(uidRaw || 0);
       const gid = Number(gidRaw || 0);
-      if (
-        !name ||
-        !Number.isFinite(uid) ||
-        !Number.isFinite(gid) ||
-        uid < 1000 ||
-        name === "nobody"
-      )
-        continue;
-      if (/nologin|false/.test(shell)) continue;
-      users.push({ name, uid, gid, home, shell } as any);
+      pushSystemUser(users, { name, uid, gid, home, shell }, 1000);
     }
   } catch {}
-  return users.sort((a, b) => a.uid - b.uid || a.name.localeCompare(b.name));
+  return users.sort(compareSystemUsers);
 }
 
 export function findSystemUser(targetUser: string) {
-  return listSystemUsers().find((entry) => entry.name === targetUser);
+  const nextTargetUser = normalizeUserName(targetUser);
+  if (!nextTargetUser) return undefined;
+  return listSystemUsers().find((entry) => entry.name === nextTargetUser);
 }
 
 export function homeForUser(targetUser: string) {
-  const matched = findSystemUser(targetUser);
-  return matched?.home || defaultHomeForUser(targetUser);
+  return resolveUserHome(targetUser);
 }
 
 export function targetHomeForUser(targetUser: string) {
-  return homeForUser(targetUser);
+  return resolveUserHome(targetUser);
 }
 
 export function describeOwnership(targetUser: string, installDir: string) {
@@ -130,9 +168,10 @@ export function shouldUseElevatedWrite(
   targetUser: string,
   ownership: ReturnType<typeof describeOwnership>,
 ) {
-  const effectiveUser = os.userInfo().username;
+  const effectiveUser = normalizeUserName(os.userInfo().username);
+  const nextTargetUser = normalizeUserName(targetUser);
   return (
-    targetUser !== effectiveUser ||
+    nextTargetUser !== effectiveUser ||
     !ownership.ownerMatches ||
     !ownership.writable
   );
