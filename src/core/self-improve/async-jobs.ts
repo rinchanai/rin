@@ -12,7 +12,7 @@ import {
   writeJsonAtomic,
 } from "../platform/fs.js";
 import { normalizeSessionValue } from "../session/ref.js";
-import { nowIso, safeString } from "./core/utils.js";
+import { nowIso, safeString, uniqueStrings } from "./core/utils.js";
 import {
   maintenanceHistoryPath,
   maintenanceLockPath,
@@ -58,6 +58,24 @@ type MaintenanceHistoryRecord = {
   changedFiles?: MaintenanceChangedFile[];
 };
 
+function resolveAgentDir(value: unknown) {
+  const normalized = normalizeSessionValue(value);
+  return normalized ? path.resolve(normalized) : "";
+}
+
+function resolveSessionFile(value: unknown) {
+  const normalized = normalizeSessionValue(value);
+  return normalized ? path.resolve(normalized) : "";
+}
+
+function normalizeAdditionalExtensionPaths(value: unknown) {
+  if (!Array.isArray(value)) return undefined;
+  const normalized = uniqueStrings(
+    value.map((item) => safeString(item).trim()).filter(Boolean),
+  );
+  return normalized.length ? normalized : undefined;
+}
+
 async function ensureStateDir(agentDir: string) {
   await fs.mkdir(selfImproveStateDir(agentDir), { recursive: true });
 }
@@ -97,12 +115,8 @@ function defaultTrigger(kind: MaintenanceJob["kind"]) {
 async function enqueueMaintenanceJob(
   input: Omit<MaintenanceJob, "id" | "createdAt" | "updatedAt">,
 ) {
-  const normalizedAgentDir = normalizeSessionValue(input.agentDir);
-  const normalizedSessionFile = normalizeSessionValue(input.sessionFile);
-  const agentDir = normalizedAgentDir ? path.resolve(normalizedAgentDir) : "";
-  const sessionFile = normalizedSessionFile
-    ? path.resolve(normalizedSessionFile)
-    : "";
+  const agentDir = resolveAgentDir(input.agentDir);
+  const sessionFile = resolveSessionFile(input.sessionFile);
   const kind =
     safeString(input.kind).trim() === "session_summary"
       ? "session_summary"
@@ -125,13 +139,12 @@ async function enqueueMaintenanceJob(
     existing.trigger = trigger;
     existing.leafId = leafId || undefined;
     existing.snapshotKey = snapshotKey || undefined;
-    existing.additionalExtensionPaths = Array.isArray(
+    existing.additionalExtensionPaths = normalizeAdditionalExtensionPaths(
       input.additionalExtensionPaths,
-    )
-      ? input.additionalExtensionPaths
-          .map((item) => safeString(item).trim())
-          .filter(Boolean)
-      : undefined;
+    );
+    existing.attempts = undefined;
+    existing.lastError = undefined;
+    existing.lastAttemptAt = undefined;
   } else {
     jobs.push({
       id: `maintenance_job_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
@@ -143,11 +156,9 @@ async function enqueueMaintenanceJob(
       leafId: leafId || undefined,
       trigger,
       snapshotKey: snapshotKey || undefined,
-      additionalExtensionPaths: Array.isArray(input.additionalExtensionPaths)
-        ? input.additionalExtensionPaths
-            .map((item) => safeString(item).trim())
-            .filter(Boolean)
-        : undefined,
+      additionalExtensionPaths: normalizeAdditionalExtensionPaths(
+        input.additionalExtensionPaths,
+      ),
     });
   }
   await saveQueue(agentDir, jobs);
@@ -302,12 +313,8 @@ async function assertUsableSessionFile(sessionFile: string) {
 }
 
 async function processJob(job: MaintenanceJob) {
-  const normalizedAgentDir = normalizeSessionValue(job.agentDir);
-  const normalizedSessionFile = normalizeSessionValue(job.sessionFile);
-  const agentDir = normalizedAgentDir ? path.resolve(normalizedAgentDir) : "";
-  const sessionFile = normalizedSessionFile
-    ? path.resolve(normalizedSessionFile)
-    : "";
+  const agentDir = resolveAgentDir(job.agentDir);
+  const sessionFile = resolveSessionFile(job.sessionFile);
   const leafId = safeString(job.leafId).trim() || undefined;
   if (!agentDir || !sessionFile) {
     throw new Error("maintenance_job_invalid_payload");
@@ -331,7 +338,7 @@ async function processJob(job: MaintenanceJob) {
 }
 
 export async function processQueuedMemoryJobs(agentDir: string) {
-  const resolvedAgentDir = path.resolve(safeString(agentDir).trim());
+  const resolvedAgentDir = resolveAgentDir(agentDir);
   if (!resolvedAgentDir) return { skipped: "no-agent-dir" };
   const handle = await acquireWorkerLock(resolvedAgentDir);
   if (!handle) return { skipped: "locked" };
@@ -424,7 +431,7 @@ export async function processQueuedMemoryJobs(agentDir: string) {
 }
 
 export function spawnQueuedMemoryWorker(agentDir: string) {
-  const resolvedAgentDir = path.resolve(safeString(agentDir).trim());
+  const resolvedAgentDir = resolveAgentDir(agentDir);
   if (!resolvedAgentDir) return false;
   const workerPath = path.join(
     path.dirname(fileURLToPath(import.meta.url)),

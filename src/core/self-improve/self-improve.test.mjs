@@ -244,6 +244,42 @@ test("queued maintenance jobs use core self-improve trigger names by default", a
   });
 });
 
+test("queued maintenance refresh clears stale retry metadata and normalizes extension paths", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "first",
+      additionalExtensionPaths: [" /tmp/ext-a ", "/tmp/ext-a", "", " /tmp/ext-b "],
+    });
+
+    const queueFile = queuePath(root);
+    const firstQueue = JSON.parse(await fs.readFile(queueFile, "utf8"));
+    firstQueue[0].attempts = 2;
+    firstQueue[0].lastError = "stale_error";
+    firstQueue[0].lastAttemptAt = "2026-01-01T00:00:00.000Z";
+    await fs.writeFile(queueFile, JSON.stringify(firstQueue, null, 2), "utf8");
+
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "second",
+      additionalExtensionPaths: ["/tmp/ext-b", " /tmp/ext-c ", "/tmp/ext-c"],
+    });
+
+    const queue = JSON.parse(await fs.readFile(queueFile, "utf8"));
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].trigger, "second");
+    assert.equal(queue[0].attempts, undefined);
+    assert.equal(queue[0].lastError, undefined);
+    assert.equal(queue[0].lastAttemptAt, undefined);
+    assert.deepEqual(queue[0].additionalExtensionPaths, [
+      "/tmp/ext-b",
+      "/tmp/ext-c",
+    ]);
+  });
+});
+
 test("queued maintenance drops invalid session jobs into history instead of blocking the queue", async () => {
   await withTempRoot(async (root) => {
     await asyncJobs.enqueueMemoryMaintenanceJob({
@@ -273,6 +309,11 @@ test("queued maintenance drops invalid session jobs into history instead of bloc
       /maintenance_job_missing_session_file:/,
     );
   });
+});
+
+test("queued maintenance ignores blank agent dir inputs", async () => {
+  const result = await asyncJobs.processQueuedMemoryJobs("   ");
+  assert.deepEqual(result, { skipped: "no-agent-dir" });
 });
 
 test("session summary jobs stay distinct from self-improve review jobs", async () => {
