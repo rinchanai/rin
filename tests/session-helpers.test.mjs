@@ -102,3 +102,21 @@ test("estimateContextTokens falls back to estimating every message when no usage
   assert.equal(sessionHelpers.estimateContextTokens(messages), 6);
   assert.equal(sessionHelpers.estimateMessageTokens(messages[2]), 3);
 });
+
+
+test("session helpers guard against non-array and malformed message inputs", () => {
+  assert.equal(sessionHelpers.getLastAssistantText(null), undefined);
+  assert.equal(sessionHelpers.estimateContextTokens(null), 0);
+  assert.equal(sessionHelpers.estimateContextTokens({}), 0);
+  assert.equal(sessionHelpers.estimateMessageTokens(null), 0);
+  assert.equal(sessionHelpers.estimateMessageTokens("bad"), 0);
+  assert.equal(
+    sessionHelpers.estimateContextTokens([
+      null,
+      { role: "assistant", content: "1234", usage: "bad" },
+      { role: "assistant", content: "12345678", usage: { totalTokens: 12 } },
+      { role: "user", content: "1234" },
+    ]),
+    13,
+  );
+});
