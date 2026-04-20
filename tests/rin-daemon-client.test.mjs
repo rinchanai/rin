@@ -84,6 +84,15 @@ test("requestDaemonCommand reuses the shared daemon JSONL client", async () => {
         socket.write(
           `${JSON.stringify({
             type: "response",
+            id: "ignored",
+            command: payload.type,
+            success: true,
+            data: { ok: false },
+          })}\n`,
+        );
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
             id: payload.id,
             command: payload.type,
             success: true,
@@ -161,6 +170,76 @@ test("daemon probe/status scripts share the same socket protocol", async () => {
     assert.equal(requests.at(-1)?.type, "daemon_status");
   } finally {
     await new Promise((resolve) => server.close(() => resolve()));
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  }
+});
+
+test("requestDaemonCommand surfaces invalid json and daemon errors distinctly", async () => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-daemon-client-"));
+  const socketDir = path.join(runtimeDir, "rin-daemon");
+  const socketPath = path.join(socketDir, "daemon.sock");
+  await fs.mkdir(socketDir, { recursive: true });
+
+  const invalidJsonServer = net.createServer((socket) => {
+    socket.on("data", () => {
+      socket.write("not-json\n");
+    });
+  });
+  await new Promise((resolve, reject) => {
+    invalidJsonServer.once("error", reject);
+    invalidJsonServer.listen(socketPath, () => resolve());
+  });
+
+  try {
+    await assert.rejects(
+      daemonClient.requestDaemonCommand(
+        { type: "daemon_status" },
+        { socketPath, timeoutMs: 500 },
+      ),
+      /daemon_invalid_json/,
+    );
+  } finally {
+    await new Promise((resolve) => invalidJsonServer.close(() => resolve()));
+  }
+
+  const errorServer = net.createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += String(chunk);
+      while (true) {
+        const idx = buffer.indexOf("\n");
+        if (idx < 0) break;
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        const payload = JSON.parse(line);
+        socket.write(
+          `${JSON.stringify({
+            type: "response",
+            id: payload.id,
+            command: payload.type,
+            success: false,
+            error: "daemon_request_failed:test",
+          })}\n`,
+        );
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    errorServer.once("error", reject);
+    errorServer.listen(socketPath, () => resolve());
+  });
+
+  try {
+    await assert.rejects(
+      daemonClient.requestDaemonCommand(
+        { type: "daemon_status" },
+        { socketPath, timeoutMs: 500 },
+      ),
+      /daemon_request_failed:test/,
+    );
+  } finally {
+    await new Promise((resolve) => errorServer.close(() => resolve()));
     await fs.rm(runtimeDir, { recursive: true, force: true });
   }
 });

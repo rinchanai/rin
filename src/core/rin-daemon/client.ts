@@ -14,13 +14,74 @@ function resolveTimeoutMs(timeoutMs: number | undefined, fallback: number) {
   return Math.max(1, Number(timeoutMs || fallback));
 }
 
-export function buildDaemonSocketProbeScript(
+function resolveDaemonRequestId(
+  requestId: string | undefined,
+  fallbackPrefix: string,
+) {
+  const resolved = safeString(requestId).trim();
+  if (resolved) return resolved;
+  return `${fallbackPrefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createDaemonRequestPayload(commandType: string, requestId: string) {
+  return { id: requestId, type: commandType };
+}
+
+function isMatchingDaemonResponse(
+  payload: any,
+  requestId: string,
+  commandType?: string,
+) {
+  if (payload?.type !== "response" || payload?.id !== requestId) return false;
+  if (!commandType) return true;
+  return safeString(payload?.command).trim() === safeString(commandType).trim();
+}
+
+function parseDaemonResponseLine(
+  line: string,
+  options: { requestId: string; commandType?: string },
+) {
+  let payload: any;
+  try {
+    payload = JSON.parse(line);
+  } catch {
+    return { error: new Error("daemon_invalid_json") };
+  }
+  if (!isMatchingDaemonResponse(payload, options.requestId, options.commandType)) {
+    return { ignored: true };
+  }
+  if (payload?.success === false) {
+    return {
+      error: new Error(String(payload?.error || "daemon_request_failed")),
+    };
+  }
+  return { value: payload?.data ?? payload };
+}
+
+function buildDaemonSocketScript(
+  body: string,
   socketPath?: string,
   timeoutMs = 500,
 ) {
   const resolvedSocketPath = resolveDaemonSocketPath(socketPath);
   const timeout = resolveTimeoutMs(timeoutMs, 500);
-  return `const net=require('node:net');const s=net.createConnection({path:${JSON.stringify(resolvedSocketPath)}});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),${timeout});`;
+  return [
+    "const net=require('node:net');",
+    `const socketPath=${JSON.stringify(resolvedSocketPath)};`,
+    `const timeoutMs=${timeout};`,
+    body,
+  ].join("");
+}
+
+export function buildDaemonSocketProbeScript(
+  socketPath?: string,
+  timeoutMs = 500,
+) {
+  return buildDaemonSocketScript(
+    "const s=net.createConnection({path:socketPath});let done=false;const finish=(ok)=>{if(done)return;done=true;try{s.destroy()}catch{};process.exit(ok?0:1)};s.once('connect',()=>finish(true));s.once('error',()=>finish(false));setTimeout(()=>finish(false),timeoutMs);",
+    socketPath,
+    timeoutMs,
+  );
 }
 
 export function buildDaemonStatusScript(
@@ -28,10 +89,13 @@ export function buildDaemonStatusScript(
   timeoutMs = 1500,
   requestId = "doctor_1",
 ) {
-  const resolvedSocketPath = resolveDaemonSocketPath(socketPath);
-  const timeout = resolveTimeoutMs(timeoutMs, 1500);
-  const id = safeString(requestId).trim() || "doctor_1";
-  return `const net=require('node:net');const socketPath=${JSON.stringify(resolvedSocketPath)};const socket=net.createConnection({path:socketPath});let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'&&payload?.id===${JSON.stringify(id)}){finish(payload.success===true?payload.data:undefined);return;}}catch{}}});socket.once('connect',()=>{socket.write(JSON.stringify({id:${JSON.stringify(id)},type:'daemon_status'})+'\\n');setTimeout(()=>finish(undefined),${timeout});});`;
+  const id = resolveDaemonRequestId(requestId, "doctor");
+  const requestPayload = JSON.stringify(createDaemonRequestPayload("daemon_status", id));
+  return buildDaemonSocketScript(
+    `const requestJson=${JSON.stringify(requestPayload)};const socket=net.createConnection({path:socketPath});let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'&&payload?.id===${JSON.stringify(id)}){finish(payload.success===true?payload.data:undefined);return;}}catch{finish(undefined);return;}}});socket.once('connect',()=>{socket.write(requestJson+'\\n');setTimeout(()=>finish(undefined),timeoutMs);});`,
+    socketPath,
+    timeoutMs,
+  );
 }
 
 export async function canConnectDaemonSocket(
@@ -65,9 +129,8 @@ export async function requestDaemonCommand(
 ) {
   const socketPath = resolveDaemonSocketPath(options.socketPath);
   const timeoutMs = resolveTimeoutMs(options.timeoutMs, 30_000);
-  const id =
-    safeString(command?.id).trim() ||
-    `daemon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const commandType = safeString(command?.type).trim() || "unknown";
+  const requestId = resolveDaemonRequestId(command?.id, "daemon");
   return await new Promise<any>((resolve, reject) => {
     const socket = new net.Socket();
     const state = { buffer: "" };
@@ -83,36 +146,31 @@ export async function requestDaemonCommand(
       else resolve(value);
     };
     const timer = setTimeout(
-      () =>
-        finish(
-          new Error(
-            `daemon_timeout:${safeString(command?.type).trim() || "unknown"}`,
-          ),
-        ),
+      () => finish(new Error(`daemon_timeout:${commandType}`)),
       timeoutMs,
     );
+
     socket.setEncoding("utf8");
-    socket.on("error", (error) => finish(error));
+    socket.once("error", (error) => finish(error));
     socket.on("data", (chunk) => {
       parseJsonl(String(chunk), state, (line) => {
-        let payload: any;
-        try {
-          payload = JSON.parse(line);
-        } catch {
-          finish(new Error("daemon_invalid_json"));
+        const parsed = parseDaemonResponseLine(line, {
+          requestId,
+          commandType,
+        });
+        if (parsed.ignored) return;
+        if (parsed.error) {
+          finish(parsed.error);
           return;
         }
-        if (payload?.type !== "response" || payload?.id !== id) return;
-        if (payload?.success === false) {
-          finish(new Error(String(payload?.error || "daemon_request_failed")));
-          return;
-        }
-        finish(undefined, payload?.data ?? payload);
+        finish(undefined, parsed.value);
       });
     });
-    socket.on("connect", () => {
+    socket.once("connect", () => {
       try {
-        socket.write(`${JSON.stringify({ ...command, id })}\n`);
+        socket.write(
+          `${JSON.stringify({ ...command, id: requestId, type: commandType })}\n`,
+        );
       } catch (error) {
         finish(error);
       }
