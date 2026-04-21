@@ -38,6 +38,7 @@ import { isTransientChatRuntimeError } from "./runtime-errors.js";
 const TURN_HEARTBEAT_INTERVAL_GRACE_MS = 60_000;
 const TURN_RECOVERY_COOLDOWN_MS = 5_000;
 const WORKING_REACTION_FRAME_INTERVAL_MS = 30_000;
+const STALE_RECOVERY_RELEASE_AFTER_MS = 30 * 60_000;
 const INTERIM_PREFIX = "··· ";
 
 function commandNameFromCommandLine(commandLine: string) {
@@ -265,6 +266,27 @@ export class ChatController {
     delete this.state.processing;
     delete this.state.pendingDelivery;
     this.saveState();
+  }
+  private async releaseStaleRecoveryState(error: unknown) {
+    const errorMessage = safeString((error as any)?.message || error).trim();
+    const pending = this.state.processing;
+    const startedAt = Number(pending?.startedAt || 0);
+    const ageMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+    const recoverableFailure =
+      errorMessage === "rin_no_attached_session" ||
+      isTransientChatRuntimeError(errorMessage);
+    if (!recoverableFailure) return false;
+    if (pending && ageMs < STALE_RECOVERY_RELEASE_AFTER_MS) return false;
+    delete this.state.piSessionFile;
+    this.logger.warn(
+      `chat recovery released stale state chatKey=${this.chatKey} err=${errorMessage || "chat_recovery_failed"}${pending ? ` ageMs=${ageMs}` : ""}`,
+    );
+    if (pending) {
+      await this.clearProcessingState();
+    } else {
+      this.saveState();
+    }
+    return true;
   }
   private getRecoverableSessionFile() {
     const wanted = resolveStoredSessionFile(this.agentDir, this.state.piSessionFile);
@@ -975,105 +997,110 @@ export class ChatController {
   }
   async recoverIfNeeded() {
     await this.runExclusiveTurn(async () => {
-      if (this.state.pendingDelivery) {
-        this.markProcessedMessage(this.currentIncomingMessageId());
-        await this.commitPendingDelivery(true);
-        return;
-      }
-      const wantedSessionFile = this.getRecoverableSessionFile();
-      if (!this.state.processing) {
-        if (!wantedSessionFile) return;
-        await this.connect();
-        if (!this.session) return;
-        const currentSessionFile = safeString(
-          this.session.sessionManager.getSessionFile?.() || "",
-        ).trim();
-        if (currentSessionFile !== wantedSessionFile) {
-          await this.resumeSessionFile(wantedSessionFile);
-        }
-        return;
-      }
-      await this.connect();
-      if (!this.session) return;
-      if (wantedSessionFile) {
-        const currentSessionFile = safeString(
-          this.session.sessionManager.getSessionFile?.() || "",
-        ).trim();
-        if (currentSessionFile !== wantedSessionFile) {
-          await this.resumeSessionFile(wantedSessionFile);
-        }
-      }
-      await this.ensureSessionReady();
-      await this.refreshSessionMessages().catch(() => {});
-      const messages = Array.isArray(this.session.messages)
-        ? this.session.messages
-        : [];
-      const lastUserIndex =
-        [...messages]
-          .map((message: any, index: number) => ({ message, index }))
-          .reverse()
-          .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
-      const lastAssistantAfterUser = messages
-        .slice(lastUserIndex + 1)
-        .reverse()
-        .find((message: any) => message?.role === "assistant");
-      const pending = this.state.processing;
-      const currentLastUser = [...messages]
-        .reverse()
-        .find((message: any) => message?.role === "user");
-      const lastUserText = extractTextFromContent(
-        (currentLastUser as any)?.content,
-      );
-      const pendingPromptText = safeString(
-        buildPromptText(pending.text, pending.attachments),
-      ).trim();
-      const deliveredCompletedText =
-        lastAssistantAfterUser &&
-        safeString(lastUserText).trim() === pendingPromptText
-          ? this.collectFinalAssistantText()
-          : "";
-      await this.pollTyping().catch(() => {});
-      this.logger.info(`resume interrupted chat turn chatKey=${this.chatKey}`);
-      if (deliveredCompletedText && !this.session.isStreaming) {
-        await this.deliverAssistantReply({
-          text: deliveredCompletedText,
-          replyToMessageId:
-            safeString(pending.replyToMessageId || "").trim() || undefined,
-          incomingMessageId: pending.incomingMessageId,
-          clearProcessing: true,
-        });
-        return;
-      }
-      this.latestAssistantText = "";
-      const requestTag = this.createTurnRequestTag();
-      const liveTurn = this.startLiveTurn(requestTag);
-      await this.pollTyping().catch(() => {});
       try {
-        await this.session.resumeInterruptedTurn({
-          source: "chat-bridge",
-          requestTag,
-        });
-        await this.finishLiveTurn({
-          liveTurn,
-          replyToMessageId:
-            safeString(pending.replyToMessageId || "").trim() || undefined,
-          incomingMessageId: pending.incomingMessageId,
-          clearProcessing: true,
-        });
-      } catch (error: any) {
-        this.failLiveTurn(
-          error instanceof Error
-            ? error
-            : new Error(String(error || "chat_turn_failed")),
-        );
-        const errorMessage = safeString(error?.message || error).trim();
-        if (errorMessage === "rpc_turn_final_output_missing") {
-          this.logger.warn(
-            `chat recovery released stale processing chatKey=${this.chatKey}`,
-          );
-          await this.clearProcessingState();
+        if (this.state.pendingDelivery) {
+          this.markProcessedMessage(this.currentIncomingMessageId());
+          await this.commitPendingDelivery(true);
           return;
         }
+        const wantedSessionFile = this.getRecoverableSessionFile();
+        if (!this.state.processing) {
+          if (!wantedSessionFile) return;
+          await this.connect();
+          if (!this.session) return;
+          const currentSessionFile = safeString(
+            this.session.sessionManager.getSessionFile?.() || "",
+          ).trim();
+          if (currentSessionFile !== wantedSessionFile) {
+            await this.resumeSessionFile(wantedSessionFile);
+          }
+          return;
+        }
+        await this.connect();
+        if (!this.session) return;
+        if (wantedSessionFile) {
+          const currentSessionFile = safeString(
+            this.session.sessionManager.getSessionFile?.() || "",
+          ).trim();
+          if (currentSessionFile !== wantedSessionFile) {
+            await this.resumeSessionFile(wantedSessionFile);
+          }
+        }
+        await this.ensureSessionReady();
+        await this.refreshSessionMessages().catch(() => {});
+        const messages = Array.isArray(this.session.messages)
+          ? this.session.messages
+          : [];
+        const lastUserIndex =
+          [...messages]
+            .map((message: any, index: number) => ({ message, index }))
+            .reverse()
+            .find((entry: any) => entry?.message?.role === "user")?.index ?? -1;
+        const lastAssistantAfterUser = messages
+          .slice(lastUserIndex + 1)
+          .reverse()
+          .find((message: any) => message?.role === "assistant");
+        const pending = this.state.processing;
+        const currentLastUser = [...messages]
+          .reverse()
+          .find((message: any) => message?.role === "user");
+        const lastUserText = extractTextFromContent(
+          (currentLastUser as any)?.content,
+        );
+        const pendingPromptText = safeString(
+          buildPromptText(pending.text, pending.attachments),
+        ).trim();
+        const deliveredCompletedText =
+          lastAssistantAfterUser &&
+          safeString(lastUserText).trim() === pendingPromptText
+            ? this.collectFinalAssistantText()
+            : "";
+        await this.pollTyping().catch(() => {});
+        this.logger.info(`resume interrupted chat turn chatKey=${this.chatKey}`);
+        if (deliveredCompletedText && !this.session.isStreaming) {
+          await this.deliverAssistantReply({
+            text: deliveredCompletedText,
+            replyToMessageId:
+              safeString(pending.replyToMessageId || "").trim() || undefined,
+            incomingMessageId: pending.incomingMessageId,
+            clearProcessing: true,
+          });
+          return;
+        }
+        this.latestAssistantText = "";
+        const requestTag = this.createTurnRequestTag();
+        const liveTurn = this.startLiveTurn(requestTag);
+        await this.pollTyping().catch(() => {});
+        try {
+          await this.session.resumeInterruptedTurn({
+            source: "chat-bridge",
+            requestTag,
+          });
+          await this.finishLiveTurn({
+            liveTurn,
+            replyToMessageId:
+              safeString(pending.replyToMessageId || "").trim() || undefined,
+            incomingMessageId: pending.incomingMessageId,
+            clearProcessing: true,
+          });
+        } catch (error: any) {
+          this.failLiveTurn(
+            error instanceof Error
+              ? error
+              : new Error(String(error || "chat_turn_failed")),
+          );
+          const errorMessage = safeString(error?.message || error).trim();
+          if (errorMessage === "rpc_turn_final_output_missing") {
+            this.logger.warn(
+              `chat recovery released stale processing chatKey=${this.chatKey}`,
+            );
+            await this.clearProcessingState();
+            return;
+          }
+          throw error;
+        }
+      } catch (error) {
+        if (await this.releaseStaleRecoveryState(error)) return;
         throw error;
       }
     });

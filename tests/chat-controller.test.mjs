@@ -786,6 +786,62 @@ test("chat controller reattaches idle saved sessions during recovery so chat wor
   assert.deepEqual(calls, [`switch:${savedSessionFile}`]);
 });
 
+test("chat controller releases stale processing when recovery session reattach keeps timing out", async () => {
+  const controller = await createController("telegram/7:10");
+  const savedSessionFile = path.join(controller.agentDir, "sessions", "stale-processing-chat.jsonl");
+  await fs.mkdir(path.dirname(savedSessionFile), { recursive: true });
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = "stale-processing-chat.jsonl";
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now() - 31 * 60_000,
+    incomingMessageId: "m-stale-timeout",
+    replyToMessageId: "42",
+  };
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => undefined,
+      getSessionId: () => "",
+      getSessionName: () => "telegram/7:10",
+    },
+    switchSession: async () => {
+      throw new Error("rin_timeout:select_session");
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.state.pendingDelivery, undefined);
+  assert.equal(controller.state.piSessionFile, undefined);
+});
+
+test("chat controller drops a stale detached session binding when recovery reattach times out", async () => {
+  const controller = await createController("telegram/7:11");
+  const savedSessionFile = path.join(controller.agentDir, "sessions", "stale-detached-chat.jsonl");
+  await fs.mkdir(path.dirname(savedSessionFile), { recursive: true });
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = "stale-detached-chat.jsonl";
+  controller.session = {
+    sessionManager: {
+      getSessionFile: () => undefined,
+      getSessionId: () => "",
+      getSessionName: () => "telegram/7:11",
+    },
+    switchSession: async () => {
+      throw new Error("rin_timeout:select_session");
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.equal(controller.state.piSessionFile, undefined);
+  assert.equal(controller.state.processing, undefined);
+});
+
 test("chat controller reattaches a saved session before recovering a pending chat turn", async () => {
   const controller = await createController("telegram/7:9");
   const calls = [];
