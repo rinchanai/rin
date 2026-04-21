@@ -44,6 +44,7 @@ for (const entry of fs.readdirSync(outputDir)) {
 for (const relativePath of [
   "install.sh",
   "update.sh",
+  path.join("scripts", "bootstrap-entrypoint.sh"),
   "release-manifest.json",
   path.join("docs", "rin", "CHANGELOG.md"),
 ]) {
@@ -56,12 +57,13 @@ fs.writeFileSync(
     "# Rin stable bootstrap branch",
     "",
     `This branch is generated for the ${args.branch} bootstrap flow.`,
-    "It only stores the stable install/update entry scripts and release metadata.",
+    "It only stores the stable install/update bootstrap entry scripts and release metadata.",
     "Do not develop Rin source code on this branch.",
     "",
     "Included files:",
     "- install.sh",
     "- update.sh",
+    "- scripts/bootstrap-entrypoint.sh",
     "- release-manifest.json",
     "- docs/rin/CHANGELOG.md",
     "",

@@ -16,6 +16,7 @@ Rin uses a four-channel release model.
 - `stable-bootstrap`: generated branch that only stores:
   - `install.sh`
   - `update.sh`
+  - `scripts/bootstrap-entrypoint.sh`
   - `release-manifest.json`
   - `docs/rin/CHANGELOG.md`
 

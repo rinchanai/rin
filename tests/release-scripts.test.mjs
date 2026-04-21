@@ -263,6 +263,7 @@ test("export-bootstrap-branch script exports stable bootstrap payload", () => {
     for (const relativePath of [
       "install.sh",
       "update.sh",
+      path.join("scripts", "bootstrap-entrypoint.sh"),
       "release-manifest.json",
       path.join("docs", "rin", "CHANGELOG.md"),
       "README.md",
