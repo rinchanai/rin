@@ -2,9 +2,10 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+BOOTSTRAP_MODE=${RIN_BOOTSTRAP_WRAPPER_MODE:-install}
 LOCAL_BOOTSTRAP_SCRIPT="$SCRIPT_DIR/scripts/bootstrap-entrypoint.sh"
 if [ -f "$LOCAL_BOOTSTRAP_SCRIPT" ]; then
-  exec sh "$LOCAL_BOOTSTRAP_SCRIPT" install "$@"
+  exec sh "$LOCAL_BOOTSTRAP_SCRIPT" "$BOOTSTRAP_MODE" "$@"
 fi
 
 REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/rinchanai/rin}
@@ -32,7 +33,7 @@ fetch() {
     wget -qO "$OUT" "$URL"
     return 0
   fi
-  echo "rin installer requires curl or wget" >&2
+  echo "rin bootstrap wrapper requires curl or wget" >&2
   exit 1
 }
 
@@ -49,4 +50,4 @@ fetch_bootstrap_script() {
 }
 
 fetch_bootstrap_script
-sh "$BOOTSTRAP_SCRIPT" install "$@"
+sh "$BOOTSTRAP_SCRIPT" "$BOOTSTRAP_MODE" "$@"
