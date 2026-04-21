@@ -439,3 +439,45 @@ test("chat controller steers an already streaming session instead of waiting for
   ]);
   assert.equal(result.steered, true);
 });
+
+test("chat controller does not let presentation polling block prompt submission", async () => {
+  const controller = await createController("onebot/1:2");
+  const calls = [];
+  controller.pollTyping = async function () {
+    calls.push("pollTyping");
+    await new Promise(() => {});
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/nonblocking-chat.jsonl",
+      getSessionId: () => "session-nonblocking",
+      getSessionName: () => controller.chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/nonblocking-chat.jsonl",
+      sessionId: "session-nonblocking",
+    }),
+    prompt: async (_text, options = {}) => {
+      calls.push("prompt");
+      emitRpcTurnComplete(controller, options, "ok");
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-nonblocking",
+  });
+
+  assert.equal(result.finalText, "ok");
+  assert.deepEqual(calls, ["pollTyping", "prompt"]);
+});

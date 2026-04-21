@@ -844,7 +844,7 @@ export class ChatController {
       incomingMessageId: input.incomingMessageId,
       replyToMessageId: input.replyToMessageId,
     });
-    await this.pollTyping().catch(() => {});
+    void this.pollTyping().catch(() => {});
     if (this.session.isStreaming) {
       await this.session.prompt(text, {
         images,
