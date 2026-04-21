@@ -37,15 +37,15 @@ If you want an assistant that stays useful over time, Rin is designed for that.
 Install with one command, no clone required:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/scripts/bootstrap-entrypoint.sh | sh -s install
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/scripts/bootstrap-entrypoint.sh | sh -s install --beta
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/scripts/bootstrap-entrypoint.sh | sh -s install --nightly
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/scripts/bootstrap-entrypoint.sh | sh -s install --git
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/scripts/bootstrap-entrypoint.sh | sh -s install --git main
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/scripts/bootstrap-entrypoint.sh | sh -s install --git deadbeef
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --beta
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --nightly
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git main
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git deadbeef
 ```
 
-If you already have the repo locally, the bundled wrapper scripts do the same bootstrap flow:
+If you already have the repo locally, the bundled `install.sh` wrapper runs the same bootstrap flow:
 
 ```bash
 ./install.sh              # stable release (default)
