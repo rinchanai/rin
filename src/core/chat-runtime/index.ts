@@ -81,6 +81,54 @@ function parseOneBotReplyQuote(data: Record<string, any>) {
   return { messageId };
 }
 
+const TELEGRAM_MAX_TEXT_LENGTH = 4096;
+const TELEGRAM_MAX_CAPTION_LENGTH = 1024;
+
+function splitTelegramText(text: string, maxLength: number) {
+  const normalized = safeString(text);
+  if (!normalized) return [];
+  const chars = Array.from(normalized);
+  const limit = Math.max(1, Math.floor(maxLength) || 1);
+  const chunks: string[] = [];
+  let cursor = 0;
+
+  while (cursor < chars.length) {
+    const remaining = chars.length - cursor;
+    if (remaining <= limit) {
+      const chunk = chars.slice(cursor).join("").trim();
+      if (chunk) chunks.push(chunk);
+      break;
+    }
+
+    const windowText = chars.slice(cursor, cursor + limit).join("");
+    let splitOffset = -1;
+    for (const marker of ["\n\n", "\n", " "]) {
+      const markerOffset = windowText.lastIndexOf(marker);
+      if (markerOffset >= 0) {
+        splitOffset = markerOffset + marker.length;
+        break;
+      }
+    }
+    if (splitOffset <= 0) splitOffset = limit;
+
+    const nextCursor = cursor + splitOffset;
+    const chunk = chars.slice(cursor, nextCursor).join("").trim();
+    if (chunk) {
+      chunks.push(chunk);
+      cursor = nextCursor;
+      while (cursor < chars.length && /\s/.test(chars[cursor] || "")) {
+        cursor += 1;
+      }
+      continue;
+    }
+
+    chunks.push(chars.slice(cursor, cursor + limit).join(""));
+    cursor += limit;
+  }
+
+  return chunks;
+}
+
 function createNodeBuilder() {
   const h: any = (
     type: string,
@@ -653,16 +701,28 @@ class TelegramAdapter {
           nextCursor += 1;
         }
         const caption = renderPlainTextFromNodes(captionNodes);
+        const captionChunks = splitTelegramText(
+          caption,
+          TELEGRAM_MAX_CAPTION_LENGTH,
+        );
         const messageId = await this.sendBinaryMessage(
           type === "image" ? "sendPhoto" : "sendDocument",
           type === "image" ? "photo" : "document",
           chatId,
           node,
-          caption,
+          captionChunks[0] || "",
           firstReply,
         );
         if (messageId) delivered.push(messageId);
         firstReply = undefined;
+        for (const extraCaptionChunk of captionChunks.slice(1)) {
+          const extraMessageId = await this.sendText(
+            chatId,
+            extraCaptionChunk,
+            firstReply,
+          );
+          if (extraMessageId) delivered.push(extraMessageId);
+        }
         cursor = nextCursor;
         continue;
       }
@@ -676,8 +736,8 @@ class TelegramAdapter {
         nextCursor += 1;
       }
       const text = renderPlainTextFromNodes(textNodes);
-      if (text) {
-        const messageId = await this.sendText(chatId, text, firstReply);
+      for (const textChunk of splitTelegramText(text, TELEGRAM_MAX_TEXT_LENGTH)) {
+        const messageId = await this.sendText(chatId, textChunk, firstReply);
         if (messageId) delivered.push(messageId);
         firstReply = undefined;
       }
