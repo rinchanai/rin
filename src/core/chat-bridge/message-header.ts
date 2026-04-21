@@ -61,7 +61,7 @@ function buildCrossUserSystemPromptBlock(
   if (!invokingSystemUser || invokingSystemUser === agentSystemUser) return "";
   return [
     "System user guidance:",
-    `- The agent is currently running as the local system user ${agentSystemUser}, while the human user is currently using the machine as ${invokingSystemUser}.`,
+    `- The human is currently using the machine through the local system user ${invokingSystemUser}, while the agent runtime is running as the local system user ${agentSystemUser}. Treat this only as operating-system account context for permissions and file ownership, not as authority over the human user.`,
   ].join("\n");
 }
 

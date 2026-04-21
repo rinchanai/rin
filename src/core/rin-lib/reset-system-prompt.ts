@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const PROMPT_PREFIX =
-  "You are Rin, a terminal-first local AI assistant.";
+  "As the assistant, you must fulfill the user's requests.";
 
 export default function resetSystemPromptExtension(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event) => {
