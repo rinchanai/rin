@@ -153,7 +153,47 @@ export class ChatController {
   }
 
   private saveState() {
-    writeJsonFile(this.statePath, this.state);
+    const nextState: ChatState = { chatKey: this.chatKey };
+    const storedSessionFile = toStoredSessionFile(
+      this.agentDir,
+      this.state.piSessionFile,
+    );
+    if (storedSessionFile) nextState.piSessionFile = storedSessionFile;
+    if (this.state.processing) {
+      nextState.processing = {
+        text: safeString(this.state.processing.text).trim(),
+        attachments: Array.isArray(this.state.processing.attachments)
+          ? [...this.state.processing.attachments]
+          : [],
+        startedAt: Number(this.state.processing.startedAt) || Date.now(),
+        replyToMessageId:
+          safeString(this.state.processing.replyToMessageId || "").trim() ||
+          undefined,
+        incomingMessageId:
+          safeString(this.state.processing.incomingMessageId || "").trim() ||
+          undefined,
+        acceptedAt:
+          safeString(this.state.processing.acceptedAt || "").trim() || undefined,
+        workingNoticeSent: this.state.processing.workingNoticeSent === true,
+      };
+    }
+    if (this.state.pendingDelivery) {
+      nextState.pendingDelivery = {
+        type: "text_delivery",
+        chatKey: this.chatKey,
+        text: safeString(this.state.pendingDelivery.text).trim(),
+        replyToMessageId:
+          safeString(this.state.pendingDelivery.replyToMessageId || "").trim() ||
+          undefined,
+        sessionFile:
+          toStoredSessionFile(
+            this.agentDir,
+            this.state.pendingDelivery.sessionFile,
+          ) || undefined,
+      };
+    }
+    this.state = nextState;
+    writeJsonFile(this.statePath, nextState);
   }
 
   async clearProcessingState() {
