@@ -564,6 +564,65 @@ setInterval(() => {}, 1000);
   await fs.rm(dir, { recursive: true, force: true });
 });
 
+test("switch_session internal commands can outlive the generic internal timeout", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    String.raw`process.stdin.setEncoding('utf8');
+let buffer='';
+process.stdin.on('data', (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf('\n');
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    setTimeout(() => {
+      process.stdout.write(JSON.stringify({
+        id: command.id,
+        type: 'response',
+        command: command.type,
+        success: true,
+        data: { sessionFile: '/tmp/slow-switch.jsonl', sessionId: 'slow-switch' },
+      }) + '\n');
+    }, 80);
+  }
+});
+setInterval(() => {}, 1000);
+`,
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({
+    workerPath,
+    cwd: dir,
+    gcIdleMs: 50,
+    internalCommandTimeoutMs: 20,
+    switchSessionCommandTimeoutMs: 200,
+  });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
+  pool.attachWorker(connection, worker);
+
+  const result = await pool.sendInternalCommand(worker, {
+    type: "switch_session",
+    sessionPath: "/tmp/slow-switch.jsonl",
+  });
+
+  assert.equal(result?.data?.sessionFile, "/tmp/slow-switch.jsonl");
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
 test("worker status snapshot exposes graceful shutdown state", async () => {
   const dir = await makeTempDir("rin-worker-pool-");
   const workerPath = path.join(dir, "worker.mjs");

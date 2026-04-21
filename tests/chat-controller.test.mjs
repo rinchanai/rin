@@ -481,3 +481,33 @@ test("chat controller does not let presentation polling block prompt submission"
   assert.equal(result.finalText, "ok");
   assert.deepEqual(calls, ["pollTyping", "prompt"]);
 });
+
+test("chat controller does not persist transient processing state to chat state.json", async () => {
+  const controller = await createController("telegram/1:2");
+  const statePath = controller.statePath;
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m1",
+    replyToMessageId: "m1",
+  };
+  controller.state.pendingDelivery = {
+    type: "text_delivery",
+    chatKey: controller.chatKey,
+    text: "hello",
+    replyToMessageId: "m1",
+    sessionFile: "/tmp/demo.jsonl",
+  };
+  controller.state.piSessionFile = "/tmp/demo.jsonl";
+
+  controller.saveState();
+
+  const persisted = JSON.parse(await fs.readFile(statePath, "utf8"));
+  assert.deepEqual(persisted, {
+    chatKey: controller.chatKey,
+    piSessionFile: "/tmp/demo.jsonl",
+  });
+  assert.equal(controller.state.processing?.incomingMessageId, "m1");
+  assert.equal(controller.state.pendingDelivery?.text, "hello");
+});

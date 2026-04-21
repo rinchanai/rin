@@ -441,7 +441,7 @@ test("chat main passes quoted reply session metadata through one normal prompt s
   }
 });
 
-test("chat main falls back to a plain turn when quoted reply-resume times out selecting the linked session", async () => {
+test("chat main does not downgrade a quoted reply to a plain turn when linked session selection times out", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
   const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
@@ -462,7 +462,6 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
       const chatKey = "telegram/1:2";
       const replySessionFile = path.join(agentDir, "sessions", "linked", "reply-history.jsonl");
       const seen = [];
-      let disposeCalls = 0;
 
       supportMod.saveIdentity(path.join(agentDir, "data"), {
         persons: { owner: { trust: "OWNER" } },
@@ -488,11 +487,7 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
           sessionFile: input?.sessionFile || null,
           replyToMessageId: input?.replyToMessageId || null,
         });
-        if (input?.sessionFile) throw new Error("rin_timeout:select_session");
-        return { retry: false };
-      };
-      controllerMod.ChatController.prototype.dispose = function () {
-        disposeCalls += 1;
+        throw new Error("rin_timeout:select_session");
       };
 
       const { app } = await mainMod.startChatBridge();
@@ -523,27 +518,17 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
         elements: [h.createChatRuntimeH().text("continue here")],
       });
 
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && seen.length < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      if (seen.length !== 1) {
+        throw new Error(JSON.stringify({ seen, replySessionFile }));
       }
-      if (seen.length !== 2 || disposeCalls !== 1) {
-        throw new Error(JSON.stringify({ seen, replySessionFile, disposeCalls }));
-      }
-      const [first, second] = seen;
+      const [first] = seen;
       if (
         first.mode !== "prompt" ||
         first.sessionFile !== replySessionFile ||
         first.replyToMessageId !== "m-follow"
       ) {
-        throw new Error(JSON.stringify({ seen, replySessionFile, disposeCalls }));
-      }
-      if (
-        second.mode !== "prompt" ||
-        second.sessionFile !== null ||
-        second.replyToMessageId !== "m-follow"
-      ) {
-        throw new Error(JSON.stringify({ seen, replySessionFile, disposeCalls }));
+        throw new Error(JSON.stringify({ seen, replySessionFile }));
       }
       process.exit(0);
     `;

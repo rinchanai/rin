@@ -78,6 +78,7 @@ export class WorkerPool {
   private shuttingDown = false;
   private readonly gcIdleMs: number;
   private readonly internalCommandTimeoutMs: number;
+  private readonly switchSessionCommandTimeoutMs: number;
   private readonly reaper: NodeJS.Timeout;
 
   constructor(
@@ -91,12 +92,23 @@ export class WorkerPool {
       gcIdleMs?: number;
       sweepIntervalMs?: number;
       internalCommandTimeoutMs?: number;
+      switchSessionCommandTimeoutMs?: number;
     },
   ) {
     this.gcIdleMs = Math.max(0, Number(options.gcIdleMs ?? 30_000));
     this.internalCommandTimeoutMs = Math.max(
       1,
       Number(options.internalCommandTimeoutMs ?? 10_000),
+    );
+    const switchSessionTimeoutDefault =
+      options.switchSessionCommandTimeoutMs != null
+        ? Number(options.switchSessionCommandTimeoutMs)
+        : options.internalCommandTimeoutMs != null
+          ? this.internalCommandTimeoutMs
+          : 120_000;
+    this.switchSessionCommandTimeoutMs = Math.max(
+      this.internalCommandTimeoutMs,
+      switchSessionTimeoutDefault,
     );
     const sweepIntervalMs = Math.max(
       250,
@@ -768,6 +780,14 @@ export class WorkerPool {
     })().catch(() => {});
   }
 
+  private getInternalCommandTimeoutMs(command: any) {
+    const commandType = String(command?.type || "unknown");
+    if (commandType === "switch_session") {
+      return this.switchSessionCommandTimeoutMs;
+    }
+    return this.internalCommandTimeoutMs;
+  }
+
   private async sendInternalCommand(worker: WorkerHandle, command: any) {
     const id = `rin_internal_${++this.internalRequestSeq}`;
     return await new Promise<any>((resolve, reject) => {
@@ -780,7 +800,7 @@ export class WorkerPool {
             `rin_internal_timeout:${String(command?.type || "unknown")}`,
           ),
         );
-      }, this.internalCommandTimeoutMs);
+      }, this.getInternalCommandTimeoutMs(command));
       timeout.unref?.();
 
       const finalize = () => clearTimeout(timeout);

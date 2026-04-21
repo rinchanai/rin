@@ -523,31 +523,6 @@ export async function startChatBridge(
       );
       return { retry: false };
     } catch (error) {
-      const errorMessage = safeString((error as any)?.message || error);
-      const shouldFallbackFromReplyResume =
-        Boolean(linkedSessionFile) &&
-        (errorMessage === "rin_no_attached_session" ||
-          /(^|\b)rin_timeout:select_session\b/.test(errorMessage));
-      if (shouldFallbackFromReplyResume) {
-        logger.warn(
-          `chat reply-resume fallback chatKey=${decision.chatKey} sessionFile=${linkedSessionFile} err=${errorMessage}`,
-        );
-        controller.dispose();
-        try {
-          await controller.runTurn(
-            {
-              text: promptBody,
-              attachments,
-              replyToMessageId: messageId,
-              incomingMessageId: messageId,
-            },
-            "prompt",
-          );
-          return { retry: false };
-        } catch (fallbackError) {
-          return await handleTurnFailure(fallbackError, "");
-        }
-      }
       return await handleTurnFailure(error, linkedSessionFile);
     }
   };
