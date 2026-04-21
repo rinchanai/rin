@@ -121,9 +121,15 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
   const macHome = "/Users/demo";
   const installDir = "/srv/rin-demo";
 
+  const windowsHomeRoot = path.join(process.env.SystemDrive || "C:", "Users");
   assert.equal(pathsMod.defaultHomeRoot("linux"), "/home");
   assert.equal(pathsMod.defaultHomeRoot("darwin"), "/Users");
-  assert.deepEqual(pathsMod.installDiscoveryHomeRoots(), ["/home", "/Users"]);
+  assert.equal(pathsMod.defaultHomeRoot("win32"), windowsHomeRoot);
+  assert.deepEqual(pathsMod.installDiscoveryHomeRoots(), [
+    "/home",
+    "/Users",
+    windowsHomeRoot,
+  ]);
   assert.equal(pathsMod.defaultHomeForUser("demo", "linux"), linuxHome);
   assert.equal(pathsMod.defaultHomeForUser("demo", "darwin"), macHome);
   assert.equal(
@@ -215,6 +221,18 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
   assert.equal(
     pathsMod.launcherMetadataPathForHome(macHome, "darwin"),
     path.join(macHome, "Library", "Application Support", "rin", "install.json"),
+  );
+  assert.equal(
+    pathsMod.localBinDirForHome(linuxHome, "win32"),
+    path.join(linuxHome, "AppData", "Roaming", "npm"),
+  );
+  assert.equal(
+    pathsMod.launcherPathForHome(linuxHome, "rin", "win32"),
+    path.join(linuxHome, "AppData", "Roaming", "npm", "rin.cmd"),
+  );
+  assert.equal(
+    pathsMod.launcherMetadataPathForHome(linuxHome, "win32"),
+    path.join(linuxHome, "AppData", "Roaming", "rin", "install.json"),
   );
   const alternateLauncherMetadataPath = pathsMod.launcherMetadataPathForHome(
     linuxHome,

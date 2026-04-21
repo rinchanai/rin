@@ -22,7 +22,12 @@ function uniqueNonEmptyStrings(values: Array<string | undefined | null>) {
   );
 }
 
-const SUPPORTED_HOME_DISCOVERY_PLATFORMS = ["linux", "darwin"] as const;
+const WINDOWS_HOME_ROOT = path.join(
+  process.env.SystemDrive || "C:",
+  "Users",
+);
+
+const SUPPORTED_HOME_DISCOVERY_PLATFORMS = ["linux", "darwin", "win32"] as const;
 
 function pathCandidatesForPlatforms(
   platforms: readonly NodeJS.Platform[],
@@ -31,8 +36,18 @@ function pathCandidatesForPlatforms(
   return uniqueNonEmptyStrings(platforms.map((platform) => buildPath(platform)));
 }
 
+function windowsRoamingAppDataDirForHome(home: string) {
+  return path.join(home, "AppData", "Roaming");
+}
+
+function windowsLocalAppDataDirForHome(home: string) {
+  return path.join(home, "AppData", "Local");
+}
+
 export function defaultHomeRoot(platform = process.platform) {
-  return platform === "darwin" ? "/Users" : "/home";
+  if (platform === "darwin") return "/Users";
+  if (platform === "win32") return WINDOWS_HOME_ROOT;
+  return "/home";
 }
 
 export function installDiscoveryHomeRoots() {
@@ -220,17 +235,28 @@ export function installerRecoveryManifestCandidates(
   return installerManifestPaths(installDir, home).recoveryPaths;
 }
 
-export function localBinDirForHome(home: string) {
+export function localBinDirForHome(home: string, platform = process.platform) {
+  if (platform === "win32") {
+    return path.join(windowsRoamingAppDataDirForHome(home), "npm");
+  }
   return path.join(home, ".local", "bin");
 }
 
-export function launcherPathForHome(home: string, name: "rin" | "rin-install") {
-  return path.join(localBinDirForHome(home), name);
+export function launcherPathForHome(
+  home: string,
+  name: "rin" | "rin-install",
+  platform = process.platform,
+) {
+  const extension = platform === "win32" ? ".cmd" : "";
+  return path.join(localBinDirForHome(home, platform), `${name}${extension}`);
 }
 
 export function appConfigDirForHome(home: string, platform = process.platform) {
   if (platform === "darwin") {
     return path.join(home, "Library", "Application Support", "rin");
+  }
+  if (platform === "win32") {
+    return path.join(windowsRoamingAppDataDirForHome(home), "rin");
   }
   return path.join(home, ".config", "rin");
 }
@@ -370,6 +396,9 @@ export function managedSystemdUnitPathsForHome(
 function userCacheDirForHome(home: string, platform = process.platform) {
   if (platform === "darwin") {
     return path.join(home, "Library", "Caches");
+  }
+  if (platform === "win32") {
+    return windowsLocalAppDataDirForHome(home);
   }
   return path.join(home, ".cache");
 }

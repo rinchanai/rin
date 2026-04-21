@@ -22,8 +22,10 @@ Rin launchers are user-scoped, not global.
 
 Typical launcher paths:
 
-- `~/.local/bin/rin`
-- `~/.local/bin/rin-install`
+- Linux / macOS: `~/.local/bin/rin`
+- Linux / macOS: `~/.local/bin/rin-install`
+- Windows: `~/AppData/Roaming/npm/rin.cmd`
+- Windows: `~/AppData/Roaming/npm/rin-install.cmd`
 
 Launcher metadata is also user-scoped.
 
@@ -31,6 +33,7 @@ Typical metadata paths:
 
 - Linux: `~/.config/rin/install.json`
 - macOS: `~/Library/Application Support/rin/install.json`
+- Windows: `~/AppData/Roaming/rin/install.json`
 
 This metadata records the current user's default `targetUser` and `installDir`.
 It is useful only when you are operating as the same user who owns the launcher.
@@ -59,6 +62,7 @@ Useful locations:
 
 - `<installDir>/installer.json`: install manifest written into the target runtime directory
 - `<targetHome>/.rin/installer.json`: stable locator manifest under the target home; for custom install dirs it points to the real `installDir`
+- Windows launcher metadata: `~/AppData/Roaming/rin/install.json`
 - Linux user service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 
@@ -80,6 +84,7 @@ In that case, prefer this recovery order:
 Typical places to recover `installDir`:
 
 - `<targetHome>/.rin/installer.json`
+- Windows: `~/AppData/Roaming/rin/install.json`
 - Linux: `~/.config/systemd/user/rin-daemon*.service`
 - macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 - default target-home install directory: `<targetHome>/.rin/`

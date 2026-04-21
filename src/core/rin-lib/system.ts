@@ -10,12 +10,23 @@ function normalizeUserName(value: unknown) {
 }
 
 function defaultHomeForUser(targetUser: string) {
-  return path.join(process.platform === "darwin" ? "/Users" : "/home", targetUser);
+  const homeRoot =
+    process.platform === "darwin"
+      ? "/Users"
+      : process.platform === "win32"
+        ? path.join(process.env.SystemDrive || "C:", "Users")
+        : "/home";
+  return path.join(homeRoot, targetUser);
 }
 
 function readUnixUserId(targetUser: string) {
   const normalizedTargetUser = normalizeUserName(targetUser);
-  if (!normalizedTargetUser || process.platform === "darwin") return -1;
+  if (
+    !normalizedTargetUser ||
+    process.platform === "darwin" ||
+    process.platform === "win32"
+  )
+    return -1;
   try {
     return Number(
       execFileSync("id", ["-u", normalizedTargetUser], {
@@ -54,6 +65,18 @@ export function pickPrivilegeCommand() {
 export function readPasswdUser(name: string) {
   const normalizedName = normalizeUserName(name);
   if (!normalizedName) return null;
+
+  if (process.platform === "win32") {
+    const currentUser = normalizeUserName(os.userInfo().username);
+    if (normalizedName === currentUser) {
+      return {
+        name: currentUser,
+        home: os.homedir(),
+        shell: process.env.ComSpec || "powershell.exe",
+      };
+    }
+    return null;
+  }
 
   if (process.platform === "darwin") {
     try {

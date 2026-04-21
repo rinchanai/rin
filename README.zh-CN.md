@@ -40,6 +40,12 @@ Rin 主要抓这几件事：
 ./install.sh
 ```
 
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/rinchanai/rin/main/install.ps1 | iex
+```
+
 然后打开 Rin：
 
 ```bash
@@ -51,6 +57,8 @@ rin
 ```bash
 rin doctor
 ```
+
+Windows 版本当前会完成用户级安装并写入启动命令，但不会额外替你创建专门的后台服务。
 
 安装器会提醒你安全边界，以及可能出现的额外 token 开销。这些开销可能来自初始化、记忆处理、总结压缩、subagent、定时任务和 Web 搜索等流程。
 

@@ -64,21 +64,34 @@ export function writeExecutable(filePath: string, content: string) {
   writeTextFile(filePath, content, 0o755);
 }
 
-const COMMON_RUNTIME_BIN_DIRS = [
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  "/usr/bin",
-  "/bin",
-  "/usr/sbin",
-  "/sbin",
-];
+function commonRuntimeBinDirs() {
+  if (process.platform === "win32") {
+    return Array.from(
+      new Set(
+        [
+          path.dirname(process.execPath),
+          path.join(os.homedir(), "AppData", "Roaming", "npm"),
+          path.join(process.env.ProgramFiles || "C:\\Program Files", "nodejs"),
+        ].filter(Boolean),
+      ),
+    );
+  }
+  return [
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+    "/usr/sbin",
+    "/sbin",
+  ];
+}
 
 export function installedRuntimePathValue() {
   const seen = new Set<string>();
   const dirs: string[] = [];
   for (const dir of [
     ...String(process.env.PATH || "").split(path.delimiter),
-    ...COMMON_RUNTIME_BIN_DIRS,
+    ...commonRuntimeBinDirs(),
   ]) {
     const next = String(dir || "").trim();
     if (!next || seen.has(next)) continue;
@@ -89,7 +102,16 @@ export function installedRuntimePathValue() {
 }
 
 export function installedRuntimeNodeCommandArgs() {
+  if (process.platform === "win32") return ["node"];
   return [fs.existsSync("/usr/bin/env") ? "/usr/bin/env" : "env", "node"];
+}
+
+function windowsCmdQuote(value: string) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function windowsPsQuote(value: string) {
+  return `'${String(value).replace(/'/g, "''")}'`;
 }
 
 export function launcherScript(candidates: string[]) {
@@ -104,6 +126,34 @@ export function launcherScript(candidates: string[]) {
     )
     .join("\n");
   return `#!/usr/bin/env sh\nPATH=${shellQuote(runtimePath)}\nexport PATH\n${checks}\necho "rin: installed runtime entry not found" >&2\nexit 1\n`;
+}
+
+export function launcherCmdScript(candidates: string[]) {
+  const runtimePath = installedRuntimePathValue();
+  const nodeCommand = installedRuntimeNodeCommandArgs()
+    .map((entry) => windowsCmdQuote(entry))
+    .join(" ");
+  const checks = candidates
+    .map(
+      (candidate) =>
+        `if exist ${windowsCmdQuote(candidate)} (\r\n  ${nodeCommand} ${windowsCmdQuote(candidate)} %*\r\n  exit /b %errorlevel%\r\n)`,
+    )
+    .join("\r\n");
+  return `@echo off\r\nsetlocal\r\nset "PATH=${runtimePath.replace(/"/g, '""')};%PATH%"\r\n${checks}\r\necho rin: installed runtime entry not found 1>&2\r\nexit /b 1\r\n`;
+}
+
+export function launcherPowerShellScript(candidates: string[]) {
+  const runtimePath = installedRuntimePathValue();
+  const nodeCommand = installedRuntimeNodeCommandArgs()
+    .map((entry) => windowsPsQuote(entry))
+    .join(", ");
+  const checks = candidates
+    .map(
+      (candidate) =>
+        `if (Test-Path -LiteralPath ${windowsPsQuote(candidate)}) { & @(${nodeCommand}) ${windowsPsQuote(candidate)} @args; exit $LASTEXITCODE }`,
+    )
+    .join("\r\n");
+  return `$ErrorActionPreference = 'Stop'\r\n$env:PATH = ${windowsPsQuote(runtimePath)} + ';' + $env:PATH\r\n${checks}\r\nWrite-Error 'rin: installed runtime entry not found'\r\nexit 1\r\n`;
 }
 
 export function installerTempRootCandidates() {
@@ -153,6 +203,21 @@ export function writeLaunchersForUser(
   const targets = launcherTargetsForInstallDir(installDir);
   const rinPath = launcherPathForHome(home, "rin");
   const rinInstallPath = launcherPathForHome(home, "rin-install");
+  if (process.platform === "win32") {
+    writeTextFile(rinPath, launcherCmdScript(targets.rin), 0o644);
+    writeTextFile(rinInstallPath, launcherCmdScript(targets.rinInstall), 0o644);
+    writeTextFile(
+      rinPath.replace(/\.cmd$/i, ".ps1"),
+      launcherPowerShellScript(targets.rin),
+      0o644,
+    );
+    writeTextFile(
+      rinInstallPath.replace(/\.cmd$/i, ".ps1"),
+      launcherPowerShellScript(targets.rinInstall),
+      0o644,
+    );
+    return { rinPath, rinInstallPath };
+  }
   writeExecutable(rinPath, launcherScript(targets.rin));
   writeExecutable(rinInstallPath, launcherScript(targets.rinInstall));
   return { rinPath, rinInstallPath };

@@ -260,3 +260,20 @@ test("bootstrap wrappers forward beta nightly and git channel selections", async
     );
   });
 });
+
+test("powershell bootstrap wrappers route through the shared bootstrap entrypoint", async () => {
+  const installPs1 = await fs.readFile(path.join(rootDir, "install.ps1"), "utf8");
+  const updatePs1 = await fs.readFile(path.join(rootDir, "update.ps1"), "utf8");
+  const bootstrapPs1 = await fs.readFile(
+    path.join(rootDir, "scripts", "bootstrap-entrypoint.ps1"),
+    "utf8",
+  );
+
+  assert.match(installPs1, /scripts\/bootstrap-entrypoint\.ps1/);
+  assert.match(installPs1, /-Mode install/);
+  assert.match(updatePs1, /scripts\/bootstrap-entrypoint\.ps1/);
+  assert.match(updatePs1, /-Mode update/);
+  assert.match(bootstrapPs1, /stable-bootstrap/);
+  assert.match(bootstrapPs1, /Invoke-WebRequest/);
+  assert.match(bootstrapPs1, /RIN_RELEASE_CHANNEL/);
+});

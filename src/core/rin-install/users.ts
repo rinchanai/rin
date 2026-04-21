@@ -60,6 +60,23 @@ function resolveUserHome(targetUser: string) {
 
 export function listSystemUsers() {
   const users: SystemUser[] = [];
+  if (process.platform === "win32") {
+    try {
+      const info = os.userInfo();
+      pushSystemUser(
+        users,
+        {
+          name: info.username,
+          uid: Number(info.uid ?? 1000),
+          gid: Number(info.gid ?? 1000),
+          home: os.homedir(),
+          shell: process.env.ComSpec || "powershell.exe",
+        },
+        0,
+      );
+    } catch {}
+    return users.sort(compareSystemUsers);
+  }
   if (process.platform === "darwin") {
     try {
       const raw = execFileSync("dscl", [".", "-list", "/Users", "UniqueID"], {

@@ -45,6 +45,12 @@ Install:
 ./install.sh --git deadbeef
 ```
 
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/rinchanai/rin/main/install.ps1 | iex
+```
+
 Then open Rin:
 
 ```bash
@@ -56,6 +62,8 @@ Check health if needed:
 ```bash
 rin doctor
 ```
+
+On Windows, Rin currently installs as a user-scoped runtime and launcher without creating a dedicated background service for you.
 
 The installer will warn you about security boundaries and possible extra token usage. That can include initialization, memory processing, summarization, subagents, scheduled tasks, and web search.
 
@@ -101,6 +109,7 @@ If `rin` is confirmed missing on the current account, treat that as “this is n
 In that case, recover the real target install through the installed metadata described in `docs/rin/docs/runtime-layout.md`:
 
 - `<targetHome>/.rin/installer.json`
+- Windows: `~/AppData/Roaming/rin/install.json`
 - Linux: `~/.config/systemd/user/rin-daemon*.service`
 - macOS: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 

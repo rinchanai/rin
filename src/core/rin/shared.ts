@@ -2,6 +2,8 @@ import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync, spawn } from "node:child_process";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { safeString } from "../text-utils.js";
 
 import { bridgeDaemonSocketPath } from "../rin-lib/common.js";
@@ -282,6 +284,16 @@ export function requireTool(name: string, paths: string[] = []) {
     if (candidate && fs.existsSync(candidate)) return candidate;
   }
   try {
+    if (process.platform === "win32") {
+      const resolved = execFileSync("where", [name], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean);
+      return resolved || name;
+    }
     return (
       execFileSync("sh", ["-lc", `command -v ${shellQuote(name)}`], {
         encoding: "utf8",
@@ -293,16 +305,31 @@ export function requireTool(name: string, paths: string[] = []) {
 }
 
 function runCommandSync(command: string, args: string[], options: any = {}) {
-  execFileSync(command, args, { stdio: "inherit", ...options });
+  execFileSync(command, args, {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    ...options,
+  });
+}
+
+async function downloadFile(url: string, destPath: string) {
+  const response = await fetch(url);
+  if (!response.ok || !response.body) {
+    throw new Error(`rin_download_failed:${response.status}:${url}`);
+  }
+  await pipeline(Readable.fromWeb(response.body as any), fs.createWriteStream(destPath));
 }
 
 export function updateWorkRoot() {
   const explicitRoot = safeString(process.env.RIN_INSTALL_TMPDIR).trim();
-  const base =
-    explicitRoot ||
-    safeString(process.env.XDG_CACHE_HOME).trim() ||
-    path.join(os.homedir(), ".cache");
-  const dir = explicitRoot ? path.resolve(base) : path.join(base, "rin-update");
+  const defaultCacheRoot =
+    process.platform === "win32"
+      ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "rin-update")
+      : path.join(
+          safeString(process.env.XDG_CACHE_HOME).trim() || path.join(os.homedir(), ".cache"),
+          "rin-update",
+        );
+  const dir = explicitRoot ? path.resolve(explicitRoot) : defaultCacheRoot;
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -565,7 +592,7 @@ export async function runUpdate(parsed: ParsedArgs) {
     } else if (wget) {
       runCommandSync(wget, ["-qO", archivePath, resolvedRelease.archiveUrl]);
     } else {
-      throw new Error("rin_missing_required_tool:curl_or_wget");
+      await downloadFile(resolvedRelease.archiveUrl, archivePath);
     }
     runCommandSync(tar, [
       "-xzf",

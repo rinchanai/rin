@@ -38,8 +38,20 @@ test("installer users keep system user lists deterministically sorted", () => {
 
 test("installer users normalize lookup and home fallback behavior", () => {
   assert.equal(users.findSystemUser("   "), undefined);
-  assert.equal(users.homeForUser(" demo-user "), "/home/demo-user");
-  assert.equal(users.targetHomeForUser(" demo-user "), "/home/demo-user");
+  const expectedHomeRoot =
+    process.platform === "darwin"
+      ? "/Users"
+      : process.platform === "win32"
+        ? path.join(process.env.SystemDrive || "C:", "Users")
+        : "/home";
+  assert.equal(
+    users.homeForUser(" demo-user "),
+    path.join(expectedHomeRoot, "demo-user"),
+  );
+  assert.equal(
+    users.targetHomeForUser(" demo-user "),
+    path.join(expectedHomeRoot, "demo-user"),
+  );
 });
 
 test("installer users describe ownership and elevated write decisions consistently", async () => {

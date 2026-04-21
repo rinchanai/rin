@@ -48,7 +48,12 @@ test("rin system falls back safely for unknown user runtime paths", () => {
 test("rin system trims user lookup inputs consistently", () => {
   const currentUser = os.userInfo().username;
   const lookedUp = system.readPasswdUser(` ${currentUser} `);
-  const expectedHomeRoot = process.platform === "darwin" ? "/Users" : "/home";
+  const expectedHomeRoot =
+    process.platform === "darwin"
+      ? "/Users"
+      : process.platform === "win32"
+        ? path.join(process.env.SystemDrive || "C:", "Users")
+        : "/home";
 
   assert.equal(lookedUp?.name, currentUser);
   assert.equal(
