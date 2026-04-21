@@ -1,0 +1,58 @@
+name: refresh-stable-bootstrap
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/refresh-stable-bootstrap.yml'
+      - 'docs/rin/CHANGELOG.md'
+      - 'install.sh'
+      - 'release-manifest.json'
+      - 'scripts/bootstrap-entrypoint.sh'
+      - 'scripts/release/export-bootstrap-branch.mjs'
+      - 'update.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-stable-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Prepare bootstrap branch checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          bootstrap_dir="$RUNNER_TEMP/stable-bootstrap"
+          remote_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin stable-bootstrap >/dev/null 2>&1; then
+            git clone --depth 1 --branch stable-bootstrap "$remote_url" "$bootstrap_dir"
+          else
+            git init "$bootstrap_dir"
+            git -C "$bootstrap_dir" checkout --orphan stable-bootstrap
+            git -C "$bootstrap_dir" remote add origin "$remote_url"
+          fi
+          node scripts/release/export-bootstrap-branch.mjs --output "$bootstrap_dir" --branch stable-bootstrap
+          git -C "$bootstrap_dir" config user.name 'github-actions[bot]'
+          git -C "$bootstrap_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git -C "$bootstrap_dir" add .
+          if git -C "$bootstrap_dir" diff --cached --quiet; then
+            echo 'No bootstrap changes to commit.'
+          else
+            git -C "$bootstrap_dir" commit -m "chore(release): refresh stable bootstrap from ${GITHUB_SHA}"
+            git -C "$bootstrap_dir" push origin HEAD:stable-bootstrap
+          fi
