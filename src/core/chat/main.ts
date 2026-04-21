@@ -532,6 +532,7 @@ export async function startChatBridge(
         logger.warn(
           `chat reply-resume fallback chatKey=${decision.chatKey} sessionFile=${linkedSessionFile} err=${errorMessage}`,
         );
+        controller.dispose();
         try {
           await controller.runTurn(
             {

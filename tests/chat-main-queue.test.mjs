@@ -462,6 +462,7 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
       const chatKey = "telegram/1:2";
       const replySessionFile = path.join(agentDir, "sessions", "linked", "reply-history.jsonl");
       const seen = [];
+      let disposeCalls = 0;
 
       supportMod.saveIdentity(path.join(agentDir, "data"), {
         persons: { owner: { trust: "OWNER" } },
@@ -489,6 +490,9 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
         });
         if (input?.sessionFile) throw new Error("rin_timeout:select_session");
         return { retry: false };
+      };
+      controllerMod.ChatController.prototype.dispose = function () {
+        disposeCalls += 1;
       };
 
       const { app } = await mainMod.startChatBridge();
@@ -523,8 +527,8 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
       while (Date.now() < deadline && seen.length < 2) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      if (seen.length !== 2) {
-        throw new Error(JSON.stringify({ seen, replySessionFile }));
+      if (seen.length !== 2 || disposeCalls !== 1) {
+        throw new Error(JSON.stringify({ seen, replySessionFile, disposeCalls }));
       }
       const [first, second] = seen;
       if (
@@ -532,14 +536,14 @@ test("chat main falls back to a plain turn when quoted reply-resume times out se
         first.sessionFile !== replySessionFile ||
         first.replyToMessageId !== "m-follow"
       ) {
-        throw new Error(JSON.stringify({ seen, replySessionFile }));
+        throw new Error(JSON.stringify({ seen, replySessionFile, disposeCalls }));
       }
       if (
         second.mode !== "prompt" ||
         second.sessionFile !== null ||
         second.replyToMessageId !== "m-follow"
       ) {
-        throw new Error(JSON.stringify({ seen, replySessionFile }));
+        throw new Error(JSON.stringify({ seen, replySessionFile, disposeCalls }));
       }
       process.exit(0);
     `;
