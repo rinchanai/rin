@@ -286,19 +286,9 @@ export async function startChatBridge(
   let inboxPollTimer: NodeJS.Timeout | null = null;
   const typingPollTimer = setInterval(() => {
     for (const controller of controllers.values()) {
-      void controller.housekeep().catch((error: any) => {
-        logger.warn(
-          `chat housekeeping failed chatKey=${controller.chatKey} err=${safeString(error?.message || error)}`,
-        );
-      });
       void controller.pollTyping().catch(() => {});
     }
     for (const controller of detachedControllers.values()) {
-      void controller.housekeep().catch((error: any) => {
-        logger.warn(
-          `chat housekeeping failed chatKey=${controller.chatKey} err=${safeString(error?.message || error)}`,
-        );
-      });
       void controller.pollTyping().catch(() => {});
     }
   }, TYPING_POLL_INTERVAL_MS);
@@ -452,9 +442,6 @@ export async function startChatBridge(
       replyToMessageId,
     );
     const linkedSessionFile = safeString(replySession?.sessionFile || "").trim();
-    if (linkedSessionFile) {
-      await controller.resumeSessionFile(linkedSessionFile).catch(() => {});
-    }
     const { attachments, failures } = await extractInboundAttachments(
       elements,
       chatStateDir(dataDir, decision.chatKey),
@@ -499,11 +486,6 @@ export async function startChatBridge(
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
     });
-    const initialMode = linkedSessionFile
-      ? "prompt"
-      : controller.hasActiveTurn()
-        ? "steer"
-        : "prompt";
     const handleTurnFailure = async (error: any, sessionFile = linkedSessionFile) => {
       const errorMessage = safeString((error as any)?.message || error);
       const transientFailure = isTransientChatRuntimeError(errorMessage);
@@ -537,34 +519,10 @@ export async function startChatBridge(
           incomingMessageId: messageId,
           sessionFile: linkedSessionFile || undefined,
         },
-        initialMode,
+        "prompt",
       );
       return { retry: false };
     } catch (error) {
-      const errorMessage = safeString((error as any)?.message || error);
-      const shouldFallbackFromReplyResume =
-        Boolean(linkedSessionFile) &&
-        (errorMessage === "rin_no_attached_session" ||
-          /(^|\b)rin_timeout:select_session\b/.test(errorMessage));
-      if (shouldFallbackFromReplyResume) {
-        logger.warn(
-          `chat reply-resume fallback chatKey=${decision.chatKey} sessionFile=${linkedSessionFile} err=${errorMessage}`,
-        );
-        try {
-          await controller.runTurn(
-            {
-              text: promptBody,
-              attachments,
-              replyToMessageId: messageId,
-              incomingMessageId: messageId,
-            },
-            controller.hasActiveTurn() ? "steer" : "prompt",
-          );
-          return { retry: false };
-        } catch (fallbackError) {
-          return await handleTurnFailure(fallbackError, "");
-        }
-      }
       return await handleTurnFailure(error, linkedSessionFile);
     }
   };
@@ -839,28 +797,6 @@ export async function startChatBridge(
     );
   }
 
-  for (const item of listChatStateFiles(path.join(dataDir, "chats"))) {
-    const controller = getController(item.chatKey);
-    void controller.recoverIfNeeded().catch((error) => {
-      logger.warn(
-        `chat recovery failed chatKey=${item.chatKey} err=${safeString((error as any)?.message || error)}`,
-      );
-    });
-  }
-  for (const item of listDetachedControllerStateFiles(
-    path.join(dataDir, "cron-turns"),
-  )) {
-    const controller = getDetachedController(item.controllerKey, {
-      chatKey: item.chatKey,
-      deliveryEnabled: false,
-      affectChatBinding: false,
-    });
-    void controller.recoverIfNeeded().catch((error) => {
-      logger.warn(
-        `detached chat recovery failed controllerKey=${item.controllerKey} err=${safeString((error as any)?.message || error)}`,
-      );
-    });
-  }
   void drainChatInbox().catch((error: any) => {
     logger.warn(
       `chat inbox startup drain failed err=${safeString(error?.message || error)}`,

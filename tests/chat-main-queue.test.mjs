@@ -19,7 +19,6 @@ test("chat main consumes inbound help messages through the inbox path only once"
     await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
 
     const script = `
-      import fs from "node:fs";
       import path from "node:path";
       import { pathToFileURL } from "node:url";
 
@@ -61,18 +60,16 @@ test("chat main consumes inbound help messages through the inbox path only once"
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 3500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
       const rows = storeMod
         .listChatMessages(agentDir)
         .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
       if (rows.length !== 1) {
-        throw new Error(
-          JSON.stringify({
-            sentCount,
-            assistantCount: rows.length,
-            texts: rows.map((item) => item.text),
-          }),
-        );
+        throw new Error(JSON.stringify({
+          sentCount,
+          assistantCount: rows.length,
+          texts: rows.map((item) => item.text),
+        }));
       }
       process.exit(0);
     `;
@@ -99,7 +96,6 @@ test("chat main does not retry a queued prompt while the controller is already h
     await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
 
     const script = `
-      import fs from "node:fs";
       import path from "node:path";
       import { pathToFileURL } from "node:url";
 
@@ -124,9 +120,7 @@ test("chat main does not retry a queued prompt while the controller is already h
         this.client = { subscribe() {} };
         this.session = {
           isStreaming: false,
-          isCompacting: false,
           messages: [],
-          subscribe: () => () => {},
           sessionManager: {
             getSessionFile: () => "/tmp/slow-chat.jsonl",
             getSessionId: () => "slow-session",
@@ -156,21 +150,16 @@ test("chat main does not retry a queued prompt while the controller is already h
               });
             }, 10);
           },
-          refreshState: async () => {},
-          refreshMessages: async () => {},
           switchSession: async () => {},
-          setSessionName: async () => {},
         };
       };
 
       const { app } = await mainMod.startChatBridge();
-      let sentCount = 0;
       app.bots.push({
         platform: "telegram",
         selfId: "1",
         async sendMessage() {
-          sentCount += 1;
-          return [String(sentCount)];
+          return ["assistant-1"];
         },
         internal: {
           async sendChatAction() {},
@@ -195,13 +184,11 @@ test("chat main does not retry a queued prompt while the controller is already h
         .listChatMessages(agentDir)
         .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
       if (promptCalls !== 1 || rows.length !== 1) {
-        throw new Error(
-          JSON.stringify({
-            promptCalls,
-            assistantCount: rows.length,
-            texts: rows.map((item) => item.text),
-          }),
-        );
+        throw new Error(JSON.stringify({
+          promptCalls,
+          assistantCount: rows.length,
+          texts: rows.map((item) => item.text),
+        }));
       }
       process.exit(0);
     `;
@@ -256,9 +243,7 @@ test("chat main retries a transient daemon startup failure without leaking the s
         this.client = { subscribe() {} };
         this.session = {
           isStreaming: false,
-          isCompacting: false,
           messages: [],
-          subscribe: () => () => {},
           sessionManager: {
             getSessionFile: () => "/tmp/retry-chat.jsonl",
             getSessionId: () => "retry-session",
@@ -269,246 +254,21 @@ test("chat main retries a transient daemon startup failure without leaking the s
             sessionId: "retry-session",
           }),
           prompt: async (_message, options = {}) => {
-            controller.session.isStreaming = true;
-            controller.handleSessionEvent({ type: "agent_start" });
-            queueMicrotask(() => {
-              controller.session.messages = [
-                { role: "user", content: [{ type: "text", text: "hello after restart" }] },
-                { role: "assistant", content: [{ type: "text", text: "recovered reply" }] },
-              ];
-              controller.session.isStreaming = false;
-              controller.handleClientEvent({
-                type: "ui",
-                payload: {
-                  type: "rpc_turn_event",
-                  event: "complete",
-                  requestTag: options.requestTag,
-                  finalText: "recovered reply",
-                  result: { messages: [{ type: "text", text: "recovered reply" }] },
-                  sessionId: "retry-session",
-                  sessionFile: "/tmp/retry-chat.jsonl",
-                },
-              });
-              controller.handleSessionEvent({ type: "agent_end" });
+            controller.handleClientEvent({
+              type: "ui",
+              payload: {
+                type: "rpc_turn_event",
+                event: "complete",
+                requestTag: options.requestTag,
+                finalText: "retry reply",
+                result: { messages: [{ type: "text", text: "retry reply" }] },
+                sessionId: "retry-session",
+                sessionFile: "/tmp/retry-chat.jsonl",
+              },
             });
           },
-          refreshState: async () => {},
-          refreshMessages: async () => {},
           switchSession: async () => {},
-          setSessionName: async () => {},
         };
-      };
-
-      const { app } = await mainMod.startChatBridge();
-      let sentCount = 0;
-      app.bots.push({
-        platform: "telegram",
-        selfId: "1",
-        async sendMessage() {
-          sentCount += 1;
-          return [String(sentCount)];
-        },
-        internal: {
-          async sendChatAction() {},
-        },
-      });
-
-      app.emit("message", {
-        platform: "telegram",
-        selfId: "1",
-        channelId: "2",
-        userId: "owner-1",
-        messageId: "m-retry-after-daemon-restart",
-        isDirect: true,
-        content: "hello after restart",
-        stripped: { content: "hello after restart" },
-        elements: [h.createChatRuntimeH().text("hello after restart")],
-      });
-
-      const deadline = Date.now() + 12000;
-      let rows = [];
-      while (Date.now() < deadline) {
-        rows = storeMod
-          .listChatMessages(agentDir)
-          .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
-        if (rows.some((item) => item.text === "recovered reply")) break;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-
-      const texts = rows.map((item) => item.text);
-      if (connectCalls < 2 || texts.includes("Chat bridge error: connect ENOENT /run/user/1001/rin-daemon/daemon.sock") || !texts.includes("recovered reply")) {
-        throw new Error(JSON.stringify({ connectCalls, texts, sentCount }));
-      }
-      process.exit(0);
-    `;
-
-    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
-      cwd: rootDir,
-      env: {
-        ...process.env,
-        RIN_REPO_ROOT: rootDir,
-        RIN_DIR: agentDir,
-      },
-      timeout: 18000,
-    });
-  } finally {
-    await fs.rm(agentDir, { recursive: true, force: true });
-  }
-});
-
-test("chat main does not replay a restored processing envelope after controller recovery already owns it", async () => {
-  const tempRoot = "/home/rin/tmp";
-  await fs.mkdir(tempRoot, { recursive: true });
-  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
-  try {
-    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
-
-    const script = `
-      import fs from "node:fs";
-      import path from "node:path";
-      import { pathToFileURL } from "node:url";
-
-      const rootDir = process.env.RIN_REPO_ROOT;
-      const agentDir = process.env.RIN_DIR;
-      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
-      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
-      const inboxMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "inbox.js")).href);
-      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
-      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
-      const dataDir = path.join(agentDir, "data");
-      const chatKey = "telegram/1:2";
-      const statePath = supportMod.chatStatePath(dataDir, chatKey);
-
-      const session = {
-        platform: "telegram",
-        selfId: "1",
-        channelId: "2",
-        userId: "owner-1",
-        messageId: "m-restart",
-        isDirect: true,
-        content: "hello after restart",
-        stripped: { content: "hello after restart" },
-        elements: [{ type: "text", attrs: { content: "hello after restart" } }],
-      };
-      const queued = inboxMod.enqueueChatInboxItem(agentDir, {
-        chatKey,
-        messageId: "m-restart",
-        session,
-        elements: session.elements,
-      });
-      inboxMod.claimChatInboxFile(agentDir, queued.filePath);
-      fs.mkdirSync(path.dirname(statePath), { recursive: true });
-      fs.writeFileSync(statePath, JSON.stringify({
-        chatKey,
-        piSessionFile: "/tmp/restart-chat.jsonl",
-        processing: {
-          text: "hello after restart",
-          attachments: [],
-          startedAt: Date.now(),
-          incomingMessageId: "m-restart",
-          replyToMessageId: "m-restart",
-        },
-      }, null, 2) + "\\n", "utf8");
-
-      let recoverCalls = 0;
-      let runTurnCalls = 0;
-      controllerMod.ChatController.prototype.recoverIfNeeded = async function () {
-        recoverCalls += 1;
-        storeMod.saveChatMessage(this.agentDir, {
-          chatKey: this.chatKey,
-          platform: "telegram",
-          botId: "1",
-          chatId: "2",
-          chatType: "private",
-          messageId: "m-restart",
-          role: "user",
-          receivedAt: new Date().toISOString(),
-          text: "hello after restart",
-          acceptedAt: new Date().toISOString(),
-          processedAt: new Date().toISOString(),
-          sessionFile: "/tmp/restart-chat.jsonl",
-          sessionId: "restart-session",
-        });
-        delete this.state.processing;
-        this.saveState();
-      };
-      controllerMod.ChatController.prototype.runTurn = async function () {
-        runTurnCalls += 1;
-        return { retry: false };
-      };
-
-      await mainMod.startChatBridge();
-      await new Promise((resolve) => setTimeout(resolve, 3500));
-
-      if (recoverCalls < 1 || runTurnCalls !== 0) {
-        throw new Error(JSON.stringify({ recoverCalls, runTurnCalls }));
-      }
-      process.exit(0);
-    `;
-
-    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
-      cwd: rootDir,
-      env: {
-        ...process.env,
-        RIN_REPO_ROOT: rootDir,
-        RIN_DIR: agentDir,
-      },
-      timeout: 15000,
-    });
-  } finally {
-    await fs.rm(agentDir, { recursive: true, force: true });
-  }
-});
-
-test("chat main resumes a quoted session from stored relative session file metadata", async () => {
-  const tempRoot = "/home/rin/tmp";
-  await fs.mkdir(tempRoot, { recursive: true });
-  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
-  try {
-    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
-
-    const script = `
-      import path from "node:path";
-      import { pathToFileURL } from "node:url";
-
-      const rootDir = process.env.RIN_REPO_ROOT;
-      const agentDir = process.env.RIN_DIR;
-      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
-      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
-      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
-      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
-      const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
-      const chatKey = "telegram/1:2";
-      const sessionFile = path.join(agentDir, "sessions", "linked", "chat.jsonl");
-      const dataDir = path.join(agentDir, "data");
-
-      supportMod.saveIdentity(dataDir, {
-        persons: { owner: { trust: "OWNER" } },
-        aliases: [{ platform: "telegram", userId: "owner-1", personId: "owner" }],
-        trusted: [],
-      });
-      storeMod.saveChatMessage(agentDir, {
-        chatKey,
-        platform: "telegram",
-        botId: "1",
-        chatId: "2",
-        chatType: "private",
-        messageId: "m-linked",
-        role: "assistant",
-        receivedAt: new Date().toISOString(),
-        text: "old reply",
-        sessionFile,
-      });
-
-      let resumed = null;
-      let runTurnCalls = 0;
-      controllerMod.ChatController.prototype.resumeSessionFile = async function (nextSessionFile) {
-        resumed = nextSessionFile;
-        return { changed: true, sessionFile: nextSessionFile };
-      };
-      controllerMod.ChatController.prototype.runTurn = async function () {
-        runTurnCalls += 1;
-        return { retry: false };
       };
 
       const { app } = await mainMod.startChatBridge();
@@ -528,23 +288,29 @@ test("chat main resumes a quoted session from stored relative session file metad
         selfId: "1",
         channelId: "2",
         userId: "owner-1",
-        messageId: "m-follow",
+        messageId: "m-retry",
         isDirect: true,
-        content: "continue here",
-        stripped: { content: "continue here" },
-        quote: {
-          messageId: "m-linked",
-          content: "old reply",
-        },
-        elements: [h.createChatRuntimeH().text("continue here")],
+        content: "hello retry",
+        stripped: { content: "hello retry" },
+        elements: [h.createChatRuntimeH().text("hello retry")],
       });
 
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && runTurnCalls < 1) {
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const rows = storeMod
+          .listChatMessages(agentDir)
+          .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
+        if (rows.some((item) => item.text === "retry reply")) break;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
-      if (runTurnCalls !== 1 || resumed !== sessionFile) {
-        throw new Error(JSON.stringify({ resumed, runTurnCalls, sessionFile }));
+
+      const rows = storeMod
+        .listChatMessages(agentDir)
+        .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
+      const leaked = rows.some((item) => String(item.text || "").includes("ENOENT"));
+      const succeeded = rows.some((item) => item.text === "retry reply");
+      if (!succeeded || leaked || connectCalls < 2) {
+        throw new Error(JSON.stringify({ connectCalls, leaked, rows }));
       }
       process.exit(0);
     `;
@@ -556,14 +322,14 @@ test("chat main resumes a quoted session from stored relative session file metad
         RIN_REPO_ROOT: rootDir,
         RIN_DIR: agentDir,
       },
-      timeout: 15000,
+      timeout: 20000,
     });
   } finally {
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
 
-test("chat main queues explicit reply-resume on the linked session instead of steering the current chat turn", async () => {
+test("chat main passes quoted reply session metadata through one normal prompt submission", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
   const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
@@ -603,14 +369,15 @@ test("chat main queues explicit reply-resume on the linked session instead of st
         sessionFile: replySessionFile,
       });
 
-      controllerMod.ChatController.prototype.hasActiveTurn = function () {
-        return true;
-      };
       controllerMod.ChatController.prototype.resumeSessionFile = async function () {
-        throw new Error("resume_failed_for_test");
+        throw new Error("main_should_not_pre_resume_reply_session");
       };
       controllerMod.ChatController.prototype.runTurn = async function (input, mode) {
-        seen.push({ mode, sessionFile: input?.sessionFile || null, replyToMessageId: input?.replyToMessageId || null });
+        seen.push({
+          mode,
+          sessionFile: input?.sessionFile || null,
+          replyToMessageId: input?.replyToMessageId || null,
+        });
         return { retry: false };
       };
 
@@ -650,118 +417,11 @@ test("chat main queues explicit reply-resume on the linked session instead of st
         throw new Error(JSON.stringify({ seen, replySessionFile }));
       }
       const first = seen[0];
-      if (first.mode !== "prompt" || first.sessionFile !== replySessionFile || first.replyToMessageId !== "m-follow") {
-        throw new Error(JSON.stringify({ seen, replySessionFile }));
-      }
-      process.exit(0);
-    `;
-
-    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
-      cwd: rootDir,
-      env: {
-        ...process.env,
-        RIN_REPO_ROOT: rootDir,
-        RIN_DIR: agentDir,
-      },
-      timeout: 15000,
-    });
-  } finally {
-    await fs.rm(agentDir, { recursive: true, force: true });
-  }
-});
-
-test("chat main falls back to a plain turn when quoted reply-resume times out selecting the linked session", async () => {
-  const tempRoot = "/home/rin/tmp";
-  await fs.mkdir(tempRoot, { recursive: true });
-  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
-  try {
-    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
-
-    const script = `
-      import path from "node:path";
-      import { pathToFileURL } from "node:url";
-
-      const rootDir = process.env.RIN_REPO_ROOT;
-      const agentDir = process.env.RIN_DIR;
-      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
-      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
-      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
-      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
-      const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
-      const chatKey = "telegram/1:2";
-      const replySessionFile = path.join(agentDir, "sessions", "linked", "reply-history.jsonl");
-      const seen = [];
-
-      supportMod.saveIdentity(path.join(agentDir, "data"), {
-        persons: { owner: { trust: "OWNER" } },
-        aliases: [{ platform: "telegram", userId: "owner-1", personId: "owner" }],
-        trusted: [],
-      });
-      storeMod.saveChatMessage(agentDir, {
-        chatKey,
-        platform: "telegram",
-        botId: "1",
-        chatId: "2",
-        chatType: "private",
-        messageId: "m-linked",
-        role: "assistant",
-        receivedAt: new Date().toISOString(),
-        text: "old reply",
-        sessionFile: replySessionFile,
-      });
-
-      controllerMod.ChatController.prototype.hasActiveTurn = function () {
-        return false;
-      };
-      controllerMod.ChatController.prototype.resumeSessionFile = async function () {
-        throw new Error("resume_failed_for_test");
-      };
-      controllerMod.ChatController.prototype.runTurn = async function (input, mode) {
-        seen.push({ mode, sessionFile: input?.sessionFile || null, replyToMessageId: input?.replyToMessageId || null });
-        if (input?.sessionFile) throw new Error("rin_timeout:select_session");
-        return { retry: false };
-      };
-
-      const { app } = await mainMod.startChatBridge();
-      app.bots.push({
-        platform: "telegram",
-        selfId: "1",
-        async sendMessage() {
-          return ["assistant-1"];
-        },
-        internal: {
-          async sendChatAction() {},
-        },
-      });
-
-      app.emit("message", {
-        platform: "telegram",
-        selfId: "1",
-        channelId: "2",
-        userId: "owner-1",
-        messageId: "m-follow",
-        isDirect: true,
-        content: "continue here",
-        stripped: { content: "continue here" },
-        quote: {
-          messageId: "m-linked",
-          content: "old reply",
-        },
-        elements: [h.createChatRuntimeH().text("continue here")],
-      });
-
-      const deadline = Date.now() + 5000;
-      while (Date.now() < deadline && seen.length < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      if (seen.length !== 2) {
-        throw new Error(JSON.stringify({ seen, replySessionFile }));
-      }
-      const [first, second] = seen;
-      if (first.mode !== "prompt" || first.sessionFile !== replySessionFile || first.replyToMessageId !== "m-follow") {
-        throw new Error(JSON.stringify({ seen, replySessionFile }));
-      }
-      if (second.mode !== "prompt" || second.sessionFile !== null || second.replyToMessageId !== "m-follow") {
+      if (
+        first.mode !== "prompt" ||
+        first.sessionFile !== replySessionFile ||
+        first.replyToMessageId !== "m-follow"
+      ) {
         throw new Error(JSON.stringify({ seen, replySessionFile }));
       }
       process.exit(0);
