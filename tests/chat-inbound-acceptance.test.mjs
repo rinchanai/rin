@@ -73,9 +73,8 @@ test("chat controller does not accept an inbound prompt before the turn actually
   });
 
   controller.commitPendingDelivery = async function (clearProcessing = false) {
-    delete this.state.pendingDelivery;
-    if (clearProcessing) delete this.state.processing;
-    this.saveState();
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
   };
 
   const acceptanceSessionFile = path.join(

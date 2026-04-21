@@ -78,9 +78,8 @@ test("chat controller bootstraps a fresh session before the first command", asyn
   const calls = [];
   const deliveries = [];
   controller.commitPendingDelivery = async function () {
-    deliveries.push(this.state.pendingDelivery?.text || "");
-    delete this.state.pendingDelivery;
-    this.saveState();
+    deliveries.push(this.stagedDelivery?.text || "");
+    this.stagedDelivery = null;
   };
 
   controller.session = {
@@ -114,9 +113,8 @@ test("chat controller skips recovery bootstrap for /new", async () => {
   const calls = [];
   const deliveries = [];
   controller.commitPendingDelivery = async function () {
-    deliveries.push(this.state.pendingDelivery?.text || "");
-    delete this.state.pendingDelivery;
-    this.saveState();
+    deliveries.push(this.stagedDelivery?.text || "");
+    this.stagedDelivery = null;
   };
 
   controller.connect = async function (options = {}) {
@@ -152,9 +150,8 @@ test("chat controller delivers visible non-transient command errors", async () =
   const controller = await createController();
   const deliveries = [];
   controller.commitPendingDelivery = async function () {
-    deliveries.push(this.state.pendingDelivery?.text || "");
-    delete this.state.pendingDelivery;
-    this.saveState();
+    deliveries.push(this.stagedDelivery?.text || "");
+    this.stagedDelivery = null;
   };
 
   controller.session = {
@@ -180,9 +177,8 @@ test("chat controller keeps transient daemon command errors out of chat replies"
   const controller = await createController();
   const deliveries = [];
   controller.commitPendingDelivery = async function () {
-    deliveries.push(this.state.pendingDelivery?.text || "");
-    delete this.state.pendingDelivery;
-    this.saveState();
+    deliveries.push(this.stagedDelivery?.text || "");
+    this.stagedDelivery = null;
   };
 
   controller.session = {
@@ -228,11 +224,10 @@ test("chat controller polls typing and rotating reactions while a turn is active
     ],
   };
 
-  controller.state.processing = {
-    text: "hello",
-    attachments: [],
+  controller.currentTurn = {
     startedAt: Date.now(),
     incomingMessageId: "m1",
+    workingNoticeSent: false,
   };
   const liveTurn = controller.startLiveTurn();
   liveTurn.promise.catch(() => {});
@@ -253,18 +248,16 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
   const controller = await createController("onebot/1:private:2");
   const deliveries = [];
   controller.sendWorkingNotice = async function () {
-    if (this.state.processing?.workingNoticeSent) return false;
+    if (this.currentTurn?.workingNoticeSent) return false;
     deliveries.push({
-      replyToMessageId: this.state.processing?.incomingMessageId,
+      replyToMessageId: this.currentTurn?.incomingMessageId,
       text: "Working……",
     });
-    if (this.state.processing) this.state.processing.workingNoticeSent = true;
+    if (this.currentTurn) this.currentTurn.workingNoticeSent = true;
     return true;
   };
 
-  controller.state.processing = {
-    text: "hello",
-    attachments: [],
+  controller.currentTurn = {
     startedAt: Date.now(),
     incomingMessageId: "m1",
     workingNoticeSent: false,
@@ -274,7 +267,7 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
 
   assert.equal(await controller.pollTyping(), true);
   assert.equal(await controller.pollTyping(), false);
-  assert.equal(controller.state.processing.workingNoticeSent, true);
+  assert.equal(controller.currentTurn.workingNoticeSent, true);
   assert.deepEqual(deliveries, [{ replyToMessageId: "m1", text: "Working……" }]);
 });
 
@@ -284,12 +277,11 @@ test("chat controller treats rpc completion as the canonical final reply for pro
   const deliveries = [];
   controller.commitPendingDelivery = async function (clearProcessing = false) {
     deliveries.push({
-      text: this.state.pendingDelivery?.text || "",
-      replyToMessageId: this.state.pendingDelivery?.replyToMessageId,
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
     });
-    delete this.state.pendingDelivery;
-    if (clearProcessing) delete this.state.processing;
-    this.saveState();
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
   };
 
   saveChatMessage(controller.agentDir, {
@@ -360,9 +352,8 @@ test("chat controller switches to a linked reply session before sending the prom
   await fs.writeFile(linkedSessionFile, "{}\n", "utf8");
 
   controller.commitPendingDelivery = async function (clearProcessing = false) {
-    delete this.state.pendingDelivery;
-    if (clearProcessing) delete this.state.processing;
-    this.saveState();
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
   };
 
   let currentSessionFile = path.join(
@@ -448,9 +439,8 @@ test("chat controller does not let presentation polling block prompt submission"
     await new Promise(() => {});
   };
   controller.commitPendingDelivery = async function (clearProcessing = false) {
-    delete this.state.pendingDelivery;
-    if (clearProcessing) delete this.state.processing;
-    this.saveState();
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
   };
 
   controller.session = {
@@ -485,14 +475,13 @@ test("chat controller does not let presentation polling block prompt submission"
 test("chat controller does not persist transient processing state to chat state.json", async () => {
   const controller = await createController("telegram/1:2");
   const statePath = controller.statePath;
-  controller.state.processing = {
-    text: "hello",
-    attachments: [],
+  controller.currentTurn = {
     startedAt: Date.now(),
     incomingMessageId: "m1",
     replyToMessageId: "m1",
+    workingNoticeSent: false,
   };
-  controller.state.pendingDelivery = {
+  controller.stagedDelivery = {
     type: "text_delivery",
     chatKey: controller.chatKey,
     text: "hello",
@@ -508,6 +497,6 @@ test("chat controller does not persist transient processing state to chat state.
     chatKey: controller.chatKey,
     piSessionFile: "/tmp/demo.jsonl",
   });
-  assert.equal(controller.state.processing?.incomingMessageId, "m1");
-  assert.equal(controller.state.pendingDelivery?.text, "hello");
+  assert.equal(controller.currentTurn?.incomingMessageId, "m1");
+  assert.equal(controller.stagedDelivery?.text, "hello");
 });

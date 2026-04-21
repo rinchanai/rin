@@ -44,6 +44,14 @@ type ChatTurnMeta = {
   startedAt: number;
 };
 
+type ChatTextDelivery = {
+  type: "text_delivery";
+  chatKey: string;
+  text: string;
+  replyToMessageId?: string;
+  sessionFile?: string;
+};
+
 function commandNameFromCommandLine(commandLine: string) {
   const trimmed = safeString(commandLine).trim();
   if (!trimmed.startsWith("/")) return "";
@@ -95,6 +103,7 @@ export class ChatController {
   frontendPhase: "idle" | "connecting" | "starting" | "sending" | "working" =
     "idle";
   currentTurn: ChatTurnMeta | null = null;
+  stagedDelivery: ChatTextDelivery | null = null;
 
   constructor(
     app: any,
@@ -119,8 +128,6 @@ export class ChatController {
     this.logger = deps.logger;
     this.h = deps.h;
     if (!this.state.chatKey) this.state.chatKey = chatKey;
-    delete this.state.processing;
-    delete this.state.pendingDelivery;
   }
 
   async connect(options: { restoreSession?: boolean } = {}) {
@@ -166,9 +173,8 @@ export class ChatController {
 
   async clearProcessingState() {
     this.currentTurn = null;
+    this.stagedDelivery = null;
     await this.clearWorkingReaction().catch(() => {});
-    delete this.state.processing;
-    delete this.state.pendingDelivery;
     this.saveState();
   }
 
@@ -177,18 +183,12 @@ export class ChatController {
   }
 
   private currentIncomingMessageId() {
-    return safeString(
-      this.currentTurn?.incomingMessageId || this.state.processing?.incomingMessageId || "",
-    ).trim();
+    return safeString(this.currentTurn?.incomingMessageId || "").trim();
   }
 
   private currentReplyToMessageId() {
     return safeString(
-      this.currentTurn?.replyToMessageId ||
-        this.currentTurn?.incomingMessageId ||
-        this.state.processing?.replyToMessageId ||
-        this.state.processing?.incomingMessageId ||
-        "",
+      this.currentTurn?.replyToMessageId || this.currentTurn?.incomingMessageId || "",
     ).trim();
   }
 
@@ -203,7 +203,7 @@ export class ChatController {
       this.frontendPhase === "sending" ||
       this.frontendPhase === "working" ||
       Boolean(this.liveTurn) ||
-      Boolean(this.state.processing)
+      Boolean(this.currentTurn)
     );
   }
 
@@ -231,21 +231,10 @@ export class ChatController {
       replyToMessageId: nextReplyToMessageId,
       workingNoticeSent: false,
     };
-    this.state.processing = {
-      text: safeString(input.text || "").trim(),
-      attachments: Array.isArray(input.attachments) ? [...input.attachments] : [],
-      startedAt: this.currentTurn.startedAt,
-      incomingMessageId: nextIncomingMessageId,
-      replyToMessageId: nextReplyToMessageId,
-      workingNoticeSent: false,
-    };
-    this.saveState();
   }
 
   private clearCurrentTurn() {
     this.currentTurn = null;
-    delete this.state.processing;
-    this.saveState();
   }
 
   async clearWorkingReaction() {
@@ -291,8 +280,8 @@ export class ChatController {
 
   private async sendWorkingNotice() {
     if (!this.deliveryEnabled) return false;
-    const processing = this.state.processing;
-    if (!processing || processing.workingNoticeSent) return false;
+    const currentTurn = this.currentTurn;
+    if (!currentTurn || currentTurn.workingNoticeSent) return false;
     const replyToMessageId = this.currentReplyToMessageId() || undefined;
     await sendOutboxPayload(
       this.app,
@@ -308,8 +297,6 @@ export class ChatController {
       this.h,
     );
     if (this.currentTurn) this.currentTurn.workingNoticeSent = true;
-    if (this.state.processing) this.state.processing.workingNoticeSent = true;
-    this.saveState();
     return true;
   }
 
@@ -330,7 +317,7 @@ export class ChatController {
     const sessionFile = this.currentSessionFile();
     if (sessionFile) lines.push(`Session file: ${sessionFile}`);
 
-    const currentTurn = this.currentTurn || this.state.processing;
+    const currentTurn = this.currentTurn;
     if (currentTurn?.startedAt) {
       lines.push(
         `Since: ${prettyMilliseconds(Math.max(0, Date.now() - currentTurn.startedAt), {
@@ -583,7 +570,7 @@ export class ChatController {
     text?: string;
     replyToMessageId?: string;
     sessionFile?: string;
-  }) {
+  }): ChatTextDelivery {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
     return {
@@ -607,21 +594,19 @@ export class ChatController {
     const text = safeString(input.text ?? this.latestAssistantText).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
     this.latestAssistantText = text;
-    this.state.pendingDelivery = this.buildAssistantDelivery(input);
+    this.stagedDelivery = this.buildAssistantDelivery(input);
     return text;
   }
 
   private async commitPendingDelivery(clearProcessing = false) {
-    const pending = this.state.pendingDelivery;
+    const pending = this.stagedDelivery;
     if (!pending) return;
     if (!this.deliveryEnabled) {
-      delete this.state.pendingDelivery;
+      this.stagedDelivery = null;
       if (clearProcessing) {
         await this.clearWorkingReaction().catch(() => {});
-        delete this.state.processing;
         this.currentTurn = null;
       }
-      this.saveState();
       return;
     }
     await sendOutboxPayload(
@@ -633,13 +618,11 @@ export class ChatController {
       },
       this.h,
     );
-    delete this.state.pendingDelivery;
+    this.stagedDelivery = null;
     if (clearProcessing) {
       await this.clearWorkingReaction().catch(() => {});
-      delete this.state.processing;
       this.currentTurn = null;
     }
-    this.saveState();
   }
 
   private async deliverAssistantReply(input: {
@@ -650,7 +633,6 @@ export class ChatController {
     clearProcessing?: boolean;
   }) {
     const text = this.stageAssistantDelivery(input);
-    this.saveState();
     this.markProcessedMessage(input.incomingMessageId);
     await this.commitPendingDelivery(input.clearProcessing);
     return text;
