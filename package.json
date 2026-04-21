@@ -6,6 +6,10 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rinchanai/rin.git"
+  },
   "bin": {
     "rin": "dist/app/rin/main.js",
     "rin-daemon": "dist/app/rin-daemon/daemon.js",

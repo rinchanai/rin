@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: publish-stable
@@ -22,7 +23,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 22.14.0
           cache: npm
           registry-url: https://registry.npmjs.org
       - name: Resolve beta promotion target
@@ -66,8 +67,6 @@ jobs:
         run: npm version --no-git-tag-version '${{ steps.plan.outputs.version }}'
       - name: Publish stable package
         working-directory: ${{ runner.temp }}/stable-candidate
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --tag latest --access public
       - name: Update release manifest
         run: >-

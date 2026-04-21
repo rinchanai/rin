@@ -7,8 +7,8 @@ Use this checklist before the first real stable npm promotion.
 - confirm the intended npm package name is `@rinchanai/rin`
 - confirm the npm organization and package ownership are set correctly
 - confirm the package should be public
-- confirm `NPM_TOKEN` exists in GitHub repository secrets and can publish `@rinchanai/rin`
-- confirm the npm account used by `NPM_TOKEN` has 2FA settings compatible with automation
+- confirm npm trusted publishing is configured for `@rinchanai/rin` with GitHub Actions workflow `publish-stable.yml`
+- confirm the configured npm publisher identity can publish `@rinchanai/rin`
 - confirm `package.json` metadata is acceptable for the first public release
 - confirm no files that should stay private are included in the published package
 
@@ -65,16 +65,17 @@ Expected status:
 
 Before the first real stable promotion:
 
-1. let `publish-beta` cut a beta candidate on schedule or by manual dispatch
-2. verify that `release-manifest.json -> beta` now contains the intended candidate ref and version
-3. run or wait for `publish-stable`
-4. confirm the stable workflow promotes that beta candidate ref instead of rebuilding from newer `main`
+1. configure npm trusted publishing on npmjs.com for repository `rinchanai/rin` and workflow `publish-stable.yml`
+2. let `publish-beta` cut a beta candidate on schedule or by manual dispatch
+3. verify that `release-manifest.json -> beta` now contains the intended candidate ref and version
+4. run or wait for `publish-stable`
+5. confirm the stable workflow promotes that beta candidate ref instead of rebuilding from newer `main`
 
 The stable workflow should:
 
 1. validate the pinned beta candidate with the focused release test set
 2. set the promotion version only inside the detached candidate worktree
-3. publish `@rinchanai/rin` to npm with dist-tag `latest`
+3. publish `@rinchanai/rin` to npm with dist-tag `latest` through npm trusted publishing
 4. rewrite stable manifest metadata to the npm tarball and promoted ref
 5. tag the promoted candidate ref as `v<version>`
 6. commit the manifest update back to `main`
