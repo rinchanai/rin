@@ -443,6 +443,58 @@ test("chat controller treats rpc completion as the canonical final reply for pro
   assert.equal(controller.state.piSessionFile, "prompt-chat.jsonl");
 });
 
+test("chat controller rejects rpc completion without canonical finalText", async () => {
+  const controller = await createController("telegram/1:2");
+  const deliveries = [];
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
+    });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [
+      { role: "user", content: [{ type: "text", text: "hello" }] },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "canonical session text" }],
+      },
+    ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/rpc-result-chat.jsonl",
+      getSessionId: () => "session-rpc-result",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/rpc-result-chat.jsonl",
+      sessionId: "session-rpc-result",
+    }),
+    prompt: async (_text, options = {}) => {
+      controller.handleSessionEvent({ type: "agent_start" });
+      emitRpcTurnComplete(controller, options, "", {
+        messages: [{ type: "text", text: "canonical result text" }],
+      });
+    },
+    switchSession: async () => {},
+  };
+
+  await assert.rejects(
+    controller.runTurn({
+      text: "hello",
+      attachments: [],
+      incomingMessageId: "m-turn-missing-final",
+      replyToMessageId: "m-turn-missing-final",
+    }),
+    /rpc_turn_final_output_missing/,
+  );
+
+  assert.deepEqual(deliveries, []);
+});
+
 test("chat controller switches to a linked reply session before sending the prompt", async () => {
   const controller = await createController("telegram/1:2");
   const operations = [];

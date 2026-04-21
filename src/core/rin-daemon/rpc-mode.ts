@@ -126,30 +126,41 @@ export async function runCustomRpcMode(
     output({ type: "rpc_turn_event", event, requestTag, ...payload });
   };
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
+    const turnSession = getSession();
+    let lastCompletedAssistantMessage: any = null;
+    const rawUnsubscribeTurnSession = turnSession.subscribe?.((event: any) => {
+      if (event?.type !== "message_end") return;
+      if (event?.message?.role !== "assistant") return;
+      lastCompletedAssistantMessage = event.message;
+    });
+    const unsubscribeTurnSession =
+      typeof rawUnsubscribeTurnSession === "function"
+        ? rawUnsubscribeTurnSession
+        : undefined;
     const promise = (async () => {
       emitTurnEvent("start", requestTag);
       const heartbeatTimer = requestTag
         ? setInterval(() => {
-            const session = getSession();
             emitTurnEvent("heartbeat", requestTag, {
-              sessionFile: session.sessionFile,
-              sessionId: session.sessionId,
+              sessionFile: turnSession.sessionFile,
+              sessionId: turnSession.sessionId,
             });
           }, TURN_HEARTBEAT_INTERVAL_MS)
         : null;
       try {
         await task();
-        const session = getSession();
-        await session.agent.waitForIdle();
+        await turnSession.agent.waitForIdle();
         const completion = resolveTurnCompletion({
-          messages: session.messages || [],
+          messages: lastCompletedAssistantMessage
+            ? [lastCompletedAssistantMessage]
+            : [],
         });
         if (!completion.finalText) {
           throw new Error("rpc_turn_final_output_missing");
         }
         emitTurnEvent("complete", requestTag, {
-          sessionFile: session.sessionFile,
-          sessionId: session.sessionId,
+          sessionFile: turnSession.sessionFile,
+          sessionId: turnSession.sessionId,
           finalText: completion.finalText,
           result: completion.result,
         });
@@ -159,6 +170,7 @@ export async function runCustomRpcMode(
         });
         throw error;
       } finally {
+        unsubscribeTurnSession?.();
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         if (activeTurnPromise === promise) activeTurnPromise = null;
       }

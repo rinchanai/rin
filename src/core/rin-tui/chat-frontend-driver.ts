@@ -1,4 +1,3 @@
-import { resolveTurnCompletion } from "../session/turn-result.js";
 import { normalizeSessionRef } from "../session/ref.js";
 import { extractMessageText } from "../message-content.js";
 import { safeString } from "../text-utils.js";
@@ -169,7 +168,7 @@ export class ChatFrontendDriver {
   private async flushPendingAssistantInterimBeforeFinal(finalText: string) {
     const pendingText = safeString(this.pendingCompletedAssistantText).trim();
     const nextFinalText = safeString(finalText).trim();
-    if (!pendingText) return false;
+    if (!pendingText || !nextFinalText) return false;
     if (pendingText === nextFinalText) {
       this.pendingCompletedAssistantText = "";
       return false;
@@ -385,27 +384,16 @@ export class ChatFrontendDriver {
     }
 
     const completion = await liveTurn.promise;
-    const completionFinalText = safeString(
-      (completion as any)?.finalText,
-    ).trim();
-    await this.flushPendingAssistantInterimBeforeFinal(completionFinalText);
+    const finalText = safeString((completion as any)?.finalText).trim();
+    await this.flushPendingAssistantInterimBeforeFinal(finalText);
     await this.waitForInterimDeliveries();
-    const canonicalCompletion = resolveTurnCompletion({
-      ...completion,
-      messages: Array.isArray(this.session?.messages)
-        ? this.session.messages
-        : [],
-    });
-    const finalText =
-      safeString((completion as any)?.finalText).trim() ||
-      safeString(canonicalCompletion.finalText).trim();
     if (!finalText) {
       throw new Error("rpc_turn_final_output_missing");
     }
     this.latestAssistantText = finalText;
     return {
       finalText,
-      result: canonicalCompletion.result,
+      result: completion?.result,
       sessionId:
         safeString(completion?.sessionId || this.currentSessionId()).trim() ||
         undefined,
@@ -440,10 +428,7 @@ export class ChatFrontendDriver {
         const current = safeString(this.liveTurn.requestTag || "").trim();
         const incoming = safeString(event.requestTag || "").trim();
         if (current && incoming && current !== incoming) return;
-        const completion = resolveTurnCompletion(event);
-        const finalText =
-          safeString(event.finalText).trim() ||
-          safeString(completion.finalText).trim();
+        const finalText = safeString(event.finalText).trim();
         if (!finalText) {
           this.failLiveTurn(new Error("rpc_turn_final_output_missing"));
           return;
@@ -452,7 +437,7 @@ export class ChatFrontendDriver {
         const session = normalizeSessionRef(event);
         this.liveTurn.resolve({
           finalText,
-          result: completion.result,
+          result: event.result,
           sessionId: session.sessionId,
           sessionFile: session.sessionFile,
         });
