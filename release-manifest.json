@@ -13,9 +13,9 @@
     "ref": "main"
   },
   "beta": {
-    "version": "0.0.1-beta.0",
-    "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
-    "ref": "main",
+    "version": "0.0.1-beta.20260421",
+    "archiveUrl": "https://github.com/rinchanai/rin/archive/f08a112e9412df9e39282e87db6a29fc6f335aeb.tar.gz",
+    "ref": "f08a112e9412df9e39282e87db6a29fc6f335aeb",
     "promotionVersion": "0.0.1"
   },
   "nightly": {
