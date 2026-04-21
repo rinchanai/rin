@@ -1003,6 +1003,7 @@ export class ChatController {
           await this.resumeSessionFile(wantedSessionFile);
         }
       }
+      await this.ensureSessionReady();
       await this.refreshSessionMessages().catch(() => {});
       const messages = Array.isArray(this.session.messages)
         ? this.session.messages

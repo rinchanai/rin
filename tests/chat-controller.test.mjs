@@ -786,6 +786,92 @@ test("chat controller reattaches idle saved sessions during recovery so chat wor
   assert.deepEqual(calls, [`switch:${savedSessionFile}`]);
 });
 
+test("chat controller reattaches a saved session before recovering a pending chat turn", async () => {
+  const controller = await createController("telegram/7:9");
+  const calls = [];
+  const delivered = [];
+  const savedSessionFile = path.join(controller.agentDir, "sessions", "saved-processing-chat.jsonl");
+  await fs.mkdir(path.dirname(savedSessionFile), { recursive: true });
+  await fs.writeFile(savedSessionFile, "", "utf8");
+  controller.state.piSessionFile = "saved-processing-chat.jsonl";
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    incomingMessageId: "m-processing-rebind",
+    replyToMessageId: "42",
+  };
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/7:9",
+    platform: "telegram",
+    botId: "7",
+    chatId: "9",
+    chatType: "private",
+    messageId: "m-processing-rebind",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push(this.state.pendingDelivery?.text || "");
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  let activeSessionFile = "";
+  controller.session = {
+    isStreaming: false,
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+    sessionManager: {
+      getSessionFile: () => activeSessionFile || undefined,
+      getSessionId: () => (activeSessionFile ? "session-7-9" : ""),
+      getSessionName: () => "telegram/7:9",
+    },
+    switchSession: async (sessionPath) => {
+      calls.push(`switch:${sessionPath}`);
+      activeSessionFile = sessionPath;
+    },
+    ensureSessionReady: async () => {
+      calls.push("ensureSessionReady");
+      return { sessionFile: savedSessionFile, sessionId: "session-7-9" };
+    },
+    resumeInterruptedTurn: async (options) => {
+      calls.push("resumeInterruptedTurn");
+      controller.session.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        controller.session.messages = [
+          { role: "user", content: [{ type: "text", text: "hello" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "rebound after ensureSessionReady" }],
+          },
+        ];
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(
+          controller,
+          options,
+          "rebound after ensureSessionReady",
+        );
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+    setSessionName: async () => {},
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.deepEqual(calls, [
+    `switch:${savedSessionFile}`,
+    "ensureSessionReady",
+    "resumeInterruptedTurn",
+  ]);
+  assert.deepEqual(delivered, ["rebound after ensureSessionReady"]);
+  assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.state.piSessionFile, "saved-processing-chat.jsonl");
+});
+
 test("chat controller self-heals missing saved session binding before a chat turn", async () => {
   const controller = await createController("telegram/7:8");
   const calls = [];
@@ -1314,6 +1400,15 @@ test("chat controller delivers completed assistant text during recovery when pro
         content: [{ type: "text", text: "final from recovery" }],
       },
     ],
+    sessionManager: {
+      getSessionFile: () => "/tmp/recover-stale.jsonl",
+      getSessionId: () => "session-recover-stale",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/recover-stale.jsonl",
+      sessionId: "session-recover-stale",
+    }),
   };
 
   await controller.recoverIfNeeded();
@@ -1453,6 +1548,10 @@ test("chat controller resumes interrupted chat turns through the shared final de
       getSessionId: () => "session-resume",
       getSessionName: () => "telegram/1:2",
     },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/resume-chat.jsonl",
+      sessionId: "session-resume",
+    }),
     resumeInterruptedTurn: async (options) => {
       controller.session.isStreaming = true;
       controller.handleSessionEvent({ type: "agent_start" });
@@ -1533,6 +1632,10 @@ test("chat controller rebinds the stored session before daemon-led recovery", as
       getSessionId: () => "session-rebind",
       getSessionName: () => "telegram/1:2",
     },
+    ensureSessionReady: async () => {
+      calls.push("ensureSessionReady");
+      return { sessionFile: wantedSessionFile, sessionId: "session-rebind" };
+    },
     resumeInterruptedTurn: async (options) => {
       calls.push("resumeInterruptedTurn");
       controller.session.isStreaming = true;
@@ -1556,6 +1659,7 @@ test("chat controller rebinds the stored session before daemon-led recovery", as
 
   assert.deepEqual(calls, [
     `resumeSessionFile:${wantedSessionFile}`,
+    "ensureSessionReady",
     "resumeInterruptedTurn",
     "deliver:final rebound text",
   ]);
@@ -1602,6 +1706,10 @@ test("chat controller recovery does not rerun the saved prompt when daemon resum
       getSessionId: () => "session-daemon-led-recover",
       getSessionName: () => "telegram/1:2",
     },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/daemon-led-recover.jsonl",
+      sessionId: "session-daemon-led-recover",
+    }),
     prompt: async () => {
       promptCalls += 1;
       throw new Error("chat recovery must not rerun prompt locally");
@@ -1674,6 +1782,10 @@ test("chat controller clears stale processing when daemon reports no resumable o
       getSessionId: () => "session-stale-recovery",
       getSessionName: () => "telegram/1:2",
     },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/stale-recovery.jsonl",
+      sessionId: "session-stale-recovery",
+    }),
     resumeInterruptedTurn: async (options) => {
       queueMicrotask(() => {
         controller.handleClientEvent({
