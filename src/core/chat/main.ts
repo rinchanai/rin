@@ -451,10 +451,9 @@ export async function startChatBridge(
       decision.chatKey,
       replyToMessageId,
     );
-    if (replySession?.sessionFile) {
-      await controller
-        .resumeSessionFile(replySession.sessionFile)
-        .catch(() => {});
+    const linkedSessionFile = safeString(replySession?.sessionFile || "").trim();
+    if (linkedSessionFile) {
+      await controller.resumeSessionFile(linkedSessionFile).catch(() => {});
     }
     const { attachments, failures } = await extractInboundAttachments(
       elements,
@@ -500,12 +499,12 @@ export async function startChatBridge(
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
     });
-    const mode = replySession?.sessionFile
+    const initialMode = linkedSessionFile
       ? "prompt"
       : controller.hasActiveTurn()
         ? "steer"
         : "prompt";
-    const handleTurnFailure = async (error: any) => {
+    const handleTurnFailure = async (error: any, sessionFile = linkedSessionFile) => {
       const errorMessage = safeString((error as any)?.message || error);
       const transientFailure = isTransientChatRuntimeError(errorMessage);
       logger.warn(
@@ -521,7 +520,7 @@ export async function startChatBridge(
             chatKey: decision.chatKey,
             text: `Chat bridge error: ${errorMessage || "chat_bridge_turn_failed"}`,
             replyToMessageId: messageId || undefined,
-            sessionFile: replySession?.sessionFile,
+            sessionFile: sessionFile || undefined,
           },
           h,
         ).catch(() => {});
@@ -536,13 +535,37 @@ export async function startChatBridge(
           attachments,
           replyToMessageId: messageId,
           incomingMessageId: messageId,
-          sessionFile: replySession?.sessionFile,
+          sessionFile: linkedSessionFile || undefined,
         },
-        mode,
+        initialMode,
       );
       return { retry: false };
     } catch (error) {
-      return await handleTurnFailure(error);
+      const errorMessage = safeString((error as any)?.message || error);
+      const shouldFallbackFromReplyResume =
+        Boolean(linkedSessionFile) &&
+        (errorMessage === "rin_no_attached_session" ||
+          /(^|\b)rin_timeout:select_session\b/.test(errorMessage));
+      if (shouldFallbackFromReplyResume) {
+        logger.warn(
+          `chat reply-resume fallback chatKey=${decision.chatKey} sessionFile=${linkedSessionFile} err=${errorMessage}`,
+        );
+        try {
+          await controller.runTurn(
+            {
+              text: promptBody,
+              attachments,
+              replyToMessageId: messageId,
+              incomingMessageId: messageId,
+            },
+            controller.hasActiveTurn() ? "steer" : "prompt",
+          );
+          return { retry: false };
+        } catch (fallbackError) {
+          return await handleTurnFailure(fallbackError, "");
+        }
+      }
+      return await handleTurnFailure(error, linkedSessionFile);
     }
   };
 
