@@ -225,7 +225,7 @@ test("install and update wrappers resolve release metadata before fetching sourc
   });
 });
 
-test("exported stable-bootstrap wrappers still work without a local scripts directory", async () => {
+test("wrapper-only bootstrap fallbacks fetch the entrypoint from stable-bootstrap first", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
     const manifestPath = await createReleaseManifest(tempDir);
@@ -245,6 +245,14 @@ test("exported stable-bootstrap wrappers still work without a local scripts dire
       ],
       { cwd: rootDir },
     );
+    assert.equal(
+      await fs.stat(path.join(bootstrapDir, "scripts", "bootstrap-entrypoint.sh")).then(() => true),
+      true,
+    );
+    await fs.rm(path.join(bootstrapDir, "scripts"), {
+      recursive: true,
+      force: true,
+    });
 
     const env = {
       ...process.env,
@@ -269,7 +277,11 @@ test("exported stable-bootstrap wrappers still work without a local scripts dire
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /curl:-fsSL https:\/\/raw\.githubusercontent\.com\/rinchanai\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/scripts\/bootstrap-entrypoint\.sh -o /,
+    );
+    assert.equal(
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /.test(log),
+      false,
     );
     assert.match(
       log,

@@ -98,6 +98,7 @@ It should contain only:
 
 - `install.sh`
 - `update.sh`
+- `scripts/bootstrap-entrypoint.sh`
 - `release-manifest.json`
 - `docs/rin/CHANGELOG.md`
 - generated bootstrap `README.md`
