@@ -95,6 +95,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$URL" in
+  *scripts/bootstrap-entrypoint.sh)
+    cp "$RIN_BOOTSTRAP_TEST_BOOTSTRAP_SCRIPT" "$OUT"
+    ;;
   *release-manifest.json)
     cp "$RIN_BOOTSTRAP_TEST_MANIFEST" "$OUT"
     ;;
@@ -191,6 +194,7 @@ test("install and update wrappers resolve release metadata before fetching sourc
       RIN_INSTALL_TMPDIR: workRoot,
       RIN_BOOTSTRAP_TEST_ARCHIVE: archivePath,
       RIN_BOOTSTRAP_TEST_MANIFEST: manifestPath,
+      RIN_BOOTSTRAP_TEST_BOOTSTRAP_SCRIPT: path.join(rootDir, "scripts", "bootstrap-entrypoint.sh"),
       RIN_BOOTSTRAP_TEST_LOG: logPath,
     };
 
@@ -221,6 +225,68 @@ test("install and update wrappers resolve release metadata before fetching sourc
   });
 });
 
+test("exported stable-bootstrap wrappers still work without a local scripts directory", async () => {
+  await withTempDir(async (tempDir) => {
+    const archivePath = await createSourceArchive(tempDir);
+    const manifestPath = await createReleaseManifest(tempDir);
+    const fakeBin = path.join(tempDir, "bin");
+    const logPath = path.join(tempDir, "invocations.log");
+    const workRoot = path.join(tempDir, "work");
+    const bootstrapDir = path.join(tempDir, "stable-bootstrap");
+    await createFakeBin(fakeBin, logPath);
+    await fs.mkdir(workRoot, { recursive: true });
+
+    await execFileAsync(
+      process.execPath,
+      [
+        path.join(rootDir, "scripts", "release", "export-bootstrap-branch.mjs"),
+        "--output",
+        bootstrapDir,
+      ],
+      { cwd: rootDir },
+    );
+
+    const env = {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      RIN_INSTALL_REPO_URL: "https://example.invalid/rin",
+      RIN_INSTALL_TMPDIR: workRoot,
+      RIN_BOOTSTRAP_TEST_ARCHIVE: archivePath,
+      RIN_BOOTSTRAP_TEST_MANIFEST: manifestPath,
+      RIN_BOOTSTRAP_TEST_BOOTSTRAP_SCRIPT: path.join(rootDir, "scripts", "bootstrap-entrypoint.sh"),
+      RIN_BOOTSTRAP_TEST_LOG: logPath,
+    };
+
+    await execFileAsync("sh", [path.join(bootstrapDir, "install.sh")], {
+      cwd: bootstrapDir,
+      env,
+    });
+    await execFileAsync("sh", [path.join(bootstrapDir, "update.sh")], {
+      cwd: bootstrapDir,
+      env,
+    });
+
+    const log = await fs.readFile(logPath, "utf8");
+    assert.match(
+      log,
+      /curl:-fsSL https:\/\/raw\.githubusercontent\.com\/rinchanai\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /,
+    );
+    assert.match(
+      log,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/release-manifest\.json -o /,
+    );
+    assert.match(
+      log,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:dist\/app\/rin-install\/main\.js/,
+    );
+    assert.match(
+      log,
+      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:dist\/app\/rin-install\/main\.js/,
+    );
+    assert.deepEqual(await fs.readdir(workRoot), []);
+  });
+});
+
 test("bootstrap wrappers forward beta nightly and git channel selections", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
@@ -238,6 +304,7 @@ test("bootstrap wrappers forward beta nightly and git channel selections", async
       RIN_INSTALL_TMPDIR: workRoot,
       RIN_BOOTSTRAP_TEST_ARCHIVE: archivePath,
       RIN_BOOTSTRAP_TEST_MANIFEST: manifestPath,
+      RIN_BOOTSTRAP_TEST_BOOTSTRAP_SCRIPT: path.join(rootDir, "scripts", "bootstrap-entrypoint.sh"),
       RIN_BOOTSTRAP_TEST_LOG: logPath,
     };
 
