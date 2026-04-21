@@ -27,7 +27,6 @@ const KOISHI_CHAT_COMMAND_ROWS: readonly ChatCommandRow[] = [
   },
   { name: "status", description: "Show current chat processing status" },
   { name: "session", description: "Show current session status" },
-  { name: "resume", description: "Resume a previous session" },
   { name: "model", description: "Show or change the current model" },
 ];
 

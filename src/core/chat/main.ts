@@ -85,6 +85,9 @@ const TYPING_POLL_INTERVAL_MS = 4000;
 const CHAT_INBOX_POLL_INTERVAL_MS = 3000;
 const CHAT_INBOX_RETRY_MIN_MS = 2000;
 const CHAT_INBOX_RETRY_MAX_MS = 60_000;
+const REMOVED_CHAT_COMMAND_NAMES = new Set(["resume"]);
+const REMOVED_CHAT_COMMAND_TEXT =
+  "Chat 中已移除 /resume。请直接回复想继续的那条消息，Rin 会按引用消息自动接续对应会话。";
 
 function computeChatInboxRetryDelay(attemptCount: number) {
   const attempt = Math.max(0, Number(attemptCount || 0));
@@ -193,6 +196,7 @@ function parseInboundCommand(
   session: any,
   text: string,
   commandRows: Array<{ name: string }>,
+  removedCommandNames: Set<string> = REMOVED_CHAT_COMMAND_NAMES,
 ) {
   const input = safeString(text).trim();
   if (!input.startsWith("/")) return null;
@@ -205,7 +209,11 @@ function parseInboundCommand(
   const [rawName, rawTarget = ""] = head.split("@", 2);
   const name = safeString(rawName).trim().toLowerCase();
   if (!name) return null;
-  if (!commandRows.some((item) => safeString(item?.name).trim() === name)) {
+  const active = commandRows.some(
+    (item) => safeString(item?.name).trim() === name,
+  );
+  const removed = removedCommandNames.has(name);
+  if (!active && !removed) {
     return null;
   }
   const target = safeString(rawTarget).trim().replace(/^@+/, "").toLowerCase();
@@ -213,7 +221,7 @@ function parseInboundCommand(
     const targets = getCommandTargets(session);
     if (targets.size && !targets.has(target)) return null;
   }
-  return { name, argsText };
+  return { name, argsText, removed };
 }
 
 export type ChatBridgeTurnPayload = {
@@ -373,14 +381,11 @@ export async function startChatBridge(
   };
   const handleCommandSession = async (
     session: any,
-    command: { name: string; argsText: string },
+    command: { name: string; argsText: string; removed?: boolean },
     identity: any,
   ) => {
     const platform = safeString(session?.platform || "").trim();
     const trust = trustOf(identity, platform, pickUserId(session));
-    if (command.name !== "help" && !canRunCommand(trust, command.name)) {
-      return { retry: false };
-    }
     const chatKey = composeChatKey(
       platform,
       getChatId(session),
@@ -394,6 +399,28 @@ export async function startChatBridge(
       chatKey,
       replyToMessageId,
     );
+
+    if (command.removed) {
+      if (trust !== "OWNER") return { retry: false };
+      await sendOutboxPayload(
+        app,
+        runtime.agentDir,
+        {
+          type: "text_delivery",
+          createdAt: new Date().toISOString(),
+          chatKey,
+          text: REMOVED_CHAT_COMMAND_TEXT,
+          replyToMessageId: messageId || undefined,
+          sessionFile: replySession?.sessionFile,
+        },
+        h,
+      ).catch(() => {});
+      return { retry: false };
+    }
+
+    if (command.name !== "help" && !canRunCommand(trust, command.name)) {
+      return { retry: false };
+    }
 
     if (command.name === "help") {
       const lines = commandRows.map(

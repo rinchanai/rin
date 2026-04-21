@@ -319,11 +319,13 @@ export function canAccessAgentInput({
 }
 
 const TRUSTED_COMMANDS = new Set(["new", "abort", "status"]);
+const REMOVED_CHAT_COMMANDS = new Set(["resume"]);
 
 export function canRunCommand(trust: string, commandName: string) {
   const nextTrust = normalizeTrust(trust);
   const nextName = safeString(commandName).trim().replace(/^\//, "");
   if (!nextName) return false;
+  if (REMOVED_CHAT_COMMANDS.has(nextName)) return false;
   if (nextTrust === "OWNER") return true;
   if (nextTrust === "TRUSTED") return TRUSTED_COMMANDS.has(nextName);
   return false;

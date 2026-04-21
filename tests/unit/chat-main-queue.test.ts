@@ -89,6 +89,99 @@ test("chat main consumes inbound help messages through the inbox path only once"
   }
 });
 
+test("chat main replies with the removal notice instead of executing /resume in chat", async () => {
+  const tempRoot = "/home/rin/tmp";
+  await fs.mkdir(tempRoot, { recursive: true });
+  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
+  try {
+    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
+
+    const script = `
+      import path from "node:path";
+      import { pathToFileURL } from "node:url";
+
+      const rootDir = process.env.RIN_REPO_ROOT;
+      const agentDir = process.env.RIN_DIR;
+      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
+      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
+      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
+      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
+      const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
+
+      supportMod.saveIdentity(path.join(agentDir, "data"), {
+        persons: { owner: { trust: "OWNER" } },
+        aliases: [{ platform: "telegram", userId: "owner-1", personId: "owner" }],
+        trusted: [],
+      });
+
+      let runCommandCalls = 0;
+      controllerMod.ChatController.prototype.runCommand = async function () {
+        runCommandCalls += 1;
+        return { handled: true, text: "should not run" };
+      };
+
+      const { app } = await mainMod.startChatBridge();
+      let sentCount = 0;
+      app.bots.push({
+        platform: "telegram",
+        selfId: "1",
+        async sendMessage() {
+          sentCount += 1;
+          return [String(sentCount)];
+        },
+      });
+
+      app.emit("message", {
+        platform: "telegram",
+        selfId: "1",
+        channelId: "2",
+        userId: "owner-1",
+        messageId: "m-resume",
+        isDirect: true,
+        content: "/resume",
+        stripped: { content: "/resume" },
+        elements: [h.createChatRuntimeH().text("/resume")],
+      });
+
+      const expected = "Chat 中已移除 /resume。请直接回复想继续的那条消息，Rin 会按引用消息自动接续对应会话。";
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const rows = storeMod
+          .listChatMessages(agentDir)
+          .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
+        if (rows.some((item) => item.text === expected)) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const rows = storeMod
+        .listChatMessages(agentDir)
+        .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
+      if (runCommandCalls !== 0 || rows.length !== 1 || rows[0]?.text !== expected) {
+        throw new Error(JSON.stringify({
+          sentCount,
+          runCommandCalls,
+          assistantCount: rows.length,
+          texts: rows.map((item) => item.text),
+        }));
+      }
+      process.exit(0);
+    `;
+
+    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        RIN_REPO_ROOT: rootDir,
+        RIN_DIR: agentDir,
+      },
+      timeout: 15000,
+    });
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("chat main does not retry a queued prompt while the controller is already handling that inbound message", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
