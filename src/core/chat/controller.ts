@@ -1052,21 +1052,29 @@ export class ChatController {
           source: "chat-bridge",
           requestTag,
         });
+        await this.finishLiveTurn({
+          liveTurn,
+          replyToMessageId:
+            safeString(pending.replyToMessageId || "").trim() || undefined,
+          incomingMessageId: pending.incomingMessageId,
+          clearProcessing: true,
+        });
       } catch (error: any) {
         this.failLiveTurn(
           error instanceof Error
             ? error
             : new Error(String(error || "chat_turn_failed")),
         );
+        const errorMessage = safeString(error?.message || error).trim();
+        if (errorMessage === "rpc_turn_final_output_missing") {
+          this.logger.warn(
+            `chat recovery released stale processing chatKey=${this.chatKey}`,
+          );
+          await this.clearProcessingState();
+          return;
+        }
         throw error;
       }
-      await this.finishLiveTurn({
-        liveTurn,
-        replyToMessageId:
-          safeString(pending.replyToMessageId || "").trim() || undefined,
-        incomingMessageId: pending.incomingMessageId,
-        clearProcessing: true,
-      });
     });
   }
 }

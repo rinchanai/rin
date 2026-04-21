@@ -1640,6 +1640,63 @@ test("chat controller recovery does not rerun the saved prompt when daemon resum
   assert.deepEqual(delivered, ["final daemon resumed text"]);
 });
 
+test("chat controller clears stale processing when daemon reports no resumable output", async () => {
+  const controller = await createController("telegram/1:2");
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/1:2",
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-stale-recovery",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "42",
+    incomingMessageId: "m-stale-recovery",
+  };
+  const clearCalls = [];
+  controller.clearProcessingState = async function () {
+    clearCalls.push(this.state.processing?.incomingMessageId || "");
+    delete this.state.processing;
+    delete this.state.pendingDelivery;
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+    sessionManager: {
+      getSessionFile: () => "/tmp/stale-recovery.jsonl",
+      getSessionId: () => "session-stale-recovery",
+      getSessionName: () => "telegram/1:2",
+    },
+    resumeInterruptedTurn: async (options) => {
+      queueMicrotask(() => {
+        controller.handleClientEvent({
+          type: "ui",
+          payload: {
+            type: "rpc_turn_event",
+            event: "complete",
+            requestTag: options?.requestTag,
+            sessionId: "session-stale-recovery",
+            sessionFile: "/tmp/stale-recovery.jsonl",
+          },
+        });
+      });
+    },
+  };
+
+  await controller.recoverIfNeeded();
+
+  assert.equal(controller.state.processing, undefined);
+  assert.equal(controller.state.pendingDelivery, undefined);
+  assert.deepEqual(clearCalls, ["m-stale-recovery"]);
+});
+
 test("chat controller retries persisted final reply delivery on recovery", async () => {
   const controller = await createController("telegram/1:2");
   const sends = [];
