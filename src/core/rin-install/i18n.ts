@@ -167,6 +167,14 @@ export function createInstallerI18n(languageTag = "en") {
     chooseInstallDirMessage: zh
       ? "选择该守护进程用户的 Rin 数据目录。"
       : "Choose the Rin data directory for the daemon user.",
+    chooseDefaultTargetMessage: (targetUser: string) =>
+      zh
+        ? `是否将 ${targetUser} 设为当前安装器用户后续运行 rin / rin update 时的默认目标用户？`
+        : `Set ${targetUser} as the default target user for future rin / rin update runs from this launcher user?`,
+    defaultTargetLabel: zh ? "默认目标用户" : "Default target user",
+    defaultTargetSetValue: (targetUser: string) =>
+      zh ? `设为 ${targetUser}` : `set to ${targetUser}`,
+    defaultTargetSkippedValue: zh ? "不设置" : "not set",
     directoryRequired: zh ? "目录不能为空。" : "Directory is required.",
     directoryMustBeAbsolute: zh
       ? "请输入绝对路径。"
@@ -375,6 +383,7 @@ export function createInstallerI18n(languageTag = "en") {
       chatDescription: string;
       chatDetail: string;
       language: string;
+      setDefaultTarget: boolean;
     }) {
       return [
         `${zh ? "目标守护进程用户" : "Target daemon user"}: ${options.targetUser}`,
@@ -384,6 +393,7 @@ export function createInstallerI18n(languageTag = "en") {
         `${zh ? "模型" : "Model"}: ${options.modelId || (zh ? "暂不设置" : "skipped for now")}`,
         `${zh ? "思考强度" : "Thinking level"}: ${options.thinkingLevel || (zh ? "暂不设置" : "skipped for now")}`,
         `${zh ? "模型认证状态" : "Model auth status"}: ${options.provider ? (options.authAvailable ? (zh ? "已就绪" : "ready") : zh ? "稍后需要认证/配置" : "needs auth/config later") : zh ? "暂不设置" : "skipped for now"}`,
+        `${this.defaultTargetLabel}: ${options.setDefaultTarget ? this.defaultTargetSetValue(options.targetUser) : this.defaultTargetSkippedValue}`,
         `${zh ? "Chat bridge" : "Chat bridge"}: ${options.chatDescription}`,
         options.chatDetail,
       ]

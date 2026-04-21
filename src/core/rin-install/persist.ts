@@ -298,6 +298,7 @@ export async function persistInstallerOutputs(
     modelId: string;
     thinkingLevel: string;
     language?: string;
+    setDefaultTarget?: boolean;
     chatConfig: any;
     authData: any;
     release?: InstalledReleaseInfo;
@@ -353,11 +354,17 @@ export async function persistInstallerOutputs(
   };
 
   const launcherPath = deps.launcherMetadataPathForUser(options.currentUser);
-  const launcherJson = normalizeInstallerRecord(
-    deps.readJsonFile<any>(launcherPath, {}),
-  );
-  launcherJson.defaultTargetUser = options.targetUser;
-  launcherJson.defaultInstallDir = options.installDir;
+  const shouldSetDefaultTarget = options.setDefaultTarget !== false;
+  const launcherJson = shouldSetDefaultTarget
+    ? normalizeInstallerRecord(deps.readJsonFile<any>(launcherPath, {}))
+    : {};
+  if (shouldSetDefaultTarget) {
+    launcherJson.defaultTargetUser = options.targetUser;
+    launcherJson.defaultInstallDir = options.installDir;
+  } else {
+    delete launcherJson.defaultTargetUser;
+    delete launcherJson.defaultInstallDir;
+  }
   launcherJson.updatedAt = new Date().toISOString();
   launcherJson.installedBy = options.currentUser;
 

@@ -44,11 +44,13 @@ test("installer interactive helpers describe dir state and plan text", () => {
     authAvailable: true,
     chatDescription: "telegram",
     chatDetail: "Chat bridge token: [saved]",
+    setDefaultTarget: false,
   });
   assert.ok(plan.includes("Target daemon user: bob"));
   assert.ok(plan.includes("Model auth status: ready"));
   assert.ok(!plan.includes("Rin safety boundary:"));
   assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
+  assert.ok(plan.includes("Default target user: not set"));
   assert.ok(plan.includes("Chat bridge: telegram"));
 
   const plainSection = interactive.buildPlainInstallerSection("安装选项", plan);
@@ -84,6 +86,28 @@ test("installer interactive helpers compute final requirements", () => {
   assert.ok(
     local.some((line) => line.includes("skip daemon service installation")),
   );
+});
+
+test("promptDefaultTargetUser returns the installer choice", async () => {
+  const result = await interactive.promptDefaultTargetUser(
+    {
+      ensureNotCancelled(value) {
+        return value;
+      },
+      async confirm() {
+        return false;
+      },
+      async select() {
+        throw new Error("select should not be used");
+      },
+      async text() {
+        throw new Error("text should not be used");
+      },
+    },
+    "bob",
+  );
+
+  assert.equal(result, false);
 });
 
 test("promptInstallerLanguage supports custom BCP 47 tags", async () => {

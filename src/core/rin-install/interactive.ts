@@ -141,6 +141,21 @@ export function describeInstallDirState(
   };
 }
 
+export async function promptDefaultTargetUser(
+  prompt: PromptApi,
+  targetUser: string,
+  i18n: InstallerI18n = createInstallerI18n(),
+) {
+  return Boolean(
+    prompt.ensureNotCancelled(
+      await prompt.confirm({
+        message: i18n.chooseDefaultTargetMessage(targetUser),
+        initialValue: true,
+      }),
+    ),
+  );
+}
+
 export async function promptProviderSetup(
   prompt: PromptApi,
   installDir: string,
@@ -258,6 +273,7 @@ export function buildInstallPlanText(
     chatDescription: string;
     chatDetail: string;
     language?: string;
+    setDefaultTarget?: boolean;
   },
   i18n: InstallerI18n = createInstallerI18n(),
 ) {
@@ -271,6 +287,7 @@ export function buildInstallPlanText(
     chatDescription: options.chatDescription,
     chatDetail: options.chatDetail,
     language: String(options.language || i18n.language || "en"),
+    setDefaultTarget: options.setDefaultTarget !== false,
   });
 }
 

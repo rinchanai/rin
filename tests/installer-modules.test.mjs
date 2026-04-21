@@ -587,6 +587,54 @@ test("persist persistInstallerOutputs forwards release metadata into installer m
   });
 });
 
+test("persist persistInstallerOutputs can skip saving a launcher default target", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const writes = [];
+    const result = await persist.persistInstallerOutputs(
+      {
+        currentUser: "operator",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        setDefaultTarget: false,
+        chatConfig: null,
+        authData: {},
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        launcherMetadataPathForUser: () => path.join(dir, "launcher.json"),
+        readJsonFile: () => ({
+          defaultTargetUser: "stale-user",
+          defaultInstallDir: "/srv/stale-dir",
+        }),
+        writeLaunchersForUser: () => ({
+          rinPath: "/tmp/rin",
+          rinInstallPath: "/tmp/rin-install",
+        }),
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    const launcherWrite = writes.find(
+      (entry) => entry.filePath === result.launcherPath,
+    );
+    assert.ok(launcherWrite);
+    assert.equal("defaultTargetUser" in launcherWrite.value, false);
+    assert.equal("defaultInstallDir" in launcherWrite.value, false);
+    assert.equal(launcherWrite.value.installedBy, "operator");
+    assert.match(launcherWrite.value.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
 test("persist persistInstallerOutputs normalizes malformed auth and launcher metadata roots", async () => {
   await withTempDir(async (dir) => {
     const ownerHome = path.join(dir, "home", "demo");
