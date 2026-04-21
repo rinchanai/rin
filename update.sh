@@ -1,4 +1,5 @@
 #!/bin/sh
 set -eu
 
-exec sh "$(dirname "$0")/scripts/bootstrap-entrypoint.sh" update "$@"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+exec env RIN_BOOTSTRAP_WRAPPER_MODE=update sh "$SCRIPT_DIR/install.sh" "$@"
