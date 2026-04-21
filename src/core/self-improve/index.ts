@@ -117,13 +117,13 @@ const saveSelfImprovePromptParams = Type.Object({
   content: Type.Optional(
     Type.String({
       description:
-        "Full revised canonical content for the slot. Use one line per topic. Keep the wording concise and information-dense. Omit this on the first call to read the current slot state.",
+        "Full revised canonical content for the slot. This is a whole-slot replacement, not an append-only patch. Rewrite the slot into its best current compact form by revising, polishing, compressing, merging, moving, or deleting existing lines as needed, and move content to a more appropriate slot or skill when it no longer belongs here. Use one line per topic. Keep each line concise and information-dense. Omit this on the first call to read the current slot state.",
     }),
   ),
   baseContent: Type.Optional(
     Type.String({
       description:
-        "Current canonical content returned by the read step. Before updating a populated slot, first call save_prompts with only `slot` to read the current canonical content. Then pass that returned content here exactly as `baseContent`. Treat the read result as canonical. Keep `content` in the same normalized shape unless you intentionally want save_prompts to re-normalize it.",
+        "Current canonical content returned by the read step. Before updating a populated slot, first call `save_prompts` with only `slot` and no `content` to read the current content, then pass that exact content here as `baseContent`. `content` does not need to use it as its basis.",
     }),
   ),
 });
@@ -284,8 +284,7 @@ export default function selfImproveExtension(pi: ExtensionAPI) {
       "Save durable prompt baselines that persist across sessions and stay available every turn. Keep them compact and focused on what will still matter later.",
     promptSnippet: "Save durable prompt baselines.",
     promptGuidelines: [
-      "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn.",
-      "Use save_prompts only for compact long-lived prompt content; do not store task progress, session outcomes, or temporary state with save_prompts.",
+      "Use save_prompts when a durable baseline about the assistant, the user, durable methods and values, or durable facts and operating conventions should remain available by default in future turns rather than only for session-local progress or one-off task state.",
     ],
     parameters: saveSelfImprovePromptParams,
     execute: async (_toolCallId, params) =>

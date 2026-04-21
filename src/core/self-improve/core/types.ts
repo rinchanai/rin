@@ -66,9 +66,9 @@ export const MEMORY_PROMPT_LIMITS: Record<
   string,
   { maxLines: number; fidelity: Array<MemoryFidelity> }
 > = {
-  agent_profile: { maxLines: 16, fidelity: ["exact", "fuzzy"] },
-  user_profile: { maxLines: 12, fidelity: ["exact", "fuzzy"] },
-  core_doctrine: { maxLines: 20, fidelity: ["fuzzy", "exact"] },
+  agent_profile: { maxLines: 8, fidelity: ["exact", "fuzzy"] },
+  user_profile: { maxLines: 4, fidelity: ["exact", "fuzzy"] },
+  core_doctrine: { maxLines: 16, fidelity: ["fuzzy", "exact"] },
   core_facts: { maxLines: 32, fidelity: ["exact", "fuzzy"] },
 };
 

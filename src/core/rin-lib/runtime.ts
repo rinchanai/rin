@@ -140,9 +140,9 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
 
   const skillGuidanceBlock = [
     "Self improve skills guidance:",
-    `- Save reusable procedures, workflows, checklists, and playbooks as skills under ${managedSkillPaths[0]} instead of save_prompts content`,
-    "- If a prompt slot accumulates extensive detail on a single topic, extract it into a self improve skill and leave only a compact reference in save_prompts",
-    "- When creating or substantially revising a skill, use the skill-creator skill if it is available",
+    `- Always save reusable procedures, workflows, checklists, playbooks, reference material, and durable knowledge as skills under ${managedSkillPaths[0]} instead of in save_prompts content, and always use the skill-creator skill to create or update those skills.`,
+    "- When material for one topic starts needing steps, branching logic, examples, or several related lines, move it into a skill and keep only a short durable baseline in save_prompts.",
+    "- Prefer revising an existing relevant skill over creating another similar one.",
   ].join("\n");
 
   const toolsList =

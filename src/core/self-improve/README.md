@@ -30,4 +30,4 @@ These prompt files are stored as markdown list items.
 Read-before-write is required: first call `save_prompts` with only `slot` to get the current canonical content and usage, then submit the full revised content with `baseContent` from that read.
 Treat the returned content as canonical: pass `baseContent` exactly as read, and prefer keeping `content` in that same normalized shape unless you intentionally want the tool to re-normalize it.
 
-Current limit design is intentionally generous: profile slots are still smaller than facts, but all slots have enough room for real resident memory without becoming cramped.
+Current limit design keeps resident memory deliberately tight: `agent_profile` 8 lines, `user_profile` 4 lines, `core_doctrine` 16 lines, and `core_facts` 32 lines.

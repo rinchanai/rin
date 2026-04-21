@@ -57,7 +57,7 @@ test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt lay
   assert.ok(!finalSystemPrompt.includes("# Self-improve guidance"));
   assert.ok(
     finalSystemPrompt.includes(
-      "Use save_prompts proactively for durable baselines such as recurring corrections, environment conventions, stable facts, and other long-lived guidance that should remain active every turn",
+      "Use save_prompts when a durable baseline about the assistant, the user, durable methods and values, or durable facts and operating conventions should remain available by default in future turns rather than only for session-local progress or one-off task state",
     ),
   );
 });

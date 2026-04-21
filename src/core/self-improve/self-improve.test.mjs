@@ -149,7 +149,7 @@ test("processing describes prompt slots with content and limits", async () => {
     existingContent: "Speak concise Chinese by default.",
   });
   assert.equal(state.slot, "agent_profile");
-  assert.equal(state.maxLines, 16);
+  assert.equal(state.maxLines, 8);
   assert.equal(state.currentLines, 1);
   assert.equal(state.content, "- Speak concise Chinese by default.");
 });
@@ -173,11 +173,11 @@ test("processing normalizes revised full-slot content and enforces limits", asyn
       processing.refineSelfImprovePromptSlot({
         slot: "agent_profile",
         incomingContent: Array.from(
-          { length: 17 },
+          { length: 9 },
           (_, i) => `line ${i + 1}`,
         ).join("\n"),
       }),
-    /self_improve_prompt_content_too_long:agent_profile:16/,
+    /self_improve_prompt_content_too_long:agent_profile:8/,
   );
 });
 

@@ -96,11 +96,8 @@ function diffManagedArtifactSnapshots(
 function buildSelfImproveReviewPrompt(_trigger: string): string {
   const prompt = [
     "Review the conversation and derive durable conclusions that should still matter across sessions.",
-    "Save compact stable baselines with save_prompts.",
-    "Save reusable workflows, operating playbooks, complex task procedures, troubleshooting methods, and similar durable methods as self improve skills.",
-    "Refine existing prompt slots and skills instead of creating duplicates, and remove stale or overly specific lines when needed.",
-    "If an existing skill is missing steps, outdated, incomplete, or wrong, update it.",
-    "Do not save summaries, progress, temporary state, or weak session-specific patterns.",
+    "Use save_prompts for prompt baselines and skills for reusable procedures, materials, and knowledge.",
+    "Simultaneously consolidate, compress, and improve existing prompt slots and skills instead of only adding new content.",
   ];
 
   return prompt.join(" ");
