@@ -267,6 +267,37 @@ export class ChatController {
     delete this.state.pendingDelivery;
     this.saveState();
   }
+  private isRetryableRecoveryRebindError(error: unknown) {
+    const errorMessage = safeString((error as any)?.message || error).trim();
+    return (
+      errorMessage === "rin_no_attached_session" ||
+      /(^|\b)rin_timeout:select_session\b/.test(errorMessage)
+    );
+  }
+  private async restartPendingTurnFresh() {
+    const pending = this.state.processing;
+    if (!pending) return false;
+    delete this.state.piSessionFile;
+    await this.clearWorkingReaction().catch(() => {});
+    if (typeof this.session?.disconnect === "function") {
+      await this.session.disconnect().catch(() => {});
+    }
+    this.client = null;
+    this.session = null;
+    this.saveState();
+    await this.runTurnNow(
+      {
+        text: pending.text,
+        attachments: pending.attachments,
+        replyToMessageId:
+          safeString(pending.replyToMessageId || "").trim() || undefined,
+        incomingMessageId:
+          safeString(pending.incomingMessageId || "").trim() || undefined,
+      },
+      "prompt",
+    );
+    return true;
+  }
   private async releaseStaleRecoveryState(error: unknown) {
     const errorMessage = safeString((error as any)?.message || error).trim();
     const pending = this.state.processing;
@@ -1084,12 +1115,19 @@ export class ChatController {
             clearProcessing: true,
           });
         } catch (error: any) {
-          this.failLiveTurn(
+          const normalizedError =
             error instanceof Error
               ? error
-              : new Error(String(error || "chat_turn_failed")),
-          );
-          const errorMessage = safeString(error?.message || error).trim();
+              : new Error(String(error || "chat_turn_failed"));
+          const errorMessage = safeString(
+            normalizedError?.message || normalizedError,
+          ).trim();
+          if (this.isRetryableRecoveryRebindError(errorMessage)) {
+            if (this.liveTurn === liveTurn) this.liveTurn = null;
+            this.clearTurnPulse();
+            throw normalizedError;
+          }
+          this.failLiveTurn(normalizedError);
           if (errorMessage === "rpc_turn_final_output_missing") {
             this.logger.warn(
               `chat recovery released stale processing chatKey=${this.chatKey}`,
@@ -1097,9 +1135,23 @@ export class ChatController {
             await this.clearProcessingState();
             return;
           }
-          throw error;
+          throw normalizedError;
         }
       } catch (error) {
+        const pending = this.state.processing;
+        const startedAt = Number(pending?.startedAt || 0);
+        const ageMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0;
+        if (
+          pending &&
+          ageMs < STALE_RECOVERY_RELEASE_AFTER_MS &&
+          this.isRetryableRecoveryRebindError(error)
+        ) {
+          this.logger.warn(
+            `chat recovery restarting pending prompt chatKey=${this.chatKey} err=${safeString((error as any)?.message || error).trim() || "chat_recovery_failed"}`,
+          );
+          await this.restartPendingTurnFresh();
+          return;
+        }
         if (await this.releaseStaleRecoveryState(error)) return;
         throw error;
       }

@@ -1804,6 +1804,108 @@ test("chat controller recovery does not rerun the saved prompt when daemon resum
   assert.deepEqual(delivered, ["final daemon resumed text"]);
 });
 
+test("chat controller replays the pending prompt on a fresh session when recovery loses its attachment", async () => {
+  const controller = await createController("telegram/1:2");
+  const wantedSessionFile = path.join(controller.agentDir, "recover-reattach.jsonl");
+  await fs.writeFile(wantedSessionFile, "{}\n", "utf8");
+  saveChatMessage(controller.agentDir, {
+    chatKey: "telegram/1:2",
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-fresh-replay",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+  controller.state.piSessionFile = wantedSessionFile;
+  controller.state.processing = {
+    text: "hello",
+    attachments: [],
+    startedAt: Date.now(),
+    replyToMessageId: "42",
+    incomingMessageId: "m-fresh-replay",
+  };
+
+  const delivered = [];
+  let connectCalls = 0;
+  let staleDisconnects = 0;
+  let promptCalls = 0;
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    delivered.push(this.state.pendingDelivery?.text || "");
+    delete this.state.pendingDelivery;
+    if (clearProcessing) delete this.state.processing;
+    this.saveState();
+  };
+
+  const freshSession = {
+    isStreaming: false,
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+    sessionManager: {
+      getSessionFile: () => "/tmp/fresh-replay.jsonl",
+      getSessionId: () => "session-fresh-replay",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/fresh-replay.jsonl",
+      sessionId: "session-fresh-replay",
+    }),
+    prompt: async (_message, options) => {
+      promptCalls += 1;
+      freshSession.isStreaming = true;
+      controller.handleSessionEvent({ type: "agent_start" });
+      queueMicrotask(() => {
+        freshSession.messages = [
+          { role: "user", content: [{ type: "text", text: "hello" }] },
+          {
+            role: "assistant",
+            content: [{ type: "text", text: "fresh replay final" }],
+          },
+        ];
+        freshSession.isStreaming = false;
+        emitRpcTurnComplete(controller, options, "fresh replay final");
+        controller.handleSessionEvent({ type: "agent_end" });
+      });
+    },
+  };
+
+  const staleSession = {
+    isStreaming: false,
+    messages: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
+    sessionManager: {
+      getSessionFile: () => wantedSessionFile,
+      getSessionId: () => "session-stale-rebind",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: wantedSessionFile,
+      sessionId: "session-stale-rebind",
+    }),
+    resumeInterruptedTurn: async () => {
+      throw new Error("rin_no_attached_session");
+    },
+    disconnect: async () => {
+      staleDisconnects += 1;
+    },
+  };
+
+  controller.connect = async function () {
+    connectCalls += 1;
+    if (this.session) return;
+    this.session = connectCalls === 1 ? staleSession : freshSession;
+  };
+
+  await controller.recoverIfNeeded();
+
+  const stored = getChatMessage(controller.agentDir, "telegram/1:2", "m-fresh-replay");
+  assert.equal(staleDisconnects, 1);
+  assert.equal(promptCalls, 1);
+  assert.equal(controller.state.processing, undefined);
+  assert.ok(stored?.processedAt);
+  assert.deepEqual(delivered, ["fresh replay final"]);
+});
+
 test("chat controller clears stale processing when daemon reports no resumable output", async () => {
   const controller = await createController("telegram/1:2");
   saveChatMessage(controller.agentDir, {
