@@ -74,7 +74,7 @@ export class ChatFrontendDriver {
   }
 
   dispose() {
-    this.failLiveTurn(new Error("chat_frontend_driver_disposed"));
+    this.failLiveTurn(new Error("chat_controller_disposed"));
     this.resetTurnTextTracking();
     this.frontendPhase = "idle";
     const session = this.session;
