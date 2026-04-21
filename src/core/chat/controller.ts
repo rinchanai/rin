@@ -3,14 +3,9 @@ import path from "node:path";
 
 import prettyMilliseconds from "pretty-ms";
 
-import { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
-import { RpcInteractiveSession } from "../rin-tui/runtime.js";
-import { resolveTurnCompletion } from "../session/turn-result.js";
-import {
-  normalizeSessionRef,
-  resolveStoredSessionFile,
-  toStoredSessionFile,
-} from "../session/ref.js";
+import { ChatFrontendDriver } from "../rin-tui/chat-frontend-driver.js";
+import { resolveStoredSessionFile, toStoredSessionFile } from "../session/ref.js";
+import { normalizeSessionRef } from "../session/ref.js";
 import {
   chatStatePath,
   isPrivateChat,
@@ -21,7 +16,6 @@ import {
 import {
   ChatState,
   SavedAttachment,
-  extractTextFromContent,
   markProcessedChatMessage,
   safeString,
 } from "./chat-helpers.js";
@@ -60,12 +54,6 @@ function commandNameFromCommandLine(commandLine: string) {
   return safeString(commandPart.split(/\s+/, 1)[0]).trim();
 }
 
-function isAgentAlreadyProcessingError(error: unknown) {
-  return safeString((error as any)?.message || error).includes(
-    "Agent is already processing.",
-  );
-}
-
 function summarizePromptText(text: string, limit = 80) {
   const value = safeString(text).replace(/\s+/g, " ").trim();
   if (!value) return "";
@@ -80,19 +68,8 @@ export class ChatController {
   agentDir: string;
   statePath: string;
   state: ChatState;
-  client: RinDaemonFrontendClient | null = null;
-  session: RpcInteractiveSession | null = null;
+  driver: ChatFrontendDriver;
   turnQueue: Promise<void> = Promise.resolve();
-  liveTurn: {
-    requestTag?: string;
-    promise: Promise<any>;
-    resolve: (value: any) => void;
-    reject: (error: Error) => void;
-  } | null = null;
-  latestAssistantText = "";
-  pendingCompletedAssistantText = "";
-  deliveredInterimTexts = new Set<string>();
-  interimDeliveryQueue: Promise<void> = Promise.resolve();
   logger: any;
   h: any;
   deliveryEnabled: boolean;
@@ -100,10 +77,9 @@ export class ChatController {
   workingReactionEmoji = "";
   workingReactionTick = 0;
   lastWorkingReactionAt = 0;
-  frontendPhase: "idle" | "connecting" | "starting" | "sending" | "working" =
-    "idle";
   currentTurn: ChatTurnMeta | null = null;
   stagedDelivery: ChatTextDelivery | null = null;
+  awaitingTurnSettle = false;
 
   constructor(
     app: any,
@@ -128,37 +104,49 @@ export class ChatController {
     this.logger = deps.logger;
     this.h = deps.h;
     if (!this.state.chatKey) this.state.chatKey = chatKey;
+    this.driver = new ChatFrontendDriver();
+    this.driver.subscribe((event) => {
+      void this.handleFrontendEvent(event).catch(() => {});
+    });
+  }
+
+  get client() {
+    return this.driver.client;
+  }
+
+  set client(value) {
+    this.driver.client = value;
+  }
+
+  get session() {
+    return this.driver.session;
+  }
+
+  set session(value) {
+    this.driver.session = value;
+  }
+
+  get frontendPhase() {
+    return this.driver.frontendPhase;
   }
 
   async connect(options: { restoreSession?: boolean } = {}) {
-    if (this.session && this.client) return;
-    const client = new RinDaemonFrontendClient();
-    const session = new RpcInteractiveSession(client);
-    await session.connect();
-    this.client = client;
-    this.session = session;
-
-    session.subscribe((event: any) => {
-      void this.handleSessionEvent(event).catch(() => {});
+    await this.driver.connect({
+      restoreSessionFile:
+        options.restoreSession === false ? "" : this.getRecoverableSessionFile(),
     });
-
-    if (options.restoreSession === false) return;
-    const wantedSessionFile = this.getRecoverableSessionFile();
-    if (wantedSessionFile) {
-      await session.switchSession(wantedSessionFile);
-      this.updateStoredSessionFile(wantedSessionFile);
+    if (this.driver.currentSessionFile()) {
+      this.updateStoredSessionFile(this.driver.currentSessionFile());
       this.saveState();
     }
   }
 
   dispose() {
     void this.clearWorkingReaction().catch(() => {});
-    this.failLiveTurn(new Error("chat_controller_disposed"));
     this.currentTurn = null;
-    this.frontendPhase = "idle";
-    void this.session?.disconnect().catch(() => {});
-    this.client = null;
-    this.session = null;
+    this.stagedDelivery = null;
+    this.awaitingTurnSettle = false;
+    this.driver.dispose();
   }
 
   private saveState() {
@@ -174,12 +162,9 @@ export class ChatController {
   async clearProcessingState() {
     this.currentTurn = null;
     this.stagedDelivery = null;
+    this.awaitingTurnSettle = false;
     await this.clearWorkingReaction().catch(() => {});
     this.saveState();
-  }
-
-  private createTurnRequestTag() {
-    return `chat_turn_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
   }
 
   private currentIncomingMessageId() {
@@ -202,14 +187,12 @@ export class ChatController {
     return (
       this.frontendPhase === "sending" ||
       this.frontendPhase === "working" ||
-      Boolean(this.liveTurn) ||
+      this.awaitingTurnSettle ||
       Boolean(this.currentTurn)
     );
   }
 
   private setCurrentTurn(input: {
-    text?: string;
-    attachments?: SavedAttachment[];
     incomingMessageId?: string;
     replyToMessageId?: string;
   }) {
@@ -300,12 +283,8 @@ export class ChatController {
     return true;
   }
 
-  private currentStatusLabel() {
-    return this.frontendPhase;
-  }
-
   private buildStatusText() {
-    const lines = [`Status: ${this.currentStatusLabel()}`, `Chat: ${this.chatKey}`];
+    const lines = [`Status: ${this.frontendPhase}`, `Chat: ${this.chatKey}`];
     const policy = this.getWorkingIndicatorPolicy();
     const indicators = [
       policy.typing ? "typing" : "",
@@ -328,7 +307,7 @@ export class ChatController {
     }
     const replyToMessageId = this.currentReplyToMessageId();
     if (replyToMessageId) lines.push(`Reply target: ${replyToMessageId}`);
-    const promptPreview = summarizePromptText(this.latestAssistantText || "");
+    const promptPreview = summarizePromptText(this.driver.latestAssistantText || "");
     if (promptPreview) lines.push(`Latest: ${promptPreview}`);
     return lines.join("\n");
   }
@@ -336,7 +315,6 @@ export class ChatController {
   private async runLocalStatusCommand(replyToMessageId = "", incomingMessageId = "") {
     const text = this.buildStatusText();
     this.markProcessedMessage(incomingMessageId);
-    this.latestAssistantText = text;
     if (!this.deliveryEnabled) return { handled: true, text, local: true };
     await sendOutboxPayload(
       this.app,
@@ -405,118 +383,12 @@ export class ChatController {
     }
   }
 
-  private startLiveTurn(requestTag?: string) {
-    if (this.liveTurn) throw new Error("chat_turn_already_running");
-    let resolve!: (value: any) => void;
-    let reject!: (error: Error) => void;
-    const liveTurn = {
-      requestTag,
-      promise: new Promise<any>((nextResolve, nextReject) => {
-        resolve = nextResolve;
-        reject = nextReject;
-      }),
-      resolve: (value: any) => {
-        if (this.liveTurn === liveTurn) this.liveTurn = null;
-        resolve(value);
-      },
-      reject: (error: Error) => {
-        if (this.liveTurn === liveTurn) this.liveTurn = null;
-        reject(error);
-      },
-    };
-    this.liveTurn = liveTurn;
-    return liveTurn;
-  }
-
-  private failLiveTurn(error: Error) {
-    if (!this.liveTurn) return;
-    const liveTurn = this.liveTurn;
-    this.liveTurn = null;
-    liveTurn.reject(error);
-  }
-
-  private resetTurnTextTracking() {
-    this.pendingCompletedAssistantText = "";
-    this.deliveredInterimTexts.clear();
-    this.interimDeliveryQueue = Promise.resolve();
-  }
-
-  private collectFinalAssistantText() {
-    return resolveTurnCompletion({
-      messages: Array.isArray(this.session?.messages) ? this.session.messages : [],
-    }).finalText;
-  }
-
-  private queueInterimDelivery(run: () => Promise<void>) {
-    const queued = this.interimDeliveryQueue.then(run, run);
-    this.interimDeliveryQueue = queued.then(
-      () => undefined,
-      () => undefined,
-    );
-    return queued;
-  }
-
-  private async waitForInterimDeliveries() {
-    await this.interimDeliveryQueue;
-  }
-
-  private async flushPendingAssistantInterim() {
-    const text = safeString(this.pendingCompletedAssistantText).trim();
-    this.pendingCompletedAssistantText = "";
-    if (!text) return false;
-    if (this.deliveredInterimTexts.has(text)) return false;
-    this.deliveredInterimTexts.add(text);
-    if (!this.deliveryEnabled) return true;
-    const replyToMessageId = this.currentReplyToMessageId();
-    await sendOutboxPayload(
-      this.app,
-      this.agentDir,
-      {
-        type: "text_delivery",
-        createdAt: new Date().toISOString(),
-        chatKey: this.chatKey,
-        text: `${INTERIM_PREFIX}${text}`,
-        replyToMessageId: replyToMessageId || undefined,
-        sessionFile: this.currentSessionFile(),
-      },
-      this.h,
-    ).catch(() => {});
-    return true;
-  }
-
-  private promotePendingAssistantMessageToInterim() {
-    if (!safeString(this.pendingCompletedAssistantText).trim()) return;
-    void this.queueInterimDelivery(async () => {
-      await this.flushPendingAssistantInterim();
-    }).catch(() => {});
-  }
-
-  private async handleAssistantMessageEnd(message: any) {
-    const text = safeString(extractTextFromContent(message?.content)).trim();
-    if (!text) return;
-    if (safeString(this.pendingCompletedAssistantText).trim()) {
-      await this.queueInterimDelivery(async () => {
-        await this.flushPendingAssistantInterim();
-      });
-    }
-    this.pendingCompletedAssistantText = text;
-    this.latestAssistantText = text;
-  }
-
-  private shouldAffectChatBinding() {
-    return this.affectChatBinding;
-  }
-
   currentSessionId() {
-    return safeString(
-      this.session?.sessionManager?.getSessionId?.() || "",
-    ).trim();
+    return this.driver.currentSessionId();
   }
 
   private currentSessionFile() {
-    const live = safeString(
-      this.session?.sessionManager?.getSessionFile?.() || "",
-    ).trim();
+    const live = this.driver.currentSessionFile();
     if (live) return live;
     return resolveStoredSessionFile(this.agentDir, this.state.piSessionFile);
   }
@@ -571,10 +443,10 @@ export class ChatController {
     replyToMessageId?: string;
     sessionFile?: string;
   }): ChatTextDelivery {
-    const text = safeString(input.text ?? this.latestAssistantText).trim();
+    const text = safeString(input.text ?? this.driver.latestAssistantText).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
     return {
-      type: "text_delivery" as const,
+      type: "text_delivery",
       chatKey: this.chatKey,
       text,
       replyToMessageId:
@@ -591,9 +463,8 @@ export class ChatController {
     replyToMessageId?: string;
     sessionFile?: string;
   }) {
-    const text = safeString(input.text ?? this.latestAssistantText).trim();
+    const text = safeString(input.text ?? this.driver.latestAssistantText).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
-    this.latestAssistantText = text;
     this.stagedDelivery = this.buildAssistantDelivery(input);
     return text;
   }
@@ -638,45 +509,35 @@ export class ChatController {
     return text;
   }
 
-  private async finishLiveTurn(input: {
-    liveTurn: { promise: Promise<any> };
-    replyToMessageId?: string;
-    incomingMessageId?: string;
-  }) {
-    const completion = await input.liveTurn.promise;
-    await this.waitForInterimDeliveries();
-    const canonicalCompletion = resolveTurnCompletion({
-      ...completion,
-      messages: Array.isArray(this.session?.messages) ? this.session.messages : [],
-    });
-    const finalText =
-      safeString((completion as any)?.finalText).trim() ||
-      safeString(canonicalCompletion.finalText).trim();
-    if (!finalText) {
-      throw new Error("rpc_turn_final_output_missing");
-    }
-    this.updateStoredSessionFile(
-      completion?.sessionFile,
-      this.session?.sessionManager?.getSessionFile?.(),
-    );
-    await this.deliverAssistantReply({
-      text: finalText,
-      replyToMessageId: input.replyToMessageId,
-      sessionFile: completion?.sessionFile,
-      incomingMessageId: input.incomingMessageId,
-      clearProcessing: true,
-    });
-    this.clearCurrentTurn();
-    return { completion, result: canonicalCompletion.result, finalText };
+  private async deliverAssistantInterim(text: string) {
+    const trimmed = safeString(text).trim();
+    if (!trimmed) return false;
+    if (!this.deliveryEnabled) return true;
+    const replyToMessageId = this.currentReplyToMessageId();
+    await sendOutboxPayload(
+      this.app,
+      this.agentDir,
+      {
+        type: "text_delivery",
+        createdAt: new Date().toISOString(),
+        chatKey: this.chatKey,
+        text: `${INTERIM_PREFIX}${trimmed}`,
+        replyToMessageId: replyToMessageId || undefined,
+        sessionFile: this.currentSessionFile(),
+      },
+      this.h,
+    ).catch(() => {});
+    return true;
   }
 
   async resumeSessionFile(sessionFile: string) {
     const wanted = safeString(sessionFile).trim();
-    if (!wanted)
+    if (!wanted) {
       return {
         changed: false,
         sessionId: this.currentSessionId() || undefined,
       };
+    }
     if (!fs.existsSync(wanted)) {
       delete this.state.piSessionFile;
       this.saveState();
@@ -685,49 +546,38 @@ export class ChatController {
         sessionId: this.currentSessionId() || undefined,
       };
     }
-    await this.connect();
-    if (!this.session) return { changed: false, sessionId: undefined };
-    const before = safeString(
-      this.session.sessionManager.getSessionFile?.() || "",
-    ).trim();
-    if (before !== wanted) await this.session.switchSession(wanted);
-    this.updateStoredSessionFile(
-      this.session.sessionManager.getSessionFile?.(),
-      wanted,
-    );
-    this.saveState();
-    return {
-      changed: before !== wanted,
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile:
-        safeString(
-          this.session.sessionManager.getSessionFile?.() || "",
-        ).trim() || undefined,
-    };
-  }
-
-  private async ensureSessionReady() {
-    if (!this.session) throw new Error("chat_session_not_connected");
-    const wanted = this.getRecoverableSessionFile();
-    const current = safeString(
-      this.session.sessionManager.getSessionFile?.() || "",
-    ).trim();
-    if (!current && wanted) {
-      await this.session.switchSession(wanted);
-    }
-    const result = await this.session.ensureSessionReady();
-    this.updateStoredSessionFile(
-      this.session.sessionManager.getSessionFile?.(),
-      result?.sessionFile,
-    );
+    const result = await this.driver.resumeSessionFile(wanted);
+    this.updateStoredSessionFile(result?.sessionFile, wanted);
     this.saveState();
     return result;
+  }
+
+  startLiveTurn() {
+    this.awaitingTurnSettle = true;
+    let resolve!: (value: any) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<any>((nextResolve, nextReject) => {
+      resolve = nextResolve;
+      reject = nextReject;
+    });
+    return {
+      promise,
+      resolve: (value: any) => {
+        this.awaitingTurnSettle = false;
+        resolve(value);
+      },
+      reject: (error: Error) => {
+        this.awaitingTurnSettle = false;
+        reject(error);
+      },
+    };
   }
 
   async runCommand(
     commandLine: string,
     replyToMessageId = "",
     incomingMessageId = "",
+    sessionFile = "",
   ) {
     const commandName = commandNameFromCommandLine(commandLine);
     if (commandName === "status") {
@@ -735,25 +585,26 @@ export class ChatController {
     }
     const skipSessionRecovery = commandName === "new";
     await this.connect({ restoreSession: !skipSessionRecovery });
-    if (!this.session) throw new Error("chat_session_not_connected");
-    if (!skipSessionRecovery) {
-      await this.ensureSessionReady();
-    }
     this.setCurrentTurn({
-      text: commandLine,
-      attachments: [],
       incomingMessageId: incomingMessageId || undefined,
       replyToMessageId: replyToMessageId || undefined,
     });
     try {
-      const data: any = await this.session.runCommand(commandLine);
-      this.updateStoredSessionFile(this.session.sessionManager.getSessionFile?.());
+      const data: any = await this.driver.runCommand(commandLine, {
+        skipSessionRecovery,
+        restoreSessionFile: skipSessionRecovery ? "" : this.getRecoverableSessionFile(),
+        sessionFile,
+      });
+      this.updateStoredSessionFile(data?.sessionFile, this.driver.currentSessionFile());
+      this.saveState();
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
       await this.deliverAssistantReply({
         text,
         replyToMessageId: replyToMessageId || undefined,
         incomingMessageId,
+        sessionFile: data?.sessionFile,
+        clearProcessing: true,
       });
       return data;
     } catch (error: any) {
@@ -764,94 +615,17 @@ export class ChatController {
           text: `Chat bridge error: ${errorMessage}`,
           replyToMessageId: replyToMessageId || undefined,
           incomingMessageId,
+          clearProcessing: true,
         });
       }
       throw error;
     } finally {
+      this.awaitingTurnSettle = false;
       await this.clearWorkingReaction().catch(() => {});
       this.clearCurrentTurn();
+      this.stagedDelivery = null;
       this.saveState();
     }
-  }
-
-  private async sendPromptLikeTui(input: {
-    text: string;
-    attachments: SavedAttachment[];
-    replyToMessageId?: string;
-    incomingMessageId?: string;
-  }) {
-    await this.connect();
-    if (!this.session) throw new Error("chat_session_not_connected");
-    await this.ensureSessionReady();
-    const { text, images } = await restorePromptParts({
-      text: input.text,
-      attachments: input.attachments,
-      startedAt: Date.now(),
-    });
-    this.setCurrentTurn({
-      text: input.text,
-      attachments: input.attachments,
-      incomingMessageId: input.incomingMessageId,
-      replyToMessageId: input.replyToMessageId,
-    });
-    void this.pollTyping().catch(() => {});
-    if (this.session.isStreaming) {
-      await this.session.prompt(text, {
-        images,
-        source: "chat-bridge",
-        streamingBehavior: "steer",
-      });
-      this.markAcceptedMessage(input.incomingMessageId);
-      return {
-        steered: true,
-        sessionId: this.currentSessionId() || undefined,
-        sessionFile: this.currentSessionFile(),
-      };
-    }
-    this.latestAssistantText = "";
-    const requestTag = this.createTurnRequestTag();
-    const liveTurn = this.startLiveTurn(requestTag);
-    try {
-      await this.session.prompt(text, {
-        images,
-        source: "chat-bridge",
-        requestTag,
-      });
-    } catch (error: any) {
-      if (isAgentAlreadyProcessingError(error)) {
-        if (this.liveTurn === liveTurn) this.liveTurn = null;
-        await this.session.prompt(text, {
-          images,
-          source: "chat-bridge",
-          streamingBehavior: "steer",
-        });
-        this.markAcceptedMessage(input.incomingMessageId);
-        return {
-          steered: true,
-          sessionId: this.currentSessionId() || undefined,
-          sessionFile: this.currentSessionFile(),
-        };
-      }
-      this.failLiveTurn(
-        error instanceof Error
-          ? error
-          : new Error(String(error || "chat_turn_failed")),
-      );
-      await this.clearWorkingReaction().catch(() => {});
-      this.clearCurrentTurn();
-      throw error;
-    }
-    const { finalText, result } = await this.finishLiveTurn({
-      liveTurn,
-      replyToMessageId: input.replyToMessageId,
-      incomingMessageId: input.incomingMessageId,
-    });
-    return {
-      finalText,
-      result,
-      sessionId: this.currentSessionId() || undefined,
-      sessionFile: this.currentSessionFile(),
-    };
   }
 
   async runTurn(
@@ -865,13 +639,60 @@ export class ChatController {
     _mode: "prompt" | "steer" = "prompt",
   ) {
     return await this.runExclusiveTurn(async () => {
-      await this.connect();
-      if (!this.session) throw new Error("chat_session_not_connected");
       const { sessionFile: wantedSessionFile } = normalizeSessionRef(input);
-      if (wantedSessionFile) {
-        await this.resumeSessionFile(wantedSessionFile);
+      const restoreSessionFile = wantedSessionFile || this.getRecoverableSessionFile();
+      await this.connect();
+      const { text, images } = await restorePromptParts({
+        text: input.text,
+        attachments: input.attachments,
+        startedAt: Date.now(),
+      });
+      this.setCurrentTurn({
+        incomingMessageId: input.incomingMessageId,
+        replyToMessageId: input.replyToMessageId,
+      });
+      this.awaitingTurnSettle = true;
+      void this.pollTyping().catch(() => {});
+      try {
+        const result = await this.driver.runTurn({
+          text,
+          images,
+          sessionFile: wantedSessionFile,
+          restoreSessionFile,
+        });
+        this.updateStoredSessionFile(result.sessionFile, this.driver.currentSessionFile());
+        this.saveState();
+        if (result.steered) {
+          this.markAcceptedMessage(input.incomingMessageId);
+          return {
+            steered: true,
+            sessionId: this.currentSessionId() || undefined,
+            sessionFile: this.currentSessionFile(),
+          };
+        }
+        await this.deliverAssistantReply({
+          text: result.finalText,
+          replyToMessageId: input.replyToMessageId,
+          sessionFile: result.sessionFile,
+          incomingMessageId: input.incomingMessageId,
+          clearProcessing: true,
+        });
+        this.clearCurrentTurn();
+        return {
+          finalText: result.finalText,
+          result: result.result,
+          sessionId: this.currentSessionId() || undefined,
+          sessionFile: this.currentSessionFile(),
+        };
+      } catch (error) {
+        await this.clearWorkingReaction().catch(() => {});
+        this.clearCurrentTurn();
+        this.stagedDelivery = null;
+        this.saveState();
+        throw error;
+      } finally {
+        this.awaitingTurnSettle = false;
       }
-      return await this.sendPromptLikeTui(input);
     });
   }
 
@@ -884,81 +705,35 @@ export class ChatController {
   }
 
   async handleClientEvent(event: any) {
-    if (!event || typeof event !== "object") return;
-    const payload = event.type === "ui" ? event.payload : event;
-    await this.handleSessionEvent(payload);
+    await this.driver.handleClientEvent(event);
   }
 
-  private async handleSessionEvent(event: any) {
+  async handleSessionEvent(event: any) {
+    await this.driver.handleClientEvent(event);
+  }
+
+  private async handleFrontendEvent(event: any) {
     if (!event || typeof event !== "object") return;
-    if (event.type === "rpc_frontend_status") {
-      this.frontendPhase = safeString(event.phase).trim() as any || "idle";
-      if (this.frontendPhase === "sending" || this.frontendPhase === "working") {
-        this.markAcceptedMessage(this.currentIncomingMessageId());
-      }
-      if (this.frontendPhase === "idle") {
-        await this.clearWorkingReaction().catch(() => {});
-      }
-      return;
-    }
-    if (event.type === "rpc_turn_event") {
-      if (event.event === "start" || event.event === "heartbeat") {
-        this.markAcceptedMessage(this.currentIncomingMessageId());
-        return;
-      }
-      if (event.event === "complete") {
-        if (!this.liveTurn) return;
-        const current = safeString(this.liveTurn.requestTag || "").trim();
-        const incoming = safeString(event.requestTag || "").trim();
-        if (current && incoming && current !== incoming) return;
-        const completion = resolveTurnCompletion(event);
-        const finalText =
-          safeString(event.finalText).trim() ||
-          safeString(completion.finalText).trim();
-        if (!finalText) {
-          this.failLiveTurn(new Error("rpc_turn_final_output_missing"));
-          return;
-        }
-        this.latestAssistantText = finalText;
-        const session = normalizeSessionRef(event);
-        this.liveTurn.resolve({
-          finalText,
-          result: completion.result,
-          sessionId: session.sessionId,
-          sessionFile: session.sessionFile,
-        });
-        return;
-      }
-      if (event.event === "error") {
-        this.failLiveTurn(new Error(String(event.error || "rpc_turn_failed")));
-        return;
-      }
-    }
     switch (event.type) {
-      case "agent_start":
-        this.resetTurnTextTracking();
-        this.latestAssistantText = "";
-        this.markAcceptedMessage(this.currentIncomingMessageId());
-        break;
-      case "message_end":
-        if (event?.message?.role === "assistant") {
-          await this.handleAssistantMessageEnd(event.message).catch(() => {});
-          break;
+      case "frontend_status":
+        if (event.phase === "sending" || event.phase === "working") {
+          this.markAcceptedMessage(this.currentIncomingMessageId());
         }
-        this.promotePendingAssistantMessageToInterim();
-        break;
-      case "message_update":
-        if (event?.message?.role === "assistant") {
-          this.promotePendingAssistantMessageToInterim();
+        if (
+          event.phase === "idle" &&
+          !this.awaitingTurnSettle &&
+          !this.stagedDelivery
+        ) {
+          await this.clearWorkingReaction().catch(() => {});
+          this.clearCurrentTurn();
         }
-        break;
-      case "tool_execution_end":
-      case "tool_execution_start":
-      case "compaction_start":
-      case "compaction_end":
+        return;
+      case "turn_accepted":
         this.markAcceptedMessage(this.currentIncomingMessageId());
-        this.promotePendingAssistantMessageToInterim();
-        break;
+        return;
+      case "assistant_interim":
+        await this.deliverAssistantInterim(event.text);
+        return;
     }
   }
 }

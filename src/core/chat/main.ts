@@ -405,15 +405,15 @@ export async function startChatBridge(
     }
 
     const controller = getController(chatKey);
-    if (replySession?.sessionFile) {
-      await controller
-        .resumeSessionFile(replySession.sessionFile)
-        .catch(() => {});
-    }
 
     const text = `/${command.name}${command.argsText ? ` ${command.argsText}` : ""}`;
     try {
-      await controller.runCommand(text, messageId, messageId);
+      await controller.runCommand(
+        text,
+        messageId,
+        messageId,
+        replySession?.sessionFile || "",
+      );
       return { retry: false };
     } catch (error) {
       logger.warn(

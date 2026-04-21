@@ -42,22 +42,12 @@ export type InboundAttachmentFailure = {
 export type ChatState = {
   chatKey: string;
   piSessionFile?: string;
-  processing?: {
-    text: string;
-    attachments: SavedAttachment[];
-    startedAt: number;
-    replyToMessageId?: string;
-    incomingMessageId?: string;
-    acceptedAt?: string;
-    workingNoticeSent?: boolean;
-  };
-  pendingDelivery?: {
-    type: "text_delivery";
-    chatKey: string;
-    text: string;
-    replyToMessageId?: string;
-    sessionFile?: string;
-  };
+};
+
+export type ChatPromptRestoreInput = {
+  text: string;
+  attachments: SavedAttachment[];
+  startedAt: number;
 };
 
 export type ChatBridgePromptMeta = {

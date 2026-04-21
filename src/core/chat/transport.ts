@@ -19,7 +19,7 @@ import {
   findChatMessageByChatAndId,
   saveChatMessage,
 } from "./message-store.js";
-import type { ChatState, SavedAttachment } from "./chat-helpers.js";
+import type { ChatPromptRestoreInput, SavedAttachment } from "./chat-helpers.js";
 import {
   ensureDir,
   extractTextFromContent,
@@ -590,7 +590,7 @@ export async function attachmentToImageContent(
 }
 
 export async function restorePromptParts(
-  processing: NonNullable<ChatState["processing"]>,
+  processing: ChatPromptRestoreInput,
 ) {
   const attachments = (processing.attachments || []).filter(
     (item) => item && fs.existsSync(item.path),
