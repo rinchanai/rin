@@ -16,6 +16,7 @@ export type FinalizeInstallOptions = {
   modelId?: string;
   thinkingLevel?: string;
   language?: string;
+  setDefaultTarget?: boolean;
   chatDescription?: string;
   chatDetail?: string;
   chatConfig?: any;

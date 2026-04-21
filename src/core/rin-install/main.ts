@@ -26,6 +26,7 @@ import {
   buildPostInstallInitExitText,
   describeInstallDirState,
   promptChatSetup,
+  promptDefaultTargetUser,
   promptProviderSetup,
   promptTargetInstall,
 } from "./interactive.js";
@@ -154,6 +155,11 @@ export async function startInstaller() {
     i18n,
   );
   note(installDirNote.text, installDirNote.title);
+  const setDefaultTarget = await promptDefaultTargetUser(
+    promptApi,
+    targetUser,
+    i18n,
+  );
 
   const { provider, modelId, thinkingLevel, authResult } =
     await promptProviderSetup(promptApi, installDir, readJsonFile, {}, i18n);
@@ -177,6 +183,7 @@ export async function startInstaller() {
           chatDescription,
           chatDetail,
           language: selectedLanguage,
+          setDefaultTarget,
         },
         i18n,
       ),
@@ -223,6 +230,7 @@ export async function startInstaller() {
       modelId,
       thinkingLevel,
       language: selectedLanguage,
+      setDefaultTarget,
       chatDescription,
       chatDetail,
       chatConfig,

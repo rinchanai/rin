@@ -51,6 +51,7 @@ async function applyInstalledRuntime(
   const modelId = String(options.modelId || "");
   const thinkingLevel = String(options.thinkingLevel || "");
   const language = String(options.language || "").trim();
+  const setDefaultTarget = options.setDefaultTarget !== false;
   const chatConfig = options.chatConfig || null;
   const authData = options.authData || {};
   const sourceRoot =
@@ -130,6 +131,7 @@ async function applyInstalledRuntime(
           modelId,
           thinkingLevel,
           language,
+          setDefaultTarget,
           chatConfig,
           authData,
           release,
