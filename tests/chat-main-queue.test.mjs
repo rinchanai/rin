@@ -440,3 +440,120 @@ test("chat main passes quoted reply session metadata through one normal prompt s
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
+
+test("chat main falls back to a plain turn when quoted reply-resume times out selecting the linked session", async () => {
+  const tempRoot = "/home/rin/tmp";
+  await fs.mkdir(tempRoot, { recursive: true });
+  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
+  try {
+    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
+
+    const script = `
+      import path from "node:path";
+      import { pathToFileURL } from "node:url";
+
+      const rootDir = process.env.RIN_REPO_ROOT;
+      const agentDir = process.env.RIN_DIR;
+      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
+      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
+      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
+      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
+      const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
+      const chatKey = "telegram/1:2";
+      const replySessionFile = path.join(agentDir, "sessions", "linked", "reply-history.jsonl");
+      const seen = [];
+
+      supportMod.saveIdentity(path.join(agentDir, "data"), {
+        persons: { owner: { trust: "OWNER" } },
+        aliases: [{ platform: "telegram", userId: "owner-1", personId: "owner" }],
+        trusted: [],
+      });
+      storeMod.saveChatMessage(agentDir, {
+        chatKey,
+        platform: "telegram",
+        botId: "1",
+        chatId: "2",
+        chatType: "private",
+        messageId: "m-linked",
+        role: "assistant",
+        receivedAt: new Date().toISOString(),
+        text: "old reply",
+        sessionFile: replySessionFile,
+      });
+
+      controllerMod.ChatController.prototype.runTurn = async function (input, mode) {
+        seen.push({
+          mode,
+          sessionFile: input?.sessionFile || null,
+          replyToMessageId: input?.replyToMessageId || null,
+        });
+        if (input?.sessionFile) throw new Error("rin_timeout:select_session");
+        return { retry: false };
+      };
+
+      const { app } = await mainMod.startChatBridge();
+      app.bots.push({
+        platform: "telegram",
+        selfId: "1",
+        async sendMessage() {
+          return ["assistant-1"];
+        },
+        internal: {
+          async sendChatAction() {},
+        },
+      });
+
+      app.emit("message", {
+        platform: "telegram",
+        selfId: "1",
+        channelId: "2",
+        userId: "owner-1",
+        messageId: "m-follow",
+        isDirect: true,
+        content: "continue here",
+        stripped: { content: "continue here" },
+        quote: {
+          messageId: "m-linked",
+          content: "old reply",
+        },
+        elements: [h.createChatRuntimeH().text("continue here")],
+      });
+
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline && seen.length < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      if (seen.length !== 2) {
+        throw new Error(JSON.stringify({ seen, replySessionFile }));
+      }
+      const [first, second] = seen;
+      if (
+        first.mode !== "prompt" ||
+        first.sessionFile !== replySessionFile ||
+        first.replyToMessageId !== "m-follow"
+      ) {
+        throw new Error(JSON.stringify({ seen, replySessionFile }));
+      }
+      if (
+        second.mode !== "prompt" ||
+        second.sessionFile !== null ||
+        second.replyToMessageId !== "m-follow"
+      ) {
+        throw new Error(JSON.stringify({ seen, replySessionFile }));
+      }
+      process.exit(0);
+    `;
+
+    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        RIN_REPO_ROOT: rootDir,
+        RIN_DIR: agentDir,
+      },
+      timeout: 15000,
+    });
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
