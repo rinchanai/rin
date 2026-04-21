@@ -34,7 +34,18 @@ If you want an assistant that stays useful over time, Rin is designed for that.
 
 ## Quick start
 
-Install:
+Install with one command, no clone required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --beta
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --nightly
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --git
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --git main
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --git deadbeef
+```
+
+If you already have the repo locally, the bundled wrapper scripts do the same bootstrap flow:
 
 ```bash
 ./install.sh              # stable release (default)

@@ -34,7 +34,16 @@ Rin 主要抓这几件事：
 
 ## 快速开始
 
-安装：
+单命令安装，不需要先 clone 仓库：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --beta
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --nightly
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/main/scripts/bootstrap-entrypoint.sh | sh -s install --git
+```
+
+如果你已经把仓库拉到本地，也可以直接执行仓库内的包装脚本：
 
 ```bash
 ./install.sh
