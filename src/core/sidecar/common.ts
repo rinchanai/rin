@@ -12,6 +12,8 @@ const LOCK_FILE_MODE = 0o600;
 const INSTANCE_STATE_FILE = "state.json";
 const LOCK_POLL_INTERVAL_MS = 100;
 
+type JsonRecord = Record<string, unknown>;
+
 type ProcessLockState = {
   pid: number;
   ts?: number;
@@ -23,25 +25,39 @@ function removeFile(filePath: string) {
   } catch {}
 }
 
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readJsonRecord(filePath: string): JsonRecord | null {
+  const value = readJsonFile<unknown>(filePath, null);
+  return isJsonRecord(value) ? value : null;
+}
+
 function normalizePid(value: unknown) {
   const pid = Number(value);
   return Number.isInteger(pid) && pid > 0 ? pid : 0;
 }
 
-function readProcessLockState(lockPath: string): ProcessLockState | null {
-  const state = readJsonFile<unknown>(lockPath, null);
-  if (!state || typeof state !== "object" || Array.isArray(state)) {
-    return null;
-  }
-  const pid = normalizePid((state as { pid?: unknown }).pid);
+function normalizeProcessLockState(state: JsonRecord | null): ProcessLockState | null {
+  if (!state) return null;
+  const pid = normalizePid(state.pid);
   if (!pid) return null;
-  const ts = Number((state as { ts?: unknown }).ts);
+  const ts = Number(state.ts);
   return Number.isFinite(ts) ? { pid, ts } : { pid };
+}
+
+function readProcessLockState(lockPath: string): ProcessLockState | null {
+  return normalizeProcessLockState(readJsonRecord(lockPath));
+}
+
+function createCurrentProcessLockState(): ProcessLockState {
+  return { pid: process.pid, ts: Date.now() };
 }
 
 function tryAcquireProcessLock(lockPath: string) {
   const fd = fs.openSync(lockPath, "wx", LOCK_FILE_MODE);
-  fs.writeFileSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+  fs.writeFileSync(fd, JSON.stringify(createCurrentProcessLockState()));
   try {
     fs.closeSync(fd);
   } catch {}
@@ -87,10 +103,7 @@ export function listInstanceIds(instancesRoot: string) {
 }
 
 export function readInstanceState<T>(statePath: string) {
-  const value = readJsonFile<unknown>(statePath, null);
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as T)
-    : null;
+  return readJsonRecord(statePath) as T | null;
 }
 
 export function writeInstanceState(statePath: string, value: unknown) {

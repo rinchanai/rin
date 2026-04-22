@@ -43,6 +43,9 @@ test("sidecar common ignores malformed instance state payloads", async () => {
     await fs.mkdir(path.dirname(statePath), { recursive: true });
     await fs.writeFile(statePath, '"bad"', "utf8");
     assert.equal(sidecar.readInstanceState(statePath), null);
+
+    await fs.writeFile(statePath, '["bad"]', "utf8");
+    assert.equal(sidecar.readInstanceState(statePath), null);
   });
 });
 
@@ -64,7 +67,19 @@ test("sidecar common replaces stale or malformed locks", async () => {
     const release = await sidecar.acquireProcessLock(lockPath, 500);
     const lockState = JSON.parse(await fs.readFile(lockPath, "utf8"));
     assert.equal(lockState.pid, process.pid);
+    assert.equal(typeof lockState.ts, "number");
     release();
+
+    await fs.writeFile(
+      lockPath,
+      JSON.stringify({ pid: "999999", ts: "bad" }),
+      "utf8",
+    );
+    const releaseStale = await sidecar.acquireProcessLock(lockPath, 500);
+    const staleLockState = JSON.parse(await fs.readFile(lockPath, "utf8"));
+    assert.equal(staleLockState.pid, process.pid);
+    assert.equal(typeof staleLockState.ts, "number");
+    releaseStale();
   });
 });
 
