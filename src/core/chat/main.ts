@@ -85,9 +85,6 @@ const TYPING_POLL_INTERVAL_MS = 4000;
 const CHAT_INBOX_POLL_INTERVAL_MS = 3000;
 const CHAT_INBOX_RETRY_MIN_MS = 2000;
 const CHAT_INBOX_RETRY_MAX_MS = 60_000;
-const UNSUPPORTED_CHAT_COMMAND_NAMES = new Set(["resume"]);
-const UNSUPPORTED_CHAT_COMMAND_TEXT =
-  "Chat 中不支持 /resume。请直接回复想继续的那条消息，Rin 会按引用消息自动接续对应会话。";
 
 function computeChatInboxRetryDelay(attemptCount: number) {
   const attempt = Math.max(0, Number(attemptCount || 0));
@@ -196,7 +193,6 @@ function parseInboundCommand(
   session: any,
   text: string,
   commandRows: Array<{ name: string }>,
-  unsupportedCommandNames: Set<string> = UNSUPPORTED_CHAT_COMMAND_NAMES,
 ) {
   const input = safeString(text).trim();
   if (!input.startsWith("/")) return null;
@@ -212,16 +208,13 @@ function parseInboundCommand(
   const active = commandRows.some(
     (item) => safeString(item?.name).trim() === name,
   );
-  const unsupported = unsupportedCommandNames.has(name);
-  if (!active && !unsupported) {
-    return null;
-  }
+  if (!active) return null;
   const target = safeString(rawTarget).trim().replace(/^@+/, "").toLowerCase();
   if (target) {
     const targets = getCommandTargets(session);
     if (targets.size && !targets.has(target)) return null;
   }
-  return { name, argsText, unsupported };
+  return { name, argsText };
 }
 
 export type ChatBridgeTurnPayload = {
@@ -381,7 +374,7 @@ export async function startChatBridge(
   };
   const handleCommandSession = async (
     session: any,
-    command: { name: string; argsText: string; unsupported?: boolean },
+    command: { name: string; argsText: string },
     identity: any,
   ) => {
     const platform = safeString(session?.platform || "").trim();
@@ -399,24 +392,6 @@ export async function startChatBridge(
       chatKey,
       replyToMessageId,
     );
-
-    if (command.unsupported) {
-      if (trust !== "OWNER") return { retry: false };
-      await sendOutboxPayload(
-        app,
-        runtime.agentDir,
-        {
-          type: "text_delivery",
-          createdAt: new Date().toISOString(),
-          chatKey,
-          text: UNSUPPORTED_CHAT_COMMAND_TEXT,
-          replyToMessageId: messageId || undefined,
-          sessionFile: replySession?.sessionFile,
-        },
-        h,
-      ).catch(() => {});
-      return { retry: false };
-    }
 
     if (command.name !== "help" && !canRunCommand(trust, command.name)) {
       return { retry: false };

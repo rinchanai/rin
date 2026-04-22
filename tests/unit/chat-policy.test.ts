@@ -20,16 +20,16 @@ test("chat policy allows trusted users to check status, abort, and start new cha
 });
 
 test("chat policy still blocks higher-impact chat commands for trusted users", () => {
-  assert.equal(support.canRunCommand("TRUSTED", "resume"), false);
   assert.equal(support.canRunCommand("TRUSTED", "model"), false);
   assert.equal(support.canRunCommand("TRUSTED", "reload"), false);
+  assert.equal(support.canRunCommand("TRUSTED", "compact"), false);
 });
 
-test("chat policy keeps unsupported and non-help commands restricted while owners retain other command access", () => {
+test("chat policy keeps non-help commands restricted while owners retain other command access", () => {
   assert.equal(support.canRunCommand("OTHER", "help"), false);
   assert.equal(support.canRunCommand("OTHER", "abort"), false);
   assert.equal(support.canRunCommand("OWNER", "abort"), true);
-  assert.equal(support.canRunCommand("OWNER", "resume"), false);
+  assert.equal(support.canRunCommand("OWNER", "model"), true);
 });
 
 test("chat policy normalizes trust values for input access and command checks", () => {
@@ -61,6 +61,6 @@ test("chat policy normalizes trust values for input access and command checks", 
     false,
   );
   assert.equal(support.canRunCommand(" trusted ", "/status"), true);
-  assert.equal(support.canRunCommand(" owner ", "/resume"), false);
+  assert.equal(support.canRunCommand(" owner ", "/abort"), true);
   assert.equal(support.canRunCommand("invalid", "/status"), false);
 });
