@@ -24,6 +24,8 @@ It does not own session-history recall. That belongs to the `memory` extension.
 - `core_doctrine`
 - `core_facts`
 
+`agent_profile` stores Rin's stable role, tone, behavior style, and standing expectations for how Rin should generally respond. `user_profile` stores the user's identity knowledge. `core_doctrine` stores durable methodology, worldview, and values. `core_facts` stores durable external facts, environment facts, user preferences, and operating conventions.
+
 Prompt slots are identified directly by filename under `~/.rin/self_improve/prompts/`.
 For example, `~/.rin/self_improve/prompts/agent_profile.md` is the `agent_profile` slot.
 These prompt files are stored as markdown list items.

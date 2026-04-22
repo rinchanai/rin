@@ -41,6 +41,11 @@ const processing = await import(
     path.join(rootDir, "dist", "core", "self-improve", "processing.js"),
   ).href
 );
+const selfImproveIndex = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "self-improve", "index.js"),
+  ).href
+);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-memory-test-"));
@@ -178,6 +183,23 @@ test("processing normalizes revised full-slot content and enforces limits", asyn
         ).join("\n"),
       }),
     /self_improve_prompt_content_too_long:agent_profile:8/,
+  );
+});
+
+test("save_prompts describes agent_profile as including standing user expectations", () => {
+  const tools = [];
+  selfImproveIndex.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+    registerCommand() {},
+    on() {},
+  });
+  const tool = tools.find((entry) => entry.name === "save_prompts");
+  assert.ok(tool);
+  assert.match(
+    String(tool.parameters.properties.slot.description || ""),
+    /agent_profile` stores the assistant's stable role, tone, behavior style, and the user's standing expectations for how the assistant should generally respond/,
   );
 });
 

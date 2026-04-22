@@ -111,7 +111,7 @@ const saveSelfImprovePromptParams = Type.Object({
     ],
     {
       description:
-        "Which always-on prompt slot to inspect or update. `agent_profile` stores the assistant's stable role, tone, and behavior style. `user_profile` stores the user's identity knowledge. `core_doctrine` stores durable methodology, worldview, and values. `core_facts` stores durable external facts, environment facts, user preferences, and operating conventions.",
+        "Which always-on prompt slot to inspect or update. `agent_profile` stores the assistant's stable role, tone, behavior style, and the user's standing expectations for how the assistant should generally respond. `user_profile` stores the user's identity knowledge. `core_doctrine` stores durable methodology, worldview, and values. `core_facts` stores durable external facts, environment facts, user preferences, and operating conventions.",
     },
   ),
   content: Type.Optional(
