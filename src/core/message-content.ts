@@ -10,62 +10,90 @@ export type RenderMessageTextOptions = {
   normalizeChildren?: (text: string) => string;
 };
 
+const EMPTY_OBJECT: Record<string, any> = {};
+const FILE_URL_PATTERN = /file:\/\/[^\s'"`<>]+/g;
+
+function isMessagePart(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeMessagePartType(value: unknown) {
+  return safeString(value).trim().toLowerCase();
+}
+
 function getMessagePartType(content: any) {
-  return safeString(content?.type).trim().toLowerCase();
+  return normalizeMessagePartType(content?.type);
 }
 
 function getMessagePartAttrs(content: any) {
-  return content?.attrs && typeof content.attrs === "object" ? content.attrs : {};
+  return isMessagePart(content?.attrs) ? content.attrs : EMPTY_OBJECT;
+}
+
+function getMessagePartChildren(content: any) {
+  return Array.isArray(content?.children) ? content.children : [];
+}
+
+function normalizeRenderedChildren(
+  text: string,
+  normalizeChildren?: (text: string) => string,
+) {
+  return typeof normalizeChildren === "function"
+    ? normalizeChildren(text)
+    : text;
+}
+
+function renderMessageChildren(
+  content: any[],
+  options: RenderMessageTextOptions,
+) {
+  return content.map((part) => renderMessageNode(part, options)).join("");
+}
+
+function renderMessageNode(
+  content: any,
+  options: RenderMessageTextOptions,
+): string {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return renderMessageChildren(content, options);
+  if (!isMessagePart(content)) return "";
+
+  const type = getMessagePartType(content);
+  const attrs = getMessagePartAttrs(content);
+  switch (type) {
+    case "text":
+      return safeString(content.text ?? attrs.content ?? "");
+    case "thinking":
+      return options.includeThinking ? safeString(content.thinking) : "";
+    case "at":
+      return typeof options.renderAt === "function"
+        ? safeString(options.renderAt(attrs))
+        : "";
+    case "br":
+      return "\n";
+    default: {
+      const childText = renderMessageChildren(
+        getMessagePartChildren(content),
+        options,
+      );
+      const normalizedChildText = normalizeRenderedChildren(
+        childText,
+        options.normalizeChildren,
+      );
+      return type === "p" || type === "paragraph"
+        ? normalizedChildText
+          ? `${normalizedChildText}\n`
+          : ""
+        : normalizedChildText;
+    }
+  }
 }
 
 export function renderMessageText(
   content: any,
-  {
-    includeThinking = false,
-    renderAt,
-    normalizeChildren,
-  }: RenderMessageTextOptions = {},
+  options: RenderMessageTextOptions = {},
 ): string {
-  if (!content) return "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) =>
-        renderMessageText(part, {
-          includeThinking,
-          renderAt,
-          normalizeChildren,
-        }),
-      )
-      .join("");
-  }
-  if (typeof content !== "object") return "";
-
-  const type = getMessagePartType(content);
-  const attrs = getMessagePartAttrs(content);
-  if (type === "text") {
-    return safeString(content.text ?? attrs.content ?? "");
-  }
-  if (includeThinking && type === "thinking") {
-    return safeString(content.thinking);
-  }
-  if (type === "at") {
-    return typeof renderAt === "function" ? safeString(renderAt(attrs)) : "";
-  }
-  if (type === "br") return "\n";
-
-  const childText = renderMessageText(
-    Array.isArray(content?.children) ? content.children : [],
-    { includeThinking, renderAt, normalizeChildren },
-  );
-  const normalizedChildText =
-    typeof normalizeChildren === "function"
-      ? normalizeChildren(childText)
-      : childText;
-  if (type === "p" || type === "paragraph") {
-    return normalizedChildText ? `${normalizedChildText}\n` : "";
-  }
-  return normalizedChildText;
+  return renderMessageNode(content, options);
 }
 
 export function extractMessageText(
@@ -89,30 +117,34 @@ export function normalizeMessageText(text: unknown) {
     .trim();
 }
 
-function extractMessageObjectParts(content: any, type: string) {
-  const normalizedType = safeString(type).trim().toLowerCase();
+function extractMessagePartsByType(content: any, type: string) {
+  const normalizedType = normalizeMessagePartType(type);
   if (!Array.isArray(content) || !normalizedType) {
     return [] as Array<Record<string, any>>;
   }
   return content.filter(
     (part): part is Record<string, any> =>
-      Boolean(part) &&
-      typeof part === "object" &&
-      getMessagePartType(part) === normalizedType,
+      isMessagePart(part) && getMessagePartType(part) === normalizedType,
+  );
+}
+
+function collectUniqueTrimmedStrings<T>(
+  values: T[],
+  pick: (value: T) => unknown,
+) {
+  return Array.from(
+    new Set(values.map((value) => safeString(pick(value)).trim()).filter(Boolean)),
   );
 }
 
 export function extractToolCallParts(content: any) {
-  return extractMessageObjectParts(content, "toolCall");
+  return extractMessagePartsByType(content, "toolCall");
 }
 
 export function extractToolCallNames(content: any) {
-  return Array.from(
-    new Set(
-      extractToolCallParts(content)
-        .map((part) => safeString(part.name || part.toolName || "").trim())
-        .filter(Boolean),
-    ),
+  return collectUniqueTrimmedStrings(
+    extractToolCallParts(content),
+    (part) => part.name || part.toolName || "",
   );
 }
 
@@ -121,16 +153,16 @@ export function countToolCalls(content: any) {
 }
 
 export function extractImageParts(content: any) {
-  const out: Array<{ data: string; mimeType: string }> = [];
-  for (const part of extractMessageObjectParts(content, "image")) {
-    const data = safeString(part.data || "");
-    if (!data) continue;
-    out.push({
-      data,
-      mimeType: safeString(part.mimeType || "").trim() || "image/png",
-    });
-  }
-  return out;
+  return extractMessagePartsByType(content, "image")
+    .map((part) => {
+      const data = safeString(part.data || "");
+      if (!data) return null;
+      return {
+        data,
+        mimeType: safeString(part.mimeType || "").trim() || "image/png",
+      };
+    })
+    .filter((part): part is { data: string; mimeType: string } => Boolean(part));
 }
 
 function normalizeFileUrlPath(rawUrl: string) {
@@ -147,15 +179,21 @@ function normalizeFileUrlPath(rawUrl: string) {
   }
 }
 
+function isExistingFile(filePath: string) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function extractExistingFilePaths(text: string, max = 8) {
   const out: string[] = [];
   const seen = new Set<string>();
-  const pattern = /file:\/\/[^\s'"`<>]+/g;
-  for (const match of safeString(text).matchAll(pattern)) {
+  for (const match of safeString(text).matchAll(FILE_URL_PATTERN)) {
     const resolved = normalizeFileUrlPath(match[0]);
-    if (!resolved || seen.has(resolved)) continue;
-    if (!fs.existsSync(resolved)) continue;
-    if (!fs.statSync(resolved).isFile()) continue;
+    if (!resolved || seen.has(resolved) || !isExistingFile(resolved)) continue;
     seen.add(resolved);
     out.push(resolved);
   }

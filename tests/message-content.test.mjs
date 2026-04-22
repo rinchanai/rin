@@ -10,7 +10,7 @@ const rootDir = path.resolve(
   "..",
 );
 const messageContent = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "message-content.js")).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "message-content.js")).href,
 );
 
 async function withTempDir(fn) {
@@ -82,6 +82,49 @@ test("message content helpers extract text with optional thinking and trimming",
   );
 });
 
+test("message content helpers keep render dispatch and child normalization rules stable", () => {
+  assert.equal(messageContent.renderMessageText(null), "");
+  assert.equal(messageContent.renderMessageText(undefined), "");
+  assert.equal(messageContent.renderMessageText(false), "");
+  assert.equal(messageContent.renderMessageText(0), "");
+  assert.equal(
+    messageContent.renderMessageText({ type: "paragraph", children: [] }),
+    "",
+  );
+  assert.equal(
+    messageContent.renderMessageText({
+      type: "p",
+      children: [{ type: "text", text: "x" }],
+    }),
+    "x\n",
+  );
+  assert.equal(
+    messageContent.renderMessageText(
+      { type: "text", text: " x " },
+      {
+        normalizeChildren: (text) => text.trim().toUpperCase(),
+      },
+    ),
+    " x ",
+  );
+  assert.equal(
+    messageContent.renderMessageText(
+      {
+        type: "paragraph",
+        children: [
+          { type: "text", text: " x " },
+          { type: "at", attrs: { name: "Rin" } },
+        ],
+      },
+      {
+        renderAt: (attrs) => ` @${attrs.name} `,
+        normalizeChildren: (text) => text.replace(/\s+/g, " ").trim(),
+      },
+    ),
+    "x @Rin\n",
+  );
+});
+
 test("message content helpers extract valid image parts and default mime types", () => {
   assert.deepEqual(
     messageContent.extractImageParts([
@@ -138,6 +181,18 @@ test("message content helpers extract tool call parts, names, and counts", () =>
   assert.deepEqual(messageContent.extractToolCallParts("not-an-array"), []);
 });
 
+test("message content helpers keep tool-call name priority and blank-name filtering stable", () => {
+  assert.deepEqual(
+    messageContent.extractToolCallNames([
+      { type: "toolCall", name: "named", toolName: "fallback" },
+      { type: "toolCall", name: "   ", toolName: "ignored-fallback" },
+      { type: "toolCall", toolName: "bash" },
+      { type: "toolCall", toolName: "bash" },
+    ]),
+    ["named", "bash"],
+  );
+});
+
 test("message content helpers resolve only explicit existing file URLs", async () => {
   await withTempDir(async (dir) => {
     const first = path.join(dir, "first.txt");
@@ -158,5 +213,27 @@ test("message content helpers resolve only explicit existing file URLs", async (
       ),
       [first, spaced],
     );
+  });
+});
+
+test("message content helpers keep file-url filtering and max limits stable", async () => {
+  await withTempDir(async (dir) => {
+    const filePath = path.join(dir, "keep.txt");
+    const folderPath = path.join(dir, "folder");
+    await fs.writeFile(filePath, "one", "utf8");
+    await fs.mkdir(folderPath, { recursive: true });
+
+    const fileUrl = pathToFileURL(filePath).href;
+    const dirUrl = pathToFileURL(folderPath).href;
+    const text = [
+      fileUrl,
+      dirUrl,
+      "https://example.com/demo.txt",
+      `${fileUrl}?download=1#preview`,
+    ].join("\n");
+
+    assert.deepEqual(messageContent.extractExistingFilePaths(text), [filePath]);
+    assert.deepEqual(messageContent.extractExistingFilePaths(text, 0), []);
+    assert.deepEqual(messageContent.extractExistingFilePaths(text, -1), []);
   });
 });
