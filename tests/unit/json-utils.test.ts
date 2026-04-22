@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
-  "..",
+  "../..",
 );
 const jsonUtils = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "json-utils.js")).href,

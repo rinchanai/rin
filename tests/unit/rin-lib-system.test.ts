@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
-  "..",
+  "../..",
 );
 const system = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "system.js"))

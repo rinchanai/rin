@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
-  "..",
+  "../..",
 );
 
 function makeTempDir(prefix) {
