@@ -22,6 +22,7 @@ import {
   buildFinalRequirements,
   buildInstallPlanText,
   buildInstallSafetyBoundaryText,
+  buildPlainInstallerSection,
   buildPostInstallInitExitText,
   describeInstallDirState,
   promptChatSetup,
@@ -161,23 +162,25 @@ export async function startInstaller() {
     i18n,
   );
 
-  note(
-    buildInstallPlanText(
-      {
-        currentUser,
-        targetUser,
-        installDir,
-        provider,
-        modelId,
-        thinkingLevel,
-        authAvailable: Boolean(authResult.available),
-        chatDescription,
-        chatDetail,
-        language: selectedLanguage,
-      },
-      i18n,
-    ),
-    i18n.installChoicesTitle,
+  process.stderr.write(
+    `${buildPlainInstallerSection(
+      i18n.installChoicesTitle,
+      buildInstallPlanText(
+        {
+          currentUser,
+          targetUser,
+          installDir,
+          provider,
+          modelId,
+          thinkingLevel,
+          authAvailable: Boolean(authResult.available),
+          chatDescription,
+          chatDetail,
+          language: selectedLanguage,
+        },
+        i18n,
+      ),
+    )}\n\n`,
   );
 
   const ownership = describeOwnership(targetUser, installDir);
