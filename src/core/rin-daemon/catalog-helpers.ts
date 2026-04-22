@@ -30,6 +30,13 @@ type OAuthProviderSummary = {
   usesCallbackServer: boolean;
 };
 
+type SlashCommandCollectorSpec<T> = {
+  source: unknown;
+  getName: (value: T) => unknown;
+  getDescription?: (value: T) => unknown;
+  getSourceInfo?: (value: T) => unknown;
+};
+
 function trimText(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -67,6 +74,22 @@ function collectSlashCommandEntries<T>(
   return commands;
 }
 
+function collectSlashCommandsForSource<T>(
+  values: unknown,
+  spec: SlashCommandCollectorSpec<T>,
+) {
+  const source = trimText(spec.source);
+  if (!source) return [];
+  return collectSlashCommandEntries<T>(values, (value) =>
+    createSlashCommandEntry(
+      spec.getName(value),
+      spec.getDescription?.(value),
+      source,
+      spec.getSourceInfo?.(value),
+    ),
+  );
+}
+
 function getSkillSlashCommandName(skill: any) {
   const name = trimText(skill?.name);
   return name ? `skill:${name}` : "";
@@ -83,52 +106,44 @@ export function dedupeSlashCommands(commands: SlashCommandEntry[]) {
 }
 
 export function getBuiltinSlashCommands() {
-  return collectSlashCommandEntries<any>(BUILTIN_SLASH_COMMANDS, (command) =>
-    createSlashCommandEntry(command?.name, command?.description, "builtin"),
-  );
+  return collectSlashCommandsForSource<any>(BUILTIN_SLASH_COMMANDS, {
+    source: "builtin",
+    getName: (command) => command?.name,
+    getDescription: (command) => command?.description,
+  });
 }
 
 export function getExtensionSlashCommands(commands: unknown[], source: string) {
-  return collectSlashCommandEntries<any>(commands, (command) =>
-    createSlashCommandEntry(
-      command?.invocationName ?? command?.name,
-      command?.description,
-      source,
-      command?.sourceInfo,
-    ),
-  );
+  return collectSlashCommandsForSource<any>(commands, {
+    source,
+    getName: (command) => command?.invocationName ?? command?.name,
+    getDescription: (command) => command?.description,
+    getSourceInfo: (command) => command?.sourceInfo,
+  });
 }
 
 export function getPromptSlashCommands(templates: unknown[]) {
-  return collectSlashCommandEntries<any>(templates, (template) =>
-    createSlashCommandEntry(
-      template?.name,
-      template?.description,
-      "prompt",
-      template?.sourceInfo,
-    ),
-  );
+  return collectSlashCommandsForSource<any>(templates, {
+    source: "prompt",
+    getName: (template) => template?.name,
+    getDescription: (template) => template?.description,
+    getSourceInfo: (template) => template?.sourceInfo,
+  });
 }
 
 export function getSkillSlashCommands(skills: unknown[]) {
-  return collectSlashCommandEntries<any>(skills, (skill) =>
-    createSlashCommandEntry(
-      getSkillSlashCommandName(skill),
-      skill?.description,
-      "skill",
-      skill?.sourceInfo,
-    ),
-  );
+  return collectSlashCommandsForSource<any>(skills, {
+    source: "skill",
+    getName: getSkillSlashCommandName,
+    getDescription: (skill) => skill?.description,
+    getSourceInfo: (skill) => skill?.sourceInfo,
+  });
 }
 
 function collectSlashCommandSourceGroups(groups: unknown) {
-  const commands: SlashCommandEntry[] = [];
-  for (const group of asArray<SlashCommandSourceGroup>(groups)) {
-    const source = trimText(group?.source);
-    if (!source) continue;
-    commands.push(...getExtensionSlashCommands(group?.commands ?? [], source));
-  }
-  return commands;
+  return asArray<SlashCommandSourceGroup>(groups).flatMap((group) =>
+    getExtensionSlashCommands(group?.commands ?? [], group?.source),
+  );
 }
 
 export function collectSlashCommands(
@@ -194,7 +209,9 @@ function normalizeOAuthCredentialType(value: unknown) {
   return trimText(value);
 }
 
-function buildOAuthCredentialSummary(credential: any): OAuthCredentialSummary | undefined {
+function buildOAuthCredentialSummary(
+  credential: any,
+): OAuthCredentialSummary | undefined {
   const type = normalizeOAuthCredentialType(credential?.type);
   return type ? { type } : undefined;
 }

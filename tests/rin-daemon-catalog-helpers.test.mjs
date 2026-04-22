@@ -16,8 +16,87 @@ const helperModule = await import(
 const {
   collectRuntimeSlashCommands,
   collectSlashCommands,
+  getExtensionSlashCommands,
   getOAuthStateFromStorage,
+  getPromptSlashCommands,
+  getSkillSlashCommands,
 } = helperModule;
+
+test("catalog helpers normalize direct slash-command collectors consistently", () => {
+  assert.deepEqual(
+    getExtensionSlashCommands(
+      [
+        {
+          invocationName: "  inspect  ",
+          description: "  Inspect chat state.  ",
+          sourceInfo: { file: "extension-a" },
+        },
+        {
+          name: "fallback-name",
+          description: "  Fallback when invocationName is missing.  ",
+        },
+        {
+          invocationName: "   ",
+          name: "ignored",
+        },
+      ],
+      " extension ",
+    ),
+    [
+      {
+        name: "inspect",
+        description: "Inspect chat state.",
+        source: "extension",
+        sourceInfo: { file: "extension-a" },
+      },
+      {
+        name: "fallback-name",
+        description: "Fallback when invocationName is missing.",
+        source: "extension",
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    getPromptSlashCommands([
+      {
+        name: "  polish  ",
+        description: "  Rewrite the final reply.  ",
+        sourceInfo: { file: "prompt-a" },
+      },
+    ]),
+    [
+      {
+        name: "polish",
+        description: "Rewrite the final reply.",
+        source: "prompt",
+        sourceInfo: { file: "prompt-a" },
+      },
+    ],
+  );
+
+  assert.deepEqual(
+    getSkillSlashCommands([
+      {
+        name: "  cleanup  ",
+        description: "  Remove stale files.  ",
+        sourceInfo: { file: "skill-a" },
+      },
+      {
+        name: "   ",
+        description: "ignored",
+      },
+    ]),
+    [
+      {
+        name: "skill:cleanup",
+        description: "Remove stale files.",
+        source: "skill",
+        sourceInfo: { file: "skill-a" },
+      },
+    ],
+  );
+});
 
 test("catalog helpers normalize and dedupe slash commands", () => {
   const commands = collectSlashCommands({
