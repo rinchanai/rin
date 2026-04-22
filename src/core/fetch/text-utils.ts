@@ -1,4 +1,7 @@
-type RegexReplacement = readonly [RegExp, string];
+import {
+  applyRegexReplacements,
+  type RegexReplacement,
+} from "./regex-utils.js";
 
 const HTML_ENTITY_REPLACEMENTS: RegexReplacement[] = [
   [/&nbsp;/gi, " "],
@@ -8,16 +11,6 @@ const HTML_ENTITY_REPLACEMENTS: RegexReplacement[] = [
   [/&quot;/gi, '"'],
   [/&#39;|&apos;/gi, "'"],
 ];
-
-function applyRegexReplacements(
-  text: string,
-  replacements: readonly RegexReplacement[],
-) {
-  return replacements.reduce(
-    (value, [pattern, replacement]) => value.replace(pattern, replacement),
-    String(text || ""),
-  );
-}
 
 function pickEncoding(charset?: string) {
   const normalized = String(charset || "")

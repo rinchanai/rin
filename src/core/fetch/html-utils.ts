@@ -1,9 +1,11 @@
 import {
+  applyRegexReplacements,
+  type RegexReplacement,
+} from "./regex-utils.js";
+import {
   decodeHtmlEntities,
   normalizePlainText,
 } from "./text-utils.js";
-
-type RegexReplacement = readonly [RegExp, string];
 
 const HTML_PRE_HIDDEN_REPLACEMENTS: RegexReplacement[] = [
   [/<!--[\s\S]*?-->/g, " "],
@@ -26,16 +28,6 @@ const HTML_TEXT_REPLACEMENTS: RegexReplacement[] = [
   [/<li\b[^>]*>/gi, "\n- "],
   [/<[^>]+>/g, " "],
 ];
-
-function applyRegexReplacements(
-  text: string,
-  replacements: readonly RegexReplacement[],
-) {
-  return replacements.reduce(
-    (value, [pattern, replacement]) => value.replace(pattern, replacement),
-    String(text || ""),
-  );
-}
 
 function parseHtmlTagAttributes(tag: string) {
   const attributes = new Map<string, string>();
