@@ -13,17 +13,12 @@ export type ChatMessageStoreRoot = {
 };
 
 export type ChatMessageStoreLayout = {
-  preferredStoreDir: string;
-  legacyStoreDir: string;
   storeDir: string;
-  fallbackStoreDir?: string;
   recordsDir: string;
   indexesDir: string;
   logDir: string;
   primaryRoot: ChatMessageStoreRoot;
-  fallbackRoot?: ChatMessageStoreRoot;
   readRoots: ChatMessageStoreRoot[];
-  source: "preferred" | "legacy" | "implicit-preferred";
 };
 
 export function sanitizePathSegment(value: string, fallback: string) {
@@ -50,7 +45,7 @@ function buildChatMessageStoreRoot(storeDir: string): ChatMessageStoreRoot {
   };
 }
 
-function dedupeStoreRoots(values: Array<ChatMessageStoreRoot | undefined>) {
+function dedupeStoreRoots(values: Iterable<ChatMessageStoreRoot | undefined>) {
   const out: ChatMessageStoreRoot[] = [];
   const seen = new Set<string>();
   for (const value of values) {
@@ -63,83 +58,61 @@ function dedupeStoreRoots(values: Array<ChatMessageStoreRoot | undefined>) {
 }
 
 function buildChatMessageStoreLayout(
-  preferredStoreDir: string,
-  legacyStoreDir: string,
-  storeDir: string,
-  fallbackStoreDir: string | undefined,
-  source: ChatMessageStoreLayout["source"],
+  primaryRoot: ChatMessageStoreRoot,
+  readRoots: Iterable<ChatMessageStoreRoot | undefined>,
 ): ChatMessageStoreLayout {
-  const primaryRoot = buildChatMessageStoreRoot(storeDir);
-  const fallbackRoot = fallbackStoreDir
-    ? buildChatMessageStoreRoot(fallbackStoreDir)
-    : undefined;
   return {
-    preferredStoreDir,
-    legacyStoreDir,
-    storeDir,
-    fallbackStoreDir,
+    storeDir: primaryRoot.storeDir,
     recordsDir: primaryRoot.recordsDir,
     indexesDir: primaryRoot.indexesDir,
     logDir: primaryRoot.logDir,
     primaryRoot,
-    fallbackRoot,
-    readRoots: dedupeStoreRoots([primaryRoot, fallbackRoot]),
-    source,
+    readRoots: dedupeStoreRoots([primaryRoot, ...readRoots]),
   };
 }
 
 function detectChatMessageStoreLayout(rootDir: string) {
-  const preferredStoreDir = path.join(rootDir, "data", "chat-message-store");
-  const legacyStoreDir = path.join(rootDir, "data", "koishi-message-store");
-  const hasPreferred = fs.existsSync(preferredStoreDir);
-  const hasLegacy = fs.existsSync(legacyStoreDir);
+  const preferredRoot = buildChatMessageStoreRoot(
+    path.join(rootDir, "data", "chat-message-store"),
+  );
+  const legacyRoot = buildChatMessageStoreRoot(
+    path.join(rootDir, "data", "koishi-message-store"),
+  );
+  const hasPreferred = fs.existsSync(preferredRoot.storeDir);
+  const hasLegacy = fs.existsSync(legacyRoot.storeDir);
   if (hasPreferred) {
     return buildChatMessageStoreLayout(
-      preferredStoreDir,
-      legacyStoreDir,
-      preferredStoreDir,
-      hasLegacy ? legacyStoreDir : undefined,
-      "preferred",
+      preferredRoot,
+      hasLegacy ? [legacyRoot] : [],
     );
   }
   if (hasLegacy) {
-    return buildChatMessageStoreLayout(
-      preferredStoreDir,
-      legacyStoreDir,
-      legacyStoreDir,
-      undefined,
-      "legacy",
-    );
+    return buildChatMessageStoreLayout(legacyRoot, []);
   }
-  return buildChatMessageStoreLayout(
-    preferredStoreDir,
-    legacyStoreDir,
-    preferredStoreDir,
-    undefined,
-    "implicit-preferred",
-  );
+  return buildChatMessageStoreLayout(preferredRoot, []);
 }
 
 export function getChatMessageStoreLayout(agentDir: string) {
   return detectChatMessageStoreLayout(path.resolve(agentDir));
 }
 
+function mapReadRoots<T>(
+  agentDir: string,
+  mapRoot: (root: ChatMessageStoreRoot) => T,
+) {
+  return getChatMessageStoreLayout(agentDir).readRoots.map(mapRoot);
+}
+
 export function chatMessageStoreRoots(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).readRoots.map(
-    (root) => root.storeDir,
-  );
+  return mapReadRoots(agentDir, (root) => root.storeDir);
 }
 
 export function recordRoots(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).readRoots.map(
-    (root) => root.recordsDir,
-  );
+  return mapReadRoots(agentDir, (root) => root.recordsDir);
 }
 
 export function indexRoots(agentDir: string) {
-  return getChatMessageStoreLayout(agentDir).readRoots.map(
-    (root) => root.indexesDir,
-  );
+  return mapReadRoots(agentDir, (root) => root.indexesDir);
 }
 
 export function chatScopedDatePath(
