@@ -135,7 +135,7 @@ return {
 
     const stored = messageStore.getChatMessage(agentDir, "telegram/1:2", "m1");
     assert.equal(stored?.text, "hello 7");
-    assert.equal(stored?.sessionId, "sess-1");
+    assert.equal(stored?.sessionId, undefined);
     assert.equal(stored?.sessionFile, "/tmp/sess-1.jsonl");
   });
 });
