@@ -89,6 +89,7 @@ const SESSION_SCOPED_COMMANDS = new Set<string>(SESSION_SCOPED_COMMAND_NAMES);
 const EMPTY_SESSION_STATE = {
   model: null,
   thinkingLevel: "medium",
+  turnActive: false,
   isStreaming: false,
   isCompacting: false,
   steeringMode: "one-at-a-time",

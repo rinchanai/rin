@@ -121,6 +121,30 @@ test("worker helpers expose normalized slash commands and oauth state", () => {
   });
 });
 
+
+test("getSessionState exposes worker-owned turn activity separately from streaming", () => {
+  const state = workerHelpers.getSessionState(
+    {
+      model: null,
+      thinkingLevel: "medium",
+      isStreaming: false,
+      isCompacting: false,
+      steeringMode: "all",
+      followUpMode: "one-at-a-time",
+      sessionFile: "/tmp/demo.jsonl",
+      sessionId: "session-1",
+      sessionName: "demo",
+      autoCompactionEnabled: true,
+      messages: [],
+      pendingMessageCount: 0,
+    },
+    { turnActive: true },
+  );
+
+  assert.equal(state.turnActive, true);
+  assert.equal(state.isStreaming, false);
+});
+
 test("runBuiltinCommand uses runtime for session replacement commands", async () => {
   const calls = [];
   const runtime = {

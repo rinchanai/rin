@@ -113,6 +113,7 @@ export async function runCustomRpcMode(
     return done(id, type, map ? map(value) : value);
   };
   let activeTurnPromise: Promise<void> | null = null;
+  const isTurnActive = () => Boolean(activeTurnPromise);
   let interruptQueue = Promise.resolve();
   let initialFreshSessionReusable =
     deps.reuseFreshSessionForInitialNewSession === true &&
@@ -325,9 +326,9 @@ export async function runCustomRpcMode(
         output(done(id, type, { shutdown: true }));
         return process.exit(0);
       case "attach_session":
-        return done(id, type, getSessionState(session));
+        return done(id, type, getSessionState(session, { turnActive: isTurnActive() }));
       case "get_state":
-        return done(id, type, getSessionState(session));
+        return done(id, type, getSessionState(session, { turnActive: isTurnActive() }));
       case "cycle_model":
         return run(
           id,

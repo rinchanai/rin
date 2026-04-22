@@ -84,12 +84,13 @@ export function applyRpcSessionState(
   target.steeringMode = state?.steeringMode ?? target.steeringMode;
   target.followUpMode = state?.followUpMode ?? target.followUpMode;
   target.autoCompactionEnabled = Boolean(state?.autoCompactionEnabled);
-  // `get_state` is a coarse snapshot and may briefly drop `isStreaming` around
-  // auto-compaction. Once a local turn has reached the remote-working phase,
-  // keep that latch until a terminal event or disconnect clears it.
-  const nextRemoteTurnRunning =
-    Boolean(state?.isStreaming) ||
-    Boolean(target.activeTurn && target.remoteTurnRunning);
+  // The worker owns authoritative turn activity. `isStreaming` is the lower-
+  // level session flag and may drop during internal checkpoints such as
+  // compaction, while `turnActive` tracks the whole in-flight turn.
+  const nextRemoteTurnRunning = Boolean(state?.turnActive ?? state?.isStreaming);
+  if (!nextRemoteTurnRunning && target.remoteTurnRunning) {
+    target.activeTurn = null;
+  }
   if (typeof target.setRemoteTurnRunning === "function") {
     target.setRemoteTurnRunning(nextRemoteTurnRunning);
   } else {

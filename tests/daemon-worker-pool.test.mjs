@@ -39,13 +39,13 @@ test("getRestorableSessionSelectors keeps live session workers and remembers tur
     { type: "new_session" },
   );
   worker.sessionFile = "/tmp/test-session.jsonl";
-  worker.isStreaming = false;
+  worker.turnActive = false;
 
   assert.deepEqual(pool.getRestorableSessionSelectors(), [
     { sessionFile: "/tmp/test-session.jsonl", resumeTurn: false },
   ]);
 
-  worker.isStreaming = true;
+  worker.turnActive = true;
   assert.deepEqual(pool.getRestorableSessionSelectors(), [
     { sessionFile: "/tmp/test-session.jsonl", resumeTurn: true },
   ]);
@@ -68,13 +68,13 @@ test("getRestorableSessionSelectors normalizes duplicate session files and prese
     { type: "new_session" },
   );
   first.sessionFile = " /tmp/test-session.jsonl ";
-  first.isStreaming = false;
+  first.turnActive = false;
   const second = pool.resolveWorkerForCommand(
     { socket: { destroyed: false, write() {} }, clientBuffer: "" },
     { type: "new_session" },
   );
   second.sessionFile = "/tmp/test-session.jsonl";
-  second.isStreaming = true;
+  second.turnActive = true;
 
   assert.deepEqual(pool.getRestorableSessionSelectors(), [
     { sessionFile: "/tmp/test-session.jsonl", resumeTurn: true },
@@ -211,6 +211,39 @@ test("detached idle worker exits after grace period via reaper", async () => {
 
   assert.equal(worker.idleSince !== null, true);
   assert.equal(pool.getStatusSnapshot().workerCount, 0);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("detached worker stays alive while turnActive is true even if streaming is false", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  await fs.writeFile(
+    workerPath,
+    "process.stdin.resume(); setInterval(() => {}, 1000);\n",
+  );
+
+  const connection = {
+    socket: { destroyed: false, write() {} },
+    clientBuffer: "",
+  };
+
+  const pool = new WorkerPool({
+    workerPath,
+    cwd: dir,
+    gcIdleMs: 20,
+    sweepIntervalMs: 10,
+  });
+  const worker = pool.resolveWorkerForCommand(connection, {
+    type: "new_session",
+  });
+  worker.turnActive = true;
+  pool.detachWorker(connection);
+
+  await sleep(80);
+
+  assert.equal(pool.getStatusSnapshot().workerCount, 1);
 
   pool.destroyAll();
   await fs.rm(dir, { recursive: true, force: true });

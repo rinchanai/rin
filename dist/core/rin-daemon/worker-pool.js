@@ -218,6 +218,7 @@ export class WorkerPool {
                 sessionId: worker.sessionId,
                 attachedConnections: worker.connections.size,
                 pendingResponses: worker.pendingResponses.size,
+                turnActive: worker.turnActive,
                 isStreaming: worker.isStreaming,
                 isCompacting: worker.isCompacting,
                 lastUsedAt: worker.lastUsedAt,
@@ -253,7 +254,7 @@ export class WorkerPool {
             const selector = this.getWorkerSelector(worker);
             if (!selector.sessionFile)
                 continue;
-            const resumeTurn = Boolean(worker.isStreaming || worker.isCompacting);
+            const resumeTurn = Boolean(worker.turnActive || worker.isCompacting);
             const existing = restorable.get(selector.sessionFile);
             if (existing) {
                 existing.resumeTurn ||= resumeTurn;
@@ -301,6 +302,7 @@ export class WorkerPool {
                 this.setWorkerSessionRefs(worker, sessionSelectorFromState(data));
             }
             if (payload.command === "get_state") {
+                worker.turnActive = Boolean(data.turnActive ?? data.isStreaming);
                 worker.isStreaming = Boolean(data.isStreaming);
                 worker.isCompacting = Boolean(data.isCompacting);
                 this.maybeReleaseWorker(worker);
@@ -308,9 +310,11 @@ export class WorkerPool {
             }
         }
         if (payload.type === "agent_start") {
+            worker.turnActive = true;
             worker.isStreaming = true;
         }
         if (payload.type === "agent_end") {
+            worker.turnActive = false;
             worker.isStreaming = false;
             this.maybeReleaseWorker(worker);
         }
@@ -319,6 +323,16 @@ export class WorkerPool {
         }
         if (payload.type === "compaction_end") {
             worker.isCompacting = false;
+            this.maybeReleaseWorker(worker);
+        }
+        if (payload.type === "rpc_turn_event" &&
+            (payload.event === "start" || payload.event === "heartbeat")) {
+            worker.turnActive = true;
+        }
+        if (payload.type === "rpc_turn_event" &&
+            (payload.event === "complete" || payload.event === "error")) {
+            worker.turnActive = false;
+            worker.isStreaming = false;
             this.maybeReleaseWorker(worker);
         }
         if (payload.type === "rpc_turn_event" && payload.event === "complete") {
@@ -342,6 +356,7 @@ export class WorkerPool {
             connections: new Set(),
             pendingResponses: new Map(),
             ignoredResponseIds: new Set(),
+            turnActive: false,
             isStreaming: false,
             isCompacting: false,
             lastUsedAt: Date.now(),
@@ -463,6 +478,7 @@ export class WorkerPool {
             return;
         }
         if (worker.pendingResponses.size > 0 ||
+            worker.turnActive ||
             worker.isStreaming ||
             worker.isCompacting) {
             worker.idleSince = null;
@@ -548,7 +564,7 @@ export class WorkerPool {
         return Boolean(this.getWorkerSelector(worker).sessionFile && liveConnections.size > 0);
     }
     recoverWorker(selector, worker, liveConnections, pending) {
-        const resumeTurn = Boolean(worker.isStreaming || worker.isCompacting);
+        const resumeTurn = Boolean(worker.turnActive || worker.isCompacting);
         for (const connection of liveConnections) {
             this.rememberSessionSelection(connection, selector);
             writeLine(connection.socket, {
