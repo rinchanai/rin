@@ -30,7 +30,7 @@ export function detectLocalLanguageTag(fallback = "en") {
   for (const key of ["LC_ALL", "LC_MESSAGES", "LANG"]) {
     const raw = String(process.env[key] || "").trim();
     if (!raw) continue;
-    const cleaned = raw.replace(/[.:].*$/, "").trim();
+    const cleaned = raw.replace(/[.:].*$/, "").trim().replace(/_/g, "-");
     const normalized = canonicalizeLanguageTag(cleaned);
     if (normalized) return normalized;
   }

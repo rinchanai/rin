@@ -14,7 +14,6 @@ case "$MODE" in
     LAUNCH_LABEL='Launching installer...'
     FETCH_ERROR='rin installer requires curl or wget'
     NPM_ERROR='rin installer requires npm'
-    NODE_ENV_PREFIX=
     ;;
   update)
     PREFIX=rin-update
@@ -27,7 +26,6 @@ case "$MODE" in
     LAUNCH_LABEL='Launching updater...'
     FETCH_ERROR='rin updater requires curl or wget'
     NPM_ERROR='rin updater requires npm'
-    NODE_ENV_PREFIX='RIN_INSTALL_MODE=update '
     ;;
   *)
     echo "unknown Rin bootstrap mode: $MODE" >&2
@@ -405,6 +403,30 @@ for (const [key, value] of Object.entries({
 NODE
 }
 
+launch_installer_entry() {
+  if [ "$MODE" = update ]; then
+    env \
+      RIN_INSTALL_MODE=update \
+      RIN_RELEASE_CHANNEL="$CHANNEL" \
+      RIN_RELEASE_VERSION="$VERSION" \
+      RIN_RELEASE_BRANCH="$BRANCH" \
+      RIN_RELEASE_REF="$REF" \
+      RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
+      RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
+      node "$INSTALLER_ENTRY"
+    return $?
+  fi
+
+  env \
+    RIN_RELEASE_CHANNEL="$CHANNEL" \
+    RIN_RELEASE_VERSION="$VERSION" \
+    RIN_RELEASE_BRANCH="$BRANCH" \
+    RIN_RELEASE_REF="$REF" \
+    RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
+    RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
+    node "$INSTALLER_ENTRY"
+}
+
 INSTALLER_ENTRY='dist/app/rin-install/main.js'
 parse_args "$@"
 : >"$LOGFILE"
@@ -430,22 +452,8 @@ run_step "$BUILD_LABEL" npm run build
 say "[$PREFIX] $LAUNCH_LABEL"
 
 if has_tty; then
-  env \
-    RIN_RELEASE_CHANNEL="$CHANNEL" \
-    RIN_RELEASE_VERSION="$VERSION" \
-    RIN_RELEASE_BRANCH="$BRANCH" \
-    RIN_RELEASE_REF="$REF" \
-    RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
-    RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
-    sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY" </dev/tty >/dev/tty 2>&1
+  launch_installer_entry </dev/tty >/dev/tty 2>&1
   exit $?
 fi
 
-env \
-  RIN_RELEASE_CHANNEL="$CHANNEL" \
-  RIN_RELEASE_VERSION="$VERSION" \
-  RIN_RELEASE_BRANCH="$BRANCH" \
-  RIN_RELEASE_REF="$REF" \
-  RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
-  RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
-  sh -lc "${NODE_ENV_PREFIX}node $INSTALLER_ENTRY"
+launch_installer_entry
