@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -375,6 +376,13 @@ test("subagent service resolves session refs with stable precedence", () => {
       sessions,
     }),
     { kind: "required" },
+  );
+});
+
+test("subagent sessions default to managed namespace dir", () => {
+  assert.equal(
+    sessionUtils.getDefaultSubagentSessionDir(),
+    path.join(os.homedir(), ".rin", "sessions", "managed", "subagent"),
   );
 });
 

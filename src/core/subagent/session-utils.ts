@@ -1,9 +1,7 @@
 import os from "node:os";
 
-import {
-  getRuntimeSessionDir,
-  resolveRuntimeProfile,
-} from "../rin-lib/runtime.js";
+import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
+import { getManagedSubagentSessionDir } from "../session/managed-paths.js";
 import type {
   SubagentSessionConfig,
   SubagentSessionMode,
@@ -52,7 +50,7 @@ export function normalizeSubagentSessionConfig(
 
 export function getDefaultSubagentSessionDir() {
   const profile = resolveRuntimeProfile({ cwd: HOME_DIR });
-  return getRuntimeSessionDir(profile.cwd, profile.agentDir);
+  return getManagedSubagentSessionDir(profile.agentDir);
 }
 
 export function formatSubagentSessionRefRequiredError(

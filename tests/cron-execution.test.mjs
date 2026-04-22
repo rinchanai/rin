@@ -85,6 +85,32 @@ test("cron scheduler can seed and preserve dedicated session files", async () =>
   }
 });
 
+test("cron scheduler preallocates managed dedicated task session files", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const scheduler = new cronMod.CronScheduler({ agentDir });
+  try {
+    const task = scheduler.upsertTask({
+      id: "cron_managed_dedicated",
+      trigger: { kind: "interval", intervalMs: 60_000 },
+      session: { mode: "dedicated" },
+      target: { kind: "agent_prompt", prompt: "hello" },
+    });
+    assert.equal(
+      task.dedicatedSessionFile,
+      path.join(
+        agentDir,
+        "sessions",
+        "managed",
+        "task",
+        "cron_managed_dedicated.jsonl",
+      ),
+    );
+    assert.equal(task.dedicatedSessionPersistent, true);
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("cron scheduler preserves dedicated session files on load", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
   const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
