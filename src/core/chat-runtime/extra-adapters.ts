@@ -19,8 +19,12 @@ import {
   renderPlainTextFromNodes,
   safeString,
   sleep,
+  splitPlainText,
   stripMentionTokens,
 } from "./common.js";
+
+const DISCORD_MAX_TEXT_LENGTH = 2000;
+const SLACK_MAX_TEXT_LENGTH = 40000;
 
 export class DiscordAdapter {
   private readonly app: any;
@@ -192,20 +196,35 @@ export class DiscordAdapter {
         name: payload.name,
       });
     }
-    if (!text && !files.length) throw new Error("discord_send_message_empty");
-    const sent = await channel.send(
-      compactObject({
-        content: text || undefined,
-        files: files.length ? files : undefined,
-        reply: replyToMessageId
-          ? {
-              messageReference: replyToMessageId,
-              failIfNotExists: false,
-            }
-          : undefined,
-      }),
-    );
-    return [safeString(sent?.id).trim()].filter(Boolean);
+    const delivered: string[] = [];
+    const textChunks = splitPlainText(text, DISCORD_MAX_TEXT_LENGTH);
+    if (!textChunks.length && !files.length) {
+      throw new Error("discord_send_message_empty");
+    }
+    const chunkQueue = textChunks.length ? textChunks : [""];
+    let remainingFiles: any[] | undefined = files.length ? files : undefined;
+    let firstReply = replyToMessageId;
+    for (const textChunk of chunkQueue) {
+      if (!textChunk && !remainingFiles?.length) continue;
+      const sent = await channel.send(
+        compactObject({
+          content: textChunk || undefined,
+          files: remainingFiles?.length ? remainingFiles : undefined,
+          reply: firstReply
+            ? {
+                messageReference: firstReply,
+                failIfNotExists: false,
+              }
+            : undefined,
+        }),
+      );
+      const messageId = safeString(sent?.id).trim();
+      if (messageId) delivered.push(messageId);
+      remainingFiles = undefined;
+      firstReply = undefined;
+    }
+    if (!delivered.length) throw new Error("discord_send_message_empty_result");
+    return delivered;
   }
 
   private async handleMessage(message: any) {
@@ -446,11 +465,11 @@ export class SlackAdapter {
       },
     });
     const delivered: string[] = [];
-    if (text) {
+    for (const textChunk of splitPlainText(text, SLACK_MAX_TEXT_LENGTH)) {
       const sent = await this.web.chat.postMessage(
         compactObject({
           channel: chatId,
-          text,
+          text: textChunk,
           thread_ts: replyToMessageId || undefined,
         }),
       );

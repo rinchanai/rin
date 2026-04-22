@@ -94,3 +94,81 @@ test("telegram adapter keeps media first and spills oversized captions into foll
     assert.equal(calls[1].payload.text, "b".repeat(6));
   });
 });
+
+test("discord adapter splits oversized text sends and keeps attachments on the first chunk", async () => {
+  await withTempDir(async (agentDir) => {
+    const app = runtime.createChatRuntimeApp(agentDir);
+    runtime.instantiateBuiltInChatRuntimeAdapters(app, {
+      dataDir: path.join(agentDir, "data"),
+      settings: {},
+      adapterEntries: [
+        { key: "discord", name: "Discord", config: { token: "abc" } },
+      ],
+    });
+    const adapter = [...app.adapters][0];
+    const h = runtime.createChatRuntimeH();
+    const calls = [];
+    adapter.fetchChannel = async () => ({
+      send: async (payload) => {
+        calls.push(payload);
+        return { id: String(calls.length) };
+      },
+    });
+
+    const result = await app.bots[0].sendMessage("456", [
+      h.quote("88"),
+      h.text("c".repeat(2005)),
+      h.image("https://example.com/demo.png"),
+    ]);
+
+    assert.deepEqual(result, ["1", "2"]);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].content.length, 2000);
+    assert.equal(calls[0].files.length, 1);
+    assert.equal(calls[0].reply.messageReference, "88");
+    assert.equal(calls[1].content, "c".repeat(5));
+    assert.equal(calls[1].files, undefined);
+    assert.equal(calls[1].reply, undefined);
+  });
+});
+
+test("slack adapter splits oversized text posts into multiple threaded messages", async () => {
+  await withTempDir(async (agentDir) => {
+    const app = runtime.createChatRuntimeApp(agentDir);
+    runtime.instantiateBuiltInChatRuntimeAdapters(app, {
+      dataDir: path.join(agentDir, "data"),
+      settings: {},
+      adapterEntries: [
+        { key: "slack", name: "Slack", config: { token: "xapp", botToken: "xoxb" } },
+      ],
+    });
+    const adapter = [...app.adapters][0];
+    const h = runtime.createChatRuntimeH();
+    const calls = [];
+    adapter.web = {
+      chat: {
+        postMessage: async (payload) => {
+          calls.push(payload);
+          return { ts: String(calls.length) };
+        },
+      },
+      files: {
+        uploadV2: async () => {
+          throw new Error("unexpected_upload");
+        },
+      },
+    };
+
+    const result = await app.bots[0].sendMessage("C123", [
+      h.quote("99"),
+      h.text("d".repeat(40005)),
+    ]);
+
+    assert.deepEqual(result, ["1", "2"]);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].text.length, 40000);
+    assert.equal(calls[0].thread_ts, "99");
+    assert.equal(calls[1].text, "d".repeat(5));
+    assert.equal(calls[1].thread_ts, "99");
+  });
+});
