@@ -319,63 +319,25 @@ test("subagent service derives context tokens when providers omit explicit total
   assert.ok(Math.abs(state.usage.cost - 0.1) < 1e-9);
 });
 
-test("subagent service resolves session refs with stable precedence", () => {
-  const sessions = [
-    { id: "target", path: "/tmp/sessions/target.jsonl" },
-    { id: "/tmp/sessions/target.jsonl", path: "/tmp/sessions/by-id.jsonl" },
-    { id: "alpha123", path: "/tmp/sessions/alpha123.jsonl" },
-    { id: "alpha999", path: "/tmp/sessions/alpha999.jsonl" },
-  ];
-
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "/tmp/sessions/target.jsonl",
-      sessions,
-      directMatchPath: "/tmp/sessions/target.jsonl",
-    }),
-    { kind: "match", path: "/tmp/sessions/target.jsonl" },
+test("subagent session file helpers normalize agentDir-relative paths", () => {
+  const agentDir = "/tmp/rin-agent";
+  assert.equal(
+    sessionUtils.resolveSubagentSessionFile(
+      agentDir,
+      " sessions/managed/subagent/demo.jsonl ",
+    ),
+    path.join(agentDir, "sessions", "managed", "subagent", "demo.jsonl"),
   );
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "target",
-      sessions,
-    }),
-    { kind: "match", path: "/tmp/sessions/target.jsonl" },
+  assert.equal(
+    sessionUtils.resolveSubagentSessionFile(agentDir, "/tmp/demo.jsonl"),
+    path.resolve("/tmp/demo.jsonl"),
   );
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "/tmp/sessions/by-id.jsonl",
-      sessions,
-    }),
-    { kind: "match", path: "/tmp/sessions/by-id.jsonl" },
-  );
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "alpha1",
-      sessions,
-    }),
-    { kind: "match", path: "/tmp/sessions/alpha123.jsonl" },
-  );
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "alpha",
-      sessions,
-    }),
-    { kind: "ambiguous" },
-  );
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "missing",
-      sessions,
-    }),
-    { kind: "not_found" },
-  );
-  assert.deepEqual(
-    subagentService.selectSessionReferencePath({
-      ref: "   ",
-      sessions,
-    }),
-    { kind: "required" },
+  assert.equal(
+    sessionUtils.toSubagentSessionFile(
+      agentDir,
+      path.join(agentDir, "sessions", "managed", "subagent", "demo.jsonl"),
+    ),
+    "sessions/managed/subagent/demo.jsonl",
   );
 });
 
@@ -386,7 +348,7 @@ test("subagent sessions default to managed namespace dir", () => {
   );
 });
 
-test("run_subagent exposes consistent session ref discovery hints", () => {
+test("run_subagent exposes consistent sessionFile discovery hints", () => {
   const tools = [];
   subagentIndex.default({
     registerTool(tool) {
@@ -408,17 +370,22 @@ test("run_subagent exposes consistent session ref discovery hints", () => {
     runTool.parameters.properties.tasks.items.properties.session.properties.keep.type,
     "boolean",
   );
+  assert.equal(
+    runTool.parameters.properties.session.properties.sessionFile.type,
+    "string",
+  );
+  assert.equal(runTool.parameters.properties.session.properties.ref, undefined);
   assert.match(
-    runTool.parameters.properties.session.properties.ref.description,
+    runTool.parameters.properties.session.properties.sessionFile.description,
     new RegExp(sessionUtils.getDefaultSubagentSessionDir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
   );
   assert.match(
-    sessionUtils.formatSubagentSessionRefHint(),
+    sessionUtils.formatSubagentSessionFileHint(),
     new RegExp(sessionUtils.getDefaultSubagentSessionDir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
   );
   assert.match(
-    sessionUtils.formatSubagentSessionRefRequiredError("resume"),
-    /Session ref is required when session.mode is resume\./,
+    sessionUtils.formatSubagentSessionFileRequiredError("resume"),
+    /Session file is required when session.mode is resume\./,
   );
   assert.match(
     sessionUtils.formatSubagentSessionModeInvalidError("broken"),
@@ -427,16 +394,16 @@ test("run_subagent exposes consistent session ref discovery hints", () => {
 });
 
 
-test("subagent session utils normalize invalid session modes and trim refs", () => {
+test("subagent session utils normalize invalid session modes and trim session files", () => {
   assert.deepEqual(
     sessionUtils.normalizeSubagentSessionConfig({
       mode: " RESUME ",
-      ref: "  /tmp/demo.jsonl  ",
+      sessionFile: "  sessions/managed/subagent/demo.jsonl  ",
       name: " demo ",
     }),
     {
       mode: "resume",
-      ref: "/tmp/demo.jsonl",
+      sessionFile: "sessions/managed/subagent/demo.jsonl",
       name: "demo",
       keep: undefined,
     },
@@ -444,13 +411,13 @@ test("subagent session utils normalize invalid session modes and trim refs", () 
   assert.deepEqual(
     sessionUtils.normalizeSubagentSessionConfig({
       mode: "broken",
-      ref: "   ",
+      sessionFile: "   ",
       keep: true,
     }),
     {
       mode: "memory",
       invalidMode: "broken",
-      ref: undefined,
+      sessionFile: undefined,
       name: undefined,
       keep: true,
     },
