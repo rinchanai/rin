@@ -25,10 +25,27 @@ export function resolveSessionValue(primary: unknown, fallback?: unknown) {
   return normalizeSessionValue(primary) ?? normalizeSessionValue(fallback);
 }
 
+function getAgentSessionDir(agentDir: string) {
+  return getRuntimeSessionDir(process.cwd(), agentDir);
+}
+
 function normalizeStoredSessionPath(value: string) {
-  const normalized = value.replace(/\\+/g, "/").replace(/^\.(?:\/|$)/, "");
-  const trimmed = normalized.replace(/^\/+/, "").trim();
-  return trimmed || undefined;
+  const normalized = path.posix.normalize(
+    String(value || "")
+      .replace(/\\+/g, "/")
+      .trim(),
+  );
+  const trimmed = normalized
+    .replace(/^\/+/, "")
+    .replace(/^(?:\.\/)+/, "")
+    .trim();
+  return trimmed && trimmed !== "." ? trimmed : undefined;
+}
+
+function isSessionDirRelativePath(value: string) {
+  return (
+    Boolean(value) && !value.startsWith("..") && !path.isAbsolute(value)
+  );
 }
 
 export function toStoredSessionFile(agentDir: string, value: unknown) {
@@ -37,10 +54,11 @@ export function toStoredSessionFile(agentDir: string, value: unknown) {
   if (!path.isAbsolute(sessionFile)) {
     return normalizeStoredSessionPath(sessionFile);
   }
-  const sessionDir = getRuntimeSessionDir(process.cwd(), agentDir);
-  const relative = path.relative(sessionDir, path.resolve(sessionFile));
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
-    return path.resolve(sessionFile);
+  const sessionDir = getAgentSessionDir(agentDir);
+  const resolvedSessionFile = path.resolve(sessionFile);
+  const relative = path.relative(sessionDir, resolvedSessionFile);
+  if (!isSessionDirRelativePath(relative)) {
+    return resolvedSessionFile;
   }
   return normalizeStoredSessionPath(relative);
 }
@@ -51,8 +69,7 @@ export function resolveStoredSessionFile(agentDir: string, value: unknown) {
   if (path.isAbsolute(sessionFile)) return path.resolve(sessionFile);
   const relative = normalizeStoredSessionPath(sessionFile);
   if (!relative) return undefined;
-  const sessionDir = getRuntimeSessionDir(process.cwd(), agentDir);
-  return path.join(sessionDir, ...relative.split("/"));
+  return path.resolve(getAgentSessionDir(agentDir), relative);
 }
 
 export function normalizeSessionRef(
