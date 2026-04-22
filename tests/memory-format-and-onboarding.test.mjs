@@ -125,4 +125,6 @@ test("memory onboarding helper keeps hidden instructions and pending state", () 
   const prompt = onboarding.buildOnboardingPrompt("manual");
   assert.ok(prompt.includes("Do not mention, quote, summarize"));
   assert.ok(prompt.includes("preferred language"));
+  assert.ok(prompt.includes("you are still learning"));
+  assert.ok(prompt.includes("trust the process"));
 });
