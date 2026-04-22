@@ -89,7 +89,7 @@ test("chat main consumes inbound help messages through the inbox path only once"
   }
 });
 
-test("chat main replies with the unsupported notice instead of executing /resume in chat", async () => {
+test("chat main treats /resume as a normal prompt after the command is removed", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
   const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
@@ -105,8 +105,8 @@ test("chat main replies with the unsupported notice instead of executing /resume
       const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
       const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
       const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
-      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
       const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
+      const seen = [];
 
       supportMod.saveIdentity(path.join(agentDir, "data"), {
         persons: { owner: { trust: "OWNER" } },
@@ -118,6 +118,15 @@ test("chat main replies with the unsupported notice instead of executing /resume
       controllerMod.ChatController.prototype.runCommand = async function () {
         runCommandCalls += 1;
         return { handled: true, text: "should not run" };
+      };
+      controllerMod.ChatController.prototype.runTurn = async function (input, mode) {
+        seen.push({
+          mode,
+          text: input?.text || null,
+          replyToMessageId: input?.replyToMessageId || null,
+          sessionFile: input?.sessionFile || null,
+        });
+        return { retry: false };
       };
 
       const { app } = await mainMod.startChatBridge();
@@ -143,27 +152,21 @@ test("chat main replies with the unsupported notice instead of executing /resume
         elements: [h.createChatRuntimeH().text("/resume")],
       });
 
-      const expected = "Chat 中不支持 /resume。请直接回复想继续的那条消息，Rin 会按引用消息自动接续对应会话。";
       const deadline = Date.now() + 5000;
-      while (Date.now() < deadline) {
-        const rows = storeMod
-          .listChatMessages(agentDir)
-          .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
-        if (rows.some((item) => item.text === expected)) break;
+      while (Date.now() < deadline && seen.length < 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const rows = storeMod
-        .listChatMessages(agentDir)
-        .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
-      if (runCommandCalls !== 0 || rows.length !== 1 || rows[0]?.text !== expected) {
-        throw new Error(JSON.stringify({
-          sentCount,
-          runCommandCalls,
-          assistantCount: rows.length,
-          texts: rows.map((item) => item.text),
-        }));
+      if (
+        runCommandCalls !== 0 ||
+        sentCount !== 0 ||
+        seen.length !== 1 ||
+        seen[0]?.mode !== "prompt" ||
+        seen[0]?.text !== "/resume" ||
+        seen[0]?.replyToMessageId !== "m-resume" ||
+        seen[0]?.sessionFile !== null
+      ) {
+        throw new Error(JSON.stringify({ sentCount, runCommandCalls, seen }));
       }
       process.exit(0);
     `;
