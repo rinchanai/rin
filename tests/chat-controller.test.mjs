@@ -341,6 +341,40 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
   assert.deepEqual(deliveries, [{ replyToMessageId: "m1", text: "Working……" }]);
 });
 
+test("chat controller does not keep typing from stale currentTurn metadata alone", async () => {
+  const controller = await createController("telegram/1:2");
+  const actions = [];
+  const reactions = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        async createReaction(chatId, messageId, emoji) {
+          reactions.push(["create", chatId, messageId, emoji]);
+        },
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          reactions.push(["delete", chatId, messageId, emoji, userId]);
+        },
+        internal: {
+          async sendChatAction(payload) {
+            actions.push(payload);
+          },
+        },
+      },
+    ],
+  };
+  controller.currentTurn = {
+    startedAt: Date.now(),
+    incomingMessageId: "m-stale",
+    workingNoticeSent: false,
+  };
+
+  assert.equal(await controller.pollTyping(), false);
+  assert.deepEqual(actions, []);
+  assert.deepEqual(reactions, []);
+});
+
 test("chat controller treats rpc completion as the canonical final reply for prompt turns", async () => {
   const controller = await createController("telegram/1:2");
   const chatKey = "telegram/1:2";
@@ -499,6 +533,39 @@ test("chat controller steers an already streaming session instead of waiting for
     { text: "follow up", streamingBehavior: "steer" },
   ]);
   assert.equal(result.steered, true);
+});
+
+test("chat controller fails fast when prompt submission is queued offline instead of hanging forever", async () => {
+  const controller = await createController("telegram/1:2");
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    queuedOfflineOps: [],
+    syncPendingCount() {},
+    emitFrontendStatus() {},
+    sessionManager: {
+      getSessionFile: () => "/tmp/offline-chat.jsonl",
+      getSessionId: () => "session-offline",
+      getSessionName: () => controller.chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/offline-chat.jsonl",
+      sessionId: "session-offline",
+    }),
+    prompt: async (_text, options = {}) => {
+      controller.session.queuedOfflineOps.push({ requestTag: options.requestTag });
+    },
+    switchSession: async () => {},
+  };
+
+  await assert.rejects(
+    controller.runTurn({
+      text: "hello",
+      attachments: [],
+      incomingMessageId: "m-offline",
+    }),
+    /rin_disconnected:rpc_turn_queued_offline/,
+  );
 });
 
 test("chat controller does not let presentation polling block prompt submission", async () => {

@@ -188,7 +188,7 @@ export class ChatController {
       this.frontendPhase === "sending" ||
       this.frontendPhase === "working" ||
       this.awaitingTurnSettle ||
-      Boolean(this.currentTurn)
+      Boolean(this.session?.isStreaming)
     );
   }
 

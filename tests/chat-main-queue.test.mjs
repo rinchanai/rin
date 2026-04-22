@@ -457,6 +457,132 @@ test("chat main retries a disposed frontend turn without leaking the dispose err
   }
 });
 
+test("chat main retries an offline-queued frontend turn without leaking the disconnect error into chat", async () => {
+  const tempRoot = "/home/rin/tmp";
+  await fs.mkdir(tempRoot, { recursive: true });
+  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
+  try {
+    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
+
+    const script = `
+      import path from "node:path";
+      import { pathToFileURL } from "node:url";
+
+      const rootDir = process.env.RIN_REPO_ROOT;
+      const agentDir = process.env.RIN_DIR;
+      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
+      const controllerMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "controller.js")).href);
+      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
+      const storeMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "message-store.js")).href);
+      const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
+
+      supportMod.saveIdentity(path.join(agentDir, "data"), {
+        persons: { owner: { trust: "OWNER" } },
+        aliases: [{ platform: "telegram", userId: "owner-1", personId: "owner" }],
+        trusted: [],
+      });
+
+      const originalRunTurn = controllerMod.ChatController.prototype.runTurn;
+      let runTurnCalls = 0;
+      controllerMod.ChatController.prototype.connect = async function () {
+        if (this.session && this.client) return;
+        const controller = this;
+        this.client = { subscribe() {} };
+        this.session = {
+          isStreaming: false,
+          messages: [],
+          sessionManager: {
+            getSessionFile: () => "/tmp/offline-queued-chat.jsonl",
+            getSessionId: () => "offline-queued-session",
+            getSessionName: () => controller.chatKey,
+          },
+          ensureSessionReady: async () => ({
+            sessionFile: "/tmp/offline-queued-chat.jsonl",
+            sessionId: "offline-queued-session",
+          }),
+          prompt: async (_message, options = {}) => {
+            controller.handleClientEvent({
+              type: "ui",
+              payload: {
+                type: "rpc_turn_event",
+                event: "complete",
+                requestTag: options.requestTag,
+                finalText: "retry after queued offline",
+                result: { messages: [{ type: "text", text: "retry after queued offline" }] },
+                sessionId: "offline-queued-session",
+                sessionFile: "/tmp/offline-queued-chat.jsonl",
+              },
+            });
+          },
+          switchSession: async () => {},
+        };
+      };
+      controllerMod.ChatController.prototype.runTurn = async function (input, mode) {
+        runTurnCalls += 1;
+        if (runTurnCalls === 1) {
+          throw new Error("rin_disconnected:rpc_turn_queued_offline");
+        }
+        return await originalRunTurn.call(this, input, mode);
+      };
+
+      const { app } = await mainMod.startChatBridge();
+      app.bots.push({
+        platform: "telegram",
+        selfId: "1",
+        async sendMessage() {
+          return ["assistant-1"];
+        },
+        internal: {
+          async sendChatAction() {},
+        },
+      });
+
+      app.emit("message", {
+        platform: "telegram",
+        selfId: "1",
+        channelId: "2",
+        userId: "owner-1",
+        messageId: "m-offline-queued",
+        isDirect: true,
+        content: "hello offline queued",
+        stripped: { content: "hello offline queued" },
+        elements: [h.createChatRuntimeH().text("hello offline queued")],
+      });
+
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
+        const rows = storeMod
+          .listChatMessages(agentDir)
+          .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
+        if (rows.some((item) => item.text === "retry after queued offline")) break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+
+      const rows = storeMod
+        .listChatMessages(agentDir)
+        .filter((item) => item.chatKey === "telegram/1:2" && item.role === "assistant");
+      const leaked = rows.some((item) => String(item.text || "").includes("queued_offline"));
+      const succeeded = rows.some((item) => item.text === "retry after queued offline");
+      if (!succeeded || leaked || runTurnCalls < 2) {
+        throw new Error(JSON.stringify({ runTurnCalls, leaked, rows }));
+      }
+      process.exit(0);
+    `;
+
+    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        RIN_REPO_ROOT: rootDir,
+        RIN_DIR: agentDir,
+      },
+      timeout: 20000,
+    });
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("chat main passes quoted reply session metadata through one normal prompt submission", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });

@@ -26,6 +26,10 @@ function isAgentAlreadyProcessingError(error: unknown) {
   );
 }
 
+function isQueuedOperationArray(value: unknown): value is Array<{ requestTag?: string }> {
+  return Array.isArray(value);
+}
+
 export class ChatFrontendDriver {
   client: RinDaemonFrontendClient | null = null;
   session: RpcInteractiveSession | any = null;
@@ -116,6 +120,7 @@ export class ChatFrontendDriver {
         reject(error);
       },
     };
+    liveTurn.promise.catch(() => {});
     this.liveTurn = liveTurn;
     return liveTurn;
   }
@@ -189,6 +194,30 @@ export class ChatFrontendDriver {
     }
     this.pendingCompletedAssistantText = text;
     this.latestAssistantText = text;
+  }
+
+  private consumeQueuedOfflineOperation(requestTag?: string) {
+    const tag = safeString(requestTag || "").trim();
+    if (!tag) return false;
+    const queued = (this.session as any)?.queuedOfflineOps;
+    if (!isQueuedOperationArray(queued)) return false;
+    const index = queued.findIndex(
+      (item) => safeString(item?.requestTag || "").trim() === tag,
+    );
+    if (index < 0) return false;
+    queued.splice(index, 1);
+    if (typeof (this.session as any)?.syncPendingCount === "function") {
+      (this.session as any).syncPendingCount();
+    }
+    if (typeof (this.session as any)?.emitFrontendStatus === "function") {
+      (this.session as any).emitFrontendStatus(true);
+    }
+    return true;
+  }
+
+  private throwIfQueuedOffline(requestTag?: string) {
+    if (!this.consumeQueuedOfflineOperation(requestTag)) return;
+    throw new Error("rin_disconnected:rpc_turn_queued_offline");
   }
 
   private async switchSessionIfNeeded(sessionFile?: string) {
@@ -273,11 +302,14 @@ export class ChatFrontendDriver {
     const images = Array.isArray(input.images) ? input.images : [];
 
     if (this.session.isStreaming) {
+      const requestTag = this.createTurnRequestTag();
       await this.session.prompt(text, {
         images,
         source: "chat-bridge",
         streamingBehavior: "steer",
+        requestTag,
       });
+      this.throwIfQueuedOffline(requestTag);
       return {
         steered: true,
         sessionId:
@@ -296,14 +328,18 @@ export class ChatFrontendDriver {
         source: "chat-bridge",
         requestTag,
       });
+      this.throwIfQueuedOffline(requestTag);
     } catch (error: any) {
       if (isAgentAlreadyProcessingError(error)) {
         if (this.liveTurn === liveTurn) this.liveTurn = null;
+        const steerRequestTag = this.createTurnRequestTag();
         await this.session.prompt(text, {
           images,
           source: "chat-bridge",
           streamingBehavior: "steer",
+          requestTag: steerRequestTag,
         });
+        this.throwIfQueuedOffline(steerRequestTag);
         return {
           steered: true,
           sessionId:
