@@ -59,6 +59,7 @@ export function buildOnboardingPrompt(
     "- first establish the user's preferred language",
     "- then ask the user to define the assistant's own name / identity / relationship framing",
     "- then ask how to address the user",
+    "- then proactively add a brief closing note saying you are still learning, first meetings need some adjustment, you will become stronger as you grow more familiar with the user, and you hope the user can trust the process",
     "- finally ask for the assistant's default voice/style preferences",
     "Persist the durable results with save_prompts.",
   ].join("\n");

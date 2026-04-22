@@ -137,6 +137,9 @@ test("buildOnboardingPrompt keeps init instructions hidden and language-first", 
     "- then ask the user to define the assistant's own name / identity / relationship framing",
   );
   const ownerIndex = prompt.indexOf("- then ask how to address the user");
+  const closingIndex = prompt.indexOf(
+    "- then proactively add a brief closing note saying you are still learning, first meetings need some adjustment, you will become stronger as you grow more familiar with the user, and you hope the user can trust the process",
+  );
   const styleIndex = prompt.indexOf(
     "- finally ask for the assistant's default voice/style preferences",
   );
@@ -144,8 +147,11 @@ test("buildOnboardingPrompt keeps init instructions hidden and language-first", 
     languageIndex >= 0 &&
       agentIndex > languageIndex &&
       ownerIndex > agentIndex &&
-      styleIndex > ownerIndex,
+      closingIndex > ownerIndex &&
+      styleIndex > closingIndex,
   );
+  assert.equal(prompt.includes("in the user's language"), false);
+  assert.equal(prompt.includes("after the final answer"), false);
 });
 
 test("processing describes prompt slots with content and limits", async () => {
