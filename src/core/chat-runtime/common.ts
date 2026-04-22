@@ -71,6 +71,51 @@ export function stripMentionTokens(text: string, tokens: string[]) {
   return next.replace(/^[\s,:，\-—]+/, "").trim();
 }
 
+export function splitPlainText(text: string, maxLength: number) {
+  const normalized = safeString(text);
+  if (!normalized) return [];
+  const chars = Array.from(normalized);
+  const limit = Math.max(1, Math.floor(maxLength) || 1);
+  const chunks: string[] = [];
+  let cursor = 0;
+
+  while (cursor < chars.length) {
+    const remaining = chars.length - cursor;
+    if (remaining <= limit) {
+      const chunk = chars.slice(cursor).join("").trim();
+      if (chunk) chunks.push(chunk);
+      break;
+    }
+
+    const windowText = chars.slice(cursor, cursor + limit).join("");
+    let splitOffset = -1;
+    for (const marker of ["\n\n", "\n", " "]) {
+      const markerOffset = windowText.lastIndexOf(marker);
+      if (markerOffset >= 0) {
+        splitOffset = markerOffset + marker.length;
+        break;
+      }
+    }
+    if (splitOffset <= 0) splitOffset = limit;
+
+    const nextCursor = cursor + splitOffset;
+    const chunk = chars.slice(cursor, nextCursor).join("").trim();
+    if (chunk) {
+      chunks.push(chunk);
+      cursor = nextCursor;
+      while (cursor < chars.length && /\s/.test(chars[cursor] || "")) {
+        cursor += 1;
+      }
+      continue;
+    }
+
+    chunks.push(chars.slice(cursor, cursor + limit).join(""));
+    cursor += limit;
+  }
+
+  return chunks;
+}
+
 export async function downloadToFile(
   filePath: string,
   url: string,
