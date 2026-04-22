@@ -396,6 +396,11 @@ export function createInstallerI18n(languageTag = "en") {
         `${this.defaultTargetLabel}: ${options.setDefaultTarget ? this.defaultTargetSetValue(options.targetUser) : this.defaultTargetSkippedValue}`,
         `${zh ? "Chat bridge" : "Chat bridge"}: ${options.chatDescription}`,
         options.chatDetail,
+        options.chatDescription === (zh ? "暂不启用" : "disabled for now")
+          ? ""
+          : zh
+            ? "Chat 授权：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。"
+            : "Chat authorization: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.",
       ]
         .filter(Boolean)
         .join("\n");

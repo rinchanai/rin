@@ -264,7 +264,7 @@ export function createChatBridgeRuntime(options: {
         },
         setTrust(input: {
           userId: string;
-          trust: "TRUSTED" | "OTHER";
+          trust: "OWNER" | "TRUSTED" | "OTHER";
           platform?: string;
           name?: string;
         }) {
@@ -272,7 +272,10 @@ export function createChatBridgeRuntime(options: {
             dataDir: options.dataDir,
             platform: safeString(input?.platform).trim() || parsed.platform,
             userId: safeString(input?.userId).trim(),
-            trust: safeString(input?.trust).trim() as "TRUSTED" | "OTHER",
+            trust: safeString(input?.trust).trim() as
+              | "OWNER"
+              | "TRUSTED"
+              | "OTHER",
             name: safeString(input?.name).trim() || undefined,
           });
         },

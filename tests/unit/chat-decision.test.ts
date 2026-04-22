@@ -13,8 +13,14 @@ const decision = await import(
 );
 
 const identity = {
-  aliases: [{ platform: "telegram", userId: "owner-1", personId: "owner" }],
-  persons: { owner: { trust: "OWNER" } },
+  aliases: [
+    { platform: "telegram", userId: "owner-1", personId: "owner" },
+    { platform: "telegram", userId: "trusted-1", personId: "trusted" },
+  ],
+  persons: {
+    owner: { trust: "OWNER" },
+    trusted: { trust: "TRUSTED" },
+  },
 };
 
 test("chat decision keeps slash-containing owner text routable", async () => {
@@ -49,6 +55,24 @@ test("chat decision only enforces access policy, not custom slash-command guessi
 
   assert.equal(result.allow, true);
   assert.equal(result.text, "/new hello");
+});
+
+test("chat decision allows trusted private messages", async () => {
+  const result = await decision.shouldProcessText(
+    {
+      platform: "telegram",
+      userId: "trusted-1",
+      content: "hello from trusted",
+      stripped: { content: "hello from trusted" },
+      isDirect: true,
+    },
+    [{ type: "text", attrs: { content: "hello from trusted" } }],
+    identity,
+  );
+
+  assert.equal(result.allow, true);
+  assert.equal(result.text, "hello from trusted");
+  assert.equal(result.trust, "TRUSTED");
 });
 
 test("chat decision keeps image-only owner messages routable", async () => {
