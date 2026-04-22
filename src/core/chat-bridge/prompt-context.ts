@@ -1,6 +1,7 @@
 type PromptContextMeta = {
   source?: string;
   sentAt?: number;
+  triggerKind?: string;
   chatKey?: string;
   chatName?: string;
   chatType?: string;

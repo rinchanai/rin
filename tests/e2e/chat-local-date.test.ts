@@ -7,10 +7,10 @@ import path from "node:path";
 const execFileAsync = promisify(execFile);
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
-  "..",
+  "../..",
 );
 const chatDate = await import(
-  new URL("../dist/core/chat/date.js", import.meta.url).href,
+  new URL("../../dist/core/chat/date.js", import.meta.url).href,
 );
 
 async function runInTimezone(source, timezone = "Asia/Shanghai") {

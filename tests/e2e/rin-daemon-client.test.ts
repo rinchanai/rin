@@ -9,7 +9,7 @@ import { pathToFileURL } from "node:url";
 
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
-  "..",
+  "../..",
 );
 const daemonClient = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-daemon", "client.js")).href,
