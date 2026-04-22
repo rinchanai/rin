@@ -239,10 +239,12 @@ export async function startDaemon(options = {}) {
         }
         if (type === "daemon_status") {
             const extraStatus = await options.getExtraStatus?.();
+            const tasks = cronScheduler.listTasks();
             writeLine(connection.socket, response(id, type, true, {
                 socketPath,
                 ...workerPool.getStatusSnapshot(),
-                taskCount: cronScheduler.listTasks().length,
+                taskCount: tasks.length,
+                tasks,
                 webSearch: getSearxngSidecarStatus(runtime.agentDir),
                 ...(extraStatus && typeof extraStatus === "object"
                     ? extraStatus

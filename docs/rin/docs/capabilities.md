@@ -64,6 +64,7 @@ Rin provides scheduled task support. As an agent, you should know that:
 
 - you can create one-time, interval, and cron-style tasks
 - it is suitable for reminders, periodic checks, delayed follow-ups, and background automation
+- `rin doctor` shows the current daemon workers and scheduled tasks in one place
 - when a task should stop running without being removed, pause it; when it should be removed entirely, delete it
 
 ## Chat bridge

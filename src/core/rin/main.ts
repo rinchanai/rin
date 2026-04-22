@@ -22,7 +22,7 @@ const RIN_COMMANDS = [
   ["start", "Start the target user daemon"],
   ["stop", "Stop the target user daemon"],
   ["restart", "Restart the target user daemon"],
-  ["doctor", "Show daemon/socket diagnostics for the target user"],
+  ["doctor", "Show daemon, worker, and cron status for the target user"],
   ["usage", "Show token telemetry dashboard and grouped usage stats"],
   ["memory-index", "Repair the memory search index from archived transcripts"],
 ] as const satisfies ReadonlyArray<readonly [ParsedArgs["command"], string]>;
