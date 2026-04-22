@@ -374,3 +374,108 @@ test("rpc agent end does not leave a stale working loader after the turn is done
   assert.equal(instance.loadingAnimation, undefined);
   existingLoader.stop();
 });
+
+test("signal handler override routes SIGINT through interactive Ctrl+C handling", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  const originalOn = process.on;
+  const originalOff = process.off;
+  const handlers = new Map();
+
+  process.on = function patchedOn(event, handler) {
+    const next = handlers.get(event) || [];
+    next.push(handler);
+    handlers.set(event, next);
+    return this;
+  };
+  process.off = function patchedOff(event, handler) {
+    const next = (handlers.get(event) || []).filter((item) => item !== handler);
+    if (next.length) handlers.set(event, next);
+    else handlers.delete(event);
+    return this;
+  };
+
+  try {
+    let ctrlCCount = 0;
+    const instance = {
+      signalCleanupHandlers: [],
+      ui: { stopped: false },
+      handleCtrlC() {
+        ctrlCCount += 1;
+      },
+      unregisterSignalHandlers() {
+        return codingAgentModule.InteractiveMode.prototype.unregisterSignalHandlers.call(
+          this,
+        );
+      },
+    };
+
+    codingAgentModule.InteractiveMode.prototype.registerSignalHandlers.call(
+      instance,
+    );
+
+    const sigintHandlers = handlers.get("SIGINT") || [];
+    assert.equal(sigintHandlers.length, 1);
+
+    sigintHandlers[0]();
+    sigintHandlers[0]();
+    assert.equal(ctrlCCount, 2);
+
+    codingAgentModule.InteractiveMode.prototype.unregisterSignalHandlers.call(
+      instance,
+    );
+    assert.equal((handlers.get("SIGINT") || []).length, 0);
+  } finally {
+    process.on = originalOn;
+    process.off = originalOff;
+  }
+});
+
+test("signal handler override ignores SIGINT while the TUI is stopped", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  const originalOn = process.on;
+  const originalOff = process.off;
+  const handlers = new Map();
+
+  process.on = function patchedOn(event, handler) {
+    const next = handlers.get(event) || [];
+    next.push(handler);
+    handlers.set(event, next);
+    return this;
+  };
+  process.off = function patchedOff(event, handler) {
+    const next = (handlers.get(event) || []).filter((item) => item !== handler);
+    if (next.length) handlers.set(event, next);
+    else handlers.delete(event);
+    return this;
+  };
+
+  try {
+    let ctrlCCount = 0;
+    const instance = {
+      signalCleanupHandlers: [],
+      ui: { stopped: true },
+      handleCtrlC() {
+        ctrlCCount += 1;
+      },
+      unregisterSignalHandlers() {
+        return codingAgentModule.InteractiveMode.prototype.unregisterSignalHandlers.call(
+          this,
+        );
+      },
+    };
+
+    codingAgentModule.InteractiveMode.prototype.registerSignalHandlers.call(
+      instance,
+    );
+
+    const sigintHandlers = handlers.get("SIGINT") || [];
+    assert.equal(sigintHandlers.length, 1);
+    sigintHandlers[0]();
+    assert.equal(ctrlCCount, 0);
+  } finally {
+    process.on = originalOn;
+    process.off = originalOff;
+  }
+});
