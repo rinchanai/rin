@@ -587,6 +587,78 @@ test("chat controller steers an already streaming session instead of waiting for
   assert.equal(result.steered, true);
 });
 
+test("chat controller lets steer bypass the owned turn queue while the current turn is still streaming", async () => {
+  const controller = await createController("telegram/1:2");
+  const promptCalls = [];
+  const deliveries = [];
+  let releaseFirstPrompt = () => {};
+  let firstRequestTag = "";
+  let resolveFirstPromptStarted = () => {};
+  const firstPromptStarted = new Promise((resolve) => {
+    resolveFirstPromptStarted = resolve;
+  });
+
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push(this.stagedDelivery?.text || "");
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/live-chat.jsonl",
+      getSessionId: () => "session-live",
+      getSessionName: () => controller.chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/live-chat.jsonl",
+      sessionId: "session-live",
+    }),
+    prompt: async (text, options = {}) => {
+      promptCalls.push({ text, streamingBehavior: options.streamingBehavior });
+      if (options.streamingBehavior === "steer") return;
+      firstRequestTag = String(options.requestTag || "");
+      controller.session.isStreaming = true;
+      resolveFirstPromptStarted();
+      await new Promise((resolve) => {
+        releaseFirstPrompt = resolve;
+      });
+      controller.session.isStreaming = false;
+      emitRpcTurnComplete(controller, { requestTag: firstRequestTag }, "done");
+    },
+    switchSession: async () => {},
+  };
+
+  const firstTurn = controller.runTurn({
+    text: "first",
+    attachments: [],
+    incomingMessageId: "m-first",
+  });
+  await firstPromptStarted;
+
+  const steerResult = await controller.runTurn(
+    {
+      text: "steer now",
+      attachments: [],
+      incomingMessageId: "m-steer-now",
+    },
+    "steer",
+  );
+
+  assert.equal(steerResult.steered, true);
+  assert.deepEqual(promptCalls, [
+    { text: "first", streamingBehavior: undefined },
+    { text: "steer now", streamingBehavior: "steer" },
+  ]);
+
+  releaseFirstPrompt();
+  const firstResult = await firstTurn;
+  assert.equal(firstResult.finalText, "done");
+  assert.deepEqual(deliveries, ["done"]);
+});
+
 test("chat controller fails fast when prompt submission is queued offline instead of hanging forever", async () => {
   const controller = await createController("telegram/1:2");
   controller.session = {
