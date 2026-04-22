@@ -479,7 +479,7 @@ Split into:
 - `src/core/rin/daemon-control.ts`
 - `src/core/rin/update.ts`
 - `src/core/rin/doctor.ts`
-- `src/core/rin/tmux.ts`
+- `src/core/rin/hidden-session.ts`
 
 Clean up currently unused leftover logic during the split.
 

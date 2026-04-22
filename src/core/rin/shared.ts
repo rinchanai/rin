@@ -53,8 +53,8 @@ export type ParsedArgs = {
   targetUser: string;
   installDir: string;
   std: boolean;
-  tmuxSession: string;
-  tmuxList: boolean;
+  hiddenSessionName: string;
+  hiddenSessionList: boolean;
   passthrough: string[];
   explicitUser: boolean;
   hasSavedInstall: boolean;
@@ -70,11 +70,11 @@ type InstallConfig = {
 
 export { repoRootFromHere, runCommand, safeString };
 
-const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user", "-t", "--tmux"]);
-const RIN_WRAPPER_FLAGS = new Set(["--std", "--tmux-list"]);
+const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user", "-s", "--session"]);
+const RIN_WRAPPER_FLAGS = new Set(["--std", "--sessions"]);
 
 function hasInlineWrapperValue(arg: string) {
-  return arg.startsWith("--user=") || arg.startsWith("--tmux=");
+  return arg.startsWith("--user=") || arg.startsWith("--session=");
 }
 
 export function stripRinWrapperArgs(rawArgv: string[]) {
@@ -504,8 +504,8 @@ export function resolveParsedArgs(
       os.userInfo().username,
     installDir: safeString(installConfig.defaultInstallDir).trim(),
     std: Boolean(options.std),
-    tmuxSession: safeString(options.tmux).trim(),
-    tmuxList: Boolean(options.tmuxList),
+    hiddenSessionName: safeString(options.session).trim(),
+    hiddenSessionList: Boolean(options.sessions),
     passthrough: command ? [] : collectTuiPassthroughArgs(rawArgv),
     explicitUser: Boolean(targetUser),
     hasSavedInstall: Boolean(

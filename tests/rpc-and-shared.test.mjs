@@ -75,7 +75,7 @@ test("rpc helpers normalize scoped commands and return fresh empty session state
 test("shared resolveParsedArgs keeps passthrough and install defaults coherent", () => {
   const parsed = shared.resolveParsedArgs(
     "",
-    { std: true, tmux: "", tmuxList: false, user: "demo" },
+    { std: true, session: "", sessions: false, user: "demo" },
     ["--std", "--foo", "bar"],
   );
   assert.equal(parsed.targetUser, "demo");
@@ -84,7 +84,7 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
   assert.deepEqual(
     shared.stripRinWrapperArgs([
       "--user=demo",
-      "--tmux=rin-hidden",
+      "--session=rin-hidden",
       "--std",
       "usage",
       "--limit",
@@ -180,8 +180,7 @@ test("shared loadInstallConfigForHome prefers launcher metadata candidates and r
   }
 });
 
-test("tmux socket args target the caller-owned hidden socket", () => {
-  assert.deepEqual(launch.buildTmuxSocketArgs("demo"), ["-L", "rin-demo"]);
+test("hidden session helpers target the internal session runner", () => {
   assert.equal(launch.buildTuiModeArg(true), "--std");
   assert.equal(launch.buildTuiModeArg(false), "--rpc");
   assert.deepEqual(
@@ -198,31 +197,22 @@ test("tmux socket args target the caller-owned hidden socket", () => {
     ],
   );
   assert.deepEqual(
-    launch.buildTmuxSessionArgs(
-      ["-L", "rin-demo"],
-      "hidden-rin",
-      [process.execPath, "/repo/dist/app/rin-tui/main.js", "--std"],
-    ),
+    launch.buildHiddenSessionAttachArgs("/repo", "hidden-rin", true, ["--foo"]),
     [
-      "tmux",
-      "-L",
-      "rin-demo",
-      "new-session",
-      "-A",
-      "-s",
-      "hidden-rin",
       process.execPath,
-      "/repo/dist/app/rin-tui/main.js",
+      path.join("/repo", "dist", "app", "rin-hidden-session", "main.js"),
+      "attach",
+      "hidden-rin",
       "--std",
+      "--",
+      "--foo",
     ],
   );
-  assert.equal(
-    launch.normalizeTmuxListExitCode(
-      1,
-      "no server running on /tmp/tmux-demo/default",
-    ),
-    0,
-  );
+  assert.deepEqual(launch.buildHiddenSessionListArgs("/repo"), [
+    process.execPath,
+    path.join("/repo", "dist", "app", "rin-hidden-session", "main.js"),
+    "list",
+  ]);
 });
 
 test("tui runtime env targets the target user's direct daemon socket", () => {
@@ -234,15 +224,4 @@ test("tui runtime env targets the target user's direct daemon socket", () => {
   assert.equal(env.RIN_INVOKING_SYSTEM_USER, "THE_cattail");
   assert.ok(String(env.RIN_DAEMON_SOCKET_PATH || "").includes("rin-daemon"));
   assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));
-});
-
-test("tmux list targets hidden Rin sessions", () => {
-  assert.deepEqual(launch.buildTmuxListArgs(["-L", "rin-demo"]), [
-    "tmux",
-    "-L",
-    "rin-demo",
-    "list-sessions",
-    "-F",
-    "#S",
-  ]);
 });

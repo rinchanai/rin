@@ -138,16 +138,6 @@ export function targetUserRuntimeEnv(
   };
 }
 
-export function isTmuxNoServerError(exitCode: number, stderr: string) {
-  if (exitCode === 0) return false;
-  const text = String(stderr || "").trim();
-  if (!text) return false;
-  return [
-    /^error connecting to .+ \((No such file or directory|Connection refused)\)$/m,
-    /^no server running on /m,
-  ].some((pattern) => pattern.test(text));
-}
-
 export function buildUserShell(
   targetUser: string,
   argv: string[],
