@@ -25,7 +25,7 @@ test("chat policy still blocks higher-impact chat commands for trusted users", (
   assert.equal(support.canRunCommand("TRUSTED", "reload"), false);
 });
 
-test("chat policy keeps removed and non-help commands restricted while owners retain other command access", () => {
+test("chat policy keeps unsupported and non-help commands restricted while owners retain other command access", () => {
   assert.equal(support.canRunCommand("OTHER", "help"), false);
   assert.equal(support.canRunCommand("OTHER", "abort"), false);
   assert.equal(support.canRunCommand("OWNER", "abort"), true);
