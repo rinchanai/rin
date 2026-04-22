@@ -274,6 +274,14 @@ export function buildInstallPlanText(
   });
 }
 
+export function buildPlainInstallerSection(title: string, body: string) {
+  const header = String(title || "").trim();
+  const lines = String(body || "").split("\n");
+  return [header, ...lines.map((line) => (line ? `  ${line}` : ""))]
+    .filter((line, index) => index === 0 || line !== "")
+    .join("\n");
+}
+
 export function buildPostInstallInitExitText(
   options: {
     currentUser: string;

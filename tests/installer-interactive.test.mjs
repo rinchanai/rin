@@ -51,6 +51,10 @@ test("installer interactive helpers describe dir state and plan text", () => {
   assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
   assert.ok(plan.includes("Chat bridge: telegram"));
 
+  const plainSection = interactive.buildPlainInstallerSection("安装选项", plan);
+  assert.ok(plainSection.startsWith("安装选项\n  Target daemon user: bob"));
+  assert.ok(!plainSection.includes("╭"));
+
   const safety = interactive.buildInstallSafetyBoundaryText();
   assert.ok(safety.includes("YOLO mode"));
   assert.ok(safety.includes("memory extraction"));
