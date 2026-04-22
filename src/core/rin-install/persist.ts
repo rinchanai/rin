@@ -1,9 +1,6 @@
 import fs from "node:fs";
 
-import {
-  dropLegacyChatSettings,
-  normalizeStoredChatSettings,
-} from "../chat/settings.js";
+import { normalizeStoredChatSettings } from "../chat/settings.js";
 import { normalizeLanguageTag } from "../language.js";
 import { isNonArrayObject, loadFirstValidCandidate } from "./candidate-loader.js";
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
@@ -77,6 +74,44 @@ function normalizeInstallerRecord(value: unknown) {
 
 function normalizeChatConfigRoot(chatConfig: unknown) {
   return isNonArrayObject(chatConfig) ? chatConfig : null;
+}
+
+function normalizeConfiguredLanguage(language: unknown) {
+  const normalizedLanguage = String(language || "").trim();
+  return normalizedLanguage
+    ? normalizeLanguageTag(normalizedLanguage, "en")
+    : "";
+}
+
+function applyInstalledDefaults(
+  target: any,
+  options: {
+    provider?: string;
+    modelId?: string;
+    thinkingLevel?: string;
+    language?: string;
+  },
+) {
+  if (options.provider) target.defaultProvider = options.provider;
+  if (options.modelId) target.defaultModel = options.modelId;
+  if (options.thinkingLevel) {
+    target.defaultThinkingLevel = options.thinkingLevel;
+  }
+  const language = normalizeConfiguredLanguage(options.language);
+  if (language) target.language = language;
+  return language;
+}
+
+function installerWriteOptions(
+  ownerUser: string,
+  ownerGroup: string | number | undefined,
+  elevated: boolean | undefined,
+) {
+  return {
+    elevated,
+    ownerUser,
+    ownerGroup,
+  };
 }
 
 function mergeInstalledChatSettings(settingsJson: any, chatConfig?: any) {
@@ -169,6 +204,11 @@ export function reconcileInstallerManifest(
     legacyManifestPath,
     legacyLocatorManifestPath,
   } = manifestPaths;
+  const writeOptions = installerWriteOptions(
+    ownerUser,
+    ownerGroup,
+    options.elevated,
+  );
   const manifestJson: any = normalizeInstalledManifest(
     loadFirstValidCandidate(
       manifestPaths.recoveryPaths,
@@ -180,12 +220,7 @@ export function reconcileInstallerManifest(
   );
   manifestJson.targetUser = options.targetUser;
   manifestJson.installDir = options.installDir;
-  if (options.provider) manifestJson.defaultProvider = options.provider;
-  if (options.modelId) manifestJson.defaultModel = options.modelId;
-  if (options.thinkingLevel)
-    manifestJson.defaultThinkingLevel = options.thinkingLevel;
-  const language = String(options.language || "").trim();
-  if (language) manifestJson.language = normalizeLanguageTag(language, "en");
+  applyInstalledDefaults(manifestJson, options);
   const normalizedRelease = normalizeInstalledReleaseInfo(options.release);
   if (normalizedRelease) {
     manifestJson.release = {
@@ -198,20 +233,10 @@ export function reconcileInstallerManifest(
       installedAt: normalizedRelease.installedAt || new Date().toISOString(),
     };
   }
-  dropLegacyChatSettings(manifestJson);
   manifestJson.updatedAt = new Date().toISOString();
 
   for (const filePath of manifestPaths.writePaths) {
-    writeInstallerJson(
-      filePath,
-      manifestJson,
-      {
-        elevated: options.elevated,
-        ownerUser,
-        ownerGroup,
-      },
-      deps,
-    );
+    writeInstallerJson(filePath, manifestJson, writeOptions, deps);
   }
   for (const filePath of manifestPaths.cleanupPaths) {
     removeFile(filePath, Boolean(options.elevated), deps.runPrivileged);
@@ -258,11 +283,7 @@ export function normalizeInstalledChatSettings(
   writeInstallerJson(
     settingsPath,
     settingsJson,
-    {
-      elevated: options.elevated,
-      ownerUser,
-      ownerGroup,
-    },
+    installerWriteOptions(ownerUser, ownerGroup, options.elevated),
     deps,
   );
   return { settingsPath };
@@ -308,6 +329,11 @@ export async function persistInstallerOutputs(
     options.targetUser,
     deps.findSystemUser,
   );
+  const writeOptions = installerWriteOptions(
+    ownerUser,
+    ownerGroup,
+    options.elevated,
+  );
   if (!options.elevated) deps.ensureDir(options.installDir);
 
   const settingsPath = installSettingsPath(options.installDir);
@@ -315,12 +341,7 @@ export async function persistInstallerOutputs(
     deps.readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated)),
     options.chatConfig,
   );
-  if (options.provider) settingsJson.defaultProvider = options.provider;
-  if (options.modelId) settingsJson.defaultModel = options.modelId;
-  if (options.thinkingLevel)
-    settingsJson.defaultThinkingLevel = options.thinkingLevel;
-  const language = String(options.language || "").trim();
-  if (language) settingsJson.language = normalizeLanguageTag(language, "en");
+  const language = applyInstalledDefaults(settingsJson, options);
 
   const authPath = installAuthPath(options.installDir);
   const authJson = normalizeInstallerRecord(
@@ -355,26 +376,8 @@ export async function persistInstallerOutputs(
     deps,
   );
 
-  writeInstallerJson(
-    settingsPath,
-    settingsJson,
-    {
-      elevated: options.elevated,
-      ownerUser,
-      ownerGroup,
-    },
-    deps,
-  );
-  writeInstallerJson(
-    authPath,
-    nextAuthJson,
-    {
-      elevated: options.elevated,
-      ownerUser,
-      ownerGroup,
-    },
-    deps,
-  );
+  writeInstallerJson(settingsPath, settingsJson, writeOptions, deps);
+  writeInstallerJson(authPath, nextAuthJson, writeOptions, deps);
   deps.writeJsonFile(launcherPath, launcherJson);
   const launchers = deps.writeLaunchersForUser(
     options.currentUser,

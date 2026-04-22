@@ -441,6 +441,9 @@ test("persistInstallerOutputs stores configured language in settings", async () 
     assert.equal(launchWrites.length, 1);
     const settingsWrite = writes.find((entry) => entry.filePath === result.settingsPath);
     assert.ok(settingsWrite);
+    assert.equal(settingsWrite.value.defaultProvider, "openai");
+    assert.equal(settingsWrite.value.defaultModel, "gpt");
+    assert.equal(settingsWrite.value.defaultThinkingLevel, "medium");
     assert.equal(settingsWrite.value.language, "zh-CN");
   });
 });
