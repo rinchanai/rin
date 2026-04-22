@@ -7,6 +7,7 @@ import path from "node:path";
 const HOME_DIR = os.homedir();
 
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
+import { getManagedTaskSessionFile } from "../session/managed-paths.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
 import { cronTaskRunId, nowIso, summarizeText } from "./cron-utils.js";
 import type { CronTaskRecord } from "./cron.js";
@@ -140,7 +141,8 @@ export async function executeCronAgentTask(
   }
   const dedicatedSessionFile =
     task.session.mode === "dedicated"
-      ? String(task.dedicatedSessionFile || "").trim() || undefined
+      ? String(task.dedicatedSessionFile || "").trim() ||
+        getManagedTaskSessionFile(options.agentDir, task.id)
       : undefined;
   const controllerKey = task.id;
   const sessionFile =
@@ -161,6 +163,7 @@ export async function executeCronAgentTask(
   if (!finalText) throw new Error("cron_final_assistant_text_missing");
   const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
   if (task.session.mode === "dedicated") {
+    task.dedicatedSessionFile = dedicatedSessionFile;
     if (nextSessionFile) {
       task.dedicatedSessionFile = nextSessionFile;
       task.dedicatedSessionPersistent = true;

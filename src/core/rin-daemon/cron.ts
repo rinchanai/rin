@@ -7,6 +7,7 @@ import { cloneJson } from "../json-utils.js";
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
 import { shellQuote } from "../rin-lib/system.js";
+import { getManagedTaskSessionFile } from "../session/managed-paths.js";
 import { executeCronTask } from "./cron-execution.js";
 import {
   computeNextRunAt,
@@ -262,15 +263,6 @@ export class CronScheduler {
             )
           : undefined,
     };
-    const dedicatedSessionPersistent =
-      session.mode === "dedicated" ? true : undefined;
-    const dedicatedSessionFile =
-      session.mode === "dedicated"
-        ? explicitSessionFile
-          ? path.resolve(HOME_DIR, explicitSessionFile)
-          : existing?.dedicatedSessionFile
-        : undefined;
-
     const target = input.target ?? existing?.target;
     if (!target) throw new Error("cron_target_required");
     const normalizedTarget: CronTaskTarget =
@@ -291,6 +283,17 @@ export class CronScheduler {
                 throw new Error("cron_command_required");
               })(),
           };
+    const dedicatedSessionPersistent =
+      session.mode === "dedicated" ? true : undefined;
+    const dedicatedSessionFile =
+      session.mode === "dedicated"
+        ? explicitSessionFile
+          ? path.resolve(HOME_DIR, explicitSessionFile)
+          : existing?.dedicatedSessionFile ||
+            (normalizedTarget.kind === "agent_prompt"
+              ? getManagedTaskSessionFile(this.options.agentDir, id)
+              : undefined)
+        : undefined;
 
     const termination =
       input.termination === null
@@ -437,6 +440,15 @@ export class CronScheduler {
       row.lastError = row.lastError ? safeString(row.lastError) : undefined;
       if ((row.session as any)?.mode === "dedicated") {
         row.dedicatedSessionPersistent = true;
+        if (
+          row.target?.kind === "agent_prompt" &&
+          !safeString(row.dedicatedSessionFile).trim()
+        ) {
+          row.dedicatedSessionFile = getManagedTaskSessionFile(
+            this.options.agentDir,
+            row.id,
+          );
+        }
       } else {
         delete row.dedicatedSessionFile;
         delete row.dedicatedSessionPersistent;

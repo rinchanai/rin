@@ -13,10 +13,13 @@ import type {
 import { BUILTIN_MODULE_ORDER } from "../builtins/registry.js";
 import { listBoundSessions } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
+import {
+  getManagedSessionSearchDirs,
+  getManagedSubagentSessionDir,
+} from "../session/managed-paths.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import {
   createConfiguredAgentSession,
-  getRuntimeSessionDir,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import { readUsageMetrics } from "../usage-metrics.js";
@@ -187,10 +190,19 @@ async function resolveSessionReference(ref: string): Promise<{ path: string }> {
   });
 
   const { SessionManager } = await loadSessionManagerModule();
-  const sessions = await listBoundSessions({
-    cwd: HOME_DIR,
-    SessionManager,
-  });
+  const profile = resolveRuntimeProfile({ cwd: HOME_DIR });
+  const sessions = (
+    await Promise.all(
+      getManagedSessionSearchDirs(profile.agentDir).map((sessionDir) =>
+        listBoundSessions({
+          cwd: HOME_DIR,
+          agentDir: profile.agentDir,
+          sessionDir,
+          SessionManager,
+        }),
+      ),
+    )
+  ).flat();
   const match = selectSessionReferencePath({
     ref: wanted,
     sessions,
@@ -215,7 +227,7 @@ async function createManagedSession(task: NormalizedSubagentTask) {
   const cwd = HOME_DIR;
   const sessionConfig = task.session;
   const profile = resolveRuntimeProfile({ cwd });
-  const sessionDir = getRuntimeSessionDir(cwd, profile.agentDir);
+  const sessionDir = getManagedSubagentSessionDir(profile.agentDir);
   const { SessionManager } = await loadSessionManagerModule();
 
   let sessionManager: any;
