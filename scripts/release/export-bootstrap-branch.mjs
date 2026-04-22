@@ -24,10 +24,22 @@ function parseArgs(argv) {
   return args;
 }
 
-function copyFile(repoRoot, relativePath, outputDir) {
+function rewriteBootstrapBranch(content, branch) {
+  return content.replace(
+    /^DEFAULT_BOOTSTRAP_BRANCH=.*$/m,
+    `DEFAULT_BOOTSTRAP_BRANCH=${branch}`,
+  );
+}
+
+function copyFile(repoRoot, relativePath, outputDir, args) {
   const source = path.join(repoRoot, relativePath);
   const target = path.join(outputDir, relativePath);
   fs.mkdirSync(path.dirname(target), { recursive: true });
+  if (relativePath === "install.sh") {
+    const content = fs.readFileSync(source, "utf8");
+    fs.writeFileSync(target, rewriteBootstrapBranch(content, args.branch), "utf8");
+    return;
+  }
   fs.copyFileSync(source, target);
 }
 
@@ -48,7 +60,7 @@ for (const relativePath of [
   "release-manifest.json",
   path.join("docs", "rin", "CHANGELOG.md"),
 ]) {
-  copyFile(repoRoot, relativePath, outputDir);
+  copyFile(repoRoot, relativePath, outputDir, args);
 }
 
 fs.writeFileSync(
