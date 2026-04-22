@@ -240,11 +240,12 @@ test("rpc session resync rebinds runtime state and rerenders history", async () 
   assert.ok(renders >= 1);
 });
 
-test("rpc compaction end restores transport loader instead of leaving status empty", async () => {
+test("rpc compaction end reattaches the existing transport loader", async () => {
   await overrides.applyRinTuiOverrides();
 
   let renders = 0;
   const ui = { requestRender() { renders += 1; } };
+  const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
   const instance = {
     isInitialized: true,
     ui,
@@ -258,8 +259,9 @@ test("rpc compaction end restores transport loader instead of leaving status emp
         };
       },
     },
+    loadingAnimation: existingLoader,
     statusContainer: {
-      child: null,
+      child: existingLoader,
       clear() {
         this.child = null;
       },
@@ -285,8 +287,58 @@ test("rpc compaction end restores transport loader instead of leaving status emp
     { type: "compaction_end", aborted: false, willRetry: false },
   );
 
+  assert.equal(instance.loadingAnimation, existingLoader);
+  assert.equal(instance.statusContainer.child, existingLoader);
   assert.equal(instance.loadingAnimation?.message, "Working...");
-  instance.loadingAnimation?.stop?.();
+  existingLoader.stop();
+  assert.ok(renders >= 1);
+});
+
+test("local compaction end restores the working loader while the turn is still streaming", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let renders = 0;
+  const ui = { requestRender() { renders += 1; } };
+  const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
+  const instance = {
+    isInitialized: true,
+    ui,
+    session: {
+      isStreaming: true,
+    },
+    loadingAnimation: existingLoader,
+    defaultWorkingMessage: "Working...",
+    statusContainer: {
+      child: existingLoader,
+      clear() {
+        this.child = null;
+      },
+      addChild(child) {
+        this.child = child;
+      },
+    },
+    chatContainer: {
+      clear() {},
+      addChild() {},
+      removeChild() {},
+    },
+    defaultEditor: { onEscape() {} },
+    footer: { invalidate() {} },
+    flushCompactionQueue() {},
+    showError() {},
+    showStatus() {},
+    autoCompactionLoader: { stop() {} },
+  };
+
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+    instance,
+    { type: "compaction_end", aborted: false, willRetry: false },
+  );
+
+  assert.equal(instance.loadingAnimation, existingLoader);
+  assert.equal(instance.statusContainer.child, existingLoader);
+  assert.equal(instance.loadingAnimation?.message, "Working...");
+  existingLoader.stop();
   assert.ok(renders >= 1);
 });
 
