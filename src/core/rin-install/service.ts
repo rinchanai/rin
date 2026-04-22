@@ -179,6 +179,30 @@ function writeManagedServiceFile(
   writeTextFile(filePath, value, mode);
 }
 
+export function systemctlUserCommandArgs(args: string[]) {
+  return ["--user", ...args];
+}
+
+export function systemctlMachineUserCommandArgs(
+  targetUser: string,
+  args: string[],
+) {
+  return ["--machine", `${targetUser}@.host`, "--user", ...args];
+}
+
+export function shouldRetrySystemdUserCommandViaMachine(error: any) {
+  const text = [error?.stderr, error?.stdout, error?.message]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join("\n");
+  if (!text) return false;
+  return [
+    /Failed to connect to user scope bus via local transport:/i,
+    /Failed to connect to bus:/i,
+    /consider using --machine=<user>@\.host --user/i,
+  ].some((pattern) => pattern.test(text));
+}
+
 function runSystemdUserCommand(
   targetUser: string,
   context: {
@@ -188,20 +212,41 @@ function runSystemdUserCommand(
   args: string[],
   elevated = false,
 ) {
-  const commandArgs = ["--user", ...args];
+  const commandArgs = systemctlUserCommandArgs(args);
   if (elevated) {
-    runCommandAsUser(
-      targetUser,
-      context.systemctl,
-      commandArgs,
-      context.userEnv,
-    );
-    return;
+    try {
+      runCommandAsUser(
+        targetUser,
+        context.systemctl,
+        commandArgs,
+        context.userEnv,
+      );
+      return;
+    } catch (error) {
+      if (!shouldRetrySystemdUserCommandViaMachine(error)) throw error;
+      runPrivileged(
+        context.systemctl,
+        systemctlMachineUserCommandArgs(targetUser, args),
+      );
+      return;
+    }
   }
-  execFileSync(context.systemctl, commandArgs, {
-    stdio: "inherit",
-    env: { ...process.env, ...context.userEnv },
-  });
+  try {
+    execFileSync(context.systemctl, commandArgs, {
+      stdio: "inherit",
+      env: { ...process.env, ...context.userEnv },
+    });
+  } catch (error) {
+    if (!shouldRetrySystemdUserCommandViaMachine(error)) throw error;
+    execFileSync(
+      context.systemctl,
+      systemctlMachineUserCommandArgs(targetUser, args),
+      {
+        stdio: "inherit",
+        env: { ...process.env },
+      },
+    );
+  }
 }
 
 export function resolveDaemonEntryForInstall(installDir: string) {

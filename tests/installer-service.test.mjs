@@ -195,6 +195,47 @@ test("systemdUserContext keeps managed unit candidates ordered", () => {
   assert.deepEqual(context.userEnv, {});
 });
 
+test("systemd user command helpers fall back to machine-host routing for bus transport failures", () => {
+  assert.deepEqual(service.systemctlUserCommandArgs(["daemon-reload"]), [
+    "--user",
+    "daemon-reload",
+  ]);
+  assert.deepEqual(
+    service.systemctlMachineUserCommandArgs("demo.user+test", [
+      "enable",
+      "--now",
+      "rin-daemon-demo.user-test.service",
+    ]),
+    [
+      "--machine",
+      "demo.user+test@.host",
+      "--user",
+      "enable",
+      "--now",
+      "rin-daemon-demo.user-test.service",
+    ],
+  );
+  assert.equal(
+    service.shouldRetrySystemdUserCommandViaMachine({
+      stderr:
+        "Failed to connect to user scope bus via local transport: Operation not permitted (consider using --machine=<user>@.host --user to connect to bus of other user)",
+    }),
+    true,
+  );
+  assert.equal(
+    service.shouldRetrySystemdUserCommandViaMachine({
+      message: "Failed to connect to bus: No medium found",
+    }),
+    true,
+  );
+  assert.equal(
+    service.shouldRetrySystemdUserCommandViaMachine({
+      stderr: "Job for demo.service failed because the control process exited with error code.",
+    }),
+    false,
+  );
+});
+
 test("managed systemd helpers prefer richer successful snapshots while keeping action probe order", () => {
   const units = [
     "missing.service",
