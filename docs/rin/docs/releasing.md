@@ -41,7 +41,7 @@ It:
 3. validates the focused release test set
 4. updates `release-manifest.json -> nightly`
 5. commits the manifest update back to `main`
-6. refreshes `stable-bootstrap`
+6. refreshes `bootstrap`
 
 ### Beta
 
@@ -54,7 +54,7 @@ It:
 4. validates the focused release test set
 5. updates `release-manifest.json -> beta`
 6. commits the manifest update back to `main`
-7. refreshes `stable-bootstrap`
+7. refreshes `bootstrap`
 
 ### Stable
 
@@ -71,7 +71,7 @@ It:
 8. updates `release-manifest.json -> stable` with the promoted ref and beta provenance
 9. tags the promoted candidate ref as `v<version>`
 10. commits the manifest update back to `main`
-11. refreshes `stable-bootstrap`
+11. refreshes `bootstrap`
 
 ### Hotfix
 
@@ -86,13 +86,13 @@ It:
 4. publishes that patch to npm as `latest` through npm trusted publishing
 5. updates `release-manifest.json -> stable`
 6. tags the hotfix ref as `v<version>`
-7. refreshes `stable-bootstrap`
+7. refreshes `bootstrap`
 
 After a hotfix, merge or cherry-pick the fix back to `main` and into any still-relevant train work before the next regular cycle.
 
-## Stable bootstrap branch
+## Bootstrap branch
 
-`stable-bootstrap` is generated output, not a development branch.
+`bootstrap` is generated output, not a development branch.
 
 It should contain only:
 
@@ -106,7 +106,7 @@ It should contain only:
 To regenerate locally:
 
 ```bash
-npm run release:bootstrap -- --output /path/to/stable-bootstrap-worktree
+npm run release:bootstrap -- --output /path/to/bootstrap-worktree
 ```
 
 ## Local manifest maintenance

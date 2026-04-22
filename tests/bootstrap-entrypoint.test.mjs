@@ -47,14 +47,14 @@ async function createReleaseManifest(tempDir) {
     JSON.stringify({
       schemaVersion: 2,
       repoUrl: "https://example.invalid/rin",
-      bootstrapBranch: "stable-bootstrap",
+      bootstrapBranch: "bootstrap",
       train: {
         series: "1.2",
         nightlyBranch: "main",
       },
       stable: {
         version: "1.2.3",
-        archiveUrl: "https://example.invalid/releases/stable-1.2.3.tar.gz",
+        archiveUrl: "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-1.2.3.tgz",
         ref: "abc1234",
       },
       beta: {
@@ -110,11 +110,13 @@ esac
   await writeExecutable(
     path.join(fakeBin, "npm"),
     `#!/bin/sh
-echo "npm:$PWD:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
+echo "npm:$PWD:RIN_INSTALL_MODE=\${RIN_INSTALL_MODE-}:RIN_RELEASE_CHANNEL=\${RIN_RELEASE_CHANNEL-}:RIN_RELEASE_BRANCH=\${RIN_RELEASE_BRANCH-}:RIN_RELEASE_VERSION=\${RIN_RELEASE_VERSION-}:$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
 if [ "$1" = "run" ] && [ "$2" = "build" ]; then
   mkdir -p dist/app/rin-install
   printf 'export {};\n' > dist/app/rin-install/main.js
+  exit 0
 fi
+exit 0
 `,
   );
   await writeExecutable(
@@ -164,7 +166,7 @@ if (args[0] === "-") {
     ],
     stable: [
       "CHANNEL='stable'",
-      "ARCHIVE_URL='https://example.invalid/releases/stable-1.2.3.tar.gz'",
+      "ARCHIVE_URL='https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-1.2.3.tgz'",
       "VERSION='1.2.3'",
       "BRANCH='stable'",
       "REF='abc1234'",
@@ -186,7 +188,7 @@ async function runBootstrapWrapper(scriptName, args, env) {
   });
 }
 
-test("install and update wrappers resolve release metadata before fetching source and leave no temp work dirs", async () => {
+test("stable install and update wrappers resolve release metadata before launching npm installer and leave no temp work dirs", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
     const manifestPath = await createReleaseManifest(tempDir);
@@ -213,28 +215,28 @@ test("install and update wrappers resolve release metadata before fetching sourc
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/release-manifest\.json -o /,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/bootstrap\/release-manifest\.json -o /,
+    );
+    assert.equal(
+      /curl:-fsSL https:\/\/registry\.npmjs\.org\//.test(log),
+      false,
+    );
+    assert.equal(/npm:.*:ci --no-fund --no-audit/.test(log), false);
+    assert.equal(/npm:.*:run build/.test(log), false);
+    assert.match(
+      log,
+      /npm:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:exec --yes --package @rinchanai\/rin@1\.2\.3 -- rin-install/,
     );
     assert.match(
       log,
-      /curl:-fsSL https:\/\/example\.invalid\/releases\/stable-1\.2\.3\.tar\.gz -o /,
-    );
-    assert.match(log, /npm:.*:ci --no-fund --no-audit/);
-    assert.match(log, /npm:.*:run build/);
-    assert.match(
-      log,
-      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:stdin_tty=0:stdout_tty=0:dist\/app\/rin-install\/main\.js/,
-    );
-    assert.match(
-      log,
-      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:stdin_tty=0:stdout_tty=0:dist\/app\/rin-install\/main\.js/,
+      /npm:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:exec --yes --package @rinchanai\/rin@1\.2\.3 -- rin-install/,
     );
 
     assert.deepEqual(await fs.readdir(workRoot), []);
   });
 });
 
-test("wrapper-only main install script fetches the shared entrypoint from main", async () => {
+test("wrapper-only main install script fetches the shared entrypoint from bootstrap", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
     const manifestPath = await createReleaseManifest(tempDir);
@@ -266,23 +268,23 @@ test("wrapper-only main install script fetches the shared entrypoint from main",
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /curl:-fsSL https:\/\/example\.invalid\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/bootstrap\/scripts\/bootstrap-entrypoint\.sh -o /,
     );
     assert.equal(
-      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/scripts\/bootstrap-entrypoint\.sh -o /.test(log),
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /.test(log),
       false,
     );
   });
 });
 
-test("wrapper-only bootstrap fallbacks fetch the entrypoint from stable-bootstrap first", async () => {
+test("wrapper-only bootstrap exports fetch the entrypoint from bootstrap first", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
     const manifestPath = await createReleaseManifest(tempDir);
     const fakeBin = path.join(tempDir, "bin");
     const logPath = path.join(tempDir, "invocations.log");
     const workRoot = path.join(tempDir, "work");
-    const bootstrapDir = path.join(tempDir, "stable-bootstrap");
+    const bootstrapDir = path.join(tempDir, "bootstrap");
     await createFakeBin(fakeBin, logPath);
     await fs.mkdir(workRoot, { recursive: true });
 
@@ -327,7 +329,7 @@ test("wrapper-only bootstrap fallbacks fetch the entrypoint from stable-bootstra
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/scripts\/bootstrap-entrypoint\.sh -o /,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/bootstrap\/scripts\/bootstrap-entrypoint\.sh -o /,
     );
     assert.equal(
       /curl:-fsSL https:\/\/example\.invalid\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /.test(log),
@@ -335,15 +337,15 @@ test("wrapper-only bootstrap fallbacks fetch the entrypoint from stable-bootstra
     );
     assert.match(
       log,
-      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/release-manifest\.json -o /,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/bootstrap\/release-manifest\.json -o /,
     );
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:stdin_tty=0:stdout_tty=0:dist\/app\/rin-install\/main\.js/,
+      /npm:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:exec --yes --package @rinchanai\/rin@1\.2\.3 -- rin-install/,
     );
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:stdin_tty=0:stdout_tty=0:dist\/app\/rin-install\/main\.js/,
+      /npm:.*:RIN_INSTALL_MODE=update:RIN_RELEASE_CHANNEL=stable:RIN_RELEASE_BRANCH=stable:RIN_RELEASE_VERSION=1\.2\.3:exec --yes --package @rinchanai\/rin@1\.2\.3 -- rin-install/,
     );
     assert.deepEqual(await fs.readdir(workRoot), []);
   });

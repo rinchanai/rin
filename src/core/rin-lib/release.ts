@@ -65,7 +65,7 @@ export type InstalledReleaseInfo = ResolvedRelease & {
 
 const DEFAULT_PACKAGE_NAME = "@rinchanai/rin";
 const DEFAULT_REPO_URL = "https://github.com/rinchanai/rin";
-const DEFAULT_BOOTSTRAP_BRANCH = "stable-bootstrap";
+const DEFAULT_BOOTSTRAP_BRANCH = "bootstrap";
 const DEFAULT_TRAIN_SERIES = "0.0";
 const DEFAULT_STABLE_VERSION = "0.0.0";
 const DEFAULT_BETA_PROMOTION_VERSION = "0.0.1";
@@ -124,7 +124,7 @@ function defaultReleaseManifest(): ReleaseManifest {
     },
     stable: {
       version: DEFAULT_STABLE_VERSION,
-      archiveUrl: buildGitHubBranchArchiveUrl(DEFAULT_REPO_URL, "main"),
+      archiveUrl: buildNpmTarballUrl(DEFAULT_PACKAGE_NAME, DEFAULT_STABLE_VERSION),
       ref: "main",
     },
     beta: {

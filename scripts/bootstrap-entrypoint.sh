@@ -35,7 +35,7 @@ esac
 shift || true
 
 REPO_URL=${RIN_INSTALL_REPO_URL:-https://github.com/rinchanai/rin}
-BOOTSTRAP_BRANCH=${RIN_BOOTSTRAP_BRANCH:-stable-bootstrap}
+BOOTSTRAP_BRANCH=${RIN_BOOTSTRAP_BRANCH:-bootstrap}
 CACHE_BASE=${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}
 TMPDIR_BASE=${RIN_INSTALL_TMPDIR:-$CACHE_BASE/rin-install}
 mkdir -p "$TMPDIR_BASE"
@@ -301,14 +301,14 @@ const defaultManifest = {
   schemaVersion: 2,
   packageName,
   repoUrl,
-  bootstrapBranch: trimValue(process.env.RIN_BOOTSTRAP_BRANCH || 'stable-bootstrap') || 'stable-bootstrap',
+  bootstrapBranch: trimValue(process.env.RIN_BOOTSTRAP_BRANCH || 'bootstrap') || 'bootstrap',
   train: {
     series: '0.0',
     nightlyBranch: 'main',
   },
   stable: {
     version: '0.0.0',
-    archiveUrl: `${repoUrl}/archive/refs/heads/main.tar.gz`,
+    archiveUrl: buildNpmTarballUrl(packageName, '0.0.0'),
     ref: 'main',
   },
   beta: {
@@ -391,6 +391,7 @@ if (channel === 'stable') {
   };
 }
 for (const [key, value] of Object.entries({
+  PACKAGE_NAME: releasePackageName,
   CHANNEL: resolved.channel,
   ARCHIVE_URL: resolved.archiveUrl,
   VERSION: resolved.version,
@@ -427,11 +428,53 @@ launch_installer_entry() {
     node "$INSTALLER_ENTRY"
 }
 
+launch_published_installer() {
+  package_spec=${PACKAGE_NAME}@${VERSION}
+  if [ "$MODE" = update ]; then
+    env \
+      RIN_INSTALL_MODE=update \
+      RIN_RELEASE_CHANNEL="$CHANNEL" \
+      RIN_RELEASE_VERSION="$VERSION" \
+      RIN_RELEASE_BRANCH="$BRANCH" \
+      RIN_RELEASE_REF="$REF" \
+      RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
+      RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
+      npm exec --yes --package "$package_spec" -- rin-install
+    return $?
+  fi
+
+  env \
+    RIN_RELEASE_CHANNEL="$CHANNEL" \
+    RIN_RELEASE_VERSION="$VERSION" \
+    RIN_RELEASE_BRANCH="$BRANCH" \
+    RIN_RELEASE_REF="$REF" \
+    RIN_RELEASE_SOURCE_LABEL="$SOURCE_LABEL" \
+    RIN_RELEASE_ARCHIVE_URL="$ARCHIVE_URL" \
+    npm exec --yes --package "$package_spec" -- rin-install
+}
+
 INSTALLER_ENTRY='dist/app/rin-install/main.js'
+PACKAGE_NAME=${RIN_NPM_PACKAGE:-@rinchanai/rin}
 parse_args "$@"
 : >"$LOGFILE"
 run_step "$MANIFEST_LABEL" fetch_manifest
-eval "$(RIN_RELEASE_CHANNEL=$CHANNEL RIN_RELEASE_BRANCH=$BRANCH RIN_RELEASE_VERSION=$VERSION RIN_INSTALL_REPO_URL=$REPO_URL resolve_release)"
+eval "$(RIN_RELEASE_CHANNEL=$CHANNEL RIN_RELEASE_BRANCH=$BRANCH RIN_RELEASE_VERSION=$VERSION RIN_INSTALL_REPO_URL=$REPO_URL RIN_NPM_PACKAGE=$PACKAGE_NAME resolve_release)"
+PACKAGE_NAME=${PACKAGE_NAME:-${RIN_NPM_PACKAGE:-@rinchanai/rin}}
+
+if [ "$CHANNEL" = stable ]; then
+  say "[$PREFIX] $LAUNCH_LABEL"
+  if command -v npm >/dev/null 2>&1; then
+    if has_tty; then
+      launch_published_installer </dev/tty >/dev/tty 2>&1
+      exit $?
+    fi
+    launch_published_installer
+    exit $?
+  fi
+  echo "$NPM_ERROR" >&2
+  exit 1
+fi
+
 run_step "$FETCH_LABEL" fetch "$ARCHIVE_URL" "$ARCHIVE"
 mkdir -p "$SRC_DIR"
 run_step "$PREP_LABEL" tar -xzf "$ARCHIVE" -C "$SRC_DIR" --strip-components=1

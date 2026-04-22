@@ -101,7 +101,7 @@ if ((channel === "beta" || channel === "nightly") && !ref) {
 manifest.schemaVersion = 2;
 manifest.packageName = packageName;
 manifest.repoUrl = repoUrl;
-manifest.bootstrapBranch = trim(manifest.bootstrapBranch) || "stable-bootstrap";
+manifest.bootstrapBranch = trim(manifest.bootstrapBranch) || "bootstrap";
 manifest.train ||= {};
 manifest.train.series = series || trim(manifest.train.series) || "0.0";
 manifest.train.nightlyBranch = branch || trim(manifest.train.nightlyBranch) || "main";

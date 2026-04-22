@@ -2,14 +2,14 @@
   "schemaVersion": 2,
   "packageName": "@rinchanai/rin",
   "repoUrl": "https://github.com/rinchanai/rin",
-  "bootstrapBranch": "stable-bootstrap",
+  "bootstrapBranch": "bootstrap",
   "train": {
     "series": "0.0",
     "nightlyBranch": "main"
   },
   "stable": {
     "version": "0.0.0",
-    "archiveUrl": "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+    "archiveUrl": "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-0.0.0.tgz",
     "ref": "main"
   },
   "beta": {

@@ -15,7 +15,7 @@ Use this checklist before the first real stable npm promotion.
 ## Repository readiness
 
 - confirm `main` remains the development source of truth
-- confirm `stable-bootstrap` either already exists or may be created by the workflows
+- confirm `bootstrap` either already exists or may be created by the workflows
 - confirm GitHub Actions is enabled for the repository
 - confirm the repository token permissions allow pushing workflow-generated commits and tags
 - confirm `release-manifest.json -> train.series` is set to the intended initial stable `major.minor` line
@@ -79,7 +79,7 @@ The stable workflow should:
 4. rewrite stable manifest metadata to the npm tarball and promoted ref
 5. tag the promoted candidate ref as `v<version>`
 6. commit the manifest update back to `main`
-7. regenerate and push `stable-bootstrap`
+7. regenerate and push `bootstrap`
 
 ## Post-publish verification
 
@@ -97,7 +97,7 @@ Verify all of the following after the workflow succeeds:
 - `npm view @rinchanai/rin version` returns the published stable version
 - `npm view @rinchanai/rin dist-tags.latest` matches the stable version
 - `release-manifest.json` on `main` now points stable to the npm tarball URL and promoted ref
-- `stable-bootstrap` contains only the intended bootstrap payload
+- `bootstrap` contains only the intended bootstrap payload
 - tag `v<version>` exists on the remote and points to the promoted beta candidate ref
 - a fresh stable install path resolves correctly through `./install.sh`
 - an installed runtime `rin update` still resolves stable correctly
@@ -106,6 +106,6 @@ Verify all of the following after the workflow succeeds:
 
 - if npm publish fails, do not manually rewrite stable manifest metadata to a fake npm URL
 - if npm publish succeeds but a later step fails, treat the published package as real state and repair Git metadata to match it
-- if bootstrap export fails, fix the export path and rerun; do not hand-edit `stable-bootstrap`
+- if bootstrap export fails, fix the export path and rerun; do not hand-edit `bootstrap`
 - if the workflow-created beta candidate is bad, do not promote it; cut a new beta candidate first
 - if a hotfix is required between beta cut and stable promotion, use `publish-hotfix.yml` and let the next stable promotion pick the next available patch version

@@ -247,7 +247,7 @@ test("plan-release script computes beta nightly and stable promotion versions", 
   }
 });
 
-test("export-bootstrap-branch script exports stable bootstrap payload", () => {
+test("export-bootstrap-branch script exports bootstrap payload", () => {
   const tempDir = makeTempDir(".tmp-bootstrap-export-");
   try {
     fs.writeFileSync(path.join(tempDir, "stale.txt"), "stale", "utf8");
@@ -272,8 +272,8 @@ test("export-bootstrap-branch script exports stable bootstrap payload", () => {
     }
     const readme = fs.readFileSync(path.join(tempDir, "README.md"), "utf8");
     const installWrapper = fs.readFileSync(path.join(tempDir, "install.sh"), "utf8");
-    assert.match(readme, /stable bootstrap branch/);
-    assert.match(installWrapper, /^DEFAULT_BOOTSTRAP_BRANCH=stable-bootstrap$/m);
+    assert.match(readme, /bootstrap branch/);
+    assert.match(installWrapper, /^DEFAULT_BOOTSTRAP_BRANCH=bootstrap$/m);
     assert.equal(fs.existsSync(path.join(tempDir, "stale.txt")), false);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
