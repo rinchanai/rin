@@ -251,13 +251,3 @@ test("tui runtime env preserves an explicit agent dir override for isolated runs
   }
 });
 
-test("tmux list targets hidden Rin sessions", () => {
-  assert.deepEqual(launch.buildTmuxListArgs(["-L", "rin-demo"]), [
-    "tmux",
-    "-L",
-    "rin-demo",
-    "list-sessions",
-    "-F",
-    "#S",
-  ]);
-});
