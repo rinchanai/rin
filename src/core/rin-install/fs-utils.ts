@@ -1,10 +1,10 @@
-import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 import {
   ensureDir,
+  preferredTempRootCandidates,
   readJsonFile,
   stringifyJson,
   writeJsonFile,
@@ -107,14 +107,7 @@ export function launcherScript(candidates: string[]) {
 }
 
 export function installerTempRootCandidates() {
-  return Array.from(
-    new Set(
-      [process.env.RIN_TMP_DIR, "/home/rin/tmp", process.env.TMPDIR, os.tmpdir()]
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-        .map((value) => path.resolve(value)),
-    ),
-  );
+  return preferredTempRootCandidates();
 }
 
 function createInstallerTempDir(prefix: string) {

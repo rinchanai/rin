@@ -1,20 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 
-function getFetchTempRootCandidates() {
-  return Array.from(
-    new Set(
-      [process.env.RIN_TMP_DIR, "/home/rin/tmp", process.env.TMPDIR, tmpdir()]
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
-        .map((value) => path.resolve(value)),
-    ),
-  );
-}
+import { preferredTempRootCandidates } from "../platform/fs.js";
 
 export async function writeFetchFullOutput(text: string) {
-  for (const root of getFetchTempRootCandidates()) {
+  for (const root of preferredTempRootCandidates()) {
     try {
       await mkdir(root, { recursive: true });
       const dir = await mkdtemp(path.join(root, "rin-fetch-"));

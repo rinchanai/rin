@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 export function ensureDir(dir: string) {
@@ -47,6 +48,17 @@ export function appendJsonLineSync(filePath: string, value: unknown) {
 export async function appendJsonLine(filePath: string, value: unknown) {
   ensureParentDir(filePath);
   await fs.promises.appendFile(filePath, stringifyJsonLine(value), "utf8");
+}
+
+export function preferredTempRootCandidates() {
+  return Array.from(
+    new Set(
+      [process.env.RIN_TMP_DIR, "/home/rin/tmp", process.env.TMPDIR, os.tmpdir()]
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+        .map((value) => path.resolve(value)),
+    ),
+  );
 }
 
 export function writeJsonAtomic(
