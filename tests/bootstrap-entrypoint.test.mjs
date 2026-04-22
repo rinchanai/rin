@@ -119,52 +119,61 @@ fi
   );
   await writeExecutable(
     path.join(fakeBin, "node"),
-    `#!/bin/sh
-echo "node:$PWD:RIN_INSTALL_MODE=\${RIN_INSTALL_MODE-}:RIN_RELEASE_CHANNEL=\${RIN_RELEASE_CHANNEL-}:RIN_RELEASE_BRANCH=\${RIN_RELEASE_BRANCH-}:RIN_RELEASE_VERSION=\${RIN_RELEASE_VERSION-}:stdin_tty=$( [ -t 0 ] && printf 1 || printf 0 ):stdout_tty=$( [ -t 1 ] && printf 1 || printf 0 ):$*" >>"$RIN_BOOTSTRAP_TEST_LOG"
-if [ "$1" = "-" ]; then
-  case "$RIN_RELEASE_CHANNEL" in
-    beta)
-      cat <<'EOF'
-CHANNEL='beta'
-ARCHIVE_URL='https://example.invalid/releases/beta-1.2.4-beta.20260420.tar.gz'
-VERSION='1.2.4-beta.20260420'
-BRANCH='beta'
-REF='def5678'
-SOURCE_LABEL='beta 1.2.4-beta.20260420'
-EOF
-      ;;
-    nightly)
-      cat <<'EOF'
-CHANNEL='nightly'
-ARCHIVE_URL='https://example.invalid/releases/nightly-1.2.5-nightly.20260420.tar.gz'
-VERSION='1.2.5-nightly.20260420+deadbee'
-BRANCH='main'
-REF='deadbeef'
-SOURCE_LABEL='nightly 1.2.5-nightly.20260420+deadbee'
-EOF
-      ;;
-    git)
-      cat <<'EOF'
-CHANNEL='git'
-ARCHIVE_URL='https://example.invalid/releases/main.tar.gz'
-VERSION='main'
-BRANCH='main'
-REF='main'
-SOURCE_LABEL='git branch main'
-EOF
-      ;;
-    *)
-      cat <<'EOF'
-CHANNEL='stable'
-ARCHIVE_URL='https://example.invalid/releases/stable-1.2.3.tar.gz'
-VERSION='1.2.3'
-BRANCH='stable'
-REF='abc1234'
-SOURCE_LABEL='stable 1.2.3'
-EOF
-      ;;
-  esac
-fi
+    `#!${process.execPath}
+import fs from "node:fs";
+
+const logPath = process.env.RIN_BOOTSTRAP_TEST_LOG;
+const args = process.argv.slice(2);
+const fields = [
+  "node:" + process.cwd(),
+  "RIN_INSTALL_MODE=" + (process.env.RIN_INSTALL_MODE || ""),
+  "RIN_RELEASE_CHANNEL=" + (process.env.RIN_RELEASE_CHANNEL || ""),
+  "RIN_RELEASE_BRANCH=" + (process.env.RIN_RELEASE_BRANCH || ""),
+  "RIN_RELEASE_VERSION=" + (process.env.RIN_RELEASE_VERSION || ""),
+  "stdin_tty=" + (process.stdin.isTTY ? 1 : 0),
+  "stdout_tty=" + (process.stdout.isTTY ? 1 : 0),
+  args.join(" "),
+];
+fs.appendFileSync(logPath, fields.join(":") + "\\n", "utf8");
+
+if (args[0] === "-") {
+  const fixtures = {
+    beta: [
+      "CHANNEL='beta'",
+      "ARCHIVE_URL='https://example.invalid/releases/beta-1.2.4-beta.20260420.tar.gz'",
+      "VERSION='1.2.4-beta.20260420'",
+      "BRANCH='beta'",
+      "REF='def5678'",
+      "SOURCE_LABEL='beta 1.2.4-beta.20260420'",
+    ],
+    nightly: [
+      "CHANNEL='nightly'",
+      "ARCHIVE_URL='https://example.invalid/releases/nightly-1.2.5-nightly.20260420.tar.gz'",
+      "VERSION='1.2.5-nightly.20260420+deadbee'",
+      "BRANCH='main'",
+      "REF='deadbeef'",
+      "SOURCE_LABEL='nightly 1.2.5-nightly.20260420+deadbee'",
+    ],
+    git: [
+      "CHANNEL='git'",
+      "ARCHIVE_URL='https://example.invalid/releases/main.tar.gz'",
+      "VERSION='main'",
+      "BRANCH='main'",
+      "REF='main'",
+      "SOURCE_LABEL='git branch main'",
+    ],
+    stable: [
+      "CHANNEL='stable'",
+      "ARCHIVE_URL='https://example.invalid/releases/stable-1.2.3.tar.gz'",
+      "VERSION='1.2.3'",
+      "BRANCH='stable'",
+      "REF='abc1234'",
+      "SOURCE_LABEL='stable 1.2.3'",
+    ],
+  };
+  const key = process.env.RIN_RELEASE_CHANNEL || "stable";
+  process.stdout.write((fixtures[key] || fixtures.stable).join("\\n") + "\\n");
+}
 `,
   );
   await fs.writeFile(logPath, "", "utf8");
@@ -388,7 +397,7 @@ printf x | sh "${path.join(rootDir, "install.sh")}" --git
     const log = await fs.readFile(logPath, "utf8");
     assert.match(
       log,
-      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=git:RIN_RELEASE_BRANCH=main:RIN_RELEASE_VERSION=main:stdin_tty=1:stdout_tty=[01]:dist\/app\/rin-install\/main\.js/,
+      /node:.*:RIN_INSTALL_MODE=:RIN_RELEASE_CHANNEL=git:RIN_RELEASE_BRANCH=main:RIN_RELEASE_VERSION=main:stdin_tty=1:stdout_tty=1:dist\/app\/rin-install\/main\.js/,
     );
   });
 });

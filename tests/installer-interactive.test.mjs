@@ -102,6 +102,102 @@ test("promptInstallerLanguage supports custom BCP 47 tags", async () => {
   assert.equal(result, "zh-Hans-CN");
 });
 
+test("promptInstallerLanguage uses English-only copy for non-Chinese locales", async () => {
+  const originalLang = process.env.LANG;
+  const originalLcAll = process.env.LC_ALL;
+  const originalLcMessages = process.env.LC_MESSAGES;
+  process.env.LANG = "en_US.UTF-8";
+  delete process.env.LC_ALL;
+  delete process.env.LC_MESSAGES;
+
+  try {
+    const seen = {};
+    const result = await installerI18n.promptInstallerLanguage({
+      ensureNotCancelled(value) {
+        return value;
+      },
+      async select(options) {
+        seen.select = options;
+        return "custom";
+      },
+      async text(options) {
+        seen.text = options;
+        return "fr-CA";
+      },
+    });
+
+    assert.equal(result, "fr-CA");
+    assert.equal(seen.select.message, "Choose installer language");
+    assert.equal(seen.select.options[0].hint, "en");
+    assert.deepEqual(
+      seen.select.options.at(-1),
+      {
+        value: "custom",
+        label: "Other",
+        hint: "Enter any BCP 47 language tag",
+      },
+    );
+    assert.equal(seen.text.message, "Enter language tag (BCP 47)");
+    assert.equal(seen.text.placeholder, "en-US");
+    assert.equal(seen.text.defaultValue, "en-US");
+    assert.equal(
+      seen.text.validate("nope nope"),
+      "Use a valid BCP 47 language tag",
+    );
+  } finally {
+    if (originalLang == null) delete process.env.LANG;
+    else process.env.LANG = originalLang;
+    if (originalLcAll == null) delete process.env.LC_ALL;
+    else process.env.LC_ALL = originalLcAll;
+    if (originalLcMessages == null) delete process.env.LC_MESSAGES;
+    else process.env.LC_MESSAGES = originalLcMessages;
+  }
+});
+
+test("promptInstallerLanguage uses Chinese-only copy for Chinese locales", async () => {
+  const originalLang = process.env.LANG;
+  const originalLcAll = process.env.LC_ALL;
+  const originalLcMessages = process.env.LC_MESSAGES;
+  process.env.LANG = "zh_CN.UTF-8";
+  delete process.env.LC_ALL;
+  delete process.env.LC_MESSAGES;
+
+  try {
+    let selectOptions;
+    const result = await installerI18n.promptInstallerLanguage({
+      ensureNotCancelled(value) {
+        return value;
+      },
+      async select(options) {
+        selectOptions = options;
+        return "en";
+      },
+      async text() {
+        throw new Error("text prompt should not run when a preset option is chosen");
+      },
+    });
+
+    assert.equal(result, "en");
+    assert.equal(selectOptions.message, "选择安装器语言");
+    assert.equal(
+      selectOptions.options.find((option) => option.value === "zh-CN")?.hint,
+      "zh-CN · 已检测",
+    );
+    assert.equal(selectOptions.options.at(-1)?.label, "其他");
+    assert.equal(
+      selectOptions.options.at(-1)?.hint,
+      "输入任意 BCP 47 语言标签",
+    );
+  } finally {
+    if (originalLang == null) delete process.env.LANG;
+    else process.env.LANG = originalLang;
+    if (originalLcAll == null) delete process.env.LC_ALL;
+    else process.env.LC_ALL = originalLcAll;
+    if (originalLcMessages == null) delete process.env.LC_MESSAGES;
+    else process.env.LC_MESSAGES = originalLcMessages;
+  }
+});
+
 test("createInstallerI18n exposes localized post-install path labels", () => {
   const en = installerI18n.createInstallerI18n("en");
   const zh = installerI18n.createInstallerI18n("zh-CN");

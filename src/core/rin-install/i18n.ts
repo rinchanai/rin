@@ -25,12 +25,35 @@ const LANGUAGE_OPTIONS = [
   { value: "ru", label: "Русский", hint: "ru" },
   { value: "ar", label: "العربية", hint: "ar" },
   { value: "hi", label: "हिन्दी", hint: "hi" },
-  {
-    value: "custom",
-    label: "Other / 其他",
-    hint: "Enter any BCP 47 language tag",
-  },
+  { value: "custom", label: "Other", hint: "Enter any BCP 47 language tag" },
 ] as const;
+
+type InstallerLanguagePromptCopy = {
+  chooseMessage: string;
+  detectedSuffix: string;
+  customLabel: string;
+  customHint: string;
+  textMessage: string;
+  invalidLanguageTag: string;
+};
+
+function resolveInstallerLanguagePromptCopy(languageTag: string): InstallerLanguagePromptCopy {
+  const zh = resolveInstallerDisplayLanguage(languageTag) === "zh-CN";
+  return {
+    chooseMessage: zh ? "选择安装器语言" : "Choose installer language",
+    detectedSuffix: zh ? "已检测" : "detected",
+    customLabel: zh ? "其他" : "Other",
+    customHint: zh
+      ? "输入任意 BCP 47 语言标签"
+      : "Enter any BCP 47 language tag",
+    textMessage: zh
+      ? "输入语言标签（BCP 47）"
+      : "Enter language tag (BCP 47)",
+    invalidLanguageTag: zh
+      ? "请输入有效的 BCP 47 语言标签"
+      : "Use a valid BCP 47 language tag",
+  };
+}
 
 function formatOpenLinks(links?: string | string[]) {
   const list = (Array.isArray(links) ? links : [links])
@@ -41,16 +64,20 @@ function formatOpenLinks(links?: string | string[]) {
 
 export async function promptInstallerLanguage(prompt: InstallerLanguagePromptApi) {
   const detected = detectLocalLanguageTag("en");
+  const copy = resolveInstallerLanguagePromptCopy(detected);
   const selected = String(
     prompt.ensureNotCancelled(
       await prompt.select({
-        message: "Choose installer language / 选择安装器语言",
+        message: copy.chooseMessage,
         options: LANGUAGE_OPTIONS.map((option) => ({
           ...option,
+          label: option.value === "custom" ? copy.customLabel : option.label,
           hint:
-            option.value === detected
-              ? `${option.hint} · detected / 已检测`
-              : option.hint,
+            option.value === "custom"
+              ? copy.customHint
+              : option.value === detected
+                ? `${option.hint} · ${copy.detectedSuffix}`
+                : option.hint,
         })),
       }),
     ),
@@ -59,14 +86,13 @@ export async function promptInstallerLanguage(prompt: InstallerLanguagePromptApi
   return normalizeLanguageTag(
     prompt.ensureNotCancelled(
       await prompt.text({
-        message:
-          "Enter language tag (BCP 47) / 输入语言标签（BCP 47）",
+        message: copy.textMessage,
         placeholder: detected || "en",
         defaultValue: detected || "en",
         validate(value: string) {
           return normalizeLanguageTag(value, "")
             ? undefined
-            : "Use a valid BCP 47 language tag / 请输入有效的 BCP 47 语言标签";
+            : copy.invalidLanguageTag;
         },
       }),
     ),
