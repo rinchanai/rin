@@ -53,6 +53,11 @@ test("installer interactive helpers describe dir state and plan text", () => {
   assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
   assert.ok(plan.includes("Default target user: not set"));
   assert.ok(plan.includes("Chat bridge: telegram"));
+  assert.ok(
+    plan.includes(
+      "Chat authorization: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.",
+    ),
+  );
 
   const plainSection = interactive.buildPlainInstallerSection("安装选项", plan);
   assert.ok(plainSection.startsWith("安装选项\n  Target daemon user: bob"));

@@ -74,6 +74,135 @@ test("chat support keeps compose, parse, and normalize symmetric across bot requ
   );
 });
 
+test("updateIdentityTrust bootstraps the first owner as a self-claim", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-support-"));
+  try {
+    const result = support.updateIdentityTrust({
+      dataDir: dir,
+      actorPlatform: "telegram",
+      actorUserId: "u1",
+      trust: "OWNER",
+      actorName: "Alice",
+    });
+
+    assert.equal(result.trust, "OWNER");
+    assert.equal(result.bootstrap, true);
+    const identity = support.loadIdentity(dir);
+    assert.equal(support.hasOwnerIdentity(identity), true);
+    assert.equal(support.trustOf(identity, "telegram", "u1"), "OWNER");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateIdentityTrust lets an owner grant trusted and owner roles", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-support-"));
+  try {
+    support.updateIdentityTrust({
+      dataDir: dir,
+      actorPlatform: "telegram",
+      actorUserId: "owner-1",
+      trust: "OWNER",
+    });
+    const trusted = support.updateIdentityTrust({
+      dataDir: dir,
+      actorPlatform: "telegram",
+      actorUserId: "owner-1",
+      actorTrust: "OWNER",
+      targetPlatform: "telegram",
+      targetUserId: "trusted-1",
+      trust: "TRUSTED",
+      targetName: "Bob",
+    });
+    const owner2 = support.updateIdentityTrust({
+      dataDir: dir,
+      actorPlatform: "telegram",
+      actorUserId: "owner-1",
+      actorTrust: "OWNER",
+      targetPlatform: "telegram",
+      targetUserId: "owner-2",
+      trust: "OWNER",
+      targetName: "Carol",
+    });
+
+    assert.equal(trusted.trust, "TRUSTED");
+    assert.equal(owner2.trust, "OWNER");
+    const identity = support.loadIdentity(dir);
+    assert.equal(support.trustOf(identity, "telegram", "trusted-1"), "TRUSTED");
+    assert.equal(support.trustOf(identity, "telegram", "owner-2"), "OWNER");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateIdentityTrust rejects non-owner role changes after bootstrap", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-support-"));
+  try {
+    support.updateIdentityTrust({
+      dataDir: dir,
+      actorPlatform: "telegram",
+      actorUserId: "owner-1",
+      trust: "OWNER",
+    });
+
+    assert.throws(
+      () =>
+        support.updateIdentityTrust({
+          dataDir: dir,
+          actorPlatform: "telegram",
+          actorUserId: "trusted-1",
+          actorTrust: "TRUSTED",
+          targetPlatform: "telegram",
+          targetUserId: "trusted-2",
+          trust: "TRUSTED",
+        }),
+      /identity_owner_required/,
+    );
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("updateIdentityTrust refuses to remove the last remaining owner", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-support-"));
+  try {
+    support.updateIdentityTrust({
+      dataDir: dir,
+      actorPlatform: "telegram",
+      actorUserId: "owner-1",
+      trust: "OWNER",
+    });
+
+    assert.throws(
+      () =>
+        support.updateIdentityTrust({
+          dataDir: dir,
+          actorPlatform: "telegram",
+          actorUserId: "owner-1",
+          actorTrust: "OWNER",
+          targetPlatform: "telegram",
+          targetUserId: "owner-1",
+          trust: "OTHER",
+        }),
+      /identity_last_owner_required/,
+    );
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("chat support normalizes trust lookup and bot selection over dirty metadata", () => {
   assert.equal(
     support.trustOf(

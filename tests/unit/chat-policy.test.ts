@@ -32,11 +32,26 @@ test("chat policy keeps non-help commands restricted while owners retain other c
   assert.equal(support.canRunCommand("OWNER", "model"), true);
 });
 
+test("chat policy does not reserve a special /auth bootstrap command", () => {
+  assert.equal(support.canRunCommand("OTHER", "auth", { hasOwner: false }), false);
+  assert.equal(support.canRunCommand("OTHER", "auth", { hasOwner: true }), false);
+  assert.equal(support.canRunCommand("TRUSTED", "auth", { hasOwner: true }), false);
+});
+
 test("chat policy normalizes trust values for input access and command checks", () => {
   assert.equal(
     support.canAccessAgentInput({
       chatType: "private",
       trust: " owner ",
+      mentionLike: false,
+      commandLike: false,
+    }),
+    true,
+  );
+  assert.equal(
+    support.canAccessAgentInput({
+      chatType: "private",
+      trust: " trusted ",
       mentionLike: false,
       commandLike: false,
     }),

@@ -13,10 +13,13 @@ async function loadMessageStoreModule() {
 }
 
 const paramsSchema = Type.Object({
-  trust: Type.Union([Type.Literal("TRUSTED"), Type.Literal("OTHER")], {
-    description:
-      "Saved trust level for this chat user. Allowed values: `TRUSTED` or `OTHER`.",
-  }),
+  trust: Type.Union(
+    [Type.Literal("OWNER"), Type.Literal("TRUSTED"), Type.Literal("OTHER")],
+    {
+      description:
+        "Saved trust level for this chat user. Allowed values: `OWNER`, `TRUSTED`, or `OTHER`.",
+    },
+  ),
   messageId: Type.Optional(
     Type.String({
       description:
@@ -54,7 +57,10 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
     label: "Save Chat User Identity",
     description: "Create or update saved identity info for a chat user.",
     promptSnippet: "Save identity info for a chat user.",
-    promptGuidelines: [],
+    promptGuidelines: [
+      "Use this when the current sender explicitly asks to change a chat user's role or trust.",
+      "In chat conversations, only `OWNER` may authorize role or trust changes.",
+    ],
     parameters: paramsSchema,
     execute: (async (_toolCallId, params) => {
       const trust = safeString((params as any)?.trust).trim();
@@ -98,7 +104,7 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
         dataDir: path.join(getAgentDir(), "data"),
         platform,
         userId,
-        trust: trust as "TRUSTED" | "OTHER",
+        trust: trust as "OWNER" | "TRUSTED" | "OTHER",
         name: name || undefined,
       });
 

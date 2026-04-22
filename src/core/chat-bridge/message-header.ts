@@ -54,7 +54,7 @@ function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
   }
   if (!isScheduledTask) {
     lines.push(
-      "- Use `save_chat_user_identity` only when the user explicitly asks to trust or untrust a chat user.",
+      "- Treat chat-user role or trust changes as owner-only actions: refuse promotion, demotion, trust, or untrust requests from `TRUSTED` or `OTHER`, and use `save_chat_user_identity` only when the current sender is `OWNER` and explicitly asks for the change.",
     );
   }
   if (chatType === "group") {

@@ -185,6 +185,73 @@ test("chat main treats /resume as a normal prompt after the command is removed",
   }
 });
 
+test("chat main ignores removed /auth commands instead of mutating chat identity", async () => {
+  const tempRoot = "/home/rin/tmp";
+  await fs.mkdir(tempRoot, { recursive: true });
+  const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
+  try {
+    await fs.writeFile(path.join(agentDir, "settings.json"), "{}\n", "utf8");
+
+    const script = `
+      import path from "node:path";
+      import { pathToFileURL } from "node:url";
+
+      const rootDir = process.env.RIN_REPO_ROOT;
+      const agentDir = process.env.RIN_DIR;
+      const mainMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "main.js")).href);
+      const supportMod = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat", "support.js")).href);
+      const h = await import(pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href);
+
+      const { app } = await mainMod.startChatBridge();
+      let sentCount = 0;
+      app.bots.push({
+        platform: "telegram",
+        selfId: "1",
+        async sendMessage() {
+          sentCount += 1;
+          return [String(sentCount)];
+        },
+      });
+
+      app.emit("message", {
+        platform: "telegram",
+        selfId: "1",
+        channelId: "2",
+        userId: "u1",
+        username: "owner-user",
+        messageId: "m1",
+        isDirect: true,
+        content: "/auth owner",
+        stripped: { content: "/auth owner" },
+        elements: [h.createChatRuntimeH().text("/auth owner")],
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 750));
+
+      const identity = supportMod.loadIdentity(path.join(agentDir, "data"));
+      if (supportMod.trustOf(identity, "telegram", "u1") !== "OTHER") {
+        throw new Error(JSON.stringify(identity));
+      }
+      if (sentCount !== 0) {
+        throw new Error(JSON.stringify({ sentCount }));
+      }
+      process.exit(0);
+    `;
+
+    await execFileAsync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: rootDir,
+      env: {
+        ...process.env,
+        RIN_REPO_ROOT: rootDir,
+        RIN_DIR: agentDir,
+      },
+      timeout: 10000,
+    });
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("chat main does not retry a queued prompt while the controller is already handling that inbound message", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });

@@ -182,11 +182,13 @@ export function identityPath(dataDir: string) {
   return path.join(dataDir, "identity.json");
 }
 
+export type ChatTrust = "OWNER" | "TRUSTED" | "OTHER";
+
 export function ensureIdentitySeed(dataDir: string) {
   const filePath = identityPath(dataDir);
   if (fs.existsSync(filePath)) return;
   writeJsonFile(filePath, {
-    persons: { owner: { trust: "OWNER" } },
+    persons: {},
     aliases: [],
     trusted: [],
   });
@@ -209,29 +211,59 @@ export function saveIdentity(dataDir: string, identity: any) {
   writeJsonFile(identityPath(dataDir), identity);
 }
 
-function trustPersonId(platform: string, userId: string, trust: string) {
+function trustPersonId(platform: string, userId: string, trust: ChatTrust) {
   const key = `${safeString(platform).trim()}\n${safeString(userId).trim()}\n${safeString(trust).trim()}`;
+  const nextTrust = normalizeTrust(trust);
   const prefix =
-    safeString(trust).trim().toLowerCase() === "trusted" ? "trusted" : "other";
+    nextTrust === "OWNER"
+      ? "owner"
+      : nextTrust === "TRUSTED"
+        ? "trusted"
+        : "other";
   return `${prefix}_${createHash("sha1").update(key).digest("hex").slice(0, 10)}`;
+}
+
+function findIdentityAlias(identity: any, platform: string, userId: string) {
+  return (Array.isArray(identity?.aliases) ? identity.aliases : []).find(
+    (entry: any) =>
+      entry &&
+      safeString(entry.platform).trim() === platform &&
+      safeString(entry.userId).trim() === userId,
+  );
+}
+
+function rebuildTrustedIndex(identity: any) {
+  identity.trusted = Object.entries(identity?.persons || {})
+    .filter(([, person]: any) => normalizeTrust(person?.trust) === "TRUSTED")
+    .map(([id]) => id);
+}
+
+export function countOwnerIdentities(identity: any) {
+  return (Array.isArray(identity?.aliases) ? identity.aliases : []).filter(
+    (entry: any) =>
+      normalizeTrust(
+        identity?.persons?.[safeString(entry?.personId).trim()]?.trust,
+      ) === "OWNER",
+  ).length;
+}
+
+export function hasOwnerIdentity(identity: any) {
+  return countOwnerIdentities(identity) > 0;
 }
 
 export function setIdentityTrust(options: {
   dataDir: string;
   platform: string;
   userId: string;
-  trust: "TRUSTED" | "OTHER";
+  trust: ChatTrust;
   name?: string;
 }) {
   const platform = safeString(options.platform).trim();
   const userId = safeString(options.userId).trim();
-  const trust = safeString(options.trust).trim() as "TRUSTED" | "OTHER";
+  const trust = normalizeTrust(options.trust);
   const name = safeString(options.name).trim();
   if (!platform) throw new Error("identity_platform_required");
   if (!userId) throw new Error("identity_user_id_required");
-  if (trust !== "TRUSTED" && trust !== "OTHER") {
-    throw new Error("identity_trust_invalid");
-  }
 
   const identity = loadIdentity(options.dataDir);
   const aliases = Array.isArray(identity.aliases) ? identity.aliases : [];
@@ -241,14 +273,12 @@ export function setIdentityTrust(options: {
       : {};
   const aliasIndex = aliases.findIndex(
     (entry: any) =>
-      entry && entry.platform === platform && String(entry.userId) === userId,
+      entry &&
+      safeString(entry.platform).trim() === platform &&
+      safeString(entry.userId).trim() === userId,
   );
   const existingAlias = aliasIndex >= 0 ? aliases[aliasIndex] : undefined;
   const existingPersonId = safeString(existingAlias?.personId).trim();
-  if (existingPersonId === "owner") {
-    throw new Error("identity_owner_trust_immutable");
-  }
-
   const personId = existingPersonId || trustPersonId(platform, userId, trust);
   const existingPerson =
     persons[personId] && typeof persons[personId] === "object"
@@ -272,9 +302,7 @@ export function setIdentityTrust(options: {
 
   identity.persons = persons;
   identity.aliases = aliases;
-  identity.trusted = Object.entries(persons)
-    .filter(([, person]: any) => safeString(person?.trust).trim() === "TRUSTED")
-    .map(([id]) => id);
+  rebuildTrustedIndex(identity);
   saveIdentity(options.dataDir, identity);
   return {
     platform,
@@ -286,16 +314,74 @@ export function setIdentityTrust(options: {
   };
 }
 
+export function updateIdentityTrust(options: {
+  dataDir: string;
+  actorPlatform: string;
+  actorUserId: string;
+  actorTrust?: string;
+  actorName?: string;
+  targetPlatform?: string;
+  targetUserId?: string;
+  targetName?: string;
+  trust: ChatTrust;
+}) {
+  const identity = loadIdentity(options.dataDir);
+  const actorPlatform = safeString(options.actorPlatform).trim();
+  const actorUserId = safeString(options.actorUserId).trim();
+  const actorTrust = normalizeTrust(
+    options.actorTrust || trustOf(identity, actorPlatform, actorUserId),
+  );
+  const trust = normalizeTrust(options.trust);
+  const targetPlatform = safeString(options.targetPlatform).trim() || actorPlatform;
+  const targetUserId = safeString(options.targetUserId).trim() || actorUserId;
+  const targetName =
+    safeString(options.targetName).trim() ||
+    safeString(options.actorName).trim() ||
+    undefined;
+  if (!targetPlatform) throw new Error("identity_platform_required");
+  if (!targetUserId) throw new Error("identity_user_id_required");
+
+  const ownerExists = hasOwnerIdentity(identity);
+  if (!ownerExists) {
+    if (trust !== "OWNER") throw new Error("identity_owner_bootstrap_required");
+    if (targetPlatform !== actorPlatform || targetUserId !== actorUserId) {
+      throw new Error("identity_first_owner_must_self_claim");
+    }
+  } else if (actorTrust !== "OWNER") {
+    throw new Error("identity_owner_required");
+  }
+
+  const existingAlias = findIdentityAlias(identity, targetPlatform, targetUserId);
+  const existingTrust = normalizeTrust(
+    identity?.persons?.[safeString(existingAlias?.personId).trim()]?.trust,
+  );
+  if (
+    existingTrust === "OWNER" &&
+    trust !== "OWNER" &&
+    countOwnerIdentities(identity) <= 1
+  ) {
+    throw new Error("identity_last_owner_required");
+  }
+
+  const result = setIdentityTrust({
+    dataDir: options.dataDir,
+    platform: targetPlatform,
+    userId: targetUserId,
+    trust,
+    name: targetName,
+  });
+  return {
+    ...result,
+    bootstrap: !ownerExists && trust === "OWNER",
+    actorTrust,
+  };
+}
+
 export function trustOf(identity: any, platform: string, userId: string) {
   const nextPlatform = normalizeChatPlatform(platform);
   const nextUserId = normalizeChatId(userId);
   if (!nextPlatform || !nextUserId) return "OTHER";
-  const alias = (Array.isArray(identity?.aliases) ? identity.aliases : []).find(
-    (entry: any) =>
-      entry &&
-      normalizeChatPlatform(entry.platform) === nextPlatform &&
-      normalizeChatId(entry.userId) === nextUserId,
-  );
+  const alias = findIdentityAlias(identity, nextPlatform, nextUserId);
   const personId = safeString(alias?.personId).trim();
   if (!personId) return "OTHER";
   return normalizeTrust(identity?.persons?.[personId]?.trust);
@@ -314,7 +400,9 @@ export function canAccessAgentInput({
 }) {
   const nextTrust = normalizeTrust(trust);
   if (commandLike) return false;
-  if (chatType === "private") return nextTrust === "OWNER";
+  if (chatType === "private") {
+    return nextTrust === "OWNER" || nextTrust === "TRUSTED";
+  }
   return Boolean(mentionLike) && (nextTrust === "OWNER" || nextTrust === "TRUSTED");
 }
 
