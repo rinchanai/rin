@@ -89,7 +89,7 @@ test("chat main consumes inbound help messages through the inbox path only once"
   }
 });
 
-test("chat main replies with the removal notice instead of executing /resume in chat", async () => {
+test("chat main replies with the unsupported notice instead of executing /resume in chat", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
   const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-queue-"));
@@ -143,7 +143,7 @@ test("chat main replies with the removal notice instead of executing /resume in 
         elements: [h.createChatRuntimeH().text("/resume")],
       });
 
-      const expected = "Chat 中已移除 /resume。请直接回复想继续的那条消息，Rin 会按引用消息自动接续对应会话。";
+      const expected = "Chat 中不支持 /resume。请直接回复想继续的那条消息，Rin 会按引用消息自动接续对应会话。";
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline) {
         const rows = storeMod
