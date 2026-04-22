@@ -31,7 +31,19 @@ function normalizeMimeType(mimeType: string) {
   return safeString(mimeType).split(";", 1)[0].toLowerCase().trim();
 }
 
-function decodeFileNameSegment(value: string) {
+function isTextMimeType(mimeType: string) {
+  return mimeType.startsWith("text/");
+}
+
+function stripQueryAndFragment(value: string) {
+  return safeString(value).split(/[?#]/, 1)[0];
+}
+
+function hasTrailingPathSeparator(value: string) {
+  return /(?:^|[\\/])$/.test(value);
+}
+
+function safeDecodeURIComponent(value: string) {
   try {
     return decodeURIComponent(value);
   } catch {
@@ -39,12 +51,24 @@ function decodeFileNameSegment(value: string) {
   }
 }
 
+function normalizeFallbackFileName(fallback: string) {
+  return safeString(fallback) || "attachment";
+}
+
+function baseNameFromPathLike(value: string) {
+  const nextValue = stripQueryAndFragment(value);
+  return hasTrailingPathSeparator(nextValue) ? "" : path.basename(nextValue);
+}
+
+function pathExtension(value: string) {
+  return path.extname(stripQueryAndFragment(value)).toLowerCase();
+}
+
 function fileNameFromPathLike(value: string, fallback: string) {
-  const nextValue = safeString(value).split(/[?#]/, 1)[0];
-  const baseName = /(?:^|[\\/])$/.test(nextValue)
-    ? ""
-    : path.basename(nextValue);
-  return ensureFileName(decodeFileNameSegment(baseName), fallback);
+  return ensureFileName(
+    safeDecodeURIComponent(baseNameFromPathLike(value)),
+    fallback,
+  );
 }
 
 export function extensionFromMimeType(
@@ -55,7 +79,7 @@ export function extensionFromMimeType(
   if (!mime) return "";
   const direct = MIME_EXTENSION_BY_TYPE.get(mime);
   if (direct) return direct;
-  return options.allTextMimeTypes && mime.startsWith("text/") ? ".txt" : "";
+  return options.allTextMimeTypes && isTextMimeType(mime) ? ".txt" : "";
 }
 
 export function ensureFileName(name: string, fallback = "attachment") {
@@ -67,7 +91,7 @@ export function ensureFileName(name: string, fallback = "attachment") {
 }
 
 export function fileNameFromUrl(url: string, fallback = "attachment") {
-  const nextFallback = safeString(fallback) || "attachment";
+  const nextFallback = normalizeFallbackFileName(fallback);
   try {
     const parsed = new URL(url);
     return fileNameFromPathLike(parsed.pathname, nextFallback);
@@ -92,7 +116,5 @@ export function isImageMimeType(mimeType: string) {
 }
 
 export function isImageName(name: string) {
-  return IMAGE_EXTENSIONS.has(
-    path.extname(safeString(name).split(/[?#]/, 1)[0]).toLowerCase(),
-  );
+  return IMAGE_EXTENSIONS.has(pathExtension(name));
 }

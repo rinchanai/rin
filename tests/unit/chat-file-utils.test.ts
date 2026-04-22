@@ -21,6 +21,12 @@ const chatRuntimeCommon = await import(
     .href,
 );
 
+function assertSharedMimeParity(mimeType: string, expected: string) {
+  assert.equal(chatFileUtils.extensionFromMimeType(mimeType), expected);
+  assert.equal(chatSupport.extensionFromMimeType(mimeType), expected);
+  assert.equal(chatRuntimeCommon.extensionFromMimeType(mimeType), expected);
+}
+
 test("chat file helpers stay consistent across shared and re-exported surfaces", () => {
   const sharedCases = [
     ["image/jpeg", ".jpg"],
@@ -29,12 +35,10 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
     ["text/plain", ".txt"],
     ["text/markdown; charset=utf-8", ".md"],
     ["application/octet-stream", ""],
-  ];
+  ] as const;
 
   for (const [mimeType, expected] of sharedCases) {
-    assert.equal(chatFileUtils.extensionFromMimeType(mimeType), expected);
-    assert.equal(chatSupport.extensionFromMimeType(mimeType), expected);
-    assert.equal(chatRuntimeCommon.extensionFromMimeType(mimeType), expected);
+    assertSharedMimeParity(mimeType, expected);
   }
 
   assert.equal(
@@ -43,52 +47,75 @@ test("chat file helpers stay consistent across shared and re-exported surfaces",
   );
   assert.equal(chatSupport.ensureExtension, chatFileUtils.ensureExtension);
 
-  assert.equal(chatFileUtils.extensionFromMimeType('text/markdown'), '.md');
-  assert.equal(chatSupport.extensionFromMimeType('text/markdown'), '.md');
-  assert.equal(chatRuntimeCommon.extensionFromMimeType('text/markdown'), '.md');
-  assert.equal(chatFileUtils.extensionFromMimeType(' IMAGE/JPG '), '.jpg');
+  assertSharedMimeParity("text/markdown", ".md");
+  assert.equal(chatFileUtils.extensionFromMimeType(" IMAGE/JPG "), ".jpg");
 
   assert.equal(
-    chatFileUtils.ensureFileName('bad:/\\name?*', 'fallback'),
-    'bad_name_',
+    chatFileUtils.ensureFileName("bad:/\\name?*", "fallback"),
+    "bad_name_",
   );
   assert.equal(
     chatSupport.fileNameFromUrl(
-      'https://example.com/files/hello%20world.txt?download=1',
-      'fallback',
+      "https://example.com/files/hello%20world.txt?download=1",
+      "fallback",
     ),
-    'hello world.txt',
+    "hello world.txt",
   );
   assert.equal(
-    chatFileUtils.fileNameFromUrl('demo.txt?download=1#view', 'fallback'),
-    'demo.txt',
+    chatFileUtils.fileNameFromUrl("demo.txt?download=1#view", "fallback"),
+    "demo.txt",
   );
   assert.equal(
     chatFileUtils.fileNameFromUrl(
-      'https://example.com/files/?download=1#view',
-      'fallback',
+      "https://example.com/files/?download=1#view",
+      "fallback",
     ),
-    'fallback',
+    "fallback",
   );
   assert.equal(
     chatFileUtils.fileNameFromUrl(
-      'https://example.com/files/%E0%A4%A.txt',
-      'fallback',
+      "https://example.com/files/%E0%A4%A.txt",
+      "fallback",
     ),
-    '%E0%A4%A.txt',
+    "%E0%A4%A.txt",
   );
-  assert.equal(chatSupport.ensureExtension('notes', 'text/markdown'), 'notes.md');
+  assert.equal(chatSupport.ensureExtension("notes", "text/markdown"), "notes.md");
   assert.equal(
-    chatRuntimeCommon.ensureExtension('notes', 'text/markdown'),
-    'notes.md',
+    chatRuntimeCommon.ensureExtension("notes", "text/markdown"),
+    "notes.md",
   );
   assert.equal(
-    chatRuntimeCommon.ensureExtension('archive.tar.gz', 'image/png'),
-    'archive.tar.gz',
+    chatRuntimeCommon.ensureExtension("archive.tar.gz", "image/png"),
+    "archive.tar.gz",
   );
-  assert.equal(chatFileUtils.isImageMimeType('image/webp'), true);
-  assert.equal(chatRuntimeCommon.isImageMimeType('application/pdf'), false);
-  assert.equal(chatFileUtils.isImageName('demo.SVG'), true);
-  assert.equal(chatRuntimeCommon.isImageName('demo.SVG?download=1'), true);
-  assert.equal(chatRuntimeCommon.isImageName('document.txt'), false);
+  assert.equal(chatFileUtils.isImageMimeType("image/webp"), true);
+  assert.equal(chatRuntimeCommon.isImageMimeType("application/pdf"), false);
+  assert.equal(chatFileUtils.isImageName("demo.SVG"), true);
+  assert.equal(chatRuntimeCommon.isImageName("demo.SVG?download=1"), true);
+  assert.equal(chatRuntimeCommon.isImageName("document.txt"), false);
+});
+
+test("chat file helpers keep filename fallback, decoding, and extension rules stable", () => {
+  assert.equal(
+    chatFileUtils.fileNameFromUrl(
+      "https://example.com/files/a%20b.txt#view",
+      "fallback",
+    ),
+    "a b.txt",
+  );
+  assert.equal(
+    chatFileUtils.fileNameFromUrl("https://example.com/files/", "fallback"),
+    "fallback",
+  );
+  assert.equal(
+    chatFileUtils.fileNameFromUrl("not a url?x=1#y", "fallback"),
+    "not a url",
+  );
+  assert.equal(chatFileUtils.isImageName("demo.SVG?download=1#view"), true);
+  assert.equal(
+    chatFileUtils.ensureExtension("notes.txt", "text/markdown"),
+    "notes.txt",
+  );
+  assert.equal(chatFileUtils.extensionFromMimeType("text/html"), "");
+  assert.equal(chatRuntimeCommon.extensionFromMimeType("text/html"), ".txt");
 });
