@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 function parseArgs(argv) {
   const args = {
     output: "",
-    branch: "stable-bootstrap",
+    branch: "bootstrap",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -14,7 +14,7 @@ function parseArgs(argv) {
     else if (arg === "--branch") args.branch = String(argv[++index] || "").trim();
     else if (arg === "-h" || arg === "--help") {
       console.log(
-        "Usage: node scripts/release/export-bootstrap-branch.mjs --output <dir> [--branch stable-bootstrap]",
+        "Usage: node scripts/release/export-bootstrap-branch.mjs --output <dir> [--branch bootstrap]",
       );
       process.exit(0);
     } else {
@@ -66,10 +66,10 @@ for (const relativePath of [
 fs.writeFileSync(
   path.join(outputDir, "README.md"),
   [
-    "# Rin stable bootstrap branch",
+    "# Rin bootstrap branch",
     "",
     `This branch is generated for the ${args.branch} bootstrap flow.`,
-    "It only stores the stable install/update bootstrap entry scripts and release metadata.",
+    "It only stores the install/update bootstrap entry scripts and release metadata.",
     "Do not develop Rin source code on this branch.",
     "",
     "Included files:",

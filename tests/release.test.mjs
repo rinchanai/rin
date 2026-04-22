@@ -203,14 +203,14 @@ test("resolveReleaseRequest resolves stable beta nightly and git sources", () =>
 test("readBundledReleaseManifest falls back to bundled defaults", () => {
   const manifest = release.readBundledReleaseManifest(path.join(rootDir, ".missing-release-manifest-root"));
   assert.equal(manifest.packageName, "@rinchanai/rin");
-  assert.equal(manifest.bootstrapBranch, "stable-bootstrap");
+  assert.equal(manifest.bootstrapBranch, "bootstrap");
   assert.equal(manifest.train.series, "0.0");
   assert.equal(manifest.stable.version, "0.0.0");
   assert.equal(manifest.beta.version, "0.0.1-beta.0");
   assert.equal(manifest.nightly.version, "0.0.1-nightly.0");
   assert.equal(
     manifest.stable.archiveUrl,
-    "https://github.com/rinchanai/rin/archive/refs/heads/main.tar.gz",
+    "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-0.0.0.tgz",
   );
 });
 
