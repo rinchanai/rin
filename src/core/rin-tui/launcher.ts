@@ -11,9 +11,12 @@ import {
 } from "../rin-web-search/service.js";
 
 import { RinDaemonFrontendClient } from "./rpc-client.js";
+import { describeRpcStartupError } from "./rpc-troubleshooting.js";
 import { RpcInteractiveSession } from "./runtime.js";
 import { createRpcRuntimeHost } from "./runtime-host.js";
 import { applyRinTuiOverrides } from "./upstream-overrides.js";
+
+export { describeRpcStartupError } from "./rpc-troubleshooting.js";
 
 type TuiMode = "rpc" | "std";
 
@@ -115,7 +118,15 @@ async function startRpcTui(
     client,
     options.additionalExtensionPaths,
   );
-  await rpcSession.connect();
+  try {
+    await rpcSession.connect();
+  } catch (error) {
+    const message = describeRpcStartupError(error);
+    if (message !== String((error as any)?.message || error || "rin_tui_failed")) {
+      throw new Error(message);
+    }
+    throw error;
+  }
   profile.mark("interactive-mode-and-rpc-ready");
 
   let runtimeHost: { dispose(): Promise<void> } | undefined;

@@ -33,6 +33,7 @@ type PendingRpcOperation = {
   requestTag?: string;
 };
 import { createModelRegistry } from "./rpc-model-registry.js";
+import { RPC_TROUBLESHOOTING_HINT } from "./rpc-troubleshooting.js";
 import {
   computeAvailableThinkingLevels,
   extractText,
@@ -845,7 +846,7 @@ export class RpcInteractiveSession {
       this.emitEvent({
         type: "status",
         level: "warning",
-        text: "Daemon is still unavailable after 30s. Try `rin doctor` and `rin --std` to troubleshoot.",
+        text: `Daemon is still unavailable after 30s. ${RPC_TROUBLESHOOTING_HINT}`,
       } as any);
     }, 30000);
     this.waitForDaemonPromise = this.ensureReconnectLoop().finally(() => {

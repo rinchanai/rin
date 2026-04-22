@@ -36,3 +36,16 @@ test("tui launcher rejects invalid or conflicting mode requests", () => {
     /Conflicting TUI mode requests: RIN_TUI_MODE=std and --rpc\./,
   );
 });
+
+test("tui launcher adds doctor/std troubleshooting hint for RPC socket startup failures", () => {
+  assert.match(
+    launcher.describeRpcStartupError(
+      new Error("connect ECONNREFUSED /run/user/1001/rin-daemon/daemon.sock"),
+    ),
+    /connect ECONNREFUSED \/run\/user\/1001\/rin-daemon\/daemon\.sock\. Try `rin doctor` and `rin --std` to troubleshoot\./,
+  );
+  assert.equal(
+    launcher.describeRpcStartupError(new Error("boom")),
+    "boom",
+  );
+});
