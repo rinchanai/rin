@@ -234,14 +234,84 @@ test("chat controller polls typing and rotating reactions while a turn is active
 
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [{ chat_id: "2", action: "typing" }]);
-  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "🤔"]]);
 
   assert.equal(await controller.pollTyping(), true);
   assert.deepEqual(actions, [
     { chat_id: "2", action: "typing" },
     { chat_id: "2", action: "typing" },
   ]);
-  assert.deepEqual(reactions, [["create", "2", "m1", "🌘"]]);
+  assert.deepEqual(reactions, [["create", "2", "m1", "🤔"]]);
+});
+
+test("chat controller flushes a completed interim assistant message before a later distinct final reply", async () => {
+  const controller = await createController("telegram/1:2");
+  const chatKey = "telegram/1:2";
+  const deliveries = [];
+  controller.deliverAssistantInterim = async function (text) {
+    deliveries.push({
+      text: `··· ${text}`,
+      replyToMessageId: this.currentReplyToMessageId(),
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
+    });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  saveChatMessage(controller.agentDir, {
+    chatKey,
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-interim",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+
+  const sessionFile = path.join(controller.agentDir, "sessions", "interim-chat.jsonl");
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => sessionFile,
+      getSessionId: () => "session-interim",
+      getSessionName: () => chatKey,
+    },
+    ensureSessionReady: async () => ({ sessionFile, sessionId: "session-interim" }),
+    prompt: async (_text, options = {}) => {
+      await controller.handleSessionEvent({ type: "agent_start" });
+      await controller.handleSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "我先查一下" }],
+        },
+      });
+      emitRpcTurnComplete(controller, options, "最终答复");
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-interim",
+    replyToMessageId: "m-interim",
+  });
+
+  assert.equal(result.finalText, "最终答复");
+  assert.deepEqual(deliveries, [
+    { text: "··· 我先查一下", replyToMessageId: "m-interim" },
+    { text: "最终答复", replyToMessageId: "m-interim" },
+  ]);
 });
 
 test("chat controller uses a fixed Working notice policy for onebot private chats", async () => {
