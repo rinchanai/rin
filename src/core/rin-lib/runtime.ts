@@ -50,6 +50,7 @@ function formatSkillsForPrompt(skills: any[]) {
     lines.push(
       `    <description>${escapeXml(String(skill.description || ""))}</description>`,
     );
+    lines.push(`    <path>${escapeXml(String(skill?.baseDir || ""))}</path>`);
     lines.push("  </skill>");
   }
   lines.push("</available_skills>");

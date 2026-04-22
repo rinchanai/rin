@@ -180,4 +180,11 @@ test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async
   assert.ok(projectContextIdx < promptsIdx);
   assert.ok(promptsIdx < skillsIdx);
   assert.ok(!finalSystemPrompt.includes("# Self-Improve Prompts"));
+  assert.ok(finalSystemPrompt.includes("<name>test-skill</name>"));
+  assert.ok(
+    finalSystemPrompt.includes(
+      `<path>${path.join(agentDir, "self_improve", "skills", "test-skill")}</path>`,
+    ),
+  );
+  assert.equal(finalSystemPrompt.includes("SKILL.md</path>"), false);
 });
