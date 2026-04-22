@@ -4,9 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-import { spinner } from "@clack/prompts";
-
-import { createInstallerI18n, type InstallerI18n } from "./i18n.js";
+import { type InstallerI18n } from "./i18n.js";
 
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 
@@ -32,18 +30,25 @@ export async function runFinalizeInstallPlanInChild(
   deps: {
     ensureNotCancelled: <T>(value: T | symbol) => T;
     i18n?: InstallerI18n;
+    spawnImpl?: typeof spawn;
+    writeStatus?: (message: string) => void;
   },
 ) {
   const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-"));
   const resultPath = path.join(resultDir, "result.json");
   const errorPath = path.join(resultDir, "error.txt");
-  const i18n = deps.i18n || createInstallerI18n(options.language || "en");
   try {
-    const child = spawn(
+    const spawnImpl = deps.spawnImpl || spawn;
+    const writeStatus =
+      deps.writeStatus ||
+      ((status: string) => process.stderr.write(`${status}\n`));
+    writeStatus(message);
+
+    const child = spawnImpl(
       process.execPath,
       [process.argv[1] || fileURLToPath(import.meta.url)],
       {
-        stdio: "ignore",
+        stdio: ["inherit", "inherit", "inherit"],
         env: {
           ...process.env,
           RIN_INSTALL_APPLY_PLAN: JSON.stringify(options),
@@ -53,9 +58,6 @@ export async function runFinalizeInstallPlanInChild(
       },
     );
 
-    const waitSpinner = spinner();
-    waitSpinner.start(message);
-
     const exitCode = await new Promise<number>((resolve, reject) => {
       child.on("error", reject);
       child.on("exit", (code, signal) => {
@@ -63,13 +65,9 @@ export async function runFinalizeInstallPlanInChild(
           reject(new Error(`rin_installer_child_terminated:${signal}`));
         else resolve(code ?? 1);
       });
-    }).catch((error) => {
-      waitSpinner.stop(i18n.installStepFailed);
-      throw error;
     });
 
     if (exitCode !== 0) {
-      waitSpinner.stop(i18n.installStepFailed);
       let errorMessage = "rin_installer_apply_failed";
       try {
         errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
@@ -81,11 +79,9 @@ export async function runFinalizeInstallPlanInChild(
     try {
       parsed = JSON.parse(fs.readFileSync(resultPath, "utf8"));
     } catch {
-      waitSpinner.stop(i18n.installStepFailed);
       throw new Error("rin_installer_apply_result_missing");
     }
 
-    waitSpinner.stop(i18n.installStepComplete);
     return parsed;
   } finally {
     try {
