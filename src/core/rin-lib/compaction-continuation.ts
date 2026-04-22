@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { writeJsonAtomic } from "../platform/fs.js";
+import {
+  preferredTempRootCandidates,
+  writeJsonAtomic,
+} from "../platform/fs.js";
 import { readSessionIdentity } from "../session/metadata.js";
 
 export type CompactionContinuationMarker = {
@@ -13,23 +15,30 @@ export type CompactionContinuationMarker = {
   assistantPreview?: string;
 };
 
-const CONTINUATION_MARKER_ROOT = [
-  process.env.RIN_TMP_DIR,
-  "/home/rin/tmp",
-  tmpdir(),
-]
-  .map((value) => String(value || "").trim())
-  .find(Boolean) as string;
-const CONTINUATION_MARKER_DIR = join(
-  CONTINUATION_MARKER_ROOT,
-  "rin-compaction-continuation",
-);
+function compactionContinuationMarkerDir() {
+  return join(
+    preferredTempRootCandidates()[0],
+    "rin-compaction-continuation",
+  );
+}
+
+function parseCompactionContinuationMarker(
+  value: unknown,
+): CompactionContinuationMarker | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const parsed = value as CompactionContinuationMarker;
+  if (parsed.version !== 1) return undefined;
+  if (parsed.reason !== "threshold" && parsed.reason !== "overflow") {
+    return undefined;
+  }
+  return parsed;
+}
 
 export function getCompactionContinuationMarkerPath(source: any): string {
   const hash = createHash("sha1")
     .update(readSessionIdentity(source))
     .digest("hex");
-  return join(CONTINUATION_MARKER_DIR, `${hash}.json`);
+  return join(compactionContinuationMarkerDir(), `${hash}.json`);
 }
 
 export function writeCompactionContinuationMarker(
@@ -56,11 +65,7 @@ export function consumeCompactionContinuationMarker(
   try {
     const raw = readFileSync(file, "utf8");
     rmSync(file, { force: true });
-    const parsed = JSON.parse(raw) as CompactionContinuationMarker;
-    if (!parsed || parsed.version !== 1) return undefined;
-    if (parsed.reason !== "threshold" && parsed.reason !== "overflow")
-      return undefined;
-    return parsed;
+    return parseCompactionContinuationMarker(JSON.parse(raw));
   } catch {
     return undefined;
   }
