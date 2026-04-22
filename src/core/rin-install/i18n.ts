@@ -37,23 +37,14 @@ type InstallerLanguagePromptCopy = {
   invalidLanguageTag: string;
 };
 
-function resolveInstallerLanguagePromptCopy(languageTag: string): InstallerLanguagePromptCopy {
-  const zh = resolveInstallerDisplayLanguage(languageTag) === "zh-CN";
-  return {
-    chooseMessage: zh ? "选择安装器语言" : "Choose installer language",
-    detectedSuffix: zh ? "已检测" : "detected",
-    customLabel: zh ? "其他" : "Other",
-    customHint: zh
-      ? "输入任意 BCP 47 语言标签"
-      : "Enter any BCP 47 language tag",
-    textMessage: zh
-      ? "输入语言标签（BCP 47）"
-      : "Enter language tag (BCP 47)",
-    invalidLanguageTag: zh
-      ? "请输入有效的 BCP 47 语言标签"
-      : "Use a valid BCP 47 language tag",
-  };
-}
+const INSTALLER_LANGUAGE_PROMPT_COPY: InstallerLanguagePromptCopy = {
+  chooseMessage: "Choose installer language",
+  detectedSuffix: "detected",
+  customLabel: "Other",
+  customHint: "Enter any BCP 47 language tag",
+  textMessage: "Enter language tag (BCP 47)",
+  invalidLanguageTag: "Use a valid BCP 47 language tag",
+};
 
 function formatOpenLinks(links?: string | string[]) {
   const list = (Array.isArray(links) ? links : [links])
@@ -64,7 +55,7 @@ function formatOpenLinks(links?: string | string[]) {
 
 export async function promptInstallerLanguage(prompt: InstallerLanguagePromptApi) {
   const detected = detectLocalLanguageTag("en");
-  const copy = resolveInstallerLanguagePromptCopy(detected);
+  const copy = INSTALLER_LANGUAGE_PROMPT_COPY;
   const selected = String(
     prompt.ensureNotCancelled(
       await prompt.select({

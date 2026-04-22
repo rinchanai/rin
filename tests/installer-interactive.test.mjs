@@ -154,7 +154,7 @@ test("promptInstallerLanguage uses English-only copy for non-Chinese locales", a
   }
 });
 
-test("promptInstallerLanguage uses Chinese-only copy for Chinese locales", async () => {
+test("promptInstallerLanguage keeps the picker copy English-only for Chinese locales", async () => {
   const originalLang = process.env.LANG;
   const originalLcAll = process.env.LC_ALL;
   const originalLcMessages = process.env.LC_MESSAGES;
@@ -178,15 +178,15 @@ test("promptInstallerLanguage uses Chinese-only copy for Chinese locales", async
     });
 
     assert.equal(result, "en");
-    assert.equal(selectOptions.message, "选择安装器语言");
+    assert.equal(selectOptions.message, "Choose installer language");
     assert.equal(
       selectOptions.options.find((option) => option.value === "zh-CN")?.hint,
-      "zh-CN · 已检测",
+      "zh-CN · detected",
     );
-    assert.equal(selectOptions.options.at(-1)?.label, "其他");
+    assert.equal(selectOptions.options.at(-1)?.label, "Other");
     assert.equal(
       selectOptions.options.at(-1)?.hint,
-      "输入任意 BCP 47 语言标签",
+      "Enter any BCP 47 language tag",
     );
   } finally {
     if (originalLang == null) delete process.env.LANG;
