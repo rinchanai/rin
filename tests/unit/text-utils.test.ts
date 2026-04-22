@@ -29,10 +29,16 @@ test("text utils normalize strings consistently", () => {
   );
   assert.deepEqual(textUtils.normalizeStringList(null), []);
   assert.deepEqual(
-    textUtils.normalizeStringList([" Rules ", "rules", "FETCH"], {
+    textUtils.normalizeStringList(new Set([" Rules ", "rules", "FETCH"]), {
       lowercase: true,
     }),
     ["rules", "fetch"],
+  );
+  assert.deepEqual(
+    textUtils.normalizeStringList([" First ", "first", "SECOND"], {
+      lowercase: false,
+    }),
+    ["First", "SECOND"],
   );
   assert.equal(
     textUtils.normalizeNeedle("  Hello\nWORLD  "),
@@ -45,5 +51,9 @@ test("text utils normalize strings consistently", () => {
   assert.deepEqual(
     textUtils.latinTokens("foo//bar /baz/ gpt-5 gpt-5 __ cache__/tmp"),
     ["foo", "bar", "baz", "gpt-5", "cache", "tmp"],
+  );
+  assert.deepEqual(
+    textUtils.latinTokens("HTTP/API http/api Gpt-5 gpt-5"),
+    ["http/api", "gpt-5"],
   );
 });

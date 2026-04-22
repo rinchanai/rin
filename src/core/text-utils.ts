@@ -1,11 +1,3 @@
-function normalizeWhitespace(value: unknown): string {
-  return safeString(value).replace(/\s+/g, " ").trim();
-}
-
-function normalizeStringKey(value: unknown): string {
-  return safeString(value).trim().toLowerCase();
-}
-
 function iterValues(values: Iterable<unknown> | null | undefined) {
   return values ?? [];
 }
@@ -14,6 +6,24 @@ export function safeString(value: unknown): string {
   if (typeof value === "string") return value;
   if (value == null) return "";
   return String(value);
+}
+
+function normalizeTrimmedString(value: unknown): string {
+  return safeString(value).trim();
+}
+
+function normalizeWhitespace(value: unknown): string {
+  return safeString(value).replace(/\s+/g, " ").trim();
+}
+
+function normalizeStringKey(value: unknown): string {
+  return normalizeTrimmedString(value).toLowerCase();
+}
+
+function normalizeStringEntry(value: unknown) {
+  const text = normalizeTrimmedString(value);
+  const key = normalizeStringKey(text);
+  return key ? { text, key } : null;
 }
 
 export function trimText(value: unknown, max = 280): string {
@@ -33,11 +43,10 @@ export function normalizeStringList(
   const out: string[] = [];
   const seen = new Set<string>();
   for (const value of iterValues(values)) {
-    const normalized = safeString(value).trim();
-    const key = normalizeStringKey(normalized);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    out.push(options.lowercase ? key : normalized);
+    const entry = normalizeStringEntry(value);
+    if (!entry || seen.has(entry.key)) continue;
+    seen.add(entry.key);
+    out.push(options.lowercase ? entry.key : entry.text);
   }
   return out;
 }
@@ -51,10 +60,11 @@ export function normalizeNeedle(value: string): string {
 }
 
 export function latinTokens(value: string): string[] {
-  return uniqueStrings(
+  return normalizeStringList(
     safeString(value)
       .toLowerCase()
       .match(/[a-z0-9]+(?:[_/-][a-z0-9]+)*/g)
-      ?.filter((item) => item.length >= 3) ?? [],
+      ?.filter((item) => item.length >= 3),
+    { lowercase: true },
   );
 }
