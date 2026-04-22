@@ -14,7 +14,7 @@ export type SubagentSessionMode = "memory" | "persist" | "resume" | "fork";
 
 export type SubagentSessionConfig = {
   mode?: SubagentSessionMode;
-  ref?: string;
+  sessionFile?: string;
   name?: string;
   keep?: boolean;
 };

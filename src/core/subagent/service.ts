@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
 import { normalizeStringList, safeString } from "../text-utils.js";
 
 const HOME_DIR = os.homedir();
@@ -11,12 +10,8 @@ import type {
 } from "@mariozechner/pi-agent-core";
 
 import { BUILTIN_MODULE_ORDER } from "../builtins/registry.js";
-import { listBoundSessions } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
-import {
-  getManagedSessionSearchDirs,
-  getManagedSubagentSessionDir,
-} from "../session/managed-paths.js";
+import { getManagedSubagentSessionDir } from "../session/managed-paths.js";
 import { loadRinCodingAgent } from "../rin-lib/loader.js";
 import {
   createConfiguredAgentSession,
@@ -25,10 +20,11 @@ import {
 import { readUsageMetrics } from "../usage-metrics.js";
 import {
   formatSubagentSessionModeInvalidError,
-  formatSubagentSessionRefAmbiguousError,
-  formatSubagentSessionRefNotFoundError,
-  formatSubagentSessionRefRequiredError,
+  formatSubagentSessionFileNotFoundError,
+  formatSubagentSessionFileRequiredError,
   normalizeSubagentSessionConfig,
+  resolveSubagentSessionFile,
+  toSubagentSessionFile,
   type NormalizedSubagentSessionConfig,
 } from "./session-utils.js";
 import {
@@ -80,13 +76,6 @@ type NormalizedSubagentTask = Omit<
   disabledExtensions: string[];
 };
 
-type SessionReferenceCandidate = {
-  id?: string;
-  normalizedId?: string;
-  path: string;
-  normalizedPath: string;
-};
-
 function isPersistedMode(
   session: Pick<SubagentSessionConfig, "mode" | "keep">,
 ): boolean {
@@ -101,124 +90,21 @@ async function loadSessionManagerModule() {
   return { SessionManager: (codingAgentModule as any).SessionManager };
 }
 
-function toSessionReferenceCandidates(
-  sessions: Array<{ id?: unknown; path?: unknown }>,
-): SessionReferenceCandidate[] {
-  const candidates: SessionReferenceCandidate[] = [];
-  for (const info of sessions) {
-    const sessionPath = safeString(info?.path || "").trim();
-    if (!sessionPath) continue;
-    const sessionId = safeString(info?.id || "").trim() || undefined;
-    candidates.push({
-      id: sessionId,
-      normalizedId: sessionId?.toLowerCase(),
-      path: sessionPath,
-      normalizedPath: path.resolve(sessionPath).toLowerCase(),
-    });
-  }
-  return candidates;
-}
-
-export function selectSessionReferencePath(options: {
-  ref: string;
-  sessions: Array<{ id?: unknown; path?: unknown }>;
-  directMatchPath?: string;
-}):
-  | { kind: "match"; path: string }
-  | { kind: "required" | "ambiguous" | "not_found" } {
-  const wanted = String(options.ref || "").trim();
-  if (!wanted) return { kind: "required" };
-
-  const candidates = toSessionReferenceCandidates(options.sessions);
-  const normalizedWanted = wanted.toLowerCase();
-  const normalizedDirectPath = options.directMatchPath
-    ? path.resolve(options.directMatchPath).toLowerCase()
-    : undefined;
-
-  let exactIdMatch: SessionReferenceCandidate | undefined;
-  let exactPathTextMatch: SessionReferenceCandidate | undefined;
-  const prefixMatches: SessionReferenceCandidate[] = [];
-
-  for (const candidate of candidates) {
-    if (
-      normalizedDirectPath &&
-      candidate.normalizedPath === normalizedDirectPath
-    ) {
-      return { kind: "match", path: candidate.path };
-    }
-    if (!exactIdMatch && candidate.normalizedId === normalizedWanted) {
-      exactIdMatch = candidate;
-    }
-    if (
-      !exactPathTextMatch &&
-      candidate.normalizedPath === normalizedWanted
-    ) {
-      exactPathTextMatch = candidate;
-    }
-    if (candidate.normalizedId?.startsWith(normalizedWanted)) {
-      prefixMatches.push(candidate);
-    }
-  }
-
-  if (exactIdMatch) return { kind: "match", path: exactIdMatch.path };
-  if (exactPathTextMatch) {
-    return { kind: "match", path: exactPathTextMatch.path };
-  }
-  if (prefixMatches.length === 1) {
-    return { kind: "match", path: prefixMatches[0].path };
-  }
-  if (prefixMatches.length > 1) {
-    return { kind: "ambiguous" };
-  }
-  return { kind: "not_found" };
-}
-
-async function resolveSessionReference(ref: string): Promise<{ path: string }> {
-  const wanted = String(ref || "").trim();
-
-  const directCandidates = wanted
-    ? path.isAbsolute(wanted)
-      ? [wanted]
-      : [path.resolve(HOME_DIR, wanted)]
-    : [];
-  const directMatchPath = directCandidates.find((candidate) => {
-    try {
-      return fs.existsSync(candidate);
-    } catch {
-      return false;
-    }
-  });
-
-  const { SessionManager } = await loadSessionManagerModule();
+async function resolveSessionFilePath(
+  sessionFile: string,
+): Promise<{ path: string }> {
+  const wanted = String(sessionFile || "").trim();
   const profile = resolveRuntimeProfile({ cwd: HOME_DIR });
-  const sessions = (
-    await Promise.all(
-      getManagedSessionSearchDirs(profile.agentDir).map((sessionDir) =>
-        listBoundSessions({
-          cwd: HOME_DIR,
-          agentDir: profile.agentDir,
-          sessionDir,
-          SessionManager,
-        }),
-      ),
-    )
-  ).flat();
-  const match = selectSessionReferencePath({
-    ref: wanted,
-    sessions,
-    directMatchPath,
-  });
-
-  if (match.kind === "match") {
-    return { path: match.path };
+  const resolved = resolveSubagentSessionFile(profile.agentDir, wanted);
+  if (!resolved) {
+    throw new Error("session_file_required");
   }
-  if (match.kind === "required") {
-    throw new Error("session_ref_required");
-  }
-  if (match.kind === "ambiguous") {
-    throw new Error(formatSubagentSessionRefAmbiguousError(wanted));
-  }
-  throw new Error(formatSubagentSessionRefNotFoundError(wanted));
+  try {
+    if (fs.existsSync(resolved)) {
+      return { path: resolved };
+    }
+  } catch {}
+  throw new Error(formatSubagentSessionFileNotFoundError(wanted));
 }
 
 export { forkSessionManagerCompat } from "../session/fork.js";
@@ -239,7 +125,9 @@ async function createManagedSession(task: NormalizedSubagentTask) {
       sessionManager = SessionManager.create(cwd, sessionDir);
       break;
     case "resume": {
-      const source = await resolveSessionReference(sessionConfig.ref || "");
+      const source = await resolveSessionFilePath(
+        sessionConfig.sessionFile || "",
+      );
       sessionManager = SessionManager.open(
         source.path,
         sessionDir,
@@ -248,7 +136,9 @@ async function createManagedSession(task: NormalizedSubagentTask) {
       break;
     }
     case "fork": {
-      const source = await resolveSessionReference(sessionConfig.ref || "");
+      const source = await resolveSessionFilePath(
+        sessionConfig.sessionFile || "",
+      );
       sessionManager = forkSessionManagerCompat(
         SessionManager,
         source.path,
@@ -393,15 +283,15 @@ function validateTasks(
     }
     if (
       (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
-      !sessionConfig.ref
+      !sessionConfig.sessionFile
     ) {
-      return formatSubagentSessionRefRequiredError(sessionConfig.mode);
+      return formatSubagentSessionFileRequiredError(sessionConfig.mode);
     }
     if (
       (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
-      sessionConfig.ref
+      sessionConfig.sessionFile
     ) {
-      return `Session ref is only valid with session.mode \`resume\` or \`fork\`.`;
+      return "session.sessionFile is only valid with session.mode `resume` or `fork`.";
     }
     if (
       typeof sessionConfig.keep === "boolean" &&
@@ -472,12 +362,15 @@ export function collectTaskResultState(
 
 function syncSessionMetadata(session: any, result: TaskResult): void {
   const manager = session?.sessionManager;
+  const profile = resolveRuntimeProfile({ cwd: HOME_DIR });
   result.sessionPersisted = Boolean(
     manager?.isPersisted?.() && manager?.getSessionFile?.(),
   );
   result.sessionId = safeString(manager?.getSessionId?.() || "").trim() || undefined;
-  result.sessionFile =
-    safeString(manager?.getSessionFile?.() || "").trim() || undefined;
+  result.sessionFile = toSubagentSessionFile(
+    profile.agentDir,
+    manager?.getSessionFile?.(),
+  );
   result.sessionName =
     safeString(manager?.getSessionName?.() || "").trim() || undefined;
 }

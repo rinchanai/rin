@@ -14,7 +14,7 @@ import {
   getSubagentBackendInfo,
 } from "./service.js";
 import {
-  formatSubagentSessionRefHint,
+  formatSubagentSessionFileHint,
   getDefaultSubagentSessionDir,
 } from "./session-utils.js";
 import type {
@@ -64,10 +64,10 @@ const SessionModeSchema = StringEnum(
 const SessionSchema = Type.Optional(
   Type.Object({
     mode: Type.Optional(SessionModeSchema),
-    ref: Type.Optional(
+    sessionFile: Type.Optional(
       Type.String({
         description:
-          `Worker session file path, exact session id, or unique session id prefix. Required for session.mode resume or fork. If you need to discover one, inspect ${getDefaultSubagentSessionDir()} with bash/find/rg.`,
+          `Worker sessionFile path relative to agentDir, for example sessions/managed/subagent/demo.jsonl. Required for session.mode resume or fork. If you need to discover one, inspect ${getDefaultSubagentSessionDir()} with bash/find/rg.`,
       }),
     ),
     name: Type.Optional(
@@ -255,7 +255,7 @@ async function runSubagentResult(
   if (run.ok === false) {
     const suffix = run.error.startsWith("Unknown or unavailable model:")
       ? `\n\n${formatModelList(detailsBase)}`
-      : `\n\n${formatSubagentSessionRefHint()}`;
+      : `\n\n${formatSubagentSessionFileHint()}`;
     return {
       content: [{ type: "text" as const, text: `${run.error}${suffix}` }],
       details: detailsBase,

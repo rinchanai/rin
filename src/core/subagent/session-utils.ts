@@ -1,4 +1,5 @@
 import os from "node:os";
+import path from "node:path";
 
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { getManagedSubagentSessionDir } from "../session/managed-paths.js";
@@ -8,8 +9,8 @@ import type {
 } from "./types.js";
 
 const HOME_DIR = os.homedir();
-const SESSION_REF_TARGET_DESCRIPTION =
-  "a session file path, exact id, or unique id prefix";
+const SESSION_FILE_TARGET_DESCRIPTION =
+  "a sessionFile path relative to agentDir";
 
 export const VALID_SUBAGENT_SESSION_MODES = [
   "memory",
@@ -36,16 +37,49 @@ function normalizeSessionMode(value: unknown) {
   };
 }
 
+function normalizeStoredSessionFile(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return undefined;
+  if (path.isAbsolute(text)) return path.resolve(text);
+  const normalized = text.replace(/\\+/g, "/").replace(/^\.(?:\/|$)/, "");
+  const trimmed = normalized.replace(/^\/+/, "").trim();
+  return trimmed || undefined;
+}
+
 export function normalizeSubagentSessionConfig(
   session: SubagentSessionConfig | undefined,
 ): NormalizedSubagentSessionConfig {
   const normalizedMode = normalizeSessionMode(session?.mode);
   return {
     ...normalizedMode,
-    ref: String(session?.ref || "").trim() || undefined,
+    sessionFile: normalizeStoredSessionFile(session?.sessionFile),
     name: String(session?.name || "").trim() || undefined,
     keep: typeof session?.keep === "boolean" ? session.keep : undefined,
   };
+}
+
+export function resolveSubagentSessionFile(
+  agentDir: string,
+  value: unknown,
+): string | undefined {
+  const sessionFile = normalizeStoredSessionFile(value);
+  if (!sessionFile) return undefined;
+  if (path.isAbsolute(sessionFile)) return sessionFile;
+  return path.join(agentDir, ...sessionFile.split("/"));
+}
+
+export function toSubagentSessionFile(
+  agentDir: string,
+  value: unknown,
+): string | undefined {
+  const sessionFile = normalizeStoredSessionFile(value);
+  if (!sessionFile) return undefined;
+  if (!path.isAbsolute(sessionFile)) return sessionFile;
+  const relative = path.relative(agentDir, sessionFile);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return sessionFile;
+  }
+  return normalizeStoredSessionFile(relative);
 }
 
 export function getDefaultSubagentSessionDir() {
@@ -53,22 +87,20 @@ export function getDefaultSubagentSessionDir() {
   return getManagedSubagentSessionDir(profile.agentDir);
 }
 
-export function formatSubagentSessionRefRequiredError(
+export function formatSubagentSessionFileRequiredError(
   mode: Extract<SubagentSessionMode, "resume" | "fork">,
 ): string {
-  return `Session ref is required when session.mode is ${mode}. Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_REF_TARGET_DESCRIPTION}.`;
+  return `Session file is required when session.mode is ${mode}. Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_FILE_TARGET_DESCRIPTION}.`;
 }
 
-export function formatSubagentSessionRefAmbiguousError(ref: string): string {
-  return `Session ref is ambiguous: ${ref}. Inspect ${getDefaultSubagentSessionDir()} and use an exact path or a less ambiguous id prefix.`;
+export function formatSubagentSessionFileNotFoundError(
+  sessionFile: string,
+): string {
+  return `Session file not found: ${sessionFile}. Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_FILE_TARGET_DESCRIPTION}.`;
 }
 
-export function formatSubagentSessionRefNotFoundError(ref: string): string {
-  return `Session not found: ${ref}. Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_REF_TARGET_DESCRIPTION}.`;
-}
-
-export function formatSubagentSessionRefHint(): string {
-  return `Hint: inspect ${getDefaultSubagentSessionDir()} with bash/find/rg, then pass session.ref as ${SESSION_REF_TARGET_DESCRIPTION}.`;
+export function formatSubagentSessionFileHint(): string {
+  return `Hint: inspect ${getDefaultSubagentSessionDir()} with bash/find/rg, then pass session.sessionFile as ${SESSION_FILE_TARGET_DESCRIPTION}.`;
 }
 
 export function formatSubagentSessionModeInvalidError(mode: string): string {
