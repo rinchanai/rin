@@ -90,7 +90,10 @@ test("worker helpers expose normalized slash commands and oauth state", () => {
   const session = createSessionFixture();
   const commands = workerHelpers.getSlashCommands(session);
 
-  assert.equal(commands.filter((command) => command.name === "resume").length, 1);
+  assert.equal(
+    commands.filter((command) => command.name === "resume").length,
+    1,
+  );
   assert.ok(
     commands.some(
       (command) =>
@@ -122,7 +125,6 @@ test("worker helpers expose normalized slash commands and oauth state", () => {
   });
 });
 
-
 test("getSessionState exposes worker-owned turn activity separately from streaming", () => {
   const state = workerHelpers.getSessionState(
     {
@@ -144,6 +146,69 @@ test("getSessionState exposes worker-owned turn activity separately from streami
 
   assert.equal(state.turnActive, true);
   assert.equal(state.isStreaming, false);
+});
+
+test("runBuiltinCommand lists available sessions and reports missing session ids", async () => {
+  const runtime = {
+    session: {
+      sessionManager: {
+        getCwd: () => "/tmp/project",
+        getSessionDir: () => "/tmp/sessions",
+      },
+    },
+  };
+
+  const listed = await workerHelpers.runBuiltinCommand(runtime, "/resume", {
+    SessionManager: {
+      list: async () => [{ id: "abc", path: "/tmp/sessions/abc.jsonl" }],
+    },
+  });
+  assert.equal(listed.handled, true);
+  assert.match(String(listed.text || ""), /Available sessions:/);
+  assert.match(String(listed.text || ""), /abc — abc/);
+
+  const empty = await workerHelpers.runBuiltinCommand(runtime, "/resume", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(empty.text, "No sessions available.");
+
+  const missing = await workerHelpers.runBuiltinCommand(
+    runtime,
+    "/resume missing",
+    {
+      SessionManager: {
+        list: async () => [{ id: "abc", path: "/tmp/sessions/abc.jsonl" }],
+      },
+    },
+  );
+  assert.equal(missing.text, "Session not found: missing");
+});
+
+test("runBuiltinCommand lists available models before selection", async () => {
+  const runtime = {
+    session: {
+      modelRegistry: {
+        getAvailable: async () => [
+          { provider: "openai", id: "gpt-5" },
+          { provider: "anthropic", id: "claude-sonnet" },
+        ],
+      },
+    },
+  };
+
+  const listed = await workerHelpers.runBuiltinCommand(runtime, "/model", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(listed.handled, true);
+  assert.match(String(listed.text || ""), /Available models:/);
+  assert.match(String(listed.text || ""), /openai\/gpt-5/);
+  assert.match(String(listed.text || ""), /anthropic\/claude-sonnet/);
+
+  runtime.session.modelRegistry.getAvailable = async () => [];
+  const empty = await workerHelpers.runBuiltinCommand(runtime, "/model", {
+    SessionManager: { list: async () => [] },
+  });
+  assert.equal(empty.text, "No models available.");
 });
 
 test("runBuiltinCommand uses runtime for session replacement commands", async () => {
@@ -207,29 +272,32 @@ test("runBuiltinCommand uses runtime for session replacement commands", async ()
     },
   );
   assert.equal(resultResume.handled, true);
-  assert.match(resultResume.text, /Resumed session: abc/);
+  assert.match(String(resultResume.text || ""), /Resumed session: abc/);
 
   const resultListModels = await workerHelpers.runBuiltinCommand(
     runtime,
     "/model",
     { SessionManager: { list: async () => [] } },
   );
-  assert.match(resultListModels.text, /Available models:/);
-  assert.match(resultListModels.text, /openai\/gpt-5/);
+  assert.match(String(resultListModels.text || ""), /Available models:/);
+  assert.match(String(resultListModels.text || ""), /openai\/gpt-5/);
 
   const resultSetModel = await workerHelpers.runBuiltinCommand(
     runtime,
     "/model openai/gpt-5 high",
     { SessionManager: { list: async () => [] } },
   );
-  assert.match(resultSetModel.text, /Model set to: openai\/gpt-5 \(high\)/);
+  assert.match(
+    String(resultSetModel.text || ""),
+    /Model set to: openai\/gpt-5 \(high\)/,
+  );
 
   const resultMissingModel = await workerHelpers.runBuiltinCommand(
     runtime,
     "/model missing",
     { SessionManager: { list: async () => [] } },
   );
-  assert.match(resultMissingModel.text, /Usage: \/model/);
+  assert.match(String(resultMissingModel.text || ""), /Usage: \/model/);
 
   assert.deepEqual(calls, [
     ["abort"],

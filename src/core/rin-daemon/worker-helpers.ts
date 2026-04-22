@@ -69,38 +69,54 @@ export function splitCommandArgs(text: string) {
   return args;
 }
 
-function formatSessionStatsLine(label: string, value: string) {
+type BuiltinCommandResult = { handled: boolean; text?: string };
+
+type ParsedBuiltinCommand = {
+  command: string;
+  args: string[];
+  argsText: string;
+};
+
+function handledText(text: string): BuiltinCommandResult {
+  return { handled: true, text };
+}
+
+function formatLabelValueLine(label: string, value: string) {
   return `${label}: ${value}`;
 }
 
-export function formatSessionStats(stats: any) {
-  return [
-    formatSessionStatsLine("Session ID", String(stats?.sessionId || "")),
-    formatSessionStatsLine(
-      "Session File",
-      String(stats?.sessionFile || "In-memory"),
-    ),
-    formatSessionStatsLine(
-      "Messages",
-      `${String(stats?.totalMessages || 0)} (user=${String(stats?.userMessages || 0)}, assistant=${String(stats?.assistantMessages || 0)}, toolResults=${String(stats?.toolResults || 0)})`,
-    ),
-    formatSessionStatsLine("Tool Calls", String(stats?.toolCalls || 0)),
-    formatSessionStatsLine(
-      "Tokens",
-      `${String(stats?.tokens?.total || 0)} (input=${String(stats?.tokens?.input || 0)}, output=${String(stats?.tokens?.output || 0)}, cacheRead=${String(stats?.tokens?.cacheRead || 0)}, cacheWrite=${String(stats?.tokens?.cacheWrite || 0)})`,
-    ),
-    formatSessionStatsLine("Cost", String(stats?.cost || 0)),
-  ].join("\n");
+function formatSectionList(
+  title: string,
+  lines: string[],
+  emptyText: string,
+) {
+  return lines.length ? [title, ...lines].join("\n") : emptyText;
 }
 
-function formatBuiltinList(title: string, lines: string[], emptyText: string) {
-  return lines.length ? [title, ...lines].join("\n") : emptyText;
+function parseBuiltinCommand(commandLine: string): ParsedBuiltinCommand | null {
+  const trimmed = String(commandLine || "").trim();
+  if (!trimmed.startsWith("/")) return null;
+  const [name = "", ...args] = splitCommandArgs(trimmed.slice(1));
+  const command = name.trim();
+  if (!command) return null;
+  return {
+    command,
+    args,
+    argsText: args.join(" ").trim(),
+  };
 }
 
 function formatSessionListItem(item: any) {
   const id = String(item?.id || "").trim();
   const label = String(item?.name || item?.id || "").trim() || id;
   return `${id} — ${label}`;
+}
+
+function findSessionById(sessions: any[], targetId: string) {
+  const nextTargetId = String(targetId || "").trim();
+  return sessions.find(
+    (item: any) => String(item?.id || "").trim() === nextTargetId,
+  );
 }
 
 function formatModelRef(model: any) {
@@ -113,60 +129,75 @@ function findModelByRef(models: any[], targetRef: string) {
   return models.find((model: any) => formatModelRef(model) === targetRef);
 }
 
+function formatModelList(models: any[]) {
+  return formatSectionList(
+    "Available models:",
+    models.slice(0, 50).map(formatModelRef).filter(Boolean),
+    "No models available.",
+  );
+}
+
+export function formatSessionStats(stats: any) {
+  return [
+    formatLabelValueLine("Session ID", String(stats?.sessionId || "")),
+    formatLabelValueLine(
+      "Session File",
+      String(stats?.sessionFile || "In-memory"),
+    ),
+    formatLabelValueLine(
+      "Messages",
+      `${String(stats?.totalMessages || 0)} (user=${String(stats?.userMessages || 0)}, assistant=${String(stats?.assistantMessages || 0)}, toolResults=${String(stats?.toolResults || 0)})`,
+    ),
+    formatLabelValueLine("Tool Calls", String(stats?.toolCalls || 0)),
+    formatLabelValueLine(
+      "Tokens",
+      `${String(stats?.tokens?.total || 0)} (input=${String(stats?.tokens?.input || 0)}, output=${String(stats?.tokens?.output || 0)}, cacheRead=${String(stats?.tokens?.cacheRead || 0)}, cacheWrite=${String(stats?.tokens?.cacheWrite || 0)})`,
+    ),
+    formatLabelValueLine("Cost", String(stats?.cost || 0)),
+  ].join("\n");
+}
+
 export async function runBuiltinCommand(
   runtime: any,
   commandLine: string,
   deps: { SessionManager: any },
 ) {
   const session = runtime.session;
-  const trimmed = String(commandLine || "").trim();
-  if (!trimmed.startsWith("/")) return { handled: false };
-  const [name = "", ...rest] = splitCommandArgs(trimmed.slice(1));
-  const argsText = rest.join(" ").trim();
-  const command = name.trim();
-  if (!command) return { handled: false };
+  const parsedCommand = parseBuiltinCommand(commandLine);
+  if (!parsedCommand) return { handled: false };
 
+  const { command, args, argsText } = parsedCommand;
   switch (command) {
     case "abort":
       await session.abort();
-      return { handled: true, text: "Aborted current operation." };
+      return handledText("Aborted current operation.");
     case "new":
       await runtime.newSession();
-      return { handled: true, text: "Started a new session." };
+      return handledText("Started a new session.");
     case "compact":
       await session.compact(argsText || undefined);
-      return { handled: true, text: "Compacted session." };
+      return handledText("Compacted session.");
     case "reload":
       await session.reload();
-      return {
-        handled: true,
-        text: "Reloaded extensions, prompts, skills, and themes.",
-      };
+      return handledText("Reloaded extensions, prompts, skills, and themes.");
     case "session":
-      return {
-        handled: true,
-        text: formatSessionStats(session.getSessionStats()),
-      };
+      return handledText(formatSessionStats(session.getSessionStats()));
     case "changelog": {
       const { getChangelogPath, parseChangelog }: any =
         await loadRinChangelogModule();
       const changelogPath = getChangelogPath();
       const entries = parseChangelog(changelogPath);
       if (entries.length === 0) {
-        return {
-          handled: true,
-          text: "No changelog entries found.",
-        };
+        return handledText("No changelog entries found.");
       }
-      return {
-        handled: true,
-        text: entries
+      return handledText(
+        entries
           .slice()
           .reverse()
           .map((entry: any) => String(entry?.content || "").trim())
           .filter(Boolean)
           .join("\n\n"),
-      };
+      );
     }
     case "resume": {
       const sessions = await listBoundSessions({
@@ -175,57 +206,40 @@ export async function runBuiltinCommand(
         SessionManager: deps.SessionManager,
       });
       if (!argsText) {
-        return {
-          handled: true,
-          text: formatBuiltinList(
+        return handledText(
+          formatSectionList(
             "Available sessions:",
             sessions.slice(0, 20).map(formatSessionListItem),
             "No sessions available.",
           ),
-        };
+        );
       }
-      const match = sessions.find(
-        (item: any) => String(item?.id || "").trim() === argsText,
-      );
+      const match = findSessionById(sessions, argsText);
       if (!match) {
-        return { handled: true, text: `Session not found: ${argsText}` };
+        return handledText(`Session not found: ${argsText}`);
       }
       await runtime.switchSession(String(match.path || ""));
-      return {
-        handled: true,
-        text: `Resumed session: ${String(match.id || "").trim()}`,
-      };
+      return handledText(`Resumed session: ${String(match.id || "").trim()}`);
     }
     case "model": {
       const models = await session.modelRegistry.getAvailable();
-      if (!rest.length) {
-        return {
-          handled: true,
-          text: formatBuiltinList(
-            "Available models:",
-            models.slice(0, 50).map(formatModelRef).filter(Boolean),
-            "No models available.",
-          ),
-        };
+      if (!args.length) {
+        return handledText(formatModelList(models));
       }
-      const [targetRef = "", thinkingLevel = ""] = rest;
+      const [targetRef = "", thinkingLevel = ""] = args;
       const nextTargetRef = String(targetRef || "").trim();
       if (!nextTargetRef.includes("/")) {
-        return {
-          handled: true,
-          text: "Usage: /model <provider/model> [thinking-level]",
-        };
+        return handledText("Usage: /model <provider/model> [thinking-level]");
       }
       const match = findModelByRef(models, nextTargetRef);
       if (!match) {
-        return { handled: true, text: `Model not found: ${nextTargetRef}` };
+        return handledText(`Model not found: ${nextTargetRef}`);
       }
       await session.setModel(match);
       if (thinkingLevel) await session.setThinkingLevel(thinkingLevel);
-      return {
-        handled: true,
-        text: `Model set to: ${formatModelRef(match)}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
-      };
+      return handledText(
+        `Model set to: ${formatModelRef(match)}${thinkingLevel ? ` (${thinkingLevel})` : ""}`,
+      );
     }
     default:
       return { handled: false };
