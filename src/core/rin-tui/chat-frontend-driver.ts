@@ -146,6 +146,20 @@ export class ChatFrontendDriver {
     await this.interimDeliveryQueue;
   }
 
+  private async flushPendingAssistantInterimBeforeFinal(finalText: string) {
+    const pendingText = safeString(this.pendingCompletedAssistantText).trim();
+    const nextFinalText = safeString(finalText).trim();
+    if (!pendingText) return false;
+    if (pendingText === nextFinalText) {
+      this.pendingCompletedAssistantText = "";
+      return false;
+    }
+    await this.queueInterimDelivery(async () => {
+      await this.flushPendingAssistantInterim();
+    });
+    return true;
+  }
+
   private async flushPendingAssistantInterim() {
     const text = safeString(this.pendingCompletedAssistantText).trim();
     this.pendingCompletedAssistantText = "";
@@ -307,6 +321,8 @@ export class ChatFrontendDriver {
     }
 
     const completion = await liveTurn.promise;
+    const completionFinalText = safeString((completion as any)?.finalText).trim();
+    await this.flushPendingAssistantInterimBeforeFinal(completionFinalText);
     await this.waitForInterimDeliveries();
     const canonicalCompletion = resolveTurnCompletion({
       ...completion,

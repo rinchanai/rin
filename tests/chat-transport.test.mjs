@@ -429,24 +429,82 @@ test("chat transport prefers internal telegram reaction calls for working reacti
     second,
   );
 
-  assert.equal(first, "🌘");
-  assert.equal(second, "🌗");
+  assert.equal(first, "🤔");
+  assert.equal(second, "🔥");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
     {
       chat_id: "2",
       message_id: 41,
-      reaction: [{ type: "emoji", emoji: "🌘" }],
+      reaction: [{ type: "emoji", emoji: "🤔" }],
     },
     {
       chat_id: "2",
       message_id: 41,
-      reaction: [{ type: "emoji", emoji: "🌗" }],
+      reaction: [{ type: "emoji", emoji: "🔥" }],
     },
     {
       chat_id: "2",
       message_id: 41,
       reaction: [],
+    },
+  ]);
+});
+
+test("chat transport sends the fixed Telegram working pair without checking chat reaction compatibility", async () => {
+  const calls = [];
+  const chats = [];
+  const app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        internal: {
+          async getChat(payload) {
+            chats.push(payload);
+            return {
+              available_reactions: [
+                { type: "emoji", emoji: "❤️" },
+                { type: "emoji", emoji: "🌕" },
+              ],
+            };
+          },
+          async setMessageReaction(payload) {
+            calls.push(payload);
+          },
+        },
+      },
+    ],
+  };
+
+  const first = await transport.rotateWorkingReaction(
+    app,
+    "telegram/1:2",
+    "41",
+    0,
+    "",
+  );
+  const second = await transport.rotateWorkingReaction(
+    app,
+    "telegram/1:2",
+    "41",
+    1,
+    first,
+  );
+
+  assert.equal(first, "🤔");
+  assert.equal(second, "🔥");
+  assert.deepEqual(chats, []);
+  assert.deepEqual(calls, [
+    {
+      chat_id: "2",
+      message_id: 41,
+      reaction: [{ type: "emoji", emoji: "🤔" }],
+    },
+    {
+      chat_id: "2",
+      message_id: 41,
+      reaction: [{ type: "emoji", emoji: "🔥" }],
     },
   ]);
 });
@@ -489,24 +547,24 @@ test("chat transport uses bot reaction helpers for onebot working reactions", as
     second,
   );
 
-  assert.equal(first, "🌘");
-  assert.equal(second, "🌗");
+  assert.equal(first, "🤔");
+  assert.equal(second, "🔥");
   assert.equal(cleared, true);
   assert.deepEqual(calls, [
-    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🌘" },
+    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🤔" },
     {
       kind: "delete",
       chatId: "1067390680",
       messageId: "52",
-      emoji: "🌘",
+      emoji: "🤔",
       userId: "2301401877",
     },
-    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🌗" },
+    { kind: "create", chatId: "1067390680", messageId: "52", emoji: "🔥" },
     {
       kind: "delete",
       chatId: "1067390680",
       messageId: "52",
-      emoji: "🌗",
+      emoji: "🔥",
       userId: "2301401877",
     },
   ]);
@@ -540,7 +598,7 @@ test("chat transport skips onebot working reactions in private chats", async () 
     app,
     "onebot/2301401877:private:519418441",
     "52",
-    "🌘",
+    "🤔",
   );
 
   assert.equal(first, "");

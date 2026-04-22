@@ -30,8 +30,8 @@ import {
   resolveStoredSessionFile,
 } from "../session/ref.js";
 
-const DEFAULT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
-const ONEBOT_WORKING_REACTION_FRAMES = ["🌘", "🌗", "🌖", "🌕"] as const;
+const DEFAULT_WORKING_REACTION_FRAMES = ["🤔", "🔥"] as const;
+const ONEBOT_WORKING_REACTION_FRAMES = ["🤔", "🔥"] as const;
 const CHAT_PRESENTATION_TIMEOUT_MS = 2500;
 
 async function withPresentationTimeout<T>(
@@ -53,11 +53,11 @@ export function getWorkingReactionFrame(platform: string, index: number) {
       ? ONEBOT_WORKING_REACTION_FRAMES
       : DEFAULT_WORKING_REACTION_FRAMES;
   const size = frames.length;
-  if (!size) return "🌕";
+  if (!size) return "";
   const nextIndex = Number.isFinite(index)
     ? Math.abs(Math.floor(index)) % size
     : 0;
-  return frames[nextIndex] || frames[0];
+  return frames[nextIndex] || frames[0] || "";
 }
 
 export async function sendTyping(app: any, chatKey: string, h: any) {
@@ -101,6 +101,7 @@ export async function rotateWorkingReaction(
   if (!target) return previousEmoji || "";
   const { parsed, bot } = target;
   const nextEmoji = getWorkingReactionFrame(parsed.platform, frameIndex);
+  if (!nextEmoji) return previousEmoji || "";
   if (previousEmoji && previousEmoji === nextEmoji) {
     return previousEmoji;
   }
@@ -129,10 +130,12 @@ export async function rotateWorkingReaction(
   if (typeof bot?.createReaction !== "function") {
     return previousEmoji || "";
   }
-  if (previousEmoji && previousEmoji !== nextEmoji) {
-    if (typeof bot?.deleteReaction !== "function") {
-      return previousEmoji || "";
-    }
+  const deletePrevious =
+    previousEmoji &&
+    previousEmoji !== nextEmoji &&
+    typeof bot?.deleteReaction === "function";
+  let previousDeleted = false;
+  if (deletePrevious) {
     await withPresentationTimeout(
       async () => {
         await bot.deleteReaction(
@@ -141,18 +144,30 @@ export async function rotateWorkingReaction(
           previousEmoji,
           safeString(bot?.selfId).trim() || undefined,
         );
+        previousDeleted = true;
         return true;
       },
       false,
     );
   }
-  return await withPresentationTimeout(
+  const created = await withPresentationTimeout(
     async () => {
       await bot.createReaction(parsed.chatId, messageId, nextEmoji);
       return nextEmoji;
     },
-    previousEmoji || "",
+    "",
   );
+  if (created) return created;
+  if (previousDeleted && previousEmoji) {
+    return await withPresentationTimeout(
+      async () => {
+        await bot.createReaction(parsed.chatId, messageId, previousEmoji);
+        return previousEmoji;
+      },
+      previousEmoji,
+    );
+  }
+  return previousEmoji || "";
 }
 
 export async function clearWorkingReaction(
