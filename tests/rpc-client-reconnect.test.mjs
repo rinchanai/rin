@@ -252,7 +252,7 @@ test("rpc interactive session keeps working status during compaction", () => {
   });
 });
 
-test("rpc interactive session does not downgrade a running owned turn after compaction state refresh", () => {
+test("rpc interactive session keeps working status from authoritative turnActive snapshots", () => {
   const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
   session.rpcConnected = true;
@@ -263,6 +263,7 @@ test("rpc interactive session does not downgrade a running owned turn after comp
   session.applyState({
     sessionId: "s1",
     sessionFile: "/tmp/demo.jsonl",
+    turnActive: true,
     isStreaming: false,
     isCompacting: false,
   });
@@ -274,6 +275,27 @@ test("rpc interactive session does not downgrade a running owned turn after comp
     label: "Working",
     connected: true,
   });
+});
+
+test("rpc interactive session clears stale local turn state when the worker reports turn inactive", () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.activeTurn = { mode: "prompt", message: "demo" };
+  session.setRemoteTurnRunning(true);
+
+  session.applyState({
+    sessionId: "s1",
+    sessionFile: "/tmp/demo.jsonl",
+    turnActive: false,
+    isStreaming: false,
+    isCompacting: false,
+  });
+
+  assert.equal(session.remoteTurnRunning, false);
+  assert.equal(session.activeTurn, null);
+  assert.equal(session.getFrontendStatusEvent(), null);
 });
 
 test("rpc interactive session reconnect loop restores transport and session in one pipeline", async () => {
