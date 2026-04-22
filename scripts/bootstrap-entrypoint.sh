@@ -74,7 +74,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 has_tty() {
-  [ -t 0 ] && [ -t 1 ] && [ -r "$TTY" ] 2>/dev/null && [ -w "$TTY" ] 2>/dev/null
+  [ -r "$TTY" ] 2>/dev/null && [ -w "$TTY" ] 2>/dev/null && (: <"$TTY" >"$TTY") >/dev/null 2>&1
 }
 
 say() {
