@@ -80,6 +80,10 @@ function syncLocalTransportLoader(instance: any) {
   );
 }
 
+function shouldIgnoreInteractiveSigint(instance: any) {
+  return instance?.ui?.stopped === true;
+}
+
 function createSessionSelectorLoaders(instance: any) {
   const renameSessionIfNamed = async (
     rename: (sessionFilePath: string, nextName: string) => Promise<void> | void,
@@ -205,6 +209,21 @@ export async function applyRinTuiOverrides() {
           );
           return { component: selector, focus: selector };
         });
+      };
+  }
+
+  const originalRegisterSignalHandlers =
+    interactiveModeProto?.registerSignalHandlers;
+  if (typeof originalRegisterSignalHandlers === "function") {
+    interactiveModeProto.registerSignalHandlers =
+      function registerSignalHandlersWithSigintFallback() {
+        originalRegisterSignalHandlers.call(this);
+        const handler = () => {
+          if (shouldIgnoreInteractiveSigint(this)) return;
+          this.handleCtrlC?.();
+        };
+        process.on("SIGINT", handler);
+        this.signalCleanupHandlers.push(() => process.off("SIGINT", handler));
       };
   }
 
