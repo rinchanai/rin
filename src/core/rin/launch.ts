@@ -4,14 +4,12 @@ import { spawn } from "node:child_process";
 
 import {
   buildUserShell,
-  isTmuxNoServerError,
   socketPathForUser,
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
 
 import {
-  createTargetExecutionContext,
   installConfigPath,
   ParsedArgs,
   repoRootFromHere,
@@ -43,12 +41,12 @@ async function runCommandCapture(
   );
 }
 
-export function buildTmuxSocketArgs(targetUser: string) {
-  return ["-L", `rin-${targetUser}`];
-}
-
-export function buildTmuxListArgs(socketArgs: string[]) {
-  return ["tmux", ...socketArgs, "list-sessions", "-F", "#S"];
+export function buildHiddenSessionListArgs(repoRoot: string) {
+  return [
+    process.execPath,
+    path.join(repoRoot, "dist", "app", "rin-hidden-session", "main.js"),
+    "list",
+  ];
 }
 
 export function buildTuiModeArg(std: boolean) {
@@ -84,24 +82,21 @@ export function buildDirectTuiArgs(
   ];
 }
 
-export function buildTmuxSessionArgs(
-  socketArgs: string[],
-  tmuxSession: string,
-  tuiArgv: string[],
+export function buildHiddenSessionAttachArgs(
+  repoRoot: string,
+  sessionName: string,
+  std: boolean,
+  passthrough: string[],
 ) {
   return [
-    "tmux",
-    ...socketArgs,
-    "new-session",
-    "-A",
-    "-s",
-    tmuxSession,
-    ...tuiArgv,
+    process.execPath,
+    path.join(repoRoot, "dist", "app", "rin-hidden-session", "main.js"),
+    "attach",
+    sessionName,
+    buildTuiModeArg(std),
+    "--",
+    ...passthrough,
   ];
-}
-
-export function normalizeTmuxListExitCode(code: number, stderr: string) {
-  return isTmuxNoServerError(code, stderr) ? 0 : code;
 }
 
 async function runTargetCommandCapture(
@@ -134,7 +129,6 @@ function resolveLaunchContext(parsed: ParsedArgs) {
   const repoRoot = repoRootFromHere();
   const targetUser = parsed.targetUser;
   const currentUser = os.userInfo().username;
-  const tmuxSocketArgs = buildTmuxSocketArgs(targetUser);
   const runtimeEnv = buildTuiRuntimeEnv(
     targetUser,
     currentUser,
@@ -148,7 +142,6 @@ function resolveLaunchContext(parsed: ParsedArgs) {
   return {
     repoRoot,
     targetUser,
-    tmuxSocketArgs,
     runtimeEnv,
     tuiArgv,
   };
@@ -160,28 +153,30 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
       `rin_not_installed: run rin-install first or pass --user/-u explicitly (expected ${installConfigPath()})`,
     );
   }
-  if (parsed.tmuxSession && parsed.tmuxList)
-    throw new Error("rin_tmux_mode_conflict");
+  if (parsed.hiddenSessionName && parsed.hiddenSessionList)
+    throw new Error("rin_hidden_session_mode_conflict");
 
-  const { repoRoot, targetUser, tmuxSocketArgs, runtimeEnv, tuiArgv } =
-    resolveLaunchContext(parsed);
+  const { repoRoot, targetUser, runtimeEnv, tuiArgv } = resolveLaunchContext(parsed);
 
-  if (parsed.tmuxList) {
+  if (parsed.hiddenSessionList) {
     const result = await runTargetCommandCapture(
       targetUser,
-      buildTmuxListArgs(tmuxSocketArgs),
+      buildHiddenSessionListArgs(repoRoot),
       runtimeEnv as Record<string, string>,
       repoRoot,
     );
     if (result.stdout) process.stdout.write(result.stdout);
-    if (normalizeTmuxListExitCode(result.code, result.stderr) !== 0 && result.stderr) {
-      process.stderr.write(result.stderr);
-    }
-    process.exit(normalizeTmuxListExitCode(result.code, result.stderr));
+    if (result.stderr) process.stderr.write(result.stderr);
+    process.exit(result.code);
   }
 
-  const argv = parsed.tmuxSession
-    ? buildTmuxSessionArgs(tmuxSocketArgs, parsed.tmuxSession, tuiArgv)
+  const argv = parsed.hiddenSessionName
+    ? buildHiddenSessionAttachArgs(
+        repoRoot,
+        parsed.hiddenSessionName,
+        parsed.std,
+        parsed.passthrough,
+      )
     : tuiArgv;
   const code = await runTargetCommand(
     targetUser,
