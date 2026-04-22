@@ -536,7 +536,7 @@ export async function startChatBridge(
           incomingMessageId: messageId,
           sessionFile: linkedSessionFile || undefined,
         },
-        "prompt",
+        controller.canSteerActiveTurn() ? "steer" : "prompt",
       );
       return { retry: false };
     } catch (error) {

@@ -218,6 +218,14 @@ export class ChatController {
     );
   }
 
+  canSteerActiveTurn() {
+    return (
+      this.frontendPhase === "sending" ||
+      this.frontendPhase === "working" ||
+      Boolean(this.session?.isStreaming)
+    );
+  }
+
   private setCurrentTurn(input: {
     incomingMessageId?: string;
     replyToMessageId?: string;
@@ -689,8 +697,51 @@ export class ChatController {
       incomingMessageId?: string;
       sessionFile?: string;
     },
-    _mode: "prompt" | "steer" = "prompt",
+    mode: "prompt" | "steer" = "prompt",
   ) {
+    if (mode === "steer" && this.canSteerActiveTurn()) {
+      const { sessionFile: wantedSessionFile } = normalizeSessionRef(input);
+      const restoreSessionFile =
+        wantedSessionFile || this.getRecoverableSessionFile();
+      await this.connect();
+      const { text, images } = await restorePromptParts({
+        text: input.text,
+        attachments: input.attachments,
+        startedAt: Date.now(),
+      });
+      const result = await this.driver.runTurn({
+        text,
+        images,
+        sessionFile: wantedSessionFile,
+        restoreSessionFile,
+      });
+      this.updateStoredSessionFile(
+        result.sessionFile,
+        this.driver.currentSessionFile(),
+      );
+      this.saveState();
+      if (result.steered) {
+        this.markAcceptedMessage(input.incomingMessageId);
+        return {
+          steered: true,
+          sessionId: this.currentSessionId() || undefined,
+          sessionFile: this.currentSessionFile(),
+        };
+      }
+      await this.deliverAssistantReply({
+        text: result.finalText,
+        replyToMessageId: input.replyToMessageId,
+        sessionFile: result.sessionFile,
+        incomingMessageId: input.incomingMessageId,
+      });
+      return {
+        finalText: result.finalText,
+        result: result.result,
+        sessionId: this.currentSessionId() || undefined,
+        sessionFile: this.currentSessionFile(),
+      };
+    }
+
     return await this.runExclusiveTurn(async () => {
       const { sessionFile: wantedSessionFile } = normalizeSessionRef(input);
       const restoreSessionFile =
