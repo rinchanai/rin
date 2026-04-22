@@ -61,6 +61,21 @@ function summarizePromptText(text: string, limit = 80) {
   return `${value.slice(0, Math.max(1, limit - 1)).trimEnd()}…`;
 }
 
+function shouldReleaseStoredSessionOnTransientTurnError(
+  error: unknown,
+  options: {
+    wantedSessionFile?: string;
+    restoreSessionFile?: string;
+  },
+) {
+  if (safeString(options.wantedSessionFile).trim()) return false;
+  if (!safeString(options.restoreSessionFile).trim()) return false;
+  const message = safeString((error as any)?.message || error).trim();
+  return /rin_timeout:(?:prompt|get_session_entries|select_session)\b|rin_no_attached_session\b/.test(
+    message,
+  );
+}
+
 export class ChatController {
   app: any;
   chatKey: string;
@@ -685,6 +700,15 @@ export class ChatController {
           sessionFile: this.currentSessionFile(),
         };
       } catch (error) {
+        if (
+          shouldReleaseStoredSessionOnTransientTurnError(error, {
+            wantedSessionFile,
+            restoreSessionFile,
+          })
+        ) {
+          delete this.state.piSessionFile;
+          this.driver.dispose();
+        }
         await this.clearWorkingReaction().catch(() => {});
         this.clearCurrentTurn();
         this.stagedDelivery = null;

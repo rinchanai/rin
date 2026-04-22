@@ -568,6 +568,55 @@ test("chat controller fails fast when prompt submission is queued offline instea
   );
 });
 
+test("chat controller releases a stale bound session after transient prompt timeout", async () => {
+  const controller = await createController("telegram/1:2");
+  await fs.mkdir(path.join(controller.agentDir, "sessions"), { recursive: true });
+  await fs.writeFile(
+    path.join(controller.agentDir, "sessions", "stale-chat.jsonl"),
+    '{"type":"session","version":3}\n',
+    "utf8",
+  );
+  controller.state.piSessionFile = "stale-chat.jsonl";
+  let disposed = 0;
+  controller.driver.dispose = function () {
+    disposed += 1;
+    this.session = null;
+  };
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    queuedOfflineOps: [],
+    syncPendingCount() {},
+    emitFrontendStatus() {},
+    sessionManager: {
+      getSessionFile: () => "/tmp/stale-chat.jsonl",
+      getSessionId: () => "session-stale",
+      getSessionName: () => controller.chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/stale-chat.jsonl",
+      sessionId: "session-stale",
+    }),
+    prompt: async () => {
+      throw new Error("rin_timeout:prompt");
+    },
+    switchSession: async () => {},
+  };
+
+  await assert.rejects(
+    controller.runTurn({
+      text: "hello",
+      attachments: [],
+      incomingMessageId: "m-timeout",
+    }),
+    /rin_timeout:prompt/,
+  );
+
+  assert.equal(controller.state.piSessionFile, undefined);
+  assert.equal(disposed, 1);
+});
+
+
 test("chat controller does not let presentation polling block prompt submission", async () => {
   const controller = await createController("onebot/1:2");
   const calls = [];
