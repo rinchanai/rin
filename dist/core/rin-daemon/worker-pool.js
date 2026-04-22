@@ -33,11 +33,18 @@ export class WorkerPool {
     shuttingDown = false;
     gcIdleMs;
     internalCommandTimeoutMs;
+    switchSessionCommandTimeoutMs;
     reaper;
     constructor(options) {
         this.options = options;
         this.gcIdleMs = Math.max(0, Number(options.gcIdleMs ?? 30_000));
         this.internalCommandTimeoutMs = Math.max(1, Number(options.internalCommandTimeoutMs ?? 10_000));
+        const switchSessionTimeoutDefault = options.switchSessionCommandTimeoutMs != null
+            ? Number(options.switchSessionCommandTimeoutMs)
+            : options.internalCommandTimeoutMs != null
+                ? this.internalCommandTimeoutMs
+                : 120_000;
+        this.switchSessionCommandTimeoutMs = Math.max(this.internalCommandTimeoutMs, switchSessionTimeoutDefault);
         const sweepIntervalMs = Math.max(250, Number(options.sweepIntervalMs ?? Math.min(this.gcIdleMs || 250, 5_000)));
         this.reaper = setInterval(() => {
             this.evictDetachedWorkers();
@@ -591,6 +598,13 @@ export class WorkerPool {
             }
         })().catch(() => { });
     }
+    getInternalCommandTimeoutMs(command) {
+        const commandType = String(command?.type || "unknown");
+        if (commandType === "switch_session") {
+            return this.switchSessionCommandTimeoutMs;
+        }
+        return this.internalCommandTimeoutMs;
+    }
     async sendInternalCommand(worker, command) {
         const id = `rin_internal_${++this.internalRequestSeq}`;
         return await new Promise((resolve, reject) => {
@@ -599,7 +613,7 @@ export class WorkerPool {
                 worker.ignoredResponseIds.add(id);
                 this.maybeReleaseWorker(worker);
                 reject(new Error(`rin_internal_timeout:${String(command?.type || "unknown")}`));
-            }, this.internalCommandTimeoutMs);
+            }, this.getInternalCommandTimeoutMs(command));
             timeout.unref?.();
             const finalize = () => clearTimeout(timeout);
             worker.pendingResponses.set(id, {

@@ -1,5 +1,9 @@
 import net from "node:net";
 
+import type {
+  RpcSocketConnector,
+  RpcSocketLike,
+} from "../platform/rpc-socket.js";
 import { defaultDaemonSocketPath, parseJsonl } from "../rin-lib/common.js";
 import { BUILTIN_SLASH_COMMANDS } from "../rin-lib/rpc.js";
 import { describeBoundSessions } from "../session/listing.js";
@@ -10,7 +14,7 @@ import type {
   FrontendModelItem,
   FrontendSessionItem,
   InteractiveFrontendEvent,
-  InteractiveFrontendSurface,
+  RpcFrontendClient,
 } from "./frontend-surface.js";
 
 function toFrontendEvent(event: any): InteractiveFrontendEvent | null {
@@ -31,9 +35,15 @@ function toFrontendEvent(event: any): InteractiveFrontendEvent | null {
   return { type: "ui", name: String(event.type || "event"), payload: event };
 }
 
-export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
+type FrontendClientTransportOptions = {
+  socketPath?: string;
+  connectSocket: RpcSocketConnector;
+};
+
+export class RinDaemonFrontendClient implements RpcFrontendClient {
   socketPath: string;
-  socket: net.Socket | null = null;
+  socket: RpcSocketLike | null = null;
+  private readonly connectSocket?: RpcSocketConnector;
   state = { buffer: "" };
   requestId = 0;
   pending = new Map<
@@ -43,15 +53,34 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
   listeners = new Set<(event: InteractiveFrontendEvent) => void>();
   connectPromise: Promise<void> | null = null;
 
-  constructor(socketPath = defaultDaemonSocketPath()) {
-    this.socketPath = socketPath;
+  constructor(
+    transport:
+      | string
+      | FrontendClientTransportOptions = defaultDaemonSocketPath(),
+  ) {
+    if (typeof transport === "string") {
+      this.socketPath = transport;
+      this.connectSocket = undefined;
+      return;
+    }
+    this.socketPath = transport.socketPath || "inprocess://rin-daemon";
+    this.connectSocket = transport.connectSocket;
   }
 
   async connect() {
     if (this.socket && !this.socket.destroyed) return;
     if (this.connectPromise) return await this.connectPromise;
-    this.connectPromise = new Promise<void>((resolve, reject) => {
-      const socket = net.createConnection(this.socketPath);
+    this.connectPromise = new Promise<void>(async (resolve, reject) => {
+      let socket: RpcSocketLike;
+      try {
+        socket = this.connectSocket
+          ? await this.connectSocket()
+          : net.createConnection(this.socketPath);
+      } catch (error) {
+        this.connectPromise = null;
+        reject(error);
+        return;
+      }
       const onError = (error: Error) => {
         try {
           socket.destroy();
@@ -200,7 +229,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
     });
   }
 
-  private handleChunk(chunk: string, socket?: net.Socket) {
+  private handleChunk(chunk: string, socket?: RpcSocketLike) {
     if (socket && this.socket !== socket) return;
     parseJsonl(chunk, this.state, (line) => this.handleLine(line));
   }
@@ -226,7 +255,7 @@ export class RinDaemonFrontendClient implements InteractiveFrontendSurface {
     this.emit(event);
   }
 
-  private handleDisconnect(emitEvent = true, socket?: net.Socket) {
+  private handleDisconnect(emitEvent = true, socket?: RpcSocketLike) {
     if (socket && this.socket && this.socket !== socket) return;
     if (!this.socket && !this.connectPromise) return;
     this.socket = null;

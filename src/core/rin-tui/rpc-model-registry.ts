@@ -1,7 +1,7 @@
-import { RinDaemonFrontendClient } from "./rpc-client.js";
+import type { RpcFrontendClient } from "./frontend-surface.js";
 import { createAuthStorageProxy } from "./rpc-auth.js";
 
-export function createModelRegistry(client: RinDaemonFrontendClient) {
+export function createModelRegistry(client: RpcFrontendClient) {
   const state = { models: [] as any[], error: undefined as string | undefined };
   const authStorage = createAuthStorageProxy(client);
   return {

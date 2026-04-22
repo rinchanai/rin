@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url";
 
 import { startChatBridge } from "../../core/chat/main.js";
 import { startDaemon } from "../../core/rin-daemon/daemon.js";
+import type { RpcSocketConnector } from "../../core/platform/rpc-socket.js";
+import { RinDaemonFrontendClient } from "../../core/rin-tui/rpc-client.js";
 import { resolveRuntimeProfile } from "../../core/rin-lib/runtime.js";
 import {
   cleanupOrphanSearxngSidecars,
@@ -26,11 +28,27 @@ async function main() {
 
   const ensureWebSearch = async () => {
     await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {});
-    await ensureSearxngSidecar(runtime.agentDir, { instanceId }).catch(() => {});
+    await ensureSearxngSidecar(runtime.agentDir, { instanceId }).catch(
+      () => {},
+    );
   };
   void ensureWebSearch();
 
-  const chatBridge = await startChatBridge({ hosted: true });
+  let localFrontendConnectorResolver:
+    | ((connector: RpcSocketConnector) => void)
+    | null = null;
+  const localFrontendConnector = new Promise<RpcSocketConnector>((resolve) => {
+    localFrontendConnectorResolver = resolve;
+  });
+
+  const chatBridge = await startChatBridge({
+    hosted: true,
+    frontendClientFactory: () =>
+      new RinDaemonFrontendClient({
+        socketPath: "inprocess://rin-daemon",
+        connectSocket: async () => (await localFrontendConnector)(),
+      }),
+  });
 
   const sidecarHealthTimer = setInterval(() => {
     void ensureWebSearch();
@@ -58,6 +76,10 @@ async function main() {
           success: true,
           data: await chatBridge.evalBridge(command?.payload || {}),
         };
+      },
+      registerLocalFrontendConnector: (connector) => {
+        localFrontendConnectorResolver?.(connector);
+        localFrontendConnectorResolver = null;
       },
       onShutdown: stopServices,
     });

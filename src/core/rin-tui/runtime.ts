@@ -10,7 +10,7 @@ import {
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
-import { RinDaemonFrontendClient } from "./rpc-client.js";
+import type { RpcFrontendClient } from "./frontend-surface.js";
 import { handleRpcSessionEvent } from "./events.js";
 import { loadRpcLocalExtensions } from "./extensions.js";
 import {
@@ -65,7 +65,8 @@ const REFRESH_ALL = { messages: true, models: true, session: true } as const;
 
 async function completeRpcRecovery(target: any) {
   const canApplyLightweightState =
-    typeof target.call === "function" && typeof target.applyState === "function";
+    typeof target.call === "function" &&
+    typeof target.applyState === "function";
   if (canApplyLightweightState) {
     target.applyState(await target.call("get_state"));
   } else {
@@ -93,7 +94,7 @@ async function completeRpcRecovery(target: any) {
 }
 
 class RemoteAgent {
-  constructor(private client: RinDaemonFrontendClient) {}
+  constructor(private client: RpcFrontendClient) {}
 
   abort() {
     void this.client.abort().catch(() => {});
@@ -201,7 +202,7 @@ export class RpcInteractiveSession {
   private nextRequestTagId = 0;
 
   constructor(
-    public client: RinDaemonFrontendClient,
+    public client: RpcFrontendClient,
     additionalExtensionPaths: string[] = [],
   ) {
     this.additionalExtensionPaths = [...additionalExtensionPaths];
@@ -316,7 +317,10 @@ export class RpcInteractiveSession {
     },
   ) {
     const expandPromptTemplates = options?.expandPromptTemplates ?? true;
-    if (expandPromptTemplates && (await this.tryExecuteLocalExtensionCommand(message))) {
+    if (
+      expandPromptTemplates &&
+      (await this.tryExecuteLocalExtensionCommand(message))
+    ) {
       return;
     }
     if (
@@ -465,10 +469,8 @@ export class RpcInteractiveSession {
   }
 
   async cycleModel(direction?: "forward" | "backward") {
-    return await cycleRpcModel(
-      this as any,
-      direction,
-      () => this.refreshState(REFRESH_MODELS),
+    return await cycleRpcModel(this as any, direction, () =>
+      this.refreshState(REFRESH_MODELS),
     );
   }
 
@@ -537,7 +539,9 @@ export class RpcInteractiveSession {
       const completed = await this.newSession();
       return {
         handled: true,
-        text: completed ? "Started a new session." : "Session switch cancelled.",
+        text: completed
+          ? "Started a new session."
+          : "Session switch cancelled.",
       };
     }
     if (trimmed.startsWith("/resume ")) {
@@ -823,7 +827,11 @@ export class RpcInteractiveSession {
   }
 
   private async waitForDaemonAvailable() {
-    if (this.client.isConnected() && this.rpcConnected && !this.recoveryPending) {
+    if (
+      this.client.isConnected() &&
+      this.rpcConnected &&
+      !this.recoveryPending
+    ) {
       return;
     }
     if (this.waitForDaemonPromise) return await this.waitForDaemonPromise;
@@ -855,8 +863,13 @@ export class RpcInteractiveSession {
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
-    if (operation.mode === "prompt") this.emitLocalUserMessage(operation.message);
-    if (!this.client.isConnected() || !this.rpcConnected || this.recoveryPending) {
+    if (operation.mode === "prompt")
+      this.emitLocalUserMessage(operation.message);
+    if (
+      !this.client.isConnected() ||
+      !this.rpcConnected ||
+      this.recoveryPending
+    ) {
       this.queueOfflineOperation(operation);
       return;
     }
@@ -926,10 +939,17 @@ export class RpcInteractiveSession {
           if (!this.client.isConnected()) {
             await this.client.connect();
           }
-          if (!this.rpcConnected || (this.recoveryPending && !this.restorePromise)) {
+          if (
+            !this.rpcConnected ||
+            (this.recoveryPending && !this.restorePromise)
+          ) {
             await this.handleConnectionRestored();
           }
-          if (this.client.isConnected() && this.rpcConnected && !this.recoveryPending) {
+          if (
+            this.client.isConnected() &&
+            this.rpcConnected &&
+            !this.recoveryPending
+          ) {
             return;
           }
         } catch {}
@@ -991,7 +1011,8 @@ export class RpcInteractiveSession {
     const extensionRunner = this.extensionRunner;
     if (!extensionRunner?.getCommand) return undefined;
     const spaceIndex = text.indexOf(" ");
-    const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+    const commandName =
+      spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
     return extensionRunner.getCommand(commandName);
   }
 
@@ -1004,7 +1025,8 @@ export class RpcInteractiveSession {
     if (!command) return false;
 
     const spaceIndex = text.indexOf(" ");
-    const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
+    const commandName =
+      spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
     const args = spaceIndex === -1 ? "" : text.slice(spaceIndex + 1);
     const ctx = this.extensionRunner?.createCommandContext?.();
     if (!ctx) return false;
@@ -1052,7 +1074,9 @@ export class RpcInteractiveSession {
       const message = String(error?.message || error || "");
       if (
         sessionScoped &&
-        /rin_tui_not_connected|rin_disconnected|rin_session_recovering/.test(message)
+        /rin_tui_not_connected|rin_disconnected|rin_session_recovering/.test(
+          message,
+        )
       ) {
         this.recoveryPending = true;
         this.emitFrontendStatus(true);
@@ -1110,7 +1134,11 @@ export class RpcInteractiveSession {
   }
 
   private syncDerivedMessages() {
-    const context = buildSessionContext(this.entries, this.leafId, this.entryById as any);
+    const context = buildSessionContext(
+      this.entries,
+      this.leafId,
+      this.entryById as any,
+    );
     this.messages = Array.isArray(context?.messages) ? context.messages : [];
     this.state.messages = this.messages;
   }

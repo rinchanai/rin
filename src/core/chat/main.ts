@@ -7,6 +7,7 @@ import {
   applyRuntimeProfileEnvironment,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
+import type { RpcFrontendClient } from "../rin-tui/frontend-surface.js";
 import {
   executeChatBridgeCode,
   renderChatBridgeResult,
@@ -247,7 +248,11 @@ export type ChatBridgeStatus = {
 
 export type ChatBridgeHandle = {
   app: any;
-  options: { additionalExtensionPaths?: string[]; hosted?: boolean };
+  options: {
+    additionalExtensionPaths?: string[];
+    hosted?: boolean;
+    frontendClientFactory?: () => RpcFrontendClient;
+  };
   stop: () => Promise<void>;
   getStatus: () => ChatBridgeStatus;
   send: (payload: ChatOutboxPayload) => Promise<{ delivered: true }>;
@@ -256,7 +261,11 @@ export type ChatBridgeHandle = {
 };
 
 export async function startChatBridge(
-  options: { additionalExtensionPaths?: string[]; hosted?: boolean } = {},
+  options: {
+    additionalExtensionPaths?: string[];
+    hosted?: boolean;
+    frontendClientFactory?: () => RpcFrontendClient;
+  } = {},
 ): Promise<ChatBridgeHandle> {
   const runtime = resolveRuntimeProfile();
   const dataDir = path.join(runtime.agentDir, "data");
@@ -293,6 +302,7 @@ export async function startChatBridge(
     }
   }, TYPING_POLL_INTERVAL_MS);
   const commandRows = getChatCommandRows();
+  const frontendClientFactory = options.frontendClientFactory;
   const getIdentity = () => loadIdentity(dataDir);
   const getController = (chatKey: string) => {
     let controller = controllers.get(chatKey);
@@ -300,6 +310,7 @@ export async function startChatBridge(
       controller = new ChatController(app, dataDir, chatKey, {
         logger,
         h,
+        frontendClientFactory,
       });
       controllers.set(chatKey, controller);
     }
@@ -307,7 +318,7 @@ export async function startChatBridge(
   };
   const getDetachedController = (
     controllerKey: string,
-    options?: {
+    detachedOptions?: {
       chatKey?: string;
       deliveryEnabled?: boolean;
       affectChatBinding?: boolean;
@@ -322,15 +333,16 @@ export async function startChatBridge(
       "state.json",
     );
     const controllerChatKey =
-      safeString(options?.chatKey).trim() || `cron:${controllerKey}`;
+      safeString(detachedOptions?.chatKey).trim() || `cron:${controllerKey}`;
     let controller = detachedControllers.get(controllerKey);
     if (!controller) {
       controller = new ChatController(app, dataDir, controllerChatKey, {
         logger,
         h,
-        deliveryEnabled: options?.deliveryEnabled,
-        affectChatBinding: options?.affectChatBinding,
+        deliveryEnabled: detachedOptions?.deliveryEnabled,
+        affectChatBinding: detachedOptions?.affectChatBinding,
         statePath,
+        frontendClientFactory,
       });
       detachedControllers.set(controllerKey, controller);
       return controller;
@@ -441,7 +453,9 @@ export async function startChatBridge(
       decision.chatKey,
       replyToMessageId,
     );
-    const linkedSessionFile = safeString(replySession?.sessionFile || "").trim();
+    const linkedSessionFile = safeString(
+      replySession?.sessionFile || "",
+    ).trim();
     const { attachments, failures } = await extractInboundAttachments(
       elements,
       chatStateDir(dataDir, decision.chatKey),
@@ -486,7 +500,10 @@ export async function startChatBridge(
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
     });
-    const handleTurnFailure = async (error: any, sessionFile = linkedSessionFile) => {
+    const handleTurnFailure = async (
+      error: any,
+      sessionFile = linkedSessionFile,
+    ) => {
       const errorMessage = safeString((error as any)?.message || error);
       const transientFailure = isTransientChatRuntimeError(errorMessage);
       logger.warn(

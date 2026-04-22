@@ -2,6 +2,7 @@ import { resolveTurnCompletion } from "../session/turn-result.js";
 import { normalizeSessionRef } from "../session/ref.js";
 import { extractMessageText } from "../message-content.js";
 import { safeString } from "../text-utils.js";
+import type { RpcFrontendClient } from "./frontend-surface.js";
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { RpcInteractiveSession } from "./runtime.js";
 
@@ -26,12 +27,15 @@ function isAgentAlreadyProcessingError(error: unknown) {
   );
 }
 
-function isQueuedOperationArray(value: unknown): value is Array<{ requestTag?: string }> {
+function isQueuedOperationArray(
+  value: unknown,
+): value is Array<{ requestTag?: string }> {
   return Array.isArray(value);
 }
 
 export class ChatFrontendDriver {
-  client: RinDaemonFrontendClient | null = null;
+  private readonly clientFactory: () => RpcFrontendClient;
+  client: RpcFrontendClient | null = null;
   session: RpcInteractiveSession | any = null;
   liveTurn: {
     requestTag?: string;
@@ -45,6 +49,11 @@ export class ChatFrontendDriver {
   interimDeliveryQueue: Promise<void> = Promise.resolve();
   frontendPhase: FrontendPhase = "idle";
   listeners = new Set<(event: ChatFrontendDriverEvent) => void>();
+
+  constructor(options: { clientFactory?: () => RpcFrontendClient } = {}) {
+    this.clientFactory =
+      options.clientFactory || (() => new RinDaemonFrontendClient());
+  }
 
   subscribe(listener: (event: ChatFrontendDriverEvent) => void) {
     this.listeners.add(listener);
@@ -61,7 +70,7 @@ export class ChatFrontendDriver {
 
   async connect(options: { restoreSessionFile?: string } = {}) {
     if (this.session) return;
-    const client = new RinDaemonFrontendClient();
+    const client = this.clientFactory();
     const session = new RpcInteractiveSession(client);
     await session.connect();
     this.client = client;
@@ -71,7 +80,9 @@ export class ChatFrontendDriver {
       void this.handleSessionEvent(event).catch(() => {});
     });
 
-    const wantedSessionFile = safeString(options.restoreSessionFile || "").trim();
+    const wantedSessionFile = safeString(
+      options.restoreSessionFile || "",
+    ).trim();
     if (wantedSessionFile) {
       await session.switchSession(wantedSessionFile);
     }
@@ -90,11 +101,15 @@ export class ChatFrontendDriver {
   }
 
   currentSessionId() {
-    return safeString(this.session?.sessionManager?.getSessionId?.() || "").trim();
+    return safeString(
+      this.session?.sessionManager?.getSessionId?.() || "",
+    ).trim();
   }
 
   currentSessionFile() {
-    return safeString(this.session?.sessionManager?.getSessionFile?.() || "").trim();
+    return safeString(
+      this.session?.sessionManager?.getSessionFile?.() || "",
+    ).trim();
   }
 
   private createTurnRequestTag() {
@@ -184,7 +199,10 @@ export class ChatFrontendDriver {
 
   private async handleAssistantMessageEnd(message: any) {
     const text = safeString(
-      extractMessageText(message?.content, { includeThinking: false, trim: true }),
+      extractMessageText(message?.content, {
+        includeThinking: false,
+        trim: true,
+      }),
     ).trim();
     if (!text) return;
     if (safeString(this.pendingCompletedAssistantText).trim()) {
@@ -257,7 +275,9 @@ export class ChatFrontendDriver {
     } = {},
   ) {
     const skipSessionRecovery = options.skipSessionRecovery === true;
-    const restoreSessionFile = safeString(options.restoreSessionFile || "").trim();
+    const restoreSessionFile = safeString(
+      options.restoreSessionFile || "",
+    ).trim();
     const sessionFile = safeString(options.sessionFile || "").trim();
     await this.connect({
       restoreSessionFile: skipSessionRecovery ? "" : restoreSessionFile,
@@ -273,8 +293,9 @@ export class ChatFrontendDriver {
     return {
       ...data,
       sessionId:
-        safeString(data?.sessionId || ready?.sessionId || this.currentSessionId()).trim() ||
-        undefined,
+        safeString(
+          data?.sessionId || ready?.sessionId || this.currentSessionId(),
+        ).trim() || undefined,
       sessionFile:
         safeString(
           data?.sessionFile || ready?.sessionFile || this.currentSessionFile(),
@@ -297,7 +318,9 @@ export class ChatFrontendDriver {
     if (sessionFile) {
       await this.switchSessionIfNeeded(sessionFile);
     }
-    const ready = await this.ensureSessionReady(sessionFile || restoreSessionFile);
+    const ready = await this.ensureSessionReady(
+      sessionFile || restoreSessionFile,
+    );
     const text = safeString(input.text).trim();
     const images = Array.isArray(input.images) ? input.images : [];
 
@@ -313,9 +336,11 @@ export class ChatFrontendDriver {
       return {
         steered: true,
         sessionId:
-          safeString(ready?.sessionId || this.currentSessionId()).trim() || undefined,
+          safeString(ready?.sessionId || this.currentSessionId()).trim() ||
+          undefined,
         sessionFile:
-          safeString(ready?.sessionFile || this.currentSessionFile()).trim() || undefined,
+          safeString(ready?.sessionFile || this.currentSessionFile()).trim() ||
+          undefined,
       };
     }
 
@@ -343,9 +368,12 @@ export class ChatFrontendDriver {
         return {
           steered: true,
           sessionId:
-            safeString(ready?.sessionId || this.currentSessionId()).trim() || undefined,
+            safeString(ready?.sessionId || this.currentSessionId()).trim() ||
+            undefined,
           sessionFile:
-            safeString(ready?.sessionFile || this.currentSessionFile()).trim() || undefined,
+            safeString(
+              ready?.sessionFile || this.currentSessionFile(),
+            ).trim() || undefined,
         };
       }
       this.failLiveTurn(
@@ -357,12 +385,16 @@ export class ChatFrontendDriver {
     }
 
     const completion = await liveTurn.promise;
-    const completionFinalText = safeString((completion as any)?.finalText).trim();
+    const completionFinalText = safeString(
+      (completion as any)?.finalText,
+    ).trim();
     await this.flushPendingAssistantInterimBeforeFinal(completionFinalText);
     await this.waitForInterimDeliveries();
     const canonicalCompletion = resolveTurnCompletion({
       ...completion,
-      messages: Array.isArray(this.session?.messages) ? this.session.messages : [],
+      messages: Array.isArray(this.session?.messages)
+        ? this.session.messages
+        : [],
     });
     const finalText =
       safeString((completion as any)?.finalText).trim() ||
@@ -378,8 +410,9 @@ export class ChatFrontendDriver {
         safeString(completion?.sessionId || this.currentSessionId()).trim() ||
         undefined,
       sessionFile:
-        safeString(completion?.sessionFile || this.currentSessionFile()).trim() ||
-        undefined,
+        safeString(
+          completion?.sessionFile || this.currentSessionFile(),
+        ).trim() || undefined,
     };
   }
 
@@ -392,7 +425,8 @@ export class ChatFrontendDriver {
   private async handleSessionEvent(event: any) {
     if (!event || typeof event !== "object") return;
     if (event.type === "rpc_frontend_status") {
-      this.frontendPhase = (safeString(event.phase).trim() as FrontendPhase) || "idle";
+      this.frontendPhase =
+        (safeString(event.phase).trim() as FrontendPhase) || "idle";
       this.emit({ type: "frontend_status", phase: this.frontendPhase });
       return;
     }

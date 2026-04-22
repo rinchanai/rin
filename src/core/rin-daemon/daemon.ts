@@ -6,6 +6,11 @@ import { pathToFileURL } from "node:url";
 
 import { ensureDir } from "../platform/fs.js";
 import {
+  createConnectedRpcSocketPair,
+  type RpcSocketConnector,
+  type RpcSocketLike,
+} from "../platform/rpc-socket.js";
+import {
   bridgeDaemonSocketPath,
   defaultDaemonSocketPath,
   safeString,
@@ -36,7 +41,7 @@ import {
 } from "../session/ref.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
-function writeLine(socket: net.Socket, payload: unknown) {
+function writeLine(socket: RpcSocketLike, payload: unknown) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
 }
 
@@ -114,6 +119,7 @@ export async function startDaemon(
         }
       | undefined;
     onShutdown?: () => Promise<void> | void;
+    registerLocalFrontendConnector?: (connector: RpcSocketConnector) => void;
   } = {},
 ) {
   const socketPath =
@@ -426,89 +432,96 @@ export async function startDaemon(
     return false;
   };
 
-  const activeSockets = new Set<net.Socket>();
+  const activeSockets = new Set<RpcSocketLike>();
+
+  const attachConnectionSocket = (socket: RpcSocketLike) => {
+    activeSockets.add(socket);
+    const dropSocket = () => activeSockets.delete(socket);
+    socket.once("close", dropSocket);
+    socket.once("error", dropSocket);
+
+    const connection: ConnectionState = {
+      socket,
+      clientBuffer: "",
+    };
+
+    socket.on("data", (chunk) => {
+      connection.clientBuffer += String(chunk);
+      while (true) {
+        const idx = connection.clientBuffer.indexOf("\n");
+        if (idx < 0) break;
+        let line = connection.clientBuffer.slice(0, idx);
+        connection.clientBuffer = connection.clientBuffer.slice(idx + 1);
+        if (line.endsWith("\r")) line = line.slice(0, -1);
+        if (!line.trim()) continue;
+        (async () => {
+          let command: any;
+          try {
+            command = JSON.parse(line);
+          } catch {
+            writeLine(
+              socket,
+              response(undefined, "unknown", false, "invalid_json"),
+            );
+            return;
+          }
+
+          if (await selfHandleCommand(connection, command)) {
+            workerPool.evictDetachedWorkers();
+            return;
+          }
+
+          let worker = workerPool.resolveWorkerForCommand(connection, command);
+          if (
+            !worker &&
+            isSessionScopedCommand(String(command?.type || "unknown")) &&
+            (commandHasSessionSelector(command) ||
+              hasSelectedSession(connection))
+          ) {
+            worker = await workerPool.ensureSelectedWorker(
+              connection,
+              getSessionSelector(command),
+            );
+          }
+          if (!worker) {
+            writeLine(
+              socket,
+              response(
+                command?.id,
+                String(command?.type || "unknown"),
+                false,
+                "rin_no_attached_session",
+              ),
+            );
+            return;
+          }
+
+          workerPool.forwardToWorker(connection, worker, command);
+          workerPool.evictDetachedWorkers();
+        })().catch((error) => {
+          writeLine(socket, response(undefined, "unknown", false, error));
+        });
+      }
+    });
+
+    const cleanup = () => {
+      workerPool.detachWorker(connection);
+      workerPool.evictDetachedWorkers();
+    };
+
+    socket.on("close", cleanup);
+    socket.on("error", cleanup);
+  };
+
+  options.registerLocalFrontendConnector?.(() => {
+    const { clientSocket, serverSocket } = createConnectedRpcSocketPair();
+    attachConnectionSocket(serverSocket);
+    return clientSocket;
+  });
 
   const createSocketServer = () =>
     net.createServer((socket) => {
-      activeSockets.add(socket);
-      const dropSocket = () => activeSockets.delete(socket);
-      socket.once("close", dropSocket);
-      socket.once("error", dropSocket);
-
-      const connection: ConnectionState = {
-        socket,
-        clientBuffer: "",
-      };
-
-      socket.on("data", (chunk) => {
-        connection.clientBuffer += String(chunk);
-        while (true) {
-          const idx = connection.clientBuffer.indexOf("\n");
-          if (idx < 0) break;
-          let line = connection.clientBuffer.slice(0, idx);
-          connection.clientBuffer = connection.clientBuffer.slice(idx + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (!line.trim()) continue;
-          (async () => {
-            let command: any;
-            try {
-              command = JSON.parse(line);
-            } catch {
-              writeLine(
-                socket,
-                response(undefined, "unknown", false, "invalid_json"),
-              );
-              return;
-            }
-
-            if (await selfHandleCommand(connection, command)) {
-              workerPool.evictDetachedWorkers();
-              return;
-            }
-
-            let worker = workerPool.resolveWorkerForCommand(
-              connection,
-              command,
-            );
-            if (
-              !worker &&
-              isSessionScopedCommand(String(command?.type || "unknown")) &&
-              (commandHasSessionSelector(command) ||
-                hasSelectedSession(connection))
-            ) {
-              worker = await workerPool.ensureSelectedWorker(
-                connection,
-                getSessionSelector(command),
-              );
-            }
-            if (!worker) {
-              writeLine(
-                socket,
-                response(
-                  command?.id,
-                  String(command?.type || "unknown"),
-                  false,
-                  "rin_no_attached_session",
-                ),
-              );
-              return;
-            }
-
-            workerPool.forwardToWorker(connection, worker, command);
-            workerPool.evictDetachedWorkers();
-          })().catch((error) => {
-            writeLine(socket, response(undefined, "unknown", false, error));
-          });
-        }
-      });
-
-      const cleanup = () => {
-        workerPool.detachWorker(connection);
-        workerPool.evictDetachedWorkers();
-      };
-
-      socket.on("close", cleanup);
-      socket.on("error", cleanup);
+      attachConnectionSocket(socket);
     });
 
   const servers = [

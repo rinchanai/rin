@@ -1,4 +1,4 @@
-import { RinDaemonFrontendClient } from "./rpc-client.js";
+import type { RpcFrontendClient } from "./frontend-surface.js";
 
 type OAuthCredentialSummary = { type: string } | undefined;
 type OAuthProviderSummary = {
@@ -70,7 +70,7 @@ function normalizeProviders(input: any): OAuthProviderSummary[] {
   return providers;
 }
 
-export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
+export function createAuthStorageProxy(client: RpcFrontendClient) {
   const state = {
     credentials: {} as Record<string, OAuthCredentialSummary>,
     providers: [] as OAuthProviderSummary[],
@@ -95,7 +95,9 @@ export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
   const sendLoginCancel = async (loginId: unknown) => {
     const nextLoginId = normalizeLoginId(loginId);
     if (!nextLoginId) return;
-    await client.send({ type: "oauth_login_cancel", loginId: nextLoginId }).catch(() => {});
+    await client
+      .send({ type: "oauth_login_cancel", loginId: nextLoginId })
+      .catch(() => {});
   };
 
   const sendLoginResponse = async (
@@ -137,7 +139,9 @@ export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
     handler: (() => Promise<string>) | undefined,
   ) => {
     Promise.resolve(handler?.() ?? "")
-      .then((value) => sendLoginResponse(payload?.loginId, payload?.requestId, value))
+      .then((value) =>
+        sendLoginResponse(payload?.loginId, payload?.requestId, value),
+      )
       .catch(() => sendLoginCancel(payload?.loginId));
   };
 
@@ -162,17 +166,24 @@ export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
       return;
     }
     if (payload.event === "prompt") {
-      handleInteractiveEvent(payload, () => login.onPrompt?.({
-        message: String(payload.message || ""),
-        placeholder:
-          typeof payload.placeholder === "string"
-            ? payload.placeholder
-            : undefined,
-      }) ?? Promise.resolve(""));
+      handleInteractiveEvent(
+        payload,
+        () =>
+          login.onPrompt?.({
+            message: String(payload.message || ""),
+            placeholder:
+              typeof payload.placeholder === "string"
+                ? payload.placeholder
+                : undefined,
+          }) ?? Promise.resolve(""),
+      );
       return;
     }
     if (payload.event === "manual_code") {
-      handleInteractiveEvent(payload, () => login.onManualCodeInput?.() ?? Promise.resolve(""));
+      handleInteractiveEvent(
+        payload,
+        () => login.onManualCodeInput?.() ?? Promise.resolve(""),
+      );
       return;
     }
     if (payload.event === "complete") {
@@ -182,8 +193,10 @@ export function createAuthStorageProxy(client: RinDaemonFrontendClient) {
 
   return {
     list: () => Object.keys(state.credentials),
-    get: (providerId: string) => state.credentials[normalizeProviderId(providerId)],
-    getOAuthProviders: () => state.providers.map((provider) => ({ ...provider })),
+    get: (providerId: string) =>
+      state.credentials[normalizeProviderId(providerId)],
+    getOAuthProviders: () =>
+      state.providers.map((provider) => ({ ...provider })),
     applyState,
     async sync() {
       const response: any = await client.send({ type: "get_oauth_state" });

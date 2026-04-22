@@ -95,3 +95,10 @@ export interface InteractiveFrontendSurface {
   openDialog?(id: string): Promise<FrontendDialogSpec | null>;
   respondDialog?(id: string, payload: unknown): Promise<void>;
 }
+
+export interface RpcFrontendClient extends InteractiveFrontendSurface {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+  send(command: unknown): Promise<any>;
+}

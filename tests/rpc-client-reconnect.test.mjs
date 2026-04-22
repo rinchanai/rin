@@ -11,6 +11,10 @@ const { RinDaemonFrontendClient } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "rpc-client.js"))
     .href
 );
+const { createConnectedRpcSocketPair } = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "platform", "rpc-socket.js"))
+    .href
+);
 const { RpcInteractiveSession } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "runtime.js"))
     .href
@@ -46,6 +50,57 @@ test("rpc client ignores stale socket disconnect after reconnect", () => {
   assert.equal(seen.length, 1);
   assert.equal(seen[0]?.type, "ui");
   assert.equal(seen[0]?.name, "connection_lost");
+});
+
+test("rpc client supports injected in-process transport connectors", async () => {
+  const client = new RinDaemonFrontendClient({
+    socketPath: "inprocess://test",
+    connectSocket: async () => {
+      const { clientSocket, serverSocket } = createConnectedRpcSocketPair();
+      let buffer = "";
+      serverSocket.on("data", (chunk) => {
+        buffer += String(chunk);
+        while (true) {
+          const idx = buffer.indexOf("\n");
+          if (idx < 0) break;
+          const line = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 1);
+          if (!line) continue;
+          const payload = JSON.parse(line);
+          serverSocket.write(
+            `${JSON.stringify({
+              type: "response",
+              id: payload.id,
+              command: payload.type,
+              success: true,
+              data: {
+                models: [
+                  {
+                    id: "provider/model",
+                    label: "provider/model",
+                    provider: "provider",
+                  },
+                ],
+              },
+            })}\n`,
+          );
+        }
+      });
+      return clientSocket;
+    },
+  });
+
+  await client.connect();
+  const models = await client.listModels();
+
+  assert.deepEqual(models, [
+    {
+      id: "provider/model",
+      label: "provider/model",
+      provider: "provider",
+      description: undefined,
+    },
+  ]);
 });
 
 test("rpc client normalizes session list display metadata from daemon responses", async () => {
@@ -387,7 +442,10 @@ test("rpc interactive session queues prompts while recovery is pending", async (
       requestTag: session.queuedOfflineOps[0]?.requestTag,
     },
   ]);
-  assert.match(String(session.queuedOfflineOps[0]?.requestTag || ""), /^rin-tui-/);
+  assert.match(
+    String(session.queuedOfflineOps[0]?.requestTag || ""),
+    /^rin-tui-/,
+  );
   assert.deepEqual(session.getFrontendStatusEvent(), {
     type: "rpc_frontend_status",
     phase: "connecting",
@@ -449,7 +507,10 @@ test("rpc interactive session exits connecting after get_state succeeds and dela
     label: "Working",
     connected: true,
   });
-  assert.deepEqual(calls.map((payload) => payload.type), ["get_state"]);
+  assert.deepEqual(
+    calls.map((payload) => payload.type),
+    ["get_state"],
+  );
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
 
   releaseRefresh();
@@ -514,7 +575,10 @@ test("rpc interactive session finishes daemon-side session recovery without drop
   assert.equal(session.recoveryPending, false);
   assert.equal(resyncs, 0);
   assert.equal(session.queuedOfflineOps.length, 0);
-  assert.deepEqual(calls.map((payload) => payload.type), ["get_state", "prompt"]);
+  assert.deepEqual(
+    calls.map((payload) => payload.type),
+    ["get_state", "prompt"],
+  );
   assert.deepEqual(refreshes, [{ messages: true, session: true }]);
 
   releaseRefresh();

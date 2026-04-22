@@ -1,6 +1,6 @@
-import net from "node:net";
 import { spawn } from "node:child_process";
 
+import type { RpcSocketLike } from "../platform/rpc-socket.js";
 import { parseJsonl } from "../rin-lib/common.js";
 import { isSessionScopedCommand } from "../rin-lib/rpc.js";
 import {
@@ -15,7 +15,7 @@ const sessionSelectorFromCommand = normalizeSessionSelector;
 const sessionSelectorFromState = normalizeSessionSelector;
 
 export type ConnectionState = {
-  socket: net.Socket;
+  socket: RpcSocketLike;
   clientBuffer: string;
   attachedWorker?: WorkerHandle;
   sessionFile?: string;
@@ -48,7 +48,7 @@ export type WorkerHandle = {
   gracefulShutdownRequested: boolean;
 };
 
-function writeLine(socket: net.Socket, payload: unknown) {
+function writeLine(socket: RpcSocketLike, payload: unknown) {
   if (!socket.destroyed) socket.write(`${JSON.stringify(payload)}\n`);
 }
 

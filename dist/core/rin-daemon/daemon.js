@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { ensureDir } from "../platform/fs.js";
+import { createConnectedRpcSocketPair, } from "../platform/rpc-socket.js";
 import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "../rin-lib/common.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { emptySessionState, isSessionScopedCommand, response, } from "../rin-lib/rpc.js";
@@ -262,7 +263,7 @@ export async function startDaemon(options = {}) {
         return false;
     };
     const activeSockets = new Set();
-    const createSocketServer = () => net.createServer((socket) => {
+    const attachConnectionSocket = (socket) => {
         activeSockets.add(socket);
         const dropSocket = () => activeSockets.delete(socket);
         socket.once("close", dropSocket);
@@ -320,6 +321,14 @@ export async function startDaemon(options = {}) {
         };
         socket.on("close", cleanup);
         socket.on("error", cleanup);
+    };
+    options.registerLocalFrontendConnector?.(() => {
+        const { clientSocket, serverSocket } = createConnectedRpcSocketPair();
+        attachConnectionSocket(serverSocket);
+        return clientSocket;
+    });
+    const createSocketServer = () => net.createServer((socket) => {
+        attachConnectionSocket(socket);
     });
     const servers = [
         { server: createSocketServer(), path: socketPath, chmod: null },

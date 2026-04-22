@@ -3,8 +3,12 @@ import path from "node:path";
 
 import prettyMilliseconds from "pretty-ms";
 
+import type { RpcFrontendClient } from "../rin-tui/frontend-surface.js";
 import { ChatFrontendDriver } from "../rin-tui/chat-frontend-driver.js";
-import { resolveStoredSessionFile, toStoredSessionFile } from "../session/ref.js";
+import {
+  resolveStoredSessionFile,
+  toStoredSessionFile,
+} from "../session/ref.js";
 import { normalizeSessionRef } from "../session/ref.js";
 import {
   chatStatePath,
@@ -106,6 +110,7 @@ export class ChatController {
       deliveryEnabled?: boolean;
       affectChatBinding?: boolean;
       statePath?: string;
+      frontendClientFactory?: () => RpcFrontendClient;
     },
   ) {
     this.app = app;
@@ -119,7 +124,9 @@ export class ChatController {
     this.logger = deps.logger;
     this.h = deps.h;
     if (!this.state.chatKey) this.state.chatKey = chatKey;
-    this.driver = new ChatFrontendDriver();
+    this.driver = new ChatFrontendDriver({
+      clientFactory: deps.frontendClientFactory,
+    });
     this.driver.subscribe((event) => {
       void this.handleFrontendEvent(event).catch(() => {});
     });
@@ -148,7 +155,9 @@ export class ChatController {
   async connect(options: { restoreSession?: boolean } = {}) {
     await this.driver.connect({
       restoreSessionFile:
-        options.restoreSession === false ? "" : this.getRecoverableSessionFile(),
+        options.restoreSession === false
+          ? ""
+          : this.getRecoverableSessionFile(),
     });
     if (this.driver.currentSessionFile()) {
       this.updateStoredSessionFile(this.driver.currentSessionFile());
@@ -188,7 +197,9 @@ export class ChatController {
 
   private currentReplyToMessageId() {
     return safeString(
-      this.currentTurn?.replyToMessageId || this.currentTurn?.incomingMessageId || "",
+      this.currentTurn?.replyToMessageId ||
+        this.currentTurn?.incomingMessageId ||
+        "",
     ).trim();
   }
 
@@ -272,7 +283,8 @@ export class ChatController {
   private shouldRefreshWorkingReaction() {
     return (
       !safeString(this.workingReactionEmoji).trim() ||
-      Date.now() - this.lastWorkingReactionAt >= WORKING_REACTION_FRAME_INTERVAL_MS
+      Date.now() - this.lastWorkingReactionAt >=
+        WORKING_REACTION_FRAME_INTERVAL_MS
     );
   }
 
@@ -314,20 +326,28 @@ export class ChatController {
     const currentTurn = this.currentTurn;
     if (currentTurn?.startedAt) {
       lines.push(
-        `Since: ${prettyMilliseconds(Math.max(0, Date.now() - currentTurn.startedAt), {
-          secondsDecimalDigits: 0,
-          unitCount: 2,
-        })}`,
+        `Since: ${prettyMilliseconds(
+          Math.max(0, Date.now() - currentTurn.startedAt),
+          {
+            secondsDecimalDigits: 0,
+            unitCount: 2,
+          },
+        )}`,
       );
     }
     const replyToMessageId = this.currentReplyToMessageId();
     if (replyToMessageId) lines.push(`Reply target: ${replyToMessageId}`);
-    const promptPreview = summarizePromptText(this.driver.latestAssistantText || "");
+    const promptPreview = summarizePromptText(
+      this.driver.latestAssistantText || "",
+    );
     if (promptPreview) lines.push(`Latest: ${promptPreview}`);
     return lines.join("\n");
   }
 
-  private async runLocalStatusCommand(replyToMessageId = "", incomingMessageId = "") {
+  private async runLocalStatusCommand(
+    replyToMessageId = "",
+    incomingMessageId = "",
+  ) {
     const text = this.buildStatusText();
     this.markProcessedMessage(incomingMessageId);
     if (!this.deliveryEnabled) return { handled: true, text, local: true };
@@ -417,13 +437,19 @@ export class ChatController {
   }
 
   private updateStoredSessionFile(...candidates: unknown[]) {
-    const picked = this.pickStoredValue(...candidates, this.state.piSessionFile);
+    const picked = this.pickStoredValue(
+      ...candidates,
+      this.state.piSessionFile,
+    );
     this.state.piSessionFile = toStoredSessionFile(this.agentDir, picked);
     return this.state.piSessionFile;
   }
 
   private getRecoverableSessionFile() {
-    const wanted = resolveStoredSessionFile(this.agentDir, this.state.piSessionFile);
+    const wanted = resolveStoredSessionFile(
+      this.agentDir,
+      this.state.piSessionFile,
+    );
     if (!wanted) return "";
     if (fs.existsSync(wanted)) return wanted;
     delete this.state.piSessionFile;
@@ -458,7 +484,9 @@ export class ChatController {
     replyToMessageId?: string;
     sessionFile?: string;
   }): ChatTextDelivery {
-    const text = safeString(input.text ?? this.driver.latestAssistantText).trim();
+    const text = safeString(
+      input.text ?? this.driver.latestAssistantText,
+    ).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
     return {
       type: "text_delivery",
@@ -478,7 +506,9 @@ export class ChatController {
     replyToMessageId?: string;
     sessionFile?: string;
   }) {
-    const text = safeString(input.text ?? this.driver.latestAssistantText).trim();
+    const text = safeString(
+      input.text ?? this.driver.latestAssistantText,
+    ).trim();
     if (!text) throw new Error("chat_final_assistant_text_missing");
     this.stagedDelivery = this.buildAssistantDelivery(input);
     return text;
@@ -596,7 +626,10 @@ export class ChatController {
   ) {
     const commandName = commandNameFromCommandLine(commandLine);
     if (commandName === "status") {
-      return await this.runLocalStatusCommand(replyToMessageId, incomingMessageId);
+      return await this.runLocalStatusCommand(
+        replyToMessageId,
+        incomingMessageId,
+      );
     }
     const skipSessionRecovery = commandName === "new";
     await this.connect({ restoreSession: !skipSessionRecovery });
@@ -607,10 +640,15 @@ export class ChatController {
     try {
       const data: any = await this.driver.runCommand(commandLine, {
         skipSessionRecovery,
-        restoreSessionFile: skipSessionRecovery ? "" : this.getRecoverableSessionFile(),
+        restoreSessionFile: skipSessionRecovery
+          ? ""
+          : this.getRecoverableSessionFile(),
         sessionFile,
       });
-      this.updateStoredSessionFile(data?.sessionFile, this.driver.currentSessionFile());
+      this.updateStoredSessionFile(
+        data?.sessionFile,
+        this.driver.currentSessionFile(),
+      );
       this.saveState();
       const text = safeString(data?.text || "").trim();
       if (!text) throw new Error("chat_command_text_missing");
@@ -655,7 +693,8 @@ export class ChatController {
   ) {
     return await this.runExclusiveTurn(async () => {
       const { sessionFile: wantedSessionFile } = normalizeSessionRef(input);
-      const restoreSessionFile = wantedSessionFile || this.getRecoverableSessionFile();
+      const restoreSessionFile =
+        wantedSessionFile || this.getRecoverableSessionFile();
       await this.connect();
       const { text, images } = await restorePromptParts({
         text: input.text,
@@ -675,7 +714,10 @@ export class ChatController {
           sessionFile: wantedSessionFile,
           restoreSessionFile,
         });
-        this.updateStoredSessionFile(result.sessionFile, this.driver.currentSessionFile());
+        this.updateStoredSessionFile(
+          result.sessionFile,
+          this.driver.currentSessionFile(),
+        );
         this.saveState();
         if (result.steered) {
           this.markAcceptedMessage(input.incomingMessageId);
