@@ -328,6 +328,13 @@ test("subagent session file helpers normalize agentDir-relative paths", () => {
     path.join(agentDir, "sessions", "managed", "subagent", "demo.jsonl"),
   );
   assert.equal(
+    sessionUtils.resolveSubagentSessionFile(
+      agentDir,
+      " ./sessions//managed/subagent/nested/../demo.jsonl ",
+    ),
+    path.join(agentDir, "sessions", "managed", "subagent", "demo.jsonl"),
+  );
+  assert.equal(
     sessionUtils.resolveSubagentSessionFile(agentDir, "/tmp/demo.jsonl"),
     path.resolve("/tmp/demo.jsonl"),
   );
@@ -337,6 +344,17 @@ test("subagent session file helpers normalize agentDir-relative paths", () => {
       path.join(agentDir, "sessions", "managed", "subagent", "demo.jsonl"),
     ),
     "sessions/managed/subagent/demo.jsonl",
+  );
+  assert.equal(
+    sessionUtils.toSubagentSessionFile(
+      agentDir,
+      " ./sessions//managed/subagent/nested/../demo.jsonl ",
+    ),
+    "sessions/managed/subagent/demo.jsonl",
+  );
+  assert.equal(
+    sessionUtils.toSubagentSessionFile(agentDir, "/tmp/outside/demo.jsonl"),
+    "/tmp/outside/demo.jsonl",
   );
 });
 
@@ -397,7 +415,7 @@ test("subagent session utils normalize invalid session modes and trim session fi
   assert.deepEqual(
     sessionUtils.normalizeSubagentSessionConfig({
       mode: " RESUME ",
-      sessionFile: "  sessions/managed/subagent/demo.jsonl  ",
+      sessionFile: "  ./sessions//managed/subagent/nested/../demo.jsonl  ",
       name: " demo ",
     }),
     {

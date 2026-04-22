@@ -37,13 +37,30 @@ function normalizeSessionMode(value: unknown) {
   };
 }
 
+function normalizeTrimmedText(value: unknown) {
+  return String(value || "").trim();
+}
+
 function normalizeStoredSessionFile(value: unknown) {
-  const text = String(value || "").trim();
+  const text = normalizeTrimmedText(value);
   if (!text) return undefined;
   if (path.isAbsolute(text)) return path.resolve(text);
-  const normalized = text.replace(/\\+/g, "/").replace(/^\.(?:\/|$)/, "");
-  const trimmed = normalized.replace(/^\/+/, "").trim();
-  return trimmed || undefined;
+  const normalized = path.posix.normalize(text.replace(/\\+/g, "/"));
+  const trimmed = normalized
+    .replace(/^\/+/, "")
+    .replace(/^(?:\.\/)+/, "")
+    .trim();
+  return trimmed && trimmed !== "." ? trimmed : undefined;
+}
+
+function isAgentRelativeSessionFile(value: string) {
+  return (
+    Boolean(value) && !value.startsWith("..") && !path.isAbsolute(value)
+  );
+}
+
+function getSubagentSessionFileGuidanceText() {
+  return `Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_FILE_TARGET_DESCRIPTION}.`;
 }
 
 export function normalizeSubagentSessionConfig(
@@ -53,7 +70,7 @@ export function normalizeSubagentSessionConfig(
   return {
     ...normalizedMode,
     sessionFile: normalizeStoredSessionFile(session?.sessionFile),
-    name: String(session?.name || "").trim() || undefined,
+    name: normalizeTrimmedText(session?.name) || undefined,
     keep: typeof session?.keep === "boolean" ? session.keep : undefined,
   };
 }
@@ -65,7 +82,7 @@ export function resolveSubagentSessionFile(
   const sessionFile = normalizeStoredSessionFile(value);
   if (!sessionFile) return undefined;
   if (path.isAbsolute(sessionFile)) return sessionFile;
-  return path.join(agentDir, ...sessionFile.split("/"));
+  return path.resolve(agentDir, sessionFile);
 }
 
 export function toSubagentSessionFile(
@@ -76,7 +93,7 @@ export function toSubagentSessionFile(
   if (!sessionFile) return undefined;
   if (!path.isAbsolute(sessionFile)) return sessionFile;
   const relative = path.relative(agentDir, sessionFile);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+  if (!isAgentRelativeSessionFile(relative)) {
     return sessionFile;
   }
   return normalizeStoredSessionFile(relative);
@@ -90,13 +107,13 @@ export function getDefaultSubagentSessionDir() {
 export function formatSubagentSessionFileRequiredError(
   mode: Extract<SubagentSessionMode, "resume" | "fork">,
 ): string {
-  return `Session file is required when session.mode is ${mode}. Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_FILE_TARGET_DESCRIPTION}.`;
+  return `Session file is required when session.mode is ${mode}. ${getSubagentSessionFileGuidanceText()}`;
 }
 
 export function formatSubagentSessionFileNotFoundError(
   sessionFile: string,
 ): string {
-  return `Session file not found: ${sessionFile}. Inspect ${getDefaultSubagentSessionDir()} and use ${SESSION_FILE_TARGET_DESCRIPTION}.`;
+  return `Session file not found: ${sessionFile}. ${getSubagentSessionFileGuidanceText()}`;
 }
 
 export function formatSubagentSessionFileHint(): string {
