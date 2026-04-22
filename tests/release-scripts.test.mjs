@@ -271,7 +271,9 @@ test("export-bootstrap-branch script exports stable bootstrap payload", () => {
       assert.equal(fs.existsSync(path.join(tempDir, relativePath)), true, relativePath);
     }
     const readme = fs.readFileSync(path.join(tempDir, "README.md"), "utf8");
+    const installWrapper = fs.readFileSync(path.join(tempDir, "install.sh"), "utf8");
     assert.match(readme, /stable bootstrap branch/);
+    assert.match(installWrapper, /^DEFAULT_BOOTSTRAP_BRANCH=stable-bootstrap$/m);
     assert.equal(fs.existsSync(path.join(tempDir, "stale.txt")), false);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

@@ -234,6 +234,47 @@ test("install and update wrappers resolve release metadata before fetching sourc
   });
 });
 
+test("wrapper-only main install script fetches the shared entrypoint from main", async () => {
+  await withTempDir(async (tempDir) => {
+    const archivePath = await createSourceArchive(tempDir);
+    const manifestPath = await createReleaseManifest(tempDir);
+    const fakeBin = path.join(tempDir, "bin");
+    const logPath = path.join(tempDir, "invocations.log");
+    const workRoot = path.join(tempDir, "work");
+    const wrapperDir = path.join(tempDir, "main-wrapper");
+    await createFakeBin(fakeBin, logPath);
+    await fs.mkdir(workRoot, { recursive: true });
+    await fs.mkdir(wrapperDir, { recursive: true });
+    await fs.copyFile(path.join(rootDir, "install.sh"), path.join(wrapperDir, "install.sh"));
+
+    const env = {
+      ...process.env,
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      RIN_INSTALL_REPO_URL: "https://example.invalid/rin",
+      RIN_INSTALL_TMPDIR: workRoot,
+      RIN_BOOTSTRAP_TEST_ARCHIVE: archivePath,
+      RIN_BOOTSTRAP_TEST_MANIFEST: manifestPath,
+      RIN_BOOTSTRAP_TEST_BOOTSTRAP_SCRIPT: path.join(rootDir, "scripts", "bootstrap-entrypoint.sh"),
+      RIN_BOOTSTRAP_TEST_LOG: logPath,
+    };
+
+    await execFileAsync("sh", [path.join(wrapperDir, "install.sh")], {
+      cwd: wrapperDir,
+      env,
+    });
+
+    const log = await fs.readFile(logPath, "utf8");
+    assert.match(
+      log,
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/main\/scripts\/bootstrap-entrypoint\.sh -o /,
+    );
+    assert.equal(
+      /curl:-fsSL https:\/\/example\.invalid\/rin\/stable-bootstrap\/scripts\/bootstrap-entrypoint\.sh -o /.test(log),
+      false,
+    );
+  });
+});
+
 test("wrapper-only bootstrap fallbacks fetch the entrypoint from stable-bootstrap first", async () => {
   await withTempDir(async (tempDir) => {
     const archivePath = await createSourceArchive(tempDir);
