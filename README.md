@@ -37,15 +37,17 @@ If you want an assistant that stays useful over time, Rin is designed for that.
 Install with one command, no clone required:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --beta
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --nightly
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git main
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git deadbeef
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --beta
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --nightly
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --git
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --git main
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --git deadbeef
 ```
 
-If you already have the repo locally, the bundled `install.sh` wrapper runs the same bootstrap flow:
+The public bootstrap branch now only carries the install and update entry wrappers. Stable installs and updates hand off to the published npm package, while `--beta`, `--nightly`, and `--git` continue to resolve through the bootstrap manifest and GitHub refs.
+
+If you already have the repo locally, the bundled `install.sh` wrapper runs the same release-selection flow:
 
 ```bash
 ./install.sh              # stable release (default)
