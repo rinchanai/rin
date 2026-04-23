@@ -20,13 +20,11 @@ export type SessionDisplayNameParts = {
   firstUserMessage: string;
 };
 
-const EMPTY_SESSION_DISPLAY_NAME_PARTS: SessionDisplayNameParts = {
-  currentName: "",
-  firstUserMessage: "",
-};
-
-function emptySessionDisplayNameParts(): SessionDisplayNameParts {
-  return { ...EMPTY_SESSION_DISPLAY_NAME_PARTS };
+function createEmptySessionDisplayNameParts(): SessionDisplayNameParts {
+  return {
+    currentName: "",
+    firstUserMessage: "",
+  };
 }
 
 export function normalizeSessionNameDetail(
@@ -70,22 +68,19 @@ function extractFirstUserMessage(entry: any): string {
   return normalizeFirstUserMessageContent(message?.content);
 }
 
-function parseSessionEntryLine(lineBuffer: Buffer<ArrayBufferLike>): any {
-  const trimmed = lineBuffer.toString("utf8").trim();
-  if (!trimmed) return null;
-  try {
-    return JSON.parse(trimmed) as any;
-  } catch {
-    return null;
-  }
-}
-
-function updateSessionDisplayNameParts(
+function applySessionEntryLine(
   parts: SessionDisplayNameParts,
   lineBuffer: Buffer<ArrayBufferLike>,
 ): void {
-  const entry = parseSessionEntryLine(lineBuffer);
-  if (!entry) return;
+  const trimmed = lineBuffer.toString("utf8").trim();
+  if (!trimmed) return;
+
+  let entry: any;
+  try {
+    entry = JSON.parse(trimmed) as any;
+  } catch {
+    return;
+  }
 
   if (!parts.firstUserMessage) {
     const firstUserMessage = extractFirstUserMessage(entry);
@@ -107,7 +102,7 @@ function readSessionDisplayNamePartsFromFile(
   const buffer: Buffer<ArrayBufferLike> = Buffer.alloc(
     SESSION_NAME_READ_CHUNK_SIZE,
   );
-  const parts = emptySessionDisplayNameParts();
+  const parts = createEmptySessionDisplayNameParts();
   let remainder = EMPTY_BUFFER;
 
   try {
@@ -124,10 +119,7 @@ function readSessionDisplayNamePartsFromFile(
       while (lineStart < chunk.length) {
         const newlineIndex = chunk.indexOf(0x0a, lineStart);
         if (newlineIndex === -1) break;
-        updateSessionDisplayNameParts(
-          parts,
-          chunk.subarray(lineStart, newlineIndex),
-        );
+        applySessionEntryLine(parts, chunk.subarray(lineStart, newlineIndex));
         lineStart = newlineIndex + 1;
       }
       remainder =
@@ -136,7 +128,7 @@ function readSessionDisplayNamePartsFromFile(
           : EMPTY_BUFFER;
     }
     if (remainder.length) {
-      updateSessionDisplayNameParts(parts, remainder);
+      applySessionEntryLine(parts, remainder);
     }
     return parts;
   } finally {
@@ -148,13 +140,13 @@ export function readSessionDisplayNameParts(
   sessionFile: string,
 ): SessionDisplayNameParts {
   const normalizedSessionFile = normalizeSessionValue(sessionFile);
-  if (!normalizedSessionFile) return emptySessionDisplayNameParts();
+  if (!normalizedSessionFile) return createEmptySessionDisplayNameParts();
   const filePath = path.resolve(normalizedSessionFile);
 
   try {
     return readSessionDisplayNamePartsFromFile(filePath);
   } catch {
-    return emptySessionDisplayNameParts();
+    return createEmptySessionDisplayNameParts();
   }
 }
 

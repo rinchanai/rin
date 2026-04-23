@@ -191,6 +191,35 @@ test("readSessionDisplayNameParts ignores blank later renames", async () => {
   await fs.rm(sessionDir, { recursive: true, force: true });
 });
 
+test("readSessionDisplayNameParts keeps the first user message once captured", async () => {
+  const sessionDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-session-names-"),
+  );
+  const sessionFile = path.join(sessionDir, "first-user-wins.jsonl");
+  await fs.writeFile(
+    sessionFile,
+    [
+      JSON.stringify({
+        type: "message",
+        message: { role: "user", content: "First question" },
+      }),
+      JSON.stringify({
+        type: "message",
+        message: { role: "user", content: "Second question" },
+      }),
+      JSON.stringify({ type: "session_info", name: "Renamed title" }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  assert.deepEqual(names.readSessionDisplayNameParts(sessionFile), {
+    currentName: "Renamed title",
+    firstUserMessage: "First question",
+  });
+
+  await fs.rm(sessionDir, { recursive: true, force: true });
+});
+
 test("session display readers return empty parts for blank or missing paths", () => {
   assert.deepEqual(names.readSessionDisplayNameParts(""), {
     currentName: "",
