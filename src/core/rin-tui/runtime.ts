@@ -189,6 +189,7 @@ export class RpcInteractiveSession {
   private activeTurn: PendingRpcOperation | null = null;
   private rpcConnected = false;
   private remoteTurnRunning = false;
+  private recoveringTurnPending = false;
   private disposed = false;
   private pendingRefreshFlags: RefreshFlags = {};
   private refreshLoopPromise: Promise<void> | null = null;
@@ -802,12 +803,16 @@ export class RpcInteractiveSession {
 
   private setRemoteTurnRunning(running: boolean) {
     this.remoteTurnRunning = running;
+    if (running || !this.recoveryPending) {
+      this.recoveringTurnPending = false;
+    }
     this.syncStreamingState();
   }
 
   private syncStreamingState() {
     this.isStreaming = Boolean(
-      this.rpcConnected && (this.remoteTurnRunning || this.activeTurn),
+      (this.rpcConnected && (this.remoteTurnRunning || this.activeTurn)) ||
+        (this.recoveryPending && this.recoveringTurnPending),
     );
     if (!this.isStreaming && !this.rpcConnected) this.activeTurn = null;
     this.emitFrontendStatus();
@@ -906,6 +911,12 @@ export class RpcInteractiveSession {
 
   handleSessionUnavailable(options?: { transportClosed?: boolean }) {
     if (this.disposed) return;
+    this.recoveringTurnPending = Boolean(
+      this.recoveringTurnPending ||
+        this.remoteTurnRunning ||
+        this.activeTurn ||
+        this.isCompacting,
+    );
     this.recoveryPending = true;
     this.activeTurn = null;
     this.remoteTurnRunning = false;
@@ -1129,6 +1140,7 @@ export class RpcInteractiveSession {
   }
 
   private applyState(state: any) {
+    this.recoveringTurnPending = false;
     applyRpcSessionState(this as any, state);
     this.syncStreamingState();
   }

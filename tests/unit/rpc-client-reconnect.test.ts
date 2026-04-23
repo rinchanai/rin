@@ -166,7 +166,7 @@ test("rpc interactive session startup fails when the daemon is unavailable", asy
   });
 });
 
-test("rpc interactive session switches to connecting state instead of emitting a fake turn end on disconnect", () => {
+test("rpc interactive session keeps a recovering turn busy while reconnecting after disconnect", () => {
   const client = { isConnected: () => false };
   const session = new RpcInteractiveSession(client);
   const seen = [];
@@ -180,8 +180,14 @@ test("rpc interactive session switches to connecting state instead of emitting a
 
   session.handleConnectionLost();
 
-  assert.equal(session.isStreaming, false);
+  assert.equal(session.isStreaming, true);
   assert.equal(session.activeTurn, null);
+  assert.deepEqual(session.getFrontendStatusEvent(), {
+    type: "rpc_frontend_status",
+    phase: "connecting",
+    label: "Connecting",
+    connected: false,
+  });
   assert.deepEqual(seen, [
     {
       type: "rpc_frontend_status",
@@ -276,6 +282,28 @@ test("rpc interactive session keeps working status from authoritative turnActive
     label: "Working",
     connected: true,
   });
+});
+
+test("rpc interactive session clears recovering turn state after an idle recovery snapshot", () => {
+  const client = { isConnected: () => true };
+  const session = new RpcInteractiveSession(client);
+  session.recoveryPending = true;
+  session.recoveringTurnPending = true;
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.syncStreamingState();
+
+  session.applyState({
+    sessionId: "s1",
+    sessionFile: "/tmp/demo.jsonl",
+    turnActive: false,
+    isStreaming: false,
+    isCompacting: false,
+  });
+
+  assert.equal(session.isStreaming, false);
+  assert.equal(session.recoveringTurnPending, false);
+  assert.equal(session.getFrontendStatusEvent()?.phase, "connecting");
 });
 
 test("rpc interactive session clears stale local turn state when the worker reports turn inactive", () => {
