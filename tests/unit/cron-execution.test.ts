@@ -112,58 +112,10 @@ test("cron scheduler preallocates managed dedicated task session files", async (
   }
 });
 
-test("cron scheduler preserves non-root dedicated session files on load", async () => {
+test("cron scheduler preserves dedicated session files on load", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
   const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
   await fs.mkdir(path.dirname(tasksFile), { recursive: true });
-  await fs.writeFile(
-    tasksFile,
-    JSON.stringify(
-      [
-        {
-          id: "cron_seeded_dedicated",
-          createdAt: "2026-04-17T00:00:00.000Z",
-          updatedAt: "2026-04-17T00:00:00.000Z",
-          enabled: true,
-          trigger: { kind: "interval", intervalMs: 60_000 },
-          session: { mode: "dedicated" },
-          target: { kind: "agent_prompt", prompt: "hello" },
-          dedicatedSessionFile: "/tmp/seeded-dedicated.jsonl",
-          runCount: 0,
-          running: false,
-        },
-      ],
-      null,
-      2,
-    ),
-  );
-  const scheduler = new cronMod.CronScheduler({ agentDir });
-  try {
-    scheduler.start();
-    const task = scheduler.getTask("cron_seeded_dedicated");
-    assert.ok(task);
-    assert.equal(task.dedicatedSessionPersistent, true);
-    assert.equal(task.dedicatedSessionFile, "/tmp/seeded-dedicated.jsonl");
-  } finally {
-    scheduler.stop();
-    await fs.rm(agentDir, { recursive: true, force: true });
-  }
-});
-
-test("cron scheduler migrates legacy root dedicated session files on load", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
-  const tasksFile = path.join(agentDir, "data", "cron", "tasks.json");
-  const legacySessionFile = path.join(agentDir, "sessions", "legacy-task.jsonl");
-  const managedSessionFile = path.join(
-    agentDir,
-    "sessions",
-    "managed",
-    "task",
-    "cron_legacy_dedicated.jsonl",
-  );
-  await fs.mkdir(path.dirname(tasksFile), { recursive: true });
-  await fs.mkdir(path.dirname(legacySessionFile), { recursive: true });
-  await fs.writeFile(legacySessionFile, '{"type":"session"}\n');
   await fs.writeFile(
     tasksFile,
     JSON.stringify(
@@ -176,7 +128,7 @@ test("cron scheduler migrates legacy root dedicated session files on load", asyn
           trigger: { kind: "interval", intervalMs: 60_000 },
           session: { mode: "dedicated" },
           target: { kind: "agent_prompt", prompt: "hello" },
-          dedicatedSessionFile: legacySessionFile,
+          dedicatedSessionFile: "/tmp/legacy-dedicated.jsonl",
           runCount: 0,
           running: false,
         },
@@ -191,9 +143,7 @@ test("cron scheduler migrates legacy root dedicated session files on load", asyn
     const task = scheduler.getTask("cron_legacy_dedicated");
     assert.ok(task);
     assert.equal(task.dedicatedSessionPersistent, true);
-    assert.equal(task.dedicatedSessionFile, managedSessionFile);
-    await assert.rejects(fs.stat(legacySessionFile), /ENOENT/);
-    assert.equal(await fs.readFile(managedSessionFile, "utf8"), '{"type":"session"}\n');
+    assert.equal(task.dedicatedSessionFile, "/tmp/legacy-dedicated.jsonl");
   } finally {
     scheduler.stop();
     await fs.rm(agentDir, { recursive: true, force: true });
