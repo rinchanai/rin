@@ -43,9 +43,9 @@ export class ChatFrontendDriver {
     reject: (error: Error) => void;
   } | null = null;
   latestAssistantText = "";
-  pendingCompletedAssistantText = "";
-  pendingAssistantPreviewText = "";
-  deliveredInterimTexts = new Set<string>();
+  pendingCommittedAssistantSegmentText = "";
+  assistantPreviewText = "";
+  deliveredAssistantInterimTexts = new Set<string>();
   interimDeliveryQueue: Promise<void> = Promise.resolve();
   frontendPhase: FrontendPhase = "idle";
   listeners = new Set<(event: ChatFrontendDriverEvent) => void>();
@@ -90,7 +90,7 @@ export class ChatFrontendDriver {
 
   dispose() {
     this.failLiveTurn(new Error("chat_controller_disposed"));
-    this.resetTurnTextTracking();
+    this.resetAssistantSegmentTracking();
     this.frontendPhase = "idle";
     const session = this.session;
     this.client = null;
@@ -147,10 +147,10 @@ export class ChatFrontendDriver {
     liveTurn.reject(error);
   }
 
-  private resetTurnTextTracking() {
-    this.pendingCompletedAssistantText = "";
-    this.pendingAssistantPreviewText = "";
-    this.deliveredInterimTexts.clear();
+  private resetAssistantSegmentTracking() {
+    this.pendingCommittedAssistantSegmentText = "";
+    this.assistantPreviewText = "";
+    this.deliveredAssistantInterimTexts.clear();
     this.interimDeliveryQueue = Promise.resolve();
   }
 
@@ -167,57 +167,59 @@ export class ChatFrontendDriver {
     await this.interimDeliveryQueue;
   }
 
-  private takePendingAssistantBoundaryText() {
-    const completed = safeString(this.pendingCompletedAssistantText).trim();
-    const preview = safeString(this.pendingAssistantPreviewText).trim();
-    this.pendingCompletedAssistantText = "";
-    this.pendingAssistantPreviewText = "";
-    return completed || preview;
+  private takePendingCommittedAssistantSegmentText() {
+    const text = safeString(this.pendingCommittedAssistantSegmentText).trim();
+    this.pendingCommittedAssistantSegmentText = "";
+    return text;
   }
 
-  private takePendingCompletedAssistantText() {
-    const completed = safeString(this.pendingCompletedAssistantText).trim();
-    this.pendingCompletedAssistantText = "";
-    return completed;
+  private clearPendingAssistantSegmentState() {
+    this.pendingCommittedAssistantSegmentText = "";
+    this.assistantPreviewText = "";
   }
 
-  private clearPendingAssistantInterimText() {
-    this.pendingCompletedAssistantText = "";
-    this.pendingAssistantPreviewText = "";
+  private promoteAssistantPreviewToCommittedSegment() {
+    const previewText = safeString(this.assistantPreviewText).trim();
+    if (!previewText) return "";
+    this.assistantPreviewText = "";
+    if (!safeString(this.pendingCommittedAssistantSegmentText).trim()) {
+      this.pendingCommittedAssistantSegmentText = previewText;
+    }
+    return safeString(this.pendingCommittedAssistantSegmentText).trim();
   }
 
-  private async flushPendingAssistantInterimBeforeFinal(finalText: string) {
-    const pendingText = this.takePendingCompletedAssistantText();
-    this.pendingAssistantPreviewText = "";
-    const nextFinalText = safeString(finalText).trim();
-    if (!pendingText || !nextFinalText) return false;
-    if (pendingText === nextFinalText) return false;
-    this.pendingCompletedAssistantText = pendingText;
-    await this.queueInterimDelivery(async () => {
-      await this.flushPendingAssistantInterim();
-    });
-    return true;
-  }
-
-  private async flushPendingAssistantInterim() {
-    const text = this.takePendingAssistantBoundaryText();
+  private async emitPendingCommittedAssistantInterim() {
+    const text = this.takePendingCommittedAssistantSegmentText();
     if (!text) return false;
-    if (this.deliveredInterimTexts.has(text)) return false;
-    this.deliveredInterimTexts.add(text);
+    if (this.deliveredAssistantInterimTexts.has(text)) return false;
+    this.deliveredAssistantInterimTexts.add(text);
     this.emit({ type: "assistant_interim", text });
     return true;
   }
 
-  private promotePendingAssistantMessageToInterim() {
-    if (
-      !safeString(this.pendingCompletedAssistantText).trim() &&
-      !safeString(this.pendingAssistantPreviewText).trim()
-    ) {
-      return;
-    }
+  private queueAssistantBoundaryAsInterim() {
+    const committedText = safeString(
+      this.pendingCommittedAssistantSegmentText,
+    ).trim();
+    const previewText = safeString(this.assistantPreviewText).trim();
+    if (!committedText && !previewText) return;
+    if (!committedText) this.promoteAssistantPreviewToCommittedSegment();
     void this.queueInterimDelivery(async () => {
-      await this.flushPendingAssistantInterim();
+      await this.emitPendingCommittedAssistantInterim();
     }).catch(() => {});
+  }
+
+  private async flushCommittedAssistantSegmentBeforeFinal(finalText: string) {
+    const pendingText = this.takePendingCommittedAssistantSegmentText();
+    this.assistantPreviewText = "";
+    const nextFinalText = safeString(finalText).trim();
+    if (!pendingText || !nextFinalText) return false;
+    if (pendingText === nextFinalText) return false;
+    this.pendingCommittedAssistantSegmentText = pendingText;
+    await this.queueInterimDelivery(async () => {
+      await this.emitPendingCommittedAssistantInterim();
+    });
+    return true;
   }
 
   private handleAssistantMessageUpdate(message: any) {
@@ -228,7 +230,7 @@ export class ChatFrontendDriver {
       }),
     ).trim();
     if (!text) return;
-    this.pendingAssistantPreviewText = text;
+    this.assistantPreviewText = text;
     this.latestAssistantText = text;
   }
 
@@ -240,13 +242,13 @@ export class ChatFrontendDriver {
       }),
     ).trim();
     if (!text) return;
-    if (safeString(this.pendingCompletedAssistantText).trim()) {
+    if (safeString(this.pendingCommittedAssistantSegmentText).trim()) {
       await this.queueInterimDelivery(async () => {
-        await this.flushPendingAssistantInterim();
+        await this.emitPendingCommittedAssistantInterim();
       });
     }
-    this.pendingCompletedAssistantText = text;
-    this.pendingAssistantPreviewText = "";
+    this.pendingCommittedAssistantSegmentText = text;
+    this.assistantPreviewText = "";
     this.latestAssistantText = text;
   }
 
@@ -361,7 +363,7 @@ export class ChatFrontendDriver {
     const images = Array.isArray(input.images) ? input.images : [];
 
     if (this.session.isStreaming) {
-      this.clearPendingAssistantInterimText();
+      this.clearPendingAssistantSegmentState();
       const requestTag = this.createTurnRequestTag();
       await this.session.prompt(text, {
         images,
@@ -394,7 +396,7 @@ export class ChatFrontendDriver {
     } catch (error: any) {
       if (isAgentAlreadyProcessingError(error)) {
         if (this.liveTurn === liveTurn) this.liveTurn = null;
-        this.clearPendingAssistantInterimText();
+        this.clearPendingAssistantSegmentState();
         const steerRequestTag = this.createTurnRequestTag();
         await this.session.prompt(text, {
           images,
@@ -424,7 +426,7 @@ export class ChatFrontendDriver {
 
     const completion = await liveTurn.promise;
     const finalText = safeString((completion as any)?.finalText).trim();
-    await this.flushPendingAssistantInterimBeforeFinal(finalText);
+    await this.flushCommittedAssistantSegmentBeforeFinal(finalText);
     await this.waitForInterimDeliveries();
     if (!finalText) {
       throw new Error("rpc_turn_final_output_missing");
@@ -469,7 +471,7 @@ export class ChatFrontendDriver {
         if (current && incoming && current !== incoming) return;
         const finalText =
           safeString(event.finalText).trim() ||
-          safeString(this.pendingCompletedAssistantText).trim();
+          safeString(this.pendingCommittedAssistantSegmentText).trim();
         if (!finalText) {
           this.failLiveTurn(new Error("rpc_turn_final_output_missing"));
           return;
@@ -492,7 +494,7 @@ export class ChatFrontendDriver {
 
     switch (event.type) {
       case "agent_start":
-        this.resetTurnTextTracking();
+        this.resetAssistantSegmentTracking();
         this.latestAssistantText = "";
         this.emit({ type: "turn_accepted" });
         break;
@@ -501,12 +503,12 @@ export class ChatFrontendDriver {
           await this.handleAssistantMessageEnd(event.message).catch(() => {});
           break;
         }
-        this.promotePendingAssistantMessageToInterim();
+        this.queueAssistantBoundaryAsInterim();
         break;
       case "message_update":
         if (event?.message?.role === "assistant") {
-          if (safeString(this.pendingCompletedAssistantText).trim()) {
-            this.promotePendingAssistantMessageToInterim();
+          if (safeString(this.pendingCommittedAssistantSegmentText).trim()) {
+            this.queueAssistantBoundaryAsInterim();
           }
           this.handleAssistantMessageUpdate(event.message);
         }
@@ -516,7 +518,7 @@ export class ChatFrontendDriver {
       case "compaction_start":
       case "compaction_end":
         this.emit({ type: "turn_accepted" });
-        this.promotePendingAssistantMessageToInterim();
+        this.queueAssistantBoundaryAsInterim();
         break;
     }
   }
