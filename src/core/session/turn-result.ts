@@ -33,57 +33,75 @@ export type TurnCompletionInput = {
   finalText?: unknown;
 };
 
+function trimTurnText(text: unknown): string {
+  return safeString(text).trim();
+}
+
 function buildTextOnlyTurnResult(text: unknown): TurnResult {
-  const value = safeString(text).trim();
+  const value = trimTurnText(text);
   return value
     ? { messages: [{ type: "text", text: value }] }
     : { messages: [] };
+}
+
+function normalizeTurnMessages(messages: TurnResultMessage[] | null | undefined) {
+  return Array.isArray(messages) ? messages.filter(Boolean) : [];
 }
 
 function normalizeTurnResult(
   result: TurnResult | null | undefined,
 ): TurnResult | null {
   if (!Array.isArray(result?.messages)) return null;
-  return { messages: result.messages.filter(Boolean) };
+  return { messages: normalizeTurnMessages(result.messages) };
+}
+
+function prependTurnText(result: TurnResult, text: string): TurnResult {
+  return text
+    ? {
+        messages: [{ type: "text", text }, ...result.messages],
+      }
+    : result;
+}
+
+function resolveTextfulTurnResult(
+  result: TurnResult | null | undefined,
+): { result: TurnResult; finalText: string } | null {
+  const normalized = normalizeTurnResult(result);
+  if (!normalized) return null;
+  const finalText = extractFinalTextFromTurnResult(normalized);
+  return { result: normalized, finalText };
 }
 
 export function extractFinalTextFromTurnResult(
   result: TurnResult | null | undefined,
 ) {
-  const messages = Array.isArray(result?.messages) ? result.messages : [];
-  for (const message of messages) {
-    if (!message || message.type !== "text") continue;
-    const text = safeString(message.text).trim();
+  for (const message of normalizeTurnMessages(result?.messages)) {
+    if (message.type !== "text") continue;
+    const text = trimTurnText(message.text);
     if (text) return text;
   }
   return "";
 }
 
 export function resolveTurnResult(input: TurnCompletionInput = {}): TurnResult {
-  const existingResult = normalizeTurnResult(input.result);
-  if (existingResult && extractFinalTextFromTurnResult(existingResult)) {
-    return existingResult;
+  const existingResult = resolveTextfulTurnResult(input.result);
+  if (existingResult?.finalText) {
+    return existingResult.result;
   }
 
+  const normalizedExistingResult = normalizeTurnResult(input.result);
   const messagesResult = Array.isArray(input.messages)
-    ? buildTurnResultFromMessages(input.messages)
+    ? resolveTextfulTurnResult(buildTurnResultFromMessages(input.messages))
     : null;
-  if (messagesResult && extractFinalTextFromTurnResult(messagesResult)) {
-    return messagesResult;
+  if (messagesResult?.finalText) {
+    return messagesResult.result;
   }
 
-  const fallbackText = safeString(input.finalText).trim();
-  if (existingResult) {
-    return fallbackText
-      ? {
-          messages: [
-            { type: "text", text: fallbackText },
-            ...existingResult.messages,
-          ],
-        }
-      : existingResult;
+  const fallbackText = trimTurnText(input.finalText);
+  if (normalizedExistingResult) {
+    return prependTurnText(normalizedExistingResult, fallbackText);
   }
-  if (messagesResult) return messagesResult;
+  if (messagesResult) return messagesResult.result;
   return buildTextOnlyTurnResult(fallbackText);
 }
 

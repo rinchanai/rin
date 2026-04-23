@@ -71,6 +71,7 @@ test("turn result final text extractor returns the first non-empty text message"
   assert.equal(
     turnResult.extractFinalTextFromTurnResult({
       messages: [
+        null,
         { type: "image", data: "abc", mimeType: "image/png" },
         { type: "text", text: "   " },
         { type: "text", text: " final text " },
@@ -131,7 +132,9 @@ test("turn completion resolver falls back to messages and payload text when need
 
   assert.deepEqual(
     turnResult.resolveTurnCompletion({
-      result: { messages: [{ type: "file", path: "/tmp/demo.txt" }] },
+      result: {
+        messages: [null, { type: "file", path: "/tmp/demo.txt" }],
+      },
       finalText: "payload fallback",
     }),
     {
@@ -140,6 +143,23 @@ test("turn completion resolver falls back to messages and payload text when need
         messages: [
           { type: "text", text: "payload fallback" },
           { type: "file", path: "/tmp/demo.txt" },
+        ],
+      },
+    },
+  );
+
+  assert.deepEqual(
+    turnResult.resolveTurnCompletion({
+      messages: [
+        { role: "assistant", content: [{ type: "image", data: "abc" }] },
+      ],
+      finalText: "",
+    }),
+    {
+      finalText: "",
+      result: {
+        messages: [
+          { type: "image", data: "abc", mimeType: "image/png" },
         ],
       },
     },
