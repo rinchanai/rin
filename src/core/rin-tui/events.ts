@@ -1,9 +1,3 @@
-function queueRefresh(refresh: () => Promise<any>) {
-  try {
-    void Promise.resolve(refresh()).catch(() => {});
-  } catch {}
-}
-
 export async function handleRpcSessionEvent(
   target: any,
   payload: any,
@@ -51,28 +45,28 @@ export async function handleRpcSessionEvent(
   }
   if (payload.type === "compaction_end") {
     target.isCompacting = false;
-    queueRefresh(refreshMessagesAndSession);
+    void refreshMessagesAndSession();
   }
   if (payload.type === "auto_retry_start")
     target.retryAttempt = Number(payload.attempt || 1);
   if (payload.type === "auto_retry_end") target.retryAttempt = 0;
   if (payload.type === "agent_end") {
     finishRemoteTurn();
-    queueRefresh(refreshMessagesAndSession);
+    void refreshMessagesAndSession();
   }
   if (
     payload.type === "rpc_turn_event" &&
     (payload.event === "complete" || payload.event === "error")
   ) {
     finishRemoteTurn();
-    queueRefresh(refreshMessagesAndSession);
+    void refreshMessagesAndSession();
   }
   if (payload.type === "worker_exit") {
     if (typeof target.handleSessionUnavailable === "function") {
       target.handleSessionUnavailable();
     } else {
       finishRemoteTurn();
-      queueRefresh(refreshMessagesAndSession);
+      void refreshMessagesAndSession();
     }
   }
   if (
@@ -80,7 +74,7 @@ export async function handleRpcSessionEvent(
     payload.type === "tool_execution_end" ||
     payload.type === "compaction_message"
   ) {
-    queueRefresh(refreshMessages);
+    void refreshMessages();
   }
   target.emitEvent(payload);
   if (payload.type === "compaction_start" || payload.type === "compaction_end") {

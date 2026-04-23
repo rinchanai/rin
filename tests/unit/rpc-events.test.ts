@@ -222,29 +222,3 @@ test("rpc session recovery events are delegated without fake turn termination", 
     { type: "session_recovered", sessionFile: "/tmp/demo.jsonl" },
   ]);
 });
-
-test("rpc session events swallow refresh callback failures", async () => {
-  const target = {
-    emitEvent() {},
-  };
-  const rejections = [] as string[];
-  const onUnhandledRejection = (error: any) => {
-    rejections.push(String(error?.message || error || "unknown"));
-  };
-  process.once("unhandledRejection", onUnhandledRejection);
-
-  try {
-    await events.handleRpcSessionEvent(
-      target,
-      { type: "agent_end" },
-      async () => {},
-      async () => {
-        throw new Error("refresh_failed");
-      },
-    );
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.deepEqual(rejections, []);
-  } finally {
-    process.removeListener("unhandledRejection", onUnhandledRejection);
-  }
-});
