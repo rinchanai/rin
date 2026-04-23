@@ -61,6 +61,15 @@ function normalizeRenderedOutputText(text: string) {
     .trim();
 }
 
+function styleRenderedOutputText(text: string, theme: any) {
+  const output = normalizeRenderedOutputText(text);
+  if (!output) return "";
+  return output
+    .split("\n")
+    .map((line) => styleToolOutputLine(line, theme))
+    .join("\n");
+}
+
 function formatToolWarnings(
   theme: any,
   config: { fullOutputPath?: string; truncation?: TruncationResult },
@@ -393,13 +402,8 @@ export function rebuildExpandableTextResultComponent(
   const state = component.state;
   component.clear();
 
-  const output = normalizeRenderedOutputText(config.outputText);
-  if (output) {
-    const styledOutput = output
-      .split("\n")
-      .map((line) => styleToolOutputLine(line, theme))
-      .join("\n");
-
+  const styledOutput = styleRenderedOutputText(config.outputText, theme);
+  if (styledOutput) {
     if (config.expanded) {
       component.addChild(new Text(`\n${styledOutput}`, 0, 0));
     } else {
@@ -467,15 +471,18 @@ export function renderTextToolResult(
     return theme.fg("warning", config.partialText);
   }
 
-  const output = normalizeRenderedOutputText(getTextOutput(result, showImages));
-  const lines = output ? output.split("\n") : [];
+  const styledOutput = styleRenderedOutputText(
+    getTextOutput(result, showImages),
+    theme,
+  );
+  const lines = styledOutput ? styledOutput.split("\n") : [];
   const maxLines = options.expanded ? lines.length : (config.previewLines ?? 10);
   const displayLines = lines.slice(0, maxLines);
   const remaining = lines.length - maxLines;
 
   let text = "";
   if (displayLines.length > 0) {
-    text = `\n${displayLines.map((line) => styleToolOutputLine(line, theme)).join("\n")}`;
+    text = `\n${displayLines.join("\n")}`;
     if (remaining > 0) {
       text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand" as any, "to expand")})`;
     }
