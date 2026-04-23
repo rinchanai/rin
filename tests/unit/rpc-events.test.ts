@@ -11,6 +11,9 @@ const rootDir = path.resolve(
 const events = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "events.js")).href
 );
+const runtime = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "runtime.js")).href,
+);
 
 test("rpc session events do not refresh whole state on every stream update", async () => {
   const seen = [];
@@ -221,4 +224,35 @@ test("rpc session recovery events are delegated without fake turn termination", 
     { type: "session_recovered_hook" },
     { type: "session_recovered", sessionFile: "/tmp/demo.jsonl" },
   ]);
+});
+
+test("rpc session listeners added during dispatch do not receive the current event", () => {
+  const session = new runtime.RpcInteractiveSession({
+    subscribe() {
+      return () => {};
+    },
+    isConnected() {
+      return true;
+    },
+  });
+  session.rpcConnected = true;
+  session.startupPending = false;
+
+  let resyncEvents = 0;
+  let unsubscribe = () => {};
+  const listener = (event) => {
+    if (event.type !== "rpc_session_resynced") return;
+    resyncEvents += 1;
+    if (resyncEvents === 1) {
+      unsubscribe();
+      unsubscribe = session.subscribe(listener);
+    }
+  };
+
+  unsubscribe = session.subscribe(listener);
+  session.emitEvent({ type: "rpc_session_resynced" });
+  assert.equal(resyncEvents, 1);
+
+  session.emitEvent({ type: "rpc_session_resynced" });
+  assert.equal(resyncEvents, 2);
 });
