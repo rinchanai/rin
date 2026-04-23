@@ -14,6 +14,13 @@ const INSTALLED_APP_ENTRY_LAYOUT = {
   },
 } as const;
 
+const INSTALLER_MANIFEST_RELATIVE_PATH = ["installer.json"] as const;
+const LEGACY_INSTALLER_MANIFEST_RELATIVE_PATH = [
+  "config",
+  "installer.json",
+] as const;
+const LAUNCHER_METADATA_FILE_NAME = "install.json";
+
 export type InstalledAppKey = keyof typeof INSTALLED_APP_ENTRY_LAYOUT;
 
 function uniqueNonEmptyStrings(values: Array<string | undefined | null>) {
@@ -108,13 +115,26 @@ function buildPathCandidates(
   return uniqueNonEmptyStrings([primaryPath, ...fallbackPaths]);
 }
 
+function joinPathSegments(root: string, segments?: readonly string[]) {
+  return segments?.length ? path.join(root, ...segments) : "";
+}
+
 function installedAppEntryPathFromSegments(
   installDir: string,
   segments?: readonly string[],
 ) {
-  return segments?.length
-    ? path.join(installedAppDistRoot(installDir), ...segments)
-    : "";
+  return joinPathSegments(installedAppDistRoot(installDir), segments);
+}
+
+function installDirPath(installDir: string, segments: readonly string[]) {
+  return joinPathSegments(installDir, segments);
+}
+
+function defaultInstallDirPathForHome(
+  home: string,
+  segments: readonly string[],
+) {
+  return installDirPath(defaultInstallDirForHome(home), segments);
 }
 
 export function installedAppEntryPaths(
@@ -170,19 +190,22 @@ export function resolveInstalledAppEntryPath(
 }
 
 export function installerManifestPath(installDir: string) {
-  return path.join(installDir, "installer.json");
+  return installDirPath(installDir, INSTALLER_MANIFEST_RELATIVE_PATH);
 }
 
 export function legacyInstallerManifestPath(installDir: string) {
-  return path.join(installDir, "config", "installer.json");
+  return installDirPath(installDir, LEGACY_INSTALLER_MANIFEST_RELATIVE_PATH);
 }
 
 export function installerLocatorPathForHome(home: string) {
-  return installerManifestPath(defaultInstallDirForHome(home));
+  return defaultInstallDirPathForHome(home, INSTALLER_MANIFEST_RELATIVE_PATH);
 }
 
 export function legacyInstallerLocatorPathForHome(home: string) {
-  return legacyInstallerManifestPath(defaultInstallDirForHome(home));
+  return defaultInstallDirPathForHome(
+    home,
+    LEGACY_INSTALLER_MANIFEST_RELATIVE_PATH,
+  );
 }
 
 export function installerManifestPaths(installDir: string, home: string) {
@@ -239,15 +262,25 @@ export function launcherMetadataPathForHome(
   home: string,
   platform = process.platform,
 ) {
-  return path.join(appConfigDirForHome(home, platform), "install.json");
+  return path.join(appConfigDirForHome(home, platform), LAUNCHER_METADATA_FILE_NAME);
+}
+
+function alternateLauncherMetadataPathForHome(
+  home: string,
+  currentPlatformPath: string,
+) {
+  return pathCandidatesForPlatforms(
+    SUPPORTED_HOME_DISCOVERY_PLATFORMS,
+    (platform) => launcherMetadataPathForHome(home, platform),
+  ).find((candidate) => candidate !== currentPlatformPath);
 }
 
 export function launcherMetadataPathsForHome(home: string) {
   const currentPlatformPath = launcherMetadataPathForHome(home);
-  const alternatePlatformPath = pathCandidatesForPlatforms(
-    SUPPORTED_HOME_DISCOVERY_PLATFORMS,
-    (platform) => launcherMetadataPathForHome(home, platform),
-  ).find((candidate) => candidate !== currentPlatformPath);
+  const alternatePlatformPath = alternateLauncherMetadataPathForHome(
+    home,
+    currentPlatformPath,
+  );
   return {
     currentPlatformPath,
     alternatePlatformPath,

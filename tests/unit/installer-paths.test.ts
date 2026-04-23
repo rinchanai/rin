@@ -193,6 +193,14 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     [path.join(linuxHome, ".rin", "installer.json")],
   );
   assert.deepEqual(
+    pathsMod.installerManifestPaths(path.join(linuxHome, ".rin"), linuxHome)
+      .recoveryPaths,
+    [
+      path.join(linuxHome, ".rin", "installer.json"),
+      path.join(linuxHome, ".rin", "config", "installer.json"),
+    ],
+  );
+  assert.deepEqual(
     pathsMod.installerRecoveryManifestCandidates(installDir, linuxHome),
     [
       path.join(installDir, "installer.json"),
