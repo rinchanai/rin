@@ -859,10 +859,16 @@ export class RpcInteractiveSession {
     return await this.waitForDaemonPromise;
   }
 
+  private startReconnectLoop() {
+    try {
+      void Promise.resolve(this.ensureReconnectLoop()).catch(() => {});
+    } catch {}
+  }
+
   private queueOfflineOperation(operation: PendingRpcOperation) {
     this.queuedOfflineOps.push(operation);
     if (!this.client.isConnected() || !this.rpcConnected) {
-      void this.ensureReconnectLoop();
+      this.startReconnectLoop();
     }
     this.emitFrontendStatus(true);
   }
@@ -918,13 +924,15 @@ export class RpcInteractiveSession {
         this.isCompacting,
     );
     this.recoveryPending = true;
+    this.startupPending = false;
+    this.sessionOperationPending = false;
     this.activeTurn = null;
     this.remoteTurnRunning = false;
     this.isCompacting = false;
     this.isBashRunning = false;
     if (options?.transportClosed) {
       this.setRpcConnected(false);
-      void this.ensureReconnectLoop();
+      this.startReconnectLoop();
       return;
     }
     this.syncStreamingState();
