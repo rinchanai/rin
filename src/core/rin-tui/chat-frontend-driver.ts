@@ -460,7 +460,9 @@ export class ChatFrontendDriver {
         const current = safeString(this.liveTurn.requestTag || "").trim();
         const incoming = safeString(event.requestTag || "").trim();
         if (current && incoming && current !== incoming) return;
-        const finalText = safeString(event.finalText).trim();
+        const finalText =
+          safeString(event.finalText).trim() ||
+          safeString(this.pendingCompletedAssistantText).trim();
         if (!finalText) {
           this.failLiveTurn(new Error("rpc_turn_final_output_missing"));
           return;

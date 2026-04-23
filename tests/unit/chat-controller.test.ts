@@ -637,6 +637,65 @@ test("chat controller treats rpc completion as the canonical final reply for pro
   assert.equal(controller.state.piSessionFile, "prompt-chat.jsonl");
 });
 
+test(
+  "chat controller reuses an observed completed assistant message when rpc finalText is missing",
+  async () => {
+    const controller = await createController("telegram/1:2");
+    const deliveries = [];
+    controller.commitPendingDelivery = async function (clearProcessing = false) {
+      deliveries.push({
+        text: this.stagedDelivery?.text || "",
+        replyToMessageId: this.stagedDelivery?.replyToMessageId,
+      });
+      this.stagedDelivery = null;
+      if (clearProcessing) this.currentTurn = null;
+    };
+
+    controller.session = {
+      isStreaming: false,
+      messages: [],
+      sessionManager: {
+        getSessionFile: () => "/tmp/rpc-result-chat.jsonl",
+        getSessionId: () => "session-rpc-result",
+        getSessionName: () => "telegram/1:2",
+      },
+      ensureSessionReady: async () => ({
+        sessionFile: "/tmp/rpc-result-chat.jsonl",
+        sessionId: "session-rpc-result",
+      }),
+      prompt: async (_text, options = {}) => {
+        await controller.handleSessionEvent({ type: "agent_start" });
+        await controller.handleSessionEvent({
+          type: "message_end",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "observed completed text" }],
+          },
+        });
+        emitRpcTurnComplete(controller, options, "", {
+          messages: [{ type: "text", text: "canonical result text" }],
+        });
+      },
+      switchSession: async () => {},
+    };
+
+    const result = await controller.runTurn({
+      text: "hello",
+      attachments: [],
+      incomingMessageId: "m-turn-observed-final",
+      replyToMessageId: "m-turn-observed-final",
+    });
+
+    assert.equal(result.finalText, "observed completed text");
+    assert.deepEqual(deliveries, [
+      {
+        text: "observed completed text",
+        replyToMessageId: "m-turn-observed-final",
+      },
+    ]);
+  },
+);
+
 test("chat controller rejects rpc completion without canonical finalText", async () => {
   const controller = await createController("telegram/1:2");
   const deliveries = [];

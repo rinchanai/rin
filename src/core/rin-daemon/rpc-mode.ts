@@ -5,6 +5,7 @@ import { fail, ok } from "../rin-lib/rpc.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { requireSessionFile } from "../session/ref.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
+import { safeString } from "../text-utils.js";
 import {
   getOAuthState,
   getSessionState,
@@ -80,6 +81,32 @@ function canReuseCurrentSessionForNewSessionCommand(
   return typeof messageCount === "number" ? messageCount === 0 : false;
 }
 
+function getSessionMessagesForTurnCompletion(session: any) {
+  if (Array.isArray(session?.agent?.state?.messages)) {
+    return session.agent.state.messages;
+  }
+  if (Array.isArray(session?.messages)) return session.messages;
+  return [];
+}
+
+function snapshotSessionTurnCompletion(session: any) {
+  const messages = getSessionMessagesForTurnCompletion(session);
+  let assistantCount = 0;
+  for (const message of messages) {
+    if (safeString(message?.role).trim() === "assistant") assistantCount += 1;
+  }
+  return {
+    messages,
+    assistantCount,
+    finalText: resolveTurnCompletion({ messages }).finalText,
+    lastAssistantText: safeString(session?.getLastAssistantText?.() || "").trim(),
+  };
+}
+
+async function settleTurnCompletionEvents() {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 export async function runCustomRpcMode(
   runtimeOrSession: any,
   deps: {
@@ -128,6 +155,7 @@ export async function runCustomRpcMode(
   };
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
     const turnSession = getSession();
+    const beforeSnapshot = snapshotSessionTurnCompletion(turnSession);
     let lastCompletedAssistantMessage: any = null;
     const rawUnsubscribeTurnSession = turnSession.subscribe?.((event: any) => {
       if (event?.type !== "message_end") return;
@@ -151,11 +179,27 @@ export async function runCustomRpcMode(
       try {
         await task();
         await turnSession.agent.waitForIdle();
-        const completion = resolveTurnCompletion({
+        await settleTurnCompletionEvents();
+        let completion = resolveTurnCompletion({
           messages: lastCompletedAssistantMessage
             ? [lastCompletedAssistantMessage]
             : [],
         });
+        if (!completion.finalText) {
+          const afterSnapshot = snapshotSessionTurnCompletion(turnSession);
+          const sessionAdvanced =
+            afterSnapshot.assistantCount > beforeSnapshot.assistantCount ||
+            (afterSnapshot.finalText &&
+              afterSnapshot.finalText !== beforeSnapshot.finalText) ||
+            (afterSnapshot.lastAssistantText &&
+              afterSnapshot.lastAssistantText !== beforeSnapshot.lastAssistantText);
+          if (sessionAdvanced) {
+            completion = resolveTurnCompletion({
+              messages: afterSnapshot.messages,
+              finalText: afterSnapshot.lastAssistantText,
+            });
+          }
+        }
         if (!completion.finalText) {
           throw new Error("rpc_turn_final_output_missing");
         }
