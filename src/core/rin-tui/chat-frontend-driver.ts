@@ -178,16 +178,6 @@ export class ChatFrontendDriver {
     this.assistantPreviewText = "";
   }
 
-  private promoteAssistantPreviewToCommittedSegment() {
-    const previewText = safeString(this.assistantPreviewText).trim();
-    if (!previewText) return "";
-    this.assistantPreviewText = "";
-    if (!safeString(this.pendingCommittedAssistantSegmentText).trim()) {
-      this.pendingCommittedAssistantSegmentText = previewText;
-    }
-    return safeString(this.pendingCommittedAssistantSegmentText).trim();
-  }
-
   private async emitPendingCommittedAssistantInterim() {
     const text = this.takePendingCommittedAssistantSegmentText();
     if (!text) return false;
@@ -197,13 +187,8 @@ export class ChatFrontendDriver {
     return true;
   }
 
-  private queueAssistantBoundaryAsInterim() {
-    const committedText = safeString(
-      this.pendingCommittedAssistantSegmentText,
-    ).trim();
-    const previewText = safeString(this.assistantPreviewText).trim();
-    if (!committedText && !previewText) return;
-    if (!committedText) this.promoteAssistantPreviewToCommittedSegment();
+  private queueCommittedAssistantSegmentAsInterim() {
+    if (!safeString(this.pendingCommittedAssistantSegmentText).trim()) return;
     void this.queueInterimDelivery(async () => {
       await this.emitPendingCommittedAssistantInterim();
     }).catch(() => {});
@@ -503,13 +488,10 @@ export class ChatFrontendDriver {
           await this.handleAssistantMessageEnd(event.message).catch(() => {});
           break;
         }
-        this.queueAssistantBoundaryAsInterim();
+        this.queueCommittedAssistantSegmentAsInterim();
         break;
       case "message_update":
         if (event?.message?.role === "assistant") {
-          if (safeString(this.pendingCommittedAssistantSegmentText).trim()) {
-            this.queueAssistantBoundaryAsInterim();
-          }
           this.handleAssistantMessageUpdate(event.message);
         }
         break;
@@ -518,7 +500,7 @@ export class ChatFrontendDriver {
       case "compaction_start":
       case "compaction_end":
         this.emit({ type: "turn_accepted" });
-        this.queueAssistantBoundaryAsInterim();
+        this.queueCommittedAssistantSegmentAsInterim();
         break;
     }
   }

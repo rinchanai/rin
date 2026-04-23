@@ -77,7 +77,7 @@ test("chat frontend driver does not leak growing final-answer prefixes as interi
   assert.deepEqual(interimTexts, []);
 });
 
-test("chat frontend driver promotes a preview to interim only when a later tool boundary commits it", async () => {
+test("chat frontend driver does not treat a preview as interim when a tool boundary follows", async () => {
   const driver = createDriver();
   const interimTexts: string[] = [];
   driver.subscribe((event: any) => {
@@ -103,7 +103,7 @@ test("chat frontend driver promotes a preview to interim only when a later tool 
   const result = await driver.runTurn({ text: "hello" });
 
   assert.equal(result.finalText, "最终答复");
-  assert.deepEqual(interimTexts, ["我先查一下"]);
+  assert.deepEqual(interimTexts, []);
 });
 
 test("chat frontend driver emits a completed assistant segment as interim before a later distinct final", async () => {

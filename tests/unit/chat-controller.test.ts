@@ -315,7 +315,7 @@ test("chat controller flushes a completed interim assistant message before a lat
   ]);
 });
 
-test("chat controller promotes assistant message updates to interim when a tool boundary follows", async () => {
+test("chat controller does not treat assistant message updates as interim when a tool boundary follows", async () => {
   const controller = await createController("telegram/1:2");
   const chatKey = "telegram/1:2";
   const deliveries = [];
@@ -387,7 +387,6 @@ test("chat controller promotes assistant message updates to interim when a tool 
 
   assert.equal(result.finalText, "最终答复");
   assert.deepEqual(deliveries, [
-    { text: "··· 我先查一下", replyToMessageId: "m-update" },
     { text: "最终答复", replyToMessageId: "m-update" },
   ]);
 });
