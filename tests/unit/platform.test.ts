@@ -114,6 +114,10 @@ test("platform/fs move helpers move files into target directories", async () => 
     );
     assert.equal(movedPath, path.join(dir, "done", "final.json"));
     assert.equal(await fs.readFile(movedPath, "utf8"), '{"ok":true}\n');
+    assert.equal(
+      fsMod.claimFileToDir(path.join(dir, "missing.json"), path.join(dir, "processing")),
+      "",
+    );
     await assert.rejects(fs.stat(source));
     await assert.rejects(fs.stat(claimedPath));
   });

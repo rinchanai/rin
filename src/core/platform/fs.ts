@@ -35,14 +35,21 @@ function ensureParentDir(filePath: string, privateDir = false) {
   (privateDir ? ensurePrivateDir : ensureDir)(dir);
 }
 
-export function writeJsonFile(filePath: string, value: unknown) {
+function writeJsonText(filePath: string, text: string, append = false) {
   ensureParentDir(filePath);
-  fs.writeFileSync(filePath, stringifyJson(value), "utf8");
+  if (append) {
+    fs.appendFileSync(filePath, text, "utf8");
+    return;
+  }
+  fs.writeFileSync(filePath, text, "utf8");
+}
+
+export function writeJsonFile(filePath: string, value: unknown) {
+  writeJsonText(filePath, stringifyJson(value));
 }
 
 export function appendJsonLineSync(filePath: string, value: unknown) {
-  ensureParentDir(filePath);
-  fs.appendFileSync(filePath, stringifyJsonLine(value), "utf8");
+  writeJsonText(filePath, stringifyJsonLine(value), true);
 }
 
 export async function appendJsonLine(filePath: string, value: unknown) {
@@ -106,12 +113,20 @@ function moveFile(sourcePath: string, targetPath: string) {
   }
 }
 
+function moveFileIntoDir(
+  filePath: string,
+  dir: string,
+  fileName = path.basename(filePath),
+) {
+  ensureDir(dir);
+  const targetPath = path.join(dir, fileName);
+  moveFile(filePath, targetPath);
+  return targetPath;
+}
+
 export function claimFileToDir(filePath: string, dir: string) {
   try {
-    ensureDir(dir);
-    const claimedPath = path.join(dir, path.basename(filePath));
-    moveFile(filePath, claimedPath);
-    return claimedPath;
+    return moveFileIntoDir(filePath, dir);
   } catch {
     return "";
   }
@@ -122,10 +137,7 @@ export function moveFileToDir(
   dir: string,
   fileName = path.basename(filePath),
 ) {
-  ensureDir(dir);
-  const targetPath = path.join(dir, fileName);
-  moveFile(filePath, targetPath);
-  return targetPath;
+  return moveFileIntoDir(filePath, dir, fileName);
 }
 
 export function removeFileIfExists(filePath: string) {
