@@ -5,10 +5,6 @@ import {
   createConfiguredAgentSession,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
-import {
-  ensureSearxngSidecar,
-  stopSearxngSidecar,
-} from "../rin-web-search/service.js";
 
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { RpcInteractiveSession } from "./runtime.js";
@@ -18,15 +14,6 @@ import { applyRinTuiOverrides } from "./upstream-overrides.js";
 type TuiMode = "rpc" | "std";
 
 const VALID_TUI_MODES: TuiMode[] = ["rpc", "std"];
-const RPC_TUI_STARTUP_CONNECT_ERROR_RE =
-  /\bconnect (?:ENOENT|ECONNREFUSED|ECONNRESET|EPIPE)\b/;
-
-export function formatTuiStartupError(error: unknown) {
-  const message = String((error as any)?.message || error || "").trim();
-  if (!message) return "rin_tui_failed";
-  if (!RPC_TUI_STARTUP_CONNECT_ERROR_RE.test(message)) return message;
-  return `RPC TUI could not connect to the daemon (${message}). Try \`rin doctor\` to inspect the daemon, or reopen Rin with \`rin --std\`.`;
-}
 
 function startupProfiler() {
   const enabled = /^(1|true|yes)$/i.test(
@@ -92,28 +79,15 @@ export function resolveTuiMode(
 }
 
 async function startStdTui(
-  agentDir: string,
   options: { additionalExtensionPaths?: string[] },
   profile: ReturnType<typeof startupProfiler>,
 ) {
-  const webSearchInstanceId = `tui-${process.pid}`;
-  await ensureSearxngSidecar(agentDir, {
-    instanceId: webSearchInstanceId,
-  }).catch(() => {});
-
-  try {
-    const { runtime: sessionRuntime } = await createConfiguredAgentSession({
-      additionalExtensionPaths: options.additionalExtensionPaths,
-    });
-    profile.mark("std-session-created");
-    console.log();
-    const interactiveMode = new InteractiveMode(sessionRuntime);
-    await interactiveMode.run();
-  } finally {
-    await stopSearxngSidecar(agentDir, {
-      instanceId: webSearchInstanceId,
-    }).catch(() => {});
-  }
+  const { runtime: sessionRuntime } = await createConfiguredAgentSession({
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  });
+  profile.mark("std-session-created");
+  const interactiveMode = new InteractiveMode(sessionRuntime);
+  await interactiveMode.run();
 }
 
 async function startRpcTui(
@@ -125,18 +99,13 @@ async function startRpcTui(
     client,
     options.additionalExtensionPaths,
   );
-  try {
-    await rpcSession.connect();
-  } catch (error) {
-    throw new Error(formatTuiStartupError(error), { cause: error });
-  }
+  await rpcSession.connect();
   profile.mark("interactive-mode-and-rpc-ready");
 
   let runtimeHost: { dispose(): Promise<void> } | undefined;
   try {
     runtimeHost = createRpcRuntimeHost(rpcSession);
     profile.mark("rpc-session-created");
-    console.log();
     const interactiveMode = new InteractiveMode(runtimeHost as any);
     await interactiveMode.run();
   } finally {
@@ -165,7 +134,7 @@ export async function startTui(
   await applyRinTuiOverrides();
 
   if (mode === "std") {
-    await startStdTui(runtime.agentDir, options, profile);
+    await startStdTui(options, profile);
     return;
   }
 
