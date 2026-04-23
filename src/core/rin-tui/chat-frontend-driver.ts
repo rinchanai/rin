@@ -167,12 +167,18 @@ export class ChatFrontendDriver {
     await this.interimDeliveryQueue;
   }
 
-  private takePendingAssistantInterimText() {
+  private takePendingAssistantBoundaryText() {
     const completed = safeString(this.pendingCompletedAssistantText).trim();
     const preview = safeString(this.pendingAssistantPreviewText).trim();
     this.pendingCompletedAssistantText = "";
     this.pendingAssistantPreviewText = "";
     return completed || preview;
+  }
+
+  private takePendingCompletedAssistantText() {
+    const completed = safeString(this.pendingCompletedAssistantText).trim();
+    this.pendingCompletedAssistantText = "";
+    return completed;
   }
 
   private clearPendingAssistantInterimText() {
@@ -181,7 +187,8 @@ export class ChatFrontendDriver {
   }
 
   private async flushPendingAssistantInterimBeforeFinal(finalText: string) {
-    const pendingText = this.takePendingAssistantInterimText();
+    const pendingText = this.takePendingCompletedAssistantText();
+    this.pendingAssistantPreviewText = "";
     const nextFinalText = safeString(finalText).trim();
     if (!pendingText || !nextFinalText) return false;
     if (pendingText === nextFinalText) return false;
@@ -193,7 +200,7 @@ export class ChatFrontendDriver {
   }
 
   private async flushPendingAssistantInterim() {
-    const text = this.takePendingAssistantInterimText();
+    const text = this.takePendingAssistantBoundaryText();
     if (!text) return false;
     if (this.deliveredInterimTexts.has(text)) return false;
     this.deliveredInterimTexts.add(text);
@@ -498,7 +505,9 @@ export class ChatFrontendDriver {
         break;
       case "message_update":
         if (event?.message?.role === "assistant") {
-          this.promotePendingAssistantMessageToInterim();
+          if (safeString(this.pendingCompletedAssistantText).trim()) {
+            this.promotePendingAssistantMessageToInterim();
+          }
           this.handleAssistantMessageUpdate(event.message);
         }
         break;

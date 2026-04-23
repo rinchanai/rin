@@ -392,7 +392,7 @@ test("chat controller promotes assistant message updates to interim when a tool 
   ]);
 });
 
-test("chat controller flushes a buffered non-final assistant preview as interim before the final reply", async () => {
+test("chat controller does not leak a buffered preview as interim before the final reply", async () => {
   const controller = await createController("telegram/1:2");
   const chatKey = "telegram/1:2";
   const deliveries = [];
@@ -460,8 +460,81 @@ test("chat controller flushes a buffered non-final assistant preview as interim 
 
   assert.equal(result.finalText, "最终答复");
   assert.deepEqual(deliveries, [
-    { text: "··· 我先查一下", replyToMessageId: "m-preview" },
     { text: "最终答复", replyToMessageId: "m-preview" },
+  ]);
+});
+
+test("chat controller does not emit growing final-answer prefixes as interim replies", async () => {
+  const controller = await createController("telegram/1:2");
+  const chatKey = "telegram/1:2";
+  const deliveries = [];
+  controller.deliverAssistantInterim = async function (text) {
+    deliveries.push({
+      text: `··· ${text}`,
+      replyToMessageId: this.currentReplyToMessageId(),
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
+    });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  saveChatMessage(controller.agentDir, {
+    chatKey,
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-prefixes",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+
+  const sessionFile = path.join(controller.agentDir, "sessions", "interim-prefixes-chat.jsonl");
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => sessionFile,
+      getSessionId: () => "session-interim-prefixes",
+      getSessionName: () => chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile,
+      sessionId: "session-interim-prefixes",
+    }),
+    prompt: async (_text, options = {}) => {
+      await controller.handleSessionEvent({ type: "agent_start" });
+      for (const text of ["我", "我先", "我先查", "我先查一下"]) {
+        await controller.handleSessionEvent({
+          type: "message_update",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text }],
+          },
+        });
+      }
+      emitRpcTurnComplete(controller, options, "我先查一下，结果如下");
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-prefixes",
+    replyToMessageId: "m-prefixes",
+  });
+
+  assert.equal(result.finalText, "我先查一下，结果如下");
+  assert.deepEqual(deliveries, [
+    { text: "我先查一下，结果如下", replyToMessageId: "m-prefixes" },
   ]);
 });
 
