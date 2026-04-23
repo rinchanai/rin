@@ -12,9 +12,10 @@ export function formatLocalDateOnly(date = new Date()) {
 function normalizeCanonicalDateOnly(value: string) {
   const match = value.match(DATE_ONLY_RE);
   if (!match) return "";
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
   const date = new Date(Date.UTC(year, month - 1, day));
   if (
     date.getUTCFullYear() !== year ||
@@ -23,23 +24,23 @@ function normalizeCanonicalDateOnly(value: string) {
   ) {
     return "";
   }
-  return `${match[1]}-${match[2]}-${match[3]}`;
+  return `${yearText}-${monthText}-${dayText}`;
 }
 
-function normalizeLeadingDateOnly(value: string) {
+function hasLeadingDateOnlySuffix(suffix: string): boolean {
+  return !suffix || /^[Tt]\d/.test(suffix) || /^\s+\d/.test(suffix);
+}
+
+function normalizeTextDateOnly(value: unknown): string {
   const text = safeString(value).trim();
   if (!text) return "";
-  const head = text.slice(0, 10);
-  const normalized = normalizeCanonicalDateOnly(head);
-  if (!normalized) return "";
-  const suffix = text.slice(10);
-  if (!suffix) return normalized;
-  return /^[Tt]\d/.test(suffix) || /^\s+\d/.test(suffix)
+  const normalized = normalizeCanonicalDateOnly(text.slice(0, 10));
+  return normalized && hasLeadingDateOnlySuffix(text.slice(10))
     ? normalized
     : "";
 }
 
-function dateInputToLocalDateOnly(value: unknown) {
+function normalizeDateValue(value: unknown): string {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? "" : formatLocalDateOnly(value);
   }
@@ -53,9 +54,9 @@ export function normalizeLocalDateOnly(
   value: unknown,
   fallbackDate?: Date | null,
 ) {
-  const normalizedText = normalizeLeadingDateOnly(safeString(value));
-  if (normalizedText) return normalizedText;
-  const normalizedDate = dateInputToLocalDateOnly(value);
-  if (normalizedDate) return normalizedDate;
-  return fallbackDate ? formatLocalDateOnly(fallbackDate) : "";
+  return (
+    normalizeTextDateOnly(value) ||
+    normalizeDateValue(value) ||
+    (fallbackDate ? formatLocalDateOnly(fallbackDate) : "")
+  );
 }
