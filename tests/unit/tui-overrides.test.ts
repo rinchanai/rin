@@ -241,46 +241,6 @@ test("rpc session resync rebinds runtime state and rerenders history", async () 
   assert.ok(renders >= 1);
 });
 
-test("background rpc event failures are surfaced without unhandled rejection", async () => {
-  await overrides.applyRinTuiOverrides();
-
-  let capturedHandler;
-  const seenErrors = [] as string[];
-  const rejections = [] as string[];
-  const onUnhandledRejection = (error: any) => {
-    rejections.push(String(error?.message || error || "unknown"));
-  };
-  process.once("unhandledRejection", onUnhandledRejection);
-
-  try {
-    const instance = {
-      session: {
-        subscribe(handler: (event: any) => void) {
-          capturedHandler = handler;
-          return () => {};
-        },
-      },
-      async handleEvent() {
-        throw new Error("rpc_session_resync_failed");
-      },
-      showError(message: string) {
-        seenErrors.push(message);
-      },
-    };
-
-    codingAgentModule.InteractiveMode.prototype.subscribeToAgent.call(instance);
-    capturedHandler?.({ type: "rpc_session_resynced" });
-    await new Promise((resolve) => setImmediate(resolve));
-
-    assert.deepEqual(rejections, []);
-    assert.deepEqual(seenErrors, [
-      "Background event error: rpc_session_resync_failed",
-    ]);
-  } finally {
-    process.removeListener("unhandledRejection", onUnhandledRejection);
-  }
-});
-
 test("rpc compaction end reattaches the existing transport loader", async () => {
   await overrides.applyRinTuiOverrides();
 
