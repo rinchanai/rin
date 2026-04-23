@@ -184,10 +184,10 @@ export class ChatController {
   }
 
   async clearProcessingState() {
-    this.currentTurn = null;
-    this.stagedDelivery = null;
     this.awaitingTurnSettle = false;
+    this.stagedDelivery = null;
     await this.clearWorkingReaction().catch(() => {});
+    this.currentTurn = null;
     this.saveState();
   }
 

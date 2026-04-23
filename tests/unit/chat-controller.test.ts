@@ -526,6 +526,49 @@ test("chat controller does not keep typing from stale currentTurn metadata alone
   assert.deepEqual(reactions, []);
 });
 
+test("chat controller clears the working reaction before dropping processing state", async () => {
+  const controller = await createController("telegram/1:2");
+  const reactions = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        async deleteReaction(chatId, messageId, emoji, userId) {
+          reactions.push(["delete", chatId, messageId, emoji, userId]);
+        },
+        internal: {
+          async sendChatAction() {},
+        },
+      },
+    ],
+  };
+  controller.currentTurn = {
+    startedAt: Date.now(),
+    incomingMessageId: "m-finished",
+    workingNoticeSent: false,
+  };
+  controller.workingReactionEmoji = "🤔";
+  controller.workingReactionTick = 1;
+  controller.lastWorkingReactionAt = Date.now();
+  controller.awaitingTurnSettle = true;
+  controller.stagedDelivery = {
+    type: "text_delivery",
+    chatKey: controller.chatKey,
+    text: "pending",
+  };
+
+  await controller.clearProcessingState();
+
+  assert.deepEqual(reactions, [["delete", "2", "m-finished", "🤔", "1"]]);
+  assert.equal(controller.currentTurn, null);
+  assert.equal(controller.workingReactionEmoji, "");
+  assert.equal(controller.workingReactionTick, 0);
+  assert.equal(controller.lastWorkingReactionAt, 0);
+  assert.equal(controller.awaitingTurnSettle, false);
+  assert.equal(controller.stagedDelivery, null);
+});
+
 test("chat controller treats rpc completion as the canonical final reply for prompt turns", async () => {
   const controller = await createController("telegram/1:2");
   const chatKey = "telegram/1:2";
