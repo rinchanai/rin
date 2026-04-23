@@ -28,8 +28,15 @@ test("json utils clone helpers return detached JSON-safe copies", () => {
 });
 
 test("json utils object helpers preserve object guards", () => {
+  const arrayValue = [{ demo: true }];
+  const clonedArray = jsonUtils.cloneJsonIfObject(arrayValue);
+
+  clonedArray[0].demo = false;
+
+  assert.equal(arrayValue[0].demo, true);
   assert.deepEqual(jsonUtils.cloneJsonIfObject(undefined), undefined);
   assert.deepEqual(jsonUtils.cloneJsonIfObject(null), undefined);
+  assert.deepEqual(jsonUtils.cloneJsonIfObject("text"), undefined);
   assert.equal(jsonUtils.isJsonRecord({ demo: true }), true);
   assert.equal(jsonUtils.isJsonRecord([]), false);
   assert.equal(jsonUtils.isJsonRecord(null), false);
