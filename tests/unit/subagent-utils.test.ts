@@ -365,7 +365,7 @@ test("subagent sessions default to managed namespace dir", () => {
   );
 });
 
-test("run_subagent exposes consistent sessionFile discovery hints", () => {
+test("run_subagent exposes single-session schema and consistent sessionFile discovery hints", () => {
   const tools = [];
   subagentIndex.default({
     registerTool(tool) {
@@ -378,15 +378,8 @@ test("run_subagent exposes consistent sessionFile discovery hints", () => {
   const runTool = tools.find((tool) => tool.name === "run_subagent");
   assert.ok(runTool);
   assert.equal(runTool.parameters.properties.disabledExtensions.type, "array");
-  assert.equal(
-    runTool.parameters.properties.tasks.items.properties.disabledExtensions.type,
-    "array",
-  );
+  assert.equal(runTool.parameters.properties.tasks, undefined);
   assert.equal(runTool.parameters.properties.session.properties.keep.type, "boolean");
-  assert.equal(
-    runTool.parameters.properties.tasks.items.properties.session.properties.keep.type,
-    "boolean",
-  );
   assert.equal(
     runTool.parameters.properties.session.properties.sessionFile.type,
     "string",
@@ -439,6 +432,58 @@ test("subagent session utils normalize invalid session modes and trim session fi
       keep: true,
     },
   );
+});
+
+test("run_subagent rejects legacy parallel task payloads", async () => {
+  const result = await subagentService.executeSubagentRun({
+    params: {
+      prompt: undefined,
+      tasks: [{ prompt: "a" }],
+    },
+    ctx: {
+      modelRegistry: {
+        async getAvailable() {
+          return [];
+        },
+      },
+    },
+    currentThinkingLevel: "medium",
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "run_subagent does not accept `tasks`.");
+});
+
+test("run_subagent surfaces legacy task rejection without extra hints", async () => {
+  const tools = [];
+  subagentIndex.default({
+    registerTool(tool) {
+      tools.push(tool);
+    },
+    getThinkingLevel() {
+      return "medium";
+    },
+  });
+  const runTool = tools.find((tool) => tool.name === "run_subagent");
+  assert.ok(runTool);
+
+  const result = await runTool.execute(
+    "tool-call-1",
+    { tasks: [{ prompt: "a" }] },
+    undefined,
+    undefined,
+    {
+      modelRegistry: {
+        async getAvailable() {
+          return [];
+        },
+      },
+    },
+  );
+
+  assert.equal(result.isError, true);
+  assert.equal(result.content?.[0]?.type, "text");
+  assert.equal(result.content?.[0]?.text, "run_subagent does not accept `tasks`.");
 });
 
 test("session manager can create ephemeral forks without writing a session file", async () => {

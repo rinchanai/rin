@@ -13,10 +13,7 @@ import {
   executeSubagentRun,
   getSubagentBackendInfo,
 } from "./service.js";
-import {
-  formatSubagentSessionFileHint,
-  getDefaultSubagentSessionDir,
-} from "./session-utils.js";
+import { getDefaultSubagentSessionDir } from "./session-utils.js";
 import type {
   ProviderModelSummary,
   RunSubagentParams,
@@ -98,19 +95,6 @@ const DisabledExtensionsSchema = Type.Optional(
   ),
 );
 
-const TaskSchema = Type.Object({
-  prompt: Type.String({ description: "Prompt for the worker." }),
-  model: Type.Optional(
-    Type.String({
-      description:
-        "Exact model id in provider/model form. Use list_models to inspect the currently available models first.",
-    }),
-  ),
-  thinkingLevel: Type.Optional(ThinkingLevelSchema),
-  session: SessionSchema,
-  disabledExtensions: DisabledExtensionsSchema,
-});
-
 const RunParamsSchema = Type.Object({
   prompt: Type.Optional(
     Type.String({ description: "Prompt for the worker." }),
@@ -124,12 +108,6 @@ const RunParamsSchema = Type.Object({
   thinkingLevel: Type.Optional(ThinkingLevelSchema),
   session: SessionSchema,
   disabledExtensions: DisabledExtensionsSchema,
-  tasks: Type.Optional(
-    Type.Array(TaskSchema, {
-      description:
-        "Parallel worker tasks. All tasks finish before the tool returns.",
-    }),
-  ),
 });
 
 type SubagentDetails = {
@@ -189,16 +167,9 @@ function buildRunUpdate(
   results: TaskResult[],
   detailsBase: SubagentBackendInfo,
 ) {
-  const done = results.filter((result) => result.status === "done").length;
-  const failed = results.filter((result) => result.status === "error").length;
-  const running = results.filter(
-    (result) => result.status === "running",
-  ).length;
-  const pending = results.filter(
-    (result) => result.status === "pending",
-  ).length;
+  const current = results[0];
   const lines = [
-    `Subagents: ${done} done, ${failed} failed, ${running} running, ${pending} pending`,
+    `Subagent: ${current?.status || "pending"}`,
     "",
     ...results.map(summarizeTaskResult),
   ];
@@ -253,11 +224,11 @@ async function runSubagentResult(
   };
 
   if (run.ok === false) {
-    const suffix = run.error.startsWith("Unknown or unavailable model:")
-      ? `\n\n${formatModelList(detailsBase)}`
-      : `\n\n${formatSubagentSessionFileHint()}`;
+    const text = run.error.startsWith("Unknown or unavailable model:")
+      ? `${run.error}\n\n${formatModelList(detailsBase)}`
+      : run.error;
     return {
-      content: [{ type: "text" as const, text: `${run.error}${suffix}` }],
+      content: [{ type: "text" as const, text }],
       details: detailsBase,
       isError: true,
     };
@@ -323,14 +294,6 @@ export default function subagentExtension(pi: ExtensionAPI) {
         state.endedAt = undefined;
       }
       const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      if (Array.isArray(args.tasks) && args.tasks.length > 0) {
-        text.setText(
-          theme.fg("toolTitle", theme.bold("run_subagent ")) +
-            theme.fg("accent", `parallel (${args.tasks.length})`),
-        );
-        return text;
-      }
-
       const preview = String(args.prompt || "")
         .replace(/\s+/g, " ")
         .trim();

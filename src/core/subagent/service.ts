@@ -41,8 +41,6 @@ import type {
   TaskResult,
 } from "./types.js";
 
-export const MAX_PARALLEL_SUBAGENT_TASKS = 8;
-
 let sessionCreationQueue: Promise<unknown> = Promise.resolve();
 
 function withSessionCreationLock<T>(fn: () => Promise<T>): Promise<T> {
@@ -219,86 +217,75 @@ function normalizeSubagentTask(
   };
 }
 
-function buildTasks(
+function buildTask(
   params: RunSubagentParams,
   ctx: any,
   currentThinkingLevel: ThinkingLevel,
-): { ok: true; tasks: NormalizedSubagentTask[] } | { ok: false; error: string } {
-  const hasTasks = Array.isArray(params.tasks) && params.tasks.length > 0;
-  const hasSingle = Boolean(String(params.prompt || "").trim());
-  if (Number(hasTasks) + Number(hasSingle) !== 1) {
+): { ok: true; task: NormalizedSubagentTask } | { ok: false; error: string } {
+  if (Array.isArray((params as any).tasks)) {
     return {
       ok: false,
-      error:
-        "Provide exactly one mode: either `prompt` for a single subagent, or `tasks` for parallel subagents.",
+      error: "run_subagent does not accept `tasks`.",
     };
   }
 
-  if (hasTasks && (params.tasks?.length || 0) > MAX_PARALLEL_SUBAGENT_TASKS) {
+  if (!String(params.prompt || "").trim()) {
     return {
       ok: false,
-      error: `Too many parallel tasks (${params.tasks?.length}). Max is ${MAX_PARALLEL_SUBAGENT_TASKS}.`,
+      error: "run_subagent requires a non-empty `prompt`.",
     };
   }
 
   return {
     ok: true,
-    tasks: hasTasks
-      ? (params.tasks || []).map((task) => normalizeSubagentTask(task))
-      : [
-          normalizeSubagentTask(
-            {
-              prompt: String(params.prompt || ""),
-              model: params.model,
-              thinkingLevel: params.thinkingLevel,
-              session: params.session,
-              disabledExtensions: params.disabledExtensions,
-            },
-            {
-              model: ctx.model
-                ? `${ctx.model.provider}/${ctx.model.id}`
-                : undefined,
-              thinkingLevel: currentThinkingLevel,
-            },
-          ),
-        ],
+    task: normalizeSubagentTask(
+      {
+        prompt: String(params.prompt || ""),
+        model: params.model,
+        thinkingLevel: params.thinkingLevel,
+        session: params.session,
+        disabledExtensions: params.disabledExtensions,
+      },
+      {
+        model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+        thinkingLevel: currentThinkingLevel,
+      },
+    ),
   };
 }
 
-function validateTasks(
-  tasks: NormalizedSubagentTask[],
+function validateTask(
+  task: NormalizedSubagentTask,
   details: SubagentBackendInfo,
 ): string | undefined {
   const availableModels = buildModelLookup(details.providers);
-  for (const task of tasks) {
-    if (!String(task.prompt || "").trim()) {
-      return "Every subagent task needs a non-empty prompt.";
-    }
-    if (task.model && !availableModels.has(task.model)) {
-      return `Unknown or unavailable model: ${task.model}`;
-    }
-    const sessionConfig = task.session;
-    if (sessionConfig.invalidMode) {
-      return formatSubagentSessionModeInvalidError(sessionConfig.invalidMode);
-    }
-    if (
-      (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
-      !sessionConfig.sessionFile
-    ) {
-      return formatSubagentSessionFileRequiredError(sessionConfig.mode);
-    }
-    if (
-      (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
-      sessionConfig.sessionFile
-    ) {
-      return "session.sessionFile is only valid with session.mode `resume` or `fork`.";
-    }
-    if (
-      typeof sessionConfig.keep === "boolean" &&
-      sessionConfig.mode !== "fork"
-    ) {
-      return "session.keep is only valid with session.mode `fork`. Use session.mode `persist` to create a saved worker session.";
-    }
+  if (!String(task.prompt || "").trim()) {
+    return "Every subagent task needs a non-empty prompt.";
+  }
+  if (task.model && !availableModels.has(task.model)) {
+    return `Unknown or unavailable model: ${task.model}`;
+  }
+  const sessionConfig = task.session;
+  if (sessionConfig.invalidMode) {
+    return formatSubagentSessionModeInvalidError(sessionConfig.invalidMode);
+  }
+  if (
+    (sessionConfig.mode === "resume" || sessionConfig.mode === "fork") &&
+    !sessionConfig.sessionFile
+  ) {
+    return formatSubagentSessionFileRequiredError(sessionConfig.mode);
+  }
+  if (
+    (sessionConfig.mode === "memory" || sessionConfig.mode === "persist") &&
+    sessionConfig.sessionFile
+  ) {
+    return "session.sessionFile is only valid with session.mode `resume` or `fork`.";
+  }
+  if (
+    typeof sessionConfig.keep === "boolean" &&
+    sessionConfig.mode !== "fork"
+  ) {
+    return "session.keep is only valid with session.mode `fork`. Use session.mode `persist` to create a saved worker session.";
   }
   return undefined;
 }
@@ -458,7 +445,7 @@ export async function executeSubagentRun(options: {
     options.ctx,
     options.currentThinkingLevel,
   );
-  const built = buildTasks(
+  const built = buildTask(
     options.params,
     options.ctx,
     options.currentThinkingLevel,
@@ -467,31 +454,24 @@ export async function executeSubagentRun(options: {
     return { ok: false, error: built.error, ...details };
   }
 
-  const validationError = validateTasks(built.tasks, details);
+  const validationError = validateTask(built.task, details);
   if (validationError) {
     return { ok: false, error: validationError, ...details };
   }
 
-  const progressResults = built.tasks.map((task, index) =>
-    createTaskResult(task, index + 1),
-  );
-  options.onProgress?.(progressResults.map(snapshotTaskResult), details);
+  const pending = createTaskResult(built.task, 1);
+  options.onProgress?.([snapshotTaskResult(pending)], details);
 
-  const results = await Promise.all(
-    built.tasks.map((task, index) =>
-      runSubagentTask(
-        task,
-        index + 1,
-        options.signal,
-        (partial) => {
-          progressResults[index] = partial;
-          options.onProgress?.(progressResults.map(snapshotTaskResult), details);
-        },
-      ),
-    ),
+  const result = await runSubagentTask(
+    built.task,
+    1,
+    options.signal,
+    (partial) => {
+      options.onProgress?.([snapshotTaskResult(partial)], details);
+    },
   );
 
-  return { ok: true, results, ...details };
+  return { ok: true, results: [result], ...details };
 }
 
 export async function runSubagentTask(

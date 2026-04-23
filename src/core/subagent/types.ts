@@ -33,7 +33,6 @@ export type RunSubagentParams = {
   thinkingLevel?: ThinkingLevel;
   session?: SubagentSessionConfig;
   disabledExtensions?: string[];
-  tasks?: SubagentTask[];
 };
 
 export type TaskResult = {
