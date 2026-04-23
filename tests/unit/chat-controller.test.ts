@@ -315,6 +315,156 @@ test("chat controller flushes a completed interim assistant message before a lat
   ]);
 });
 
+test("chat controller promotes assistant message updates to interim when a tool boundary follows", async () => {
+  const controller = await createController("telegram/1:2");
+  const chatKey = "telegram/1:2";
+  const deliveries = [];
+  controller.deliverAssistantInterim = async function (text) {
+    deliveries.push({
+      text: `··· ${text}`,
+      replyToMessageId: this.currentReplyToMessageId(),
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
+    });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  saveChatMessage(controller.agentDir, {
+    chatKey,
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-update",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+
+  const sessionFile = path.join(controller.agentDir, "sessions", "interim-update-chat.jsonl");
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => sessionFile,
+      getSessionId: () => "session-interim-update",
+      getSessionName: () => chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile,
+      sessionId: "session-interim-update",
+    }),
+    prompt: async (_text, options = {}) => {
+      await controller.handleSessionEvent({ type: "agent_start" });
+      await controller.handleSessionEvent({
+        type: "message_update",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "我先查一下" }],
+        },
+      });
+      await controller.handleSessionEvent({
+        type: "tool_execution_start",
+        toolName: "read",
+      });
+      emitRpcTurnComplete(controller, options, "最终答复");
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-update",
+    replyToMessageId: "m-update",
+  });
+
+  assert.equal(result.finalText, "最终答复");
+  assert.deepEqual(deliveries, [
+    { text: "··· 我先查一下", replyToMessageId: "m-update" },
+    { text: "最终答复", replyToMessageId: "m-update" },
+  ]);
+});
+
+test("chat controller flushes a buffered non-final assistant preview as interim before the final reply", async () => {
+  const controller = await createController("telegram/1:2");
+  const chatKey = "telegram/1:2";
+  const deliveries = [];
+  controller.deliverAssistantInterim = async function (text) {
+    deliveries.push({
+      text: `··· ${text}`,
+      replyToMessageId: this.currentReplyToMessageId(),
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
+    });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  saveChatMessage(controller.agentDir, {
+    chatKey,
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-preview",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+
+  const sessionFile = path.join(controller.agentDir, "sessions", "interim-preview-chat.jsonl");
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => sessionFile,
+      getSessionId: () => "session-interim-preview",
+      getSessionName: () => chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile,
+      sessionId: "session-interim-preview",
+    }),
+    prompt: async (_text, options = {}) => {
+      await controller.handleSessionEvent({ type: "agent_start" });
+      await controller.handleSessionEvent({
+        type: "message_update",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "我先查一下" }],
+        },
+      });
+      emitRpcTurnComplete(controller, options, "最终答复");
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-preview",
+    replyToMessageId: "m-preview",
+  });
+
+  assert.equal(result.finalText, "最终答复");
+  assert.deepEqual(deliveries, [
+    { text: "··· 我先查一下", replyToMessageId: "m-preview" },
+    { text: "最终答复", replyToMessageId: "m-preview" },
+  ]);
+});
+
 test("chat controller uses a fixed Working notice policy for onebot private chats", async () => {
   const controller = await createController("onebot/1:private:2");
   const deliveries = [];
@@ -658,6 +808,82 @@ test("chat controller lets steer bypass the owned turn queue while the current t
   const firstResult = await firstTurn;
   assert.equal(firstResult.finalText, "done");
   assert.deepEqual(deliveries, ["done"]);
+});
+
+test("chat controller drops superseded pending assistant text before steer", async () => {
+  const controller = await createController("telegram/1:2");
+  const deliveries = [];
+  let firstPromptOptions;
+
+  controller.deliverAssistantInterim = async function (text) {
+    deliveries.push({
+      text: `··· ${text}`,
+      replyToMessageId: this.currentReplyToMessageId(),
+    });
+    return true;
+  };
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
+    });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/steer-final-chat.jsonl",
+      getSessionId: () => "session-steer-final",
+      getSessionName: () => controller.chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/steer-final-chat.jsonl",
+      sessionId: "session-steer-final",
+    }),
+    prompt: async (_text, options = {}) => {
+      if (options.streamingBehavior === "steer") {
+        controller.session.isStreaming = false;
+        emitRpcTurnComplete(controller, firstPromptOptions, "steer 后最终答复");
+        return;
+      }
+
+      firstPromptOptions = options;
+      controller.session.isStreaming = true;
+      await controller.handleSessionEvent({ type: "agent_start" });
+      await controller.handleSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "被 steer 取代的旧答复" }],
+        },
+      });
+      await controller.runTurn(
+        {
+          text: "interrupt",
+          attachments: [],
+          incomingMessageId: "m-steer-new",
+          replyToMessageId: "m-steer-old",
+        },
+        "steer",
+      );
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-steer-old",
+    replyToMessageId: "m-steer-old",
+  });
+
+  assert.equal(result.finalText, "steer 后最终答复");
+  assert.deepEqual(deliveries, [
+    { text: "steer 后最终答复", replyToMessageId: "m-steer-old" },
+  ]);
 });
 
 test("chat controller fails fast when prompt submission is queued offline instead of hanging forever", async () => {

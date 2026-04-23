@@ -44,6 +44,7 @@ export class ChatFrontendDriver {
   } | null = null;
   latestAssistantText = "";
   pendingCompletedAssistantText = "";
+  pendingAssistantPreviewText = "";
   deliveredInterimTexts = new Set<string>();
   interimDeliveryQueue: Promise<void> = Promise.resolve();
   frontendPhase: FrontendPhase = "idle";
@@ -148,6 +149,7 @@ export class ChatFrontendDriver {
 
   private resetTurnTextTracking() {
     this.pendingCompletedAssistantText = "";
+    this.pendingAssistantPreviewText = "";
     this.deliveredInterimTexts.clear();
     this.interimDeliveryQueue = Promise.resolve();
   }
@@ -165,14 +167,25 @@ export class ChatFrontendDriver {
     await this.interimDeliveryQueue;
   }
 
+  private takePendingAssistantInterimText() {
+    const completed = safeString(this.pendingCompletedAssistantText).trim();
+    const preview = safeString(this.pendingAssistantPreviewText).trim();
+    this.pendingCompletedAssistantText = "";
+    this.pendingAssistantPreviewText = "";
+    return completed || preview;
+  }
+
+  private clearPendingAssistantInterimText() {
+    this.pendingCompletedAssistantText = "";
+    this.pendingAssistantPreviewText = "";
+  }
+
   private async flushPendingAssistantInterimBeforeFinal(finalText: string) {
-    const pendingText = safeString(this.pendingCompletedAssistantText).trim();
+    const pendingText = this.takePendingAssistantInterimText();
     const nextFinalText = safeString(finalText).trim();
     if (!pendingText || !nextFinalText) return false;
-    if (pendingText === nextFinalText) {
-      this.pendingCompletedAssistantText = "";
-      return false;
-    }
+    if (pendingText === nextFinalText) return false;
+    this.pendingCompletedAssistantText = pendingText;
     await this.queueInterimDelivery(async () => {
       await this.flushPendingAssistantInterim();
     });
@@ -180,8 +193,7 @@ export class ChatFrontendDriver {
   }
 
   private async flushPendingAssistantInterim() {
-    const text = safeString(this.pendingCompletedAssistantText).trim();
-    this.pendingCompletedAssistantText = "";
+    const text = this.takePendingAssistantInterimText();
     if (!text) return false;
     if (this.deliveredInterimTexts.has(text)) return false;
     this.deliveredInterimTexts.add(text);
@@ -190,10 +202,27 @@ export class ChatFrontendDriver {
   }
 
   private promotePendingAssistantMessageToInterim() {
-    if (!safeString(this.pendingCompletedAssistantText).trim()) return;
+    if (
+      !safeString(this.pendingCompletedAssistantText).trim() &&
+      !safeString(this.pendingAssistantPreviewText).trim()
+    ) {
+      return;
+    }
     void this.queueInterimDelivery(async () => {
       await this.flushPendingAssistantInterim();
     }).catch(() => {});
+  }
+
+  private handleAssistantMessageUpdate(message: any) {
+    const text = safeString(
+      extractMessageText(message?.content, {
+        includeThinking: false,
+        trim: true,
+      }),
+    ).trim();
+    if (!text) return;
+    this.pendingAssistantPreviewText = text;
+    this.latestAssistantText = text;
   }
 
   private async handleAssistantMessageEnd(message: any) {
@@ -210,6 +239,7 @@ export class ChatFrontendDriver {
       });
     }
     this.pendingCompletedAssistantText = text;
+    this.pendingAssistantPreviewText = "";
     this.latestAssistantText = text;
   }
 
@@ -324,6 +354,7 @@ export class ChatFrontendDriver {
     const images = Array.isArray(input.images) ? input.images : [];
 
     if (this.session.isStreaming) {
+      this.clearPendingAssistantInterimText();
       const requestTag = this.createTurnRequestTag();
       await this.session.prompt(text, {
         images,
@@ -356,6 +387,7 @@ export class ChatFrontendDriver {
     } catch (error: any) {
       if (isAgentAlreadyProcessingError(error)) {
         if (this.liveTurn === liveTurn) this.liveTurn = null;
+        this.clearPendingAssistantInterimText();
         const steerRequestTag = this.createTurnRequestTag();
         await this.session.prompt(text, {
           images,
@@ -465,6 +497,7 @@ export class ChatFrontendDriver {
       case "message_update":
         if (event?.message?.role === "assistant") {
           this.promotePendingAssistantMessageToInterim();
+          this.handleAssistantMessageUpdate(event.message);
         }
         break;
       case "tool_execution_end":
