@@ -38,8 +38,9 @@ type BoundSessionSource = {
 
 type NormalizedBoundSessionDetails = {
   item: BoundSessionListItem;
-  source?: BoundSessionSource;
   resolvedPath: string;
+  title: string;
+  subtitle: string;
 };
 
 function isBoundSessionListItem(value: unknown): value is BoundSessionListItem {
@@ -135,15 +136,26 @@ function resolveBoundSessionDisplayTitle(
   );
 }
 
+function createNormalizedBoundSessionDetails(
+  item: BoundSessionListItem,
+  source?: BoundSessionSource,
+): NormalizedBoundSessionDetails {
+  return {
+    item,
+    resolvedPath: resolveNormalizedSessionPath(item.path),
+    title: resolveBoundSessionDisplayTitle(item),
+    subtitle: resolveBoundSessionSubtitle(source, item),
+  };
+}
+
 function normalizeBoundSessionDetails(
   session: unknown,
 ): NormalizedBoundSessionDetails | null {
   if (isBoundSessionListItem(session)) {
-    return {
-      item: session,
-      source: getBoundSessionSource(session),
-      resolvedPath: resolveNormalizedSessionPath(session.path),
-    };
+    return createNormalizedBoundSessionDetails(
+      session,
+      getBoundSessionSource(session),
+    );
   }
 
   const source = getBoundSessionSource(session);
@@ -166,11 +178,7 @@ function normalizeBoundSessionDetails(
     allMessagesText: normalizeSessionText(source?.allMessagesText, firstMessage),
   } satisfies BoundSessionListItem;
 
-  return {
-    item,
-    source,
-    resolvedPath: resolveNormalizedSessionPath(item.path),
-  };
+  return createNormalizedBoundSessionDetails(item, source);
 }
 
 function normalizeBoundSessionDetailsList(
@@ -205,12 +213,11 @@ function isNormalizedBoundSessionActive(
 function describeNormalizedBoundSession(
   session: NormalizedBoundSessionDetails,
   normalizedActivePath?: string,
-  subtitle = resolveBoundSessionSubtitle(session.source, session.item),
 ): BoundSessionListPresentation {
   return {
     ...session.item,
-    title: resolveBoundSessionDisplayTitle(session.item),
-    subtitle,
+    title: session.title,
+    subtitle: session.subtitle,
     isActive: isNormalizedBoundSessionActive(session, normalizedActivePath),
   };
 }
@@ -250,16 +257,11 @@ export function describeBoundSessions(
 }
 
 export function getBoundSessionDisplayTitle(session: unknown): string {
-  return resolveBoundSessionDisplayTitle(
-    normalizeBoundSessionDetails(session)?.item,
-  );
+  return normalizeBoundSessionDetails(session)?.title || DEFAULT_SESSION_DISPLAY_NAME;
 }
 
 export function getBoundSessionSubtitle(session: unknown): string | undefined {
-  const normalized = normalizeBoundSessionDetails(session);
-  return normalized
-    ? resolveBoundSessionSubtitle(normalized.source, normalized.item)
-    : undefined;
+  return normalizeBoundSessionDetails(session)?.subtitle;
 }
 
 export function isActiveBoundSession(
