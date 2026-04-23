@@ -78,6 +78,19 @@ test("subagent model utils normalize and sort model refs", async () => {
     "openai/gpt-5-20250101",
     "openai/gpt-5-20260301",
   ]);
+  assert.deepEqual(
+    Array.from(
+      modelUtils.buildModelLookup([
+        {
+          provider: " openai ",
+          count: 3,
+          top3: [" gpt-5 ", "gpt-5", "bad model"],
+          all: [" gpt-5 ", "gpt-5", "bad model"],
+        },
+      ]),
+    ),
+    ["openai/gpt-5"],
+  );
 });
 
 test("subagent format utils summarize results", () => {
