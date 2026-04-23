@@ -90,12 +90,22 @@ test("rules tool returns empty text when no ancestor rules files exist", async (
   });
 });
 
-test("rules tool reports missing and non-directory paths accurately", async () => {
+test("rules tool reports invalid, missing, and non-directory paths accurately", async () => {
   await withTempDir(async (dir) => {
     const missingPath = path.join(dir, "missing");
     const filePath = path.join(dir, "file.txt");
     await fs.writeFile(filePath, "demo", "utf8");
 
+    await assert.rejects(
+      () =>
+        getRulesTool().execute(
+          "tool-rules-relative",
+          { path: " relative/path " },
+          undefined,
+          undefined,
+        ),
+      /Path must be absolute/,
+    );
     await assert.rejects(
       () =>
         getRulesTool().execute(

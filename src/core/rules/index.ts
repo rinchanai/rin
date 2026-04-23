@@ -23,8 +23,19 @@ type RulesFile = {
   content: string;
 };
 
-function normalizeInputPath(input: string): string {
-  return input.trim();
+function requireTargetDirPath(params: { path?: unknown } | undefined): string {
+  const targetPath = String(params?.path || "").trim();
+  if (!targetPath) throw new Error("Path is required");
+  if (!isAbsolute(targetPath)) {
+    throw new Error(`Path must be absolute: ${targetPath}`);
+  }
+  if (!existsSync(targetPath)) {
+    throw new Error(`Path not found: ${targetPath}`);
+  }
+  if (!statSync(targetPath).isDirectory()) {
+    throw new Error(`Not a directory: ${targetPath}`);
+  }
+  return targetPath;
 }
 
 export function collectRuleAncestorDirs(targetDir: string) {
@@ -48,7 +59,7 @@ export function collectRelevantRulesFiles(
   const ancestorDirs = new Set(collectRuleAncestorDirs(targetDir));
   const filesByPath = new Map<string, RulesFile>();
   for (const agentFile of Array.isArray(agentsFiles) ? agentsFiles : []) {
-    const filePath = normalizeInputPath(String(agentFile?.path || ""));
+    const filePath = String(agentFile?.path || "").trim();
     if (!filePath) continue;
     const resolvedPath = resolve(filePath);
     if (!ancestorDirs.has(dirname(resolvedPath))) continue;
@@ -106,18 +117,6 @@ function formatRulesCall(
   return `${theme.fg("toolTitle", theme.bold("rules"))} ${path === null ? invalidArgText(theme) : theme.fg("accent", path)}`;
 }
 
-function formatRulesResult(
-  result: {
-    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
-    details?: { truncation?: TruncationResult; emptyMessage?: string };
-  },
-  options: { expanded: boolean },
-  theme: any,
-  showImages: boolean,
-) {
-  return renderTextToolResult(result, options, theme, showImages);
-}
-
 export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
   pi.registerTool({
     name: "rules",
@@ -135,19 +134,7 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal, _onUpdate, _ctx) {
       if (signal?.aborted) throw new Error("Operation aborted");
 
-      const targetPath = normalizeInputPath(String((params as any).path || ""));
-      if (!targetPath) throw new Error("Path is required");
-      if (!isAbsolute(targetPath)) {
-        throw new Error(`Path must be absolute: ${targetPath}`);
-      }
-      if (!existsSync(targetPath)) {
-        throw new Error(`Path not found: ${targetPath}`);
-      }
-
-      const stats = statSync(targetPath);
-      if (!stats.isDirectory()) {
-        throw new Error(`Not a directory: ${targetPath}`);
-      }
+      const targetPath = requireTargetDirPath(params as { path?: unknown });
 
       const prompt = await buildRulesPrompt(targetPath);
       if (!prompt) {
@@ -176,7 +163,9 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
     },
     renderResult(result, options, theme, context) {
       const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      text.setText(formatRulesResult(result as any, options, theme, context.showImages));
+      text.setText(
+        renderTextToolResult(result as any, options, theme, context.showImages),
+      );
       return text;
     },
   });
