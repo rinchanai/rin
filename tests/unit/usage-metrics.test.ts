@@ -53,3 +53,34 @@ test("usage metrics keep explicit total tokens as the single source of truth", (
     99,
   );
 });
+
+test("usage metrics normalize invalid numbers and keep fallback total behavior", () => {
+  assert.deepEqual(
+    usageMetrics.readUsageMetrics({
+      input: "invalid",
+      output: undefined,
+      cacheRead: null,
+      cacheWrite: "5",
+      totalTokens: 0,
+      cost: {
+        input: "bad",
+        output: undefined,
+        cacheRead: null,
+        cacheWrite: "0.04",
+        total: "0.04",
+      },
+    }),
+    {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 5,
+      totalTokens: 5,
+      costInput: 0,
+      costOutput: 0,
+      costCacheRead: 0,
+      costCacheWrite: 0.04,
+      costTotal: 0.04,
+    },
+  );
+});

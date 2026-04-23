@@ -11,30 +11,58 @@ export type UsageMetrics = {
   costTotal: number;
 };
 
-function usageNumber(value: unknown) {
+type UsageCounts = Pick<
+  UsageMetrics,
+  "input" | "output" | "cacheRead" | "cacheWrite"
+>;
+
+type UsageCosts = Pick<
+  UsageMetrics,
+  "costInput" | "costOutput" | "costCacheRead" | "costCacheWrite" | "costTotal"
+>;
+
+function usageNumber(value: unknown): number {
   const num = Number(value || 0);
   return Number.isFinite(num) ? num : 0;
 }
 
-export function readUsageMetrics(usage: any): UsageMetrics {
-  const input = usageNumber(usage?.input);
-  const output = usageNumber(usage?.output);
-  const cacheRead = usageNumber(usage?.cacheRead);
-  const cacheWrite = usageNumber(usage?.cacheWrite);
+function usageField(source: any, key: string): number {
+  return usageNumber(source?.[key]);
+}
 
+function readUsageCounts(usage: any): UsageCounts {
   return {
-    input,
-    output,
-    cacheRead,
-    cacheWrite,
-    totalTokens:
-      usageNumber(usage?.totalTokens) ||
-      input + output + cacheRead + cacheWrite,
-    costInput: usageNumber(usage?.cost?.input),
-    costOutput: usageNumber(usage?.cost?.output),
-    costCacheRead: usageNumber(usage?.cost?.cacheRead),
-    costCacheWrite: usageNumber(usage?.cost?.cacheWrite),
-    costTotal: usageNumber(usage?.cost?.total),
+    input: usageField(usage, "input"),
+    output: usageField(usage, "output"),
+    cacheRead: usageField(usage, "cacheRead"),
+    cacheWrite: usageField(usage, "cacheWrite"),
+  };
+}
+
+function readUsageCosts(cost: any): UsageCosts {
+  return {
+    costInput: usageField(cost, "input"),
+    costOutput: usageField(cost, "output"),
+    costCacheRead: usageField(cost, "cacheRead"),
+    costCacheWrite: usageField(cost, "cacheWrite"),
+    costTotal: usageField(cost, "total"),
+  };
+}
+
+function derivedTotalTokens(counts: UsageCounts): number {
+  return counts.input + counts.output + counts.cacheRead + counts.cacheWrite;
+}
+
+function resolveTotalTokens(usage: any, counts: UsageCounts): number {
+  return usageField(usage, "totalTokens") || derivedTotalTokens(counts);
+}
+
+export function readUsageMetrics(usage: any): UsageMetrics {
+  const counts = readUsageCounts(usage);
+  return {
+    ...counts,
+    totalTokens: resolveTotalTokens(usage, counts),
+    ...readUsageCosts(usage?.cost),
   };
 }
 
