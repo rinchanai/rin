@@ -4,37 +4,21 @@ import path from "node:path";
 
 import { resolveRuntimeProfile } from "./runtime.js";
 
-function existingPath(...parts: string[]) {
-  const filePath = path.join(...parts);
-  return fs.existsSync(filePath) ? filePath : undefined;
-}
-
-function changelogPathCandidates(agentDir: string) {
-  const homeAgentDir = path.join(os.homedir(), ".rin");
-  return [
-    path.join(agentDir, "docs", "pi", "CHANGELOG.md"),
-    path.join(homeAgentDir, "docs", "pi", "CHANGELOG.md"),
-  ].filter((item, index, list) => list.indexOf(item) === index);
-}
+const CHANGELOG_RELATIVE_PATH = ["docs", "pi", "CHANGELOG.md"] as const;
 
 export function getChangelogPath() {
   const { agentDir } = resolveRuntimeProfile();
-  const candidates = changelogPathCandidates(agentDir);
+  const candidates = Array.from(
+    new Set([
+      path.join(agentDir, ...CHANGELOG_RELATIVE_PATH),
+      path.join(os.homedir(), ".rin", ...CHANGELOG_RELATIVE_PATH),
+    ]),
+  );
   return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0];
 }
 
 function normalizeChangelogText(text: string) {
   return String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
-}
-
-function formatChangelogEntry(heading: string, lines: string[]) {
-  const normalizedHeading = String(heading || "").trim();
-  const body = lines.join("\n").trim();
-  if (!normalizedHeading || !body) return null;
-  return {
-    heading: normalizedHeading,
-    content: `## ${normalizedHeading}\n${body}`,
-  };
 }
 
 export function parseChangelog(changelogPath: string) {
@@ -45,20 +29,29 @@ export function parseChangelog(changelogPath: string) {
   const entries: Array<{ heading: string; content: string }> = [];
   let currentHeading = "";
   let currentBody: string[] = [];
-  const flush = () => {
-    const entry = formatChangelogEntry(currentHeading, currentBody);
-    if (entry) entries.push(entry);
+
+  const flushCurrentEntry = () => {
+    const heading = String(currentHeading || "").trim();
+    const body = currentBody.join("\n").trim();
+    if (heading && body) {
+      entries.push({
+        heading,
+        content: `## ${heading}\n${body}`,
+      });
+    }
     currentBody = [];
   };
+
   for (const line of lines) {
     if (/^##\s+\S/.test(line)) {
-      flush();
+      flushCurrentEntry();
       currentHeading = line.replace(/^##\s+/, "").trim();
       continue;
     }
     if (!currentHeading) continue;
     currentBody.push(line);
   }
-  flush();
+
+  flushCurrentEntry();
   return entries;
 }
