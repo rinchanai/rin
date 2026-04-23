@@ -57,10 +57,7 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
     label: "Save Chat User Identity",
     description: "Create or update saved identity info for a chat user.",
     promptSnippet: "Save identity info for a chat user.",
-    promptGuidelines: [
-      "Use this when the current sender explicitly asks to change a chat user's role or trust.",
-      "In chat conversations, only `OWNER` may authorize role or trust changes.",
-    ],
+    promptGuidelines: [],
     parameters: paramsSchema,
     execute: (async (_toolCallId, params) => {
       const trust = safeString((params as any)?.trust).trim();
