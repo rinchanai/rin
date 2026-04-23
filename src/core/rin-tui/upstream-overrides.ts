@@ -84,6 +84,21 @@ function shouldIgnoreInteractiveSigint(instance: any) {
   return instance?.ui?.stopped === true;
 }
 
+function reportBackgroundEventError(instance: any, error: any) {
+  const message =
+    error instanceof Error ? error.message : String(error || "rin_tui_event_failed");
+  try {
+    if (typeof instance?.showError === "function") {
+      instance.showError(`Background event error: ${message}`);
+      return;
+    }
+    if (typeof instance?.showStatus === "function") {
+      instance.showStatus(`Background event error: ${message}`);
+      return;
+    }
+  } catch {}
+}
+
 function createSessionSelectorLoaders(instance: any) {
   const renameSessionIfNamed = async (
     rename: (sessionFilePath: string, nextName: string) => Promise<void> | void,
@@ -224,6 +239,18 @@ export async function applyRinTuiOverrides() {
         };
         process.on("SIGINT", handler);
         this.signalCleanupHandlers.push(() => process.off("SIGINT", handler));
+      };
+  }
+
+  const originalSubscribeToAgent = interactiveModeProto?.subscribeToAgent;
+  if (typeof originalSubscribeToAgent === "function") {
+    interactiveModeProto.subscribeToAgent =
+      function subscribeToAgentWithHandledBackgroundErrors() {
+        this.unsubscribe = this.session.subscribe((event: any) => {
+          void Promise.resolve(this.handleEvent(event)).catch((error) => {
+            reportBackgroundEventError(this, error);
+          });
+        });
       };
   }
 
