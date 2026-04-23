@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import {
@@ -325,7 +325,7 @@ export function formatSearchMemoryCall(args: any, theme: any) {
 }
 
 export default function memoryExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "search_memory",
     label: "Search Memory",
     description:

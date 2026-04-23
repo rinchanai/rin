@@ -1,5 +1,5 @@
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import {
   type ExtensionAPI,
   type TruncationResult,
@@ -93,7 +93,7 @@ function formatWebSearchCall(args: any, theme: any) {
 }
 
 export default function webSearchExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "web_search",
     label: "Web Search",
     description: "Search the web.",

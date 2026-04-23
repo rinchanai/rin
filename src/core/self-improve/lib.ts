@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { resolveAgentDir } from "./agent-dir.js";
 import {

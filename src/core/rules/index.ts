@@ -7,7 +7,7 @@ import {
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import {
@@ -118,7 +118,7 @@ function formatRulesCall(
 }
 
 export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "rules",
     label: "Rules",
     description: "Get effective rules for a target directory.",

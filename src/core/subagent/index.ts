@@ -6,7 +6,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import {
   applySubagentTaskPreferences,
@@ -42,15 +42,17 @@ import {
 } from "../pi/render-utils.js";
 
 const VALID_SESSION_MODES = ["memory", "persist", "resume", "fork"] as const;
+const createLooseEnumSchema = (...args: Parameters<typeof StringEnum>) =>
+  StringEnum(...args) as any;
 
-const ThinkingLevelSchema = StringEnum(
+const ThinkingLevelSchema = createLooseEnumSchema(
   VALID_THINKING_LEVELS as ThinkingLevel[],
   {
     description: "Thinking level: off, minimal, low, medium, high, xhigh.",
   },
 );
 
-const SessionModeSchema = StringEnum(
+const SessionModeSchema = createLooseEnumSchema(
   [...VALID_SESSION_MODES] as SubagentSessionMode[],
   {
     description:
@@ -267,7 +269,7 @@ async function runSubagentResult(
 export { applySubagentTaskPreferences };
 
 export default function subagentExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "run_subagent",
     label: "Run Subagent",
     description: "Run a worker with independent context and optional model selection.",
@@ -343,7 +345,7 @@ export default function subagentExtension(pi: ExtensionAPI) {
     },
   });
 
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "list_models",
     label: "List Models",
     description: "List available models.",

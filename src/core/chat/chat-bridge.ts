@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import {
   type TruncationResult,
@@ -24,6 +24,7 @@ import { safeString } from "../text-utils.js";
 
 const CHAT_BRIDGE_PREVIEW_LINES = 5;
 const CHAT_BRIDGE_DOC_PATH = "~/.rin/docs/rin/docs/chat-bridge.md";
+const createObjectSchema: any = Type.Object;
 
 function getTempFilePath(): string {
   const id = randomBytes(8).toString("hex");
@@ -66,7 +67,7 @@ function formatChatBridgeCall(
   return theme.fg("toolTitle", theme.bold(`$ ${preview}`)) + timeoutSuffix;
 }
 
-const paramsSchema = Type.Object({
+const paramsSchema = createObjectSchema({
   code: Type.String({
     description:
       'TypeScript/JavaScript async function body for the live chat bridge runtime. Available globals: `chat`, `bot`, `internal`, `h`, `store`, `identity`, `helpers`. `chat`, `bot`, `internal`, `store`, and `identity` are bound to the current chat when the current session already belongs to a chat; otherwise use `helpers.useChat("platform/bot:chat")` to get a bound scope for a specific chat. `bot` is intentionally thin; prefer `internal` for most platform operations. Template: `const scope = chat ?? helpers.useChat("telegram/8623230033:-1001234567890"); return await scope.internal.getChat({ chat_id: scope.chat.chatId });` Example send: `const room = helpers.useChat("onebot/2301401877:1067390680"); await room.helpers.send([{ type: "text", text: "hello" }, { type: "image", url: "https://example.com/demo.png" }]); return "sent";` Example platform-specific call: `const scope = helpers.useChat("telegram/8623230033:-1001234567890"); return await scope.internal.getChatMember({ chat_id: scope.chat.chatId, user_id: 123456789 });` Read `${CHAT_BRIDGE_DOC_PATH}` for the runtime reference and more examples.',
@@ -79,7 +80,8 @@ const paramsSchema = Type.Object({
 });
 
 export default function chatBridgeExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  const registerTool: any = pi.registerTool.bind(pi);
+  registerTool({
     name: "chat_bridge",
     label: "chat_bridge",
     description: "Run constrained bridge code against a specific live chat.",
@@ -87,7 +89,7 @@ export default function chatBridgeExtension(pi: ExtensionAPI) {
     promptGuidelines: [
       "Use chat_bridge for tasks such as querying chat or user information, sending messages to a specified chat, sending multimedia content, using platform features for chat management, or building complex interactive chat flows.",
     ],
-    parameters: paramsSchema,
+    parameters: paramsSchema as any,
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const code = safeString((params as any)?.code);
       const timeoutSeconds = Number((params as any)?.timeout);

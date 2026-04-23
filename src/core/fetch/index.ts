@@ -5,7 +5,7 @@ import {
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { sniffHtmlCharset, extractHtmlTitle, htmlToText, isProbablyHtml } from "./html-utils.js";
 import { writeFetchFullOutput } from "./output-utils.js";
@@ -210,7 +210,7 @@ async function buildFetchOutputText(details: FetchDetails, bodyText: string) {
 }
 
 export default function fetchExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "fetch",
     label: "Fetch URL",
     description: "Fetch text content from a specific URL.",

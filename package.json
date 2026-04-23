@@ -35,10 +35,10 @@
   "dependencies": {
     "@clack/prompts": "^0.10.1",
     "@larksuiteoapi/node-sdk": "^1.60.0",
-    "@mariozechner/pi-agent-core": "^0.68.1",
-    "@mariozechner/pi-ai": "^0.68.1",
-    "@mariozechner/pi-coding-agent": "^0.68.1",
-    "@mariozechner/pi-tui": "^0.68.1",
+    "@mariozechner/pi-agent-core": "^0.69.0",
+    "@mariozechner/pi-ai": "^0.69.0",
+    "@mariozechner/pi-coding-agent": "^0.69.0",
+    "@mariozechner/pi-tui": "^0.69.0",
     "@silvia-odwyer/photon-node": "^0.3.4",
     "@slack/socket-mode": "^2.0.6",
     "@slack/web-api": "^7.15.1",
@@ -60,6 +60,7 @@
     "proper-lockfile": "^4.1.2",
     "qq-guild-bot": "^2.9.5",
     "strip-ansi": "^7.2.0",
+    "typebox": "^1.1.32",
     "undici": "^7.24.6",
     "ws": "^8.18.3",
     "yaml": "^2.8.3"

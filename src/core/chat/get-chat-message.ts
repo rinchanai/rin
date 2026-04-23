@@ -5,7 +5,7 @@ import {
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import {
   buildUserFacingTextResult,
@@ -57,7 +57,7 @@ function stripRequestedMessageFields(text: string, messageId: string, chatKey?: 
 }
 
 export default function chatGetMessageExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "get_chat_msg",
     label: "Get Chat Message",
     description: "Get a specific chat message.",

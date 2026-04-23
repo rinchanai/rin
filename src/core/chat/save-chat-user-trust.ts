@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { safeString } from "../text-utils.js";
 
 async function loadSupportModule() {
@@ -52,7 +52,7 @@ const paramsSchema = Type.Object({
 });
 
 export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "save_chat_user_identity",
     label: "Save Chat User Identity",
     description: "Create or update saved identity info for a chat user.",

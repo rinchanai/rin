@@ -4,7 +4,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import { normalizeChatKey } from "../chat/support.js";
 import {
@@ -66,6 +66,9 @@ type TaskSaveDefaults = {
 function wrapAgentPrompt(prompt: string) {
   return String(prompt || "").trim();
 }
+
+const createLooseEnumSchema = (...args: Parameters<typeof StringEnum>) =>
+  StringEnum(...args) as any;
 
 function readTaskSaveDefaults(ctx: unknown): TaskSaveDefaults {
   const session = readSessionMetadata(ctx);
@@ -235,7 +238,7 @@ const taskSchema = Type.Object({
     ]),
   ),
   trigger: Type.Object({
-    kind: StringEnum(["interval", "cron", "once"] as const, {
+    kind: createLooseEnumSchema(["interval", "cron", "once"] as const, {
       description:
         "Trigger kind. Allowed values: `interval`, `cron`, or `once`.",
     }),
@@ -278,7 +281,7 @@ const taskSchema = Type.Object({
   ),
   session: Type.Optional(
     Type.Object({
-      mode: StringEnum(["current", "dedicated"] as const, {
+      mode: createLooseEnumSchema(["current", "dedicated"] as const, {
         description:
           "Session binding mode. Allowed values: `current` or `dedicated`.",
       }),
@@ -291,7 +294,7 @@ const taskSchema = Type.Object({
     }),
   ),
   target: Type.Object({
-    kind: StringEnum(["agent_prompt", "shell_command"] as const, {
+    kind: createLooseEnumSchema(["agent_prompt", "shell_command"] as const, {
       description:
         "Task target kind. Allowed values: `agent_prompt` or `shell_command`.",
     }),
@@ -315,7 +318,7 @@ const getTaskSchema = Type.Object({
 });
 
 const manageTaskSchema = Type.Object({
-  action: StringEnum(["delete", "pause", "resume"] as const, {
+  action: createLooseEnumSchema(["delete", "pause", "resume"] as const, {
     description: "Task action. Allowed values: `delete`, `pause`, or `resume`.",
   }),
   taskId: Type.String({
@@ -456,7 +459,7 @@ function renderTaskResult(
 }
 
 export default function cronExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "get_task",
     label: "Get Task",
     description: "Get a specific scheduled task, or list scheduled tasks when taskId is omitted.",
@@ -469,7 +472,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     renderResult: renderTaskResult,
   });
 
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "save_task",
     label: "Save Task",
     description: "Create or update a scheduled task.",
@@ -484,7 +487,7 @@ export default function cronExtension(pi: ExtensionAPI) {
     renderResult: renderTaskResult,
   });
 
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "manage_task",
     label: "Manage Task",
     description: "Delete, pause, or resume a scheduled task.",

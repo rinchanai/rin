@@ -58,8 +58,8 @@ test("loader stop clears render interval", () => {
 test("local session selector reuses bound session helpers for canonicalized list and rename", async () => {
   await overrides.applyRinTuiOverrides();
 
-  let listed = [];
-  let renamed = [];
+  const listed = [];
+  const renamed = [];
   let selector;
   const originalList = codingAgentModule.SessionManager.list;
   const originalOpen = codingAgentModule.SessionManager.open;
@@ -245,7 +245,10 @@ test("rpc compaction end reattaches the existing transport loader", async () => 
   await overrides.applyRinTuiOverrides();
 
   let renders = 0;
-  const ui = { requestRender() { renders += 1; } };
+  const ui = {
+    requestRender() { renders += 1; },
+    terminal: { setProgress() {} },
+  };
   const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
   const instance = {
     isInitialized: true,
@@ -299,7 +302,10 @@ test("local compaction end restores the working loader while the turn is still s
   await overrides.applyRinTuiOverrides();
 
   let renders = 0;
-  const ui = { requestRender() { renders += 1; } };
+  const ui = {
+    requestRender() { renders += 1; },
+    terminal: { setProgress() {} },
+  };
   const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
   const instance = {
     isInitialized: true,
@@ -346,7 +352,10 @@ test("local compaction end restores the working loader while the turn is still s
 test("rpc agent end does not leave a stale working loader after the turn is done", async () => {
   await overrides.applyRinTuiOverrides();
 
-  const ui = { requestRender() {} };
+  const ui = {
+    requestRender() {},
+    terminal: { setProgress() {} },
+  };
   const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
   const instance = {
     isInitialized: true,

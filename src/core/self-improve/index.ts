@@ -1,6 +1,6 @@
 import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import {
   enqueueMemoryMaintenanceJob,
@@ -277,7 +277,7 @@ function renderSelfImproveResult(result: any, _options: any, theme: any, context
 }
 
 export default function selfImproveExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "save_prompts",
     label: "Save Prompts",
     description:

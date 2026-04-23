@@ -5,7 +5,7 @@ import {
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 
 import {
   buildUserFacingTextResult,
@@ -58,7 +58,7 @@ function formatUserListChatLogText(filePath: string, entries: any[], body: strin
 }
 
 export default function chatListChatLogExtension(pi: ExtensionAPI) {
-  pi.registerTool({
+  (pi as any).registerTool({
     name: "list_chat_log",
     label: "List Chat Log",
     description: "List chat records for a specific chat.",
