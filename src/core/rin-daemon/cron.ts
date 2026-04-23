@@ -7,7 +7,10 @@ import { cloneJson } from "../json-utils.js";
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
 import { shellQuote } from "../rin-lib/system.js";
-import { getManagedTaskSessionFile } from "../session/managed-paths.js";
+import {
+  getManagedTaskSessionDir,
+  getManagedTaskSessionFile,
+} from "../session/managed-paths.js";
 import { executeCronTask } from "./cron-execution.js";
 import {
   computeNextRunAt,
@@ -146,6 +149,30 @@ function mergeBuiltInTaskState(
 function assertMutableTask(task: CronTaskRecord | undefined) {
   if (!task) return;
   if (task.builtIn) throw new Error(`cron_builtin_task_protected:${task.id}`);
+}
+
+function migrateLegacyDedicatedTaskSessionFile(
+  agentDir: string,
+  task: Pick<CronTaskRecord, "id" | "dedicatedSessionFile">,
+) {
+  const current = safeString(task.dedicatedSessionFile).trim();
+  if (!current) return getManagedTaskSessionFile(agentDir, task.id);
+  const resolvedCurrent = path.resolve(current);
+  const managedTaskDir = getManagedTaskSessionDir(agentDir);
+  const sessionRoot = path.dirname(path.dirname(managedTaskDir));
+  if (path.dirname(resolvedCurrent) !== sessionRoot) return resolvedCurrent;
+
+  const managedTarget = getManagedTaskSessionFile(agentDir, task.id);
+  if (resolvedCurrent === managedTarget) return managedTarget;
+
+  try {
+    fs.mkdirSync(path.dirname(managedTarget), { recursive: true });
+    if (fs.existsSync(resolvedCurrent) && !fs.existsSync(managedTarget)) {
+      fs.renameSync(resolvedCurrent, managedTarget);
+    }
+  } catch {}
+
+  return managedTarget;
 }
 
 export class CronScheduler {
@@ -440,13 +467,10 @@ export class CronScheduler {
       row.lastError = row.lastError ? safeString(row.lastError) : undefined;
       if ((row.session as any)?.mode === "dedicated") {
         row.dedicatedSessionPersistent = true;
-        if (
-          row.target?.kind === "agent_prompt" &&
-          !safeString(row.dedicatedSessionFile).trim()
-        ) {
-          row.dedicatedSessionFile = getManagedTaskSessionFile(
+        if (row.target?.kind === "agent_prompt") {
+          row.dedicatedSessionFile = migrateLegacyDedicatedTaskSessionFile(
             this.options.agentDir,
-            row.id,
+            row,
           );
         }
       } else {
