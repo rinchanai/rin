@@ -70,6 +70,29 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
   );
 
   assert.deepEqual(
+    usage.parseUsageArgs([
+      "usage",
+      "--group-by",
+      " provider_model , capability ,, ",
+      "--filter",
+      " source = extension ",
+      "--direction",
+      " ASC ",
+    ]),
+    {
+      groupBy: ["provider_model", "capability"],
+      filters: [{ key: "source", value: "extension" }],
+      limit: 20,
+      orderBy: "total_tokens",
+      direction: "asc",
+      events: false,
+      includeZero: false,
+      dimensions: false,
+      help: false,
+    },
+  );
+
+  assert.deepEqual(
     memoryIndex.parseMemoryIndexArgs([
       "memory-index",
       "repair",
@@ -126,6 +149,13 @@ test("captureInternalRinCommand forwards only subcommand args", () => {
       "5",
     ],
   ]);
+});
+
+test("usage parser rejects invalid filter syntax after trimming", () => {
+  assert.throws(
+    () => usage.parseUsageArgs(["usage", "--filter", " source= "]),
+    /invalid_filter:source=/,
+  );
 });
 
 test("resolveInternalRinDispatch detects internal markers and wrapped subcommand help", () => {

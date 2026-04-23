@@ -74,6 +74,32 @@ function parsePositiveInt(value: string, fallback: number) {
   return Math.round(num);
 }
 
+function readUsageArg(args: string[], index: number): string {
+  return safeString(args[index]).trim();
+}
+
+function parseGroupByArg(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseFilterArg(raw: string) {
+  const eq = raw.indexOf("=");
+  if (eq <= 0 || eq >= raw.length - 1) {
+    throw new Error(`invalid_filter:${raw}`);
+  }
+  return {
+    key: raw.slice(0, eq).trim(),
+    value: raw.slice(eq + 1).trim(),
+  };
+}
+
+function normalizeDirectionArg(value: string): "asc" | "desc" {
+  return value.toLowerCase() === "asc" ? "asc" : "desc";
+}
+
 function normalizeTimeArg(input: string | undefined, boundary: "start" | "end") {
   const raw = safeString(input).trim();
   if (!raw) return undefined;
@@ -134,42 +160,31 @@ export function parseUsageArgs(argv: string[]): UsageCliOptions {
       continue;
     }
     if (arg === "--from") {
-      result.from = normalizeTimeArg(args[++i], "start");
+      result.from = normalizeTimeArg(readUsageArg(args, ++i), "start");
       continue;
     }
     if (arg === "--to") {
-      result.to = normalizeTimeArg(args[++i], "end");
+      result.to = normalizeTimeArg(readUsageArg(args, ++i), "end");
       continue;
     }
     if (arg === "--group-by") {
-      result.groupBy = safeString(args[++i])
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
+      result.groupBy = parseGroupByArg(readUsageArg(args, ++i));
       continue;
     }
     if (arg === "--filter") {
-      const raw = safeString(args[++i]).trim();
-      const eq = raw.indexOf("=");
-      if (eq <= 0 || eq >= raw.length - 1) {
-        throw new Error(`invalid_filter:${raw}`);
-      }
-      result.filters.push({
-        key: raw.slice(0, eq).trim(),
-        value: raw.slice(eq + 1).trim(),
-      });
+      result.filters.push(parseFilterArg(readUsageArg(args, ++i)));
       continue;
     }
     if (arg === "--limit") {
-      result.limit = parsePositiveInt(safeString(args[++i]).trim(), result.limit);
+      result.limit = parsePositiveInt(readUsageArg(args, ++i), result.limit);
       continue;
     }
     if (arg === "--order-by") {
-      result.orderBy = safeString(args[++i]).trim() || result.orderBy;
+      result.orderBy = readUsageArg(args, ++i) || result.orderBy;
       continue;
     }
     if (arg === "--direction") {
-      result.direction = safeString(args[++i]).trim().toLowerCase() === "asc" ? "asc" : "desc";
+      result.direction = normalizeDirectionArg(readUsageArg(args, ++i));
       continue;
     }
     throw new Error(`unknown_usage_arg:${arg}`);
