@@ -18,6 +18,32 @@ const common = await import(
     .href,
 );
 
+async function withEnv(
+  updates: Record<string, string | undefined>,
+  fn: () => void | Promise<void>,
+) {
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(updates)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  try {
+    await fn();
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  }
+}
+
 test("rin system normalizes current-user shell launches", () => {
   const currentUser = os.userInfo().username;
   const launch = system.buildUserShell(` ${currentUser} `, ["node", "app.js"], {
@@ -42,6 +68,40 @@ test("rin system falls back safely for unknown user runtime paths", () => {
   assert.throws(
     () => system.buildUserShell(missingUser, ["node", "app.js"]),
     /target_user_not_found:rin-missing-user-for-test/,
+  );
+});
+
+test("defaultDaemonSocketPath prefers explicit socket env over platform defaults", async () => {
+  await withEnv(
+    {
+      RIN_DAEMON_SOCKET_PATH: " /tmp/custom-rin-daemon.sock ",
+      XDG_RUNTIME_DIR: "/tmp/ignored-runtime",
+    },
+    async () => {
+      assert.equal(
+        common.defaultDaemonSocketPath(),
+        "/tmp/custom-rin-daemon.sock",
+      );
+    },
+  );
+});
+
+test("defaultDaemonSocketPath keeps runtime dir precedence stable", async () => {
+  await withEnv(
+    {
+      RIN_DAEMON_SOCKET_PATH: undefined,
+      XDG_RUNTIME_DIR: "/tmp/demo-runtime",
+    },
+    async () => {
+      const expectedRuntimeDir =
+        process.platform === "linux" && typeof process.getuid === "function"
+          ? path.join("/run/user", String(process.getuid()))
+          : "/tmp/demo-runtime";
+      assert.equal(
+        common.defaultDaemonSocketPath(),
+        path.join(expectedRuntimeDir, "rin-daemon", "daemon.sock"),
+      );
+    },
   );
 });
 

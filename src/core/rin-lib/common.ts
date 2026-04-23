@@ -8,29 +8,32 @@ export function bridgeDaemonSocketPath(agentDir: string) {
   return path.join(agentDir, "data", "daemon", "bridge.sock");
 }
 
+function fallbackRuntimeDir() {
+  return process.platform === "darwin"
+    ? path.join(os.homedir(), "Library", "Caches")
+    : path.join(os.homedir(), ".cache");
+}
+
+function defaultLinuxRuntimeDir(): string {
+  if (process.platform !== "linux") return "";
+  const uid = typeof process.getuid === "function" ? process.getuid() : -1;
+  return uid >= 0 ? path.join("/run/user", String(uid)) : "";
+}
+
+function defaultDaemonRuntimeDir(): string {
+  return (
+    defaultLinuxRuntimeDir() ||
+    safeString(process.env.XDG_RUNTIME_DIR).trim() ||
+    fallbackRuntimeDir()
+  );
+}
+
 export function defaultDaemonSocketPath() {
   const explicitSocketPath = safeString(
     process.env.RIN_DAEMON_SOCKET_PATH,
   ).trim();
   if (explicitSocketPath) return explicitSocketPath;
-
-  if (process.platform === "linux") {
-    const uid = typeof process.getuid === "function" ? process.getuid() : -1;
-    if (uid >= 0) {
-      const runUserDir = path.join("/run/user", String(uid));
-      if (os.platform() === "linux") {
-        return path.join(runUserDir, "rin-daemon", "daemon.sock");
-      }
-    }
-  }
-
-  const fallbackRuntimeDir =
-    process.platform === "darwin"
-      ? path.join(os.homedir(), "Library", "Caches")
-      : path.join(os.homedir(), ".cache");
-  const runtimeDir =
-    safeString(process.env.XDG_RUNTIME_DIR).trim() || fallbackRuntimeDir;
-  return path.join(runtimeDir, "rin-daemon", "daemon.sock");
+  return path.join(defaultDaemonRuntimeDir(), "rin-daemon", "daemon.sock");
 }
 
 export function parseJsonl(
