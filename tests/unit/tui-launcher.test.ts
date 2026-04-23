@@ -36,3 +36,19 @@ test("tui launcher rejects invalid or conflicting mode requests", () => {
     /Conflicting TUI mode requests: RIN_TUI_MODE=std and --rpc\./,
   );
 });
+
+test("tui launcher formats daemon startup socket failures with doctor/std guidance", () => {
+  const message = launcher.formatTuiStartupError(
+    new Error("connect ECONNREFUSED /run/user/1001/rin-daemon/daemon.sock"),
+  );
+  assert.match(
+    message,
+    /RPC TUI could not connect to the daemon \(connect ECONNREFUSED \/run\/user\/1001\/rin-daemon\/daemon\.sock\)\./,
+  );
+  assert.match(message, /Try `rin doctor`/);
+  assert.match(message, /`rin --std`/);
+});
+
+test("tui launcher leaves unrelated startup errors unchanged", () => {
+  assert.equal(launcher.formatTuiStartupError(new Error("boom")), "boom");
+});

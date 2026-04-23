@@ -18,6 +18,15 @@ import { applyRinTuiOverrides } from "./upstream-overrides.js";
 type TuiMode = "rpc" | "std";
 
 const VALID_TUI_MODES: TuiMode[] = ["rpc", "std"];
+const RPC_TUI_STARTUP_CONNECT_ERROR_RE =
+  /\bconnect (?:ENOENT|ECONNREFUSED|ECONNRESET|EPIPE)\b/;
+
+export function formatTuiStartupError(error: unknown) {
+  const message = String((error as any)?.message || error || "").trim();
+  if (!message) return "rin_tui_failed";
+  if (!RPC_TUI_STARTUP_CONNECT_ERROR_RE.test(message)) return message;
+  return `RPC TUI could not connect to the daemon (${message}). Try \`rin doctor\` to inspect the daemon, or reopen Rin with \`rin --std\`.`;
+}
 
 function startupProfiler() {
   const enabled = /^(1|true|yes)$/i.test(
@@ -115,7 +124,11 @@ async function startRpcTui(
     client,
     options.additionalExtensionPaths,
   );
-  await rpcSession.connect();
+  try {
+    await rpcSession.connect();
+  } catch (error) {
+    throw new Error(formatTuiStartupError(error), { cause: error });
+  }
   profile.mark("interactive-mode-and-rpc-ready");
 
   let runtimeHost: { dispose(): Promise<void> } | undefined;
