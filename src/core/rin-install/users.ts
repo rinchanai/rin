@@ -58,6 +58,23 @@ function resolveUserHome(targetUser: string) {
   return matched?.home || defaultHomeForUser(nextTargetUser);
 }
 
+function readDarwinUserAttribute(name: string, attribute: string) {
+  try {
+    const raw = execFileSync(
+      "dscl",
+      [".", "-read", `/Users/${name}`, attribute],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const prefix = `${attribute}:`;
+    const line = raw
+      .split(/\r?\n/)
+      .find((item) => item.trimStart().startsWith(prefix));
+    return line?.replace(new RegExp(`^\\s*${attribute}:\\s*`), "").trim() || "";
+  } catch {
+    return "";
+  }
+}
+
 export function listSystemUsers() {
   const users: SystemUser[] = [];
   if (process.platform === "darwin") {
@@ -71,33 +88,11 @@ export function listSystemUsers() {
         const [, name, uidRaw] = match;
         const uid = Number(uidRaw || 0);
         if (!name || !Number.isFinite(uid)) continue;
-        let home = "";
-        let shell = "";
-        let gid = 20;
-        try {
-          const detail = execFileSync(
-            "dscl",
-            [
-              ".",
-              "-read",
-              `/Users/${name}`,
-              "NFSHomeDirectory",
-              "UserShell",
-              "PrimaryGroupID",
-            ],
-            { encoding: "utf8" },
-          );
-          for (const detailLine of detail.split(/\r?\n/)) {
-            if (detailLine.startsWith("NFSHomeDirectory:"))
-              home = detailLine.replace(/^NFSHomeDirectory:\s*/, "").trim();
-            if (detailLine.startsWith("UserShell:"))
-              shell = detailLine.replace(/^UserShell:\s*/, "").trim();
-            if (detailLine.startsWith("PrimaryGroupID:"))
-              gid = Number(
-                detailLine.replace(/^PrimaryGroupID:\s*/, "").trim() || 20,
-              );
-          }
-        } catch {}
+        const home = readDarwinUserAttribute(name, "NFSHomeDirectory");
+        const shell = readDarwinUserAttribute(name, "UserShell");
+        const gid = Number(
+          readDarwinUserAttribute(name, "PrimaryGroupID") || 20,
+        );
         pushSystemUser(users, { name, uid, gid, home, shell }, 500);
       }
     } catch {}
