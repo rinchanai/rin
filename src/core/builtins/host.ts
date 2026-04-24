@@ -564,6 +564,10 @@ export class CompositeBuiltinRunner {
     } catch {}
   }
 
+  invalidate(message?: string) {
+    this.externalRunner?.invalidate?.(message);
+  }
+
   hasHandlers(eventName: string) {
     return Boolean(
       this.externalRunner?.hasHandlers?.(eventName) ||

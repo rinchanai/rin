@@ -44,6 +44,28 @@ test("composite builtin runner exposes a merged createContext", () => {
   assert.equal(typeof context.isIdle, "function");
 });
 
+test("composite builtin runner forwards extension context invalidation", () => {
+  const calls: unknown[] = [];
+  const builtinHost = new BuiltinModuleHost(
+    "/tmp/rin-cwd",
+    "/tmp/rin-agent",
+    { name: "session-manager" },
+    { name: "model-registry" },
+  );
+  const runner = new CompositeBuiltinRunner(
+    {
+      invalidate(message: string) {
+        calls.push(message);
+      },
+    },
+    builtinHost,
+  );
+
+  runner.invalidate("stale");
+
+  assert.deepEqual(calls, ["stale"]);
+});
+
 test("composite builtin runner forwards optional diagnostics", () => {
   const builtinHost = new BuiltinModuleHost(
     "/tmp/rin-cwd",
