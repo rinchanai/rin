@@ -5,12 +5,69 @@ import { execFileSync } from "node:child_process";
 
 import { defaultDaemonSocketPath } from "./common.js";
 
+const PRIVILEGE_COMMAND_CANDIDATES = [
+  "/run/current-system/sw/bin/doas",
+  "/usr/bin/doas",
+  "/bin/doas",
+  "/usr/bin/sudo",
+  "/bin/sudo",
+  "/usr/bin/pkexec",
+] as const;
+
 function normalizeUserName(value: unknown) {
   return String(value || "").trim();
 }
 
 function defaultHomeForUser(targetUser: string) {
-  return path.join(process.platform === "darwin" ? "/Users" : "/home", targetUser);
+  return path.join(
+    process.platform === "darwin" ? "/Users" : "/home",
+    targetUser,
+  );
+}
+
+function isNonWindowsPlatform() {
+  return process.platform !== "win32";
+}
+
+function mergeLaunchEnv(env: Record<string, string>, home?: string) {
+  return { ...process.env, ...(home ? { HOME: home } : {}), ...env };
+}
+
+function envEntries(env: Record<string, string>) {
+  return Object.entries(env);
+}
+
+function inlineEnvArgs(env: Record<string, string>) {
+  return envEntries(env).map(([key, value]) => `${key}=${value}`);
+}
+
+function quotedShellCommand(argv: string[], env: Record<string, string>) {
+  return [
+    ...envEntries(env).map(([key, value]) => `${key}=${shellQuote(value)}`),
+    ...argv.map((arg) => shellQuote(arg)),
+  ].join(" ");
+}
+
+function canUseRunuser() {
+  return (
+    typeof process.getuid === "function" &&
+    process.getuid() === 0 &&
+    isNonWindowsPlatform() &&
+    fs.existsSync("/usr/sbin/runuser")
+  );
+}
+
+function isDirectUserCommand(command: string) {
+  return command.endsWith("doas") || command.endsWith("sudo");
+}
+
+function requireTargetUser(targetUser: string) {
+  const target = readPasswdUser(targetUser);
+  if (!target) throw new Error(`target_user_not_found:${targetUser}`);
+  return {
+    name: targetUser,
+    home: target.home || defaultHomeForUser(targetUser),
+  };
 }
 
 function readUnixUserId(targetUser: string) {
@@ -33,22 +90,11 @@ export function shellQuote(value: string) {
 }
 
 export function pickPrivilegeCommand() {
-  if (
-    process.platform !== "win32" &&
-    fs.existsSync("/run/current-system/sw/bin/doas")
-  )
-    return "/run/current-system/sw/bin/doas";
-  if (process.platform !== "win32" && fs.existsSync("/usr/bin/doas"))
-    return "/usr/bin/doas";
-  if (process.platform !== "win32" && fs.existsSync("/bin/doas"))
-    return "/bin/doas";
-  if (process.platform !== "win32" && fs.existsSync("/usr/bin/sudo"))
-    return "/usr/bin/sudo";
-  if (process.platform !== "win32" && fs.existsSync("/bin/sudo"))
-    return "/bin/sudo";
-  if (process.platform !== "win32" && fs.existsSync("/usr/bin/pkexec"))
-    return "/usr/bin/pkexec";
-  return "sudo";
+  if (!isNonWindowsPlatform()) return "sudo";
+  return (
+    PRIVILEGE_COMMAND_CANDIDATES.find((command) => fs.existsSync(command)) ||
+    "sudo"
+  );
 }
 
 export function readPasswdUser(name: string) {
@@ -149,47 +195,34 @@ export function buildUserShell(
     return {
       command: argv[0],
       args: argv.slice(1),
-      env: { ...process.env, ...env },
+      env: mergeLaunchEnv(env),
     };
   }
 
-  const target = readPasswdUser(normalizedTargetUser);
-  if (!target) throw new Error(`target_user_not_found:${normalizedTargetUser}`);
+  const target = requireTargetUser(normalizedTargetUser);
+  const mergedEnv = mergeLaunchEnv(env, target.home);
+  const envArgs = inlineEnvArgs(env);
 
-  const targetHome = target.home || defaultHomeForUser(normalizedTargetUser);
-  const mergedEnv = { ...process.env, HOME: targetHome, ...env };
-  const envArgs = Object.entries(env).map(([key, value]) => `${key}=${value}`);
-
-  const isRoot =
-    typeof process.getuid === "function" ? process.getuid() === 0 : false;
-  if (
-    isRoot &&
-    process.platform !== "win32" &&
-    fs.existsSync("/usr/sbin/runuser")
-  ) {
+  if (canUseRunuser()) {
     return {
       command: "/usr/sbin/runuser",
-      args: ["-u", normalizedTargetUser, "--", "env", ...envArgs, ...argv],
+      args: ["-u", target.name, "--", "env", ...envArgs, ...argv],
       env: mergedEnv,
     };
   }
 
   const privilegeCommand = pickPrivilegeCommand();
-  if (privilegeCommand.endsWith("doas") || privilegeCommand.endsWith("sudo")) {
+  if (isDirectUserCommand(privilegeCommand)) {
     return {
       command: privilegeCommand,
-      args: ["-u", normalizedTargetUser, "env", ...envArgs, ...argv],
+      args: ["-u", target.name, "env", ...envArgs, ...argv],
       env: mergedEnv,
     };
   }
 
-  const shellCommand = [
-    ...Object.entries(env).map(([key, value]) => `${key}=${shellQuote(value)}`),
-    ...argv.map((arg) => shellQuote(arg)),
-  ].join(" ");
   return {
     command: privilegeCommand,
-    args: ["sh", "-lc", shellCommand],
+    args: ["sh", "-lc", quotedShellCommand(argv, env)],
     env: mergedEnv,
   };
 }

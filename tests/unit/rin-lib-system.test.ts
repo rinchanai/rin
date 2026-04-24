@@ -10,12 +10,10 @@ const rootDir = path.resolve(
   "../..",
 );
 const system = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "system.js"))
-    .href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "system.js")).href
 );
 const common = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "common.js"))
-    .href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "common.js")).href
 );
 
 async function withEnv(
@@ -53,6 +51,10 @@ test("rin system normalizes current-user shell launches", () => {
   assert.equal(launch.command, "node");
   assert.deepEqual(launch.args, ["app.js"]);
   assert.equal(launch.env.DEMO_FLAG, "1");
+  assert.equal(
+    system.socketPathForUser(` ${currentUser} `),
+    common.defaultDaemonSocketPath(),
+  );
 });
 
 test("rin system falls back safely for unknown user runtime paths", () => {
@@ -62,9 +64,12 @@ test("rin system falls back safely for unknown user runtime paths", () => {
     system.socketPathForUser(missingUser),
     common.defaultDaemonSocketPath(),
   );
-  assert.deepEqual(system.targetUserRuntimeEnv(missingUser, { DEMO_FLAG: "1" }), {
-    DEMO_FLAG: "1",
-  });
+  assert.deepEqual(
+    system.targetUserRuntimeEnv(missingUser, { DEMO_FLAG: "1" }),
+    {
+      DEMO_FLAG: "1",
+    },
+  );
   assert.throws(
     () => system.buildUserShell(missingUser, ["node", "app.js"]),
     /target_user_not_found:rin-missing-user-for-test/,
@@ -134,4 +139,17 @@ test("shellQuote round-trips paths and event names used by daemon probes", () =>
   const command = `${system.shellQuote(process.execPath)} -e ${system.shellQuote(script)}`;
   execFileSync("sh", ["-lc", command], { stdio: "inherit" });
   assert.ok(command.includes(`'"'"'connect'"'"'`));
+});
+
+test("buildUserShell leaves returned env isolated from later mutations", () => {
+  const currentUser = os.userInfo().username;
+  const firstLaunch = system.buildUserShell(currentUser, ["node", "app.js"], {
+    DEMO_FLAG: "1",
+  });
+  firstLaunch.env.DEMO_FLAG = "2";
+
+  const secondLaunch = system.buildUserShell(currentUser, ["node", "app.js"], {
+    DEMO_FLAG: "1",
+  });
+  assert.equal(secondLaunch.env.DEMO_FLAG, "1");
 });
