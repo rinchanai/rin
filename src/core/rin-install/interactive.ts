@@ -1,7 +1,13 @@
 import path from "node:path";
 
 import { promptChatBridgeSetup } from "../chat-bridge/setup.js";
-import { defaultInstallDirForHome } from "./paths.js";
+import {
+  defaultInstallDirForHome,
+  installAuthPath,
+  installSettingsPath,
+  installerManifestPath,
+  legacyInstallerManifestPath,
+} from "./paths.js";
 import {
   configureProviderAuth,
   computeAvailableThinkingLevels,
@@ -156,6 +162,38 @@ export async function promptDefaultTargetUser(
   );
 }
 
+function normalizeRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function loadExistingProviderDefaults(
+  installDir: string,
+  readJsonFile: <T>(filePath: string, fallback: T) => T,
+) {
+  const candidates = [
+    installSettingsPath(installDir),
+    installerManifestPath(installDir),
+    legacyInstallerManifestPath(installDir),
+  ];
+  for (const filePath of candidates) {
+    const record = normalizeRecord(readJsonFile<any>(filePath, {}));
+    const provider = String(record.defaultProvider || "").trim();
+    const modelId = String(record.defaultModel || "").trim();
+    const thinkingLevel = String(record.defaultThinkingLevel || "").trim();
+    if (provider && modelId && thinkingLevel) {
+      return { provider, modelId, thinkingLevel };
+    }
+  }
+  return null;
+}
+
+function hasStoredProviderAuth(authData: unknown, provider: string) {
+  const record = normalizeRecord(authData);
+  return Object.prototype.hasOwnProperty.call(record, provider);
+}
+
 export async function promptProviderSetup(
   prompt: PromptApi,
   installDir: string,
@@ -178,6 +216,39 @@ export async function promptProviderSetup(
     ...new Set(models.map((model) => model.provider).filter(Boolean)),
   ];
   if (!providerNames.length) throw new Error(i18n.noModelsAvailableError);
+
+  const existingDefaults = loadExistingProviderDefaults(
+    installDir,
+    readJsonFile,
+  );
+  const existingAuthData = normalizeRecord(
+    readJsonFile<any>(installAuthPath(installDir), {}),
+  );
+  if (
+    existingDefaults &&
+    hasStoredProviderAuth(existingAuthData, existingDefaults.provider)
+  ) {
+    const existingModel = models.find(
+      (model) =>
+        model.provider === existingDefaults.provider &&
+        model.id === existingDefaults.modelId,
+    );
+    if (
+      existingModel &&
+      computeAvailableThinkingLevels(existingModel).includes(
+        existingDefaults.thinkingLevel as any,
+      )
+    ) {
+      return {
+        ...existingDefaults,
+        authResult: {
+          available: true,
+          authKind: "existing",
+          authData: existingAuthData,
+        },
+      };
+    }
+  }
 
   provider = String(
     prompt.ensureNotCancelled(

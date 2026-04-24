@@ -159,14 +159,11 @@ test("promptInstallerLanguage uses English-only copy for non-Chinese locales", a
     assert.equal(result, "fr-CA");
     assert.equal(seen.select.message, "Choose installer language");
     assert.equal(seen.select.options[0].hint, "en");
-    assert.deepEqual(
-      seen.select.options.at(-1),
-      {
-        value: "custom",
-        label: "Other",
-        hint: "Enter any BCP 47 language tag",
-      },
-    );
+    assert.deepEqual(seen.select.options.at(-1), {
+      value: "custom",
+      label: "Other",
+      hint: "Enter any BCP 47 language tag",
+    });
     assert.equal(seen.text.message, "Enter language tag (BCP 47)");
     assert.equal(seen.text.placeholder, "en-US");
     assert.equal(seen.text.defaultValue, "en-US");
@@ -203,7 +200,9 @@ test("promptInstallerLanguage keeps the picker copy English-only for Chinese loc
         return "en";
       },
       async text() {
-        throw new Error("text prompt should not run when a preset option is chosen");
+        throw new Error(
+          "text prompt should not run when a preset option is chosen",
+        );
       },
     });
 
@@ -240,7 +239,68 @@ test("createInstallerI18n exposes localized post-install path labels", () => {
   assert.equal(zh.serviceLabelLabel, "标签");
 });
 
-test("promptProviderSetup always requires choosing a provider", async () => {
+test("promptProviderSetup reuses complete existing provider config", async () => {
+  const installDir = "/tmp/demo";
+  const result = await interactive.promptProviderSetup(
+    {
+      ensureNotCancelled(value) {
+        return value;
+      },
+      async select() {
+        throw new Error(
+          "select should not be used for existing provider config",
+        );
+      },
+      async text() {
+        throw new Error("text should not be used for existing provider config");
+      },
+      async confirm() {
+        throw new Error(
+          "confirm should not be used for existing provider config",
+        );
+      },
+    },
+    installDir,
+    (filePath) => {
+      if (filePath === path.join(installDir, "settings.json")) {
+        return {
+          defaultProvider: "openai",
+          defaultModel: "gpt-5",
+          defaultThinkingLevel: "medium",
+        };
+      }
+      if (filePath === path.join(installDir, "auth.json")) {
+        return { openai: { type: "api_key", key: "demo" } };
+      }
+      return {};
+    },
+    {
+      async loadModelChoices() {
+        return [
+          {
+            provider: "openai",
+            id: "gpt-5",
+            reasoning: true,
+            available: false,
+          },
+        ];
+      },
+      async configureProviderAuth() {
+        throw new Error(
+          "auth setup should not run for existing provider config",
+        );
+      },
+    },
+  );
+
+  assert.equal(result.provider, "openai");
+  assert.equal(result.modelId, "gpt-5");
+  assert.equal(result.thinkingLevel, "medium");
+  assert.equal(result.authResult.available, true);
+  assert.equal(result.authResult.authKind, "existing");
+});
+
+test("promptProviderSetup prompts when no reusable provider config exists", async () => {
   const selectCalls = [];
   const authCalls = [];
   const prompt = {
@@ -260,7 +320,9 @@ test("promptProviderSetup always requires choosing a provider", async () => {
       throw new Error("text prompt should not be used in this test");
     },
     async confirm() {
-      throw new Error("provider setup must not allow skipping provider selection");
+      throw new Error(
+        "provider setup must not allow skipping provider selection",
+      );
     },
   };
 
@@ -301,7 +363,9 @@ test("promptProviderSetup always requires choosing a provider", async () => {
     "Choose a model.",
     "Choose the default thinking level.",
   ]);
-  assert.deepEqual(authCalls, [{ provider: "openai", installDir: "/tmp/demo" }]);
+  assert.deepEqual(authCalls, [
+    { provider: "openai", installDir: "/tmp/demo" },
+  ]);
   assert.equal(result.provider, "openai");
   assert.equal(result.modelId, "gpt-5");
   assert.equal(result.thinkingLevel, "medium");
