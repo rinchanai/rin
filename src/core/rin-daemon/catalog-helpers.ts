@@ -45,33 +45,18 @@ function asArray<T>(value: unknown) {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
-function createSlashCommandEntry(
-  name: unknown,
-  description: unknown,
-  source: string,
-  sourceInfo?: unknown,
-): SlashCommandEntry | null {
-  const trimmedName = trimText(name);
-  if (!trimmedName) return null;
-  const entry: SlashCommandEntry = {
-    name: trimmedName,
-    description: trimText(description),
-    source,
-  };
-  if (sourceInfo !== undefined) entry.sourceInfo = sourceInfo;
-  return entry;
-}
-
-function collectSlashCommandEntries<T>(
+function eachUniqueNormalizedValue<T>(
   values: unknown,
-  mapValue: (value: T) => SlashCommandEntry | null,
+  normalize: (value: T) => string,
+  visit: (value: T, normalized: string) => void,
 ) {
-  const commands: SlashCommandEntry[] = [];
+  const seen = new Set<string>();
   for (const value of asArray<T>(values)) {
-    const command = mapValue(value);
-    if (command) commands.push(command);
+    const normalized = normalize(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    visit(value, normalized);
   }
-  return commands;
 }
 
 function collectSlashCommandsForSource<T>(
@@ -80,14 +65,21 @@ function collectSlashCommandsForSource<T>(
 ) {
   const source = trimText(spec.source);
   if (!source) return [];
-  return collectSlashCommandEntries<T>(values, (value) =>
-    createSlashCommandEntry(
-      spec.getName(value),
-      spec.getDescription?.(value),
+
+  const commands: SlashCommandEntry[] = [];
+  for (const value of asArray<T>(values)) {
+    const name = trimText(spec.getName(value));
+    if (!name) continue;
+    const entry: SlashCommandEntry = {
+      name,
+      description: trimText(spec.getDescription?.(value)),
       source,
-      spec.getSourceInfo?.(value),
-    ),
-  );
+    };
+    const sourceInfo = spec.getSourceInfo?.(value);
+    if (sourceInfo !== undefined) entry.sourceInfo = sourceInfo;
+    commands.push(entry);
+  }
+  return commands;
 }
 
 function getSkillSlashCommandName(skill: any) {
@@ -96,13 +88,15 @@ function getSkillSlashCommandName(skill: any) {
 }
 
 export function dedupeSlashCommands(commands: SlashCommandEntry[]) {
-  const seen = new Set<string>();
-  return commands.filter((command) => {
-    const name = trimText(command?.name);
-    if (!name || seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
+  const deduped: SlashCommandEntry[] = [];
+  eachUniqueNormalizedValue<SlashCommandEntry>(
+    commands,
+    (command) => trimText(command?.name),
+    (command) => {
+      deduped.push(command);
+    },
+  );
+  return deduped;
 }
 
 export function getBuiltinSlashCommands() {
@@ -199,7 +193,8 @@ function getSessionSkills(session: any) {
 
 export function getSessionSlashCommands(session: any) {
   return collectRuntimeSlashCommands({
-    extensionCommands: session?.extensionRunner?.getRegisteredCommands?.() ?? [],
+    extensionCommands:
+      session?.extensionRunner?.getRegisteredCommands?.() ?? [],
     promptTemplates: asArray(session?.promptTemplates),
     skills: getSessionSkills(session),
   });
@@ -220,37 +215,48 @@ function normalizeProviderId(value: unknown) {
   return trimText(value);
 }
 
-function normalizeOAuthProvider(provider: any): OAuthProviderSummary | null {
-  const id = normalizeProviderId(provider?.id);
-  if (!id) return null;
+function buildOAuthProviderSummary(
+  provider: any,
+  providerId: string,
+): OAuthProviderSummary {
   return {
-    id,
+    id: providerId,
     name: trimText(provider?.name),
     usesCallbackServer: Boolean(provider?.usesCallbackServer),
   };
 }
 
-export function getOAuthStateFromStorage(authStorage: any) {
+function collectOAuthCredentials(authStorage: any) {
   const credentials: Record<string, OAuthCredentialSummary | undefined> = {};
-  for (const providerId of asArray<string>(authStorage?.list?.())) {
-    const normalizedProviderId = normalizeProviderId(providerId);
-    if (!normalizedProviderId || normalizedProviderId in credentials) continue;
-    credentials[normalizedProviderId] = buildOAuthCredentialSummary(
-      authStorage?.get?.(providerId),
-    );
-  }
+  eachUniqueNormalizedValue<string>(
+    authStorage?.list?.(),
+    normalizeProviderId,
+    (providerId, normalizedProviderId) => {
+      credentials[normalizedProviderId] = buildOAuthCredentialSummary(
+        authStorage?.get?.(providerId),
+      );
+    },
+  );
+  return credentials;
+}
 
+function collectOAuthProviders(authStorage: any) {
   const providers: OAuthProviderSummary[] = [];
-  const seenProviderIds = new Set<string>();
-  for (const provider of asArray(authStorage?.getOAuthProviders?.())) {
-    const normalizedProvider = normalizeOAuthProvider(provider);
-    if (!normalizedProvider) continue;
-    if (seenProviderIds.has(normalizedProvider.id)) continue;
-    seenProviderIds.add(normalizedProvider.id);
-    providers.push(normalizedProvider);
-  }
+  eachUniqueNormalizedValue<any>(
+    authStorage?.getOAuthProviders?.(),
+    (provider) => normalizeProviderId(provider?.id),
+    (provider, normalizedProviderId) => {
+      providers.push(buildOAuthProviderSummary(provider, normalizedProviderId));
+    },
+  );
+  return providers;
+}
 
-  return { credentials, providers };
+export function getOAuthStateFromStorage(authStorage: any) {
+  return {
+    credentials: collectOAuthCredentials(authStorage),
+    providers: collectOAuthProviders(authStorage),
+  };
 }
 
 export function getSessionOAuthState(session: any) {

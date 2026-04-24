@@ -11,12 +11,13 @@ const rootDir = path.resolve(
 const helperModule = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-daemon", "catalog-helpers.js"),
-  ).href,
+  ).href
 );
 
 const {
   collectRuntimeSlashCommands,
   collectSlashCommands,
+  dedupeSlashCommands,
   getExtensionSlashCommands,
   getOAuthStateFromStorage,
   getPromptSlashCommands,
@@ -162,6 +163,15 @@ test("catalog helpers normalize and dedupe slash commands", () => {
       sourceInfo: { file: "skill-a" },
     },
   ]);
+
+  assert.deepEqual(
+    dedupeSlashCommands([
+      { name: " resume ", description: "first", source: "extension" },
+      { name: "resume", description: "second", source: "prompt" },
+      { name: "   ", description: "ignored", source: "skill" },
+    ]),
+    [{ name: " resume ", description: "first", source: "extension" }],
+  );
 });
 
 test("catalog helpers collect runtime slash commands in source order", () => {
@@ -180,7 +190,10 @@ test("catalog helpers collect runtime slash commands in source order", () => {
     description: "Inspect chat state.",
     source: "builtin_module",
   });
-  assert.equal(commands.some((command) => command.name === "model"), true);
+  assert.equal(
+    commands.some((command) => command.name === "model"),
+    true,
+  );
 });
 
 test("catalog helpers read oauth state from auth storage", () => {
