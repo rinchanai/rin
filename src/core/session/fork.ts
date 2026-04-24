@@ -1,19 +1,34 @@
 import { randomUUID } from "node:crypto";
 
+type ForkCapabilities = {
+  legacy: boolean;
+  optionAware: boolean;
+};
+
 function normalizeLeafId(value: unknown) {
   const leafId = String(value || "").trim();
   return leafId || undefined;
 }
 
-function hasLegacyForkFrom(SessionManager: any) {
-  return typeof SessionManager?.forkFrom === "function";
+function normalizeForkOptions(
+  options: { persist?: boolean; leafId?: string } = {},
+) {
+  return {
+    ...options,
+    leafId: normalizeLeafId(options.leafId),
+    persist: options.persist !== false,
+  };
 }
 
-function hasNativeForkOptions(SessionManager: any) {
-  return hasLegacyForkFrom(SessionManager) && SessionManager.forkFrom.length >= 4;
+function getForkCapabilities(SessionManager: any): ForkCapabilities {
+  const legacy = typeof SessionManager?.forkFrom === "function";
+  return {
+    legacy,
+    optionAware: legacy && SessionManager.forkFrom.length >= 4,
+  };
 }
 
-function getForkEntries(sourceManager: any, leafId?: string) {
+function resolveForkEntries(sourceManager: any, leafId?: string) {
   const branchEntries = leafId ? sourceManager.getBranch?.(leafId) : undefined;
   if (Array.isArray(branchEntries) && branchEntries.length > 0) {
     return branchEntries;
@@ -29,13 +44,21 @@ function createEphemeralForkManager(
   sessionDir: string | undefined,
   leafId: string | undefined,
 ) {
-  if (typeof SessionManager?.open !== "function" || typeof SessionManager !== "function") {
+  if (
+    typeof SessionManager?.open !== "function" ||
+    typeof SessionManager !== "function"
+  ) {
     throw new Error("session_fork_unsupported:ephemeral");
   }
 
   const sourceManager = SessionManager.open(sourcePath, sessionDir, undefined);
   const sourceHeader = sourceManager.getHeader?.() || {};
-  const manager = new SessionManager(targetCwd, sessionDir || "", undefined, false);
+  const manager = new SessionManager(
+    targetCwd,
+    sessionDir || "",
+    undefined,
+    false,
+  );
   manager.fileEntries = [
     {
       ...sourceHeader,
@@ -46,7 +69,7 @@ function createEphemeralForkManager(
       cwd: targetCwd,
       parentSession: sourcePath,
     },
-    ...getForkEntries(sourceManager, leafId),
+    ...resolveForkEntries(sourceManager, leafId),
   ];
   manager.sessionId = manager.fileEntries[0].id;
   manager.sessionFile = undefined;
@@ -62,19 +85,20 @@ export function forkSessionManagerCompat(
   sessionDir?: string,
   options: { persist?: boolean; leafId?: string } = {},
 ) {
-  const leafId = normalizeLeafId(options.leafId);
-  const persist = options.persist !== false;
+  const normalizedOptions = normalizeForkOptions(options);
+  const capabilities = getForkCapabilities(SessionManager);
 
-  if (hasNativeForkOptions(SessionManager)) {
-    return SessionManager.forkFrom(sourcePath, targetCwd, sessionDir, {
-      ...options,
-      leafId,
-      persist,
-    });
+  if (capabilities.optionAware) {
+    return SessionManager.forkFrom(
+      sourcePath,
+      targetCwd,
+      sessionDir,
+      normalizedOptions,
+    );
   }
 
-  if (persist) {
-    if (!hasLegacyForkFrom(SessionManager)) {
+  if (normalizedOptions.persist) {
+    if (!capabilities.legacy) {
       throw new Error("session_fork_unsupported:persisted");
     }
     return SessionManager.forkFrom(sourcePath, targetCwd, sessionDir);
@@ -85,6 +109,6 @@ export function forkSessionManagerCompat(
     sourcePath,
     targetCwd,
     sessionDir,
-    leafId,
+    normalizedOptions.leafId,
   );
 }

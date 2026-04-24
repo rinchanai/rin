@@ -8,8 +8,40 @@ const rootDir = path.resolve(
   "../..",
 );
 const sessionFork = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "session", "fork.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "session", "fork.js")).href
 );
+
+test("session fork compat uses native option-aware fork APIs when available", () => {
+  const calls = [];
+  class NativeSessionManager {}
+  NativeSessionManager.forkFrom = function (
+    sourcePath,
+    targetCwd,
+    sessionDir,
+    options,
+  ) {
+    calls.push([sourcePath, targetCwd, sessionDir, options]);
+    return { mode: "native" };
+  };
+
+  const result = sessionFork.forkSessionManagerCompat(
+    NativeSessionManager,
+    "/tmp/source.jsonl",
+    "/tmp/cwd",
+    "/tmp/sessions",
+    { persist: false, leafId: " leaf-1 " },
+  );
+
+  assert.deepEqual(calls, [
+    [
+      "/tmp/source.jsonl",
+      "/tmp/cwd",
+      "/tmp/sessions",
+      { persist: false, leafId: "leaf-1" },
+    ],
+  ]);
+  assert.deepEqual(result, { mode: "native" });
+});
 
 test("session fork compat uses legacy persisted fork when option-aware native fork is unavailable", () => {
   const calls = [];
@@ -137,7 +169,10 @@ test("session fork compat falls back to full entries when the requested branch i
     { persist: false, leafId: "missing-leaf" },
   );
 
-  assert.deepEqual(fork.getEntries().slice(1), [{ id: "full-u1" }, { id: "full-a1" }]);
+  assert.deepEqual(fork.getEntries().slice(1), [
+    { id: "full-u1" },
+    { id: "full-a1" },
+  ]);
 });
 
 test("session fork compat reports unsupported persisted and ephemeral capabilities clearly", () => {
