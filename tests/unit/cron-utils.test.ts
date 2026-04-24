@@ -22,6 +22,11 @@ test("cron utils normalize iso and summarize text", () => {
     cronUtils.summarizeText("  hello\r\nworld  ", 20),
     "hello\nworld",
   );
+  assert.equal(cronUtils.normalizeIso("   ", "startAt"), undefined);
+  assert.throws(
+    () => cronUtils.normalizeIso("not-a-date", "startAt"),
+    /cron_invalid_startAt/,
+  );
 });
 
 test("cron utils compute next run for once and interval triggers", () => {
@@ -72,4 +77,56 @@ test("cron utils compute next cron tick", () => {
     Date.parse("2026-03-31T12:00:00.000Z"),
   );
   assert.equal(next, "2026-03-31T12:05:00.000Z");
+  assert.deepEqual(
+    Array.from(cronUtils.formatCronField("1-5/2,10", 0, 10)).sort(
+      (a, b) => a - b,
+    ),
+    [1, 3, 5, 10],
+  );
+  assert.throws(
+    () => cronUtils.formatCronField("*/0", 0, 59),
+    /cron_invalid_expression/,
+  );
+});
+
+test("cron utils stop disabled or exhausted tasks before computing the next run", () => {
+  const baseTask = {
+    id: "a",
+    createdAt: "",
+    updatedAt: "",
+    enabled: true,
+    cwd: "",
+    chatKey: undefined,
+    session: { mode: "dedicated" },
+    target: { kind: "shell_command", command: "echo hi" },
+    runCount: 0,
+    running: false,
+    trigger: { kind: "interval", intervalMs: 60_000 },
+  };
+
+  assert.equal(
+    cronUtils.computeNextRunAt({ ...baseTask, enabled: false }, Date.now()),
+    undefined,
+  );
+  assert.equal(
+    cronUtils.computeNextRunAt(
+      {
+        ...baseTask,
+        termination: { maxRuns: 1 },
+        runCount: 1,
+      },
+      Date.now(),
+    ),
+    undefined,
+  );
+  assert.equal(
+    cronUtils.computeNextRunAt(
+      {
+        ...baseTask,
+        termination: { stopAt: "2026-03-31T12:00:00.000Z" },
+      },
+      Date.parse("2026-03-31T12:00:01.000Z"),
+    ),
+    undefined,
+  );
 });
