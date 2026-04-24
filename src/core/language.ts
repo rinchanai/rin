@@ -3,6 +3,8 @@ import path from "node:path";
 
 export type InstallerDisplayLanguage = "en" | "zh-CN";
 
+const LANGUAGE_ENV_KEYS = ["LC_ALL", "LC_MESSAGES", "LANG"] as const;
+
 export function canonicalizeLanguageTag(value: unknown) {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -17,21 +19,31 @@ export function normalizeLanguageTag(value: unknown, fallback = "en") {
   return canonicalizeLanguageTag(value) || fallback;
 }
 
+function isChineseLanguageTag(value: unknown) {
+  const language = normalizeLanguageTag(value, "").toLowerCase();
+  return language === "zh" || language.startsWith("zh-");
+}
+
+function normalizeLocaleEnvLanguageTag(value: unknown) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return canonicalizeLanguageTag(
+    raw
+      .replace(/[.:].*$/, "")
+      .trim()
+      .replace(/_/g, "-"),
+  );
+}
+
 export function resolveInstallerDisplayLanguage(
   value: unknown,
 ): InstallerDisplayLanguage {
-  const language = normalizeLanguageTag(value, "en").toLowerCase();
-  return language === "zh-cn" || language.startsWith("zh-") || language === "zh"
-    ? "zh-CN"
-    : "en";
+  return isChineseLanguageTag(value) ? "zh-CN" : "en";
 }
 
 export function detectLocalLanguageTag(fallback = "en") {
-  for (const key of ["LC_ALL", "LC_MESSAGES", "LANG"]) {
-    const raw = String(process.env[key] || "").trim();
-    if (!raw) continue;
-    const cleaned = raw.replace(/[.:].*$/, "").trim().replace(/_/g, "-");
-    const normalized = canonicalizeLanguageTag(cleaned);
+  for (const key of LANGUAGE_ENV_KEYS) {
+    const normalized = normalizeLocaleEnvLanguageTag(process.env[key]);
     if (normalized) return normalized;
   }
   return fallback;
