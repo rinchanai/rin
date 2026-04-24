@@ -49,7 +49,8 @@ export type ParsedArgs = {
     | "restart"
     | "doctor"
     | "usage"
-    | "memory-index";
+    | "memory-index"
+    | "version";
   targetUser: string;
   installDir: string;
   std: boolean;
@@ -410,11 +411,6 @@ export function readRinPackageVersion(repoRoot = repoRootFromHere()) {
   }
 }
 
-export function shouldPrintRinVersion(rawArgv: string[]) {
-  const args = stripRinWrapperArgs(rawArgv);
-  return args.length === 1 && (args[0] === "--version" || args[0] === "-v");
-}
-
 function looksLikeGitRefSelector(value: string) {
   const normalized = safeString(value).trim();
   return (
@@ -476,8 +472,7 @@ function resolveParsedReleaseArgs(
 
   const releaseChannel = selectedChannels[0] || "stable";
   let releaseBranch = safeString(options.branch).trim();
-  let releaseVersion =
-    options.version === true ? "" : safeString(options.version).trim();
+  let releaseVersion = safeString(options.version).trim();
   const stableSelector = extractOptionalFlagSelector(
     rawArgv,
     command,

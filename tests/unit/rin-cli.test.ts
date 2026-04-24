@@ -23,30 +23,23 @@ const main = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "main.js")).href
 );
 
-test("top-level version flag prints package version without launching Rin", () => {
-  assert.equal(shared.shouldPrintRinVersion(["--version"]), true);
-  assert.equal(shared.shouldPrintRinVersion(["-v"]), true);
-  assert.equal(shared.shouldPrintRinVersion(["-u", "rin", "--version"]), true);
-  assert.equal(
-    shared.shouldPrintRinVersion(["update", "--version", "1.2.3"]),
-    false,
-  );
-
+test("version subcommand prints package version without launching Rin", () => {
   const packageJson = JSON.parse(
     fs.readFileSync(path.join(rootDir, "package.json"), "utf8"),
   );
   const output = execFileSync(
     process.execPath,
-    [path.join(rootDir, "dist", "app", "rin", "main.js"), "--version"],
+    [path.join(rootDir, "dist", "app", "rin", "main.js"), "version"],
     { cwd: rootDir, encoding: "utf8" },
   ).trim();
 
   assert.equal(output, packageJson.version);
-  const parsed = shared.resolveParsedArgs("update", { version: true }, [
+  const parsed = shared.resolveParsedArgs("update", { version: "1.2.3" }, [
     "update",
     "--version",
+    "1.2.3",
   ]);
-  assert.equal(parsed.releaseVersion, "");
+  assert.equal(parsed.releaseVersion, "1.2.3");
 });
 
 test("usage and memory-index parsers ignore wrapper args around the subcommand", () => {

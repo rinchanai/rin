@@ -12,7 +12,6 @@ import {
   readRinPackageVersion,
   runUpdate,
   safeString,
-  shouldPrintRinVersion,
 } from "./shared.js";
 import { runUsage, runUsageInternal } from "./usage.js";
 
@@ -27,6 +26,7 @@ const RIN_COMMANDS = [
   ["doctor", "Show daemon/socket diagnostics for the target user"],
   ["usage", "Show token telemetry dashboard and grouped usage stats"],
   ["memory-index", "Repair the memory search index from archived transcripts"],
+  ["version", "Show Rin version"],
 ] as const satisfies ReadonlyArray<readonly [ParsedArgs["command"], string]>;
 
 const INTERNAL_COMMANDS = [
@@ -60,10 +60,7 @@ function createCli() {
     .option("--nightly", "Use the nightly release channel")
     .option("--git", "Use the git release channel")
     .option("--branch <name>", "Explicit git branch selector")
-    .option(
-      "-v, --version [value]",
-      "Show Rin version, or with update select an explicit stable version/git ref",
-    )
+    .option("--version <value>", "Explicit stable version or git ref selector")
     .help();
 
   for (const [name, description] of RIN_COMMANDS) {
@@ -93,11 +90,6 @@ export function resolveInternalRinDispatch(rawArgv: string[]) {
 
 export async function startRinCli() {
   const rawArgv = process.argv.slice(2);
-  if (shouldPrintRinVersion(rawArgv)) {
-    console.log(readRinPackageVersion());
-    return;
-  }
-
   const internalDispatch = resolveInternalRinDispatch(rawArgv);
   if (internalDispatch) {
     await internalDispatch.run(internalDispatch.args);
@@ -123,6 +115,10 @@ export async function startRinCli() {
     return await runUsage(parsed, process.argv.slice(2));
   if (parsed.command === "memory-index")
     return await runMemoryIndex(parsed, process.argv.slice(2));
+  if (parsed.command === "version") {
+    console.log(readRinPackageVersion());
+    return;
+  }
 
   await launchDefaultRin(parsed);
 }
