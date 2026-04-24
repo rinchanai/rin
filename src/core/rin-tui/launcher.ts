@@ -59,16 +59,6 @@ function tuiModeFlag(mode: TuiMode): "--rpc" | "--std" {
   return mode === "std" ? "--std" : "--rpc";
 }
 
-export function shouldPrintTuiStartupSpacer(
-  stream: Pick<NodeJS.WriteStream, "isTTY"> = process.stdout,
-) {
-  return stream.isTTY === true;
-}
-
-function printTuiStartupSpacer() {
-  if (shouldPrintTuiStartupSpacer()) process.stdout.write("\n");
-}
-
 function resolveArgvTuiMode(argv: string[]): TuiMode | undefined {
   const modes = new Set<TuiMode>();
   if (argv.includes("--std")) modes.add("std");
@@ -116,7 +106,7 @@ async function startStdTui(
       additionalExtensionPaths: options.additionalExtensionPaths,
     });
     profile.mark("std-session-created");
-    printTuiStartupSpacer();
+    console.log();
     const interactiveMode = new InteractiveMode(sessionRuntime);
     await interactiveMode.run();
   } finally {
@@ -146,7 +136,7 @@ async function startRpcTui(
   try {
     runtimeHost = createRpcRuntimeHost(rpcSession);
     profile.mark("rpc-session-created");
-    printTuiStartupSpacer();
+    console.log();
     const interactiveMode = new InteractiveMode(runtimeHost as any);
     await interactiveMode.run();
   } finally {

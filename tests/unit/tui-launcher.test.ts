@@ -37,12 +37,6 @@ test("tui launcher rejects invalid or conflicting mode requests", () => {
   );
 });
 
-test("tui launcher startup spacer is limited to TTY output", () => {
-  assert.equal(launcher.shouldPrintTuiStartupSpacer({ isTTY: true }), true);
-  assert.equal(launcher.shouldPrintTuiStartupSpacer({ isTTY: false }), false);
-  assert.equal(launcher.shouldPrintTuiStartupSpacer({}), false);
-});
-
 test("tui launcher formats daemon startup socket failures with doctor/std guidance", () => {
   const message = launcher.formatTuiStartupError(
     new Error("connect ECONNREFUSED /run/user/1001/rin-daemon/daemon.sock"),
