@@ -27,71 +27,108 @@ export type WebSearchInstanceState = {
   ownerPid?: number;
 };
 
+const WEB_SEARCH_DATA_SEGMENTS = ["data", "web-search"] as const;
+const RUNTIME_SEGMENT = "runtime";
+const INSTANCES_SEGMENT = "instances";
+const WINDOWS_VENV_BIN_DIR = "Scripts";
+const POSIX_VENV_BIN_DIR = "bin";
+
+function dataPathForState(stateRoot: string, ...segments: string[]): string {
+  return path.join(
+    path.resolve(stateRoot),
+    ...WEB_SEARCH_DATA_SEGMENTS,
+    ...segments,
+  );
+}
+
+function runtimePathForState(stateRoot: string, ...segments: string[]): string {
+  return dataPathForState(stateRoot, RUNTIME_SEGMENT, ...segments);
+}
+
+function instancePathForState(
+  stateRoot: string,
+  instanceId: string,
+  ...segments: string[]
+): string {
+  return dataPathForState(
+    stateRoot,
+    INSTANCES_SEGMENT,
+    instanceId,
+    ...segments,
+  );
+}
+
+function runtimeVenvBinPathForState(
+  stateRoot: string,
+  posixName: string,
+  windowsName: string,
+): string {
+  return path.join(
+    runtimeVenvDirForState(stateRoot),
+    process.platform === "win32" ? WINDOWS_VENV_BIN_DIR : POSIX_VENV_BIN_DIR,
+    process.platform === "win32" ? windowsName : posixName,
+  );
+}
+
 export function dataRootForState(stateRoot: string): string {
-  return path.join(path.resolve(stateRoot), "data", "web-search");
+  return dataPathForState(stateRoot);
 }
 
 export function runtimeRootForState(stateRoot: string): string {
-  return path.join(dataRootForState(stateRoot), "runtime");
+  return runtimePathForState(stateRoot);
 }
 
 export function instancesRootForState(stateRoot: string): string {
-  return path.join(dataRootForState(stateRoot), "instances");
+  return dataPathForState(stateRoot, INSTANCES_SEGMENT);
 }
 
 export function runtimeLockPathForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), "install.lock");
+  return runtimePathForState(stateRoot, "install.lock");
 }
 
 export function runtimeSourceDirForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), "src");
+  return runtimePathForState(stateRoot, "src");
 }
 
 export function runtimeVenvDirForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), "venv");
+  return runtimePathForState(stateRoot, "venv");
 }
 
 export function runtimeTmpDirForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), "tmp");
+  return runtimePathForState(stateRoot, "tmp");
 }
 
 export function runtimeBootstrapStateFileForState(stateRoot: string): string {
-  return path.join(runtimeRootForState(stateRoot), "bootstrap.json");
+  return runtimePathForState(stateRoot, "bootstrap.json");
 }
 
 export function runtimePythonBinForState(stateRoot: string): string {
-  const dir = runtimeVenvDirForState(stateRoot);
-  return process.platform === "win32"
-    ? path.join(dir, "Scripts", "python.exe")
-    : path.join(dir, "bin", "python");
+  return runtimeVenvBinPathForState(stateRoot, "python", "python.exe");
 }
 
 export function runtimePipBinForState(stateRoot: string): string {
-  const dir = runtimeVenvDirForState(stateRoot);
-  return process.platform === "win32"
-    ? path.join(dir, "Scripts", "pip.exe")
-    : path.join(dir, "bin", "pip");
+  return runtimeVenvBinPathForState(stateRoot, "pip", "pip.exe");
 }
 
 export function instanceRootForState(
   stateRoot: string,
   instanceId: string,
 ): string {
-  return path.join(instancesRootForState(stateRoot), instanceId);
+  return instancePathForState(stateRoot, instanceId);
 }
 
 export function instanceStateFileForState(
   stateRoot: string,
   instanceId: string,
 ): string {
-  return path.join(instanceRootForState(stateRoot, instanceId), "state.json");
+  return instancePathForState(stateRoot, instanceId, "state.json");
 }
 
 export function instanceSettingsFileForState(
   stateRoot: string,
   instanceId: string,
 ): string {
-  return path.join(instanceRootForState(stateRoot, instanceId), "settings.yml");
+  return instancePathForState(stateRoot, instanceId, "settings.yml");
 }
 
 export function readRuntimeBootstrapState(
@@ -128,10 +165,16 @@ export function writeInstanceState(
   instanceId: string,
   value: WebSearchInstanceState,
 ): void {
-  writeSidecarInstanceState(instanceStateFileForState(stateRoot, instanceId), value);
+  writeSidecarInstanceState(
+    instanceStateFileForState(stateRoot, instanceId),
+    value,
+  );
 }
 
-export function removeInstanceRoot(stateRoot: string, instanceId: string): void {
+export function removeInstanceRoot(
+  stateRoot: string,
+  instanceId: string,
+): void {
   try {
     fs.rmSync(instanceRootForState(stateRoot, instanceId), {
       recursive: true,
@@ -140,6 +183,9 @@ export function removeInstanceRoot(stateRoot: string, instanceId: string): void 
   } catch {}
 }
 
-export function removeInstanceState(stateRoot: string, instanceId: string): void {
+export function removeInstanceState(
+  stateRoot: string,
+  instanceId: string,
+): void {
   removeInstanceRoot(stateRoot, instanceId);
 }

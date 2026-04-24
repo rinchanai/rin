@@ -39,9 +39,11 @@ async function writeExecutable(filePath, content) {
   await fs.chmod(filePath, 0o755);
 }
 
-function buildFakeSearxngNodeProgram(
-  { readyServer = false, spawnCountFile = "", exitAfterMs = 0 } = {},
-) {
+function buildFakeSearxngNodeProgram({
+  readyServer = false,
+  spawnCountFile = "",
+  exitAfterMs = 0,
+} = {}) {
   return [
     'const fs = require("node:fs");',
     spawnCountFile
@@ -50,7 +52,7 @@ function buildFakeSearxngNodeProgram(
     readyServer
       ? [
           'const http = require("node:http");',
-          'const port = Number(process.env.SEARXNG_PORT || 0);',
+          "const port = Number(process.env.SEARXNG_PORT || 0);",
           "const server = http.createServer((req, res) => {",
           'if (req.url === "/healthz") {',
           'res.writeHead(200, { "Content-Type": "text/plain" });',
@@ -163,6 +165,13 @@ test("web search query helpers discard invalid freshness", () => {
 
 test("web search paths derive runtime locations", () => {
   const root = "/tmp/demo";
+  const runtimeBinDir = process.platform === "win32" ? "Scripts" : "bin";
+  const pythonBinName = process.platform === "win32" ? "python.exe" : "python";
+  const pipBinName = process.platform === "win32" ? "pip.exe" : "pip";
+
+  assert.ok(
+    paths.dataRootForState(root).endsWith(path.join("data", "web-search")),
+  );
   assert.ok(
     paths
       .runtimeRootForState(root)
@@ -170,9 +179,59 @@ test("web search paths derive runtime locations", () => {
   );
   assert.ok(
     paths
+      .runtimeBootstrapStateFileForState(root)
+      .endsWith(path.join("runtime", "bootstrap.json")),
+  );
+  assert.ok(
+    paths
+      .runtimePythonBinForState(root)
+      .endsWith(path.join("runtime", "venv", runtimeBinDir, pythonBinName)),
+  );
+  assert.ok(
+    paths
+      .runtimePipBinForState(root)
+      .endsWith(path.join("runtime", "venv", runtimeBinDir, pipBinName)),
+  );
+  assert.ok(
+    paths
       .instanceStateFileForState(root, "abc")
       .endsWith(path.join("instances", "abc", "state.json")),
   );
+  assert.ok(
+    paths
+      .instanceSettingsFileForState(root, "abc")
+      .endsWith(path.join("instances", "abc", "settings.yml")),
+  );
+});
+
+test("web search paths share bootstrap and instance state locations", async () => {
+  await withTempDir(async (dir) => {
+    const bootstrap = {
+      ready: true,
+      sourceDir: "/tmp/source",
+      pythonBin: "/tmp/python",
+      pipBin: "/tmp/pip",
+      installedAt: "2026-04-25T06:14:58Z",
+    };
+    paths.writeRuntimeBootstrapState(dir, bootstrap);
+    assert.deepEqual(paths.readRuntimeBootstrapState(dir), bootstrap);
+
+    const instance = {
+      pid: 123,
+      port: 8080,
+      baseUrl: "http://127.0.0.1:8080",
+      pythonBin: "/tmp/python",
+      sourceDir: "/tmp/source",
+      settingsPath: path.join(dir, "settings.yml"),
+      startedAt: "2026-04-25T06:14:58Z",
+      ownerPid: process.pid,
+    };
+    paths.writeInstanceState(dir, "abc", instance);
+    assert.deepEqual(paths.listInstanceIds(dir), ["abc"]);
+    assert.deepEqual(paths.readInstanceState(dir, "abc"), instance);
+    await fs.stat(paths.runtimeBootstrapStateFileForState(dir));
+    await fs.stat(paths.instanceStateFileForState(dir, "abc"));
+  });
 });
 
 test("web search orphan cleanup removes full instance root", async () => {
@@ -247,7 +306,9 @@ test("web search sidecar bootstrap falls back to archive download without git", 
       const status = service.getSearxngSidecarStatus(dir);
       assert.equal(status.runtime.ready, true);
       await fs.stat(path.join(status.runtime.sourceDir, "requirements.txt"));
-      await assert.rejects(fs.stat(path.join(status.runtime.sourceDir, ".git")));
+      await assert.rejects(
+        fs.stat(path.join(status.runtime.sourceDir, ".git")),
+      );
       assert.equal(status.instances.length, 1);
       assert.equal(status.instances[0].instanceId, "archive-fallback");
       assert.equal(status.instances[0].alive, true);
