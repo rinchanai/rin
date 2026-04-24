@@ -15,6 +15,14 @@ import {
 } from "./worker-helpers.js";
 
 const TURN_HEARTBEAT_INTERVAL_MS = 2_000;
+const DEFAULT_TURN_STALL_TIMEOUT_MS = 15 * 60_000;
+
+function resolveTurnStallTimeoutMs(value: unknown) {
+  const resolved = Number(value ?? DEFAULT_TURN_STALL_TIMEOUT_MS);
+  return Number.isFinite(resolved)
+    ? Math.max(0, resolved)
+    : DEFAULT_TURN_STALL_TIMEOUT_MS;
+}
 
 function appendInterruptedToolResults(
   session: any,
@@ -99,7 +107,9 @@ function snapshotSessionTurnCompletion(session: any) {
     messages,
     assistantCount,
     finalText: resolveTurnCompletion({ messages }).finalText,
-    lastAssistantText: safeString(session?.getLastAssistantText?.() || "").trim(),
+    lastAssistantText: safeString(
+      session?.getLastAssistantText?.() || "",
+    ).trim(),
   };
 }
 
@@ -112,6 +122,7 @@ export async function runCustomRpcMode(
   deps: {
     SessionManager: any;
     reuseFreshSessionForInitialNewSession?: boolean;
+    turnStallTimeoutMs?: number;
   },
 ) {
   const { SessionManager } = deps;
@@ -141,6 +152,9 @@ export async function runCustomRpcMode(
   };
   let activeTurnPromise: Promise<void> | null = null;
   const isTurnActive = () => Boolean(activeTurnPromise);
+  const turnStallTimeoutMs = resolveTurnStallTimeoutMs(
+    deps.turnStallTimeoutMs ?? process.env.RIN_RPC_TURN_STALL_TIMEOUT_MS,
+  );
   let interruptQueue = Promise.resolve();
   let initialFreshSessionReusable =
     deps.reuseFreshSessionForInitialNewSession === true &&
@@ -157,7 +171,9 @@ export async function runCustomRpcMode(
     const turnSession = getSession();
     const beforeSnapshot = snapshotSessionTurnCompletion(turnSession);
     let lastCompletedAssistantMessage: any = null;
+    let markProgress = () => {};
     const rawUnsubscribeTurnSession = turnSession.subscribe?.((event: any) => {
+      markProgress();
       if (event?.type !== "message_end") return;
       if (event?.message?.role !== "assistant") return;
       lastCompletedAssistantMessage = event.message;
@@ -168,6 +184,9 @@ export async function runCustomRpcMode(
         : undefined;
     const promise = (async () => {
       emitTurnEvent("start", requestTag);
+      let turnExpired = false;
+      let stallTimer: NodeJS.Timeout | null = null;
+      let rejectStalledTurn: ((error: Error) => void) | undefined;
       const heartbeatTimer = requestTag
         ? setInterval(() => {
             emitTurnEvent("heartbeat", requestTag, {
@@ -176,45 +195,76 @@ export async function runCustomRpcMode(
             });
           }, TURN_HEARTBEAT_INTERVAL_MS)
         : null;
+      const clearStallTimer = () => {
+        if (!stallTimer) return;
+        clearTimeout(stallTimer);
+        stallTimer = null;
+      };
+      markProgress = () => {
+        if (turnExpired || turnStallTimeoutMs <= 0) return;
+        clearStallTimer();
+        stallTimer = setTimeout(() => {
+          turnExpired = true;
+          void turnSession.abort?.().catch(() => {});
+          rejectStalledTurn?.(new Error("rin_rpc_turn_stalled"));
+        }, turnStallTimeoutMs);
+        stallTimer.unref?.();
+      };
+      const stalledTurn = new Promise<never>((_resolve, reject) => {
+        rejectStalledTurn = reject;
+      });
       try {
-        await task();
-        await turnSession.agent.waitForIdle();
-        await settleTurnCompletionEvents();
-        let completion = resolveTurnCompletion({
-          messages: lastCompletedAssistantMessage
-            ? [lastCompletedAssistantMessage]
-            : [],
-        });
-        if (!completion.finalText) {
-          const afterSnapshot = snapshotSessionTurnCompletion(turnSession);
-          const sessionAdvanced =
-            afterSnapshot.assistantCount > beforeSnapshot.assistantCount ||
-            (afterSnapshot.finalText &&
-              afterSnapshot.finalText !== beforeSnapshot.finalText) ||
-            (afterSnapshot.lastAssistantText &&
-              afterSnapshot.lastAssistantText !== beforeSnapshot.lastAssistantText);
-          if (sessionAdvanced) {
-            completion = resolveTurnCompletion({
-              messages: afterSnapshot.messages,
-              finalText: afterSnapshot.lastAssistantText,
-            });
+        markProgress();
+        const operation = (async () => {
+          await task();
+          if (turnExpired) return;
+          await turnSession.agent.waitForIdle();
+          if (turnExpired) return;
+          await settleTurnCompletionEvents();
+          if (turnExpired) return;
+          let completion = resolveTurnCompletion({
+            messages: lastCompletedAssistantMessage
+              ? [lastCompletedAssistantMessage]
+              : [],
+          });
+          if (!completion.finalText) {
+            const afterSnapshot = snapshotSessionTurnCompletion(turnSession);
+            const sessionAdvanced =
+              afterSnapshot.assistantCount > beforeSnapshot.assistantCount ||
+              (afterSnapshot.finalText &&
+                afterSnapshot.finalText !== beforeSnapshot.finalText) ||
+              (afterSnapshot.lastAssistantText &&
+                afterSnapshot.lastAssistantText !==
+                  beforeSnapshot.lastAssistantText);
+            if (sessionAdvanced) {
+              completion = resolveTurnCompletion({
+                messages: afterSnapshot.messages,
+                finalText: afterSnapshot.lastAssistantText,
+              });
+            }
           }
-        }
-        if (!completion.finalText) {
-          throw new Error("rpc_turn_final_output_missing");
-        }
-        emitTurnEvent("complete", requestTag, {
-          sessionFile: turnSession.sessionFile,
-          sessionId: turnSession.sessionId,
-          finalText: completion.finalText,
-          result: completion.result,
-        });
+          if (!completion.finalText) {
+            throw new Error("rpc_turn_final_output_missing");
+          }
+          emitTurnEvent("complete", requestTag, {
+            sessionFile: turnSession.sessionFile,
+            sessionId: turnSession.sessionId,
+            finalText: completion.finalText,
+            result: completion.result,
+          });
+        })();
+        operation.catch(() => {});
+        await Promise.race([operation, stalledTurn]);
       } catch (error: any) {
+        turnExpired = true;
         emitTurnEvent("error", requestTag, {
           error: String(error?.message || error || "rpc_turn_failed"),
         });
         throw error;
       } finally {
+        turnExpired = true;
+        markProgress = () => {};
+        clearStallTimer();
         unsubscribeTurnSession?.();
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         if (activeTurnPromise === promise) activeTurnPromise = null;
@@ -382,9 +432,17 @@ export async function runCustomRpcMode(
         output(done(id, type, { shutdown: true }));
         return process.exit(0);
       case "attach_session":
-        return done(id, type, getSessionState(session, { turnActive: isTurnActive() }));
+        return done(
+          id,
+          type,
+          getSessionState(session, { turnActive: isTurnActive() }),
+        );
       case "get_state":
-        return done(id, type, getSessionState(session, { turnActive: isTurnActive() }));
+        return done(
+          id,
+          type,
+          getSessionState(session, { turnActive: isTurnActive() }),
+        );
       case "cycle_model":
         return run(
           id,
