@@ -24,27 +24,21 @@ const service = await import(
   ).href
 );
 
-const startpageFixture = `
-<div class="result css-o7i03b">
-  <a class="result-title result-link css-1bggj8v" href="https://github.com/rinchanai/rin" target="_blank" rel="noopener nofollow noreferrer">
-    <h2 class="wgl-title css-i3irj7">GitHub - rinchanai/rin</h2>
+const googleFixture = `
+<div>
+  <a href="/url?q=https://github.com/rinchanai/rin&sa=U&ved=demo">
+    <div style="-webkit-line-clamp:2">GitHub - rinchanai/rin</div>
   </a>
-  <p class="description css-1507v2l">Rin personal workspace mirror managed by <b>RinChan</b>.</p>
+  <div class="VwiC3b yXK7lf p4wth r025kc hJNv6b">Rin personal workspace mirror managed by <b>RinChan</b>.</div>
 </div>`;
 
-const yandexFixture = `
-<li class="serp-item serp-item_card ">
-  <div class="VanillaReact OrganicTitle OrganicTitle_size_l">
-    <a target="_blank" class="Link Link_theme_normal OrganicTitle-Link link" href="https://example.com/yandex-result">
-      <h2 class="OrganicTitle-LinkText"><span class="OrganicTitleContentSpan" role="text">Yandex Result Title</span></h2>
-    </a>
-  </div>
-  <div class="Organic-ContentWrapper">
-    <div class="TextContainer OrganicText Typo Typo_text_m Typo_line_m">
-      <span role="text" class="OrganicTextContentSpan">Yandex fallback snippet for <b>RinChan</b>.</span>
-    </div>
-  </div>
-</li>`;
+const bingFixture = `
+<ol id="b_results">
+  <li class="b_algo">
+    <h2><a href="https://www.bing.com/ck/a?u=a1aHR0cHM6Ly9leGFtcGxlLmNvbS9iaW5nLXN1cHBvcnQ">Bing Support Result</a></h2>
+    <div><p><span class="algoSlug_icon">icon</span>Bing fallback snippet for <b>RinChan</b>.</p></div>
+  </li>
+</ol>`;
 
 const duckDuckGoLiteFixture = `
 <table>
@@ -94,29 +88,30 @@ test("web search query helpers discard invalid freshness", () => {
 test("web search paths derive data root location", () => {
   const root = "/tmp/demo";
   assert.ok(
-    paths
-      .dataRootForState(root)
-      .endsWith(path.join("data", "web-search")),
+    paths.dataRootForState(root).endsWith(path.join("data", "web-search")),
   );
 });
 
-test("startpage parser extracts google-compatible direct results", () => {
-  const rows = query.parseStartpageResults(startpageFixture, 5);
+test("google parser extracts direct results", () => {
+  const rows = query.parseGoogleResults(googleFixture, 5);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].engine, "google");
   assert.equal(rows[0].url, "https://github.com/rinchanai/rin");
   assert.equal(rows[0].title, "GitHub - rinchanai/rin");
-  assert.equal(rows[0].snippet, "Rin personal workspace mirror managed by RinChan.");
+  assert.equal(
+    rows[0].snippet,
+    "Rin personal workspace mirror managed by RinChan.",
+  );
   assert.equal(rows[0].domain, "github.com");
 });
 
-test("yandex parser extracts direct results", () => {
-  const rows = query.parseYandexResults(yandexFixture, 5);
+test("bing parser extracts direct results and unwraps redirects", () => {
+  const rows = query.parseBingResults(bingFixture, 5);
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].engine, "yandex");
-  assert.equal(rows[0].url, "https://example.com/yandex-result");
-  assert.equal(rows[0].title, "Yandex Result Title");
-  assert.equal(rows[0].snippet, "Yandex fallback snippet for RinChan.");
+  assert.equal(rows[0].engine, "bing");
+  assert.equal(rows[0].url, "https://example.com/bing-support");
+  assert.equal(rows[0].title, "Bing Support Result");
+  assert.equal(rows[0].snippet, "Bing fallback snippet for RinChan.");
   assert.equal(rows[0].domain, "example.com");
 });
 
@@ -126,7 +121,10 @@ test("duckduckgo lite parser extracts direct results", () => {
   assert.equal(rows[0].engine, "duckduckgo");
   assert.equal(rows[0].url, "https://github.com/rinchanai/rin");
   assert.equal(rows[0].title, "GitHub - rinchanai/rin");
-  assert.equal(rows[0].snippet, "Rin personal workspace mirror managed by RinChan.");
+  assert.equal(
+    rows[0].snippet,
+    "Rin personal workspace mirror managed by RinChan.",
+  );
   assert.equal(rows[0].domain, "github.com");
 });
 
@@ -144,22 +142,14 @@ test("web search service reports direct provider runtime status", () => {
   const status = service.getWebSearchStatus("/tmp/rin-agent");
   assert.equal(status.runtime.ready, true);
   assert.equal(status.runtime.mode, "direct");
-  assert.equal(status.runtime.providerCount, 4);
-  assert.deepEqual(status.runtime.providers, [
-    "google-startpage",
-    "yandex-html",
-    "duckduckgo-html",
-    "duckduckgo-lite",
-  ]);
+  assert.equal(status.runtime.providerCount, 3);
+  assert.deepEqual(status.runtime.providers, ["google", "bing", "duckduckgo"]);
   assert.deepEqual(status.instances, []);
 });
 
-test("web search uses google-compatible results first and fills gaps from fallback providers", async () => {
+test("web search uses google results first and fills gaps from bing", async () => {
   const originalFetch = globalThis.fetch;
-  const responses = [
-    startpageFixture,
-    yandexFixture,
-  ];
+  const responses = [googleFixture, bingFixture];
   globalThis.fetch = (async () => ({
     ok: true,
     status: 200,
@@ -172,17 +162,21 @@ test("web search uses google-compatible results first and fills gaps from fallba
     assert.equal(result.engine, "google");
     assert.equal(result.results.length, 2);
     assert.deepEqual(
-      result.results.map((item) => [item.engine, item.url]),
+      result.results.map((item: any) => [item.engine, item.url]),
       [
         ["google", "https://github.com/rinchanai/rin"],
-        ["yandex", "https://example.com/yandex-result"],
+        ["bing", "https://example.com/bing-support"],
       ],
     );
     assert.deepEqual(
-      result.attempts?.map((item) => [item.engine, item.ok, item.results ?? 0]),
+      result.attempts?.map((item: any) => [
+        item.engine,
+        item.ok,
+        item.results ?? 0,
+      ]),
       [
-        ["google-startpage", true, 1],
-        ["yandex-html", true, 1],
+        ["google", true, 1],
+        ["bing", true, 1],
       ],
     );
   } finally {
@@ -190,11 +184,11 @@ test("web search uses google-compatible results first and fills gaps from fallba
   }
 });
 
-test("web search falls back when google-compatible provider is challenged", async () => {
+test("web search falls back to bing when google is challenged", async () => {
   const originalFetch = globalThis.fetch;
   const responses = [
-    '<html><body><h1>CAPTCHA</h1><p>automated queries detected</p></body></html>',
-    yandexFixture,
+    "<html><body><h1>CAPTCHA</h1><p>automated queries detected</p></body></html>",
+    bingFixture,
   ];
   globalThis.fetch = (async () => ({
     ok: true,
@@ -205,23 +199,12 @@ test("web search falls back when google-compatible provider is challenged", asyn
   try {
     const result = await query.searchWeb({ q: "rinchanai", limit: 1 });
     assert.equal(result.ok, true);
-    assert.equal(result.engine, "yandex");
-    assert.deepEqual(
-      result.attempts,
-      [
-        {
-          engine: "google-startpage",
-          ok: false,
-          error: "google_challenge_required",
-        },
-        {
-          engine: "yandex-html",
-          ok: true,
-          results: 1,
-        },
-      ],
-    );
-    assert.equal(result.results[0].url, "https://example.com/yandex-result");
+    assert.equal(result.engine, "bing");
+    assert.deepEqual(result.attempts, [
+      { engine: "google", ok: false, error: "google_challenge_required" },
+      { engine: "bing", ok: true, results: 1 },
+    ]);
+    assert.equal(result.results[0].url, "https://example.com/bing-support");
   } finally {
     globalThis.fetch = originalFetch;
   }
