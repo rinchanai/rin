@@ -80,16 +80,9 @@ function detectChatMessageStoreLayout(rootDir: string) {
   );
   const hasPreferred = fs.existsSync(preferredRoot.storeDir);
   const hasLegacy = fs.existsSync(legacyRoot.storeDir);
-  if (hasPreferred) {
-    return buildChatMessageStoreLayout(
-      preferredRoot,
-      hasLegacy ? [legacyRoot] : [],
-    );
-  }
-  if (hasLegacy) {
-    return buildChatMessageStoreLayout(legacyRoot, []);
-  }
-  return buildChatMessageStoreLayout(preferredRoot, []);
+  const primaryRoot = hasLegacy && !hasPreferred ? legacyRoot : preferredRoot;
+  const readFallbacks = hasPreferred && hasLegacy ? [legacyRoot] : [];
+  return buildChatMessageStoreLayout(primaryRoot, readFallbacks);
 }
 
 export function getChatMessageStoreLayout(agentDir: string) {
