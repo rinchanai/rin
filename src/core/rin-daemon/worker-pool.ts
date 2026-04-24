@@ -453,7 +453,6 @@ export class WorkerPool {
     ) {
       worker.turnActive = false;
       worker.isStreaming = false;
-      worker.isCompacting = false;
       this.maybeReleaseWorker(worker);
     }
     if (payload.type === "rpc_turn_event" && payload.event === "complete") {

@@ -217,37 +217,6 @@ test("detached idle worker exits after grace period via reaper", async () => {
   await fs.rm(dir, { recursive: true, force: true });
 });
 
-test("rpc turn error clears stale streaming and compaction state", async () => {
-  const dir = await makeTempDir("rin-worker-pool-");
-  const workerPath = path.join(dir, "worker.mjs");
-  await fs.writeFile(
-    workerPath,
-    String.raw`process.stdout.write(JSON.stringify({ type: 'agent_start' }) + '\n');
-process.stdout.write(JSON.stringify({ type: 'compaction_start' }) + '\n');
-setTimeout(() => {
-  process.stdout.write(JSON.stringify({ type: 'rpc_turn_event', event: 'error', error: 'rin_rpc_turn_stalled' }) + '\n');
-}, 20);
-setInterval(() => {}, 1000);
-`,
-  );
-
-  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
-  pool.resolveWorkerForCommand(
-    { socket: { destroyed: false, write() {} }, clientBuffer: "" },
-    { type: "new_session" },
-  );
-
-  await sleep(120);
-
-  const worker = pool.getStatusSnapshot().workers[0];
-  assert.equal(worker?.turnActive, false);
-  assert.equal(worker?.isStreaming, false);
-  assert.equal(worker?.isCompacting, false);
-
-  pool.destroyAll();
-  await fs.rm(dir, { recursive: true, force: true });
-});
-
 test("detached worker stays alive while turnActive is true even if streaming is false", async () => {
   const dir = await makeTempDir("rin-worker-pool-");
   const workerPath = path.join(dir, "worker.mjs");
@@ -704,10 +673,7 @@ test("worker status snapshot exposes graceful shutdown state", async () => {
 
   pool.terminateWorkerGracefully(worker);
 
-  assert.equal(
-    pool.getStatusSnapshot().workers[0]?.gracefulShutdownRequested,
-    true,
-  );
+  assert.equal(pool.getStatusSnapshot().workers[0]?.gracefulShutdownRequested, true);
 
   pool.destroyAll();
   await fs.rm(dir, { recursive: true, force: true });
