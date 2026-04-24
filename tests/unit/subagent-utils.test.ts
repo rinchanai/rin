@@ -21,12 +21,11 @@ const formatUtils = await import(
   ).href
 );
 const subagentIndex = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "subagent", "index.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "subagent", "index.js")).href
 );
 const subagentService = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "subagent", "service.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "subagent", "service.js"))
+    .href
 );
 const sessionUtils = await import(
   pathToFileURL(
@@ -127,7 +126,10 @@ test("subagent format utils summarize results", () => {
     "hello world\n\nSession: auth-review\nPath: /tmp/auth-review.jsonl",
   );
   assert.equal(userText, agentText);
-  assert.match(summary, /\[done\] \(default model\) session=auth-review — hello world$/);
+  assert.match(
+    summary,
+    /\[done\] \(default model\) session=auth-review — hello world$/,
+  );
   assert.ok(
     formatUtils
       .formatUsage({
@@ -157,8 +159,23 @@ test("subagent format utils summarize results", () => {
     ),
     "openai/gpt-5",
   );
+  assert.equal(
+    formatUtils.getTaskSessionLabel({
+      sessionPersisted: true,
+      sessionName: "   ",
+      sessionId: " session-123 ",
+      sessionFile: " /tmp/demo.jsonl ",
+    }),
+    "session-123",
+  );
+  assert.equal(
+    formatUtils.getTaskModelLabel({
+      model: "   ",
+      requestedModel: " openai/gpt-5 ",
+    }),
+    "openai/gpt-5",
+  );
 });
-
 
 test("subagent format utils share persisted fallback labels and final output parsing", () => {
   const results = [
@@ -209,14 +226,23 @@ test("subagent format utils share persisted fallback labels and final output par
 
   assert.match(agentText, /1\. \(default model\) \[session: persisted\]/);
   assert.match(userText, /Parallel subagents finished: 1\/2 succeeded/);
-  assert.match(userText, /1\. \[ok\] \(default model\) \[session: persisted\] — first result/);
+  assert.match(
+    userText,
+    /1\. \[ok\] \(default model\) \[session: persisted\] — first result/,
+  );
   assert.match(userText, /2\. \[failed\] openai\/gpt-5 — line one line two/);
   assert.equal(
-    formatUtils.getTaskPreview({ output: "word ".repeat(60), errorMessage: "" }, 12),
+    formatUtils.getTaskPreview(
+      { output: "word ".repeat(60), errorMessage: "" },
+      12,
+    ),
     "word word wo…",
   );
   assert.equal(
-    formatUtils.getTaskPrimaryText({ output: "  \n  ", errorMessage: "\r\nfailed\r\n" }),
+    formatUtils.getTaskPrimaryText({
+      output: "  \n  ",
+      errorMessage: "\r\nfailed\r\n",
+    }),
     "failed",
   );
   assert.equal(
@@ -302,7 +328,6 @@ test("subagent service aggregates task state from current-run assistant messages
   assert.equal(state.usage.turns, 2);
   assert.ok(Math.abs(state.usage.cost - 0.12) < 1e-9);
 });
-
 
 test("subagent service derives context tokens when providers omit explicit totals", () => {
   const state = subagentService.collectTaskResultState([
@@ -392,7 +417,10 @@ test("run_subagent exposes single-session schema and consistent sessionFile disc
   assert.ok(runTool);
   assert.equal(runTool.parameters.properties.disabledExtensions.type, "array");
   assert.equal(runTool.parameters.properties.tasks, undefined);
-  assert.equal(runTool.parameters.properties.session.properties.keep.type, "boolean");
+  assert.equal(
+    runTool.parameters.properties.session.properties.keep.type,
+    "boolean",
+  );
   assert.equal(
     runTool.parameters.properties.session.properties.sessionFile.type,
     "string",
@@ -400,11 +428,19 @@ test("run_subagent exposes single-session schema and consistent sessionFile disc
   assert.equal(runTool.parameters.properties.session.properties.ref, undefined);
   assert.match(
     runTool.parameters.properties.session.properties.sessionFile.description,
-    new RegExp(sessionUtils.getDefaultSubagentSessionDir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    new RegExp(
+      sessionUtils
+        .getDefaultSubagentSessionDir()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    ),
   );
   assert.match(
     sessionUtils.formatSubagentSessionFileHint(),
-    new RegExp(sessionUtils.getDefaultSubagentSessionDir().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    new RegExp(
+      sessionUtils
+        .getDefaultSubagentSessionDir()
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    ),
   );
   assert.match(
     sessionUtils.formatSubagentSessionFileRequiredError("resume"),
@@ -415,7 +451,6 @@ test("run_subagent exposes single-session schema and consistent sessionFile disc
     /Invalid session.mode: broken\. Allowed values: memory, persist, resume, fork\./,
   );
 });
-
 
 test("subagent session utils normalize invalid session modes and trim session files", () => {
   assert.deepEqual(
@@ -496,15 +531,23 @@ test("run_subagent surfaces legacy task rejection without extra hints", async ()
 
   assert.equal(result.isError, true);
   assert.equal(result.content?.[0]?.type, "text");
-  assert.equal(result.content?.[0]?.text, "run_subagent does not accept `tasks`.");
+  assert.equal(
+    result.content?.[0]?.text,
+    "run_subagent does not accept `tasks`.",
+  );
 });
 
 test("session manager can create ephemeral forks without writing a session file", async () => {
-  const tempRoot = await fs.promises.mkdtemp(path.join(process.cwd(), "tmp-subagent-fork-"));
+  const tempRoot = await fs.promises.mkdtemp(
+    path.join(process.cwd(), "tmp-subagent-fork-"),
+  );
   try {
     const sessionDir = path.join(tempRoot, "sessions");
     const source = SessionManager.create(tempRoot, sessionDir);
-    source.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] });
+    source.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    });
     source.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "world" }],
