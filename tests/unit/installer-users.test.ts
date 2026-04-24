@@ -11,12 +11,14 @@ const rootDir = path.resolve(
 );
 const users = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-install", "users.js"))
-    .href,
+    .href
 );
 
 async function withTempDir(fn) {
   await fs.mkdir("/home/rin/tmp", { recursive: true });
-  const dir = await fs.mkdtemp(path.join("/home/rin/tmp", "rin-installer-users-"));
+  const dir = await fs.mkdtemp(
+    path.join("/home/rin/tmp", "rin-installer-users-"),
+  );
   try {
     await fn(dir);
   } finally {
@@ -31,7 +33,8 @@ test("installer users keep system user lists deterministically sorted", () => {
     const current = listed[index];
     assert.ok(
       previous.uid < current.uid ||
-        (previous.uid === current.uid && previous.name.localeCompare(current.name) <= 0),
+        (previous.uid === current.uid &&
+          previous.name.localeCompare(current.name) <= 0),
     );
   }
 });
@@ -42,6 +45,65 @@ test("installer users normalize lookup and home fallback behavior", () => {
   assert.equal(users.targetHomeForUser(" demo-user "), "/home/demo-user");
 });
 
+test("installer users keep macOS dscl users when home key is missing", async () => {
+  await withTempDir(async (dir) => {
+    const binDir = path.join(dir, "bin");
+    await fs.mkdir(binDir, { recursive: true });
+    const dsclPath = path.join(binDir, "dscl");
+    await fs.writeFile(
+      dsclPath,
+      `#!/bin/sh
+if [ "$1" = "." ] && [ "$2" = "-list" ]; then
+  printf 'mobile 501\\n'
+  exit 0
+fi
+if [ "$1" = "." ] && [ "$2" = "-read" ]; then
+  case "$4" in
+    NFSHomeDirectory)
+      echo 'No such key: NFSHomeDirectory' >&2
+      exit 1
+      ;;
+    UserShell)
+      printf 'UserShell: /bin/zsh\\n'
+      exit 0
+      ;;
+    PrimaryGroupID)
+      printf 'PrimaryGroupID: 20\\n'
+      exit 0
+      ;;
+  esac
+fi
+exit 1
+`,
+      { mode: 0o755 },
+    );
+
+    const previousPath = process.env.PATH;
+    const platformDescriptor = Object.getOwnPropertyDescriptor(
+      process,
+      "platform",
+    );
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath || ""}`;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    try {
+      assert.deepEqual(users.listSystemUsers(), [
+        {
+          name: "mobile",
+          uid: 501,
+          gid: 20,
+          home: "/Users/mobile",
+          shell: "/bin/zsh",
+        },
+      ]);
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (platformDescriptor)
+        Object.defineProperty(process, "platform", platformDescriptor);
+    }
+  });
+});
+
 test("installer users describe ownership and elevated write decisions consistently", async () => {
   await withTempDir(async (dir) => {
     const currentUser = os.userInfo().username;
@@ -50,10 +112,16 @@ test("installer users describe ownership and elevated write decisions consistent
     assert.equal(ownership.writable, true);
     assert.equal(Number.isInteger(ownership.statUid), true);
     assert.equal(Number.isInteger(ownership.statGid), true);
-    assert.equal(users.shouldUseElevatedWrite(` ${currentUser} `, ownership), false);
+    assert.equal(
+      users.shouldUseElevatedWrite(` ${currentUser} `, ownership),
+      false,
+    );
     assert.equal(users.shouldUseElevatedWrite("other-user", ownership), true);
 
-    const missing = users.describeOwnership("missing-user", path.join(dir, "missing"));
+    const missing = users.describeOwnership(
+      "missing-user",
+      path.join(dir, "missing"),
+    );
     assert.deepEqual(missing, {
       ownerMatches: true,
       writable: true,
