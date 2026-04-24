@@ -14,7 +14,7 @@ import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
 import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, } from "../session/ref.js";
-import { listResumableSessionFiles } from "../session/turn-state.js";
+import { initializeTerminalTurnStateBaseline, listResumableSessionFiles, } from "../session/turn-state.js";
 import { WorkerPool } from "./worker-pool.js";
 function writeLine(socket, payload) {
     if (!socket.destroyed)
@@ -22,6 +22,9 @@ function writeLine(socket, payload) {
 }
 function restartStatePath(agentDir) {
     return path.join(agentDir, "data", "restart.json");
+}
+function turnStateBaselinePath(agentDir) {
+    return path.join(agentDir, "data", "turn-state-terminal-baseline.json");
 }
 function clearLegacyRestartState(agentDir) {
     try {
@@ -328,6 +331,7 @@ export async function startDaemon(options = {}) {
     console.log(`rin daemon bridge listening on ${bridgeSocketPath}`);
     clearLegacyRestartState(runtime.agentDir);
     const sessionDir = getRuntimeSessionDir(runtime.cwd, runtime.agentDir);
+    initializeTerminalTurnStateBaseline(sessionDir, turnStateBaselinePath(runtime.agentDir));
     for (const sessionFile of listResumableSessionFiles(sessionDir)) {
         try {
             workerPool.restoreSessionWorker({ sessionFile, resumeTurn: true });

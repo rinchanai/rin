@@ -39,7 +39,10 @@ import {
   hasSessionRef as hasSessionSelector,
   normalizeSessionRef as sessionSelectorFromCommand,
 } from "../session/ref.js";
-import { listResumableSessionFiles } from "../session/turn-state.js";
+import {
+  initializeTerminalTurnStateBaseline,
+  listResumableSessionFiles,
+} from "../session/turn-state.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
 function writeLine(socket: RpcSocketLike, payload: unknown) {
@@ -48,6 +51,10 @@ function writeLine(socket: RpcSocketLike, payload: unknown) {
 
 function restartStatePath(agentDir: string) {
   return path.join(agentDir, "data", "restart.json");
+}
+
+function turnStateBaselinePath(agentDir: string) {
+  return path.join(agentDir, "data", "turn-state-terminal-baseline.json");
 }
 
 function clearLegacyRestartState(agentDir: string) {
@@ -516,6 +523,10 @@ export async function startDaemon(
 
   clearLegacyRestartState(runtime.agentDir);
   const sessionDir = getRuntimeSessionDir(runtime.cwd, runtime.agentDir);
+  initializeTerminalTurnStateBaseline(
+    sessionDir,
+    turnStateBaselinePath(runtime.agentDir),
+  );
   for (const sessionFile of listResumableSessionFiles(sessionDir)) {
     try {
       workerPool.restoreSessionWorker({ sessionFile, resumeTurn: true });

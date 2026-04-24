@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   appendSessionTurnState,
+  initializeTerminalTurnStateBaseline,
   listResumableSessionFiles,
   readSessionTurnState,
   shouldResumeSessionFile,
@@ -42,36 +43,62 @@ test("session turn state uses the latest durable marker", async () => {
   }
 });
 
-test("session turn state scanner resumes every active session recursively", async () => {
+test("session turn state treats missing or active markers as resumable", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {
-    const activeRoot = path.join(dir, "active.jsonl");
-    const activeNested = path.join(dir, "managed", "task", "active.jsonl");
-    const aborted = path.join(dir, "aborted.jsonl");
-    await fs.mkdir(path.dirname(activeNested), { recursive: true });
+    const unmarked = path.join(dir, "unmarked.jsonl");
+    const active = path.join(dir, "active.jsonl");
+    const completed = path.join(dir, "completed.jsonl");
     await fs.writeFile(
-      activeRoot,
+      unmarked,
+      `${JSON.stringify({ type: "message", message: { role: "user", content: "hello" }, id: "u1", parentId: null })}\n`,
+    );
+    await fs.writeFile(
+      active,
       `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "active" } })}\n`,
     );
     await fs.writeFile(
-      activeNested,
-      `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "active" } })}\n`,
-    );
-    await fs.writeFile(
-      aborted,
-      `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "aborted" } })}\n`,
+      completed,
+      `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "completed" } })}\n`,
     );
 
-    assert.deepEqual(listResumableSessionFiles(dir), [
-      activeRoot,
-      activeNested,
-    ]);
+    assert.deepEqual(listResumableSessionFiles(dir), [active, unmarked]);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
-test("appendSessionTurnState writes compact custom session entries", () => {
+test("terminal turn state baseline marks legacy untracked sessions completed once", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
+  try {
+    const baselineFile = path.join(dir, "data", "baseline.json");
+    const legacy = path.join(dir, "sessions", "legacy.jsonl");
+    const active = path.join(dir, "sessions", "active.jsonl");
+    await fs.mkdir(path.dirname(legacy), { recursive: true });
+    await fs.writeFile(
+      legacy,
+      `${JSON.stringify({ type: "message", message: { role: "assistant", content: "done" }, id: "a1", parentId: null })}\n`,
+    );
+    await fs.writeFile(
+      active,
+      `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "active" }, id: "c1", parentId: null })}\n`,
+    );
+
+    initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile);
+
+    assert.equal(readSessionTurnState(legacy)?.status, "completed");
+    assert.equal(readSessionTurnState(active)?.status, "active");
+    assert.deepEqual(listResumableSessionFiles(path.dirname(legacy)), [active]);
+
+    const legacyBefore = await fs.readFile(legacy, "utf8");
+    initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile);
+    assert.equal(await fs.readFile(legacy, "utf8"), legacyBefore);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("appendSessionTurnState writes compact terminal custom session entries", () => {
   const entries: any[] = [];
   appendSessionTurnState(
     {
@@ -80,11 +107,11 @@ test("appendSessionTurnState writes compact custom session entries", () => {
           entries.push({ customType, data }),
       },
     },
-    "active",
+    "completed",
   );
 
   assert.equal(entries.length, 1);
   assert.equal(entries[0].customType, "rin-turn-state");
-  assert.equal(entries[0].data.status, "active");
+  assert.equal(entries[0].data.status, "completed");
   assert.match(entries[0].data.timestamp, /^\d{4}-\d{2}-\d{2}T/);
 });

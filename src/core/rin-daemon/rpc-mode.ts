@@ -6,7 +6,7 @@ import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { requireSessionFile } from "../session/ref.js";
 import {
   appendSessionTurnState,
-  type SessionTurnStateStatus,
+  type TerminalSessionTurnStateStatus,
 } from "../session/turn-state.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
 import { safeString } from "../text-utils.js";
@@ -152,7 +152,10 @@ export async function runCustomRpcMode(
     if (!requestTag) return;
     output({ type: "rpc_turn_event", event, requestTag, ...payload });
   };
-  const markTurnState = (session: any, status: SessionTurnStateStatus) => {
+  const markTurnState = (
+    session: any,
+    status: TerminalSessionTurnStateStatus,
+  ) => {
     appendSessionTurnState(session, status);
   };
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
@@ -179,7 +182,6 @@ export async function runCustomRpcMode(
           }, TURN_HEARTBEAT_INTERVAL_MS)
         : null;
       try {
-        markTurnState(turnSession, "active");
         await task();
         await turnSession.agent.waitForIdle();
         await settleTurnCompletionEvents();
