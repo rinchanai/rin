@@ -11,49 +11,53 @@ export const MAINTENANCE_QUEUE_FILE = "maintenance-queue.json";
 export const MAINTENANCE_HISTORY_FILE = "maintenance-history.jsonl";
 export const MAINTENANCE_LOCK_FILE = "maintenance-worker.lock";
 
+function resolveSelfImprovePath(agentDirOverride = "", ...segments: string[]) {
+  return path.join(
+    resolveAgentDir(agentDirOverride),
+    SELF_IMPROVE_DIR,
+    ...segments,
+  );
+}
+
+function resolveSelfImproveStatePath(agentDirOverride = "", fileName = "") {
+  return resolveSelfImprovePath(
+    agentDirOverride,
+    SELF_IMPROVE_STATE_DIR,
+    fileName,
+  );
+}
+
 export function resolveSelfImproveRoot(agentDirOverride = ""): string {
-  return path.join(resolveAgentDir(agentDirOverride), SELF_IMPROVE_DIR);
+  return resolveSelfImprovePath(agentDirOverride);
 }
 
 export function selfImprovePromptsDir(agentDirOverride = ""): string {
-  return path.join(
-    resolveSelfImproveRoot(agentDirOverride),
-    SELF_IMPROVE_PROMPTS_DIR,
-  );
+  return resolveSelfImprovePath(agentDirOverride, SELF_IMPROVE_PROMPTS_DIR);
 }
 
 export function selfImproveSkillsDir(agentDirOverride = ""): string {
-  return path.join(
-    resolveSelfImproveRoot(agentDirOverride),
-    SELF_IMPROVE_SKILLS_DIR,
-  );
+  return resolveSelfImprovePath(agentDirOverride, SELF_IMPROVE_SKILLS_DIR);
 }
 
 export function selfImproveStateDir(agentDirOverride = ""): string {
-  return path.join(
-    resolveSelfImproveRoot(agentDirOverride),
-    SELF_IMPROVE_STATE_DIR,
-  );
+  return resolveSelfImprovePath(agentDirOverride, SELF_IMPROVE_STATE_DIR);
 }
 
 export function initStatePath(agentDirOverride = ""): string {
-  return path.join(selfImproveStateDir(agentDirOverride), INIT_STATE_FILE);
+  return resolveSelfImproveStatePath(agentDirOverride, INIT_STATE_FILE);
 }
 
 export function maintenanceQueuePath(agentDirOverride = ""): string {
-  return path.join(
-    selfImproveStateDir(agentDirOverride),
-    MAINTENANCE_QUEUE_FILE,
-  );
+  return resolveSelfImproveStatePath(agentDirOverride, MAINTENANCE_QUEUE_FILE);
 }
 
 export function maintenanceHistoryPath(agentDirOverride = ""): string {
-  return path.join(
-    selfImproveStateDir(agentDirOverride),
+  return resolveSelfImproveStatePath(
+    agentDirOverride,
     MAINTENANCE_HISTORY_FILE,
   );
 }
 
 export function maintenanceLockPath(agentDirOverride = ""): string {
-  return path.join(selfImproveStateDir(agentDirOverride), MAINTENANCE_LOCK_FILE);
+  return resolveSelfImproveStatePath(agentDirOverride, MAINTENANCE_LOCK_FILE);
 }

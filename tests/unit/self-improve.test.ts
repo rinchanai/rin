@@ -11,19 +11,16 @@ const rootDir = path.resolve(
   "..",
 );
 const lib = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "lib.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "lib.js"))
+    .href
 );
 const store = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "store.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "store.js"))
+    .href
 );
 const memoryDocs = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "docs.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "docs.js"))
+    .href
 );
 const asyncJobs = await import(
   pathToFileURL(
@@ -31,9 +28,8 @@ const asyncJobs = await import(
   ).href
 );
 const selfImprovePaths = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "paths.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "paths.js"))
+    .href
 );
 const processing = await import(
   pathToFileURL(
@@ -41,9 +37,8 @@ const processing = await import(
   ).href
 );
 const selfImproveIndex = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "index.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "index.js"))
+    .href
 );
 
 async function withTempRoot(fn) {
@@ -69,17 +64,31 @@ function selfImproveRoot(root) {
 
 test("self-improve paths resolve under the agent root", () => {
   const root = "/tmp/rin-agent";
+  const selfImproveDir = path.join(root, "self_improve");
+  const stateDir = path.join(selfImproveDir, "state");
+
+  assert.equal(selfImproveRoot(root), selfImproveDir);
   assert.equal(
-    selfImproveRoot(root),
-    path.join(root, "self_improve"),
+    selfImprovePaths.selfImprovePromptsDir(root),
+    path.join(selfImproveDir, "prompts"),
   );
   assert.equal(
-    queuePath(root),
-    path.join(root, "self_improve", "state", "maintenance-queue.json"),
+    selfImprovePaths.selfImproveSkillsDir(root),
+    path.join(selfImproveDir, "skills"),
   );
+  assert.equal(selfImprovePaths.selfImproveStateDir(root), stateDir);
+  assert.equal(
+    selfImprovePaths.initStatePath(root),
+    path.join(stateDir, "init-state.json"),
+  );
+  assert.equal(queuePath(root), path.join(stateDir, "maintenance-queue.json"));
   assert.equal(
     historyPath(root),
-    path.join(root, "self_improve", "state", "maintenance-history.jsonl"),
+    path.join(stateDir, "maintenance-history.jsonl"),
+  );
+  assert.equal(
+    selfImprovePaths.maintenanceLockPath(root),
+    path.join(stateDir, "maintenance-worker.lock"),
   );
 });
 
@@ -277,7 +286,12 @@ test("queued maintenance refresh clears stale retry metadata and normalizes exte
       agentDir: root,
       sessionFile: "/tmp/session-a.jsonl",
       trigger: "first",
-      additionalExtensionPaths: [" /tmp/ext-a ", "/tmp/ext-a", "", " /tmp/ext-b "],
+      additionalExtensionPaths: [
+        " /tmp/ext-a ",
+        "/tmp/ext-a",
+        "",
+        " /tmp/ext-b ",
+      ],
     });
 
     const queueFile = queuePath(root);
