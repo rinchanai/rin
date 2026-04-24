@@ -98,6 +98,9 @@ async function waitForSocketState(
 test("isolated CLI doctor flow sees a daemon booted in a temporary agent dir", async () => {
   await withTempDir(async (tempDir) => {
     const { agentDir, env } = await setupIsolatedCliEnv(tempDir);
+    const before = await runCli(["doctor"], env);
+    assert.match(before.stdout, /socketReady=no/);
+
     const daemon = spawn(process.execPath, [daemonPath], {
       cwd: rootDir,
       env,
@@ -112,15 +115,15 @@ test("isolated CLI doctor flow sees a daemon booted in a temporary agent dir", a
       daemonLog += String(chunk);
     });
 
-    const daemonExit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    const daemonExit = new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolve, reject) => {
       daemon.once("error", reject);
       daemon.once("exit", (code, signal) => resolve({ code, signal }));
     });
 
     try {
-      const before = await runCli(["doctor"], env);
-      assert.match(before.stdout, /socketReady=no/);
-
       const doctor = await waitForSocketState(env, "yes");
       assert.match(doctor, /socketReady=yes/);
       assert.match(doctor, /targetUser=/);
@@ -131,11 +134,12 @@ test("isolated CLI doctor flow sees a daemon booted in a temporary agent dir", a
       daemon.kill("SIGTERM");
       const result = await Promise.race([
         daemonExit,
-        new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
-          setTimeout(async () => {
-            daemon.kill("SIGKILL");
-            resolve(await daemonExit);
-          }, 2500),
+        new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+          (resolve) =>
+            setTimeout(async () => {
+              daemon.kill("SIGKILL");
+              resolve(await daemonExit);
+            }, 2500),
         ),
       ]);
       assert.ok(

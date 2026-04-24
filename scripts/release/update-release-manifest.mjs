@@ -17,16 +17,25 @@ function parseArgs(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--manifest") args.manifest = String(argv[++index] || "").trim();
-    else if (arg === "--channel") args.channel = String(argv[++index] || "").trim();
-    else if (arg === "--version") args.version = String(argv[++index] || "").trim();
+    if (arg === "--manifest")
+      args.manifest = String(argv[++index] || "").trim();
+    else if (arg === "--channel")
+      args.channel = String(argv[++index] || "").trim();
+    else if (arg === "--version")
+      args.version = String(argv[++index] || "").trim();
     else if (arg === "--ref") args.ref = String(argv[++index] || "").trim();
-    else if (arg === "--package-name") args.packageName = String(argv[++index] || "").trim();
-    else if (arg === "--repo-url") args.repoUrl = String(argv[++index] || "").trim();
-    else if (arg === "--branch") args.branch = String(argv[++index] || "").trim();
-    else if (arg === "--series") args.series = String(argv[++index] || "").trim();
-    else if (arg === "--from-beta-version") args.fromBetaVersion = String(argv[++index] || "").trim();
-    else if (arg === "--promotion-version") args.promotionVersion = String(argv[++index] || "").trim();
+    else if (arg === "--package-name")
+      args.packageName = String(argv[++index] || "").trim();
+    else if (arg === "--repo-url")
+      args.repoUrl = String(argv[++index] || "").trim();
+    else if (arg === "--branch")
+      args.branch = String(argv[++index] || "").trim();
+    else if (arg === "--series")
+      args.series = String(argv[++index] || "").trim();
+    else if (arg === "--from-beta-version")
+      args.fromBetaVersion = String(argv[++index] || "").trim();
+    else if (arg === "--promotion-version")
+      args.promotionVersion = String(argv[++index] || "").trim();
     else if (arg === "-h" || arg === "--help") {
       console.log(
         "Usage: node scripts/release/update-release-manifest.mjs --channel stable|beta|nightly --version <value> [--ref <sha>] [--branch <name>] [--series <major.minor>] [--from-beta-version <value>] [--promotion-version <x.y.z>] [--package-name <name>] [--repo-url <url>] [--manifest <path>]",
@@ -67,10 +76,6 @@ function buildGitHubRefArchiveUrl(repoUrl, ref) {
   return `${normalizedRepo}/archive/${encodedRef}.tar.gz`;
 }
 
-function buildGitHubBranchArchiveUrl(repoUrl, branch) {
-  return buildGitHubRefArchiveUrl(repoUrl, `refs/heads/${trim(branch) || "main"}`);
-}
-
 const args = parseArgs(process.argv.slice(2));
 const manifestPath = path.resolve(process.cwd(), args.manifest);
 const manifest = readJson(manifestPath);
@@ -104,7 +109,8 @@ manifest.repoUrl = repoUrl;
 manifest.bootstrapBranch = trim(manifest.bootstrapBranch) || "bootstrap";
 manifest.train ||= {};
 manifest.train.series = series || trim(manifest.train.series) || "0.0";
-manifest.train.nightlyBranch = branch || trim(manifest.train.nightlyBranch) || "main";
+manifest.train.nightlyBranch =
+  branch || trim(manifest.train.nightlyBranch) || "main";
 manifest.stable ||= {};
 manifest.beta ||= {};
 manifest.nightly ||= {};
@@ -140,9 +146,15 @@ if (channel === "stable") {
 } else {
   manifest.nightly.version = version;
   manifest.nightly.ref = ref;
-  manifest.nightly.branch = branch || trim(manifest.nightly.branch) || trim(manifest.train.nightlyBranch) || "main";
+  manifest.nightly.branch =
+    branch ||
+    trim(manifest.nightly.branch) ||
+    trim(manifest.train.nightlyBranch) ||
+    "main";
   manifest.nightly.archiveUrl = buildGitHubRefArchiveUrl(repoUrl, ref);
 }
 
 writeJson(manifestPath, manifest);
-console.log(`Updated ${path.relative(process.cwd(), manifestPath)} for ${channel} ${version}.`);
+console.log(
+  `Updated ${path.relative(process.cwd(), manifestPath)} for ${channel} ${version}.`,
+);

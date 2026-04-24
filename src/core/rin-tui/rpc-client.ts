@@ -70,35 +70,34 @@ export class RinDaemonFrontendClient implements RpcFrontendClient {
   async connect() {
     if (this.socket && !this.socket.destroyed) return;
     if (this.connectPromise) return await this.connectPromise;
-    this.connectPromise = new Promise<void>(async (resolve, reject) => {
-      let socket: RpcSocketLike;
-      try {
-        socket = this.connectSocket
-          ? await this.connectSocket()
-          : net.createConnection(this.socketPath);
-      } catch (error) {
-        this.connectPromise = null;
-        reject(error);
-        return;
-      }
-      const onError = (error: Error) => {
-        try {
-          socket.destroy();
-        } catch {}
-        this.connectPromise = null;
-        reject(error);
-      };
-      socket.once("error", onError);
-      socket.once("connect", () => {
-        socket.removeListener("error", onError);
-        this.socket = socket;
-        this.state.buffer = "";
-        socket.on("data", (chunk) => this.handleChunk(String(chunk), socket));
-        socket.on("close", () => this.handleDisconnect(true, socket));
-        socket.on("error", () => this.handleDisconnect(true, socket));
-        this.connectPromise = null;
-        resolve();
+    this.connectPromise = (async () => {
+      const socket = this.connectSocket
+        ? await this.connectSocket()
+        : net.createConnection(this.socketPath);
+
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error) => {
+          try {
+            socket.destroy();
+          } catch {}
+          this.connectPromise = null;
+          reject(error);
+        };
+        socket.once("error", onError);
+        socket.once("connect", () => {
+          socket.removeListener("error", onError);
+          this.socket = socket;
+          this.state.buffer = "";
+          socket.on("data", (chunk) => this.handleChunk(String(chunk), socket));
+          socket.on("close", () => this.handleDisconnect(true, socket));
+          socket.on("error", () => this.handleDisconnect(true, socket));
+          this.connectPromise = null;
+          resolve();
+        });
       });
+    })().catch((error) => {
+      this.connectPromise = null;
+      throw error;
     });
     return await this.connectPromise;
   }
