@@ -994,7 +994,7 @@ test(
 );
 
 test(
-  "rpc mode auto-resumes an interrupted turn without appending reconnect noise to the session transcript",
+  "rpc mode session bind does not auto-resume an interrupted turn",
   { concurrency: false },
   async () => {
     const stdinOn = process.stdin.on;
@@ -1092,9 +1092,9 @@ test(
 
       await wait(10);
 
-      assert.deepEqual(calls, [["continue"]]);
-      assert.equal(stateMessages.length, 2);
-      assert.equal(stateMessages[1].role, "toolResult");
+      assert.deepEqual(calls, []);
+      assert.equal(stateMessages.length, 1);
+      assert.equal(stateMessages[0].role, "assistant");
     } finally {
       process.stdin.on = stdinOn;
       process.stdout.write = stdoutWrite;
@@ -1103,7 +1103,7 @@ test(
 );
 
 test(
-  "rpc mode switch_session responds before background auto-resume finishes",
+  "rpc mode switch_session binds without auto-resuming interrupted work",
   { concurrency: false },
   async () => {
     const stdinOn = process.stdin.on;
@@ -1131,7 +1131,6 @@ test(
         state: { messages },
         continue: async () => {
           calls.push(["continue", name]);
-          await new Promise(() => {});
         },
       },
       bindExtensions: async () => {},
@@ -1217,7 +1216,7 @@ test(
       const output = lines.join("");
       assert.ok(output.includes('"id":"switch-1"'));
       assert.ok(output.includes('"success":true'));
-      assert.deepEqual(calls, [["continue", "interrupted"]]);
+      assert.deepEqual(calls, []);
     } finally {
       process.stdin.on = stdinOn;
       process.stdout.write = stdoutWrite;

@@ -58,16 +58,6 @@ async function resumeInterruptedTurn(
   return true;
 }
 
-function shouldResumeInterruptedTurn(session: any) {
-  if (!session || session.isStreaming || session.isCompacting) return false;
-  const lastMessage = Array.isArray(session?.agent?.state?.messages)
-    ? session.agent.state.messages[session.agent.state.messages.length - 1]
-    : null;
-  if (!lastMessage) return false;
-  if (lastMessage.role !== "assistant") return true;
-  return extractToolCallParts(lastMessage.content).length > 0;
-}
-
 function canReuseCurrentSessionForNewSessionCommand(
   session: any,
   command: any,
@@ -256,14 +246,6 @@ export async function runCustomRpcMode(
       )
       .catch(() => {});
   };
-  const startAutoResumeIfNeeded = (session: any) => {
-    if (activeTurnPromise || !shouldResumeInterruptedTurn(session)) return;
-    startTurnTask("", async () => {
-      await resumeInterruptedTurn(session, {
-        persistInterruptionMessage: false,
-      });
-    });
-  };
   let loginSeq = 0;
   const activeLogins = new Map<
     string,
@@ -354,8 +336,6 @@ export async function runCustomRpcMode(
     unsubscribeSessionEvents = session.subscribe((event: unknown) =>
       output(event),
     );
-
-    startAutoResumeIfNeeded(session);
   };
 
   await bindCurrentSession();
