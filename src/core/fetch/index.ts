@@ -7,9 +7,18 @@ import {
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
-import { sniffHtmlCharset, extractHtmlTitle, htmlToText, isProbablyHtml } from "./html-utils.js";
+import {
+  extractHtmlTitle,
+  htmlToText,
+  isProbablyHtml,
+  sniffHtmlCharset,
+} from "./html-utils.js";
 import { writeFetchFullOutput } from "./output-utils.js";
-import { isTextLike, normalizeUrl, parseContentType } from "./response-utils.js";
+import {
+  isTextLike,
+  normalizeUrl,
+  parseContentType,
+} from "./response-utils.js";
 import {
   decodeBuffer,
   maybePrettyJson,
@@ -52,21 +61,13 @@ type FetchResponseData = {
   buffer: Buffer;
 };
 
-function formatTextResponse(details: FetchDetails, bodyText: string) {
+function buildResponseText(
+  details: FetchDetails,
+  bodyText: string,
+  leadingLine: string,
+) {
   const lines = [
-    `Fetched: ${details.finalUrl}`,
-    `Status: ${details.status} ${details.statusText}`.trim(),
-    `MIME: ${details.mimeType}`,
-    `Bytes: ${details.bytes}`,
-  ];
-  if (details.title) lines.push(`Title: ${details.title}`);
-  lines.push("", bodyText || "(empty response body)");
-  return lines.join("\n");
-}
-
-function formatUserTextResponse(details: FetchDetails, bodyText: string) {
-  const lines = [
-    details.finalUrl !== details.url ? `Final URL: ${details.finalUrl}` : "",
+    leadingLine,
     `Status: ${details.status} ${details.statusText}`.trim(),
     `MIME: ${details.mimeType}`,
     `Bytes: ${details.bytes}`,
@@ -74,6 +75,18 @@ function formatUserTextResponse(details: FetchDetails, bodyText: string) {
   if (details.title) lines.push(`Title: ${details.title}`);
   lines.push("", bodyText || "(empty response body)");
   return lines.join("\n");
+}
+
+function formatTextResponse(details: FetchDetails, bodyText: string) {
+  return buildResponseText(details, bodyText, `Fetched: ${details.finalUrl}`);
+}
+
+function formatUserTextResponse(details: FetchDetails, bodyText: string) {
+  return buildResponseText(
+    details,
+    bodyText,
+    details.finalUrl !== details.url ? `Final URL: ${details.finalUrl}` : "",
+  );
 }
 
 function formatFetchResult(
@@ -156,10 +169,7 @@ function createFetchDetails(
   };
 }
 
-function resolveResponseBody(
-  details: FetchDetails,
-  buffer: Buffer,
-) {
+function resolveResponseBody(details: FetchDetails, buffer: Buffer) {
   const decoded = normalizeRawText(decodeBuffer(buffer, details.charset));
   if (isProbablyHtml(details.mimeType, decoded)) {
     details.title = extractHtmlTitle(decoded) || undefined;
@@ -174,10 +184,7 @@ function resolveResponseBody(
   throw new Error(`Fetch returned non-text content (${details.mimeType}).`);
 }
 
-function formatFailedFetch(
-  details: FetchDetails,
-  buffer: Buffer,
-) {
+function formatFailedFetch(details: FetchDetails, buffer: Buffer) {
   const body = isTextLike(details.mimeType)
     ? normalizePlainText(decodeBuffer(buffer, details.charset)).slice(0, 600)
     : "";
@@ -236,7 +243,9 @@ export default function fetchExtension(pi: ExtensionAPI) {
       const bodyText = resolveResponseBody(details, buffer);
 
       return {
-        content: [{ type: "text", text: await buildFetchOutputText(details, bodyText) }],
+        content: [
+          { type: "text", text: await buildFetchOutputText(details, bodyText) },
+        ],
         details,
       };
     },
@@ -251,13 +260,17 @@ export default function fetchExtension(pi: ExtensionAPI) {
       const text =
         (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       const details = (result.details as FetchDetails | undefined) || undefined;
-      const userResult = buildUserFacingTextResult(result as any, context.showImages, {
-        userText: details?.userText,
-        details: {
-          truncation: details?.truncation,
-          fullOutputPath: details?.fullOutputPath,
+      const userResult = buildUserFacingTextResult(
+        result as any,
+        context.showImages,
+        {
+          userText: details?.userText,
+          details: {
+            truncation: details?.truncation,
+            fullOutputPath: details?.fullOutputPath,
+          },
         },
-      });
+      );
       text.setText(
         formatFetchResult(
           userResult as any,
