@@ -145,7 +145,7 @@ To share extensions via npm or git as pi packages, see [packages.md](packages.md
 
 npm dependencies work too. Add a `package.json` next to your extension (or in a parent directory), run `npm install`, and imports from `node_modules/` are resolved automatically.
 
-For distributed pi packages installed with `pi install` (npm or git), runtime deps must be in `dependencies`. Package installation uses production installs (`npm install --omit=dev`), so `devDependencies` are not available at runtime.
+For distributed pi packages installed with `pi install` (npm or git), runtime deps must be in `dependencies`. Package installation uses production installs (`npm install --omit=dev`) by default, so `devDependencies` are not available at runtime; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers.
 
 Node.js built-ins (`node:fs`, `node:path`, etc.) are also available.
 
@@ -992,14 +992,19 @@ Options:
 Fork from a specific entry, creating a new session file:
 
 ```typescript
-const result = await ctx.fork("entry-id-123");
-if (!result.cancelled) {
-  // Now in the forked session
+const result = await ctx.fork("entry-id-123", {
+  withSession: async (ctx) => {
+    // Use only the replacement-session ctx here.
+    ctx.ui.notify("Now in the forked session", "info");
+  },
+});
+if (result.cancelled) {
+  // An extension cancelled the fork
 }
 
 const cloneResult = await ctx.fork("entry-id-456", { position: "at" });
-if (!cloneResult.cancelled) {
-  // New session contains the active path through entry-id-456
+if (cloneResult.cancelled) {
+  // An extension cancelled the clone
 }
 ```
 
@@ -1060,7 +1065,11 @@ pi.registerCommand("switch", {
       sessions.map(s => s.file),
     );
     if (choice) {
-      await ctx.switchSession(choice);
+      await ctx.switchSession(choice, {
+        withSession: async (ctx) => {
+          ctx.ui.notify("Switched session", "info");
+        },
+      });
     }
   },
 });
@@ -1785,10 +1794,10 @@ Extensions can override built-in tools (`read`, `bash`, `edit`, `write`, `grep`,
 pi -e ./tool-override.ts
 ```
 
-Alternatively, use `--no-tools` to start without any built-in tools:
+Alternatively, use `--no-builtin-tools` to start without any built-in tools while keeping extension tools enabled:
 ```bash
 # No built-in tools, only extension tools
-pi --no-tools -e ./my-extension.ts
+pi --no-builtin-tools -e ./my-extension.ts
 ```
 
 See [examples/extensions/tool-override.ts](../examples/extensions/tool-override.ts) for a complete example that overrides `read` with logging and access control.

@@ -86,6 +86,23 @@ const mirrors = {
   },
 };
 
+function resolveMirrorRef(mirror, existingMeta, options = {}) {
+  const explicitRef = String(options.ref || "").trim();
+  if (explicitRef) return explicitRef;
+
+  const defaultRef = String(mirror.defaultRef || "").trim();
+  const existingRef = String(existingMeta.ref || "").trim();
+  if (!defaultRef) return existingRef;
+  if (!mirror.packageVersion) return existingRef || defaultRef;
+
+  const existingPackageVersion = String(existingMeta.packageVersion || "").trim();
+  if (existingPackageVersion === mirror.packageVersion && existingRef) {
+    return existingRef;
+  }
+
+  return defaultRef;
+}
+
 function syncMirror(name, options = {}) {
   const mirror = mirrors[name];
   if (!mirror) throw new Error(`Unknown upstream mirror: ${name}`);
@@ -96,7 +113,7 @@ function syncMirror(name, options = {}) {
   const sourceSubdir = String(
     options.sourceSubdir || existingMeta.sourceSubdir || mirror.sourceSubdir,
   ).trim();
-  const ref = String(options.ref || existingMeta.ref || mirror.defaultRef).trim();
+  const ref = resolveMirrorRef(mirror, existingMeta, options);
   const tempRoot = fs.mkdtempSync(path.join(preferredTempRoot, `rin-sync-${name}-`));
   const cloneDir = path.join(tempRoot, "upstream");
 
