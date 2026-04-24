@@ -11,10 +11,11 @@ const rootDir = path.resolve(
   "..",
 );
 const store = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "token-usage", "store.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "token-usage", "store.js"))
+    .href
 );
 const usageCli = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "usage.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "usage.js")).href
 );
 
 async function withTempRoot(fn) {
@@ -112,6 +113,10 @@ test("token usage store normalizes telemetry events in one place", () => {
   const normalized = store.normalizeTokenTelemetryEvent({
     timestamp: " 2026-04-10T09:00:00.000Z ",
     sessionId: " s1 ",
+    provider: " openai ",
+    model: " gpt-5.4 ",
+    source: " chat ",
+    trigger: " manual ",
     eventType: "  ",
     turnIndex: "7.2",
     toolCallCount: "4.8",
@@ -119,23 +124,35 @@ test("token usage store normalizes telemetry events in one place", () => {
     inputTokens: "10.9",
     outputTokens: -3,
     costTotal: "0.125",
+    costInput: "bad",
     metadata: ["ignored"],
   });
   assert.equal(normalized.timestamp, "2026-04-10T09:00:00.000Z");
   assert.equal(normalized.sessionId, "s1");
+  assert.equal(normalized.provider, "openai");
+  assert.equal(normalized.model, "gpt-5.4");
+  assert.equal(normalized.source, "chat");
+  assert.equal(normalized.trigger, "manual");
   assert.equal(normalized.eventType, "event");
   assert.equal(normalized.turnIndex, 7);
   assert.equal(normalized.toolCallCount, 5);
   assert.deepEqual(normalized.toolNames, ["archive", "read", "write"]);
   assert.equal(normalized.inputTokens, 11);
   assert.equal(normalized.outputTokens, 0);
+  assert.equal(normalized.costInput, 0);
   assert.equal(normalized.costTotal, 0.125);
   assert.equal(normalized.metadata, null);
 });
 
 test("token usage store formats provider_model labels from one shared rule", () => {
-  assert.equal(store.formatProviderModelLabel("openai", "gpt-5.4"), "openai/gpt-5.4");
-  assert.equal(store.formatProviderModelLabel("", "gpt-5.4-mini"), "gpt-5.4-mini");
+  assert.equal(
+    store.formatProviderModelLabel("openai", "gpt-5.4"),
+    "openai/gpt-5.4",
+  );
+  assert.equal(
+    store.formatProviderModelLabel("", "gpt-5.4-mini"),
+    "gpt-5.4-mini",
+  );
   assert.equal(store.formatProviderModelLabel("", ""), "(none)");
 });
 
@@ -469,7 +486,10 @@ test("token usage store handles repeated cached queries with varying limits", as
     assert.equal(recentOne.length, 1);
     assert.equal(recentOne[0].session_id, "s3");
 
-    const recentThree = store.queryTokenUsageEvents({ agentDir: root, limit: 3 });
+    const recentThree = store.queryTokenUsageEvents({
+      agentDir: root,
+      limit: 3,
+    });
     assert.equal(recentThree.length, 3);
     assert.deepEqual(
       recentThree.map((row) => row.session_id),

@@ -68,7 +68,10 @@ const EMPTY_DIMENSION_VALUE = "(none)";
 
 const AGGREGATE_METRICS = [
   { key: "rows", select: `COUNT(*)` },
-  { key: "token_events", select: `SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END)` },
+  {
+    key: "token_events",
+    select: `SUM(CASE WHEN total_tokens > 0 THEN 1 ELSE 0 END)`,
+  },
   { key: "input_tokens", select: `SUM(input_tokens)` },
   { key: "output_tokens", select: `SUM(output_tokens)` },
   { key: "cache_read_tokens", select: `SUM(cache_read_tokens)` },
@@ -204,6 +207,46 @@ export type NormalizedTokenTelemetryEvent = {
   metadata: Record<string, unknown> | null;
 };
 
+const TELEMETRY_TEXT_FIELDS = [
+  "timestamp",
+  "sessionId",
+  "sessionFile",
+  "sessionName",
+  "cwd",
+  "eventType",
+  "source",
+  "trigger",
+  "phase",
+  "provider",
+  "model",
+  "thinkingLevel",
+  "messageId",
+  "messageRole",
+  "stopReason",
+  "toolCallId",
+  "toolName",
+  "capabilityKind",
+  "capabilityKey",
+] as const satisfies ReadonlyArray<keyof TokenTelemetryEvent>;
+
+const TELEMETRY_INT_FIELDS = [
+  "toolCallCount",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheWriteTokens",
+  "totalTokens",
+  "contextTokens",
+] as const satisfies ReadonlyArray<keyof TokenTelemetryEvent>;
+
+const TELEMETRY_FLOAT_FIELDS = [
+  "costInput",
+  "costOutput",
+  "costCacheRead",
+  "costCacheWrite",
+  "costTotal",
+] as const satisfies ReadonlyArray<keyof TokenTelemetryEvent>;
+
 function normalizeText(value: unknown): string {
   return safeString(value).trim();
 }
@@ -231,6 +274,32 @@ function normalizeMetadata(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function normalizeTelemetryTextFields(event: TokenTelemetryEvent) {
+  return Object.fromEntries(
+    TELEMETRY_TEXT_FIELDS.map((key) => [key, normalizeText(event[key])]),
+  ) as Record<(typeof TELEMETRY_TEXT_FIELDS)[number], string>;
+}
+
+function normalizeTelemetryIntFields(event: TokenTelemetryEvent) {
+  return Object.fromEntries(
+    TELEMETRY_INT_FIELDS.map((key) => [key, normalizeInt(event[key])]),
+  ) as Record<(typeof TELEMETRY_INT_FIELDS)[number], number>;
+}
+
+function normalizeTelemetryFloatFields(event: TokenTelemetryEvent) {
+  return Object.fromEntries(
+    TELEMETRY_FLOAT_FIELDS.map((key) => [key, safeNumber(event[key])]),
+  ) as Record<(typeof TELEMETRY_FLOAT_FIELDS)[number], number>;
+}
+
+function textOrNull(value: string): string | null {
+  return value || null;
+}
+
+function sqliteBool(value: boolean): 0 | 1 {
+  return value ? 1 : 0;
+}
+
 function safeJsonStringify(value: unknown): string | null {
   if (value == null) return null;
   try {
@@ -241,7 +310,10 @@ function safeJsonStringify(value: unknown): string | null {
 }
 
 function clampQueryLimit(value: unknown, fallback: number): number {
-  return Math.max(1, Math.min(MAX_QUERY_LIMIT, Math.round(safeNumber(value || fallback))));
+  return Math.max(
+    1,
+    Math.min(MAX_QUERY_LIMIT, Math.round(safeNumber(value || fallback))),
+  );
 }
 
 function normalizeOverviewRow(row: any) {
@@ -289,12 +361,18 @@ const PROVIDER_MODEL_VALUE_EXPR = [
   `  ELSE ''`,
   `END`,
 ].join(" ");
-const PROVIDER_MODEL_DIMENSION_EXPR = coalescedTextDimensionExpr(PROVIDER_MODEL_VALUE_EXPR);
+const PROVIDER_MODEL_DIMENSION_EXPR = coalescedTextDimensionExpr(
+  PROVIDER_MODEL_VALUE_EXPR,
+);
 
-export function formatProviderModelLabel(provider: unknown, model: unknown): string {
+export function formatProviderModelLabel(
+  provider: unknown,
+  model: unknown,
+): string {
   const normalizedProvider = normalizeText(provider);
   const normalizedModel = normalizeText(model);
-  if (normalizedProvider && normalizedModel) return `${normalizedProvider}/${normalizedModel}`;
+  if (normalizedProvider && normalizedModel)
+    return `${normalizedProvider}/${normalizedModel}`;
   return normalizedModel || EMPTY_DIMENSION_VALUE;
 }
 
@@ -308,7 +386,9 @@ function resolveDimensionDef(
 }
 
 export function resolveAgentDir(agentDir = ""): string {
-  const fromEnv = safeString(process.env.PI_CODING_AGENT_DIR || process.env.RIN_DIR).trim();
+  const fromEnv = safeString(
+    process.env.PI_CODING_AGENT_DIR || process.env.RIN_DIR,
+  ).trim();
   if (safeString(agentDir).trim()) return path.resolve(agentDir);
   if (fromEnv) return path.resolve(fromEnv);
   return path.join(os.homedir(), ".rin");
@@ -416,15 +496,13 @@ export function openTokenUsageDb(agentDir = ""): BetterSqlite3.Database {
 function normalizeToolNames(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
   return Array.from(
-    new Set(
-      input
-        .map((item) => safeString(item).trim())
-        .filter(Boolean),
-    ),
+    new Set(input.map((item) => safeString(item).trim()).filter(Boolean)),
   ).sort();
 }
 
-function stableEventId(event: Omit<NormalizedTokenTelemetryEvent, "id">): string {
+function stableEventId(
+  event: Omit<NormalizedTokenTelemetryEvent, "id">,
+): string {
   const seed = [
     event.timestamp,
     event.sessionId,
@@ -441,48 +519,55 @@ function stableEventId(event: Omit<NormalizedTokenTelemetryEvent, "id">): string
     String(event.totalTokens),
     safeJsonStringify(event.toolNames) || "[]",
   ].join("|");
-  const digest = crypto.createHash("sha256").update(seed).digest("hex").slice(0, 24);
+  const digest = crypto
+    .createHash("sha256")
+    .update(seed)
+    .digest("hex")
+    .slice(0, 24);
   return `evt_${digest}`;
 }
 
 export function normalizeTokenTelemetryEvent(
   event: TokenTelemetryEvent,
 ): NormalizedTokenTelemetryEvent {
+  const textFields = normalizeTelemetryTextFields(event);
+  const intFields = normalizeTelemetryIntFields(event);
+  const floatFields = normalizeTelemetryFloatFields(event);
   const normalizedWithoutId = {
-    timestamp: normalizeText(event.timestamp) || nowIso(),
-    sessionId: normalizeText(event.sessionId),
-    sessionFile: normalizeText(event.sessionFile),
-    sessionName: normalizeText(event.sessionName),
+    timestamp: textFields.timestamp || nowIso(),
+    sessionId: textFields.sessionId,
+    sessionFile: textFields.sessionFile,
+    sessionName: textFields.sessionName,
     sessionPersisted: Boolean(event.sessionPersisted),
-    cwd: normalizeText(event.cwd),
-    eventType: normalizeText(event.eventType) || "event",
-    source: normalizeText(event.source),
-    trigger: normalizeText(event.trigger),
+    cwd: textFields.cwd,
+    eventType: textFields.eventType || "event",
+    source: textFields.source,
+    trigger: textFields.trigger,
     turnIndex: normalizeOptionalInt(event.turnIndex),
-    phase: normalizeText(event.phase),
-    provider: normalizeText(event.provider),
-    model: normalizeText(event.model),
-    thinkingLevel: normalizeText(event.thinkingLevel),
-    messageId: normalizeText(event.messageId),
-    messageRole: normalizeText(event.messageRole),
-    stopReason: normalizeText(event.stopReason),
-    toolCallId: normalizeText(event.toolCallId),
-    toolName: normalizeText(event.toolName),
-    toolCallCount: normalizeInt(event.toolCallCount),
+    phase: textFields.phase,
+    provider: textFields.provider,
+    model: textFields.model,
+    thinkingLevel: textFields.thinkingLevel,
+    messageId: textFields.messageId,
+    messageRole: textFields.messageRole,
+    stopReason: textFields.stopReason,
+    toolCallId: textFields.toolCallId,
+    toolName: textFields.toolName,
+    toolCallCount: intFields.toolCallCount,
     toolNames: normalizeToolNames(event.toolNames),
-    capabilityKind: normalizeText(event.capabilityKind),
-    capabilityKey: normalizeText(event.capabilityKey),
-    inputTokens: normalizeInt(event.inputTokens),
-    outputTokens: normalizeInt(event.outputTokens),
-    cacheReadTokens: normalizeInt(event.cacheReadTokens),
-    cacheWriteTokens: normalizeInt(event.cacheWriteTokens),
-    totalTokens: normalizeInt(event.totalTokens),
-    costInput: safeNumber(event.costInput),
-    costOutput: safeNumber(event.costOutput),
-    costCacheRead: safeNumber(event.costCacheRead),
-    costCacheWrite: safeNumber(event.costCacheWrite),
-    costTotal: safeNumber(event.costTotal),
-    contextTokens: normalizeInt(event.contextTokens),
+    capabilityKind: textFields.capabilityKind,
+    capabilityKey: textFields.capabilityKey,
+    inputTokens: intFields.inputTokens,
+    outputTokens: intFields.outputTokens,
+    cacheReadTokens: intFields.cacheReadTokens,
+    cacheWriteTokens: intFields.cacheWriteTokens,
+    totalTokens: intFields.totalTokens,
+    costInput: floatFields.costInput,
+    costOutput: floatFields.costOutput,
+    costCacheRead: floatFields.costCacheRead,
+    costCacheWrite: floatFields.costCacheWrite,
+    costTotal: floatFields.costTotal,
+    contextTokens: intFields.contextTokens,
     isError: Boolean(event.isError),
     metadata: normalizeMetadata(event.metadata),
   } satisfies Omit<NormalizedTokenTelemetryEvent, "id">;
@@ -496,30 +581,30 @@ function toTelemetryEventDbRow(normalized: NormalizedTokenTelemetryEvent) {
   return {
     id: normalized.id,
     timestamp: normalized.timestamp,
-    session_id: normalized.sessionId || null,
-    session_file: normalized.sessionFile || null,
-    session_name: normalized.sessionName || null,
-    session_persisted: normalized.sessionPersisted ? 1 : 0,
-    cwd: normalized.cwd || null,
+    session_id: textOrNull(normalized.sessionId),
+    session_file: textOrNull(normalized.sessionFile),
+    session_name: textOrNull(normalized.sessionName),
+    session_persisted: sqliteBool(normalized.sessionPersisted),
+    cwd: textOrNull(normalized.cwd),
     event_type: normalized.eventType,
-    source: normalized.source || null,
-    trigger: normalized.trigger || null,
+    source: textOrNull(normalized.source),
+    trigger: textOrNull(normalized.trigger),
     turn_index: normalized.turnIndex,
-    phase: normalized.phase || null,
-    provider: normalized.provider || null,
-    model: normalized.model || null,
-    thinking_level: normalized.thinkingLevel || null,
-    message_id: normalized.messageId || null,
-    message_role: normalized.messageRole || null,
-    stop_reason: normalized.stopReason || null,
-    tool_call_id: normalized.toolCallId || null,
-    tool_name: normalized.toolName || null,
+    phase: textOrNull(normalized.phase),
+    provider: textOrNull(normalized.provider),
+    model: textOrNull(normalized.model),
+    thinking_level: textOrNull(normalized.thinkingLevel),
+    message_id: textOrNull(normalized.messageId),
+    message_role: textOrNull(normalized.messageRole),
+    stop_reason: textOrNull(normalized.stopReason),
+    tool_call_id: textOrNull(normalized.toolCallId),
+    tool_name: textOrNull(normalized.toolName),
     tool_call_count: normalized.toolCallCount,
     tool_names_json: safeJsonStringify(
       normalized.toolNames.length ? normalized.toolNames : null,
     ),
-    capability_kind: normalized.capabilityKind || null,
-    capability_key: normalized.capabilityKey || null,
+    capability_kind: textOrNull(normalized.capabilityKind),
+    capability_key: textOrNull(normalized.capabilityKey),
     input_tokens: normalized.inputTokens,
     output_tokens: normalized.outputTokens,
     cache_read_tokens: normalized.cacheReadTokens,
@@ -531,7 +616,7 @@ function toTelemetryEventDbRow(normalized: NormalizedTokenTelemetryEvent) {
     cost_cache_write: normalized.costCacheWrite,
     cost_total: normalized.costTotal,
     context_tokens: normalized.contextTokens,
-    is_error: normalized.isError ? 1 : 0,
+    is_error: sqliteBool(normalized.isError),
     metadata_json: safeJsonStringify(normalized.metadata),
   } satisfies Record<(typeof TELEMETRY_EVENT_INSERT_COLUMNS)[number], unknown>;
 }
@@ -549,7 +634,10 @@ export function appendTokenTelemetryEvent(
 }
 
 export function getTokenUsageOverview(
-  options: Omit<TokenUsageQueryOptions, "groupBy" | "orderBy" | "direction"> = {},
+  options: Omit<
+    TokenUsageQueryOptions,
+    "groupBy" | "orderBy" | "direction"
+  > = {},
 ) {
   const db = openTokenUsageDb(options.agentDir || "");
   const { whereSql, params } = buildWhereClause(options, false);
@@ -597,7 +685,9 @@ const DIMENSIONS = {
   tool_name: textDimension(`tool_name`),
   capability: textDimension(`capability_key`),
   capability_kind: textDimension(`capability_kind`),
-  turn_index: buildDimension(`COALESCE(CAST(turn_index AS TEXT), '${EMPTY_DIMENSION_VALUE}')`),
+  turn_index: buildDimension(
+    `COALESCE(CAST(turn_index AS TEXT), '${EMPTY_DIMENSION_VALUE}')`,
+  ),
   is_error: yesNoDimension(`is_error = 1`),
 } satisfies Record<string, DimensionDef>;
 
@@ -605,7 +695,10 @@ export function listTokenUsageDimensions(): string[] {
   return Object.keys(DIMENSIONS).sort();
 }
 
-function buildWhereClause(options: TokenUsageQueryOptions, forAggregate: boolean) {
+function buildWhereClause(
+  options: TokenUsageQueryOptions,
+  forAggregate: boolean,
+) {
   const clauses: string[] = [];
   const params: Record<string, unknown> = {};
   if (safeString(options.from).trim()) {
@@ -645,10 +738,14 @@ export function queryTokenUsageAggregate(options: TokenUsageQueryOptions = {}) {
     ? `GROUP BY ${dims.map((dim) => dim.select).join(", ")}`
     : "";
   const orderBy = safeString(options.orderBy).trim() || "total_tokens";
-  const direction = safeString(options.direction).trim().toLowerCase() === "asc"
-    ? "ASC"
-    : "DESC";
-  const supportedOrder = new Set([...dims.map((dim) => dim.key), ...AGGREGATE_ORDER_FIELDS]);
+  const direction =
+    safeString(options.direction).trim().toLowerCase() === "asc"
+      ? "ASC"
+      : "DESC";
+  const supportedOrder = new Set([
+    ...dims.map((dim) => dim.key),
+    ...AGGREGATE_ORDER_FIELDS,
+  ]);
   const orderExpr = supportedOrder.has(orderBy)
     ? `"${orderBy}"`
     : `"total_tokens"`;
