@@ -204,7 +204,8 @@ export class CronScheduler {
   ) {
     const existing = input.id ? this.tasks.get(String(input.id)) : undefined;
     assertMutableTask(existing);
-    const id = existing?.id || safeString(input.id).trim() || createCronTaskId();
+    const id =
+      existing?.id || safeString(input.id).trim() || createCronTaskId();
     const createdAt = existing?.createdAt || nowIso();
     const updatedAt = nowIso();
     const name =
@@ -245,7 +246,9 @@ export class CronScheduler {
     const session = input.session ?? existing?.session;
     if (!session) throw new Error("cron_session_required");
     if (session.mode !== "current" && session.mode !== "dedicated") {
-      throw new Error(`cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`);
+      throw new Error(
+        `cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`,
+      );
     }
     const explicitSessionFile = safeString(session.sessionFile).trim();
     const normalizedSession: CronTaskSessionBinding = {
@@ -254,9 +257,7 @@ export class CronScheduler {
         session.mode === "current"
           ? path.resolve(
               HOME_DIR,
-              safeString(
-                session.sessionFile || defaults.sessionFile,
-              ).trim() ||
+              safeString(session.sessionFile || defaults.sessionFile).trim() ||
                 (() => {
                   throw new Error("cron_current_session_required");
                 })(),
@@ -311,40 +312,6 @@ export class CronScheduler {
       input.enabled !== undefined
         ? Boolean(input.enabled)
         : (existing?.enabled ?? true);
-    const nextRunAt = computeNextRunAt(
-      {
-        id,
-        createdAt,
-        updatedAt,
-        createdFrom: existing?.createdFrom || {
-          sessionFile: defaults.sessionFile,
-          sessionId: defaults.sessionId,
-          sessionName: defaults.sessionName,
-          chatKey: defaults.chatKey,
-        },
-        name,
-        enabled,
-        completedAt: existing?.completedAt,
-        completionReason: existing?.completionReason,
-        pausedAt: existing?.pausedAt,
-        chatKey,
-        trigger: normalizedTrigger,
-        termination,
-        session: normalizedSession,
-        target: normalizedTarget,
-        dedicatedSessionFile,
-        dedicatedSessionPersistent,
-        nextRunAt: existing?.nextRunAt,
-        lastStartedAt: existing?.lastStartedAt,
-        lastFinishedAt: existing?.lastFinishedAt,
-        lastResultText: existing?.lastResultText,
-        lastError: existing?.lastError,
-        runCount: existing?.runCount ?? 0,
-        running: false,
-      },
-      Date.now(),
-    );
-
     const task: CronTaskRecord = {
       id,
       createdAt,
@@ -367,7 +334,6 @@ export class CronScheduler {
       target: normalizedTarget,
       dedicatedSessionFile,
       dedicatedSessionPersistent,
-      nextRunAt,
       lastStartedAt: existing?.lastStartedAt,
       lastFinishedAt: existing?.lastFinishedAt,
       lastResultText: existing?.lastResultText,
@@ -375,6 +341,8 @@ export class CronScheduler {
       runCount: existing?.runCount ?? 0,
       running: false,
     };
+
+    task.nextRunAt = computeNextRunAt(task, Date.now());
 
     if (task.completedAt) {
       task.enabled = false;
