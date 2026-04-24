@@ -75,6 +75,35 @@ test("chat decision allows trusted private messages", async () => {
   assert.equal(result.trust, "TRUSTED");
 });
 
+test("chat decision treats two-member owner groups as private-like", async () => {
+  const result = await decision.shouldProcessText(
+    {
+      platform: "telegram",
+      guildId: "group-1",
+      channelId: "-1001447529496",
+      selfId: "8623230033",
+      userId: "owner-1",
+      bot: {
+        selfId: "8623230033",
+        internal: {
+          async getChatMemberCount({ chat_id }) {
+            assert.equal(chat_id, "-1001447529496");
+            return 2;
+          },
+        },
+      },
+      stripped: { content: "悄悄说" },
+      elements: [{ type: "text", attrs: { content: "悄悄说" } }],
+    },
+    [{ type: "text", attrs: { content: "悄悄说" } }],
+    identity,
+  );
+
+  assert.equal(result.allow, true);
+  assert.equal(result.chatKey, "telegram/8623230033:-1001447529496");
+  assert.equal(result.trust, "OWNER");
+});
+
 test("chat decision keeps image-only owner messages routable", async () => {
   const result = await decision.shouldProcessText(
     {
