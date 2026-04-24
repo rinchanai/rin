@@ -312,7 +312,7 @@ test("promptProviderSetup always requires choosing a provider", async () => {
 });
 
 test("promptProviderSetup limits thinking levels to the selected model", async () => {
-  async function chooseModel(modelId) {
+  async function chooseModel(provider, modelId) {
     let thinkingOptions = [];
     const prompt = {
       ensureNotCancelled(value) {
@@ -320,7 +320,7 @@ test("promptProviderSetup limits thinking levels to the selected model", async (
       },
       async select(options) {
         if (options.message === "Choose a provider to authenticate and use.")
-          return "openai";
+          return provider;
         if (options.message === "Choose a model.") return modelId;
         if (options.message === "Choose the default thinking level.") {
           thinkingOptions = options.options.map((option) => option.value);
@@ -346,8 +346,8 @@ test("promptProviderSetup limits thinking levels to the selected model", async (
             available: true,
           },
           {
-            provider: "openai",
-            id: "codex-max",
+            provider: "openai-codex",
+            id: "gpt-5.1-codex-max",
             reasoning: true,
             available: true,
           },
@@ -370,14 +370,14 @@ test("promptProviderSetup limits thinking levels to the selected model", async (
     return thinkingOptions;
   }
 
-  assert.deepEqual(await chooseModel("gpt-5"), [
+  assert.deepEqual(await chooseModel("openai", "gpt-5"), [
     "off",
     "minimal",
     "low",
     "medium",
     "high",
   ]);
-  assert.deepEqual(await chooseModel("codex-max"), [
+  assert.deepEqual(await chooseModel("openai-codex", "gpt-5.1-codex-max"), [
     "off",
     "minimal",
     "low",
@@ -385,7 +385,7 @@ test("promptProviderSetup limits thinking levels to the selected model", async (
     "high",
     "xhigh",
   ]);
-  assert.deepEqual(await chooseModel("gpt-4.1"), ["off"]);
+  assert.deepEqual(await chooseModel("openai", "gpt-4.1"), ["off"]);
 });
 
 test("promptProviderSetup fails when no models are available", async () => {

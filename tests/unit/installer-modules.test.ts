@@ -45,6 +45,14 @@ test("provider-auth computes available thinking levels deterministically", () =>
   );
   assert.deepEqual(
     provider.computeAvailableThinkingLevels({
+      provider: "openai-codex",
+      id: "gpt-5.1-codex-max",
+      reasoning: true,
+    }),
+    ["off", "minimal", "low", "medium", "high", "xhigh"],
+  );
+  assert.deepEqual(
+    provider.computeAvailableThinkingLevels({
       provider: "anthropic",
       id: "claude",
       reasoning: true,
@@ -161,9 +169,7 @@ test("install-record normalizes launcher metadata and installer manifests", () =
       "fallback-user",
       ["missing", "launcher"],
       (filePath) =>
-        filePath === "launcher"
-          ? { defaultInstallDir: "/srv/rin-demo" }
-          : null,
+        filePath === "launcher" ? { defaultInstallDir: "/srv/rin-demo" } : null,
     ),
     {
       targetUser: "fallback-user",
@@ -192,7 +198,9 @@ test("persist reconcileInstallerManifest writes primary and locator manifests fo
         findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
         ensureDir: async () => {},
         readInstallerJson: (_filePath, fallback) =>
-          fallback === null ? { koishi: { telegram: { token: "legacy" } } } : fallback,
+          fallback === null
+            ? { koishi: { telegram: { token: "legacy" } } }
+            : fallback,
         writeJsonFileWithPrivilege: () => {},
         writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
         runPrivileged: () => {},
@@ -438,9 +446,14 @@ test("persistInstallerOutputs stores configured language in settings", async () 
       },
     );
 
-    assert.equal(result.settingsPath.endsWith(path.join(dir, "settings.json")), true);
+    assert.equal(
+      result.settingsPath.endsWith(path.join(dir, "settings.json")),
+      true,
+    );
     assert.equal(launchWrites.length, 1);
-    const settingsWrite = writes.find((entry) => entry.filePath === result.settingsPath);
+    const settingsWrite = writes.find(
+      (entry) => entry.filePath === result.settingsPath,
+    );
     assert.ok(settingsWrite);
     assert.equal(settingsWrite.value.defaultProvider, "openai");
     assert.equal(settingsWrite.value.defaultModel, "gpt");
@@ -493,7 +506,10 @@ test("persist persistInstallerOutputs normalizes malformed chat roots before mer
         ensureDir: () => {},
         readInstallerJson: (filePath, fallback) => {
           if (filePath === path.join(dir, "settings.json")) {
-            return { chat: "broken", koishi: { telegram: { token: "legacy" } } };
+            return {
+              chat: "broken",
+              koishi: { telegram: { token: "legacy" } },
+            };
           }
           if (filePath === path.join(dir, "auth.json")) {
             return { existing: true };
@@ -513,14 +529,18 @@ test("persist persistInstallerOutputs normalizes malformed chat roots before mer
       },
     );
 
-    const settingsWrite = writes.find((entry) => entry.filePath === result.settingsPath);
+    const settingsWrite = writes.find(
+      (entry) => entry.filePath === result.settingsPath,
+    );
     assert.ok(settingsWrite);
     assert.deepEqual(settingsWrite.value.chat, {
       telegram: { token: "fresh-token" },
     });
     assert.equal("koishi" in settingsWrite.value, false);
 
-    const authWrite = writes.find((entry) => entry.filePath === result.authPath);
+    const authWrite = writes.find(
+      (entry) => entry.filePath === result.authPath,
+    );
     assert.ok(authWrite);
     assert.deepEqual(authWrite.value, { existing: true, apiKey: "secret" });
   });
@@ -569,9 +589,10 @@ test("persist persistInstallerOutputs forwards release metadata into installer m
       },
     );
 
-    const manifestWrites = writes.filter((entry) =>
-      entry.filePath.endsWith(path.join(".rin", "installer.json")) ||
-      entry.filePath.endsWith(path.join(dir, "installer.json")),
+    const manifestWrites = writes.filter(
+      (entry) =>
+        entry.filePath.endsWith(path.join(".rin", "installer.json")) ||
+        entry.filePath.endsWith(path.join(dir, "installer.json")),
     );
     assert.equal(manifestWrites.length >= 1, true);
     for (const entry of manifestWrites) {
@@ -672,7 +693,9 @@ test("persist persistInstallerOutputs normalizes malformed auth and launcher met
       },
     );
 
-    const authWrite = writes.find((entry) => entry.filePath === result.authPath);
+    const authWrite = writes.find(
+      (entry) => entry.filePath === result.authPath,
+    );
     assert.ok(authWrite);
     assert.deepEqual(authWrite.value, { apiKey: "secret" });
 

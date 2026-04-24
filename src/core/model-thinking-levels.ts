@@ -20,8 +20,7 @@ export function computeAvailableThinkingLevels(model: {
 }) {
   if (!model?.reasoning) return [...OFF_ONLY_THINKING_LEVELS];
   const id = String(model.id || "").toLowerCase();
-  const provider = String(model.provider || "").toLowerCase();
-  return provider === "openai" && id.includes("codex-max")
+  return id.includes("codex-max")
     ? [...MAX_REASONING_THINKING_LEVELS]
     : [...STANDARD_REASONING_THINKING_LEVELS];
 }
