@@ -29,6 +29,12 @@ const loaderModule = await import(
 );
 const codingAgentModule = await import("@mariozechner/pi-coding-agent");
 
+const settingsManagerWithoutTerminalProgress = {
+  getShowTerminalProgress() {
+    return false;
+  },
+};
+
 test("terminal title override shows only session name", async () => {
   await overrides.applyRinTuiOverrides();
 
@@ -253,6 +259,7 @@ test("rpc compaction end reattaches the existing transport loader", async () => 
   const instance = {
     isInitialized: true,
     ui,
+    settingsManager: settingsManagerWithoutTerminalProgress,
     session: {
       getFrontendStatusEvent() {
         return {
@@ -286,16 +293,19 @@ test("rpc compaction end reattaches the existing transport loader", async () => 
     autoCompactionLoader: { stop() {} },
   };
 
-  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
-    instance,
-    { type: "compaction_end", aborted: false, willRetry: false },
-  );
+  try {
+    await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+      instance,
+      { type: "compaction_end", aborted: false, willRetry: false },
+    );
 
-  assert.equal(instance.loadingAnimation, existingLoader);
-  assert.equal(instance.statusContainer.child, existingLoader);
-  assert.equal(instance.loadingAnimation?.message, "Working...");
-  existingLoader.stop();
-  assert.ok(renders >= 1);
+    assert.equal(instance.loadingAnimation, existingLoader);
+    assert.equal(instance.statusContainer.child, existingLoader);
+    assert.equal(instance.loadingAnimation?.message, "Working...");
+    assert.ok(renders >= 1);
+  } finally {
+    existingLoader.stop();
+  }
 });
 
 test("local compaction end restores the working loader while the turn is still streaming", async () => {
@@ -310,6 +320,7 @@ test("local compaction end restores the working loader while the turn is still s
   const instance = {
     isInitialized: true,
     ui,
+    settingsManager: settingsManagerWithoutTerminalProgress,
     session: {
       isStreaming: true,
     },
@@ -337,16 +348,19 @@ test("local compaction end restores the working loader while the turn is still s
     autoCompactionLoader: { stop() {} },
   };
 
-  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
-    instance,
-    { type: "compaction_end", aborted: false, willRetry: false },
-  );
+  try {
+    await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+      instance,
+      { type: "compaction_end", aborted: false, willRetry: false },
+    );
 
-  assert.equal(instance.loadingAnimation, existingLoader);
-  assert.equal(instance.statusContainer.child, existingLoader);
-  assert.equal(instance.loadingAnimation?.message, "Working...");
-  existingLoader.stop();
-  assert.ok(renders >= 1);
+    assert.equal(instance.loadingAnimation, existingLoader);
+    assert.equal(instance.statusContainer.child, existingLoader);
+    assert.equal(instance.loadingAnimation?.message, "Working...");
+    assert.ok(renders >= 1);
+  } finally {
+    existingLoader.stop();
+  }
 });
 
 test("rpc agent end does not leave a stale working loader after the turn is done", async () => {
@@ -360,6 +374,7 @@ test("rpc agent end does not leave a stale working loader after the turn is done
   const instance = {
     isInitialized: true,
     ui,
+    settingsManager: settingsManagerWithoutTerminalProgress,
     session: {
       getFrontendStatusEvent() {
         return null;
@@ -376,13 +391,16 @@ test("rpc agent end does not leave a stale working loader after the turn is done
     loadingAnimation: existingLoader,
   };
 
-  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
-    instance,
-    { type: "agent_end" },
-  );
+  try {
+    await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+      instance,
+      { type: "agent_end" },
+    );
 
-  assert.equal(instance.loadingAnimation, undefined);
-  existingLoader.stop();
+    assert.equal(instance.loadingAnimation, undefined);
+  } finally {
+    existingLoader.stop();
+  }
 });
 
 test("signal handler override routes SIGINT through interactive Ctrl+C handling", async () => {
