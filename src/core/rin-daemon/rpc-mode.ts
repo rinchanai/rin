@@ -58,11 +58,14 @@ async function resumeInterruptedTurn(
   return true;
 }
 
-async function resumeInterruptedTurnIfNeeded(session: any) {
+function shouldResumeInterruptedTurn(session: any) {
   if (!session || session.isStreaming || session.isCompacting) return false;
-  return await resumeInterruptedTurn(session, {
-    persistInterruptionMessage: false,
-  });
+  const lastMessage = Array.isArray(session?.agent?.state?.messages)
+    ? session.agent.state.messages[session.agent.state.messages.length - 1]
+    : null;
+  if (!lastMessage) return false;
+  if (lastMessage.role !== "assistant") return true;
+  return extractToolCallParts(lastMessage.content).length > 0;
 }
 
 function canReuseCurrentSessionForNewSessionCommand(
@@ -99,7 +102,9 @@ function snapshotSessionTurnCompletion(session: any) {
     messages,
     assistantCount,
     finalText: resolveTurnCompletion({ messages }).finalText,
-    lastAssistantText: safeString(session?.getLastAssistantText?.() || "").trim(),
+    lastAssistantText: safeString(
+      session?.getLastAssistantText?.() || "",
+    ).trim(),
   };
 }
 
@@ -192,7 +197,8 @@ export async function runCustomRpcMode(
             (afterSnapshot.finalText &&
               afterSnapshot.finalText !== beforeSnapshot.finalText) ||
             (afterSnapshot.lastAssistantText &&
-              afterSnapshot.lastAssistantText !== beforeSnapshot.lastAssistantText);
+              afterSnapshot.lastAssistantText !==
+                beforeSnapshot.lastAssistantText);
           if (sessionAdvanced) {
             completion = resolveTurnCompletion({
               messages: afterSnapshot.messages,
@@ -249,6 +255,14 @@ export async function runCustomRpcMode(
         },
       )
       .catch(() => {});
+  };
+  const startAutoResumeIfNeeded = (session: any) => {
+    if (activeTurnPromise || !shouldResumeInterruptedTurn(session)) return;
+    startTurnTask("", async () => {
+      await resumeInterruptedTurn(session, {
+        persistInterruptionMessage: false,
+      });
+    });
   };
   let loginSeq = 0;
   const activeLogins = new Map<
@@ -341,7 +355,7 @@ export async function runCustomRpcMode(
       output(event),
     );
 
-    await resumeInterruptedTurnIfNeeded(session);
+    startAutoResumeIfNeeded(session);
   };
 
   await bindCurrentSession();
@@ -382,9 +396,17 @@ export async function runCustomRpcMode(
         output(done(id, type, { shutdown: true }));
         return process.exit(0);
       case "attach_session":
-        return done(id, type, getSessionState(session, { turnActive: isTurnActive() }));
+        return done(
+          id,
+          type,
+          getSessionState(session, { turnActive: isTurnActive() }),
+        );
       case "get_state":
-        return done(id, type, getSessionState(session, { turnActive: isTurnActive() }));
+        return done(
+          id,
+          type,
+          getSessionState(session, { turnActive: isTurnActive() }),
+        );
       case "cycle_model":
         return run(
           id,

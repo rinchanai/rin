@@ -240,61 +240,6 @@ test("applyMidTurnCompaction ignores provider-shaped reasoning payload inflation
   assert.equal(transformed, sourceMessages);
 });
 
-test("applyLlmStreamIdleTimeout aborts a provider call that never returns a stream", async () => {
-  let aborted = false;
-  const agent = {
-    async streamFn(_model, _context, options) {
-      return await new Promise((_resolve, reject) => {
-        options.signal.addEventListener("abort", () => {
-          aborted = true;
-          reject(options.signal.reason);
-        });
-      });
-    },
-  };
-  const session = { agent };
-
-  runtimeMod.applyLlmStreamIdleTimeout(session, 20);
-
-  await assert.rejects(
-    agent.streamFn({}, { messages: [], tools: [] }, {}),
-    /rin_llm_stream_idle_timeout/,
-  );
-  assert.equal(aborted, true);
-});
-
-test("applyLlmStreamIdleTimeout aborts a stream that stops yielding events", async () => {
-  let aborted = false;
-  const agent = {
-    async streamFn(_model, _context, options) {
-      return {
-        [Symbol.asyncIterator]() {
-          return {
-            async next() {
-              options.signal.addEventListener("abort", () => {
-                aborted = true;
-              });
-              await new Promise(() => {});
-              return { done: true, value: undefined };
-            },
-          };
-        },
-        result: async () => null,
-      };
-    },
-  };
-  const session = { agent };
-
-  runtimeMod.applyLlmStreamIdleTimeout(session, 20);
-  const stream = await agent.streamFn({}, { messages: [], tools: [] }, {});
-
-  await assert.rejects(async () => {
-    for await (const _event of stream) {
-    }
-  }, /rin_llm_stream_idle_timeout/);
-  assert.equal(aborted, true);
-});
-
 test("applyMidTurnCompaction respects disabled auto compaction", async () => {
   let compactCalls = 0;
   const sourceMessages = [

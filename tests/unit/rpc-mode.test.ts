@@ -1103,6 +1103,129 @@ test(
 );
 
 test(
+  "rpc mode switch_session responds before background auto-resume finishes",
+  { concurrency: false },
+  async () => {
+    const stdinOn = process.stdin.on;
+    const stdoutWrite = process.stdout.write;
+    const handlers = new Map();
+    const lines = [];
+    const calls = [];
+
+    process.stdin.on = function (event, handler) {
+      handlers.set(event, handler);
+      return this;
+    };
+    process.stdout.write = function (chunk) {
+      lines.push(String(chunk));
+      return true;
+    };
+
+    const makeSession = (name, messages = []) => ({
+      isStreaming: false,
+      isCompacting: false,
+      sessionFile: `/tmp/${name}.jsonl`,
+      sessionId: name,
+      agent: {
+        waitForIdle: async () => {},
+        state: { messages },
+        continue: async () => {
+          calls.push(["continue", name]);
+          await new Promise(() => {});
+        },
+      },
+      bindExtensions: async () => {},
+      subscribe: () => () => {},
+      prompt: async () => {},
+      steer: async () => {},
+      followUp: async () => {},
+      abort: async () => {},
+      modelRegistry: { getAvailable: async () => [] },
+      sessionManager: {
+        appendMessage: (message) => {
+          messages.push(message);
+        },
+        getEntries: () => [],
+        getTree: () => [],
+        getLeafId: () => null,
+        getCwd: () => process.cwd(),
+        getSessionDir: () => process.cwd(),
+      },
+      messages,
+      getSessionStats: () => ({}),
+      getUserMessagesForForking: () => [],
+      getLastAssistantText: () => "",
+      setThinkingLevel: () => {},
+      cycleThinkingLevel: () => undefined,
+      setSteeringMode: () => {},
+      setFollowUpMode: () => {},
+      compact: async () => {},
+      setAutoCompactionEnabled: () => {},
+      setAutoRetryEnabled: () => {},
+      abortRetry: () => {},
+      executeBash: async () => {},
+      abortBash: async () => {},
+      fork: async () => ({ cancelled: false, selectedText: "" }),
+      navigateTree: async () => ({ cancelled: false }),
+      exportToHtml: async () => "",
+      exportToJsonl: () => "",
+      importFromJsonl: async () => true,
+      newSession: async () => true,
+      switchSession: async () => true,
+      setModel: async () => {},
+      reload: async () => {},
+      setSessionName: () => {},
+    });
+
+    try {
+      const initialSession = makeSession("initial", [
+        { role: "assistant", content: [{ type: "text", text: "done" }] },
+      ]);
+      const interruptedSession = makeSession("interrupted", [
+        { role: "toolResult", toolCallId: "tool-1", content: [] },
+      ]);
+      const runtime = {
+        session: initialSession,
+        switchSession: async () => {
+          runtime.session = interruptedSession;
+          return { cancelled: false };
+        },
+        newSession: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: false, selectedText: "" }),
+        importFromJsonl: async () => ({ cancelled: false }),
+      };
+
+      void runCustomRpcMode(runtime, {
+        SessionManager: {
+          listAll: async () => [],
+          list: async () => [],
+          open: () => ({ appendSessionInfo() {} }),
+        },
+        builtinSlashCommands: [],
+      });
+      await wait(0);
+
+      const onData = handlers.get("data");
+      assert.equal(typeof onData, "function");
+      onData(
+        Buffer.from(
+          `${JSON.stringify({ id: "switch-1", type: "switch_session", sessionPath: interruptedSession.sessionFile })}\n`,
+        ),
+      );
+      await wait(100);
+
+      const output = lines.join("");
+      assert.ok(output.includes('"id":"switch-1"'));
+      assert.ok(output.includes('"success":true'));
+      assert.deepEqual(calls, [["continue", "interrupted"]]);
+    } finally {
+      process.stdin.on = stdinOn;
+      process.stdout.write = stdoutWrite;
+    }
+  },
+);
+
+test(
   "rpc mode get_state keeps turnActive true across internal non-streaming gaps",
   { concurrency: false },
   async () => {
@@ -1197,7 +1320,9 @@ test(
         ),
       );
       await wait(10);
-      onData(Buffer.from(`${JSON.stringify({ id: "2", type: "get_state" })}\n`));
+      onData(
+        Buffer.from(`${JSON.stringify({ id: "2", type: "get_state" })}\n`),
+      );
       await wait(10);
       releasePrompt();
       await wait(20);

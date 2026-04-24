@@ -17,8 +17,6 @@ import {
 } from "./compaction-continuation.js";
 import { attachBuiltinModulesToSession } from "../builtins/session.js";
 
-const DEFAULT_LLM_STREAM_IDLE_TIMEOUT_MS = 15 * 60_000;
-
 const DEFAULT_PI_GUIDELINES = [
   "Be concise in your responses",
   "Show file paths clearly when working with files",
@@ -316,7 +314,6 @@ const OVERFLOW_CONTINUATION_PROMPT_KEY = Symbol.for(
   "rin.overflowContinuationPrompt",
 );
 const MID_TURN_COMPACTION_KEY = Symbol.for("rin.midTurnCompaction");
-const LLM_STREAM_IDLE_TIMEOUT_KEY = Symbol.for("rin.llmStreamIdleTimeout");
 const DISABLE_END_TURN_THRESHOLD_KEY = Symbol.for(
   "rin.disableEndTurnThresholdCompaction",
 );
@@ -392,133 +389,6 @@ export function applyDisableEndTurnThresholdCompaction(session: any) {
   };
 
   (session as any)[DISABLE_END_TURN_THRESHOLD_KEY] = { original };
-}
-
-function resolveLlmStreamIdleTimeoutMs(value: unknown) {
-  const timeoutMs = Number(value ?? DEFAULT_LLM_STREAM_IDLE_TIMEOUT_MS);
-  return Number.isFinite(timeoutMs)
-    ? Math.max(0, timeoutMs)
-    : DEFAULT_LLM_STREAM_IDLE_TIMEOUT_MS;
-}
-
-function createLinkedAbortController(parent?: AbortSignal) {
-  const controller = new AbortController();
-  const abort = () => controller.abort(parent?.reason);
-  if (parent?.aborted) abort();
-  else parent?.addEventListener("abort", abort, { once: true });
-  return {
-    controller,
-    cleanup: () => parent?.removeEventListener("abort", abort),
-  };
-}
-
-function withLlmStreamIdleTimeout(
-  stream: any,
-  controller: AbortController,
-  timeoutMs: number,
-  cleanup: () => void,
-) {
-  const nextWithTimeout = async (iterator: AsyncIterator<any>) => {
-    if (timeoutMs <= 0) return await iterator.next();
-    const nextPromise = Promise.resolve(iterator.next());
-    let timer: NodeJS.Timeout | null = null;
-    const timeoutPromise = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => {
-        const error = new Error("rin_llm_stream_idle_timeout");
-        controller.abort(error);
-        reject(error);
-      }, timeoutMs);
-    });
-    try {
-      return await Promise.race([nextPromise, timeoutPromise]);
-    } finally {
-      if (timer) clearTimeout(timer);
-      void nextPromise.catch(() => {});
-    }
-  };
-
-  return {
-    async *[Symbol.asyncIterator]() {
-      const iterator = stream[Symbol.asyncIterator]();
-      try {
-        while (true) {
-          if (controller.signal.aborted) {
-            throw (
-              controller.signal.reason ?? new Error("rin_llm_stream_aborted")
-            );
-          }
-          const event = await nextWithTimeout(iterator);
-          if (controller.signal.aborted) {
-            throw (
-              controller.signal.reason ?? new Error("rin_llm_stream_aborted")
-            );
-          }
-          if (event.done) return;
-          yield event.value;
-        }
-      } finally {
-        try {
-          await iterator.return?.();
-        } finally {
-          cleanup();
-        }
-      }
-    },
-    result: () => stream.result?.(),
-  };
-}
-
-export function applyLlmStreamIdleTimeout(session: any, timeoutMs?: number) {
-  if (!session || typeof session !== "object") return;
-  if ((session as any)[LLM_STREAM_IDLE_TIMEOUT_KEY]) return;
-  const agent = session.agent;
-  if (!agent || typeof agent.streamFn !== "function") return;
-
-  const resolvedTimeoutMs = resolveLlmStreamIdleTimeoutMs(
-    timeoutMs ?? process.env.RIN_LLM_STREAM_IDLE_TIMEOUT_MS,
-  );
-  if (resolvedTimeoutMs <= 0) return;
-
-  const originalStreamFn = agent.streamFn.bind(agent);
-  agent.streamFn = async (model: any, context: any, options: any = {}) => {
-    const { controller, cleanup } = createLinkedAbortController(
-      options?.signal,
-    );
-    const streamPromise = originalStreamFn(model, context, {
-      ...options,
-      signal: controller.signal,
-    });
-    try {
-      const stream = await Promise.race([
-        streamPromise,
-        new Promise<never>((_resolve, reject) => {
-          const timer = setTimeout(() => {
-            controller.abort(new Error("rin_llm_stream_idle_timeout"));
-            reject(new Error("rin_llm_stream_idle_timeout"));
-          }, resolvedTimeoutMs);
-          void streamPromise.finally(() => clearTimeout(timer)).catch(() => {});
-        }),
-      ]);
-      return withLlmStreamIdleTimeout(
-        stream,
-        controller,
-        resolvedTimeoutMs,
-        cleanup,
-      );
-    } catch (error) {
-      cleanup();
-      throw error;
-    }
-  };
-
-  (session as any)[LLM_STREAM_IDLE_TIMEOUT_KEY] = {
-    timeoutMs: resolvedTimeoutMs,
-    originalStreamFn,
-    cleanup: () => {
-      agent.streamFn = originalStreamFn;
-      delete (session as any)[LLM_STREAM_IDLE_TIMEOUT_KEY];
-    },
-  };
 }
 
 export function applyMidTurnCompaction(
@@ -785,7 +655,6 @@ export async function createConfiguredAgentSession(
     applyRinPromptBuilder(result.session);
     applyDisableEndTurnThresholdCompaction(result.session);
     applyMidTurnCompaction(result.session);
-    applyLlmStreamIdleTimeout(result.session);
     applyOverflowContinuationPrompt(result.session);
     applyAutoReloadAfterCompaction(result.session);
     return {
