@@ -39,10 +39,10 @@ Rin 主要抓这几件事：
 单命令安装，不需要先 clone 仓库：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --beta
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --nightly
-curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/stable-bootstrap/install.sh | sh -s -- --git
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --beta
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --nightly
+curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh | sh -s -- --git
 ```
 
 如果你已经把仓库拉到本地，也可以直接执行仓库内的 `install.sh` 包装脚本：

@@ -25,8 +25,18 @@ test("update-release-manifest script writes stable npm tarball metadata", () => 
         repoUrl: "https://github.com/rinchanai/rin",
         train: { series: "1.2", nightlyBranch: "main" },
         stable: { version: "1.2.2", archiveUrl: "https://example.com/old.tgz" },
-        beta: { version: "1.2.3-beta.20260420", archiveUrl: "https://example.com/beta.tgz", ref: "abc1234", promotionVersion: "1.2.3" },
-        nightly: { version: "1.2.4-nightly.20260420+abc1234", archiveUrl: "https://example.com/nightly.tgz", ref: "abc1234", branch: "main" },
+        beta: {
+          version: "1.2.3-beta.20260420",
+          archiveUrl: "https://example.com/beta.tgz",
+          ref: "abc1234",
+          promotionVersion: "1.2.3",
+        },
+        nightly: {
+          version: "1.2.4-nightly.20260420+abc1234",
+          archiveUrl: "https://example.com/nightly.tgz",
+          ref: "abc1234",
+          branch: "main",
+        },
         git: { defaultBranch: "main" },
       }),
     );
@@ -76,7 +86,11 @@ test("update-release-manifest script writes beta and nightly pinned ref metadata
         packageName: "@rinchanai/rin",
         repoUrl: "https://github.com/rinchanai/rin",
         train: { series: "1.2", nightlyBranch: "main" },
-        stable: { version: "1.2.3", archiveUrl: "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-1.2.3.tgz" },
+        stable: {
+          version: "1.2.3",
+          archiveUrl:
+            "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-1.2.3.tgz",
+        },
         beta: {},
         nightly: {},
         git: { defaultBranch: "main" },
@@ -247,6 +261,30 @@ test("plan-release script computes beta nightly and stable promotion versions", 
   }
 });
 
+test("release workflows publish the public bootstrap branch", () => {
+  for (const workflow of [
+    "publish-nightly.yml",
+    "publish-beta.yml",
+    "publish-stable.yml",
+    "publish-hotfix.yml",
+  ]) {
+    const content = fs.readFileSync(
+      path.join(rootDir, ".github", "workflows", workflow),
+      "utf8",
+    );
+    assert.match(content, /bootstrap_branch=bootstrap/);
+    assert.match(
+      content,
+      /npm run release:bootstrap -- --output "\$bootstrap_dir" --branch "\$bootstrap_branch"/,
+    );
+    assert.match(
+      content,
+      /git -C "\$bootstrap_dir" push origin "HEAD:\$bootstrap_branch"/,
+    );
+    assert.doesNotMatch(content, /stable-bootstrap/);
+  }
+});
+
 test("export-bootstrap-branch script exports bootstrap payload", () => {
   const tempDir = makeTempDir(".tmp-bootstrap-export-");
   try {
@@ -268,10 +306,17 @@ test("export-bootstrap-branch script exports bootstrap payload", () => {
       path.join("docs", "rin", "CHANGELOG.md"),
       "README.md",
     ]) {
-      assert.equal(fs.existsSync(path.join(tempDir, relativePath)), true, relativePath);
+      assert.equal(
+        fs.existsSync(path.join(tempDir, relativePath)),
+        true,
+        relativePath,
+      );
     }
     const readme = fs.readFileSync(path.join(tempDir, "README.md"), "utf8");
-    const installWrapper = fs.readFileSync(path.join(tempDir, "install.sh"), "utf8");
+    const installWrapper = fs.readFileSync(
+      path.join(tempDir, "install.sh"),
+      "utf8",
+    );
     assert.match(readme, /bootstrap branch/);
     assert.match(installWrapper, /^DEFAULT_BOOTSTRAP_BRANCH=bootstrap$/m);
     assert.equal(fs.existsSync(path.join(tempDir, "stale.txt")), false);

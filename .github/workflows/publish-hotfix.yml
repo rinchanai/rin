@@ -79,16 +79,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          bootstrap_dir="$RUNNER_TEMP/stable-bootstrap"
+          bootstrap_branch=bootstrap
+          bootstrap_dir="$RUNNER_TEMP/$bootstrap_branch"
           remote_url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          if git ls-remote --exit-code --heads origin stable-bootstrap >/dev/null 2>&1; then
-            git clone --depth 1 --branch stable-bootstrap "$remote_url" "$bootstrap_dir"
+          if git ls-remote --exit-code --heads origin "$bootstrap_branch" >/dev/null 2>&1; then
+            git clone --depth 1 --branch "$bootstrap_branch" "$remote_url" "$bootstrap_dir"
           else
             git init "$bootstrap_dir"
-            git -C "$bootstrap_dir" checkout --orphan stable-bootstrap
+            git -C "$bootstrap_dir" checkout --orphan "$bootstrap_branch"
             git -C "$bootstrap_dir" remote add origin "$remote_url"
           fi
-          npm run release:bootstrap -- --output "$bootstrap_dir" --branch stable-bootstrap
+          npm run release:bootstrap -- --output "$bootstrap_dir" --branch "$bootstrap_branch"
           git -C "$bootstrap_dir" config user.name 'github-actions[bot]'
           git -C "$bootstrap_dir" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git -C "$bootstrap_dir" add .
@@ -96,7 +97,7 @@ jobs:
             echo 'No bootstrap changes to commit.'
           else
             git -C "$bootstrap_dir" commit -m 'chore(release): publish hotfix ${{ inputs.version }}'
-            git -C "$bootstrap_dir" push origin HEAD:stable-bootstrap
+            git -C "$bootstrap_dir" push origin "HEAD:$bootstrap_branch"
           fi
       - name: Remove candidate worktree
         if: always()
