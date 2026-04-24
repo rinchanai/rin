@@ -9,9 +9,8 @@ const rootDir = path.resolve(
   "..",
 );
 const renderUtils = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "pi", "render-utils.js"),
-  ).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "pi", "render-utils.js"))
+    .href
 );
 
 test("render utils format shared truncation warnings and notices", () => {
@@ -75,7 +74,10 @@ test("render utils format shared tool durations", () => {
 });
 
 test("render utils format shared hidden result notices", () => {
-  assert.equal(renderUtils.formatHiddenResultsNotice(5, 2), "[Showing top 3 of 5 results.]");
+  assert.equal(
+    renderUtils.formatHiddenResultsNotice(5, 2),
+    "[Showing top 3 of 5 results.]",
+  );
   assert.equal(renderUtils.formatHiddenResultsNotice(5, 0), "");
 });
 

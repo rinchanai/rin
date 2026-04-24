@@ -61,13 +61,15 @@ function normalizeRenderedOutputText(text: string) {
     .trim();
 }
 
-function styleRenderedOutputText(text: string, theme: any) {
+function getStyledOutputLines(text: string, theme: any) {
   const output = normalizeRenderedOutputText(text);
-  if (!output) return "";
   return output
-    .split("\n")
-    .map((line) => styleToolOutputLine(line, theme))
-    .join("\n");
+    ? output.split("\n").map((line) => styleToolOutputLine(line, theme))
+    : [];
+}
+
+function styleRenderedOutputText(text: string, theme: any) {
+  return getStyledOutputLines(text, theme).join("\n");
 }
 
 function formatToolWarnings(
@@ -75,7 +77,8 @@ function formatToolWarnings(
   config: { fullOutputPath?: string; truncation?: TruncationResult },
 ) {
   const warnings: string[] = [];
-  if (config.fullOutputPath) warnings.push(`Full output: ${config.fullOutputPath}`);
+  if (config.fullOutputPath)
+    warnings.push(`Full output: ${config.fullOutputPath}`);
   if (config.truncation?.truncated) {
     warnings.push(formatTruncationWarningMessage(config.truncation));
   }
@@ -84,7 +87,10 @@ function formatToolWarnings(
     : "";
 }
 
-export function formatHiddenResultsNotice(totalResults: number, hiddenCount: number) {
+export function formatHiddenResultsNotice(
+  totalResults: number,
+  hiddenCount: number,
+) {
   if (!(hiddenCount > 0)) return "";
   return `[Showing top ${Math.max(totalResults - hiddenCount, 0)} of ${totalResults} results.]`;
 }
@@ -106,9 +112,10 @@ type TextToolResult = TextToolContent & {
 
 export const NO_OUTPUT_TEXT = "(no output)";
 
-function collectTextOutput(
-  result: TextToolContent | null | undefined,
-): { outputText: string; imageBlocks: ToolContentEntry[] } {
+function collectTextOutput(result: TextToolContent | null | undefined): {
+  outputText: string;
+  imageBlocks: ToolContentEntry[];
+} {
   const textParts: string[] = [];
   const imageBlocks: ToolContentEntry[] = [];
   if (!Array.isArray(result?.content)) {
@@ -118,7 +125,10 @@ function collectTextOutput(
   for (const entry of result.content) {
     if (entry?.type === "text") {
       textParts.push(
-        sanitizeBinaryOutput(stripAnsi(String(entry.text || ""))).replace(/\r/g, ""),
+        sanitizeBinaryOutput(stripAnsi(String(entry.text || ""))).replace(
+          /\r/g,
+          "",
+        ),
       );
       continue;
     }
@@ -203,7 +213,8 @@ function styleValue(value: string, theme: any) {
   const leading = value.match(/^\s*/)?.[0] ?? "";
   const body = value.slice(leading.length);
   if (!body) return value;
-  if (/^https?:\/\//i.test(body)) return `${leading}${theme.fg("accent", body)}`;
+  if (/^https?:\/\//i.test(body))
+    return `${leading}${theme.fg("accent", body)}`;
   if (/^(~|\/|\.\.\/|\.\/)[^\s]*$/.test(body) || /^[A-Za-z]:[\\/]/.test(body)) {
     return `${leading}${theme.fg("accent", body)}`;
   }
@@ -230,7 +241,11 @@ export function styleToolOutputLine(line: string, theme: any) {
   if (/^(No |\(no output\)$)/.test(trimmed)) {
     return theme.fg("muted", line);
   }
-  if (/^(Error:|Web search failed:|Fetch failed:|Message not found:)/.test(trimmed)) {
+  if (
+    /^(Error:|Web search failed:|Fetch failed:|Message not found:)/.test(
+      trimmed,
+    )
+  ) {
     return theme.fg("error", line);
   }
 
@@ -297,7 +312,10 @@ function formatDuration(ms: number) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function formatToolDuration(startedAt: number | undefined, endedAt: number | undefined) {
+export function formatToolDuration(
+  startedAt: number | undefined,
+  endedAt: number | undefined,
+) {
   if (startedAt === undefined) return undefined;
   const label = endedAt === undefined ? "Elapsed" : "Took";
   const endTime = endedAt ?? Date.now();
@@ -306,6 +324,8 @@ export function formatToolDuration(startedAt: number | undefined, endedAt: numbe
 
 function describeTruncation(truncation: TruncationResult) {
   const byteLimit = formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES);
+  const outputLines = truncation.outputLines;
+  const totalLines = truncation.totalLines;
   if (truncation.firstLineExceedsLimit) {
     return {
       warning: `First line exceeds ${byteLimit} limit`,
@@ -314,13 +334,13 @@ function describeTruncation(truncation: TruncationResult) {
   }
   if (truncation.truncatedBy === "lines") {
     return {
-      warning: `Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)`,
-      notice: `Showing ${truncation.outputLines} of ${truncation.totalLines} lines`,
+      warning: `Truncated: showing ${outputLines} of ${totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)`,
+      notice: `Showing ${outputLines} of ${totalLines} lines`,
     };
   }
   return {
-    warning: `Truncated: ${truncation.outputLines} lines shown (${byteLimit} limit)`,
-    notice: `Showing ${truncation.outputLines} of ${truncation.totalLines} lines (${byteLimit} limit)`,
+    warning: `Truncated: ${outputLines} lines shown (${byteLimit} limit)`,
+    notice: `Showing ${outputLines} of ${totalLines} lines (${byteLimit} limit)`,
   };
 }
 
@@ -332,7 +352,10 @@ export function formatTruncationNotice(truncation: TruncationResult) {
   return `[${describeTruncation(truncation).notice}.]`;
 }
 
-export function appendTruncationNotice(text: string, truncation: TruncationResult | undefined) {
+export function appendTruncationNotice(
+  text: string,
+  truncation: TruncationResult | undefined,
+) {
   if (!truncation?.truncated) return text;
   const notice = formatTruncationNotice(truncation);
   return text ? `${text}\n\n${notice}` : notice;
@@ -340,7 +363,10 @@ export function appendTruncationNotice(text: string, truncation: TruncationResul
 
 type TruncateTextOptions = Parameters<typeof truncateHead>[1];
 
-export function prepareTruncatedText(text: string, options?: TruncateTextOptions) {
+export function prepareTruncatedText(
+  text: string,
+  options?: TruncateTextOptions,
+) {
   const result = truncateHead(text, options);
   const truncation = result.truncated ? result : undefined;
   return {
@@ -471,12 +497,10 @@ export function renderTextToolResult(
     return theme.fg("warning", config.partialText);
   }
 
-  const styledOutput = styleRenderedOutputText(
-    getTextOutput(result, showImages),
-    theme,
-  );
-  const lines = styledOutput ? styledOutput.split("\n") : [];
-  const maxLines = options.expanded ? lines.length : (config.previewLines ?? 10);
+  const lines = getStyledOutputLines(getTextOutput(result, showImages), theme);
+  const maxLines = options.expanded
+    ? lines.length
+    : (config.previewLines ?? 10);
   const displayLines = lines.slice(0, maxLines);
   const remaining = lines.length - maxLines;
 
