@@ -12,13 +12,16 @@ const rootDir = path.resolve(
   "..",
 );
 const transcripts = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "memory", "transcripts.js"))
+    .href
+);
+const transcriptArchiveModule = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "core", "memory", "transcripts.js"),
+    path.join(rootDir, "dist", "core", "memory", "transcript-archive.js"),
   ).href
 );
 const memoryExtensionModule = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "memory", "index.js"))
-    .href
+  pathToFileURL(path.join(rootDir, "dist", "core", "memory", "index.js")).href
 );
 
 async function withTempRoot(fn) {
@@ -284,6 +287,45 @@ test("memory can browse recent sessions without a query", async () => {
   });
 });
 
+test("presentSessionResult shares ranked preview and message ordering while keeping latest timestamp", () => {
+  const result = transcriptArchiveModule.presentSessionResult(
+    [
+      {
+        id: "assistant-tool",
+        timestamp: "2026-04-05T12:22:24.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "assistant",
+        text: '[tool:browser_click] {"selector":"Next"}\n卡在验证码页面，下一步要收验证码。',
+        toolName: "browser_click",
+      },
+      {
+        id: "newer-tool-result",
+        timestamp: "2026-04-05T12:22:25.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "toolResult",
+        text: "tool output should not replace the session preview",
+        toolName: "read",
+      },
+      {
+        id: "older-user",
+        timestamp: "2026-04-05T12:22:22.000Z",
+        sessionId: "session-2",
+        sessionFile: "/tmp/session-2.jsonl",
+        role: "user",
+        text: "这是最近的一次会话",
+      },
+    ],
+    7,
+  );
+
+  assert.match(result.preview, /browser_click/);
+  assert.equal(result.messages[0].id, "assistant-tool");
+  assert.equal(result.messages[1].id, "newer-tool-result");
+  assert.equal(result.timestamp, "2026-04-05T12:22:25.000Z");
+});
+
 test("memory search merges multiple message hits from the same session", async () => {
   await withTempRoot(async (root) => {
     await transcripts.appendTranscriptArchiveEntry(
@@ -503,7 +545,10 @@ test("memory transcripts ignore transient in-memory sessions without a session f
       },
       root,
     );
-    const results = await transcripts.loadRecentTranscriptSessions({ limit: 8 }, root);
+    const results = await transcripts.loadRecentTranscriptSessions(
+      { limit: 8 },
+      root,
+    );
     assert.equal(results.length, 0);
   });
 });
@@ -532,7 +577,9 @@ test("search_memory uses the stored transcript session summary instead of live s
         timestamp: "2026-04-08T09:02:00.000Z",
         message: {
           role: "user",
-          content: [{ type: "text", text: "Can you fix the memory recall hang?" }],
+          content: [
+            { type: "text", text: "Can you fix the memory recall hang?" },
+          ],
         },
       },
     ]);
@@ -570,7 +617,10 @@ test("search_memory uses the stored transcript session summary instead of live s
       { limit: 8 },
       root,
     );
-    assert.equal(rows[0].summary, "Fixed memory recall hang and cached transcript summaries.");
+    assert.equal(
+      rows[0].summary,
+      "Fixed memory recall hang and cached transcript summaries.",
+    );
     assert.equal(rows[0].name, "telegram/1:2");
 
     const result = await memoryExtensionModule.executeSearchMemory(
@@ -588,25 +638,31 @@ test("search_memory uses the stored transcript session summary instead of live s
 
 test("search_memory can retrieve sessions by stored session summary text", async () => {
   await withTempRoot(async (root) => {
-    const sessionFile = await writeSessionFile(root, "display-only-summary-session.jsonl", [
-      {
-        type: "session",
-        version: 3,
-        id: "display-only-summary-session",
-        timestamp: "2026-04-08T09:00:00.000Z",
-        cwd: "/tmp/project",
-      },
-      {
-        type: "message",
-        id: "msg1",
-        parentId: null,
-        timestamp: "2026-04-08T09:02:00.000Z",
-        message: {
-          role: "user",
-          content: [{ type: "text", text: "Need help checking a runtime regression" }],
+    const sessionFile = await writeSessionFile(
+      root,
+      "display-only-summary-session.jsonl",
+      [
+        {
+          type: "session",
+          version: 3,
+          id: "display-only-summary-session",
+          timestamp: "2026-04-08T09:00:00.000Z",
+          cwd: "/tmp/project",
         },
-      },
-    ]);
+        {
+          type: "message",
+          id: "msg1",
+          parentId: null,
+          timestamp: "2026-04-08T09:02:00.000Z",
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "Need help checking a runtime regression" },
+            ],
+          },
+        },
+      ],
+    );
 
     await transcripts.appendTranscriptArchiveEntry(
       {
@@ -636,9 +692,16 @@ test("search_memory can retrieve sessions by stored session summary text", async
       root,
     );
 
-    const rows = await transcripts.searchTranscriptArchive("zebra", { limit: 8 }, root);
+    const rows = await transcripts.searchTranscriptArchive(
+      "zebra",
+      { limit: 8 },
+      root,
+    );
     assert.equal(rows.length, 1);
-    assert.equal(rows[0].summary, "zebra only appears in the stored display summary");
+    assert.equal(
+      rows[0].summary,
+      "zebra only appears in the stored display summary",
+    );
   });
 });
 
@@ -659,7 +722,12 @@ test("search_memory falls back to the first user message when no stored session 
         timestamp: "2026-04-08T09:02:00.000Z",
         message: {
           role: "user",
-          content: [{ type: "text", text: "Need help debugging the outbound chat routing bug" }],
+          content: [
+            {
+              type: "text",
+              text: "Need help debugging the outbound chat routing bug",
+            },
+          ],
         },
       },
     ]);
@@ -686,31 +754,43 @@ test("search_memory falls back to the first user message when no stored session 
       root,
     );
     assert.equal(rows[0].summary, undefined);
-    assert.equal(rows[0].name, "Need help debugging the outbound chat routing bug");
+    assert.equal(
+      rows[0].name,
+      "Need help debugging the outbound chat routing bug",
+    );
   });
 });
 
 test("search_memory derives the display name without a full readFileSync slurp", async () => {
   await withTempRoot(async (root) => {
-    const sessionFile = await writeSessionFile(root, "single-read-session.jsonl", [
-      {
-        type: "session",
-        version: 3,
-        id: "single-read-session",
-        timestamp: "2026-04-08T09:00:00.000Z",
-        cwd: "/tmp/project",
-      },
-      {
-        type: "message",
-        id: "msg1",
-        parentId: null,
-        timestamp: "2026-04-08T09:02:00.000Z",
-        message: {
-          role: "user",
-          content: [{ type: "text", text: "Need help debugging the outbound chat routing bug" }],
+    const sessionFile = await writeSessionFile(
+      root,
+      "single-read-session.jsonl",
+      [
+        {
+          type: "session",
+          version: 3,
+          id: "single-read-session",
+          timestamp: "2026-04-08T09:00:00.000Z",
+          cwd: "/tmp/project",
         },
-      },
-    ]);
+        {
+          type: "message",
+          id: "msg1",
+          parentId: null,
+          timestamp: "2026-04-08T09:02:00.000Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Need help debugging the outbound chat routing bug",
+              },
+            ],
+          },
+        },
+      ],
+    );
 
     await transcripts.appendTranscriptArchiveEntry(
       {
@@ -743,7 +823,10 @@ test("search_memory derives the display name without a full readFileSync slurp",
         { limit: 8 },
         root,
       );
-      assert.equal(rows[0].name, "Need help debugging the outbound chat routing bug");
+      assert.equal(
+        rows[0].name,
+        "Need help debugging the outbound chat routing bug",
+      );
       assert.equal(sessionFileReadCount, 0);
     } finally {
       fsSync.readFileSync = originalReadFileSync;

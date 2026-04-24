@@ -235,7 +235,9 @@ export async function loadTranscriptArchiveFile(filePath: string) {
       try {
         const parsed = JSON.parse(item.rawLine) as TranscriptArchiveEntry;
         if (!parsed?.text) {
-          parsed.text = extractTranscriptText(parsed as Record<string, unknown>);
+          parsed.text = extractTranscriptText(
+            parsed as Record<string, unknown>,
+          );
         }
         parsed.archiveLine = item.lineNumber;
         parsed.archivePath = filePath;
@@ -290,11 +292,23 @@ function contentTranscriptEntries(entries: TranscriptArchiveEntry[]) {
   return filtered.length ? filtered : entries;
 }
 
+function compareEntriesByNewest(
+  a: TranscriptArchiveEntry,
+  b: TranscriptArchiveEntry,
+) {
+  return timestampValue(b.timestamp) - timestampValue(a.timestamp);
+}
+
+function latestTranscriptEntry(entries: TranscriptArchiveEntry[]) {
+  return [...entries].sort(compareEntriesByNewest)[0];
+}
+
 function latestStoredSessionSummary(entries: TranscriptArchiveEntry[]) {
-  const entry = [...entries]
-    .filter((item) => isSessionSummaryEntry(item))
-    .sort((a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp))[0];
-  return normalizeSessionNameDetail(entry?.text || "", 180);
+  return normalizeSessionNameDetail(
+    latestTranscriptEntry(entries.filter((item) => isSessionSummaryEntry(item)))
+      ?.text || "",
+    180,
+  );
 }
 
 export function transcriptPreviewText(entry: TranscriptArchiveEntry) {
@@ -325,22 +339,24 @@ function sessionPreviewPriority(entry: TranscriptArchiveEntry) {
   return score;
 }
 
-function chooseSessionPreviewEntry(entries: TranscriptArchiveEntry[]) {
-  return [...entries].sort((a, b) => {
-    const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
-    if (priority) return priority;
-    return timestampValue(b.timestamp) - timestampValue(a.timestamp);
-  })[0];
+function compareEntriesBySessionPreview(
+  a: TranscriptArchiveEntry,
+  b: TranscriptArchiveEntry,
+) {
+  const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
+  if (priority) return priority;
+  return compareEntriesByNewest(a, b);
 }
 
-function buildSessionPreview(entries: TranscriptArchiveEntry[]) {
-  const ranked = [...entries].sort((a, b) => {
-    const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
-    if (priority) return priority;
-    return timestampValue(b.timestamp) - timestampValue(a.timestamp);
-  });
-  const topScore = ranked.length ? sessionPreviewPriority(ranked[0]) : 0;
-  const chosen = ranked
+function rankSessionEntries(entries: TranscriptArchiveEntry[]) {
+  return [...entries].sort(compareEntriesBySessionPreview);
+}
+
+function buildSessionPreviewFromRankedEntries(
+  entries: TranscriptArchiveEntry[],
+) {
+  const topScore = entries.length ? sessionPreviewPriority(entries[0]) : 0;
+  const chosen = entries
     .filter(
       (entry, index) =>
         index === 0 || sessionPreviewPriority(entry) >= topScore - 8,
@@ -379,16 +395,6 @@ export function buildResultMessage(
   };
 }
 
-function chooseSessionMessageEntries(entries: TranscriptArchiveEntry[]) {
-  return [...entries]
-    .sort((a, b) => {
-      const priority = sessionPreviewPriority(b) - sessionPreviewPriority(a);
-      if (priority) return priority;
-      return timestampValue(b.timestamp) - timestampValue(a.timestamp);
-    })
-    .slice(0, MAX_MATCHED_ENTRIES_PER_SESSION);
-}
-
 export function presentSessionResult(
   entries: TranscriptArchiveEntry[],
   score: number,
@@ -399,11 +405,10 @@ export function presentSessionResult(
   } = {},
 ): TranscriptSessionResult {
   const displayEntries = contentTranscriptEntries(entries);
-  const previewEntry = chooseSessionPreviewEntry(displayEntries);
-  const latestEntry = [...displayEntries].sort(
-    (a, b) => timestampValue(b.timestamp) - timestampValue(a.timestamp),
-  )[0];
-  const preview = buildSessionPreview(displayEntries);
+  const rankedDisplayEntries = rankSessionEntries(displayEntries);
+  const previewEntry = rankedDisplayEntries[0];
+  const latestEntry = latestTranscriptEntry(displayEntries);
+  const preview = buildSessionPreviewFromRankedEntries(rankedDisplayEntries);
   const sessionName = resolveTranscriptSessionDisplayName(
     safeString(previewEntry?.sessionFile || "").trim(),
     preview,
@@ -433,8 +438,8 @@ export function presentSessionResult(
     messages:
       extra.messages && extra.messages.length
         ? extra.messages
-        : chooseSessionMessageEntries(displayEntries).map((entry) =>
-            buildResultMessage(entry),
-          ),
+        : rankedDisplayEntries
+            .slice(0, MAX_MATCHED_ENTRIES_PER_SESSION)
+            .map((entry) => buildResultMessage(entry)),
   };
 }
