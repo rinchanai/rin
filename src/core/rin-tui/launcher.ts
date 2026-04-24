@@ -106,6 +106,7 @@ async function startStdTui(
       additionalExtensionPaths: options.additionalExtensionPaths,
     });
     profile.mark("std-session-created");
+    console.log();
     const interactiveMode = new InteractiveMode(sessionRuntime);
     await interactiveMode.run();
   } finally {
@@ -135,6 +136,7 @@ async function startRpcTui(
   try {
     runtimeHost = createRpcRuntimeHost(rpcSession);
     profile.mark("rpc-session-created");
+    console.log();
     const interactiveMode = new InteractiveMode(runtimeHost as any);
     await interactiveMode.run();
   } finally {
