@@ -9,9 +9,8 @@ const rootDir = path.resolve(
   "..",
 );
 const format = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "format.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "format.js"))
+    .href
 );
 const onboarding = await import(
   pathToFileURL(
@@ -50,7 +49,10 @@ test("self-improve format builds compact compiled prompt", () => {
   assert.match(text, /Project rules:\nSpecific/);
   assert.ok(!text.includes("ignored"));
   assert.ok(!text.includes("# Self-Improve Prompts"));
-  assert.equal(format.buildSystemPromptSelfImprove({ self_improve_prompt_docs: [] }), "");
+  assert.equal(
+    format.buildSystemPromptSelfImprove({ self_improve_prompt_docs: [] }),
+    "",
+  );
 });
 
 test("self-improve format renders stable result variants", () => {
@@ -75,6 +77,10 @@ test("self-improve format renders stable result variants", () => {
       path: "/tmp/agent.md",
     },
     self_improve_prompt_docs: [{ path: "/tmp/agent.md" }],
+  };
+  const emptyResponse = {
+    query: " memory ",
+    results: [],
   };
 
   const listText = format.formatSelfImproveResult("list", response);
@@ -106,15 +112,41 @@ test("self-improve format renders stable result variants", () => {
 
   const agentListText = format.formatSelfImproveAgentResult("list", response);
   assert.match(agentListText, /^self_improve list 1/m);
-  assert.match(agentListText, /1\. Agent Profile \| always \| global \| instruction \| slot=agent_profile \| path=\/tmp\/agent.md/);
+  assert.match(
+    agentListText,
+    /1\. Agent Profile \| always \| global \| instruction \| slot=agent_profile \| path=\/tmp\/agent.md/,
+  );
 
-  const agentSearchText = format.formatSelfImproveAgentResult("search", response);
+  const agentSearchText = format.formatSelfImproveAgentResult(
+    "search",
+    response,
+  );
   assert.match(agentSearchText, /^self_improve search memory \(1\)$/m);
   assert.match(agentSearchText, /score=0.88/);
 
-  const agentCompileText = format.formatSelfImproveAgentResult("compile", response);
+  const agentCompileText = format.formatSelfImproveAgentResult(
+    "compile",
+    response,
+  );
   assert.match(agentCompileText, /^self_improve compile memory$/m);
   assert.match(agentCompileText, /self_improve_prompts: 1/);
+
+  assert.equal(
+    format.formatSelfImproveResult("list", emptyResponse),
+    "No self-improve prompts found.",
+  );
+  assert.equal(
+    format.formatSelfImproveResult("search", emptyResponse),
+    "No self-improve matches for: memory",
+  );
+  assert.equal(
+    format.formatSelfImproveAgentResult("list", emptyResponse),
+    "self_improve list 0",
+  );
+  assert.equal(
+    format.formatSelfImproveAgentResult("search", emptyResponse),
+    "self_improve search memory (0)",
+  );
 
   assert.equal(
     format.formatSelfImproveAgentResult("", {}),

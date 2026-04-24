@@ -55,12 +55,18 @@ function normalizeResultRows(response: any) {
 }
 
 function formatMetaParts(parts: unknown[], separator: string) {
-  return parts.map((part) => trimText(part)).filter(Boolean).join(separator);
+  return parts
+    .map((part) => trimText(part))
+    .filter(Boolean)
+    .join(separator);
 }
 
 function formatTags(tags: unknown) {
   return Array.isArray(tags)
-    ? tags.map((tag) => trimText(tag)).filter(Boolean).join(",")
+    ? tags
+        .map((tag) => trimText(tag))
+        .filter(Boolean)
+        .join(",")
     : "";
 }
 
@@ -137,103 +143,101 @@ export function buildSystemPromptSelfImprove(result: any): string {
   return buildPromptBlock(result);
 }
 
-export function formatSelfImproveResult(action: string, response: any): string {
+function formatCompileAgentDocPaths(response: any): string[] {
+  return collectPromptDocs(response)
+    .map((doc: any, index: number) => {
+      const docPath = getPromptDocPath(doc);
+      return docPath
+        ? `self_improve_prompts[${index + 1}] path=${docPath}`
+        : "";
+    })
+    .filter(Boolean);
+}
+
+function formatSavedPromptResult(doc: any, compact: boolean): string {
+  const docPath = getPromptDocPath(doc);
+  return compact
+    ? [
+        "self_improve save_self_improve_prompt",
+        docPath ? `path=${docPath}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : [`Saved self-improve prompt: ${getItemName(doc)}`, docPath]
+        .filter(Boolean)
+        .join("\n");
+}
+
+function formatSelfImproveActionResult(
+  action: string,
+  response: any,
+  compact: boolean,
+): string {
+  const normalizedAction = trimText(action);
+  const rows = normalizeResultRows(response);
+  const query = trimText(response?.query);
+
   if (action === "list") {
-    const rows = normalizeResultRows(response);
-    if (!rows.length) return "No self-improve prompts found.";
+    if (!rows.length) {
+      return compact ? "self_improve list 0" : "No self-improve prompts found.";
+    }
     return [
-      `Self-improve prompts (${rows.length}):`,
+      compact
+        ? `self_improve list ${rows.length}`
+        : `Self-improve prompts (${rows.length}):`,
       ...rows.map((item: any, index: number) =>
-        formatListRowText(item, index, false),
+        formatListRowText(item, index, compact),
       ),
     ].join("\n");
   }
 
   if (action === "search") {
-    const rows = normalizeResultRows(response);
-    const query = trimText(response?.query);
     if (!rows.length) {
-      return `No self-improve matches for: ${query}`;
+      return compact
+        ? `self_improve search ${query} (0)`
+        : `No self-improve matches for: ${query}`;
     }
     return [
-      `Self-improve matches for: ${query}`,
+      compact
+        ? `self_improve search ${query} (${rows.length})`
+        : `Self-improve matches for: ${query}`,
       ...rows.map((item: any, index: number) =>
-        formatSearchRowText(item, index, false),
+        formatSearchRowText(item, index, compact),
       ),
-    ].join("\n\n");
+    ].join(compact ? "\n" : "\n\n");
   }
 
   if (action === "save_self_improve_prompt") {
-    return [
-      `Saved self-improve prompt: ${getItemName(response?.doc)}`,
-      getPromptDocPath(response?.doc),
-    ]
-      .filter(Boolean)
-      .join("\n");
+    return formatSavedPromptResult(response?.doc, compact);
   }
 
   if (action === "compile") {
-    return (
-      buildCompiledSelfImprovePrompt(response) ||
-      "No compiled self-improve prompt available."
-    );
+    if (!compact) {
+      return (
+        buildCompiledSelfImprovePrompt(response) ||
+        "No compiled self-improve prompt available."
+      );
+    }
+    const docs = formatCompileAgentDocPaths(response);
+    return [
+      `self_improve compile ${query || "(no query)"}`,
+      `self_improve_prompts: ${docs.length}`,
+      ...docs,
+    ].join("\n");
   }
 
-  return `Self-improve action completed: ${trimText(action) || "unknown"}`;
+  return compact
+    ? `self_improve ${normalizedAction || "result"}`
+    : `Self-improve action completed: ${normalizedAction || "unknown"}`;
+}
+
+export function formatSelfImproveResult(action: string, response: any): string {
+  return formatSelfImproveActionResult(action, response, false);
 }
 
 export function formatSelfImproveAgentResult(
   action: string,
   response: any,
 ): string {
-  if (action === "list") {
-    const rows = normalizeResultRows(response);
-    if (!rows.length) return "self_improve list 0";
-    return [
-      `self_improve list ${rows.length}`,
-      ...rows.map((item: any, index: number) =>
-        formatListRowText(item, index, true),
-      ),
-    ].join("\n");
-  }
-
-  if (action === "search") {
-    const rows = normalizeResultRows(response);
-    const query = trimText(response?.query);
-    if (!rows.length) return `self_improve search ${query} (0)`;
-    return [
-      `self_improve search ${query} (${rows.length})`,
-      ...rows.map((item: any, index: number) =>
-        formatSearchRowText(item, index, true),
-      ),
-    ].join("\n");
-  }
-
-  if (action === "save_self_improve_prompt") {
-    return [
-      "self_improve save_self_improve_prompt",
-      getPromptDocPath(response?.doc)
-        ? `path=${getPromptDocPath(response?.doc)}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  if (action === "compile") {
-    const query = trimText(response?.query) || "(no query)";
-    const docs = collectPromptDocs(response)
-      .map((doc: any, index: number) => {
-        const docPath = getPromptDocPath(doc);
-        return docPath ? `self_improve_prompts[${index + 1}] path=${docPath}` : "";
-      })
-      .filter(Boolean);
-    return [
-      `self_improve compile ${query}`,
-      `self_improve_prompts: ${docs.length}`,
-      ...docs,
-    ].join("\n");
-  }
-
-  return `self_improve ${trimText(action) || "result"}`;
+  return formatSelfImproveActionResult(action, response, true);
 }
