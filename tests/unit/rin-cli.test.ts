@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -8,19 +10,44 @@ const rootDir = path.resolve(
   "../..",
 );
 const shared = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "shared.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "shared.js")).href
 );
 const usage = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "usage.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "usage.js")).href
 );
 const memoryIndex = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin", "memory-index.js"),
-  ).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "memory-index.js"))
+    .href
 );
 const main = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "main.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin", "main.js")).href
 );
+
+test("top-level version flag prints package version without launching Rin", () => {
+  assert.equal(shared.shouldPrintRinVersion(["--version"]), true);
+  assert.equal(shared.shouldPrintRinVersion(["-v"]), true);
+  assert.equal(shared.shouldPrintRinVersion(["-u", "rin", "--version"]), true);
+  assert.equal(
+    shared.shouldPrintRinVersion(["update", "--version", "1.2.3"]),
+    false,
+  );
+
+  const packageJson = JSON.parse(
+    fs.readFileSync(path.join(rootDir, "package.json"), "utf8"),
+  );
+  const output = execFileSync(
+    process.execPath,
+    [path.join(rootDir, "dist", "app", "rin", "main.js"), "--version"],
+    { cwd: rootDir, encoding: "utf8" },
+  ).trim();
+
+  assert.equal(output, packageJson.version);
+  const parsed = shared.resolveParsedArgs("update", { version: true }, [
+    "update",
+    "--version",
+  ]);
+  assert.equal(parsed.releaseVersion, "");
+});
 
 test("usage and memory-index parsers ignore wrapper args around the subcommand", () => {
   assert.deepEqual(

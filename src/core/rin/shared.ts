@@ -70,7 +70,12 @@ type InstallConfig = {
 
 export { repoRootFromHere, runCommand, safeString };
 
-const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user", "-s", "--session"]);
+const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set([
+  "-u",
+  "--user",
+  "-s",
+  "--session",
+]);
 const RIN_WRAPPER_FLAGS = new Set(["--std", "--sessions"]);
 
 function hasInlineWrapperValue(arg: string) {
@@ -394,6 +399,22 @@ export function collectTuiPassthroughArgs(argv: string[]) {
   return stripRinWrapperArgs(argv);
 }
 
+export function readRinPackageVersion(repoRoot = repoRootFromHere()) {
+  try {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"),
+    );
+    return safeString(packageJson.version).trim() || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export function shouldPrintRinVersion(rawArgv: string[]) {
+  const args = stripRinWrapperArgs(rawArgv);
+  return args.length === 1 && (args[0] === "--version" || args[0] === "-v");
+}
+
 function looksLikeGitRefSelector(value: string) {
   const normalized = safeString(value).trim();
   return (
@@ -455,10 +476,19 @@ function resolveParsedReleaseArgs(
 
   const releaseChannel = selectedChannels[0] || "stable";
   let releaseBranch = safeString(options.branch).trim();
-  let releaseVersion = safeString(options.version).trim();
-  const stableSelector = extractOptionalFlagSelector(rawArgv, command, "--stable");
+  let releaseVersion =
+    options.version === true ? "" : safeString(options.version).trim();
+  const stableSelector = extractOptionalFlagSelector(
+    rawArgv,
+    command,
+    "--stable",
+  );
   const betaSelector = extractOptionalFlagSelector(rawArgv, command, "--beta");
-  const nightlySelector = extractOptionalFlagSelector(rawArgv, command, "--nightly");
+  const nightlySelector = extractOptionalFlagSelector(
+    rawArgv,
+    command,
+    "--nightly",
+  );
   const gitSelector = extractOptionalFlagSelector(rawArgv, command, "--git");
 
   if (stableSelector) throw new Error("rin_stable_selector_not_supported");

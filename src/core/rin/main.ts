@@ -9,8 +9,10 @@ import {
   hasSubcommandHelpFlag,
   ParsedArgs,
   resolveParsedArgs,
+  readRinPackageVersion,
   runUpdate,
   safeString,
+  shouldPrintRinVersion,
 } from "./shared.js";
 import { runUsage, runUsageInternal } from "./usage.js";
 
@@ -43,7 +45,9 @@ const INTERNAL_COMMANDS = [
 function createCli() {
   const cli = cac("rin");
   cli
-    .usage("[command] [--beta|--nightly|--git [branch-or-ref]] [options] [-- passthrough]")
+    .usage(
+      "[command] [--beta|--nightly|--git [branch-or-ref]] [options] [-- passthrough]",
+    )
     .option("-u, --user <name>", "Run against a specific daemon user")
     .option("--std", "Start std TUI instead of RPC TUI")
     .option(
@@ -56,7 +60,10 @@ function createCli() {
     .option("--nightly", "Use the nightly release channel")
     .option("--git", "Use the git release channel")
     .option("--branch <name>", "Explicit git branch selector")
-    .option("--version <value>", "Explicit stable version or git ref selector")
+    .option(
+      "-v, --version [value]",
+      "Show Rin version, or with update select an explicit stable version/git ref",
+    )
     .help();
 
   for (const [name, description] of RIN_COMMANDS) {
@@ -85,7 +92,13 @@ export function resolveInternalRinDispatch(rawArgv: string[]) {
 }
 
 export async function startRinCli() {
-  const internalDispatch = resolveInternalRinDispatch(process.argv.slice(2));
+  const rawArgv = process.argv.slice(2);
+  if (shouldPrintRinVersion(rawArgv)) {
+    console.log(readRinPackageVersion());
+    return;
+  }
+
+  const internalDispatch = resolveInternalRinDispatch(rawArgv);
   if (internalDispatch) {
     await internalDispatch.run(internalDispatch.args);
     return;
@@ -99,18 +112,15 @@ export async function startRinCli() {
   }
 
   const command = parseCommandName(safeString(cli.matchedCommandName).trim());
-  const parsed = resolveParsedArgs(
-    command,
-    parsedArgv.options,
-    process.argv.slice(2),
-  );
+  const parsed = resolveParsedArgs(command, parsedArgv.options, rawArgv);
 
   if (parsed.command === "update") return await runUpdate(parsed);
   if (parsed.command === "start") return await runStart(parsed);
   if (parsed.command === "stop") return await runStop(parsed);
   if (parsed.command === "restart") return await runRestart(parsed);
   if (parsed.command === "doctor") return await runDoctor(parsed);
-  if (parsed.command === "usage") return await runUsage(parsed, process.argv.slice(2));
+  if (parsed.command === "usage")
+    return await runUsage(parsed, process.argv.slice(2));
   if (parsed.command === "memory-index")
     return await runMemoryIndex(parsed, process.argv.slice(2));
 
