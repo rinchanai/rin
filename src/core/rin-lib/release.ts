@@ -81,6 +81,14 @@ function trimReleaseValue(value: unknown) {
   return safeString(value).trim();
 }
 
+function firstReleaseValue(...values: unknown[]): string {
+  for (const value of values) {
+    const text = trimReleaseValue(value);
+    if (text) return text;
+  }
+  return "";
+}
+
 function resolveModuleRootFromHere() {
   return path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -124,7 +132,10 @@ function defaultReleaseManifest(): ReleaseManifest {
     },
     stable: {
       version: DEFAULT_STABLE_VERSION,
-      archiveUrl: buildNpmTarballUrl(DEFAULT_PACKAGE_NAME, DEFAULT_STABLE_VERSION),
+      archiveUrl: buildNpmTarballUrl(
+        DEFAULT_PACKAGE_NAME,
+        DEFAULT_STABLE_VERSION,
+      ),
       ref: "main",
     },
     beta: {
@@ -151,7 +162,9 @@ export function getBundledReleaseManifestPath(sourceRoot?: string) {
   return path.join(root, "release-manifest.json");
 }
 
-export function readBundledReleaseManifest(sourceRoot?: string): ReleaseManifest {
+export function readBundledReleaseManifest(
+  sourceRoot?: string,
+): ReleaseManifest {
   const manifestPath = getBundledReleaseManifestPath(sourceRoot);
   try {
     return JSON.parse(fs.readFileSync(manifestPath, "utf8")) as ReleaseManifest;
@@ -161,26 +174,26 @@ export function readBundledReleaseManifest(sourceRoot?: string): ReleaseManifest
 }
 
 export function getBootstrapBranch(manifest?: ReleaseManifest) {
-  return (
-    trimReleaseValue(process.env.RIN_BOOTSTRAP_BRANCH) ||
-    trimReleaseValue(manifest?.bootstrapBranch) ||
-    DEFAULT_BOOTSTRAP_BRANCH
+  return firstReleaseValue(
+    process.env.RIN_BOOTSTRAP_BRANCH,
+    manifest?.bootstrapBranch,
+    DEFAULT_BOOTSTRAP_BRANCH,
   );
 }
 
 export function getReleaseRepoUrl(manifest?: ReleaseManifest) {
-  return (
-    trimReleaseValue(process.env.RIN_INSTALL_REPO_URL) ||
-    trimReleaseValue(manifest?.repoUrl) ||
-    DEFAULT_REPO_URL
+  return firstReleaseValue(
+    process.env.RIN_INSTALL_REPO_URL,
+    manifest?.repoUrl,
+    DEFAULT_REPO_URL,
   );
 }
 
 export function getReleasePackageName(manifest?: ReleaseManifest) {
-  return (
-    trimReleaseValue(process.env.RIN_NPM_PACKAGE) ||
-    trimReleaseValue(manifest?.packageName) ||
-    DEFAULT_PACKAGE_NAME
+  return firstReleaseValue(
+    process.env.RIN_NPM_PACKAGE,
+    manifest?.packageName,
+    DEFAULT_PACKAGE_NAME,
   );
 }
 
@@ -200,14 +213,15 @@ function resolveLegacyBetaRelease(
   const version = trimReleaseValue(request.version);
   if (version) {
     const entry = beta.versions?.[version];
-    const resolvedBranch =
-      trimReleaseValue(entry?.branch) ||
-      trimReleaseValue(beta.defaultBranch) ||
-      "main";
+    const resolvedBranch = firstReleaseValue(
+      entry?.branch,
+      beta.defaultBranch,
+      "main",
+    );
     return {
       channel: "beta",
       archiveUrl:
-        trimReleaseValue(entry?.archiveUrl) ||
+        firstReleaseValue(entry?.archiveUrl) ||
         buildGitHubRefArchiveUrl(repoUrl, version),
       version,
       branch: resolvedBranch,
@@ -215,14 +229,14 @@ function resolveLegacyBetaRelease(
       sourceLabel: `beta version ${version}`,
     };
   }
-  const resolvedBranch = branch || trimReleaseValue(beta.defaultBranch) || "main";
+  const resolvedBranch = firstReleaseValue(branch, beta.defaultBranch, "main");
   const entry = beta.branches?.[resolvedBranch];
   return {
     channel: "beta",
     archiveUrl:
-      trimReleaseValue(entry?.archiveUrl) ||
+      firstReleaseValue(entry?.archiveUrl) ||
       buildGitHubBranchArchiveUrl(repoUrl, resolvedBranch),
-    version: trimReleaseValue(entry?.version) || DEFAULT_BETA_VERSION,
+    version: firstReleaseValue(entry?.version, DEFAULT_BETA_VERSION),
     branch: resolvedBranch,
     ref: resolvedBranch,
     sourceLabel: `beta branch ${resolvedBranch}`,
@@ -246,17 +260,20 @@ export function resolveReleaseRequest(
   if (channel === "stable") {
     if (branch) throw new Error("rin_stable_branch_not_supported");
     const explicit = version ? manifest.stable?.versions?.[version] : undefined;
-    const resolvedVersion =
-      version || trimReleaseValue(manifest.stable?.version) || DEFAULT_STABLE_VERSION;
-    const resolvedRef =
-      trimReleaseValue(explicit?.ref) ||
-      trimReleaseValue(manifest.stable?.ref) ||
-      version ||
-      trimReleaseValue(manifest.stable?.version) ||
-      "main";
+    const resolvedVersion = firstReleaseValue(
+      version,
+      manifest.stable?.version,
+      DEFAULT_STABLE_VERSION,
+    );
+    const resolvedRef = firstReleaseValue(
+      explicit?.ref,
+      manifest.stable?.ref,
+      version,
+      manifest.stable?.version,
+      "main",
+    );
     const archiveUrl =
-      trimReleaseValue(explicit?.archiveUrl) ||
-      trimReleaseValue(manifest.stable?.archiveUrl) ||
+      firstReleaseValue(explicit?.archiveUrl, manifest.stable?.archiveUrl) ||
       buildNpmTarballUrl(packageName, resolvedVersion);
     return {
       channel,
@@ -274,13 +291,15 @@ export function resolveReleaseRequest(
     if (branch || version) {
       return resolveLegacyBetaRelease(manifest, repoUrl, request);
     }
-    const resolvedRef = trimReleaseValue(manifest.beta?.ref) || "main";
-    const resolvedVersion =
-      trimReleaseValue(manifest.beta?.version) || DEFAULT_BETA_VERSION;
+    const resolvedRef = firstReleaseValue(manifest.beta?.ref, "main");
+    const resolvedVersion = firstReleaseValue(
+      manifest.beta?.version,
+      DEFAULT_BETA_VERSION,
+    );
     return {
       channel,
       archiveUrl:
-        trimReleaseValue(manifest.beta?.archiveUrl) ||
+        firstReleaseValue(manifest.beta?.archiveUrl) ||
         buildGitHubRefArchiveUrl(repoUrl, resolvedRef),
       version: resolvedVersion,
       branch: "beta",
@@ -290,31 +309,40 @@ export function resolveReleaseRequest(
   }
 
   if (channel === "nightly") {
-    if (branch || version) throw new Error("rin_nightly_selector_not_supported");
-    const resolvedBranch =
-      trimReleaseValue(manifest.nightly?.branch) ||
-      trimReleaseValue(manifest.train?.nightlyBranch) ||
-      trimReleaseValue(manifest.git?.defaultBranch) ||
-      "main";
-    const resolvedRef = trimReleaseValue(manifest.nightly?.ref) || resolvedBranch;
-    const hasExplicitRef = Boolean(trimReleaseValue(manifest.nightly?.ref));
+    if (branch || version)
+      throw new Error("rin_nightly_selector_not_supported");
+    const resolvedBranch = firstReleaseValue(
+      manifest.nightly?.branch,
+      manifest.train?.nightlyBranch,
+      manifest.git?.defaultBranch,
+      "main",
+    );
+    const explicitRef = firstReleaseValue(manifest.nightly?.ref);
+    const resolvedRef = explicitRef || resolvedBranch;
+    const resolvedVersion = firstReleaseValue(
+      manifest.nightly?.version,
+      DEFAULT_NIGHTLY_VERSION,
+    );
     return {
       channel,
       archiveUrl:
-        trimReleaseValue(manifest.nightly?.archiveUrl) ||
-        (hasExplicitRef
+        firstReleaseValue(manifest.nightly?.archiveUrl) ||
+        (explicitRef
           ? buildGitHubRefArchiveUrl(repoUrl, resolvedRef)
           : buildGitHubBranchArchiveUrl(repoUrl, resolvedBranch)),
-      version:
-        trimReleaseValue(manifest.nightly?.version) || DEFAULT_NIGHTLY_VERSION,
+      version: resolvedVersion,
       branch: resolvedBranch,
       ref: resolvedRef,
-      sourceLabel: `nightly ${trimReleaseValue(manifest.nightly?.version) || DEFAULT_NIGHTLY_VERSION}`,
+      sourceLabel: `nightly ${resolvedVersion}`,
     };
   }
 
-  const gitRepoUrl = trimReleaseValue(manifest.git?.repoUrl) || repoUrl;
-  const resolvedBranch = branch || trimReleaseValue(manifest.git?.defaultBranch) || "main";
+  const gitRepoUrl = firstReleaseValue(manifest.git?.repoUrl, repoUrl);
+  const resolvedBranch = firstReleaseValue(
+    branch,
+    manifest.git?.defaultBranch,
+    "main",
+  );
   const resolvedRef = version || resolvedBranch;
   return {
     channel,
@@ -324,7 +352,9 @@ export function resolveReleaseRequest(
     version: version || resolvedRef,
     branch: resolvedBranch,
     ref: resolvedRef,
-    sourceLabel: version ? `git ref ${resolvedRef}` : `git branch ${resolvedRef}`,
+    sourceLabel: version
+      ? `git ref ${resolvedRef}`
+      : `git branch ${resolvedRef}`,
   };
 }
 
@@ -370,17 +400,19 @@ export function releaseInfoFromEnv(): InstalledReleaseInfo | undefined {
   const channel = normalizeReleaseChannel(process.env.RIN_RELEASE_CHANNEL);
   const version = trimReleaseValue(process.env.RIN_RELEASE_VERSION);
   const branch = trimReleaseValue(process.env.RIN_RELEASE_BRANCH);
-  const ref = trimReleaseValue(process.env.RIN_RELEASE_REF || branch || version);
+  const ref = firstReleaseValue(process.env.RIN_RELEASE_REF, branch, version);
   const sourceLabel = trimReleaseValue(process.env.RIN_RELEASE_SOURCE_LABEL);
   const archiveUrl = trimReleaseValue(process.env.RIN_RELEASE_ARCHIVE_URL);
-  if (!version && !branch && !ref && !sourceLabel && !archiveUrl) return undefined;
+  if (!version && !branch && !ref && !sourceLabel && !archiveUrl)
+    return undefined;
   return {
     channel,
-    version: version || ref || branch || "unknown",
-    branch: branch || (channel === "stable" ? "stable" : "main"),
-    ref: ref || branch || version || "main",
+    version: firstReleaseValue(version, ref, branch, "unknown"),
+    branch: firstReleaseValue(branch, channel === "stable" ? "stable" : "main"),
+    ref: firstReleaseValue(ref, branch, version, "main"),
     sourceLabel:
-      sourceLabel || `${channel} ${version || branch || ref || "unknown"}`,
+      sourceLabel ||
+      `${channel} ${firstReleaseValue(version, branch, ref, "unknown")}`,
     archiveUrl,
     installedAt: new Date().toISOString(),
   };
