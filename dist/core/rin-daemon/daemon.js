@@ -8,12 +8,13 @@ import { createConnectedRpcSocketPair, } from "../platform/rpc-socket.js";
 import { bridgeDaemonSocketPath, defaultDaemonSocketPath, safeString, } from "../rin-lib/common.js";
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { emptySessionState, isSessionScopedCommand, response, } from "../rin-lib/rpc.js";
-import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, } from "../rin-lib/runtime.js";
+import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, getRuntimeSessionDir, } from "../rin-lib/runtime.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
-import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, readSessionFile, } from "../session/ref.js";
+import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, } from "../session/ref.js";
+import { listResumableSessionFiles } from "../session/turn-state.js";
 import { WorkerPool } from "./worker-pool.js";
 function writeLine(socket, payload) {
     if (!socket.destroyed)
@@ -22,32 +23,9 @@ function writeLine(socket, payload) {
 function restartStatePath(agentDir) {
     return path.join(agentDir, "data", "restart.json");
 }
-function loadRestartState(agentDir) {
+function clearLegacyRestartState(agentDir) {
     try {
-        const parsed = JSON.parse(fs.readFileSync(restartStatePath(agentDir), "utf8"));
-        const pendingResume = Array.isArray(parsed?.pendingResume)
-            ? parsed.pendingResume
-                .map((item) => ({
-                sessionFile: readSessionFile(item),
-                resumeTurn: Boolean(item?.resumeTurn),
-            }))
-                .filter((item) => Boolean(item.sessionFile))
-            : [];
-        return { pendingResume };
-    }
-    catch {
-        return { pendingResume: [] };
-    }
-}
-function saveRestartState(agentDir, state) {
-    const filePath = restartStatePath(agentDir);
-    try {
-        fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        if (!state.pendingResume.length) {
-            fs.rmSync(filePath, { force: true });
-            return;
-        }
-        fs.writeFileSync(filePath, JSON.stringify({ version: 1, pendingResume: state.pendingResume }));
+        fs.rmSync(restartStatePath(agentDir), { force: true });
     }
     catch { }
 }
@@ -60,7 +38,6 @@ export async function startDaemon(options = {}) {
     const runtime = resolveRuntimeProfile();
     applyRuntimeProfileEnvironment(runtime);
     const sessionManagerModulePromise = loadRinSessionManagerModule();
-    const restartState = loadRestartState(runtime.agentDir);
     const workerPool = new WorkerPool({
         workerPath,
         cwd: runtime.cwd,
@@ -349,19 +326,14 @@ export async function startDaemon(options = {}) {
     })));
     console.log(`rin daemon listening on ${socketPath}`);
     console.log(`rin daemon bridge listening on ${bridgeSocketPath}`);
-    const pendingResume = [...restartState.pendingResume];
-    restartState.pendingResume = [];
-    saveRestartState(runtime.agentDir, restartState);
-    for (const item of pendingResume) {
+    clearLegacyRestartState(runtime.agentDir);
+    const sessionDir = getRuntimeSessionDir(runtime.cwd, runtime.agentDir);
+    for (const sessionFile of listResumableSessionFiles(sessionDir)) {
         try {
-            if (item.sessionFile)
-                workerPool.restoreSessionWorker(item);
+            workerPool.restoreSessionWorker({ sessionFile, resumeTurn: true });
         }
-        catch {
-            restartState.pendingResume.push(item);
-        }
+        catch { }
     }
-    saveRestartState(runtime.agentDir, restartState);
     let shuttingDown = false;
     const shutdownGraceMs = Math.max(0, Number(process.env.RIN_DAEMON_SHUTDOWN_GRACE_MS || 85_000));
     const shutdown = async () => {
@@ -383,8 +355,7 @@ export async function startDaemon(options = {}) {
             }
             catch { }
         }
-        restartState.pendingResume = await workerPool.shutdown(shutdownGraceMs);
-        saveRestartState(runtime.agentDir, restartState);
+        await workerPool.shutdown(shutdownGraceMs);
         await Promise.resolve(options.onShutdown?.()).catch(() => { });
         process.exit(0);
     };

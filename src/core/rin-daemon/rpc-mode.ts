@@ -4,6 +4,10 @@ import { createInterruptedToolResultMessage } from "../rin-lib/interruption.js";
 import { fail, ok } from "../rin-lib/rpc.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 import { requireSessionFile } from "../session/ref.js";
+import {
+  appendSessionTurnState,
+  type SessionTurnStateStatus,
+} from "../session/turn-state.js";
 import { resolveTurnCompletion } from "../session/turn-result.js";
 import { safeString } from "../text-utils.js";
 import {
@@ -148,6 +152,9 @@ export async function runCustomRpcMode(
     if (!requestTag) return;
     output({ type: "rpc_turn_event", event, requestTag, ...payload });
   };
+  const markTurnState = (session: any, status: SessionTurnStateStatus) => {
+    appendSessionTurnState(session, status);
+  };
   const startTurnTask = (requestTag: string, task: () => Promise<void>) => {
     const turnSession = getSession();
     const beforeSnapshot = snapshotSessionTurnCompletion(turnSession);
@@ -172,6 +179,7 @@ export async function runCustomRpcMode(
           }, TURN_HEARTBEAT_INTERVAL_MS)
         : null;
       try {
+        markTurnState(turnSession, "active");
         await task();
         await turnSession.agent.waitForIdle();
         await settleTurnCompletionEvents();
@@ -199,6 +207,7 @@ export async function runCustomRpcMode(
         if (!completion.finalText) {
           throw new Error("rpc_turn_final_output_missing");
         }
+        markTurnState(turnSession, "completed");
         emitTurnEvent("complete", requestTag, {
           sessionFile: turnSession.sessionFile,
           sessionId: turnSession.sessionId,
@@ -370,7 +379,10 @@ export async function runCustomRpcMode(
           session.followUp(command.message, command.images),
         );
       case "abort":
-        return run(id, type, () => session.abort());
+        return run(id, type, async () => {
+          markTurnState(session, "aborted");
+          await session.abort();
+        });
       case "shutdown_session":
         await runtime.dispose();
         output(done(id, type, { shutdown: true }));
