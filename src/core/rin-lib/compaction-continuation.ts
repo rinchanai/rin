@@ -15,10 +15,9 @@ export type CompactionContinuationMarker = {
   assistantPreview?: string;
 };
 
-function compactionContinuationMarkerDir() {
-  return join(
-    preferredTempRootCandidates()[0],
-    "rin-compaction-continuation",
+function compactionContinuationMarkerDirs() {
+  return preferredTempRootCandidates().map((root) =>
+    join(root, "rin-compaction-continuation"),
   );
 }
 
@@ -34,11 +33,17 @@ function parseCompactionContinuationMarker(
   return parsed;
 }
 
-export function getCompactionContinuationMarkerPath(source: any): string {
+function getCompactionContinuationMarkerPaths(source: any): string[] {
   const hash = createHash("sha1")
     .update(readSessionIdentity(source))
     .digest("hex");
-  return join(compactionContinuationMarkerDir(), `${hash}.json`);
+  return compactionContinuationMarkerDirs().map((dir) =>
+    join(dir, `${hash}.json`),
+  );
+}
+
+export function getCompactionContinuationMarkerPath(source: any): string {
+  return getCompactionContinuationMarkerPaths(source)[0];
 }
 
 export function writeCompactionContinuationMarker(
@@ -47,32 +52,43 @@ export function writeCompactionContinuationMarker(
     at?: number;
   },
 ) {
-  const file = getCompactionContinuationMarkerPath(source);
   const next: CompactionContinuationMarker = {
     version: 1,
     at: Number(marker?.at || Date.now()),
     reason: marker.reason,
-    assistantPreview: String(marker?.assistantPreview || "").trim() || undefined,
+    assistantPreview:
+      String(marker?.assistantPreview || "").trim() || undefined,
   };
-  writeJsonAtomic(file, next);
-  return next;
+  let lastError: unknown;
+  for (const file of getCompactionContinuationMarkerPaths(source)) {
+    try {
+      writeJsonAtomic(file, next);
+      return next;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
 }
 
 export function consumeCompactionContinuationMarker(
   source: any,
 ): CompactionContinuationMarker | undefined {
-  const file = getCompactionContinuationMarkerPath(source);
-  try {
-    const raw = readFileSync(file, "utf8");
-    rmSync(file, { force: true });
-    return parseCompactionContinuationMarker(JSON.parse(raw));
-  } catch {
-    return undefined;
+  for (const file of getCompactionContinuationMarkerPaths(source)) {
+    try {
+      const raw = readFileSync(file, "utf8");
+      rmSync(file, { force: true });
+      const marker = parseCompactionContinuationMarker(JSON.parse(raw));
+      if (marker) return marker;
+    } catch {}
   }
+  return undefined;
 }
 
 export function clearCompactionContinuationMarker(source: any) {
-  try {
-    rmSync(getCompactionContinuationMarkerPath(source), { force: true });
-  } catch {}
+  for (const file of getCompactionContinuationMarkerPaths(source)) {
+    try {
+      rmSync(file, { force: true });
+    } catch {}
+  }
 }
