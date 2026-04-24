@@ -43,12 +43,20 @@ test("session turn state uses the latest durable marker", async () => {
   }
 });
 
-test("session turn state treats missing or active markers as resumable", async () => {
+test("session turn state treats missing, active, or post-terminal user tails as resumable", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {
     const unmarked = path.join(dir, "unmarked.jsonl");
     const active = path.join(dir, "active.jsonl");
     const completed = path.join(dir, "completed.jsonl");
+    const completedWithAssistantTail = path.join(
+      dir,
+      "completed-with-assistant-tail.jsonl",
+    );
+    const completedWithUserTail = path.join(
+      dir,
+      "completed-with-user-tail.jsonl",
+    );
     await fs.writeFile(
       unmarked,
       `${JSON.stringify({ type: "message", message: { role: "user", content: "hello" }, id: "u1", parentId: null })}\n`,
@@ -61,8 +69,47 @@ test("session turn state treats missing or active markers as resumable", async (
       completed,
       `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "completed" } })}\n`,
     );
+    await fs.writeFile(
+      completedWithAssistantTail,
+      [
+        JSON.stringify({
+          type: "custom",
+          customType: "rin-turn-state",
+          data: { status: "completed" },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: { role: "assistant", content: "done" },
+        }),
+        "",
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      completedWithUserTail,
+      [
+        JSON.stringify({
+          type: "custom",
+          customType: "rin-turn-state",
+          data: { status: "completed" },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: { role: "assistant", content: "done" },
+        }),
+        JSON.stringify({
+          type: "message",
+          message: { role: "user", content: "continue" },
+        }),
+        "",
+      ].join("\n"),
+    );
 
-    assert.deepEqual(listResumableSessionFiles(dir), [active, unmarked]);
+    assert.deepEqual(listResumableSessionFiles(dir), [
+      active,
+      completedWithUserTail,
+      unmarked,
+    ]);
+    assert.equal(shouldResumeSessionFile(completedWithAssistantTail), false);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

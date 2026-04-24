@@ -47,12 +47,24 @@ function normalizeTurnState(value: unknown): SessionTurnState | undefined {
   };
 }
 
-export function readSessionTurnState(
-  sessionFile: string,
-): SessionTurnState | undefined {
+function isTurnStartEntry(entry: any) {
+  if (entry?.type === "custom_message") return true;
+  if (entry?.type === "branch_summary") return true;
+  if (entry?.type !== "message") return false;
+  const role = entry?.message?.role;
+  return role === "user" || role === "bashExecution";
+}
+
+function readSessionTurnStateDetails(sessionFile: string):
+  | {
+      latest?: SessionTurnState;
+      hasTurnStartAfterLatestState: boolean;
+    }
+  | undefined {
   try {
     const text = fs.readFileSync(sessionFile, "utf8");
     let latest: SessionTurnState | undefined;
+    let hasTurnStartAfterLatestState = false;
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
       let entry: any;
@@ -61,19 +73,34 @@ export function readSessionTurnState(
       } catch {
         continue;
       }
-      if (entry?.type !== "custom") continue;
-      if (entry?.customType !== SESSION_TURN_STATE_ENTRY_TYPE) continue;
-      latest = normalizeTurnState(entry) ?? latest;
+      if (
+        entry?.type === "custom" &&
+        entry?.customType === SESSION_TURN_STATE_ENTRY_TYPE
+      ) {
+        latest = normalizeTurnState(entry) ?? latest;
+        hasTurnStartAfterLatestState = false;
+        continue;
+      }
+      if (isTurnStartEntry(entry)) hasTurnStartAfterLatestState = true;
     }
-    return latest;
+    return { latest, hasTurnStartAfterLatestState };
   } catch {
     return undefined;
   }
 }
 
+export function readSessionTurnState(
+  sessionFile: string,
+): SessionTurnState | undefined {
+  return readSessionTurnStateDetails(sessionFile)?.latest;
+}
+
 export function shouldResumeSessionFile(sessionFile: string) {
-  const latest = readSessionTurnState(sessionFile);
-  return !latest || !TERMINAL_TURN_STATES.has(latest.status);
+  const details = readSessionTurnStateDetails(sessionFile);
+  const latest = details?.latest;
+  if (!latest) return true;
+  if (details.hasTurnStartAfterLatestState) return true;
+  return !TERMINAL_TURN_STATES.has(latest.status);
 }
 
 export function listSessionFiles(sessionDir: string): string[] {
