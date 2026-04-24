@@ -436,6 +436,21 @@ test("daemon auto-resumes active session logs on startup without frontend help",
 import process from "node:process";
 function send(payload) { process.stdout.write(JSON.stringify(payload) + "\\n"); }
 let buffer = "";
+let switched = false;
+async function handle(command) {
+  if (command.type === "switch_session") {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    switched = true;
+    send({ type: "response", id: command.id, command: command.type, success: true, data: { cancelled: false } });
+    return;
+  }
+  if (command.type === "resume_interrupted_turn") {
+    if (switched) send({ type: "agent_start" });
+    send({ type: "response", id: command.id, command: command.type, success: true, data: {} });
+    return;
+  }
+  send({ type: "response", id: command.id, command: command.type, success: true, data: {} });
+}
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   buffer += chunk;
@@ -445,16 +460,7 @@ process.stdin.on("data", (chunk) => {
     const line = buffer.slice(0, idx);
     buffer = buffer.slice(idx + 1);
     if (!line.trim()) continue;
-    const command = JSON.parse(line);
-    if (command.type === "switch_session") {
-      send({ type: "response", id: command.id, command: command.type, success: true, data: { cancelled: false } });
-      continue;
-    }
-    if (command.type === "resume_interrupted_turn") {
-      send({ type: "agent_start" });
-      continue;
-    }
-    send({ type: "response", id: command.id, command: command.type, success: true, data: {} });
+    handle(JSON.parse(line));
   }
 });
 `,

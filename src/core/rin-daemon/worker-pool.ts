@@ -380,14 +380,22 @@ export class WorkerPool {
     if (!selector.sessionFile) return;
     const worker = this.createWorker();
     this.setWorkerSessionRefs(worker, selector);
-    worker.child.stdin.write(
-      `${JSON.stringify(createSwitchSessionCommand(selector.sessionFile))}\n`,
-    );
-    if (item?.resumeTurn) {
-      worker.child.stdin.write(
-        `${JSON.stringify({ type: "resume_interrupted_turn", source: "daemon-restart" })}\n`,
-      );
-    }
+    void (async () => {
+      try {
+        await this.sendInternalCommand(
+          worker,
+          createSwitchSessionCommand(selector.sessionFile),
+        );
+        if (item?.resumeTurn) {
+          await this.sendInternalCommand(worker, {
+            type: "resume_interrupted_turn",
+            source: "daemon-restart",
+          });
+        }
+      } catch {
+        this.destroyWorker(worker);
+      }
+    })().catch(() => {});
   }
 
   async shutdown(graceMs: number) {
