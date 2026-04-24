@@ -65,15 +65,11 @@ test("chat message header explains sender identity tiers in the system prompt", 
   );
   assert.ok(
     systemPrompt.includes(
-      "`sender trust: trusted user` means a known trusted user; all other identities are external users.",
+      "`sender trust` is `owner`, `trusted user`, or `other chat user`.",
     ),
   );
-  assert.equal(
-    systemPrompt.includes("- Injected message header fields:"),
-    false,
-  );
   assert.ok(header.includes("sender nickname: Alice"));
-  assert.ok(header.includes("sender is owner: no"));
+  assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: other chat user"));
 });
 
@@ -106,10 +102,10 @@ test("chat message header keeps owner senders marked as owner", async () => {
   const header = String(beforeStart?.message?.content || "");
   assert.ok(
     systemPrompt.includes(
-      "`sender is owner: yes` and `sender trust: owner` mean the owner;",
+      "Only `sender trust: owner` should receive owner-only forms of address or owner-only authority",
     ),
   );
-  assert.ok(header.includes("sender is owner: yes"));
+  assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: owner"));
 });
 
@@ -139,6 +135,6 @@ test("chat message header keeps trusted senders distinct from owner", async () =
   });
 
   const header = String(beforeStart?.message?.content || "");
-  assert.ok(header.includes("sender is owner: no"));
+  assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: trusted user"));
 });
