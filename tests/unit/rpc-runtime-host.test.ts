@@ -44,6 +44,11 @@ test("rpc runtime host adapts RpcInteractiveSession shape for InteractiveMode", 
 
   const runtimeHost = createRpcRuntimeHost(session);
 
+  runtimeHost.setBeforeSessionInvalidate(() => calls.push(["beforeInvalidate"]));
+  runtimeHost.setRebindSession(async (nextSession) =>
+    calls.push(["rebind", nextSession.id]),
+  );
+
   assert.equal(runtimeHost.session, session);
   assert.deepEqual(await runtimeHost.newSession({ parentSession: "p" }), {
     cancelled: false,
@@ -64,9 +69,16 @@ test("rpc runtime host adapts RpcInteractiveSession shape for InteractiveMode", 
 
   assert.deepEqual(calls, [
     ["newSession", { parentSession: "p" }],
+    ["beforeInvalidate"],
+    ["rebind", "session-like"],
     ["switchSession", "/tmp/demo.jsonl", "/tmp/cwd"],
     ["fork", "entry-1"],
+    ["beforeInvalidate"],
+    ["rebind", "session-like"],
     ["importFromJsonl", "/tmp/in.jsonl", "/tmp/cwd"],
+    ["beforeInvalidate"],
+    ["rebind", "session-like"],
+    ["beforeInvalidate"],
     ["terminateSession"],
     ["disconnect"],
   ]);

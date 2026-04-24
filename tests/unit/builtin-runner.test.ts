@@ -44,6 +44,33 @@ test("composite builtin runner exposes a merged createContext", () => {
   assert.equal(typeof context.isIdle, "function");
 });
 
+test("composite builtin runner forwards optional diagnostics", () => {
+  const builtinHost = new BuiltinModuleHost(
+    "/tmp/rin-cwd",
+    "/tmp/rin-agent",
+    { name: "session-manager" },
+    { name: "model-registry" },
+  );
+  const runner = new CompositeBuiltinRunner(
+    {
+      getCommandDiagnostics() {
+        return [{ type: "warning", message: "command" }];
+      },
+      getShortcutDiagnostics() {
+        return [{ type: "warning", message: "shortcut" }];
+      },
+    },
+    builtinHost,
+  );
+
+  assert.deepEqual(runner.getCommandDiagnostics(), [
+    { type: "warning", message: "command" },
+  ]);
+  assert.deepEqual(runner.getShortcutDiagnostics(), [
+    { type: "warning", message: "shortcut" },
+  ]);
+});
+
 test("composite builtin runner returns wrapped builtin tools for registry refresh", () => {
   const builtinHost = new BuiltinModuleHost(
     "/tmp/rin-cwd",

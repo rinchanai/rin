@@ -620,6 +620,20 @@ export class CompositeBuiltinRunner {
     return this.externalRunner?.getShortcuts?.(resolvedKeybindings) || new Map();
   }
 
+  getCommandDiagnostics() {
+    return [
+      ...(this.externalRunner?.getCommandDiagnostics?.() || []),
+      ...((this.builtinHost as any).getCommandDiagnostics?.() || []),
+    ];
+  }
+
+  getShortcutDiagnostics() {
+    return [
+      ...(this.externalRunner?.getShortcutDiagnostics?.() || []),
+      ...((this.builtinHost as any).getShortcutDiagnostics?.() || []),
+    ];
+  }
+
   getFlags() {
     return this.externalRunner?.getFlags?.() || new Map();
   }
