@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "packageName": "@rinchanai/rin",
+  "repoUrl": "https://github.com/rinchanai/rin",
+  "bootstrapBranch": "bootstrap",
+  "train": {
+    "series": "0.0",
+    "nightlyBranch": "main"
+  },
+  "stable": {
+    "version": "0.0.0",
+    "archiveUrl": "https://registry.npmjs.org/%40rinchanai%2Frin/-/rin-0.0.0.tgz",
+    "ref": "main"
+  },
+  "beta": {
+    "version": "0.0.1-beta.20260421",
+    "archiveUrl": "https://github.com/rinchanai/rin/archive/f08a112e9412df9e39282e87db6a29fc6f335aeb.tar.gz",
+    "ref": "f08a112e9412df9e39282e87db6a29fc6f335aeb",
+    "promotionVersion": "0.0.1"
+  },
+  "nightly": {
+    "version": "0.0.1-nightly.20260421+20315bd",
+    "archiveUrl": "https://github.com/rinchanai/rin/archive/20315bd9f505afdf123cb8fe513e31955f653d71.tar.gz",
+    "ref": "20315bd9f505afdf123cb8fe513e31955f653d71",
+    "branch": "main"
+  },
+  "git": {
+    "defaultBranch": "main",
+    "repoUrl": "https://github.com/rinchanai/rin"
+  }
+}
