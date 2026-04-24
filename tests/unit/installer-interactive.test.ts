@@ -159,14 +159,11 @@ test("promptInstallerLanguage uses English-only copy for non-Chinese locales", a
     assert.equal(result, "fr-CA");
     assert.equal(seen.select.message, "Choose installer language");
     assert.equal(seen.select.options[0].hint, "en");
-    assert.deepEqual(
-      seen.select.options.at(-1),
-      {
-        value: "custom",
-        label: "Other",
-        hint: "Enter any BCP 47 language tag",
-      },
-    );
+    assert.deepEqual(seen.select.options.at(-1), {
+      value: "custom",
+      label: "Other",
+      hint: "Enter any BCP 47 language tag",
+    });
     assert.equal(seen.text.message, "Enter language tag (BCP 47)");
     assert.equal(seen.text.placeholder, "en-US");
     assert.equal(seen.text.defaultValue, "en-US");
@@ -203,7 +200,9 @@ test("promptInstallerLanguage keeps the picker copy English-only for Chinese loc
         return "en";
       },
       async text() {
-        throw new Error("text prompt should not run when a preset option is chosen");
+        throw new Error(
+          "text prompt should not run when a preset option is chosen",
+        );
       },
     });
 
@@ -260,7 +259,9 @@ test("promptProviderSetup always requires choosing a provider", async () => {
       throw new Error("text prompt should not be used in this test");
     },
     async confirm() {
-      throw new Error("provider setup must not allow skipping provider selection");
+      throw new Error(
+        "provider setup must not allow skipping provider selection",
+      );
     },
   };
 
@@ -301,11 +302,90 @@ test("promptProviderSetup always requires choosing a provider", async () => {
     "Choose a model.",
     "Choose the default thinking level.",
   ]);
-  assert.deepEqual(authCalls, [{ provider: "openai", installDir: "/tmp/demo" }]);
+  assert.deepEqual(authCalls, [
+    { provider: "openai", installDir: "/tmp/demo" },
+  ]);
   assert.equal(result.provider, "openai");
   assert.equal(result.modelId, "gpt-5");
   assert.equal(result.thinkingLevel, "medium");
   assert.equal(result.authResult.available, true);
+});
+
+test("promptProviderSetup limits thinking levels to the selected model", async () => {
+  async function chooseModel(modelId) {
+    let thinkingOptions = [];
+    const prompt = {
+      ensureNotCancelled(value) {
+        return value;
+      },
+      async select(options) {
+        if (options.message === "Choose a provider to authenticate and use.")
+          return "openai";
+        if (options.message === "Choose a model.") return modelId;
+        if (options.message === "Choose the default thinking level.") {
+          thinkingOptions = options.options.map((option) => option.value);
+          return thinkingOptions.includes("medium") ? "medium" : "off";
+        }
+        throw new Error(`unexpected select prompt: ${options.message}`);
+      },
+      async text() {
+        throw new Error("text prompt should not be used in this test");
+      },
+      async confirm() {
+        throw new Error("confirm should not be used in this test");
+      },
+    };
+
+    await interactive.promptProviderSetup(prompt, "/tmp/demo", () => ({}), {
+      async loadModelChoices() {
+        return [
+          {
+            provider: "openai",
+            id: "gpt-5",
+            reasoning: true,
+            available: true,
+          },
+          {
+            provider: "openai",
+            id: "codex-max",
+            reasoning: true,
+            available: true,
+          },
+          {
+            provider: "openai",
+            id: "gpt-4.1",
+            reasoning: false,
+            available: true,
+          },
+        ];
+      },
+      async configureProviderAuth() {
+        return {
+          available: true,
+          authKind: "existing",
+          authData: {},
+        };
+      },
+    });
+    return thinkingOptions;
+  }
+
+  assert.deepEqual(await chooseModel("gpt-5"), [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+  ]);
+  assert.deepEqual(await chooseModel("codex-max"), [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+  ]);
+  assert.deepEqual(await chooseModel("gpt-4.1"), ["off"]);
 });
 
 test("promptProviderSetup fails when no models are available", async () => {
