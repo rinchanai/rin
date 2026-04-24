@@ -11,7 +11,7 @@ const rootDir = path.resolve(
   "..",
 );
 const messageContent = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "message-content.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "message-content.js")).href
 );
 
 async function withTempDir(fn) {
@@ -234,6 +234,9 @@ test("message content helpers keep file-url filtering and max limits stable", as
     ].join("\n");
 
     assert.deepEqual(messageContent.extractExistingFilePaths(text), [filePath]);
+    assert.deepEqual(messageContent.extractExistingFilePaths(text, 1), [
+      filePath,
+    ]);
     assert.deepEqual(messageContent.extractExistingFilePaths(text, 0), []);
     assert.deepEqual(messageContent.extractExistingFilePaths(text, -1), []);
   });

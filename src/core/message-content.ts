@@ -10,10 +10,18 @@ export type RenderMessageTextOptions = {
   normalizeChildren?: (text: string) => string;
 };
 
+type MessagePart = Record<string, any>;
+type NormalizedMessagePart = {
+  value: MessagePart;
+  type: string;
+  attrs: Record<string, any>;
+  children: any[];
+};
+
 const EMPTY_OBJECT: Record<string, any> = {};
 const FILE_URL_PATTERN = /file:\/\/[^\s'"`<>]+/g;
 
-function isMessagePart(value: unknown): value is Record<string, any> {
+function isMessagePart(value: unknown): value is MessagePart {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -21,16 +29,14 @@ function normalizeMessagePartType(value: unknown) {
   return safeString(value).trim().toLowerCase();
 }
 
-function getMessagePartType(content: any) {
-  return normalizeMessagePartType(content?.type);
-}
-
-function getMessagePartAttrs(content: any) {
-  return isMessagePart(content?.attrs) ? content.attrs : EMPTY_OBJECT;
-}
-
-function getMessagePartChildren(content: any) {
-  return Array.isArray(content?.children) ? content.children : [];
+function normalizeMessagePart(value: unknown): NormalizedMessagePart | null {
+  if (!isMessagePart(value)) return null;
+  return {
+    value,
+    type: normalizeMessagePartType(value.type),
+    attrs: isMessagePart(value.attrs) ? value.attrs : EMPTY_OBJECT,
+    children: Array.isArray(value.children) ? value.children : [],
+  };
 }
 
 function normalizeRenderedChildren(
@@ -49,6 +55,21 @@ function renderMessageChildren(
   return content.map((part) => renderMessageNode(part, options)).join("");
 }
 
+function renderContainerMessagePart(
+  part: NormalizedMessagePart,
+  options: RenderMessageTextOptions,
+) {
+  const childText = normalizeRenderedChildren(
+    renderMessageChildren(part.children, options),
+    options.normalizeChildren,
+  );
+  return part.type === "p" || part.type === "paragraph"
+    ? childText
+      ? `${childText}\n`
+      : ""
+    : childText;
+}
+
 function renderMessageNode(
   content: any,
   options: RenderMessageTextOptions,
@@ -56,36 +77,23 @@ function renderMessageNode(
   if (!content) return "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return renderMessageChildren(content, options);
-  if (!isMessagePart(content)) return "";
 
-  const type = getMessagePartType(content);
-  const attrs = getMessagePartAttrs(content);
-  switch (type) {
+  const part = normalizeMessagePart(content);
+  if (!part) return "";
+
+  switch (part.type) {
     case "text":
-      return safeString(content.text ?? attrs.content ?? "");
+      return safeString(part.value.text ?? part.attrs.content ?? "");
     case "thinking":
-      return options.includeThinking ? safeString(content.thinking) : "";
+      return options.includeThinking ? safeString(part.value.thinking) : "";
     case "at":
       return typeof options.renderAt === "function"
-        ? safeString(options.renderAt(attrs))
+        ? safeString(options.renderAt(part.attrs))
         : "";
     case "br":
       return "\n";
-    default: {
-      const childText = renderMessageChildren(
-        getMessagePartChildren(content),
-        options,
-      );
-      const normalizedChildText = normalizeRenderedChildren(
-        childText,
-        options.normalizeChildren,
-      );
-      return type === "p" || type === "paragraph"
-        ? normalizedChildText
-          ? `${normalizedChildText}\n`
-          : ""
-        : normalizedChildText;
-    }
+    default:
+      return renderContainerMessagePart(part, options);
   }
 }
 
@@ -117,15 +125,22 @@ export function normalizeMessageText(text: unknown) {
     .trim();
 }
 
-function extractMessagePartsByType(content: any, type: string) {
+function mapMessagePartsByType<T>(
+  content: any,
+  type: string,
+  map: (part: MessagePart) => T | undefined,
+) {
   const normalizedType = normalizeMessagePartType(type);
-  if (!Array.isArray(content) || !normalizedType) {
-    return [] as Array<Record<string, any>>;
+  if (!Array.isArray(content) || !normalizedType) return [] as T[];
+
+  const parts: T[] = [];
+  for (const entry of content) {
+    const part = normalizeMessagePart(entry);
+    if (!part || part.type !== normalizedType) continue;
+    const mapped = map(part.value);
+    if (mapped !== undefined) parts.push(mapped);
   }
-  return content.filter(
-    (part): part is Record<string, any> =>
-      isMessagePart(part) && getMessagePartType(part) === normalizedType,
-  );
+  return parts;
 }
 
 function collectUniqueTrimmedStrings<T>(
@@ -133,12 +148,14 @@ function collectUniqueTrimmedStrings<T>(
   pick: (value: T) => unknown,
 ) {
   return Array.from(
-    new Set(values.map((value) => safeString(pick(value)).trim()).filter(Boolean)),
+    new Set(
+      values.map((value) => safeString(pick(value)).trim()).filter(Boolean),
+    ),
   );
 }
 
 export function extractToolCallParts(content: any) {
-  return extractMessagePartsByType(content, "toolCall");
+  return mapMessagePartsByType(content, "toolCall", (part) => part);
 }
 
 export function extractToolCallNames(content: any) {
@@ -153,16 +170,14 @@ export function countToolCalls(content: any) {
 }
 
 export function extractImageParts(content: any) {
-  return extractMessagePartsByType(content, "image")
-    .map((part) => {
-      const data = safeString(part.data || "");
-      if (!data) return null;
-      return {
-        data,
-        mimeType: safeString(part.mimeType || "").trim() || "image/png",
-      };
-    })
-    .filter((part): part is { data: string; mimeType: string } => Boolean(part));
+  return mapMessagePartsByType(content, "image", (part) => {
+    const data = safeString(part.data || "");
+    if (!data) return undefined;
+    return {
+      data,
+      mimeType: safeString(part.mimeType || "").trim() || "image/png",
+    };
+  });
 }
 
 function normalizeFileUrlPath(rawUrl: string) {
@@ -189,6 +204,9 @@ function isExistingFile(filePath: string) {
 }
 
 export function extractExistingFilePaths(text: string, max = 8) {
+  const limit = Math.max(0, max);
+  if (!limit) return [];
+
   const out: string[] = [];
   const seen = new Set<string>();
   for (const match of safeString(text).matchAll(FILE_URL_PATTERN)) {
@@ -196,6 +214,7 @@ export function extractExistingFilePaths(text: string, max = 8) {
     if (!resolved || seen.has(resolved) || !isExistingFile(resolved)) continue;
     seen.add(resolved);
     out.push(resolved);
+    if (out.length >= limit) break;
   }
-  return out.slice(0, Math.max(0, max));
+  return out;
 }
