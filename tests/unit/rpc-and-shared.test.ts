@@ -74,18 +74,17 @@ test("rpc helpers normalize scoped commands and return fresh empty session state
 });
 
 test("shared resolveParsedArgs keeps passthrough and install defaults coherent", () => {
-  const parsed = shared.resolveParsedArgs(
-    "",
-    { std: true, session: "", sessions: false, user: "demo" },
-    ["--std", "--foo", "bar"],
-  );
+  const parsed = shared.resolveParsedArgs("", { std: true, user: "demo" }, [
+    "--std",
+    "--foo",
+    "bar",
+  ]);
   assert.equal(parsed.targetUser, "demo");
   assert.equal(parsed.std, true);
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
   assert.deepEqual(
     shared.stripRinWrapperArgs([
       "--user=demo",
-      "--session=rin-hidden",
       "--std",
       "usage",
       "--limit",
@@ -93,6 +92,9 @@ test("shared resolveParsedArgs keeps passthrough and install defaults coherent",
     ]),
     ["usage", "--limit", "5"],
   );
+  assert.deepEqual(shared.stripRinWrapperArgs(["--session=old"]), [
+    "--session=old",
+  ]);
   assert.equal(
     shared.installConfigPath(),
     installPaths.launcherMetadataPathForHome(os.homedir()),
@@ -181,7 +183,7 @@ test("shared loadInstallConfigForHome prefers launcher metadata candidates and r
   }
 });
 
-test("hidden session helpers target the internal session runner", () => {
+test("tui launch helpers target the direct TUI runner", () => {
   assert.equal(launch.buildTuiModeArg(true), "--std");
   assert.equal(launch.buildTuiModeArg(false), "--rpc");
   assert.deepEqual(
@@ -197,23 +199,6 @@ test("hidden session helpers target the internal session runner", () => {
       "bar",
     ],
   );
-  assert.deepEqual(
-    launch.buildHiddenSessionAttachArgs("/repo", "hidden-rin", true, ["--foo"]),
-    [
-      process.execPath,
-      path.join("/repo", "dist", "app", "rin-hidden-session", "main.js"),
-      "attach",
-      "hidden-rin",
-      "--std",
-      "--",
-      "--foo",
-    ],
-  );
-  assert.deepEqual(launch.buildHiddenSessionListArgs("/repo"), [
-    process.execPath,
-    path.join("/repo", "dist", "app", "rin-hidden-session", "main.js"),
-    "list",
-  ]);
 });
 
 test("tui runtime env targets the target user's direct daemon socket", () => {
@@ -226,7 +211,6 @@ test("tui runtime env targets the target user's direct daemon socket", () => {
   assert.ok(String(env.RIN_DAEMON_SOCKET_PATH || "").includes("rin-daemon"));
   assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));
 });
-
 
 test("tui runtime env preserves an explicit agent dir override for isolated runs", () => {
   const currentUser = os.userInfo().username;
@@ -246,8 +230,8 @@ test("tui runtime env preserves an explicit agent dir override for isolated runs
   } finally {
     if (previousRinDir === undefined) delete process.env.RIN_DIR;
     else process.env.RIN_DIR = previousRinDir;
-    if (previousPiAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    if (previousPiAgentDir === undefined)
+      delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = previousPiAgentDir;
   }
 });
-

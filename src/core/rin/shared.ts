@@ -54,8 +54,6 @@ export type ParsedArgs = {
   targetUser: string;
   installDir: string;
   std: boolean;
-  hiddenSessionName: string;
-  hiddenSessionList: boolean;
   passthrough: string[];
   explicitUser: boolean;
   hasSavedInstall: boolean;
@@ -71,16 +69,11 @@ type InstallConfig = {
 
 export { repoRootFromHere, runCommand, safeString };
 
-const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set([
-  "-u",
-  "--user",
-  "-s",
-  "--session",
-]);
-const RIN_WRAPPER_FLAGS = new Set(["--std", "--sessions"]);
+const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user"]);
+const RIN_WRAPPER_FLAGS = new Set(["--std"]);
 
 function hasInlineWrapperValue(arg: string) {
-  return arg.startsWith("--user=") || arg.startsWith("--session=");
+  return arg.startsWith("--user=");
 }
 
 export function stripRinWrapperArgs(rawArgv: string[]) {
@@ -533,8 +526,6 @@ export function resolveParsedArgs(
       os.userInfo().username,
     installDir: safeString(installConfig.defaultInstallDir).trim(),
     std: Boolean(options.std),
-    hiddenSessionName: safeString(options.session).trim(),
-    hiddenSessionList: Boolean(options.sessions),
     passthrough: command ? [] : collectTuiPassthroughArgs(rawArgv),
     explicitUser: Boolean(targetUser),
     hasSavedInstall: Boolean(
