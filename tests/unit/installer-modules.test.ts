@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -74,6 +75,56 @@ test("provider-auth computes available thinking levels deterministically", () =>
     }),
     ["off", "minimal", "low", "medium", "high", "xhigh"],
   );
+});
+
+test("provider-auth loads installer model choices through the shared model registry", async () => {
+  await withTempDir(async (dir) => {
+    await fs.writeFile(
+      path.join(dir, "auth.json"),
+      `${JSON.stringify({ openai: { type: "api_key", key: "test-key" } })}\n`,
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(dir, "models.json"),
+      `${JSON.stringify({
+        providers: {
+          "local-test": {
+            baseUrl: "http://127.0.0.1:11434/v1",
+            apiKey: "literal:test-key",
+            api: "openai",
+            models: [{ id: "llama-test", reasoning: true }],
+          },
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    const choices = await provider.loadModelChoices(
+      dir,
+      (filePath, fallback) => {
+        try {
+          return JSON.parse(String(fsSync.readFileSync(filePath, "utf8")));
+        } catch {
+          return fallback;
+        }
+      },
+    );
+
+    assert.ok(
+      choices.some(
+        (model) => model.provider === "openai" && model.available === true,
+      ),
+    );
+    assert.ok(
+      choices.some(
+        (model) =>
+          model.provider === "local-test" &&
+          model.id === "llama-test" &&
+          model.reasoning === true &&
+          model.available === true,
+      ),
+    );
+  });
 });
 
 test("install-record normalizes launcher metadata and installer manifests", () => {
