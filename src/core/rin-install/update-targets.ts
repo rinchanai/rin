@@ -102,14 +102,6 @@ function addInstalledTarget(
   rowsByKey.set(key, target);
 }
 
-function readDirectoryNames(dir: string) {
-  try {
-    return fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-}
-
 function readDirectoryEntries(dir: string) {
   try {
     return fs.readdirSync(dir, { withFileTypes: true });
