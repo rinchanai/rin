@@ -46,6 +46,9 @@ test("sidecar common ignores malformed instance state payloads", async () => {
 
     await fs.writeFile(statePath, '["bad"]', "utf8");
     assert.equal(sidecar.readInstanceState(statePath), null);
+
+    await fs.writeFile(statePath, "null", "utf8");
+    assert.equal(sidecar.readInstanceState(statePath), null);
   });
 });
 

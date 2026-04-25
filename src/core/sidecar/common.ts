@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { isJsonRecord } from "../json-utils.js";
 import {
   ensurePrivateDir,
   readJsonFile,
@@ -11,8 +12,6 @@ import { isPidAlive, sleep } from "../platform/process.js";
 const LOCK_FILE_MODE = 0o600;
 const INSTANCE_STATE_FILE = "state.json";
 const LOCK_POLL_INTERVAL_MS = 100;
-
-type JsonRecord = Record<string, unknown>;
 
 type ProcessLockState = {
   pid: number;
@@ -25,11 +24,7 @@ function removeFile(filePath: string) {
   } catch {}
 }
 
-function isJsonRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function readJsonRecord(filePath: string): JsonRecord | null {
+function readJsonRecord(filePath: string): Record<string, unknown> | null {
   const value = readJsonFile<unknown>(filePath, null);
   return isJsonRecord(value) ? value : null;
 }
@@ -39,7 +34,9 @@ function normalizePid(value: unknown) {
   return Number.isInteger(pid) && pid > 0 ? pid : 0;
 }
 
-function normalizeProcessLockState(state: JsonRecord | null): ProcessLockState | null {
+function normalizeProcessLockState(
+  state: Record<string, unknown> | null,
+): ProcessLockState | null {
   if (!state) return null;
   const pid = normalizePid(state.pid);
   if (!pid) return null;
@@ -93,7 +90,9 @@ export function listInstanceIds(instancesRoot: string) {
       .filter(
         (entry) =>
           entry.isDirectory() &&
-          fs.existsSync(path.join(instancesRoot, entry.name, INSTANCE_STATE_FILE)),
+          fs.existsSync(
+            path.join(instancesRoot, entry.name, INSTANCE_STATE_FILE),
+          ),
       )
       .map((entry) => entry.name)
       .sort();
