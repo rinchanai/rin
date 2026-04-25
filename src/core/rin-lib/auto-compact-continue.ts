@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { BuiltinModuleApi } from "../builtins/host.js";
 
 import {
   consumeCompactionContinuationMarker,
@@ -10,7 +10,7 @@ const CONTINUATION_BLOCK = [
   "Resume the current task immediately from its current state. Execute the next concrete step directly without narration, and keep going if work remains.",
 ].join("\n");
 
-export default function autoCompactContinueExtension(pi: ExtensionAPI) {
+export default function autoCompactContinueModule(pi: BuiltinModuleApi) {
   pi.on("session_start", async (_event, ctx) => {
     clearCompactionContinuationMarker(ctx);
   });

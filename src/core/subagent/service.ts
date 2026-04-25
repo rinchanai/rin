@@ -126,11 +126,7 @@ async function createManagedSession(task: NormalizedSubagentTask) {
       const source = await resolveSessionFilePath(
         sessionConfig.sessionFile || "",
       );
-      sessionManager = SessionManager.open(
-        source.path,
-        sessionDir,
-        undefined,
-      );
+      sessionManager = SessionManager.open(source.path, sessionDir, undefined);
       break;
     }
     case "fork": {
@@ -312,7 +308,10 @@ function getSessionMessages(session: any): Message[] {
 
 export function collectTaskResultState(
   messages: Message[],
-): Pick<TaskResult, "output" | "stopReason" | "errorMessage" | "model" | "usage"> {
+): Pick<
+  TaskResult,
+  "output" | "stopReason" | "errorMessage" | "model" | "usage"
+> {
   const usage = createEmptyUsageStats();
   let stopReason: TaskResult["stopReason"];
   let errorMessage: TaskResult["errorMessage"];
@@ -353,7 +352,8 @@ function syncSessionMetadata(session: any, result: TaskResult): void {
   result.sessionPersisted = Boolean(
     manager?.isPersisted?.() && manager?.getSessionFile?.(),
   );
-  result.sessionId = safeString(manager?.getSessionId?.() || "").trim() || undefined;
+  result.sessionId =
+    safeString(manager?.getSessionId?.() || "").trim() || undefined;
   result.sessionFile = toSubagentSessionFile(
     profile.agentDir,
     manager?.getSessionFile?.(),
@@ -422,10 +422,16 @@ function emitTaskProgress(
   onProgress?.(snapshotTaskResult(result));
 }
 
-function setTaskResultError(result: TaskResult, error: unknown, session?: any): void {
+function setTaskResultError(
+  result: TaskResult,
+  error: unknown,
+  session?: any,
+): void {
   result.exitCode = 1;
   result.status = "error";
-  result.errorMessage = String((error as any)?.message || error || "subagent_failed");
+  result.errorMessage = String(
+    (error as any)?.message || error || "subagent_failed",
+  );
   if (session) {
     syncSessionMetadata(session, result);
   }
@@ -525,7 +531,7 @@ export async function runSubagentTask(
     }
     await session.prompt(task.prompt, {
       expandPromptTemplates: false,
-      source: "extension",
+      source: "builtin:subagent",
     });
     await session.agent.waitForIdle();
     syncResultFromSession(session, result, initialMessageCount);

@@ -1,9 +1,6 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { BuiltinModuleApi } from "../builtins/host.js";
 
-import {
-  appendTokenTelemetryEvent,
-  resolveAgentDir,
-} from "./store.js";
+import { appendTokenTelemetryEvent, resolveAgentDir } from "./store.js";
 import { extractToolCallNames } from "../message-content.js";
 import { readSessionMetadata } from "../session/metadata.js";
 import { safeString } from "../text-utils.js";
@@ -85,10 +82,15 @@ function nextEventId(prefix: string, ctx: any) {
 
 function inferCapability(eventType: string, message: any, toolName = "") {
   const normalizedToolName = safeString(toolName).trim();
-  if (eventType === "tool_execution_start" || eventType === "tool_execution_end") {
+  if (
+    eventType === "tool_execution_start" ||
+    eventType === "tool_execution_end"
+  ) {
     return {
       capabilityKind: "tool_execution",
-      capabilityKey: normalizedToolName ? `tool:${normalizedToolName}` : "tool:(unknown)",
+      capabilityKey: normalizedToolName
+        ? `tool:${normalizedToolName}`
+        : "tool:(unknown)",
     };
   }
 
@@ -115,7 +117,9 @@ function inferCapability(eventType: string, message: any, toolName = "") {
   if (message?.role === "toolResult") {
     return {
       capabilityKind: "tool_result",
-      capabilityKey: normalizedToolName ? `tool:${normalizedToolName}` : "tool_result",
+      capabilityKey: normalizedToolName
+        ? `tool:${normalizedToolName}`
+        : "tool_result",
     };
   }
 
@@ -152,7 +156,8 @@ function recordEvent(ctx: any, input: Record<string, any>) {
       phase: input.phase,
       provider: safeString(input.provider).trim() || state.provider,
       model: safeString(input.model).trim() || state.model,
-      thinkingLevel: safeString(input.thinkingLevel).trim() || state.thinkingLevel,
+      thinkingLevel:
+        safeString(input.thinkingLevel).trim() || state.thinkingLevel,
       messageId: input.messageId,
       messageRole: input.messageRole,
       stopReason: input.stopReason,
@@ -180,7 +185,7 @@ function recordEvent(ctx: any, input: Record<string, any>) {
   );
 }
 
-export default function tokenUsageExtension(pi: ExtensionAPI) {
+export default function tokenUsageModule(pi: BuiltinModuleApi) {
   pi.on("session_start", async (event, ctx) => {
     const state = getSessionState(ctx);
     state.trigger = safeString(event?.reason).trim();
@@ -220,7 +225,8 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
     const state = getSessionState(ctx);
     state.lastPromptPreview = previewText(event?.prompt);
     try {
-      state.thinkingLevel = safeString(pi.getThinkingLevel()).trim() || state.thinkingLevel;
+      state.thinkingLevel =
+        safeString(pi.getThinkingLevel()).trim() || state.thinkingLevel;
     } catch {}
     recordEvent(ctx, {
       eventType: "before_agent_start",
@@ -243,7 +249,9 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
       metadata: {
         source: safeString(event?.source).trim(),
         previousProvider: safeString(event?.previousModel?.provider).trim(),
-        previousModel: safeString(event?.previousModel?.id || event?.previousModel?.name).trim(),
+        previousModel: safeString(
+          event?.previousModel?.id || event?.previousModel?.name,
+        ).trim(),
       },
     });
   });
@@ -262,9 +270,17 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_start", async (event, ctx) => {
-    const capability = inferCapability("tool_execution_start", null, event?.toolName);
+    const capability = inferCapability(
+      "tool_execution_start",
+      null,
+      event?.toolName,
+    );
     recordEvent(ctx, {
-      id: [sessionKey(ctx), "tool_execution_start", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
+      id: [
+        sessionKey(ctx),
+        "tool_execution_start",
+        safeString(event?.toolCallId).trim() || nextEventId("tool", ctx),
+      ].join(":"),
       eventType: "tool_execution_start",
       phase: "tool",
       toolCallId: safeString(event?.toolCallId).trim(),
@@ -278,9 +294,17 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_end", async (event, ctx) => {
-    const capability = inferCapability("tool_execution_end", null, event?.toolName);
+    const capability = inferCapability(
+      "tool_execution_end",
+      null,
+      event?.toolName,
+    );
     recordEvent(ctx, {
-      id: [sessionKey(ctx), "tool_execution_end", safeString(event?.toolCallId).trim() || nextEventId("tool", ctx)].join(":"),
+      id: [
+        sessionKey(ctx),
+        "tool_execution_end",
+        safeString(event?.toolCallId).trim() || nextEventId("tool", ctx),
+      ].join(":"),
       eventType: "tool_execution_end",
       phase: "tool",
       toolCallId: safeString(event?.toolCallId).trim(),
@@ -298,13 +322,18 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
     const message = event?.message as any;
     const state = getSessionState(ctx);
     const toolNames = extractToolCallNames(message?.content);
-    const capability = inferCapability("message_end", message, message?.toolName);
+    const capability = inferCapability(
+      "message_end",
+      message,
+      message?.toolName,
+    );
     const usageMetrics = readUsageMetrics(message?.usage);
     recordEvent(ctx, {
-      id:
-        safeString(message?.id).trim()
-          ? [sessionKey(ctx), "message_end", safeString(message?.id).trim()].join(":")
-          : nextEventId("message_end", ctx),
+      id: safeString(message?.id).trim()
+        ? [sessionKey(ctx), "message_end", safeString(message?.id).trim()].join(
+            ":",
+          )
+        : nextEventId("message_end", ctx),
       eventType: "message_end",
       phase: "message",
       provider: safeString(message?.provider).trim(),
@@ -345,7 +374,9 @@ export default function tokenUsageExtension(pi: ExtensionAPI) {
       eventType: "agent_end",
       phase: "agent",
       metadata: {
-        messageCount: Array.isArray(event?.messages) ? event.messages.length : 0,
+        messageCount: Array.isArray(event?.messages)
+          ? event.messages.length
+          : 0,
       },
     });
   });

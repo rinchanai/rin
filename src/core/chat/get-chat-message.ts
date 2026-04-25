@@ -1,9 +1,6 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 
-import {
-  getAgentDir,
-  type ExtensionAPI,
-  type TruncationResult,
-} from "@mariozechner/pi-coding-agent";
+import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -48,7 +45,11 @@ function formatGetChatMessageResult(
   });
 }
 
-function stripRequestedMessageFields(text: string, messageId: string, chatKey?: string) {
+function stripRequestedMessageFields(
+  text: string,
+  messageId: string,
+  chatKey?: string,
+) {
   const filtered = text
     .split("\n")
     .filter((line) => line !== `messageId=${messageId}`)
@@ -56,7 +57,7 @@ function stripRequestedMessageFields(text: string, messageId: string, chatKey?: 
   return filtered.length ? filtered.join("\n") : text;
 }
 
-export default function chatGetMessageExtension(pi: ExtensionAPI) {
+export default function chatGetMessageModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "get_chat_msg",
     label: "Get Chat Message",
@@ -82,7 +83,7 @@ export default function chatGetMessageExtension(pi: ExtensionAPI) {
       const chatKey = safeString((params as any)?.chatKey).trim() || undefined;
       if (!messageId) throw new Error("chat_get_message_messageId_required");
 
-      const agentDir = getAgentDir();
+      const agentDir = pi.agentDir;
       const { normalizeChatMessageLookup, describeChatMessageRecord } =
         await loadMessageStoreModule();
       const matches = normalizeChatMessageLookup(agentDir, messageId, chatKey);
@@ -136,10 +137,14 @@ export default function chatGetMessageExtension(pi: ExtensionAPI) {
     renderResult(result: any, options, theme, context) {
       const details = result.details as GetChatMessageDetails | undefined;
       if (!result.isError) {
-        const userResult = buildUserFacingTextResult(result, context.showImages, {
-          userText: details?.userText,
-          details: { truncation: details?.truncation },
-        });
+        const userResult = buildUserFacingTextResult(
+          result,
+          context.showImages,
+          {
+            userText: details?.userText,
+            details: { truncation: details?.truncation },
+          },
+        );
         return new Text(
           formatGetChatMessageResult(
             userResult,

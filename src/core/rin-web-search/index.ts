@@ -1,9 +1,7 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 
 import { Type } from "typebox";
-import {
-  type ExtensionAPI,
-  type TruncationResult,
-} from "@mariozechner/pi-coding-agent";
+import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 
 import {
@@ -62,7 +60,12 @@ function formatAgentResults(response: any): string {
 
 function formatWebSearchResult(
   result: {
-    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    content: Array<{
+      type: string;
+      text?: string;
+      data?: string;
+      mimeType?: string;
+    }>;
     details?: {
       truncation?: TruncationResult;
       emptyMessage?: string;
@@ -92,7 +95,7 @@ function formatWebSearchCall(args: any, theme: any) {
   return `${theme.fg("toolTitle", theme.bold("web_search"))} ${theme.fg("accent", String(args?.q || "").trim())}`;
 }
 
-export default function webSearchExtension(pi: ExtensionAPI) {
+export default function webSearchModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "web_search",
     label: "Web Search",
@@ -135,11 +138,13 @@ export default function webSearchExtension(pi: ExtensionAPI) {
           ? Number((params as any).limit)
           : 8,
       };
-      const response = await searchWeb(normalizedParams).catch((error: any) => ({
-        ok: false,
-        results: [],
-        error: String(error?.message || error || "web_search_failed"),
-      }));
+      const response = await searchWeb(normalizedParams).catch(
+        (error: any) => ({
+          ok: false,
+          results: [],
+          error: String(error?.message || error || "web_search_failed"),
+        }),
+      );
 
       const agentText = formatAgentResults(response);
       const userText = formatResults(response);
@@ -176,7 +181,8 @@ export default function webSearchExtension(pi: ExtensionAPI) {
       return new Text(formatWebSearchCall(args, theme), 0, 0);
     },
     renderResult(result, options, theme, context) {
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       const details = (result.details as any) || {};
       const userResult = buildUserFacingTextResult(result, context.showImages, {
         userText: details.userText,
@@ -187,7 +193,9 @@ export default function webSearchExtension(pi: ExtensionAPI) {
           totalResults: details.totalResults,
         },
       });
-      text.setText(formatWebSearchResult(userResult, options, theme, context.showImages));
+      text.setText(
+        formatWebSearchResult(userResult, options, theme, context.showImages),
+      );
       return text;
     },
   });

@@ -1,7 +1,5 @@
-import {
-  type ExtensionAPI,
-  type TruncationResult,
-} from "@mariozechner/pi-coding-agent";
+import type { BuiltinModuleApi } from "../builtins/host.js";
+import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
@@ -100,7 +98,8 @@ function buildTaskTarget(target: CronTaskInput["target"]) {
 function buildTaskForSave(input: CronTaskInput, defaults: TaskSaveDefaults) {
   const taskId = String(input.id || "").trim() || createCronTaskId();
   const session = input.session ?? { mode: "dedicated" as const };
-  const chatKey = input.chatKey !== undefined ? input.chatKey : defaults.chatKey;
+  const chatKey =
+    input.chatKey !== undefined ? input.chatKey : defaults.chatKey;
   return {
     ...input,
     id: taskId,
@@ -171,11 +170,16 @@ function formatTaskLabel(task: TaskRecordLike) {
 }
 
 function readTaskId(params: unknown) {
-  return String((params as TaskGetParams | TaskManageParams | null | undefined)?.taskId || "").trim();
+  return String(
+    (params as TaskGetParams | TaskManageParams | null | undefined)?.taskId ||
+      "",
+  ).trim();
 }
 
 function readManageTaskAction(params: unknown) {
-  return String((params as TaskManageParams | null | undefined)?.action || "").trim();
+  return String(
+    (params as TaskManageParams | null | undefined)?.action || "",
+  ).trim();
 }
 
 function buildFallbackTexts(
@@ -211,13 +215,18 @@ function buildTexts(
     return { agentText: text, userText: text };
   }
 
-  return buildFallbackTexts(action as Exclude<TaskAction, "get" | "save">, data, params);
+  return buildFallbackTexts(
+    action as Exclude<TaskAction, "get" | "save">,
+    data,
+    params,
+  );
 }
 
 const taskSchema = Type.Object({
   id: Type.Optional(
     Type.String({
-      description: "Existing task id to update in place. Omit to create a new task.",
+      description:
+        "Existing task id to update in place. Omit to create a new task.",
     }),
   ),
   name: Type.Optional(
@@ -345,20 +354,24 @@ function formatListTaskResult(
   });
 }
 
-function isTaskMutationAction(action: string): action is keyof typeof TASK_MUTATION_COMMANDS {
+function isTaskMutationAction(
+  action: string,
+): action is keyof typeof TASK_MUTATION_COMMANDS {
   return Object.prototype.hasOwnProperty.call(TASK_MUTATION_COMMANDS, action);
 }
 
-async function executeTaskAction(action: TaskAction, params: unknown, ctx: unknown) {
+async function executeTaskAction(
+  action: TaskAction,
+  params: unknown,
+  ctx: unknown,
+) {
   const defaults = readTaskSaveDefaults(ctx);
 
   let data: TaskCommandResponse;
   if (action === "get") {
     const taskId = readTaskId(params);
     data = (await requestDaemonCommand(
-      taskId
-        ? { type: "cron_get_task", taskId }
-        : { type: "cron_list_tasks" },
+      taskId ? { type: "cron_get_task", taskId } : { type: "cron_list_tasks" },
     )) as TaskCommandResponse;
   } else if (action === "save") {
     data = (await requestDaemonCommand({
@@ -458,11 +471,12 @@ function renderTaskResult(
   );
 }
 
-export default function cronExtension(pi: ExtensionAPI) {
+export default function cronModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "get_task",
     label: "Get Task",
-    description: "Get a specific scheduled task, or list scheduled tasks when taskId is omitted.",
+    description:
+      "Get a specific scheduled task, or list scheduled tasks when taskId is omitted.",
     promptSnippet: "Get a specific scheduled task, or list scheduled tasks.",
     promptGuidelines: [],
     parameters: getTaskSchema,
@@ -483,7 +497,8 @@ export default function cronExtension(pi: ExtensionAPI) {
     parameters: taskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
       await executeTaskAction("save", params, ctx),
-    renderCall: (args, theme) => new Text(formatSaveTaskCall(args, theme), 0, 0),
+    renderCall: (args, theme) =>
+      new Text(formatSaveTaskCall(args, theme), 0, 0),
     renderResult: renderTaskResult,
   });
 
@@ -495,8 +510,13 @@ export default function cronExtension(pi: ExtensionAPI) {
     promptGuidelines: [],
     parameters: manageTaskSchema,
     execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
-      await executeTaskAction(readManageTaskAction(params) as TaskAction, params, ctx),
-    renderCall: (args, theme) => new Text(formatManageTaskCall(args, theme), 0, 0),
+      await executeTaskAction(
+        readManageTaskAction(params) as TaskAction,
+        params,
+        ctx,
+      ),
+    renderCall: (args, theme) =>
+      new Text(formatManageTaskCall(args, theme), 0, 0),
     renderResult: renderTaskResult,
   });
 }

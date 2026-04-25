@@ -1,4 +1,4 @@
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -48,7 +48,7 @@ function getSessionReviewState(sessionId: string) {
 }
 
 function triggerInitConversation(
-  pi: ExtensionAPI,
+  pi: BuiltinModuleApi,
   _mode: "auto" | "manual",
   busy: boolean,
 ) {
@@ -64,7 +64,12 @@ function triggerInitConversation(
 
 async function processSelfImproveReview(
   ctx: any,
-  opts: { sessionFile?: string; leafId?: string; trigger: string; snapshotKey?: string },
+  opts: {
+    sessionFile?: string;
+    leafId?: string;
+    trigger: string;
+    snapshotKey?: string;
+  },
 ) {
   const sessionFile = String(opts.sessionFile || "").trim();
   const agentDir = String(ctx?.agentDir || "").trim();
@@ -149,15 +154,19 @@ async function executeSaveSelfImprovePromptAction(params: any) {
 
     if (!incomingContent) {
       return {
-        content: [{
-          type: "text" as const,
-          text: [
-            `Loaded save_prompts slot: ${currentState.slot}`,
-            usageLine,
-            String(currentDoc?.path || ""),
-            currentState.content || "(empty)",
-          ].filter(Boolean).join("\n"),
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              `Loaded save_prompts slot: ${currentState.slot}`,
+              usageLine,
+              String(currentDoc?.path || ""),
+              currentState.content || "(empty)",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+        ],
         details: {
           ok: true,
           status: "review_required",
@@ -175,15 +184,19 @@ async function executeSaveSelfImprovePromptAction(params: any) {
 
     if (baseContent !== currentState.content) {
       return {
-        content: [{
-          type: "text" as const,
-          text: [
-            `Stale save_prompts baseContent for slot: ${currentState.slot}`,
-            usageLine,
-            String(currentDoc?.path || ""),
-            currentState.content || "(empty)",
-          ].filter(Boolean).join("\n"),
-        }],
+        content: [
+          {
+            type: "text" as const,
+            text: [
+              `Stale save_prompts baseContent for slot: ${currentState.slot}`,
+              usageLine,
+              String(currentDoc?.path || ""),
+              currentState.content || "(empty)",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          },
+        ],
         details: {
           ok: false,
           status: "stale_base_content",
@@ -207,15 +220,19 @@ async function executeSaveSelfImprovePromptAction(params: any) {
       content: refined.content,
     });
     return {
-      content: [{
-        type: "text" as const,
-        text: [
-          `Updated save_prompts slot: ${currentState.slot}`,
-          `usage=${refined.nextLines}/${refined.maxLines} lines`,
-          String(response?.doc?.path || ""),
-          refined.content || "(empty)",
-        ].filter(Boolean).join("\n"),
-      }],
+      content: [
+        {
+          type: "text" as const,
+          text: [
+            `Updated save_prompts slot: ${currentState.slot}`,
+            `usage=${refined.nextLines}/${refined.maxLines} lines`,
+            String(response?.doc?.path || ""),
+            refined.content || "(empty)",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      ],
       details: {
         ...response,
         ok: true,
@@ -234,7 +251,9 @@ async function executeSaveSelfImprovePromptAction(params: any) {
     try {
       if (slot) {
         const existing = await executeSelfImproveTool({ action: "compile" });
-        const currentDoc = Array.isArray(existing?.self_improve_prompt_prompt_docs)
+        const currentDoc = Array.isArray(
+          existing?.self_improve_prompt_prompt_docs,
+        )
           ? existing.self_improve_prompt_prompt_docs.find(
               (doc: any) =>
                 String(doc?.self_improve_prompt_slot || "").trim() === slot,
@@ -265,18 +284,26 @@ async function executeSaveSelfImprovePromptAction(params: any) {
   }
 }
 
-function renderSelfImproveResult(result: any, _options: any, theme: any, context: any) {
+function renderSelfImproveResult(
+  result: any,
+  _options: any,
+  theme: any,
+  context: any,
+) {
   const output = result.content
     ?.filter((c: any) => c?.type === "text")
     .map((c: any) => c?.text || "")
     .join("\n");
   if (!output) return new Text("", 0, 0);
-  const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-  text.setText(`\n${context.isError ? theme.fg("error", output) : theme.fg("toolOutput", output)}`);
+  const text =
+    (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+  text.setText(
+    `\n${context.isError ? theme.fg("error", output) : theme.fg("toolOutput", output)}`,
+  );
   return text;
 }
 
-export default function selfImproveExtension(pi: ExtensionAPI) {
+export default function selfImproveModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "save_prompts",
     label: "Save Prompts",

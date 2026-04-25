@@ -1,9 +1,8 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { BuiltinModuleApi } from "../builtins/host.js";
 
-const PROMPT_PREFIX =
-  "As the assistant, you must fulfill the user's requests.";
+const PROMPT_PREFIX = "As the assistant, you must fulfill the user's requests.";
 
-export default function resetSystemPromptExtension(pi: ExtensionAPI) {
+export default function resetSystemPromptModule(pi: BuiltinModuleApi) {
   pi.on("before_agent_start", async (event) => {
     const current = String(event.systemPrompt || "");
     if (current.includes(PROMPT_PREFIX)) {

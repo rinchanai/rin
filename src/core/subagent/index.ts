@@ -1,10 +1,10 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -65,8 +65,7 @@ const SessionSchema = Type.Optional(
     mode: Type.Optional(SessionModeSchema),
     sessionFile: Type.Optional(
       Type.String({
-        description:
-          `Worker sessionFile path relative to agentDir, for example sessions/managed/subagent/demo.jsonl. Required for session.mode resume or fork. If you need to discover one, inspect ${getDefaultSubagentSessionDir()} with bash/find/rg.`,
+        description: `Worker sessionFile path relative to agentDir, for example sessions/managed/subagent/demo.jsonl. Required for session.mode resume or fork. If you need to discover one, inspect ${getDefaultSubagentSessionDir()} with bash/find/rg.`,
       }),
     ),
     name: Type.Optional(
@@ -98,9 +97,7 @@ const DisabledExtensionsSchema = Type.Optional(
 );
 
 const RunParamsSchema = Type.Object({
-  prompt: Type.Optional(
-    Type.String({ description: "Prompt for the worker." }),
-  ),
+  prompt: Type.Optional(Type.String({ description: "Prompt for the worker." })),
   model: Type.Optional(
     Type.String({
       description:
@@ -268,11 +265,12 @@ async function runSubagentResult(
 
 export { applySubagentTaskPreferences };
 
-export default function subagentExtension(pi: ExtensionAPI) {
+export default function subagentModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "run_subagent",
     label: "Run Subagent",
-    description: "Run a worker with independent context and optional model selection.",
+    description:
+      "Run a worker with independent context and optional model selection.",
     promptSnippet: "Run a worker with independent context.",
     promptGuidelines: [
       "Use run_subagent to run a worker with independent context and optional model selection.",
@@ -295,7 +293,8 @@ export default function subagentExtension(pi: ExtensionAPI) {
         state.startedAt = Date.now();
         state.endedAt = undefined;
       }
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       const preview = String(args.prompt || "")
         .replace(/\s+/g, " ")
         .trim();
@@ -307,7 +306,11 @@ export default function subagentExtension(pi: ExtensionAPI) {
     },
     renderResult(result, options, theme, context) {
       const state = context.state as SubagentRenderState;
-      if (state.startedAt !== undefined && options.isPartial && !state.interval) {
+      if (
+        state.startedAt !== undefined &&
+        options.isPartial &&
+        !state.interval
+      ) {
         state.interval = setInterval(() => context.invalidate(), 1000);
       }
       if (!options.isPartial || context.isError) {

@@ -1,12 +1,11 @@
+import type {
+  BuiltinModuleApi,
+  BuiltinModuleContext,
+} from "../builtins/host.js";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-} from "@mariozechner/pi-coding-agent";
-
 type FrozenPromptSnapshot = {
   version: 1;
   systemPrompt: string;
@@ -16,18 +15,18 @@ type FrozenPromptSnapshot = {
 const SNAPSHOT_TYPE = "frozen-system-prompt";
 const RELOAD_MARKER_DIR = join(tmpdir(), "rin-frozen-runtime");
 
-function getSessionKey(ctx: ExtensionContext): string {
+function getSessionKey(ctx: BuiltinModuleContext): string {
   const sessionFile = ctx.sessionManager.getSessionFile?.();
   const sessionId = ctx.sessionManager.getSessionId?.();
   return String(sessionFile || sessionId || homedir() || "unknown-session");
 }
 
-function getReloadMarkerPath(ctx: ExtensionContext): string {
+function getReloadMarkerPath(ctx: BuiltinModuleContext): string {
   const hash = createHash("sha1").update(getSessionKey(ctx)).digest("hex");
   return join(RELOAD_MARKER_DIR, `${hash}.json`);
 }
 
-function markReload(ctx: ExtensionContext): void {
+function markReload(ctx: BuiltinModuleContext): void {
   const file = getReloadMarkerPath(ctx);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(
@@ -37,7 +36,7 @@ function markReload(ctx: ExtensionContext): void {
   );
 }
 
-function consumeReloadMarker(ctx: ExtensionContext): boolean {
+function consumeReloadMarker(ctx: BuiltinModuleContext): boolean {
   const file = getReloadMarkerPath(ctx);
   try {
     const raw = readFileSync(file, "utf8");
@@ -49,7 +48,9 @@ function consumeReloadMarker(ctx: ExtensionContext): boolean {
   }
 }
 
-function findSnapshot(ctx: ExtensionContext): FrozenPromptSnapshot | undefined {
+function findSnapshot(
+  ctx: BuiltinModuleContext,
+): FrozenPromptSnapshot | undefined {
   let snapshot: FrozenPromptSnapshot | undefined;
   for (const entry of ctx.sessionManager.getBranch()) {
     if (entry.type !== "custom" || entry.customType !== SNAPSHOT_TYPE) continue;
@@ -62,7 +63,7 @@ function findSnapshot(ctx: ExtensionContext): FrozenPromptSnapshot | undefined {
 }
 
 function persistSnapshot(
-  pi: ExtensionAPI,
+  pi: BuiltinModuleApi,
   systemPrompt: string,
 ): FrozenPromptSnapshot {
   const snapshot: FrozenPromptSnapshot = {
@@ -74,11 +75,11 @@ function persistSnapshot(
   return snapshot;
 }
 
-export default function freezeSessionRuntimeExtension(pi: ExtensionAPI) {
+export default function freezeSessionRuntimeModule(pi: BuiltinModuleApi) {
   let snapshot: FrozenPromptSnapshot | undefined;
   let reloadPending = false;
 
-  function restore(ctx: ExtensionContext) {
+  function restore(ctx: BuiltinModuleContext) {
     reloadPending = consumeReloadMarker(ctx);
     snapshot = reloadPending ? undefined : findSnapshot(ctx);
   }

@@ -1,9 +1,9 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import { existsSync, statSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 
 import {
   DefaultResourceLoader,
-  type ExtensionAPI,
   type TruncationResult,
 } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
@@ -108,16 +108,13 @@ async function buildRulesPrompt(targetDir: string) {
   );
 }
 
-function formatRulesCall(
-  args: { path?: string } | undefined,
-  theme: any,
-) {
+function formatRulesCall(args: { path?: string } | undefined, theme: any) {
   const rawPath = str(args?.path);
   const path = rawPath !== null ? shortenPath(rawPath) : null;
   return `${theme.fg("toolTitle", theme.bold("rules"))} ${path === null ? invalidArgText(theme) : theme.fg("accent", path)}`;
 }
 
-export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
+export default function discoverAttentionResourcesModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "rules",
     label: "Rules",
@@ -157,12 +154,14 @@ export default function discoverAttentionResourcesExtension(pi: ExtensionAPI) {
       };
     },
     renderCall(args, theme, context) {
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       text.setText(formatRulesCall(args, theme));
       return text;
     },
     renderResult(result, options, theme, context) {
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       text.setText(
         renderTextToolResult(result as any, options, theme, context.showImages),
       );

@@ -1,4 +1,4 @@
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import {
   DEFAULT_MAX_BYTES,
   DEFAULT_MAX_LINES,
@@ -216,7 +216,7 @@ async function buildFetchOutputText(details: FetchDetails, bodyText: string) {
   return truncated.outputText;
 }
 
-export default function fetchExtension(pi: ExtensionAPI) {
+export default function fetchModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "fetch",
     label: "Fetch URL",

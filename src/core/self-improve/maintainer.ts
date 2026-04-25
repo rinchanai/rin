@@ -114,7 +114,10 @@ async function createForkedSessionManager(options: {
   if (!sessionFile) throw new Error("session_file_required");
   const leafId = session.leafId || undefined;
   const { SessionManager } = await loadRinSessionManagerModule();
-  const sourceManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
+  const sourceManager = SessionManager.open(
+    sessionFile,
+    path.dirname(sessionFile),
+  );
   const cwd = safeString(sourceManager.getCwd?.() || "").trim() || HOME_DIR;
   return {
     cwd,
@@ -152,7 +155,7 @@ async function runForkedSessionPrompt(options: {
   try {
     await session.prompt(options.prompt, {
       expandPromptTemplates: false,
-      source: "extension",
+      source: "builtin:self-improve",
     });
     await session.agent.waitForIdle();
     return safeString(session.getLastAssistantText?.() || "").trim();
@@ -190,7 +193,10 @@ async function storeSessionSummaryInTranscriptArchive(options: {
   }
 
   const { SessionManager } = await loadRinSessionManagerModule();
-  const sessionManager = SessionManager.open(sessionFile, path.dirname(sessionFile));
+  const sessionManager = SessionManager.open(
+    sessionFile,
+    path.dirname(sessionFile),
+  );
   const sessionInfo = readSessionMetadata(sessionManager);
   const sessionId = sessionInfo.sessionId;
   const existingEntries = await loadTranscriptSessionEntries(
@@ -201,9 +207,8 @@ async function storeSessionSummaryInTranscriptArchive(options: {
     agentDir,
   ).catch(() => []);
   const currentSummary = normalizeSessionSummaryText(
-    [...existingEntries]
-      .reverse()
-      .find((entry) => isSessionSummaryEntry(entry))?.text || "",
+    [...existingEntries].reverse().find((entry) => isSessionSummaryEntry(entry))
+      ?.text || "",
   );
   const timestamp = nowIso();
   const archivePath = getTranscriptArchivePath(

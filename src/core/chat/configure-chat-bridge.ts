@@ -1,6 +1,5 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import path from "node:path";
-
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import {
   promptChatBridgeSetup,
@@ -86,7 +85,7 @@ function createUiPromptApi(ui: any): ChatBridgePromptApi {
   };
 }
 
-export default function configureChatBridgeCommandExtension(pi: ExtensionAPI) {
+export default function configureChatBridgeCommandModule(pi: BuiltinModuleApi) {
   pi.registerCommand("chat", {
     description: "Configure an official chat bridge adapter.",
     handler: async (_args, ctx) => {

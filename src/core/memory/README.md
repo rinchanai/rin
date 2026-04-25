@@ -1,6 +1,6 @@
 # memory
 
-Rin's builtin session-history memory extension.
+Rin's builtin session-history memory module.
 
 Public tool:
 
@@ -18,4 +18,4 @@ This module owns:
 - transcript recall summarization via the active model at fixed `low` thinking
 - recall summaries are steered to fuse the overall session context with why the current query matched
 
-It does not own always-on prompts or agent-managed skills. Those belong to the `self-improve` extension.
+It does not own always-on prompts or agent-managed skills. Those belong to the `self-improve` module.

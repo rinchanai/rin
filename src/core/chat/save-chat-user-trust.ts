@@ -1,6 +1,6 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import path from "node:path";
 
-import { getAgentDir, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { safeString } from "../text-utils.js";
 
@@ -51,7 +51,7 @@ const paramsSchema = Type.Object({
   ),
 });
 
-export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
+export default function saveChatUserTrustModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "save_chat_user_identity",
     label: "Save Chat User Identity",
@@ -74,7 +74,7 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
       if (messageId) {
         const { normalizeChatMessageLookup } = await loadMessageStoreModule();
         const matches = normalizeChatMessageLookup(
-          getAgentDir(),
+          pi.agentDir,
           messageId,
           chatKey || undefined,
         );
@@ -98,7 +98,7 @@ export default function saveChatUserTrustExtension(pi: ExtensionAPI) {
 
       const { setIdentityTrust } = await loadSupportModule();
       const result = setIdentityTrust({
-        dataDir: path.join(getAgentDir(), "data"),
+        dataDir: path.join(pi.agentDir, "data"),
         platform,
         userId,
         trust: trust as "OWNER" | "TRUSTED" | "OTHER",

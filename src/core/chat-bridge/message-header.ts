@@ -1,6 +1,5 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import os from "node:os";
-
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 import { consumeChatPromptContext } from "./prompt-context.js";
 import { safeString } from "../text-utils.js";
@@ -240,7 +239,7 @@ function buildHeader(
   return `${lines.join("\n")}\n---\n${body}`;
 }
 
-export default function messageHeaderExtension(pi: ExtensionAPI) {
+export default function messageHeaderModule(pi: BuiltinModuleApi) {
   const pendingContexts: Array<{
     meta: TurnPromptMeta | null;
     body: string;

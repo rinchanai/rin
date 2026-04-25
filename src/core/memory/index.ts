@@ -1,5 +1,5 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -120,14 +120,17 @@ function searchResultHeader(response: any): string {
 
 export function formatSearchResult(response: any): string {
   const rows = Array.isArray(response?.results) ? response.results : [];
-  if (!rows.length) return `${searchResultHeader(response)}\n\nNo memory results found.`;
+  if (!rows.length)
+    return `${searchResultHeader(response)}\n\nNo memory results found.`;
   return [
     searchResultHeader(response),
     ...rows.map((item: any) => {
       return [
         resultLocation(item),
         resultSnippet(item),
-        ...resultMessages(item).map((message: any) => formatMessageLine(message)),
+        ...resultMessages(item).map((message: any) =>
+          formatMessageLine(message),
+        ),
       ]
         .filter(Boolean)
         .join("\n");
@@ -144,7 +147,9 @@ export function formatAgentSearchResult(response: any): string {
       return [
         `${index + 1}. ${resultLocation(item)}`,
         resultSnippet(item),
-        ...resultMessages(item).map((message: any) => formatMessageLine(message)),
+        ...resultMessages(item).map((message: any) =>
+          formatMessageLine(message),
+        ),
       ]
         .filter(Boolean)
         .join("\n");
@@ -152,13 +157,21 @@ export function formatAgentSearchResult(response: any): string {
   ].join("\n\n");
 }
 
-function buildSearchMemorySearchStatusText(mode: "search" | "recent", query: string): string {
+function buildSearchMemorySearchStatusText(
+  mode: "search" | "recent",
+  query: string,
+): string {
   if (mode === "recent") return "Loading recent archived sessions...";
   return `Searching archived sessions for ${JSON.stringify(query)}...`;
 }
 
 function emitSearchMemoryUpdate(
-  onUpdate: ((value: { content: Array<{ type: "text"; text: string }>; details: MemoryToolDetails }) => void) | undefined,
+  onUpdate:
+    | ((value: {
+        content: Array<{ type: "text"; text: string }>;
+        details: MemoryToolDetails;
+      }) => void)
+    | undefined,
   userText: string,
   details: Partial<MemoryToolDetails> = {},
 ) {
@@ -173,7 +186,12 @@ function emitSearchMemoryUpdate(
 
 function formatMemoryResult(
   result: {
-    content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    content: Array<{
+      type: string;
+      text?: string;
+      data?: string;
+      mimeType?: string;
+    }>;
     details?: MemoryToolDetails;
   },
   options: { expanded: boolean },
@@ -199,7 +217,10 @@ export async function executeSearchMemory(
   ctx: any,
   _currentThinkingLevel: ThinkingLevel,
   signal?: AbortSignal,
-  onUpdate?: (value: { content: Array<{ type: "text"; text: string }>; details: MemoryToolDetails }) => void,
+  onUpdate?: (value: {
+    content: Array<{ type: "text"; text: string }>;
+    details: MemoryToolDetails;
+  }) => void,
 ) {
   try {
     const query = String(params?.query || "").trim();
@@ -210,9 +231,13 @@ export async function executeSearchMemory(
     };
     const rootOverride = String(ctx?.agentDir || "").trim();
 
-    emitSearchMemoryUpdate(onUpdate, buildSearchMemorySearchStatusText(mode, query), {
-      phase: mode,
-    });
+    emitSearchMemoryUpdate(
+      onUpdate,
+      buildSearchMemorySearchStatusText(mode, query),
+      {
+        phase: mode,
+      },
+    );
 
     throwIfAborted(signal);
     const results = query
@@ -229,7 +254,9 @@ export async function executeSearchMemory(
     const agentText = formatAgentSearchResult(response);
     const userText = formatSearchResult(response);
     const truncated = prepareTruncatedText(agentText);
-    const visibleRows = Array.isArray(response?.results) ? response.results : [];
+    const visibleRows = Array.isArray(response?.results)
+      ? response.results
+      : [];
     const details: MemoryToolDetails = {
       hiddenCount: 0,
       totalResults: visibleRows.length,
@@ -289,7 +316,12 @@ export function formatRenderedMemoryResult(
   return text;
 }
 
-function renderMemoryResult(result: any, options: any, theme: any, context: any) {
+function renderMemoryResult(
+  result: any,
+  options: any,
+  theme: any,
+  context: any,
+) {
   const state = context.state as MemoryRenderState;
   if (state.startedAt !== undefined && options.isPartial && !state.interval) {
     state.interval = setInterval(() => context.invalidate(), 1000);
@@ -302,7 +334,8 @@ function renderMemoryResult(result: any, options: any, theme: any, context: any)
     }
   }
 
-  const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+  const text =
+    (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
   text.setText(
     formatRenderedMemoryResult(
       result,
@@ -324,7 +357,7 @@ export function formatSearchMemoryCall(args: any, theme: any) {
   return `${theme.fg("toolTitle", theme.bold("search_memory"))} ${theme.fg("accent", query)}`;
 }
 
-export default function memoryExtension(pi: ExtensionAPI) {
+export default function memoryModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "search_memory",
     label: "Search Memory",
@@ -350,7 +383,8 @@ export default function memoryExtension(pi: ExtensionAPI) {
         state.startedAt = Date.now();
         state.endedAt = undefined;
       }
-      const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       text.setText(formatSearchMemoryCall(args, theme));
       return text;
     },

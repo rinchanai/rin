@@ -1,6 +1,6 @@
 # self-improve
 
-Rin's builtin self-improvement extension.
+Rin's builtin self-improvement module.
 
 Public tool:
 
@@ -15,7 +15,7 @@ This module owns:
 - onboarding for resident self-improve prompts
 - periodic review and pre-compaction self-improve review, both running at fixed `low` thinking
 
-It does not own session-history recall. That belongs to the `memory` extension.
+It does not own session-history recall. That belongs to the `memory` module.
 
 ## Prompt slots
 

@@ -9,6 +9,50 @@ import {
 type EventHandler = (event: any, ctx: any) => Promise<any> | any;
 type ErrorListener = (error: any) => void;
 
+export type BuiltinModuleApi = {
+  readonly cwd: string;
+  readonly agentDir: string;
+  readonly __builtinCapability: string;
+  registerTool: (definition: any) => void;
+  registerCommand: (commandName: string, command: any) => void;
+  on: (eventName: string, handler: EventHandler) => void;
+  sendMessage: (message: any, options?: any) => void;
+  sendUserMessage: (content: any, options?: any) => void;
+  appendEntry: <T = unknown>(customType: string, data?: T) => void;
+  setSessionName: (sessionName: string) => void;
+  getSessionName: () => string | undefined;
+  setLabel: (entryId: string, label: string | undefined) => void;
+  getActiveTools: () => string[];
+  getAllTools: () => any[];
+  setActiveTools: (toolNames: string[]) => void;
+  refreshTools: () => void;
+  getCommands: () => any[];
+  setModel: (model: any) => Promise<boolean>;
+  getThinkingLevel: () => ThinkingLevel;
+  setThinkingLevel: (level: ThinkingLevel) => void;
+};
+
+export type BuiltinModuleContext = {
+  ui: any;
+  hasUI: boolean;
+  cwd: string;
+  agentDir: string;
+  sessionManager: any;
+  modelRegistry: any;
+  readonly model: any;
+  isIdle: () => boolean;
+  signal: AbortSignal | undefined;
+  abort: () => void;
+  hasPendingMessages: () => boolean;
+  shutdown: () => void;
+  getContextUsage: () => any;
+  compact: (options?: any) => void;
+  getSystemPrompt: () => string;
+  getThinkingLevel: () => ThinkingLevel;
+};
+
+export type BuiltinModuleFactory = (api: BuiltinModuleApi) => void;
+
 type RegisteredTool = {
   definition: any;
   sourcePath: string;
@@ -24,7 +68,7 @@ type RegisteredCommand = {
 type CoreActions = {
   sendMessage: (message: any, options?: any) => void;
   sendUserMessage: (content: any, options?: any) => void;
-  appendEntry: (customType: string, data?: unknown) => void;
+  appendEntry: <T = unknown>(customType: string, data?: T) => void;
   setSessionName: (name: string) => void;
   getSessionName: () => string | undefined;
   setLabel: (entryId: string, label: string | undefined) => void;
@@ -54,7 +98,10 @@ type CommandContextActions = {
   waitForIdle: () => Promise<void>;
   newSession: (options?: any) => Promise<{ cancelled: boolean }>;
   fork: (entryId: string) => Promise<{ cancelled: boolean }>;
-  navigateTree: (targetId: string, options?: any) => Promise<{ cancelled: boolean }>;
+  navigateTree: (
+    targetId: string,
+    options?: any,
+  ) => Promise<{ cancelled: boolean }>;
   switchSession: (sessionPath: string) => Promise<{ cancelled: boolean }>;
   reload: () => Promise<void>;
 };
@@ -135,15 +182,13 @@ export class BuiltinModuleHost {
     public readonly modelRegistry: any,
   ) {}
 
-  static async create(
-    options: {
-      cwd: string;
-      agentDir: string;
-      sessionManager?: any;
-      modelRegistry?: any;
-      disabledNames?: string[];
-    },
-  ) {
+  static async create(options: {
+    cwd: string;
+    agentDir: string;
+    sessionManager?: any;
+    modelRegistry?: any;
+    disabledNames?: string[];
+  }) {
     const host = new BuiltinModuleHost(
       options.cwd,
       options.agentDir,
@@ -163,15 +208,17 @@ export class BuiltinModuleHost {
   private async loadModule(name: BuiltinModuleName) {
     const moduleUrl = getBuiltinModuleUrl(name);
     const imported = await import(moduleUrl.href);
-    const factory = imported?.default;
+    const factory = imported?.default as BuiltinModuleFactory | undefined;
     if (typeof factory !== "function") {
       throw new Error(`builtin_module_factory_missing:${name}`);
     }
     factory(this.createApi(name, moduleUrl.pathname));
   }
 
-  private createApi(name: string, sourcePath: string) {
+  private createApi(name: string, sourcePath: string): BuiltinModuleApi {
     return {
+      cwd: this.cwd,
+      agentDir: this.agentDir,
       registerTool: (definition: any) => {
         const toolName = String(definition?.name || "").trim();
         if (!toolName || this.toolMap.has(toolName)) return;
@@ -179,7 +226,11 @@ export class BuiltinModuleHost {
       },
       registerCommand: (commandName: string, command: any) => {
         const normalizedName = String(commandName || "").trim();
-        if (!normalizedName || !command || typeof command.handler !== "function")
+        if (
+          !normalizedName ||
+          !command ||
+          typeof command.handler !== "function"
+        )
           return;
         this.commands.push({
           name: normalizedName,
@@ -220,7 +271,10 @@ export class BuiltinModuleHost {
     };
   }
 
-  bindCore(coreActions?: Partial<CoreActions>, contextActions?: Partial<ContextActions>) {
+  bindCore(
+    coreActions?: Partial<CoreActions>,
+    contextActions?: Partial<ContextActions>,
+  ) {
     this.coreActions = {
       ...noOpCoreActions,
       ...(coreActions || {}),
@@ -336,7 +390,8 @@ export class BuiltinModuleHost {
     return {
       ...this.createContext(),
       waitForIdle: () => this.commandContextActions.waitForIdle(),
-      newSession: (options?: any) => this.commandContextActions.newSession(options),
+      newSession: (options?: any) =>
+        this.commandContextActions.newSession(options),
       fork: (entryId: string) => this.commandContextActions.fork(entryId),
       navigateTree: (targetId: string, options?: any) =>
         this.commandContextActions.navigateTree(targetId, options),
@@ -377,7 +432,11 @@ export class BuiltinModuleHost {
     return result;
   }
 
-  async emitBeforeAgentStart(prompt: string, images: any[] | undefined, systemPrompt: string) {
+  async emitBeforeAgentStart(
+    prompt: string,
+    images: any[] | undefined,
+    systemPrompt: string,
+  ) {
     const ctx = this.createContext();
     const messages: any[] = [];
     let currentSystemPrompt = systemPrompt;
@@ -500,7 +559,9 @@ function mergeCommandLists(...lists: any[][]) {
   const taken = new Set<string>();
   for (const list of lists) {
     for (const entry of list || []) {
-      const baseName = String(entry?.invocationName || entry?.name || "").trim();
+      const baseName = String(
+        entry?.invocationName || entry?.name || "",
+      ).trim();
       if (!baseName) continue;
       let invocationName = baseName;
       let suffix = 2;
@@ -571,7 +632,7 @@ export class CompositeBuiltinRunner {
   hasHandlers(eventName: string) {
     return Boolean(
       this.externalRunner?.hasHandlers?.(eventName) ||
-        this.builtinHost.hasHandlers(eventName),
+      this.builtinHost.hasHandlers(eventName),
     );
   }
 
@@ -621,7 +682,9 @@ export class CompositeBuiltinRunner {
   }
 
   getShortcuts(resolvedKeybindings: any) {
-    return this.externalRunner?.getShortcuts?.(resolvedKeybindings) || new Map();
+    return (
+      this.externalRunner?.getShortcuts?.(resolvedKeybindings) || new Map()
+    );
   }
 
   getCommandDiagnostics() {
@@ -659,9 +722,17 @@ export class CompositeBuiltinRunner {
     return builtinResult ?? externalResult;
   }
 
-  async emitBeforeAgentStart(prompt: string, images: any[] | undefined, systemPrompt: string) {
+  async emitBeforeAgentStart(
+    prompt: string,
+    images: any[] | undefined,
+    systemPrompt: string,
+  ) {
     const externalResult = this.externalRunner?.emitBeforeAgentStart
-      ? await this.externalRunner.emitBeforeAgentStart(prompt, images, systemPrompt)
+      ? await this.externalRunner.emitBeforeAgentStart(
+          prompt,
+          images,
+          systemPrompt,
+        )
       : undefined;
     const externalMessages = Array.isArray(externalResult?.messages)
       ? externalResult.messages
@@ -701,7 +772,7 @@ export class CompositeBuiltinRunner {
       externalResult?.action === "transform" ? externalResult.text : text;
     const nextImages =
       externalResult?.action === "transform"
-        ? externalResult.images ?? images
+        ? (externalResult.images ?? images)
         : images;
     const builtinResult = await this.builtinHost.emitInput(
       nextText,
@@ -716,12 +787,10 @@ export class CompositeBuiltinRunner {
       return {
         action: "transform",
         text:
-          builtinResult?.action === "transform"
-            ? builtinResult.text
-            : nextText,
+          builtinResult?.action === "transform" ? builtinResult.text : nextText,
         images:
           builtinResult?.action === "transform"
-            ? builtinResult.images ?? nextImages
+            ? (builtinResult.images ?? nextImages)
             : nextImages,
       };
     }

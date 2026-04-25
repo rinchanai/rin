@@ -1,9 +1,9 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { type ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -79,7 +79,7 @@ const paramsSchema = createObjectSchema({
   ),
 });
 
-export default function chatBridgeExtension(pi: ExtensionAPI) {
+export default function chatBridgeModule(pi: BuiltinModuleApi) {
   const registerTool: any = pi.registerTool.bind(pi);
   registerTool({
     name: "chat_bridge",

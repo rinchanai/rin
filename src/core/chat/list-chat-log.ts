@@ -1,9 +1,6 @@
+import type { BuiltinModuleApi } from "../builtins/host.js";
 
-import {
-  getAgentDir,
-  type ExtensionAPI,
-  type TruncationResult,
-} from "@mariozechner/pi-coding-agent";
+import { type TruncationResult } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -50,14 +47,18 @@ function formatListChatLogResult(
   });
 }
 
-function formatUserListChatLogText(filePath: string, entries: any[], body: string) {
+function formatUserListChatLogText(
+  filePath: string,
+  entries: any[],
+  body: string,
+) {
   if (!entries.length) {
     return `No chat log found\npath=${filePath}`;
   }
   return [`path=${filePath}`, `count=${entries.length}`, "", body].join("\n");
 }
 
-export default function chatListChatLogExtension(pi: ExtensionAPI) {
+export default function chatListChatLogModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "list_chat_log",
     label: "List Chat Log",
@@ -82,7 +83,7 @@ export default function chatListChatLogExtension(pi: ExtensionAPI) {
         safeString((params as any)?.date).trim() || formatLocalDateOnly();
       if (!chatKey) throw new Error("chat_list_log_chatKey_required");
 
-      const agentDir = getAgentDir();
+      const agentDir = pi.agentDir;
       const { readChatLog, formatChatLog } = await loadChatLogModule();
       const { filePath, entries } = readChatLog(agentDir, chatKey, date);
       const body = entries.length ? formatChatLog(entries) : "";
