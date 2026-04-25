@@ -103,7 +103,10 @@ test("platform/fs move helpers move files into target directories", async () => 
     await fs.mkdir(path.dirname(source), { recursive: true });
     await fs.writeFile(source, '{"ok":true}\n', "utf8");
 
-    const claimedPath = fsMod.claimFileToDir(source, path.join(dir, "processing"));
+    const claimedPath = fsMod.claimFileToDir(
+      source,
+      path.join(dir, "processing"),
+    );
     assert.equal(claimedPath, path.join(dir, "processing", "item.json"));
     assert.equal(await fs.readFile(claimedPath, "utf8"), '{"ok":true}\n');
 
@@ -115,7 +118,10 @@ test("platform/fs move helpers move files into target directories", async () => 
     assert.equal(movedPath, path.join(dir, "done", "final.json"));
     assert.equal(await fs.readFile(movedPath, "utf8"), '{"ok":true}\n');
     assert.equal(
-      fsMod.claimFileToDir(path.join(dir, "missing.json"), path.join(dir, "processing")),
+      fsMod.claimFileToDir(
+        path.join(dir, "missing.json"),
+        path.join(dir, "processing"),
+      ),
       "",
     );
     await assert.rejects(fs.stat(source));
@@ -158,6 +164,7 @@ test("platform/process helpers behave as expected", async () => {
   assert.equal(processMod.safeString(42), "42");
   assert.equal(processMod.isPidAlive(process.pid), true);
   assert.equal(processMod.isPidAlive(-1), false);
+  assert.equal(processMod.isPidAlive(1.5), false);
   const started = Date.now();
   await processMod.sleep(20);
   assert.ok(Date.now() - started >= 10);

@@ -2,7 +2,7 @@ export { safeString } from "../text-utils.js";
 
 export function isPidAlive(pid: unknown): boolean {
   const n = Number(pid || 0);
-  if (!Number.isFinite(n) || n <= 1) return false;
+  if (!Number.isInteger(n) || n <= 1) return false;
   try {
     process.kill(n, 0);
     return true;
@@ -12,5 +12,5 @@ export function isPidAlive(pid: unknown): boolean {
 }
 
 export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
