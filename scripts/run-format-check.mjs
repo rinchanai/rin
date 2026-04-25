@@ -7,13 +7,8 @@ const args = [
   "--ignore-unknown",
   "--ignore-path",
   ".prettierignore",
+  ...(targets.length > 0 ? targets : ["."]),
 ];
-
-if (targets.length > 0) {
-  args.push(...targets);
-} else {
-  args.push(".");
-}
 
 const result = spawnSync("prettier", args, { stdio: "inherit" });
 if (result.status !== 0) {
