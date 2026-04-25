@@ -617,6 +617,7 @@ test("persist normalizeInstalledChatSettings applies install upgrade migrations"
         migratedFiles: [],
       },
     ]);
+    await assert.rejects(fs.access(result.migrations[1].markerPath));
   });
 });
 
@@ -807,6 +808,7 @@ test("persist persistInstallerOutputs applies install upgrade migrations before 
         migratedFiles: [],
       },
     ]);
+    await assert.rejects(fs.access(result.migrations[1].markerPath));
   });
 });
 
