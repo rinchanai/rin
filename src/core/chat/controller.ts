@@ -99,6 +99,7 @@ export class ChatController {
   currentTurn: ChatTurnMeta | null = null;
   stagedDelivery: ChatTextDelivery | null = null;
   awaitingTurnSettle = false;
+  turnAbortRequested = false;
 
   constructor(
     app: any,
@@ -170,6 +171,7 @@ export class ChatController {
     this.currentTurn = null;
     this.stagedDelivery = null;
     this.awaitingTurnSettle = false;
+    this.turnAbortRequested = false;
     this.driver.dispose();
   }
 
@@ -185,6 +187,7 @@ export class ChatController {
 
   async clearProcessingState() {
     this.awaitingTurnSettle = false;
+    this.turnAbortRequested = false;
     this.stagedDelivery = null;
     await this.clearWorkingReaction().catch(() => {});
     this.currentTurn = null;
@@ -219,6 +222,7 @@ export class ChatController {
   }
 
   canSteerActiveTurn() {
+    if (this.turnAbortRequested) return false;
     return (
       this.frontendPhase === "sending" ||
       this.frontendPhase === "working" ||
@@ -633,6 +637,8 @@ export class ChatController {
     sessionFile = "",
   ) {
     const commandName = commandNameFromCommandLine(commandLine);
+    const abortingActiveTurn = commandName === "abort" && this.hasActiveTurn();
+    if (abortingActiveTurn) this.turnAbortRequested = true;
     if (commandName === "status") {
       return await this.runLocalStatusCommand(
         replyToMessageId,
@@ -793,6 +799,21 @@ export class ChatController {
           sessionFile: this.currentSessionFile(),
         };
       } catch (error) {
+        const errorMessage = safeString(
+          (error as any)?.message || error,
+        ).trim();
+        if (errorMessage === "chat_turn_aborted") {
+          this.markProcessedMessage(input.incomingMessageId);
+          await this.clearWorkingReaction().catch(() => {});
+          this.clearCurrentTurn();
+          this.stagedDelivery = null;
+          this.saveState();
+          return {
+            aborted: true,
+            sessionId: this.currentSessionId() || undefined,
+            sessionFile: this.currentSessionFile(),
+          };
+        }
         if (
           shouldReleaseStoredSessionOnTransientTurnError(error, {
             wantedSessionFile,
@@ -809,6 +830,7 @@ export class ChatController {
         throw error;
       } finally {
         this.awaitingTurnSettle = false;
+        this.turnAbortRequested = false;
       }
     });
   }

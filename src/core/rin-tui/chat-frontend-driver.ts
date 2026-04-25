@@ -32,6 +32,10 @@ function isQueuedOperationArray(
   return Array.isArray(value);
 }
 
+function isAbortCommand(commandLine: string) {
+  return safeString(commandLine).trim() === "/abort";
+}
+
 export class ChatFrontendDriver {
   private readonly clientFactory: () => RpcFrontendClient;
   client: RpcFrontendClient | null = null;
@@ -145,6 +149,14 @@ export class ChatFrontendDriver {
     const liveTurn = this.liveTurn;
     this.liveTurn = null;
     liveTurn.reject(error);
+  }
+
+  private abortLiveTurn() {
+    if (!this.liveTurn) return;
+    this.clearPendingAssistantSegmentState();
+    this.frontendPhase = "idle";
+    this.emit({ type: "frontend_status", phase: this.frontendPhase });
+    this.failLiveTurn(new Error("chat_turn_aborted"));
   }
 
   private resetAssistantSegmentTracking() {
@@ -313,6 +325,7 @@ export class ChatFrontendDriver {
       ? await this.ensureSessionReady(sessionFile || restoreSessionFile)
       : undefined;
     const data: any = await this.session.runCommand(commandLine);
+    if (isAbortCommand(commandLine)) this.abortLiveTurn();
     return {
       ...data,
       sessionId:
