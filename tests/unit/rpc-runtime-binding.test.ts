@@ -12,6 +12,52 @@ const { RpcInteractiveSession } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "runtime.js"))
     .href
 );
+const { createModelRegistry } = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-tui", "rpc-model-registry.js"),
+  ).href
+);
+
+test("rpc model registry exposes all models for login provider selection", async () => {
+  const sent = [];
+  const allModels = [
+    { provider: "openai", id: "gpt-5" },
+    { provider: "anthropic", id: "claude-sonnet" },
+  ];
+  const availableModels = [{ provider: "openai", id: "gpt-5" }];
+  const registry = createModelRegistry({
+    send(payload) {
+      sent.push(payload.type);
+      switch (payload.type) {
+        case "get_all_models":
+          return Promise.resolve({
+            success: true,
+            data: { models: allModels },
+          });
+        case "get_available_models":
+          return Promise.resolve({
+            success: true,
+            data: { models: availableModels },
+          });
+        case "get_oauth_state":
+          return Promise.resolve({ success: true, data: {} });
+        default:
+          throw new Error(`unexpected command: ${payload.type}`);
+      }
+    },
+  });
+
+  await registry.sync();
+
+  assert.deepEqual(registry.getAll(), allModels);
+  assert.deepEqual(registry.getAvailable(), availableModels);
+  assert.deepEqual(registry.find("anthropic", "claude-sonnet"), allModels[1]);
+  assert.deepEqual(sent, [
+    "get_all_models",
+    "get_available_models",
+    "get_oauth_state",
+  ]);
+});
 
 test("rpc runtime keeps control methods bound to the session instance", async () => {
   const sent = [];
@@ -35,6 +81,7 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
               autoCompactionEnabled: false,
             },
           });
+        case "get_all_models":
         case "get_available_models":
           return Promise.resolve({ success: true, data: { models: [model] } });
         case "get_oauth_state":
@@ -104,6 +151,7 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
     [
       "set_model",
       "get_state",
+      "get_all_models",
       "get_available_models",
       "get_oauth_state",
       "set_steering_mode",

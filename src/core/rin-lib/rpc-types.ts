@@ -9,6 +9,7 @@ export type RinRpcCommandType =
   | "get_session_entries"
   | "get_session_tree"
   | "get_commands"
+  | "get_all_models"
   | "get_available_models"
   | "get_oauth_state"
   | "list_sessions"

@@ -30,7 +30,11 @@ type CatalogContext = {
 
 function normalizeAdditionalExtensionPaths(value: string[] | undefined) {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      value.map((entry) => String(entry || "").trim()).filter(Boolean),
+    ),
+  ];
 }
 
 async function closeIfSupported(target: any) {
@@ -147,17 +151,22 @@ async function withCatalogContext<T>(
 }
 
 export async function listCatalogCommands(options: CatalogOptions = {}) {
-  return withCatalogContext(options, async ({
-    resourceLoader,
-    extensionRunner,
-    builtinHost,
-  }) => {
-    return collectRuntimeSlashCommands({
-      extensionCommands: extensionRunner.getRegisteredCommands(),
-      builtinModuleCommands: builtinHost.getRegisteredCommands(),
-      promptTemplates: resourceLoader.getPrompts().prompts,
-      skills: resourceLoader.getSkills().skills,
-    });
+  return withCatalogContext(
+    options,
+    async ({ resourceLoader, extensionRunner, builtinHost }) => {
+      return collectRuntimeSlashCommands({
+        extensionCommands: extensionRunner.getRegisteredCommands(),
+        builtinModuleCommands: builtinHost.getRegisteredCommands(),
+        promptTemplates: resourceLoader.getPrompts().prompts,
+        skills: resourceLoader.getSkills().skills,
+      });
+    },
+  );
+}
+
+export async function listCatalogAllModels(options: CatalogOptions = {}) {
+  return withCatalogContext(options, async ({ modelRegistry }) => {
+    return modelRegistry.getAll();
   });
 }
 
