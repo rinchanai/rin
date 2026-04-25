@@ -145,6 +145,54 @@ test("terminal turn state baseline marks legacy untracked sessions completed onc
   }
 });
 
+test("terminal turn state baseline ignores malformed lines while preserving the latest valid parent", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
+  try {
+    const baselineFile = path.join(dir, "data", "baseline.json");
+    const legacy = path.join(dir, "sessions", "legacy.jsonl");
+    await fs.mkdir(path.dirname(legacy), { recursive: true });
+    await fs.writeFile(
+      legacy,
+      [
+        JSON.stringify({
+          type: "message",
+          message: { role: "assistant", content: "done" },
+          id: "a1",
+          parentId: null,
+        }),
+        "{not-json}",
+        JSON.stringify({
+          type: "message",
+          message: { role: "assistant", content: "later" },
+          id: "a2",
+          parentId: "a1",
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile);
+
+    const entries = (await fs.readFile(legacy, "utf8"))
+      .trim()
+      .split(/\r?\n/g)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+    const appended = entries.at(-1);
+    assert.equal(appended.customType, "rin-turn-state");
+    assert.equal(appended.data.status, "completed");
+    assert.equal(appended.parentId, "a2");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("appendSessionTurnState writes compact terminal custom session entries", () => {
   const entries: any[] = [];
   appendSessionTurnState(

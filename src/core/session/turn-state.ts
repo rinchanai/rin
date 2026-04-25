@@ -55,38 +55,50 @@ function isTurnStartEntry(entry: any) {
   return role === "user" || role === "bashExecution";
 }
 
+function forEachSessionFileEntry(
+  sessionFile: string,
+  visitor: (entry: any) => void,
+): boolean {
+  try {
+    const text = fs.readFileSync(sessionFile, "utf8");
+    for (const line of text.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        visitor(JSON.parse(line));
+      } catch {
+        continue;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function readSessionTurnStateDetails(sessionFile: string):
   | {
       latest?: SessionTurnState;
       hasTurnStartAfterLatestState: boolean;
     }
   | undefined {
-  try {
-    const text = fs.readFileSync(sessionFile, "utf8");
-    let latest: SessionTurnState | undefined;
-    let hasTurnStartAfterLatestState = false;
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let entry: any;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
+  let latest: SessionTurnState | undefined;
+  let hasTurnStartAfterLatestState = false;
+  if (
+    !forEachSessionFileEntry(sessionFile, (entry) => {
       if (
         entry?.type === "custom" &&
         entry?.customType === SESSION_TURN_STATE_ENTRY_TYPE
       ) {
         latest = normalizeTurnState(entry) ?? latest;
         hasTurnStartAfterLatestState = false;
-        continue;
+        return;
       }
       if (isTurnStartEntry(entry)) hasTurnStartAfterLatestState = true;
-    }
-    return { latest, hasTurnStartAfterLatestState };
-  } catch {
+    })
+  ) {
     return undefined;
   }
+  return { latest, hasTurnStartAfterLatestState };
 }
 
 export function readSessionTurnState(
@@ -141,22 +153,14 @@ function appendTerminalTurnStateEntry(
 ) {
   const ids = new Set<string>();
   let parentId: string | null = null;
-  try {
-    const text = fs.readFileSync(sessionFile, "utf8");
-    for (const line of text.split(/\r?\n/)) {
-      if (!line.trim()) continue;
-      let entry: any;
-      try {
-        entry = JSON.parse(line);
-      } catch {
-        continue;
-      }
+  if (
+    !forEachSessionFileEntry(sessionFile, (entry) => {
       const id = safeString(entry?.id).trim();
-      if (!id) continue;
+      if (!id) return;
       ids.add(id);
       parentId = id;
-    }
-  } catch {
+    })
+  ) {
     return;
   }
 
