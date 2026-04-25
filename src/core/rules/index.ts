@@ -114,7 +114,7 @@ function formatRulesCall(args: { path?: string } | undefined, theme: any) {
   return `${theme.fg("toolTitle", theme.bold("rules"))} ${path === null ? invalidArgText(theme) : theme.fg("accent", path)}`;
 }
 
-export default function discoverAttentionResourcesModule(pi: BuiltinModuleApi) {
+export default function rulesModule(pi: BuiltinModuleApi) {
   (pi as any).registerTool({
     name: "rules",
     label: "Rules",
@@ -142,8 +142,7 @@ export default function discoverAttentionResourcesModule(pi: BuiltinModuleApi) {
       }
 
       const truncated = prepareTruncatedText(prompt);
-      const details: { truncation?: TruncationResult; emptyMessage?: string } =
-        {};
+      const details: { truncation?: TruncationResult } = {};
       if (truncated.truncation) {
         details.truncation = truncated.truncation;
       }
