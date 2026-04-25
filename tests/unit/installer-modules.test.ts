@@ -401,7 +401,7 @@ test("persist reconcileInstallerManifest stores configured language in installer
   });
 });
 
-test("persist reconcileInstallerManifest preserves normalized legacy chat config when new chat config is malformed", async () => {
+test("persist reconcileInstallerManifest preserves existing chat config when new chat config is malformed", async () => {
   await withTempDir(async (dir) => {
     const installDir = path.join(dir, "srv", "rin-demo");
     const ownerHome = path.join(dir, "home", "demo");
@@ -420,7 +420,7 @@ test("persist reconcileInstallerManifest preserves normalized legacy chat config
         ensureDir: async () => {},
         readInstallerJson: (_filePath, fallback) =>
           fallback === null
-            ? { koishi: { telegram: { token: "legacy" } } }
+            ? { chat: { telegram: { token: "existing" } } }
             : fallback,
         writeJsonFileWithPrivilege: () => {},
         writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
@@ -430,8 +430,7 @@ test("persist reconcileInstallerManifest preserves normalized legacy chat config
 
     assert.equal(writes.length, 2);
     for (const entry of writes) {
-      assert.deepEqual(entry.value.chat, { telegram: { token: "legacy" } });
-      assert.equal("koishi" in entry.value, false);
+      assert.deepEqual(entry.value.chat, { telegram: { token: "existing" } });
       assert.equal(entry.value.defaultProvider, "openai");
     }
   });
@@ -490,7 +489,7 @@ test("persistInstallerOutputs stores configured language in settings", async () 
   });
 });
 
-test("persist normalizeInstalledChatSettings migrates legacy koishi settings", async () => {
+test("persist normalizeInstalledChatSettings drops removed adapter settings without reusing them", async () => {
   await withTempDir(async (dir) => {
     const writes = [];
     persist.normalizeInstalledChatSettings(
@@ -501,15 +500,58 @@ test("persist normalizeInstalledChatSettings migrates legacy koishi settings", a
       },
       {
         findSystemUser: () => ({ name: "demo", gid: 1000 }),
-        readInstallerJson: () => ({ koishi: { telegram: { token: "x" } } }),
+        readInstallerJson: () => ({
+          koishi: { telegram: { token: "x" } },
+          keep: true,
+        }),
         writeJsonFileWithPrivilege: () => {},
         writeJsonFile: (filePath, value) => writes.push({ filePath, value }),
+        runPrivileged: () => {},
       },
     );
     assert.equal(writes.length, 1);
     assert.ok(writes[0].filePath.endsWith(path.join(dir, "settings.json")));
-    assert.deepEqual(writes[0].value.chat, { telegram: { token: "x" } });
-    assert.equal("koishi" in writes[0].value, false);
+    assert.deepEqual(writes[0].value, { keep: true });
+  });
+});
+
+test("persist normalizeInstalledChatSettings applies install upgrade migrations", async () => {
+  await withTempDir(async (dir) => {
+    const previousStoreDir = path.join(dir, "data", "koishi-message-store");
+    const currentStoreDir = path.join(dir, "data", "chat-message-store");
+    await fs.mkdir(previousStoreDir, { recursive: true });
+    await fs.writeFile(
+      path.join(previousStoreDir, "marker.txt"),
+      "old\n",
+      "utf8",
+    );
+
+    const result = persist.normalizeInstalledChatSettings(
+      {
+        targetUser: "demo",
+        installDir: dir,
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: () => {},
+        runPrivileged: () => {},
+      },
+    );
+
+    await fs.access(path.join(currentStoreDir, "marker.txt"));
+    await assert.rejects(fs.access(path.join(previousStoreDir, "marker.txt")));
+    assert.deepEqual(result.migrations, [
+      {
+        id: "chat-message-store-dir",
+        fromPath: previousStoreDir,
+        toPath: currentStoreDir,
+        moved: true,
+        skipped: false,
+      },
+    ]);
   });
 });
 
@@ -571,6 +613,61 @@ test("persist persistInstallerOutputs normalizes malformed chat roots before mer
     );
     assert.ok(authWrite);
     assert.deepEqual(authWrite.value, { existing: true, apiKey: "secret" });
+  });
+});
+
+test("persist persistInstallerOutputs applies install upgrade migrations before finishing install state", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const previousStoreDir = path.join(dir, "data", "koishi-message-store");
+    const currentStoreDir = path.join(dir, "data", "chat-message-store");
+    await fs.mkdir(previousStoreDir, { recursive: true });
+    await fs.writeFile(
+      path.join(previousStoreDir, "marker.txt"),
+      "old\n",
+      "utf8",
+    );
+
+    const result = await persist.persistInstallerOutputs(
+      {
+        currentUser: "operator",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        chatConfig: {},
+        authData: {},
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: () => {},
+        launcherMetadataPathForUser: () => path.join(dir, "launcher.json"),
+        readJsonFile: (_filePath, fallback) => fallback,
+        writeLaunchersForUser: () => ({
+          rinPath: "/tmp/rin",
+          rinInstallPath: "/tmp/rin-install",
+        }),
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    await fs.access(path.join(currentStoreDir, "marker.txt"));
+    await assert.rejects(fs.access(path.join(previousStoreDir, "marker.txt")));
+    assert.deepEqual(result.migrations, [
+      {
+        id: "chat-message-store-dir",
+        fromPath: previousStoreDir,
+        toPath: currentStoreDir,
+        moved: true,
+        skipped: false,
+      },
+    ]);
   });
 });
 

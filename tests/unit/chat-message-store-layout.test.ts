@@ -54,29 +54,12 @@ test("message store layout defaults to the preferred root", async () => {
   });
 });
 
-test("message store layout switches entirely to legacy when only the legacy root exists", async () => {
-  await withTempRoot(async (root) => {
-    const legacyStoreDir = path.join(root, "data", "koishi-message-store");
-    await fs.mkdir(legacyStoreDir, { recursive: true });
-
-    const layout = getChatMessageStoreLayout(root);
-
-    assert.equal(layout.storeDir, legacyStoreDir);
-    assert.equal(layout.primaryRoot.storeDir, legacyStoreDir);
-    assert.deepEqual(
-      layout.readRoots.map((item: { storeDir: string }) => item.storeDir),
-      [legacyStoreDir],
-    );
-    assert.deepEqual(chatMessageStoreRoots(root), [legacyStoreDir]);
-  });
-});
-
-test("message store layout keeps legacy reads as a fallback once the preferred root exists", async () => {
+test("message store layout keeps using the preferred root when a previous root exists", async () => {
   await withTempRoot(async (root) => {
     const preferredStoreDir = path.join(root, "data", "chat-message-store");
-    const legacyStoreDir = path.join(root, "data", "koishi-message-store");
-    await fs.mkdir(preferredStoreDir, { recursive: true });
-    await fs.mkdir(legacyStoreDir, { recursive: true });
+    await fs.mkdir(path.join(root, "data", "koishi-message-store"), {
+      recursive: true,
+    });
 
     const layout = getChatMessageStoreLayout(root);
 
@@ -84,11 +67,8 @@ test("message store layout keeps legacy reads as a fallback once the preferred r
     assert.equal(layout.primaryRoot.storeDir, preferredStoreDir);
     assert.deepEqual(
       layout.readRoots.map((item: { storeDir: string }) => item.storeDir),
-      [preferredStoreDir, legacyStoreDir],
+      [preferredStoreDir],
     );
-    assert.deepEqual(chatMessageStoreRoots(root), [
-      preferredStoreDir,
-      legacyStoreDir,
-    ]);
+    assert.deepEqual(chatMessageStoreRoots(root), [preferredStoreDir]);
   });
 });

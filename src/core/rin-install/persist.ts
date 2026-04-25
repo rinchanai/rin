@@ -1,8 +1,12 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { normalizeStoredChatSettings } from "../chat/settings.js";
 import { normalizeLanguageTag } from "../language.js";
-import { isNonArrayObject, loadFirstValidCandidate } from "./candidate-loader.js";
+import {
+  isNonArrayObject,
+  loadFirstValidCandidate,
+} from "./candidate-loader.js";
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 import {
   defaultHomeForUser,
@@ -68,6 +72,108 @@ function removeFile(
   } catch {}
 }
 
+const PREVIOUS_CHAT_MESSAGE_STORE_DIRNAME = "koishi-message-store";
+const CHAT_MESSAGE_STORE_DIRNAME = "chat-message-store";
+
+type InstallPathMoveResult = {
+  id: string;
+  fromPath: string;
+  toPath: string;
+  moved: boolean;
+  skipped: boolean;
+};
+
+function installerPathExists(
+  filePath: string,
+  elevated: boolean,
+  runPrivileged: (command: string, args: string[]) => void,
+) {
+  try {
+    fs.accessSync(filePath);
+    return true;
+  } catch (error: any) {
+    const code = String(error?.code || "");
+    if ((code === "EACCES" || code === "EPERM") && elevated) {
+      try {
+        runPrivileged("test", ["-e", filePath]);
+        return true;
+      } catch {}
+    }
+    return false;
+  }
+}
+
+function moveInstalledPathIfNeeded(
+  move: {
+    id: string;
+    fromPath: string;
+    toPath: string;
+  },
+  options: {
+    elevated?: boolean;
+  },
+  deps: {
+    runPrivileged: (command: string, args: string[]) => void;
+  },
+): InstallPathMoveResult {
+  const elevated = Boolean(options.elevated);
+  const hasSource = installerPathExists(
+    move.fromPath,
+    elevated,
+    deps.runPrivileged,
+  );
+  if (!hasSource) {
+    return { ...move, moved: false, skipped: false };
+  }
+  const hasTarget = installerPathExists(
+    move.toPath,
+    elevated,
+    deps.runPrivileged,
+  );
+  if (hasTarget) {
+    return { ...move, moved: false, skipped: true };
+  }
+  const parentDir = path.dirname(move.toPath);
+  if (elevated) {
+    deps.runPrivileged("mkdir", ["-p", parentDir]);
+    deps.runPrivileged("mv", [move.fromPath, move.toPath]);
+  } else {
+    fs.mkdirSync(parentDir, { recursive: true });
+    fs.renameSync(move.fromPath, move.toPath);
+  }
+  return { ...move, moved: true, skipped: false };
+}
+
+export function applyInstallUpgradeMigrations(
+  options: {
+    installDir: string;
+    elevated?: boolean;
+  },
+  deps: {
+    runPrivileged: (command: string, args: string[]) => void;
+  },
+) {
+  return [
+    moveInstalledPathIfNeeded(
+      {
+        id: "chat-message-store-dir",
+        fromPath: path.join(
+          options.installDir,
+          "data",
+          PREVIOUS_CHAT_MESSAGE_STORE_DIRNAME,
+        ),
+        toPath: path.join(
+          options.installDir,
+          "data",
+          CHAT_MESSAGE_STORE_DIRNAME,
+        ),
+      },
+      options,
+      deps,
+    ),
+  ];
+}
+
 function normalizeInstallerRecord(value: unknown) {
   return isNonArrayObject(value) ? value : {};
 }
@@ -120,7 +226,9 @@ function mergeInstalledChatSettings(settingsJson: any, chatConfig?: any) {
     ensureChat: Boolean(normalizedChatConfig),
   });
   if (!normalizedChatConfig) return normalized;
-  for (const [adapterKey, adapterConfig] of Object.entries(normalizedChatConfig)) {
+  for (const [adapterKey, adapterConfig] of Object.entries(
+    normalizedChatConfig,
+  )) {
     if (adapterConfig === undefined) continue;
     normalized.chat[adapterKey] = adapterConfig;
   }
@@ -138,7 +246,9 @@ function normalizeInstalledReleaseInfo(
   release: InstalledReleaseInfo | undefined,
 ): InstalledReleaseInfo | undefined {
   if (!release || typeof release !== "object") return undefined;
-  const channel = String(release.channel || "stable").trim().toLowerCase();
+  const channel = String(release.channel || "stable")
+    .trim()
+    .toLowerCase();
   const normalizedChannel =
     channel === "beta" || channel === "git" ? channel : "stable";
   const version = String(release.version || "").trim();
@@ -147,7 +257,8 @@ function normalizeInstalledReleaseInfo(
   const sourceLabel = String(release.sourceLabel || "").trim();
   const archiveUrl = String(release.archiveUrl || "").trim();
   const installedAt = String(release.installedAt || "").trim();
-  if (!version && !branch && !ref && !sourceLabel && !archiveUrl) return undefined;
+  if (!version && !branch && !ref && !sourceLabel && !archiveUrl)
+    return undefined;
   return {
     channel: normalizedChannel,
     version: version || ref || branch || "unknown",
@@ -270,12 +381,14 @@ export function normalizeInstalledChatSettings(
       ownerGroup?: string | number,
     ) => void;
     writeJsonFile: (filePath: string, value: unknown) => void;
+    runPrivileged: (command: string, args: string[]) => void;
   },
 ) {
   const { ownerUser, ownerGroup } = resolveInstallOwner(
     options.targetUser,
     deps.findSystemUser,
   );
+  const migrations = applyInstallUpgradeMigrations(options, deps);
   const settingsPath = installSettingsPath(options.installDir);
   const settingsJson = normalizeStoredChatSettings(
     deps.readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated)),
@@ -286,7 +399,7 @@ export function normalizeInstalledChatSettings(
     installerWriteOptions(ownerUser, ownerGroup, options.elevated),
     deps,
   );
-  return { settingsPath };
+  return { settingsPath, migrations };
 }
 
 export async function persistInstallerOutputs(
@@ -337,6 +450,7 @@ export async function persistInstallerOutputs(
   );
   if (!options.elevated) deps.ensureDir(options.installDir);
 
+  const migrations = applyInstallUpgradeMigrations(options, deps);
   const settingsPath = installSettingsPath(options.installDir);
   const settingsJson = mergeInstalledChatSettings(
     deps.readInstallerJson<any>(settingsPath, {}, Boolean(options.elevated)),
@@ -397,6 +511,7 @@ export async function persistInstallerOutputs(
     launcherPath,
     manifestPath,
     locatorManifestPath,
+    migrations,
     ...launchers,
   };
 }
