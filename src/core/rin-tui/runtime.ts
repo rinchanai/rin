@@ -813,7 +813,7 @@ export class RpcInteractiveSession {
   private syncStreamingState() {
     this.isStreaming = Boolean(
       (this.rpcConnected && (this.remoteTurnRunning || this.activeTurn)) ||
-        (this.recoveryPending && this.recoveringTurnPending),
+      (this.recoveryPending && this.recoveringTurnPending),
     );
     if (!this.isStreaming && !this.rpcConnected) this.activeTurn = null;
     this.emitFrontendStatus();
@@ -869,7 +869,7 @@ export class RpcInteractiveSession {
   }
 
   private async sendOrQueue(operation: PendingRpcOperation) {
-    if (operation.mode === "prompt")
+    if (operation.mode === "prompt" && !operation.streamingBehavior)
       this.emitLocalUserMessage(operation.message);
     if (
       !this.client.isConnected() ||
@@ -914,9 +914,9 @@ export class RpcInteractiveSession {
     if (this.disposed) return;
     this.recoveringTurnPending = Boolean(
       this.recoveringTurnPending ||
-        this.remoteTurnRunning ||
-        this.activeTurn ||
-        this.isCompacting,
+      this.remoteTurnRunning ||
+      this.activeTurn ||
+      this.isCompacting,
     );
     this.recoveryPending = true;
     this.activeTurn = null;

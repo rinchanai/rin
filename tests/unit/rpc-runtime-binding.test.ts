@@ -195,7 +195,10 @@ test("rpc runtime forwards prompt streamingBehavior through prompt mode", async 
   assert.deepEqual(
     {
       ...sent[0],
-      requestTag: typeof sent[0]?.requestTag === "string" ? "<auto>" : sent[0]?.requestTag,
+      requestTag:
+        typeof sent[0]?.requestTag === "string"
+          ? "<auto>"
+          : sent[0]?.requestTag,
     },
     {
       type: "prompt",
@@ -235,7 +238,10 @@ test("rpc runtime resumes a session through select_session", async () => {
         return Promise.resolve({ success: true, data: { entries: [] } });
       }
       if (payload.type === "get_session_tree") {
-        return Promise.resolve({ success: true, data: { tree: [], leafId: null } });
+        return Promise.resolve({
+          success: true,
+          data: { tree: [], leafId: null },
+        });
       }
       if (payload.type === "get_available_models") {
         return Promise.resolve({ success: true, data: { models: [] } });
@@ -369,7 +375,9 @@ test("rpc runtime rebuilds session context from entries when messages are stale"
       message: { role: "assistant", content: "world" },
     },
   ];
-  session.entryById = new Map(session.entries.map((entry) => [entry.id, entry]));
+  session.entryById = new Map(
+    session.entries.map((entry) => [entry.id, entry]),
+  );
   session.leafId = "m2";
 
   const context = session.sessionManager.buildSessionContext();
@@ -378,6 +386,68 @@ test("rpc runtime rebuilds session context from entries when messages are stale"
     { role: "user", content: "hello" },
     { role: "assistant", content: "world" },
   ]);
+});
+
+test("rpc runtime keeps steer prompts pending until the remote turn starts", async () => {
+  const sent = [];
+  let releaseEnsureRemoteSession;
+  const session = new RpcInteractiveSession({
+    send(payload) {
+      sent.push(payload);
+      return Promise.resolve({ success: true, data: {} });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  session.rpcConnected = true;
+  session.startupPending = false;
+  session.ensureRemoteSession = () =>
+    new Promise((resolve) => {
+      releaseEnsureRemoteSession = resolve;
+    });
+
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
+  seen.length = 0;
+
+  const promptPromise = session.prompt("hello", {
+    expandPromptTemplates: false,
+    streamingBehavior: "steer",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(session.getSteeringMessages(), ["hello"]);
+  assert.equal(session.pendingMessageCount, 1);
+  assert.deepEqual(seen, [
+    {
+      type: "rpc_frontend_status",
+      phase: "sending",
+      label: "Sending",
+      connected: true,
+    },
+  ]);
+  assert.equal(sent.length, 0);
+
+  releaseEnsureRemoteSession();
+  await promptPromise;
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]?.type, "prompt");
+  assert.equal(sent[0]?.streamingBehavior, "steer");
 });
 
 test("rpc runtime marks a connected prompt as sending before remote session setup finishes", async () => {
@@ -407,17 +477,18 @@ test("rpc runtime marks a connected prompt as sending before remote session setu
 
   session.rpcConnected = true;
   session.startupPending = false;
-  session.ensureRemoteSession =
-    () =>
-      new Promise((resolve) => {
-        releaseEnsureRemoteSession = resolve;
-      });
+  session.ensureRemoteSession = () =>
+    new Promise((resolve) => {
+      releaseEnsureRemoteSession = resolve;
+    });
 
   const seen = [];
   session.subscribe((event) => seen.push(event));
   seen.length = 0;
 
-  const promptPromise = session.prompt("hello", { expandPromptTemplates: false });
+  const promptPromise = session.prompt("hello", {
+    expandPromptTemplates: false,
+  });
   await new Promise((resolve) => setImmediate(resolve));
 
   assert.deepEqual(session.getFrontendStatusEvent(), {
@@ -443,4 +514,3 @@ test("rpc runtime marks a connected prompt as sending before remote session setu
   assert.equal(sent.length, 1);
   assert.equal(sent[0]?.type, "prompt");
 });
-
