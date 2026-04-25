@@ -14,18 +14,35 @@ export function getChangelogPath() {
       path.join(os.homedir(), ".rin", ...CHANGELOG_RELATIVE_PATH),
     ]),
   );
-  return candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0];
+  return (
+    candidates.find((filePath) => fs.existsSync(filePath)) || candidates[0]
+  );
 }
 
 function normalizeChangelogText(text: string) {
-  return String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  return String(text || "")
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?/g, "\n");
+}
+
+function isMissingPathError(error: unknown) {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+function readChangelogText(changelogPath: string) {
+  try {
+    return fs.readFileSync(changelogPath, "utf8");
+  } catch (error) {
+    if (isMissingPathError(error)) return undefined;
+    throw error;
+  }
 }
 
 export function parseChangelog(changelogPath: string) {
-  if (!fs.existsSync(changelogPath)) return [];
-  const lines = normalizeChangelogText(fs.readFileSync(changelogPath, "utf8")).split(
-    "\n",
-  );
+  const text = readChangelogText(changelogPath);
+  if (text === undefined) return [];
+  const lines = normalizeChangelogText(text).split("\n");
   const entries: Array<{ heading: string; content: string }> = [];
   let currentHeading = "";
   let currentBody: string[] = [];

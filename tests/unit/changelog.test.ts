@@ -11,7 +11,7 @@ const rootDir = path.resolve(
 );
 const changelog = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "changelog.js"))
-    .href,
+    .href
 );
 
 async function withTempDir(fn) {
@@ -61,8 +61,20 @@ test("changelog parser ignores intro text, skips empty sections, and normalizes 
   });
 });
 
-test("changelog parser returns empty entries for missing files", () => {
-  assert.deepEqual(changelog.parseChangelog("/tmp/rin-missing-changelog.md"), []);
+test("changelog parser returns empty entries for missing paths", async () => {
+  await withTempDir(async (dir) => {
+    assert.deepEqual(
+      changelog.parseChangelog(path.join(dir, "missing.md")),
+      [],
+    );
+
+    const filePath = path.join(dir, "not-a-dir");
+    await fs.writeFile(filePath, "not a directory", "utf8");
+    assert.deepEqual(
+      changelog.parseChangelog(path.join(filePath, "CHANGELOG.md")),
+      [],
+    );
+  });
 });
 
 test("changelog path prefers runtime agent docs when that file exists", async () => {
