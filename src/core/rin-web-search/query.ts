@@ -252,15 +252,8 @@ function buildBingUrl(request: NormalizedWebSearchRequest): string {
   return url.toString();
 }
 
-function buildDuckDuckGoUrl(
-  mode: "lite" | "html",
-  request: NormalizedWebSearchRequest,
-): string {
-  const url = new URL(
-    mode === "lite"
-      ? "https://lite.duckduckgo.com/lite/"
-      : "https://html.duckduckgo.com/html/",
-  );
+function buildDuckDuckGoUrl(request: NormalizedWebSearchRequest): string {
+  const url = new URL("https://lite.duckduckgo.com/lite/");
   url.searchParams.set("q", buildSearchQuery(request));
   const locale = parseLocale(request.language);
   if (locale?.region) {
@@ -553,30 +546,6 @@ export function parseDuckDuckGoLiteResults(
   return dedupeResults(rows, limit);
 }
 
-export function parseDuckDuckGoHtmlResults(
-  html: string,
-  limit = 8,
-): WebSearchResult[] {
-  const rows: WebSearchResult[] = [];
-  const pattern =
-    /<a\b([^>]*\bclass=(['"])[^'"]*\bresult__a\b[^'"]*\2[^>]*)>([\s\S]*?)<\/a>([\s\S]*?)(?=<h2[^>]*\bclass=(['"])[^'"]*\bresult__title\b|$)/gi;
-  let match: RegExpExecArray | null = null;
-  while ((match = pattern.exec(String(html || "")))) {
-    const snippetMatch = match[4].match(
-      /<(?:a|div)[^>]*class=(['"])[^'"]*\bresult__snippet\b[^'"]*\1[^>]*>([\s\S]*?)<\/(?:a|div)>/i,
-    );
-    const row = buildResultRow(
-      unwrapDuckDuckGoUrl(extractHref(match[1] || "")),
-      stripHtml(match[3] || ""),
-      stripHtml(snippetMatch?.[2] || ""),
-      "duckduckgo",
-      rows.length + 1,
-    );
-    if (row) rows.push(row);
-  }
-  return dedupeResults(rows, limit);
-}
-
 async function searchGoogle(request: NormalizedWebSearchRequest) {
   const html = await fetchText(buildGoogleUrl(request), {
     headers: {
@@ -613,32 +582,11 @@ async function searchBing(request: NormalizedWebSearchRequest) {
 }
 
 async function searchDuckDuckGo(request: NormalizedWebSearchRequest) {
-  const headers = {
-    "Accept-Language": buildAcceptLanguage(request.language),
-    Referer: "https://duckduckgo.com/",
-  };
-
-  try {
-    const html = await fetchText(buildDuckDuckGoUrl("html", request), {
-      headers,
-    });
-    if (isChallengePage(html)) {
-      throw new Error("duckduckgo_challenge_required");
-    }
-    const rows = filterResultsByDomains(
-      parseDuckDuckGoHtmlResults(html, request.limit),
-      request.domains,
-    );
-    if (rows.length > 0) return rows;
-  } catch (error) {
-    const message = safeText(error instanceof Error ? error.message : error);
-    if (message && !message.includes("no_results")) {
-      // continue to lite fallback
-    }
-  }
-
-  const lite = await fetchText(buildDuckDuckGoUrl("lite", request), {
-    headers,
+  const lite = await fetchText(buildDuckDuckGoUrl(request), {
+    headers: {
+      "Accept-Language": buildAcceptLanguage(request.language),
+      Referer: "https://duckduckgo.com/",
+    },
   });
   if (isChallengePage(lite)) {
     throw new Error("duckduckgo_challenge_required");
