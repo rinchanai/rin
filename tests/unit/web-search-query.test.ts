@@ -26,20 +26,24 @@ const service = await import(
 
 const googleFixture = `
 <div>
-  <a href="/url?q=https://github.com/rinchanai/rin&sa=U&ved=demo">
+  <a href="/url?q=https://github.com/rinchanai/rin&sa=U&ved=demo" data-ved="demo">
     <div style="-webkit-line-clamp:2">GitHub - rinchanai/rin</div>
   </a>
   <div class="VwiC3b yXK7lf p4wth r025kc hJNv6b">Rin personal workspace mirror managed by <b>RinChan</b>.</div>
 </div>`;
 
-const startpageFixture = `
-<div class="result css-o7i03b">
-  <div class="upper css-4wnopv">
-    <a class="favicon-link" href="https://github.com/rinchanai/rin">favicon</a>
-    <a class="result-title result-link css-1bggj8v" href="https://github.com/rinchanai/rin" target="_blank" rel="noopener nofollow noreferrer">
-      <h2 class="wgl-title css-i3irj7">GitHub - rinchanai/rin</h2>
-    </a>
-    <p class="description css-1507v2l">Rin personal workspace mirror managed by <b>Google results</b>.</p>
+const googleGsaFixture = `
+<div>
+  <div class="Gx5Zad xpd EtOod pkphOe">
+    <div class="egMi0 kCrYT">
+      <a href="/url?q=https://example.com/google-result&amp;sa=U&amp;ved=2ahUKEwi-demo&amp;usg=demo" data-ved="2ahUKEwi-demo">
+        <div class="DnJfK">
+          <div class="j039Wc"><h3 class="zBAuLc l97dzf"><div class="ilUpNd UFvD1 aSRlid IwSnJ" style="-webkit-line-clamp:2">SearXNG style Google result</div></h3></div>
+          <div class="sCuL3"><div class="ilUpNd BamJPe aSRlid XR4uSe">example.com</div></div>
+        </div>
+      </a>
+    </div>
+    <div class="kCrYT"><div><div class="ilUpNd H66NU aSRlid"><span class="UK5aid MDvRSc">3 days ago</span><span class="UK5aid MDvRSc"> · </span>Snippet from the Google Go rendered result card.</div></div></div>
   </div>
 </div>`;
 
@@ -112,19 +116,6 @@ test("google parser extracts direct results", () => {
   assert.equal(
     rows[0].snippet,
     "Rin personal workspace mirror managed by RinChan.",
-  );
-  assert.equal(rows[0].domain, "github.com");
-});
-
-test("startpage parser extracts google-compatible results", () => {
-  const rows = query.parseStartpageResults(startpageFixture, 5);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].engine, "google");
-  assert.equal(rows[0].url, "https://github.com/rinchanai/rin");
-  assert.equal(rows[0].title, "GitHub - rinchanai/rin");
-  assert.equal(
-    rows[0].snippet,
-    "Rin personal workspace mirror managed by Google results.",
   );
   assert.equal(rows[0].domain, "github.com");
 });
@@ -208,36 +199,26 @@ test("web search uses google results first and fills gaps from bing", async () =
   }
 });
 
-test("web search tries google-compatible fallback before bing", async () => {
+test("web search requests Google with SearXNG-style mobile user agent", async () => {
   const originalFetch = globalThis.fetch;
-  const calls: string[] = [];
-  const responses = [
-    "<html><body>No direct Google results</body></html>",
-    startpageFixture,
-  ];
-  globalThis.fetch = (async (url: any) => {
-    calls.push(String(url));
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  globalThis.fetch = (async (url: any, init: any) => {
+    calls.push({ url: String(url), headers: init.headers });
     return {
       ok: true,
       status: 200,
       statusText: "OK",
-      text: async () => responses.shift() || "",
+      text: async () => googleGsaFixture,
     };
   }) as typeof fetch;
   try {
     const result = await query.searchWeb({ q: "rinchanai", limit: 1 });
     assert.equal(result.ok, true);
     assert.equal(result.engine, "google");
-    assert.equal(result.results.length, 1);
-    assert.equal(result.results[0].engine, "google");
-    assert.equal(result.results[0].url, "https://github.com/rinchanai/rin");
-    assert.deepEqual(result.attempts, [
-      { engine: "google", ok: true, results: 1 },
-    ]);
-    assert.equal(
-      calls.some((url) => url.includes("www.bing.com")),
-      false,
-    );
+    assert.equal(result.results[0].url, "https://example.com/google-result");
+    assert.equal(calls.length, 1);
+    assert.equal(new URL(calls[0].url).hostname, "www.google.com");
+    assert.match(calls[0].headers["User-Agent"], /NSTNWV$/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -247,7 +228,6 @@ test("web search falls back to bing when google is challenged", async () => {
   const originalFetch = globalThis.fetch;
   const responses = [
     "<html><body><h1>CAPTCHA</h1><p>automated queries detected</p></body></html>",
-    "<html><body>No Startpage results</body></html>",
     bingFixture,
   ];
   globalThis.fetch = (async () => ({
