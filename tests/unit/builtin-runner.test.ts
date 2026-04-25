@@ -169,8 +169,8 @@ test("headless builtin attachment emits session_start for runtime state restorat
   assert.deepEqual(appendedEntries, []);
 });
 
-test("headless builtin reload emits session_start for runtime state restoration", async () => {
-  const frozenPrompt = "frozen prompt after reload";
+test("headless builtin reload refreshes frozen runtime state", async () => {
+  const frozenPrompt = "frozen prompt before reload";
   const appendedEntries: unknown[] = [];
   const session = {
     sessionManager: {
@@ -194,7 +194,9 @@ test("headless builtin reload emits session_start for runtime state restoration"
     getAllTools: () => [],
     setActiveToolsByName: () => {},
     _refreshToolRegistry: () => {},
-    reload: async () => {},
+    reload: async function (this: any) {
+      this._extensionRunner = undefined;
+    },
   };
   const disabledNames = builtinRegistry.BUILTIN_MODULE_ORDER.filter(
     (name: string) => name !== "freeze-session-runtime",
@@ -215,8 +217,10 @@ test("headless builtin reload emits session_start for runtime state restoration"
     "fresh rebuilt prompt",
   );
 
-  assert.equal(result.systemPrompt, frozenPrompt);
-  assert.deepEqual(appendedEntries, []);
+  assert.equal(result.systemPrompt, "fresh rebuilt prompt");
+  assert.equal(appendedEntries.length, 1);
+  assert.equal(appendedEntries[0].customType, "frozen-system-prompt");
+  assert.equal(appendedEntries[0].data.systemPrompt, "fresh rebuilt prompt");
 });
 
 test("builtin registry normalizes disabled module names once", () => {
