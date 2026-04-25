@@ -9,8 +9,7 @@ const rootDir = path.resolve(
   "..",
 );
 const { BuiltinModuleHost, CompositeBuiltinRunner } = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "host.js"))
-    .href
+  pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "host.js")).href
 );
 const builtinRegistry = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "registry.js"))
@@ -128,5 +127,20 @@ test("builtin registry normalizes disabled module names once", () => {
       "",
     ]),
     ["rules", "fetch"],
+  );
+});
+
+test("builtin registry derives module order and paths from one table", () => {
+  assert.deepEqual(
+    builtinRegistry.getBuiltinModuleNames([" rules ", "FETCH"]),
+    builtinRegistry.BUILTIN_MODULE_ORDER.filter(
+      (name) => name !== "rules" && name !== "fetch",
+    ),
+  );
+  assert.equal(
+    builtinRegistry
+      .getBuiltinModuleUrl("memory")
+      .href.endsWith("/dist/core/memory/index.js"),
+    true,
   );
 });
