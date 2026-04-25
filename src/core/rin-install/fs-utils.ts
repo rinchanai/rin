@@ -73,6 +73,20 @@ const COMMON_RUNTIME_BIN_DIRS = [
   "/sbin",
 ];
 
+const INSTALLED_PI_DOC_NAMES = [
+  "README.md",
+  "CHANGELOG.md",
+  "docs",
+  "examples",
+  "_upstream.json",
+] as const;
+
+const RUNTIME_COPY_ENTRY_NAMES = [
+  "dist",
+  "node_modules",
+  "package.json",
+] as const;
+
 export function installedRuntimePathValue() {
   const seen = new Set<string>();
   const dirs: string[] = [];
@@ -370,13 +384,7 @@ export function syncInstalledDocs(
   const piDocRoot = path.join(sourceRoot, "upstream", "pi");
   const piInstallRoot = installedPiDocsRoot(installDir);
   const installedPiDocs: string[] = [];
-  for (const name of [
-    "README.md",
-    "CHANGELOG.md",
-    "docs",
-    "examples",
-    "_upstream.json",
-  ]) {
+  for (const name of INSTALLED_PI_DOC_NAMES) {
     const synced = syncInstalledDocTree(
       path.join(piDocRoot, name),
       path.join(piInstallRoot, name),
@@ -407,7 +415,7 @@ export function publishInstalledRuntime(
     const target = deps.findSystemUser(targetUser) as any;
     const targetGroup = target?.name ? String(target?.gid ?? "") : "";
     runPrivileged("mkdir", ["-p", releaseRoot]);
-    for (const name of ["dist", "node_modules", "package.json"]) {
+    for (const name of RUNTIME_COPY_ENTRY_NAMES) {
       runPrivileged("rm", ["-rf", path.join(releaseRoot, name)]);
       runPrivileged("cp", [
         "-a",
@@ -440,7 +448,7 @@ export function publishInstalledRuntime(
     return { releaseRoot, currentLink };
   }
   ensureDir(path.dirname(releaseRoot));
-  for (const name of ["dist", "node_modules", "package.json"])
+  for (const name of RUNTIME_COPY_ENTRY_NAMES)
     syncTree(path.join(sourceRoot, name), path.join(releaseRoot, name));
   try {
     fs.rmSync(currentTmpLink, { recursive: true, force: true });
