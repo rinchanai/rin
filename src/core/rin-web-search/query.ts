@@ -237,6 +237,30 @@ function buildGoogleUrl(request: NormalizedWebSearchRequest): string {
   return url.toString();
 }
 
+function mapStartpageLanguage(language: string): string {
+  const locale = parseLocale(language);
+  if (!locale) return "english";
+  if (locale.lang === "zh") return "chinese";
+  if (locale.lang === "ja") return "japanese";
+  if (locale.lang === "de") return "deutsch";
+  if (locale.lang === "fr") return "francais";
+  if (locale.lang === "es") return "espanol";
+  if (locale.lang === "it") return "italiano";
+  if (locale.lang === "pt") return "portugues";
+  if (locale.lang === "ru") return "russian";
+  return "english";
+}
+
+function buildStartpageUrl(request: NormalizedWebSearchRequest): string {
+  const url = new URL("https://www.startpage.com/do/dsearch");
+  url.searchParams.set("query", buildSearchQuery(request));
+  url.searchParams.set("cat", "web");
+  url.searchParams.set("language", mapStartpageLanguage(request.language));
+  const freshness = mapFreshness(request.freshness);
+  if (freshness) url.searchParams.set("with_date", freshness);
+  return url.toString();
+}
+
 function buildBingUrl(request: NormalizedWebSearchRequest): string {
   const url = new URL("https://www.bing.com/search");
   url.searchParams.set("q", buildSearchQuery(request));
@@ -486,6 +510,46 @@ export function parseGoogleResults(html: string, limit = 8): WebSearchResult[] {
   return dedupeResults(rows, limit);
 }
 
+export function parseStartpageResults(
+  html: string,
+  limit = 8,
+): WebSearchResult[] {
+  const rows: WebSearchResult[] = [];
+  const source = String(html || "");
+  const pattern =
+    /<div\b[^>]*class=(['"])[^'"]*\bresult\b[^'"]*\1[^>]*>([\s\S]*?)(?=<div\b[^>]*class=(['"])[^'"]*\bresult\b|<div\b[^>]*class=(['"])[^'"]*\ba-bg-result\b|$)/gi;
+  let match: RegExpExecArray | null = null;
+  while ((match = pattern.exec(source))) {
+    const section = match[2] || "";
+    let title = "";
+    let url = "";
+
+    for (const anchor of section.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+      const attributes = anchor[1] || "";
+      if (!/\bclass=(['"])[^'"]*\bresult-(?:title|link)\b/i.test(attributes)) {
+        continue;
+      }
+      url = decodeHtmlEntities(extractHref(attributes));
+      title = stripHtml(anchor[2] || "");
+      if (url && title) break;
+    }
+
+    const snippetMatch = section.match(
+      /<(?:p|div)\b[^>]*\bclass=(['"])[^'"]*(?:description|snippet|summary)[^'"]*\1[^>]*>([\s\S]*?)<\/(?:p|div)>/i,
+    );
+    const row = buildResultRow(
+      url,
+      title,
+      stripHtml(snippetMatch?.[2] || ""),
+      "google",
+      rows.length + 1,
+    );
+    if (row) rows.push(row);
+  }
+
+  return dedupeResults(rows, limit);
+}
+
 export function parseBingResults(html: string, limit = 8): WebSearchResult[] {
   const rows: WebSearchResult[] = [];
   const source = String(html || "");
@@ -565,20 +629,51 @@ export function parseDuckDuckGoHtmlResults(
 }
 
 async function searchGoogle(request: NormalizedWebSearchRequest) {
-  const html = await fetchText(buildGoogleUrl(request), {
-    headers: {
-      "Accept-Language": buildAcceptLanguage(request.language),
-      Cookie: "CONSENT=YES+",
-      Referer: "https://www.google.com/",
-    },
-  });
-  if (isChallengePage(html)) {
-    throw new Error("google_challenge_required");
+  const headers = {
+    "Accept-Language": buildAcceptLanguage(request.language),
+    Cookie: "CONSENT=YES+",
+    Referer: "https://www.google.com/",
+  };
+  let primaryError = "";
+
+  try {
+    const html = await fetchText(buildGoogleUrl(request), { headers });
+    if (isChallengePage(html)) {
+      throw new Error("google_challenge_required");
+    }
+    const directRows = filterResultsByDomains(
+      parseGoogleResults(html, request.limit),
+      request.domains,
+    );
+    if (directRows.length > 0) return directRows;
+  } catch (error) {
+    primaryError = safeText(
+      error instanceof Error ? error.message : error || "google_failed",
+    );
   }
-  return filterResultsByDomains(
-    parseGoogleResults(html, request.limit),
-    request.domains,
-  );
+
+  try {
+    const html = await fetchText(buildStartpageUrl(request), {
+      headers: {
+        "Accept-Language": buildAcceptLanguage(request.language),
+        Referer: "https://www.startpage.com/",
+      },
+    });
+    if (isChallengePage(html) || /startpage captcha/i.test(html)) {
+      throw new Error("google_startpage_challenge_required");
+    }
+    const startpageRows = filterResultsByDomains(
+      parseStartpageResults(html, request.limit),
+      request.domains,
+    );
+    if (startpageRows.length > 0) return startpageRows;
+  } catch (error) {
+    if (primaryError) throw new Error(primaryError);
+    throw error;
+  }
+
+  if (primaryError) throw new Error(primaryError);
+  return [];
 }
 
 async function searchBing(request: NormalizedWebSearchRequest) {
