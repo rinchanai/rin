@@ -34,6 +34,7 @@ import { createInstallerI18n, promptInstallerLanguage } from "./i18n.js";
 import { detectCurrentUser, repoRootFromHere, runCommand } from "./common.js";
 import { finalizeInstallPlan } from "./finalize.js";
 import { releaseInfoFromEnv } from "../rin-lib/release.js";
+import { runGuiInstaller, shouldStartGuiInstaller } from "./gui.js";
 import {
   describeOwnership,
   listSystemUsers,
@@ -108,6 +109,11 @@ export async function startInstaller() {
       ensureNotCancelled,
       release: releaseInfoFromEnv(),
     });
+    return;
+  }
+
+  if (shouldStartGuiInstaller(process.argv.slice(2))) {
+    await runGuiInstaller(process.argv.slice(2));
     return;
   }
 
