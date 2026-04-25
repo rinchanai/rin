@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 
 import { normalizeLocalDateOnly } from "./date.js";
@@ -75,14 +74,7 @@ function detectChatMessageStoreLayout(rootDir: string) {
   const preferredRoot = buildChatMessageStoreRoot(
     path.join(rootDir, "data", "chat-message-store"),
   );
-  const legacyRoot = buildChatMessageStoreRoot(
-    path.join(rootDir, "data", "koishi-message-store"),
-  );
-  const hasPreferred = fs.existsSync(preferredRoot.storeDir);
-  const hasLegacy = fs.existsSync(legacyRoot.storeDir);
-  const primaryRoot = hasLegacy && !hasPreferred ? legacyRoot : preferredRoot;
-  const readFallbacks = hasPreferred && hasLegacy ? [legacyRoot] : [];
-  return buildChatMessageStoreLayout(primaryRoot, readFallbacks);
+  return buildChatMessageStoreLayout(preferredRoot, []);
 }
 
 export function getChatMessageStoreLayout(agentDir: string) {

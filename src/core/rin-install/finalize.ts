@@ -163,6 +163,7 @@ async function applyInstalledRuntime(
           readInstallerJson,
           writeJsonFileWithPrivilege,
           writeJsonFile,
+          runPrivileged,
         },
       );
 
