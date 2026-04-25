@@ -211,7 +211,7 @@ export async function promptProviderSetup(
 
   const loadChoices = deps.loadModelChoices || loadModelChoices;
   const configureAuth = deps.configureProviderAuth || configureProviderAuth;
-  const models = await loadChoices();
+  const models = await loadChoices(installDir, readJsonFile);
   const providerNames = [
     ...new Set(models.map((model) => model.provider).filter(Boolean)),
   ];

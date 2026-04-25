@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { spinner, text } from "@clack/prompts";
 
 import { computeAvailableThinkingLevels } from "../model-thinking-levels.js";
@@ -7,30 +9,43 @@ import { installAuthPath } from "./paths.js";
 
 export { computeAvailableThinkingLevels };
 
-export async function loadModelChoices() {
-  const { getProviders, getModels } = await import("@mariozechner/pi-ai");
+export async function loadModelChoices(
+  installDir = "",
+  readJsonFile: <T>(filePath: string, fallback: T) => T = (
+    _filePath,
+    fallback,
+  ) => fallback,
+) {
+  const codingAgentModule = await loadRinCodingAgent();
+  const { AuthStorage, ModelRegistry } = codingAgentModule as any;
+  const authPath = installDir ? installAuthPath(installDir) : "";
+  const existingAuth = authPath ? readJsonFile<any>(authPath, {}) : {};
+  const authStorage = AuthStorage.inMemory(existingAuth);
+  const modelsJsonPath = installDir
+    ? path.join(installDir, "models.json")
+    : undefined;
+  const modelRegistry = new ModelRegistry(authStorage, modelsJsonPath);
   const merged = new Map<
     string,
     { provider: string; id: string; reasoning: boolean; available: boolean }
   >();
 
-  for (const provider of getProviders()) {
-    for (const model of getModels(provider as any)) {
-      merged.set(
-        `${(model as any).provider || provider}/${(model as any).id || ""}`,
-        {
-          provider: String((model as any).provider || provider),
-          id: String((model as any).id || ""),
-          reasoning: Boolean((model as any).reasoning),
-          available: false,
-        },
-      );
-    }
+  const models = Array.isArray(modelRegistry.getAll?.())
+    ? modelRegistry.getAll()
+    : [];
+  for (const model of models) {
+    const provider = String((model as any).provider || "").trim();
+    const id = String((model as any).id || "").trim();
+    if (!provider || !id) continue;
+    merged.set(`${provider}/${id}`, {
+      provider,
+      id,
+      reasoning: Boolean((model as any).reasoning),
+      available: Boolean(modelRegistry.hasConfiguredAuth?.(model)),
+    });
   }
 
-  const choices = [...merged.values()].filter(
-    (model) => model.provider && model.id,
-  );
+  const choices = [...merged.values()];
   choices.sort(
     (a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id),
   );
