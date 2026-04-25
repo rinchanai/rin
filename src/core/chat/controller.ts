@@ -177,9 +177,10 @@ export class ChatController {
     const nextState: ChatState = { chatKey: this.chatKey };
     const storedSessionFile = toStoredSessionFile(
       this.agentDir,
-      this.state.piSessionFile,
+      this.state.sessionFile,
     );
-    if (storedSessionFile) nextState.piSessionFile = storedSessionFile;
+    if (storedSessionFile) nextState.sessionFile = storedSessionFile;
+    this.state = nextState;
     writeJsonFile(this.statePath, nextState);
   }
 
@@ -433,7 +434,7 @@ export class ChatController {
   private currentSessionFile() {
     const live = this.driver.currentSessionFile();
     if (live) return live;
-    return resolveStoredSessionFile(this.agentDir, this.state.piSessionFile);
+    return resolveStoredSessionFile(this.agentDir, this.state.sessionFile);
   }
 
   private pickStoredValue(...candidates: unknown[]) {
@@ -445,22 +446,19 @@ export class ChatController {
   }
 
   private updateStoredSessionFile(...candidates: unknown[]) {
-    const picked = this.pickStoredValue(
-      ...candidates,
-      this.state.piSessionFile,
-    );
-    this.state.piSessionFile = toStoredSessionFile(this.agentDir, picked);
-    return this.state.piSessionFile;
+    const picked = this.pickStoredValue(...candidates, this.state.sessionFile);
+    this.state.sessionFile = toStoredSessionFile(this.agentDir, picked);
+    return this.state.sessionFile;
   }
 
   private getRecoverableSessionFile() {
     const wanted = resolveStoredSessionFile(
       this.agentDir,
-      this.state.piSessionFile,
+      this.state.sessionFile,
     );
     if (!wanted) return "";
     if (fs.existsSync(wanted)) return wanted;
-    delete this.state.piSessionFile;
+    delete this.state.sessionFile;
     this.saveState();
     return "";
   }
@@ -592,7 +590,7 @@ export class ChatController {
       };
     }
     if (!fs.existsSync(wanted)) {
-      delete this.state.piSessionFile;
+      delete this.state.sessionFile;
       this.saveState();
       return {
         changed: false,
@@ -799,7 +797,7 @@ export class ChatController {
             restoreSessionFile,
           })
         ) {
-          delete this.state.piSessionFile;
+          delete this.state.sessionFile;
           this.driver.dispose();
         }
         await this.clearWorkingReaction().catch(() => {});

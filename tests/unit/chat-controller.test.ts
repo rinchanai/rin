@@ -64,10 +64,9 @@ function emitRpcTurnComplete(controller, options, finalText, result) {
       event: "complete",
       requestTag: options?.requestTag,
       finalText,
-      result:
-        result || {
-          messages: [{ type: "text", text: finalText }],
-        },
+      result: result || {
+        messages: [{ type: "text", text: finalText }],
+      },
       sessionId: controller.session?.sessionManager?.getSessionId?.(),
       sessionFile: controller.session?.sessionManager?.getSessionFile?.(),
     },
@@ -92,7 +91,11 @@ test("chat controller bootstraps a fresh session before the first command", asyn
     ensureSessionReady: async () => {
       calls.push("ensureSessionReady");
       return {
-        sessionFile: path.join(controller.agentDir, "sessions", "fresh-chat.jsonl"),
+        sessionFile: path.join(
+          controller.agentDir,
+          "sessions",
+          "fresh-chat.jsonl",
+        ),
         sessionId: "session-1",
       };
     },
@@ -106,7 +109,7 @@ test("chat controller bootstraps a fresh session before the first command", asyn
 
   assert.deepEqual(calls, ["ensureSessionReady", "runCommand:/session"]);
   assert.deepEqual(deliveries, ["Session stats"]);
-  assert.equal(controller.state.piSessionFile, "fresh-chat.jsonl");
+  assert.equal(controller.state.sessionFile, "fresh-chat.jsonl");
 });
 
 test("chat controller skips recovery bootstrap for /new", async () => {
@@ -122,14 +125,19 @@ test("chat controller skips recovery bootstrap for /new", async () => {
     calls.push(`connect:${String(options.restoreSession)}`);
     this.session = {
       sessionManager: {
-        getSessionFile: () => path.join(controller.agentDir, "sessions", "new-chat.jsonl"),
+        getSessionFile: () =>
+          path.join(controller.agentDir, "sessions", "new-chat.jsonl"),
         getSessionId: () => "session-2",
         getSessionName: () => this.chatKey,
       },
       ensureSessionReady: async () => {
         calls.push("ensureSessionReady");
         return {
-          sessionFile: path.join(controller.agentDir, "sessions", "new-chat.jsonl"),
+          sessionFile: path.join(
+            controller.agentDir,
+            "sessions",
+            "new-chat.jsonl",
+          ),
           sessionId: "session-2",
         };
       },
@@ -144,7 +152,7 @@ test("chat controller skips recovery bootstrap for /new", async () => {
 
   assert.deepEqual(calls, ["connect:false", "runCommand:/new"]);
   assert.deepEqual(deliveries, ["Started a new session."]);
-  assert.equal(controller.state.piSessionFile, "new-chat.jsonl");
+  assert.equal(controller.state.sessionFile, "new-chat.jsonl");
 });
 
 test("chat controller delivers visible non-transient command errors", async () => {
@@ -277,7 +285,11 @@ test("chat controller flushes a completed interim assistant message before a lat
     text: "hello",
   });
 
-  const sessionFile = path.join(controller.agentDir, "sessions", "interim-chat.jsonl");
+  const sessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "interim-chat.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
@@ -286,7 +298,10 @@ test("chat controller flushes a completed interim assistant message before a lat
       getSessionId: () => "session-interim",
       getSessionName: () => chatKey,
     },
-    ensureSessionReady: async () => ({ sessionFile, sessionId: "session-interim" }),
+    ensureSessionReady: async () => ({
+      sessionFile,
+      sessionId: "session-interim",
+    }),
     prompt: async (_text, options = {}) => {
       await controller.handleSessionEvent({ type: "agent_start" });
       await controller.handleSessionEvent({
@@ -347,7 +362,11 @@ test("chat controller does not treat assistant message updates as interim when a
     text: "hello",
   });
 
-  const sessionFile = path.join(controller.agentDir, "sessions", "interim-update-chat.jsonl");
+  const sessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "interim-update-chat.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
@@ -423,7 +442,11 @@ test("chat controller does not leak a buffered preview as interim before the fin
     text: "hello",
   });
 
-  const sessionFile = path.join(controller.agentDir, "sessions", "interim-preview-chat.jsonl");
+  const sessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "interim-preview-chat.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
@@ -495,7 +518,11 @@ test("chat controller does not emit growing final-answer prefixes as interim rep
     text: "hello",
   });
 
-  const sessionFile = path.join(controller.agentDir, "sessions", "interim-prefixes-chat.jsonl");
+  const sessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "interim-prefixes-chat.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
@@ -666,7 +693,11 @@ test("chat controller treats rpc completion as the canonical final reply for pro
     text: "hello",
   });
 
-  const sessionFile = path.join(controller.agentDir, "sessions", "prompt-chat.jsonl");
+  const sessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "prompt-chat.jsonl",
+  );
   controller.session = {
     isStreaming: false,
     messages: [],
@@ -675,14 +706,20 @@ test("chat controller treats rpc completion as the canonical final reply for pro
       getSessionId: () => "session-prompt",
       getSessionName: () => chatKey,
     },
-    ensureSessionReady: async () => ({ sessionFile, sessionId: "session-prompt" }),
+    ensureSessionReady: async () => ({
+      sessionFile,
+      sessionId: "session-prompt",
+    }),
     prompt: async (_text, options = {}) => {
       controller.handleSessionEvent({ type: "agent_start" });
       const during = getChatMessage(controller.agentDir, chatKey, "m-turn");
       assert.ok(during?.acceptedAt);
       assert.equal(during?.processedAt, undefined);
       controller.session.messages = [
-        { role: "assistant", content: [{ type: "text", text: "history text" }] },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "history text" }],
+        },
       ];
       emitRpcTurnComplete(controller, options, "canonical final", {
         messages: [{ type: "text", text: "result final" }],
@@ -706,67 +743,64 @@ test("chat controller treats rpc completion as the canonical final reply for pro
   assert.ok(stored?.acceptedAt);
   assert.ok(stored?.processedAt);
   assert.equal(stored?.sessionFile, "prompt-chat.jsonl");
-  assert.equal(controller.state.piSessionFile, "prompt-chat.jsonl");
+  assert.equal(controller.state.sessionFile, "prompt-chat.jsonl");
 });
 
-test(
-  "chat controller reuses an observed completed assistant message when rpc finalText is missing",
-  async () => {
-    const controller = await createController("telegram/1:2");
-    const deliveries = [];
-    controller.commitPendingDelivery = async function (clearProcessing = false) {
-      deliveries.push({
-        text: this.stagedDelivery?.text || "",
-        replyToMessageId: this.stagedDelivery?.replyToMessageId,
-      });
-      this.stagedDelivery = null;
-      if (clearProcessing) this.currentTurn = null;
-    };
-
-    controller.session = {
-      isStreaming: false,
-      messages: [],
-      sessionManager: {
-        getSessionFile: () => "/tmp/rpc-result-chat.jsonl",
-        getSessionId: () => "session-rpc-result",
-        getSessionName: () => "telegram/1:2",
-      },
-      ensureSessionReady: async () => ({
-        sessionFile: "/tmp/rpc-result-chat.jsonl",
-        sessionId: "session-rpc-result",
-      }),
-      prompt: async (_text, options = {}) => {
-        await controller.handleSessionEvent({ type: "agent_start" });
-        await controller.handleSessionEvent({
-          type: "message_end",
-          message: {
-            role: "assistant",
-            content: [{ type: "text", text: "observed completed text" }],
-          },
-        });
-        emitRpcTurnComplete(controller, options, "", {
-          messages: [{ type: "text", text: "canonical result text" }],
-        });
-      },
-      switchSession: async () => {},
-    };
-
-    const result = await controller.runTurn({
-      text: "hello",
-      attachments: [],
-      incomingMessageId: "m-turn-observed-final",
-      replyToMessageId: "m-turn-observed-final",
+test("chat controller reuses an observed completed assistant message when rpc finalText is missing", async () => {
+  const controller = await createController("telegram/1:2");
+  const deliveries = [];
+  controller.commitPendingDelivery = async function (clearProcessing = false) {
+    deliveries.push({
+      text: this.stagedDelivery?.text || "",
+      replyToMessageId: this.stagedDelivery?.replyToMessageId,
     });
+    this.stagedDelivery = null;
+    if (clearProcessing) this.currentTurn = null;
+  };
 
-    assert.equal(result.finalText, "observed completed text");
-    assert.deepEqual(deliveries, [
-      {
-        text: "observed completed text",
-        replyToMessageId: "m-turn-observed-final",
-      },
-    ]);
-  },
-);
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/rpc-result-chat.jsonl",
+      getSessionId: () => "session-rpc-result",
+      getSessionName: () => "telegram/1:2",
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/rpc-result-chat.jsonl",
+      sessionId: "session-rpc-result",
+    }),
+    prompt: async (_text, options = {}) => {
+      await controller.handleSessionEvent({ type: "agent_start" });
+      await controller.handleSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "observed completed text" }],
+        },
+      });
+      emitRpcTurnComplete(controller, options, "", {
+        messages: [{ type: "text", text: "canonical result text" }],
+      });
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn({
+    text: "hello",
+    attachments: [],
+    incomingMessageId: "m-turn-observed-final",
+    replyToMessageId: "m-turn-observed-final",
+  });
+
+  assert.equal(result.finalText, "observed completed text");
+  assert.deepEqual(deliveries, [
+    {
+      text: "observed completed text",
+      replyToMessageId: "m-turn-observed-final",
+    },
+  ]);
+});
 
 test("chat controller rejects rpc completion without canonical finalText", async () => {
   const controller = await createController("telegram/1:2");
@@ -876,7 +910,7 @@ test("chat controller switches to a linked reply session before sending the prom
     "ensureSessionReady",
     "prompt",
   ]);
-  assert.equal(controller.state.piSessionFile, "reply-linked.jsonl");
+  assert.equal(controller.state.sessionFile, "reply-linked.jsonl");
 });
 
 test("chat controller steers an already streaming session instead of waiting for a new owned turn", async () => {
@@ -1078,7 +1112,9 @@ test("chat controller fails fast when prompt submission is queued offline instea
       sessionId: "session-offline",
     }),
     prompt: async (_text, options = {}) => {
-      controller.session.queuedOfflineOps.push({ requestTag: options.requestTag });
+      controller.session.queuedOfflineOps.push({
+        requestTag: options.requestTag,
+      });
     },
     switchSession: async () => {},
   };
@@ -1095,13 +1131,15 @@ test("chat controller fails fast when prompt submission is queued offline instea
 
 test("chat controller releases a stale bound session after transient prompt timeout", async () => {
   const controller = await createController("telegram/1:2");
-  await fs.mkdir(path.join(controller.agentDir, "sessions"), { recursive: true });
+  await fs.mkdir(path.join(controller.agentDir, "sessions"), {
+    recursive: true,
+  });
   await fs.writeFile(
     path.join(controller.agentDir, "sessions", "stale-chat.jsonl"),
     '{"type":"session","version":3}\n',
     "utf8",
   );
-  controller.state.piSessionFile = "stale-chat.jsonl";
+  controller.state.sessionFile = "stale-chat.jsonl";
   let disposed = 0;
   controller.driver.dispose = function () {
     disposed += 1;
@@ -1137,10 +1175,9 @@ test("chat controller releases a stale bound session after transient prompt time
     /rin_timeout:prompt/,
   );
 
-  assert.equal(controller.state.piSessionFile, undefined);
+  assert.equal(controller.state.sessionFile, undefined);
   assert.equal(disposed, 1);
 });
-
 
 test("chat controller does not let presentation polling block prompt submission", async () => {
   const controller = await createController("onebot/1:2");
@@ -1199,14 +1236,14 @@ test("chat controller does not persist transient processing state to chat state.
     replyToMessageId: "m1",
     sessionFile: "/tmp/demo.jsonl",
   };
-  controller.state.piSessionFile = "/tmp/demo.jsonl";
+  controller.state.sessionFile = "/tmp/demo.jsonl";
 
   controller.saveState();
 
   const persisted = JSON.parse(await fs.readFile(statePath, "utf8"));
   assert.deepEqual(persisted, {
     chatKey: controller.chatKey,
-    piSessionFile: "/tmp/demo.jsonl",
+    sessionFile: "/tmp/demo.jsonl",
   });
   assert.equal(controller.currentTurn?.incomingMessageId, "m1");
   assert.equal(controller.stagedDelivery?.text, "hello");

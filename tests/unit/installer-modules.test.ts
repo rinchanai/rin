@@ -602,7 +602,82 @@ test("persist normalizeInstalledChatSettings applies install upgrade migrations"
         moved: true,
         skipped: false,
       },
+      {
+        id: "chat-state-session-file-v1",
+        markerPath: path.join(
+          dir,
+          "data",
+          "migrations",
+          "chat-state-session-file-v1.json",
+        ),
+        alreadyApplied: false,
+        skipped: true,
+        scanned: 0,
+        migrated: 0,
+        migratedFiles: [],
+      },
     ]);
+    await assert.rejects(fs.access(result.migrations[1].markerPath));
+  });
+});
+
+test("persist normalizeInstalledChatSettings migrates previous chat state session files", async () => {
+  await withTempDir(async (dir) => {
+    const chatStatePath = path.join(
+      dir,
+      "data",
+      "chats",
+      "telegram",
+      "1",
+      "2",
+      "state.json",
+    );
+    const detachedStatePath = path.join(
+      dir,
+      "data",
+      "cron-turns",
+      "cron_demo",
+      "state.json",
+    );
+    await fs.mkdir(path.dirname(chatStatePath), { recursive: true });
+    await fs.mkdir(path.dirname(detachedStatePath), { recursive: true });
+    await fs.writeFile(
+      chatStatePath,
+      JSON.stringify({ chatKey: "telegram/1:2", piSessionFile: "chat.jsonl" }),
+    );
+    await fs.writeFile(
+      detachedStatePath,
+      JSON.stringify({ chatKey: "cron:test", piSessionFile: "turn.jsonl" }),
+    );
+
+    const result = persist.normalizeInstalledChatSettings(
+      {
+        targetUser: "demo",
+        installDir: dir,
+        elevated: false,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000 }),
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: () => {},
+        runPrivileged: () => {},
+      },
+    );
+
+    assert.deepEqual(JSON.parse(await fs.readFile(chatStatePath, "utf8")), {
+      chatKey: "telegram/1:2",
+      sessionFile: "chat.jsonl",
+    });
+    assert.deepEqual(JSON.parse(await fs.readFile(detachedStatePath, "utf8")), {
+      chatKey: "cron:test",
+      sessionFile: "turn.jsonl",
+    });
+    assert.equal(result.migrations[1].id, "chat-state-session-file-v1");
+    assert.equal(result.migrations[1].skipped, false);
+    assert.equal(result.migrations[1].scanned, 2);
+    assert.equal(result.migrations[1].migrated, 2);
+    await fs.access(result.migrations[1].markerPath);
   });
 });
 
@@ -718,7 +793,22 @@ test("persist persistInstallerOutputs applies install upgrade migrations before 
         moved: true,
         skipped: false,
       },
+      {
+        id: "chat-state-session-file-v1",
+        markerPath: path.join(
+          dir,
+          "data",
+          "migrations",
+          "chat-state-session-file-v1.json",
+        ),
+        alreadyApplied: false,
+        skipped: true,
+        scanned: 0,
+        migrated: 0,
+        migratedFiles: [],
+      },
     ]);
+    await assert.rejects(fs.access(result.migrations[1].markerPath));
   });
 });
 

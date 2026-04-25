@@ -2,7 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { normalizeStoredChatSettings } from "../chat/settings.js";
+import {
+  listChatStateFiles,
+  listDetachedControllerStateFiles,
+} from "../chat/support.js";
 import { normalizeLanguageTag } from "../language.js";
+import { stringifyJson } from "../platform/fs.js";
+import { safeString } from "../text-utils.js";
 import {
   isNonArrayObject,
   loadFirstValidCandidate,
@@ -144,6 +150,139 @@ function moveInstalledPathIfNeeded(
   return { ...move, moved: true, skipped: false };
 }
 
+const CHAT_STATE_SESSION_FILE_MIGRATION_ID = "chat-state-session-file-v1";
+
+type InstallStateRewriteResult = {
+  id: string;
+  markerPath: string;
+  alreadyApplied: boolean;
+  skipped: boolean;
+  scanned: number;
+  migrated: number;
+  migratedFiles: string[];
+};
+
+function uniqueStatePaths(paths: unknown[]) {
+  return Array.from(
+    new Set(
+      (Array.isArray(paths) ? paths : [])
+        .map((value) => safeString(value).trim())
+        .filter(Boolean)
+        .map((value) => path.resolve(value)),
+    ),
+  );
+}
+
+function readJsonObject(filePath: string) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeJsonObject(filePath: string, value: unknown) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, stringifyJson(value), "utf8");
+}
+
+function rewriteChatStateSessionFileKey(statePath: string) {
+  const state = readJsonObject(statePath);
+  if (!state) return false;
+  if (!Object.prototype.hasOwnProperty.call(state, "piSessionFile")) {
+    return false;
+  }
+
+  const nextState: Record<string, unknown> = { ...state };
+  const sessionFile = safeString(nextState.sessionFile).trim();
+  const previousSessionFile = safeString(nextState.piSessionFile).trim();
+  if (!sessionFile && previousSessionFile) {
+    nextState.sessionFile = previousSessionFile;
+  }
+  delete nextState.piSessionFile;
+  writeJsonObject(statePath, nextState);
+  return true;
+}
+
+function chatStateSessionFileMigrationMarkerPath(installDir: string) {
+  return path.join(
+    path.resolve(String(installDir || "").trim() || "."),
+    "data",
+    "migrations",
+    `${CHAT_STATE_SESSION_FILE_MIGRATION_ID}.json`,
+  );
+}
+
+function rewriteInstalledChatStateSessionFileKeys(
+  installDir: string,
+): InstallStateRewriteResult {
+  const markerPath = chatStateSessionFileMigrationMarkerPath(installDir);
+  const marker = readJsonObject(markerPath);
+  if (
+    marker &&
+    safeString(marker.id || marker.migrationId).trim() ===
+      CHAT_STATE_SESSION_FILE_MIGRATION_ID
+  ) {
+    return {
+      id: CHAT_STATE_SESSION_FILE_MIGRATION_ID,
+      markerPath,
+      alreadyApplied: true,
+      skipped: true,
+      scanned: 0,
+      migrated: 0,
+      migratedFiles: [],
+    };
+  }
+
+  const root = path.resolve(String(installDir || "").trim() || ".");
+  const statePaths = uniqueStatePaths([
+    ...listChatStateFiles(path.join(root, "data", "chats")).map(
+      (item) => item.statePath,
+    ),
+    ...listDetachedControllerStateFiles(
+      path.join(root, "data", "cron-turns"),
+    ).map((item) => item.statePath),
+  ]);
+  const migratedFiles: string[] = [];
+  for (const statePath of statePaths) {
+    if (!rewriteChatStateSessionFileKey(statePath)) continue;
+    migratedFiles.push(statePath);
+  }
+
+  const scanned = statePaths.length;
+  const migrated = migratedFiles.length;
+  if (migrated === 0) {
+    return {
+      id: CHAT_STATE_SESSION_FILE_MIGRATION_ID,
+      markerPath,
+      alreadyApplied: false,
+      skipped: true,
+      scanned,
+      migrated,
+      migratedFiles,
+    };
+  }
+
+  writeJsonObject(markerPath, {
+    id: CHAT_STATE_SESSION_FILE_MIGRATION_ID,
+    appliedAt: new Date().toISOString(),
+    scanned,
+    migrated,
+  });
+  return {
+    id: CHAT_STATE_SESSION_FILE_MIGRATION_ID,
+    markerPath,
+    alreadyApplied: false,
+    skipped: false,
+    scanned,
+    migrated,
+    migratedFiles,
+  };
+}
+
 export function applyInstallUpgradeMigrations(
   options: {
     installDir: string;
@@ -171,6 +310,7 @@ export function applyInstallUpgradeMigrations(
       options,
       deps,
     ),
+    rewriteInstalledChatStateSessionFileKeys(options.installDir),
   ];
 }
 

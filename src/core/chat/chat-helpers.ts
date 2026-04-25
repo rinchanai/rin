@@ -1,11 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import {
-  ensureExtension,
-  ensureFileName,
-  fileNameFromUrl,
-} from "./support.js";
+import { ensureExtension, ensureFileName, fileNameFromUrl } from "./support.js";
 import { ensureDir } from "../platform/fs.js";
 import {
   findChatMessageByChatAndId,
@@ -22,7 +18,10 @@ import {
   extractMessageText,
 } from "../message-content.js";
 import { safeString } from "../text-utils.js";
-import { resolveStoredSessionFile, toStoredSessionFile } from "../session/ref.js";
+import {
+  resolveStoredSessionFile,
+  toStoredSessionFile,
+} from "../session/ref.js";
 
 export type SavedAttachment = {
   kind: "image" | "file";
@@ -41,7 +40,7 @@ export type InboundAttachmentFailure = {
 
 export type ChatState = {
   chatKey: string;
-  piSessionFile?: string;
+  sessionFile?: string;
 };
 
 export type ChatPromptRestoreInput = {
@@ -155,7 +154,10 @@ export function markProcessedChatMessage(
 ) {
   const normalized = { ...update };
   if (Object.prototype.hasOwnProperty.call(normalized, "sessionFile")) {
-    normalized.sessionFile = toStoredSessionFile(agentDir, normalized.sessionFile);
+    normalized.sessionFile = toStoredSessionFile(
+      agentDir,
+      normalized.sessionFile,
+    );
   }
   if (Object.prototype.hasOwnProperty.call(normalized, "sessionId")) {
     delete normalized.sessionId;
