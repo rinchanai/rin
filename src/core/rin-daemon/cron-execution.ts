@@ -145,10 +145,7 @@ export async function executeCronAgentTask(
         getManagedTaskSessionFile(options.agentDir, task.id)
       : undefined;
   const controllerKey = task.id;
-  const sessionFile =
-    task.session.mode === "dedicated" && !dedicatedSessionFile
-      ? undefined
-      : await resolveCronSessionFile(task);
+  const sessionFile = await resolveCronSessionFile(task);
   const result = await options.chat.runTurn({
     chatKey: task.chatKey,
     controllerKey,
