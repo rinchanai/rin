@@ -102,6 +102,18 @@ function snapshotSessionTurnCompletion(session: any) {
   };
 }
 
+function resolveTurnFailureMessage(session: any, messages: any[]) {
+  const stateError = safeString(session?.agent?.state?.errorMessage).trim();
+  if (stateError) return stateError;
+
+  for (const message of [...messages].reverse()) {
+    if (safeString(message?.role).trim() !== "assistant") continue;
+    const errorMessage = safeString(message?.errorMessage).trim();
+    if (errorMessage) return errorMessage;
+  }
+  return "";
+}
+
 async function settleTurnCompletionEvents() {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
@@ -190,8 +202,11 @@ export async function runCustomRpcMode(
             ? [lastCompletedAssistantMessage]
             : [],
         });
+        let afterSnapshot: ReturnType<
+          typeof snapshotSessionTurnCompletion
+        > | null = null;
         if (!completion.finalText) {
-          const afterSnapshot = snapshotSessionTurnCompletion(turnSession);
+          afterSnapshot = snapshotSessionTurnCompletion(turnSession);
           const sessionAdvanced =
             afterSnapshot.assistantCount > beforeSnapshot.assistantCount ||
             (afterSnapshot.finalText &&
@@ -207,7 +222,14 @@ export async function runCustomRpcMode(
           }
         }
         if (!completion.finalText) {
-          throw new Error("rpc_turn_final_output_missing");
+          const failureMessage = resolveTurnFailureMessage(
+            turnSession,
+            afterSnapshot?.messages ||
+              (lastCompletedAssistantMessage
+                ? [lastCompletedAssistantMessage]
+                : []),
+          );
+          throw new Error(failureMessage || "rpc_turn_final_output_missing");
         }
         markTurnState(turnSession, "completed");
         emitTurnEvent("complete", requestTag, {
