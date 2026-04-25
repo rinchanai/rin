@@ -42,13 +42,12 @@ function formatModelRef(parts: { provider: string; modelId: string }) {
 }
 
 function uniqueSortedModelIds(ids: Iterable<unknown>) {
-  return Array.from(
-    new Set(
-      Array.from(ids)
-        .map((id) => normalizeModelSegment(id))
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ).sort(compareModelIds);
+  const normalized = new Set<string>();
+  for (const id of ids) {
+    const modelId = normalizeModelSegment(id);
+    if (modelId) normalized.add(modelId);
+  }
+  return Array.from(normalized).sort(compareModelIds);
 }
 
 export function normalizeModelRef(value?: string): string | undefined {
