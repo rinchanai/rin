@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { normalizeStoredChatSettings } from "../chat/settings.js";
+import { runChatStateSessionFileUpgradeMigration } from "../chat/state-migration.js";
 import { normalizeLanguageTag } from "../language.js";
 import {
   isNonArrayObject,
@@ -171,6 +172,7 @@ export function applyInstallUpgradeMigrations(
       options,
       deps,
     ),
+    runChatStateSessionFileUpgradeMigration(options.installDir),
   ];
 }
 
