@@ -5,10 +5,6 @@ import {
   createConfiguredAgentSession,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
-import {
-  ensureSearxngSidecar,
-  stopSearxngSidecar,
-} from "../rin-web-search/service.js";
 
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { RpcInteractiveSession } from "./runtime.js";
@@ -92,28 +88,16 @@ export function resolveTuiMode(
 }
 
 async function startStdTui(
-  agentDir: string,
   options: { additionalExtensionPaths?: string[] },
   profile: ReturnType<typeof startupProfiler>,
 ) {
-  const webSearchInstanceId = `tui-${process.pid}`;
-  await ensureSearxngSidecar(agentDir, {
-    instanceId: webSearchInstanceId,
-  }).catch(() => {});
-
-  try {
-    const { runtime: sessionRuntime } = await createConfiguredAgentSession({
-      additionalExtensionPaths: options.additionalExtensionPaths,
-    });
-    profile.mark("std-session-created");
-    console.log();
-    const interactiveMode = new InteractiveMode(sessionRuntime);
-    await interactiveMode.run();
-  } finally {
-    await stopSearxngSidecar(agentDir, {
-      instanceId: webSearchInstanceId,
-    }).catch(() => {});
-  }
+  const { runtime: sessionRuntime } = await createConfiguredAgentSession({
+    additionalExtensionPaths: options.additionalExtensionPaths,
+  });
+  profile.mark("std-session-created");
+  console.log();
+  const interactiveMode = new InteractiveMode(sessionRuntime);
+  await interactiveMode.run();
 }
 
 async function startRpcTui(
@@ -165,7 +149,7 @@ export async function startTui(
   await applyRinTuiOverrides();
 
   if (mode === "std") {
-    await startStdTui(runtime.agentDir, options, profile);
+    await startStdTui(options, profile);
     return;
   }
 

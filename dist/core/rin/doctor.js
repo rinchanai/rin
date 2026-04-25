@@ -15,7 +15,12 @@ export async function runDoctor(parsed) {
         `socketReady=${socketReady ? "yes" : "no"}`,
         `serviceManager=${context.systemctl ? "systemd-user" : "none"}`,
     ];
-    lines.push(`webSearchRuntimeReady=${webSearchStatus?.runtime?.ready ? "yes" : "no"}`, `webSearchInstanceCount=${String(Array.isArray(webSearchStatus?.instances) ? webSearchStatus.instances.length : 0)}`);
+    lines.push(`webSearchRuntimeReady=${webSearchStatus?.runtime?.ready ? "yes" : "no"}`, `webSearchMode=${String(webSearchStatus?.runtime?.mode || "unknown")}`, `webSearchProviderCount=${String(webSearchStatus?.runtime?.providerCount ?? 0)}`, `webSearchInstanceCount=${String(Array.isArray(webSearchStatus?.instances) ? webSearchStatus.instances.length : 0)}`);
+    for (const provider of Array.isArray(webSearchStatus?.runtime?.providers)
+        ? webSearchStatus.runtime.providers
+        : []) {
+        lines.push(`webSearchProvider=${String(provider)}`);
+    }
     for (const instance of Array.isArray(webSearchStatus?.instances)
         ? webSearchStatus.instances
         : []) {

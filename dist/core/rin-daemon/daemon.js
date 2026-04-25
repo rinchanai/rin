@@ -10,7 +10,7 @@ import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { emptySessionState, isSessionScopedCommand, response, } from "../rin-lib/rpc.js";
 import { applyRuntimeProfileEnvironment, resolveRuntimeProfile, getRuntimeSessionDir, } from "../rin-lib/runtime.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
-import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
+import { getWebSearchStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import { getCatalogOAuthState, listCatalogCommands, listCatalogModels, } from "./catalog.js";
 import { hasSessionRef as hasSessionSelector, normalizeSessionRef as sessionSelectorFromCommand, } from "../session/ref.js";
@@ -223,7 +223,7 @@ export async function startDaemon(options = {}) {
                 socketPath,
                 ...workerPool.getStatusSnapshot(),
                 taskCount: cronScheduler.listTasks().length,
-                webSearch: getSearxngSidecarStatus(runtime.agentDir),
+                webSearch: getWebSearchStatus(runtime.agentDir),
                 ...(extraStatus && typeof extraStatus === "object"
                     ? extraStatus
                     : {}),

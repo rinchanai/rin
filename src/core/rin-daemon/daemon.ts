@@ -28,7 +28,7 @@ import {
   getRuntimeSessionDir,
 } from "../rin-lib/runtime.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
-import { getSearxngSidecarStatus } from "../rin-web-search/service.js";
+import { getWebSearchStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import {
   getCatalogOAuthState,
@@ -382,7 +382,7 @@ export async function startDaemon(
           socketPath,
           ...workerPool.getStatusSnapshot(),
           taskCount: cronScheduler.listTasks().length,
-          webSearch: getSearxngSidecarStatus(runtime.agentDir),
+          webSearch: getWebSearchStatus(runtime.agentDir),
           ...(extraStatus && typeof extraStatus === "object"
             ? extraStatus
             : {}),

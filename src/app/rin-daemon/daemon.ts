@@ -12,27 +12,11 @@ import { startChatBridge } from "../../core/chat/main.js";
 import { startDaemon } from "../../core/rin-daemon/daemon.js";
 import type { RpcSocketConnector } from "../../core/platform/rpc-socket.js";
 import { RinDaemonFrontendClient } from "../../core/rin-tui/rpc-client.js";
-import { resolveRuntimeProfile } from "../../core/rin-lib/runtime.js";
-import {
-  cleanupOrphanSearxngSidecars,
-  ensureSearxngSidecar,
-  stopSearxngSidecar,
-} from "../../core/rin-web-search/service.js";
 
 async function main() {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const ext = path.extname(fileURLToPath(import.meta.url)) || ".js";
   const workerPath = path.join(here, `worker${ext}`);
-  const runtime = resolveRuntimeProfile();
-  const instanceId = `daemon-${process.pid}`;
-
-  const ensureWebSearch = async () => {
-    await cleanupOrphanSearxngSidecars(runtime.agentDir).catch(() => {});
-    await ensureSearxngSidecar(runtime.agentDir, { instanceId }).catch(
-      () => {},
-    );
-  };
-  void ensureWebSearch();
 
   let localFrontendConnectorResolver:
     | ((connector: RpcSocketConnector) => void)
@@ -50,13 +34,8 @@ async function main() {
       }),
   });
 
-  const sidecarHealthTimer = setInterval(() => {
-    void ensureWebSearch();
-  }, 10_000);
   const stopServices = async () => {
-    clearInterval(sidecarHealthTimer);
     await chatBridge.stop().catch(() => {});
-    await stopSearxngSidecar(runtime.agentDir, { instanceId }).catch(() => {});
   };
 
   try {

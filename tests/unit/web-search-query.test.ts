@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -25,120 +24,50 @@ const service = await import(
   ).href
 );
 
-async function withTempDir(fn) {
-  const dir = await fs.mkdtemp("/home/rin/tmp/rin-web-search-test-");
-  try {
-    await fn(dir);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-}
+const googleFixture = `
+<div>
+  <a href="/url?q=https://github.com/rinchanai/rin&sa=U&ved=demo" data-ved="demo">
+    <div style="-webkit-line-clamp:2">GitHub - rinchanai/rin</div>
+  </a>
+  <div class="VwiC3b yXK7lf p4wth r025kc hJNv6b">Rin personal workspace mirror managed by <b>RinChan</b>.</div>
+</div>`;
 
-async function writeExecutable(filePath, content) {
-  await fs.writeFile(filePath, content, { encoding: "utf8", mode: 0o755 });
-  await fs.chmod(filePath, 0o755);
-}
+const googleGsaFixture = `
+<div>
+  <div class="Gx5Zad xpd EtOod pkphOe">
+    <div class="egMi0 kCrYT">
+      <a href="/url?q=https://example.com/google-result&amp;sa=U&amp;ved=2ahUKEwi-demo&amp;usg=demo" data-ved="2ahUKEwi-demo">
+        <div class="DnJfK">
+          <div class="j039Wc"><h3 class="zBAuLc l97dzf"><div class="ilUpNd UFvD1 aSRlid IwSnJ" style="-webkit-line-clamp:2">SearXNG style Google result</div></h3></div>
+          <div class="sCuL3"><div class="ilUpNd BamJPe aSRlid XR4uSe">example.com</div></div>
+        </div>
+      </a>
+    </div>
+    <div class="kCrYT"><div><div class="ilUpNd H66NU aSRlid"><span class="UK5aid MDvRSc">3 days ago</span><span class="UK5aid MDvRSc"> · </span>Snippet from the Google Go rendered result card.</div></div></div>
+  </div>
+</div>`;
 
-function buildFakeSearxngNodeProgram({
-  readyServer = false,
-  spawnCountFile = "",
-  exitAfterMs = 0,
-} = {}) {
-  return [
-    'const fs = require("node:fs");',
-    spawnCountFile
-      ? `fs.appendFileSync(${JSON.stringify(spawnCountFile)}, "spawn\\n");`
-      : "",
-    readyServer
-      ? [
-          'const http = require("node:http");',
-          "const port = Number(process.env.SEARXNG_PORT || 0);",
-          "const server = http.createServer((req, res) => {",
-          'if (req.url === "/healthz") {',
-          'res.writeHead(200, { "Content-Type": "text/plain" });',
-          'res.end("OK");',
-          "return;",
-          "}",
-          "res.writeHead(404);",
-          'res.end("not found");',
-          "});",
-          'server.listen(port, "127.0.0.1");',
-        ].join(" ")
-      : "",
-    exitAfterMs > 0 ? `setTimeout(() => process.exit(0), ${exitAfterMs});` : "",
-    "setInterval(() => {}, 60000);",
-  ]
-    .filter(Boolean)
-    .join(" ");
-}
+const bingFixture = `
+<ol id="b_results">
+  <li class="b_algo">
+    <h2><a href="https://www.bing.com/ck/a?u=a1aHR0cHM6Ly9leGFtcGxlLmNvbS9iaW5nLXN1cHBvcnQ">Bing Support Result</a></h2>
+    <div><p><span class="algoSlug_icon">icon</span>Bing fallback snippet for <b>RinChan</b>.</p></div>
+  </li>
+</ol>`;
 
-async function installArchiveFallbackToolchain(
-  binDir,
-  { readyServer = false, spawnCountFile = "", exitAfterMs = 0 } = {},
-) {
-  const nodeBin = JSON.stringify(process.execPath);
-  const nodeProgram = JSON.stringify(
-    buildFakeSearxngNodeProgram({ readyServer, spawnCountFile, exitAfterMs }),
-  );
-  await writeExecutable(
-    path.join(binDir, "python3"),
-    `#!/bin/sh
-if [ "$1" = "-m" ] && [ "$2" = "venv" ]; then
-  venv="$3"
-  /bin/mkdir -p "$venv/bin"
-  /bin/cat > "$venv/bin/python" <<'EOF'
-#!/bin/sh
-node_bin=${nodeBin}
-if [ "$1" = "-m" ] && [ "$2" = "searx.webapp" ]; then
-  exec "$node_bin" -e ${nodeProgram}
-fi
-exit 0
-EOF
-  /bin/cat > "$venv/bin/pip" <<'EOF'
-#!/bin/sh
-exit 0
-EOF
-  /bin/chmod +x "$venv/bin/python" "$venv/bin/pip"
-  exit 0
-fi
-exit 0
-`,
-  );
-  await writeExecutable(
-    path.join(binDir, "curl"),
-    `#!/bin/sh
-out=""
-while [ $# -gt 0 ]; do
-  if [ "$1" = "-o" ]; then
-    out="$2"
-    shift 2
-    continue
-  fi
-  shift
-done
-: > "$out"
-exit 0
-`,
-  );
-  await writeExecutable(
-    path.join(binDir, "tar"),
-    `#!/bin/sh
-target=""
-while [ $# -gt 0 ]; do
-  if [ "$1" = "-C" ]; then
-    target="$2"
-    shift 2
-    continue
-  fi
-  shift
-done
-/bin/mkdir -p "$target/searx"
-printf 'flask\n' > "$target/requirements.txt"
-printf '# test package\n' > "$target/searx/__init__.py"
-exit 0
-`,
-  );
-}
+const duckDuckGoLiteFixture = `
+<table>
+  <tr>
+    <td>1.&nbsp;</td>
+    <td>
+      <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgithub.com%2Frinchanai%2Frin&amp;rut=abc" class='result-link'>GitHub - rinchanai/rin</a>
+    </td>
+  </tr>
+  <tr>
+    <td>&nbsp;&nbsp;&nbsp;</td>
+    <td class='result-snippet'>Rin personal workspace mirror managed by <b>RinChan</b>.</td>
+  </tr>
+</table>`;
 
 test("web search query helpers normalize request", () => {
   const req = query.normalizeSearchRequest({
@@ -163,253 +92,182 @@ test("web search query helpers discard invalid freshness", () => {
   assert.equal(req.freshness, undefined);
 });
 
-test("web search paths derive runtime locations", () => {
+test("web search paths derive data root location", () => {
   const root = "/tmp/demo";
-  const runtimeBinDir = process.platform === "win32" ? "Scripts" : "bin";
-  const pythonBinName = process.platform === "win32" ? "python.exe" : "python";
-  const pipBinName = process.platform === "win32" ? "pip.exe" : "pip";
-
   assert.ok(
     paths.dataRootForState(root).endsWith(path.join("data", "web-search")),
   );
-  assert.ok(
-    paths
-      .runtimeRootForState(root)
-      .endsWith(path.join("data", "web-search", "runtime")),
-  );
-  assert.ok(
-    paths
-      .runtimeBootstrapStateFileForState(root)
-      .endsWith(path.join("runtime", "bootstrap.json")),
-  );
-  assert.ok(
-    paths
-      .runtimePythonBinForState(root)
-      .endsWith(path.join("runtime", "venv", runtimeBinDir, pythonBinName)),
-  );
-  assert.ok(
-    paths
-      .runtimePipBinForState(root)
-      .endsWith(path.join("runtime", "venv", runtimeBinDir, pipBinName)),
-  );
-  assert.ok(
-    paths
-      .instanceStateFileForState(root, "abc")
-      .endsWith(path.join("instances", "abc", "state.json")),
-  );
-  assert.ok(
-    paths
-      .instanceSettingsFileForState(root, "abc")
-      .endsWith(path.join("instances", "abc", "settings.yml")),
-  );
 });
 
-test("web search paths share bootstrap and instance state locations", async () => {
-  await withTempDir(async (dir) => {
-    const bootstrap = {
-      ready: true,
-      sourceDir: "/tmp/source",
-      pythonBin: "/tmp/python",
-      pipBin: "/tmp/pip",
-      installedAt: "2026-04-25T06:14:58Z",
-    };
-    paths.writeRuntimeBootstrapState(dir, bootstrap);
-    assert.deepEqual(paths.readRuntimeBootstrapState(dir), bootstrap);
-
-    const instance = {
-      pid: 123,
-      port: 8080,
-      baseUrl: "http://127.0.0.1:8080",
-      pythonBin: "/tmp/python",
-      sourceDir: "/tmp/source",
-      settingsPath: path.join(dir, "settings.yml"),
-      startedAt: "2026-04-25T06:14:58Z",
-      ownerPid: process.pid,
-    };
-    paths.writeInstanceState(dir, "abc", instance);
-    assert.deepEqual(paths.listInstanceIds(dir), ["abc"]);
-    assert.deepEqual(paths.readInstanceState(dir, "abc"), instance);
-    await fs.stat(paths.runtimeBootstrapStateFileForState(dir));
-    await fs.stat(paths.instanceStateFileForState(dir, "abc"));
-  });
+test("google parser extracts direct results", () => {
+  const rows = query.parseGoogleResults(googleFixture, 5);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].engine, "google");
+  assert.equal(rows[0].url, "https://github.com/rinchanai/rin");
+  assert.equal(rows[0].title, "GitHub - rinchanai/rin");
+  assert.equal(
+    rows[0].snippet,
+    "Rin personal workspace mirror managed by RinChan.",
+  );
+  assert.equal(rows[0].domain, "github.com");
 });
 
-test("web search orphan cleanup removes full instance root", async () => {
-  await withTempDir(async (dir) => {
-    const instanceRoot = paths.instanceRootForState(dir, "demo");
-    await fs.mkdir(instanceRoot, { recursive: true });
-    await fs.writeFile(
-      path.join(instanceRoot, "settings.yml"),
-      "demo: true\n",
-      "utf8",
-    );
-    paths.writeInstanceState(dir, "demo", {
-      pid: 0,
-      ownerPid: 999999,
-      baseUrl: "http://127.0.0.1:9999",
-      settingsPath: path.join(instanceRoot, "settings.yml"),
-    });
+test("bing parser extracts direct results and unwraps redirects", () => {
+  const rows = query.parseBingResults(bingFixture, 5);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].engine, "bing");
+  assert.equal(rows[0].url, "https://example.com/bing-support");
+  assert.equal(rows[0].title, "Bing Support Result");
+  assert.equal(rows[0].snippet, "Bing fallback snippet for RinChan.");
+  assert.equal(rows[0].domain, "example.com");
+});
 
-    const result = await service.cleanupOrphanSearxngSidecars(dir);
+test("duckduckgo lite parser extracts direct results", () => {
+  const rows = query.parseDuckDuckGoLiteResults(duckDuckGoLiteFixture, 5);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].engine, "duckduckgo");
+  assert.equal(rows[0].url, "https://github.com/rinchanai/rin");
+  assert.equal(rows[0].title, "GitHub - rinchanai/rin");
+  assert.equal(
+    rows[0].snippet,
+    "Rin personal workspace mirror managed by RinChan.",
+  );
+  assert.equal(rows[0].domain, "github.com");
+});
+
+test("web search service reports direct provider runtime status", () => {
+  const status = service.getWebSearchStatus("/tmp/rin-agent");
+  assert.equal(status.runtime.ready, true);
+  assert.equal(status.runtime.mode, "direct");
+  assert.equal(status.runtime.providerCount, 3);
+  assert.deepEqual(status.runtime.providers, ["google", "bing", "duckduckgo"]);
+  assert.deepEqual(status.instances, []);
+});
+
+test("web search uses google results first and fills gaps from bing", async () => {
+  const originalFetch = globalThis.fetch;
+  const responses = [googleFixture, bingFixture];
+  globalThis.fetch = (async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => responses.shift() || "",
+  })) as typeof fetch;
+  try {
+    const result = await query.searchWeb({ q: "rinchanai", limit: 2 });
     assert.equal(result.ok, true);
-    assert.deepEqual(result.cleaned, [
-      { instanceId: "demo", pid: 0, ownerPid: 999999 },
-    ]);
-    await assert.rejects(fs.stat(instanceRoot));
-  });
-});
-
-test("web search cleanup removes stale dead instances owned by a live process", async () => {
-  await withTempDir(async (dir) => {
-    const instanceRoot = paths.instanceRootForState(dir, "stale");
-    await fs.mkdir(instanceRoot, { recursive: true });
-    await fs.writeFile(
-      path.join(instanceRoot, "settings.yml"),
-      "demo: true\n",
-      "utf8",
+    assert.equal(result.engine, "google");
+    assert.equal(result.results.length, 2);
+    assert.deepEqual(
+      result.results.map((item: any) => [item.engine, item.url]),
+      [
+        ["google", "https://github.com/rinchanai/rin"],
+        ["bing", "https://example.com/bing-support"],
+      ],
     );
-    paths.writeInstanceState(dir, "stale", {
-      pid: 999999,
-      ownerPid: process.pid,
-      baseUrl: "http://127.0.0.1:9999",
-      settingsPath: path.join(instanceRoot, "settings.yml"),
-    });
+    assert.deepEqual(
+      result.attempts?.map((item: any) => [
+        item.engine,
+        item.ok,
+        item.results ?? 0,
+      ]),
+      [
+        ["google", true, 1],
+        ["bing", true, 1],
+      ],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
-    const result = await service.cleanupOrphanSearxngSidecars(dir);
+test("web search requests Google with SearXNG-style mobile user agent", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+  globalThis.fetch = (async (url: any, init: any) => {
+    calls.push({ url: String(url), headers: init.headers });
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => googleGsaFixture,
+    };
+  }) as typeof fetch;
+  try {
+    const result = await query.searchWeb({ q: "rinchanai", limit: 1 });
     assert.equal(result.ok, true);
-    assert.deepEqual(result.cleaned, [
-      { instanceId: "stale", pid: 999999, ownerPid: process.pid },
+    assert.equal(result.engine, "google");
+    assert.equal(result.results[0].url, "https://example.com/google-result");
+    assert.equal(calls.length, 1);
+    assert.equal(new URL(calls[0].url).hostname, "www.google.com");
+    assert.match(calls[0].headers["User-Agent"], /NSTNWV$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("duckduckgo provider uses the lite endpoint directly", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const responses = [
+    "<html><body>No Google results</body></html>",
+    "<html><body>No Bing results</body></html>",
+    duckDuckGoLiteFixture,
+  ];
+  globalThis.fetch = (async (url: any) => {
+    calls.push(String(url));
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      text: async () => responses.shift() || "",
+    };
+  }) as typeof fetch;
+  try {
+    const result = await query.searchWeb({ q: "rinchanai", limit: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(result.engine, "duckduckgo");
+    assert.equal(result.results[0].url, "https://github.com/rinchanai/rin");
+    assert.equal(
+      calls.some((url) => url.includes("html.duckduckgo.com")),
+      false,
+    );
+    assert.equal(
+      calls.some((url) => url.includes("lite.duckduckgo.com")),
+      true,
+    );
+    assert.deepEqual(result.attempts, [
+      { engine: "google", ok: true, results: 0 },
+      { engine: "bing", ok: true, results: 0 },
+      { engine: "duckduckgo", ok: true, results: 1 },
     ]);
-    await assert.rejects(fs.stat(instanceRoot));
-  });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
-test("web search sidecar bootstrap falls back to archive download without git", async () => {
-  await withTempDir(async (dir) => {
-    const binDir = path.join(dir, "bin");
-    await fs.mkdir(binDir, { recursive: true });
-    await installArchiveFallbackToolchain(binDir, { readyServer: true });
-
-    const previousPath = process.env.PATH;
-    const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-    delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-    process.env.PATH = binDir;
-
-    try {
-      const result = await service.ensureSearxngSidecar(dir, {
-        instanceId: "archive-fallback",
-        timeoutMs: 2_000,
-      });
-      assert.equal(result.ok, true);
-      assert.match(result.baseUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
-
-      const status = service.getSearxngSidecarStatus(dir);
-      assert.equal(status.runtime.ready, true);
-      await fs.stat(path.join(status.runtime.sourceDir, "requirements.txt"));
-      await assert.rejects(
-        fs.stat(path.join(status.runtime.sourceDir, ".git")),
-      );
-      assert.equal(status.instances.length, 1);
-      assert.equal(status.instances[0].instanceId, "archive-fallback");
-      assert.equal(status.instances[0].alive, true);
-    } finally {
-      await service.stopSearxngSidecar(dir, {
-        instanceId: "archive-fallback",
-      });
-      if (previousPath == null) delete process.env.PATH;
-      else process.env.PATH = previousPath;
-      if (previousBaseUrl == null) {
-        delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-      } else {
-        process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV] = previousBaseUrl;
-      }
-    }
-  });
-});
-
-test("web search sidecar reuses a ready instance after waiting for the lock", async () => {
-  await withTempDir(async (dir) => {
-    const binDir = path.join(dir, "bin");
-    const spawnCountFile = path.join(dir, "spawn-count.log");
-    await fs.mkdir(binDir, { recursive: true });
-    await installArchiveFallbackToolchain(binDir, {
-      readyServer: true,
-      spawnCountFile,
-      exitAfterMs: 1_500,
-    });
-
-    const previousPath = process.env.PATH;
-    const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-    delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-    process.env.PATH = binDir;
-
-    try {
-      const [first, second] = await Promise.all([
-        service.ensureSearxngSidecar(dir, {
-          instanceId: "shared-instance",
-          timeoutMs: 2_000,
-        }),
-        service.ensureSearxngSidecar(dir, {
-          instanceId: "shared-instance",
-          timeoutMs: 2_000,
-        }),
-      ]);
-      assert.equal(first.ok, true);
-      assert.equal(second.ok, true);
-      assert.equal(first.baseUrl, second.baseUrl);
-
-      const spawnCount = (await fs.readFile(spawnCountFile, "utf8"))
-        .split("\n")
-        .filter(Boolean).length;
-      assert.equal(spawnCount, 1);
-    } finally {
-      await service.stopSearxngSidecar(dir, {
-        instanceId: "shared-instance",
-      });
-      if (previousPath == null) delete process.env.PATH;
-      else process.env.PATH = previousPath;
-      if (previousBaseUrl == null) {
-        delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-      } else {
-        process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV] = previousBaseUrl;
-      }
-    }
-  });
-});
-
-test("web search sidecar waits for a healthy endpoint before succeeding", async () => {
-  await withTempDir(async (dir) => {
-    const binDir = path.join(dir, "bin");
-    await fs.mkdir(binDir, { recursive: true });
-    await installArchiveFallbackToolchain(binDir, { readyServer: false });
-
-    const previousPath = process.env.PATH;
-    const previousBaseUrl = process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-    delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-    process.env.PATH = binDir;
-
-    try {
-      await assert.rejects(
-        service.ensureSearxngSidecar(dir, {
-          instanceId: "not-ready",
-          timeoutMs: 300,
-        }),
-        /searxng_start_timeout/,
-      );
-
-      const status = service.getSearxngSidecarStatus(dir);
-      assert.equal(status.instances.length, 0);
-      await assert.rejects(
-        fs.stat(paths.instanceRootForState(dir, "not-ready")),
-      );
-    } finally {
-      if (previousPath == null) delete process.env.PATH;
-      else process.env.PATH = previousPath;
-      if (previousBaseUrl == null) {
-        delete process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV];
-      } else {
-        process.env[service.RIN_WEB_SEARCH_BASE_URL_ENV] = previousBaseUrl;
-      }
-    }
-  });
+test("web search falls back to bing when google is challenged", async () => {
+  const originalFetch = globalThis.fetch;
+  const responses = [
+    "<html><body><h1>CAPTCHA</h1><p>automated queries detected</p></body></html>",
+    bingFixture,
+  ];
+  globalThis.fetch = (async () => ({
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    text: async () => responses.shift() || "",
+  })) as typeof fetch;
+  try {
+    const result = await query.searchWeb({ q: "rinchanai", limit: 1 });
+    assert.equal(result.ok, true);
+    assert.equal(result.engine, "bing");
+    assert.deepEqual(result.attempts, [
+      { engine: "google", ok: false, error: "google_challenge_required" },
+      { engine: "bing", ok: true, results: 1 },
+    ]);
+    assert.equal(result.results[0].url, "https://example.com/bing-support");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
