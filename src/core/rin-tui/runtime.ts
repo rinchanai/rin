@@ -125,6 +125,7 @@ type RpcFrontendPhase =
   | "idle"
   | "starting"
   | "sending"
+  | "compacting"
   | "working"
   | "connecting";
 
@@ -739,7 +740,8 @@ export class RpcInteractiveSession {
 
   private getFrontendPhase(): RpcFrontendPhase {
     if (!this.rpcConnected || this.recoveryPending) return "connecting";
-    if (this.remoteTurnRunning || this.isCompacting) return "working";
+    if (this.isCompacting) return "compacting";
+    if (this.remoteTurnRunning) return "working";
     if (this.activeTurn) return "sending";
     if (this.startupPending || this.sessionOperationPending) {
       return "starting";
@@ -757,7 +759,9 @@ export class RpcInteractiveSession {
           ? "Starting"
           : phase === "sending"
             ? "Sending"
-            : "Working";
+            : phase === "compacting"
+              ? "Compacting context"
+              : "Working";
     return {
       type: "rpc_frontend_status",
       phase,

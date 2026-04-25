@@ -12,7 +12,8 @@ const events = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "events.js")).href
 );
 const runtime = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "runtime.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-tui", "runtime.js"))
+    .href
 );
 
 test("rpc session events do not refresh whole state on every stream update", async () => {

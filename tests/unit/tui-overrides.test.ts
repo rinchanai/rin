@@ -12,7 +12,7 @@ const rootDir = path.resolve(
 const overrides = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-tui", "upstream-overrides.js"),
-  ).href,
+  ).href
 );
 const loaderModule = await import(
   pathToFileURL(
@@ -25,9 +25,24 @@ const loaderModule = await import(
       "components",
       "loader.js",
     ),
-  ).href,
+  ).href
 );
 const codingAgentModule = await import("@mariozechner/pi-coding-agent");
+const themeModule = await import(
+  pathToFileURL(
+    path.join(
+      rootDir,
+      "node_modules",
+      "@mariozechner",
+      "pi-coding-agent",
+      "dist",
+      "modes",
+      "interactive",
+      "theme",
+      "theme.js",
+    ),
+  ).href
+);
 
 const settingsManagerWithoutTerminalProgress = {
   getShowTerminalProgress() {
@@ -41,7 +56,13 @@ test("terminal title override shows only session name", async () => {
   let title;
   codingAgentModule.InteractiveMode.prototype.updateTerminalTitle.call({
     sessionManager: { getSessionName: () => "demo" },
-    ui: { terminal: { setTitle(value) { title = value; } } },
+    ui: {
+      terminal: {
+        setTitle(value) {
+          title = value;
+        },
+      },
+    },
   });
 
   assert.equal(title, "π - demo");
@@ -50,7 +71,11 @@ test("terminal title override shows only session name", async () => {
 test("loader stop clears render interval", () => {
   let renders = 0;
   const loader = new loaderModule.Loader(
-    { requestRender() { renders += 1; } },
+    {
+      requestRender() {
+        renders += 1;
+      },
+    },
     (x) => x,
     (x) => x,
     "demo",
@@ -103,7 +128,9 @@ test("local session selector reuses bound session helpers for canonicalized list
       shutdown: async () => {},
     };
 
-    codingAgentModule.InteractiveMode.prototype.showSessionSelector.call(instance);
+    codingAgentModule.InteractiveMode.prototype.showSessionSelector.call(
+      instance,
+    );
 
     const sessions = await selector.currentSessionsLoader();
     await selector.renameSession("/tmp/demo.jsonl", "renamed");
@@ -187,7 +214,9 @@ test("rpc session selector loads sessions through the daemon instead of local Se
     shutdown: async () => {},
   };
 
-  codingAgentModule.InteractiveMode.prototype.showSessionSelector.call(instance);
+  codingAgentModule.InteractiveMode.prototype.showSessionSelector.call(
+    instance,
+  );
 
   const sessions = await selector.currentSessionsLoader();
   await selector.renameSession("/tmp/demo.jsonl", "renamed");
@@ -209,7 +238,11 @@ test("rpc session resync rebinds runtime state and rerenders history", async () 
   let runtimeChanges = 0;
   let renders = 0;
   let historyRenders = 0;
-  const ui = { requestRender() { renders += 1; } };
+  const ui = {
+    requestRender() {
+      renders += 1;
+    },
+  };
   const instance = {
     isInitialized: true,
     ui,
@@ -237,14 +270,94 @@ test("rpc session resync rebinds runtime state and rerenders history", async () 
     autoCompactionLoader: { stop() {} },
   };
 
-  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
-    instance,
-    { type: "rpc_session_resynced" },
-  );
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(instance, {
+    type: "rpc_session_resynced",
+  });
 
   assert.equal(runtimeChanges, 1);
   assert.equal(historyRenders, 1);
   assert.ok(renders >= 1);
+});
+
+test("rpc compaction start keeps the dedicated compaction loader", async () => {
+  await overrides.applyRinTuiOverrides();
+  themeModule.initTheme("dark", false);
+
+  let renders = 0;
+  const ui = {
+    requestRender() {
+      renders += 1;
+    },
+    terminal: { setProgress() {} },
+  };
+  const instance = {
+    isInitialized: true,
+    ui,
+    settingsManager: settingsManagerWithoutTerminalProgress,
+    session: {
+      isCompacting: true,
+      abortCompaction() {},
+      getFrontendStatusEvent() {
+        return {
+          type: "rpc_frontend_status",
+          phase: "compacting",
+          label: "Compacting context",
+          connected: true,
+        };
+      },
+    },
+    loadingAnimation: undefined,
+    statusContainer: {
+      child: undefined,
+      clear() {
+        this.child = undefined;
+      },
+      addChild(child) {
+        this.child = child;
+      },
+    },
+    chatContainer: {
+      clear() {},
+      addChild() {},
+      removeChild() {},
+    },
+    defaultEditor: { onEscape() {} },
+    footer: { invalidate() {} },
+    flushCompactionQueue() {},
+    showError() {},
+    showStatus() {},
+    autoCompactionLoader: undefined,
+  };
+
+  try {
+    await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+      instance,
+      { type: "compaction_start", reason: "threshold" },
+    );
+
+    const compactionLoader = instance.autoCompactionLoader;
+    assert.ok(compactionLoader);
+    assert.equal(instance.loadingAnimation, undefined);
+    assert.equal(instance.statusContainer.child, compactionLoader);
+    assert.match(compactionLoader.message, /Auto-compacting/);
+    assert.doesNotMatch(compactionLoader.message, /Working/);
+
+    await codingAgentModule.InteractiveMode.prototype.handleEvent.call(
+      instance,
+      {
+        type: "rpc_frontend_status",
+        phase: "compacting",
+        label: "Compacting context",
+        connected: true,
+      },
+    );
+
+    assert.equal(instance.loadingAnimation, undefined);
+    assert.equal(instance.statusContainer.child, compactionLoader);
+    assert.ok(renders >= 1);
+  } finally {
+    instance.autoCompactionLoader?.stop();
+  }
 });
 
 test("rpc compaction end reattaches the existing transport loader", async () => {
@@ -252,10 +365,17 @@ test("rpc compaction end reattaches the existing transport loader", async () => 
 
   let renders = 0;
   const ui = {
-    requestRender() { renders += 1; },
+    requestRender() {
+      renders += 1;
+    },
     terminal: { setProgress() {} },
   };
-  const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
+  const existingLoader = new loaderModule.Loader(
+    ui,
+    (x) => x,
+    (x) => x,
+    "Working...",
+  );
   const instance = {
     isInitialized: true,
     ui,
@@ -313,10 +433,17 @@ test("local compaction end restores the working loader while the turn is still s
 
   let renders = 0;
   const ui = {
-    requestRender() { renders += 1; },
+    requestRender() {
+      renders += 1;
+    },
     terminal: { setProgress() {} },
   };
-  const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
+  const existingLoader = new loaderModule.Loader(
+    ui,
+    (x) => x,
+    (x) => x,
+    "Working...",
+  );
   const instance = {
     isInitialized: true,
     ui,
@@ -370,7 +497,12 @@ test("rpc agent end does not leave a stale working loader after the turn is done
     requestRender() {},
     terminal: { setProgress() {} },
   };
-  const existingLoader = new loaderModule.Loader(ui, (x) => x, (x) => x, "Working...");
+  const existingLoader = new loaderModule.Loader(
+    ui,
+    (x) => x,
+    (x) => x,
+    "Working...",
+  );
   const instance = {
     isInitialized: true,
     ui,
