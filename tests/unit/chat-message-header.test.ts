@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
+  "..",
 );
 const messageHeaderMod = await import(
   pathToFileURL(
