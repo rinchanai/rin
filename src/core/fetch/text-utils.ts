@@ -12,24 +12,22 @@ const HTML_ENTITY_REPLACEMENTS: RegexReplacement[] = [
   [/&#39;|&apos;/gi, "'"],
 ];
 
+const SUPPORTED_TEXT_DECODER_ENCODINGS = new Set([
+  "utf-8",
+  "utf-16le",
+  "utf-16be",
+  "latin1",
+  "iso-8859-1",
+  "windows-1252",
+]);
+
 function pickEncoding(charset?: string) {
   const normalized = String(charset || "")
     .trim()
     .toLowerCase();
   if (!normalized) return "utf-8";
   if (normalized === "utf8") return "utf-8";
-  if (
-    [
-      "utf-8",
-      "utf-16le",
-      "utf-16be",
-      "latin1",
-      "iso-8859-1",
-      "windows-1252",
-    ].includes(normalized)
-  ) {
-    return normalized;
-  }
+  if (SUPPORTED_TEXT_DECODER_ENCODINGS.has(normalized)) return normalized;
   return "utf-8";
 }
 
@@ -42,16 +40,18 @@ export function decodeBuffer(buffer: Buffer, charset?: string) {
   }
 }
 
+function decodeHtmlCodePoint(match: string, value: number) {
+  return Number.isFinite(value) ? String.fromCodePoint(value) : match;
+}
+
 export function decodeHtmlEntities(text: string) {
   return applyRegexReplacements(text, HTML_ENTITY_REPLACEMENTS)
-    .replace(/&#(\d+);/g, (_match, code) => {
-      const value = Number(code);
-      return Number.isFinite(value) ? String.fromCodePoint(value) : _match;
-    })
-    .replace(/&#x([0-9a-f]+);/gi, (_match, code) => {
-      const value = Number.parseInt(code, 16);
-      return Number.isFinite(value) ? String.fromCodePoint(value) : _match;
-    });
+    .replace(/&#(\d+);/g, (match, code) =>
+      decodeHtmlCodePoint(match, Number(code)),
+    )
+    .replace(/&#x([0-9a-f]+);/gi, (match, code) =>
+      decodeHtmlCodePoint(match, Number.parseInt(code, 16)),
+    );
 }
 
 export function normalizeRawText(text: string) {
