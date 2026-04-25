@@ -42,18 +42,20 @@ test("version subcommand prints package version without launching Rin", () => {
   assert.equal(parsed.releaseVersion, "1.2.3");
 });
 
+test("cli help omits removed hidden-session flags", () => {
+  const output = execFileSync(
+    process.execPath,
+    [path.join(rootDir, "dist", "app", "rin", "main.js"), "--help"],
+    { cwd: rootDir, encoding: "utf8" },
+  );
+
+  assert.doesNotMatch(output, /--session\b/);
+  assert.doesNotMatch(output, /--sessions\b/);
+});
+
 test("usage and memory-index parsers ignore wrapper args around the subcommand", () => {
   assert.deepEqual(
-    usage.parseUsageArgs([
-      "-u",
-      "rin",
-      "usage",
-      "--events",
-      "--session",
-      "rin-hidden",
-      "--limit",
-      "5",
-    ]),
+    usage.parseUsageArgs(["-u", "rin", "usage", "--events", "--limit", "5"]),
     {
       groupBy: [],
       filters: [],
@@ -68,14 +70,7 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
   );
 
   assert.deepEqual(
-    usage.parseUsageArgs([
-      "--user=rin",
-      "usage",
-      "--events",
-      "--session=rin-hidden",
-      "--limit",
-      "5",
-    ]),
+    usage.parseUsageArgs(["--user=rin", "usage", "--events", "--limit", "5"]),
     {
       groupBy: [],
       filters: [],
@@ -116,8 +111,6 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
     memoryIndex.parseMemoryIndexArgs([
       "memory-index",
       "repair",
-      "--session",
-      "rin-hidden",
       "-u",
       "rin",
       "--help",
@@ -133,7 +126,6 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
       "--user=rin",
       "memory-index",
       "repair",
-      "--session=rin-hidden",
       "--help",
     ]),
     {
@@ -154,7 +146,7 @@ test("captureInternalRinCommand forwards only subcommand args", () => {
       },
     },
     "__usage_internal",
-    ["--user=rin", "usage", "--events", "--session=rin-hidden", "--limit", "5"],
+    ["--user=rin", "usage", "--events", "--limit", "5"],
     "usage",
   );
 
@@ -171,10 +163,14 @@ test("captureInternalRinCommand forwards only subcommand args", () => {
   ]);
 });
 
-test("usage parser rejects invalid filter syntax after trimming", () => {
+test("usage parser rejects invalid filter syntax and removed hidden-session flags", () => {
   assert.throws(
     () => usage.parseUsageArgs(["usage", "--filter", " source= "]),
     /invalid_filter:source=/,
+  );
+  assert.throws(
+    () => usage.parseUsageArgs(["usage", "--session=rin-hidden"]),
+    /unknown_usage_arg:--session=rin-hidden/,
   );
 });
 

@@ -50,11 +50,6 @@ function createCli() {
     )
     .option("-u, --user <name>", "Run against a specific daemon user")
     .option("--std", "Start std TUI instead of RPC TUI")
-    .option(
-      "-s, --session <name>",
-      "Create or attach a built-in hidden Rin session",
-    )
-    .option("--sessions", "List built-in hidden Rin sessions")
     .option("--stable", "Use the stable release channel (default)")
     .option("--beta", "Use the beta release channel")
     .option("--nightly", "Use the nightly release channel")

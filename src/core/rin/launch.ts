@@ -1,7 +1,5 @@
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
-
 import {
   buildUserShell,
   socketPathForUser,
@@ -15,39 +13,6 @@ import {
   repoRootFromHere,
   runCommand,
 } from "./shared.js";
-
-async function runCommandCapture(
-  command: string,
-  args: string[],
-  options: any = {},
-) {
-  return await new Promise<{ code: number; stdout: string; stderr: string }>(
-    (resolve, reject) => {
-      const child = spawn(command, args, { ...options, stdio: "pipe" });
-      let stdout = "";
-      let stderr = "";
-      child.stdout?.on("data", (chunk) => {
-        stdout += String(chunk);
-      });
-      child.stderr?.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
-      child.on("error", reject);
-      child.on("exit", (code, signal) => {
-        if (signal) return reject(new Error(`terminated:${signal}`));
-        resolve({ code: code ?? 0, stdout, stderr });
-      });
-    },
-  );
-}
-
-export function buildHiddenSessionListArgs(repoRoot: string) {
-  return [
-    process.execPath,
-    path.join(repoRoot, "dist", "app", "rin-hidden-session", "main.js"),
-    "list",
-  ];
-}
 
 export function buildTuiModeArg(std: boolean) {
   return std ? "--std" : "--rpc";
@@ -84,36 +49,6 @@ export function buildDirectTuiArgs(
     buildTuiModeArg(options.std),
     ...options.passthrough,
   ];
-}
-
-export function buildHiddenSessionAttachArgs(
-  repoRoot: string,
-  sessionName: string,
-  std: boolean,
-  passthrough: string[],
-) {
-  return [
-    process.execPath,
-    path.join(repoRoot, "dist", "app", "rin-hidden-session", "main.js"),
-    "attach",
-    sessionName,
-    buildTuiModeArg(std),
-    "--",
-    ...passthrough,
-  ];
-}
-
-async function runTargetCommandCapture(
-  targetUser: string,
-  argv: string[],
-  env: Record<string, string>,
-  cwd: string,
-) {
-  const launch = buildUserShell(targetUser, argv, env);
-  return await runCommandCapture(launch.command, launch.args, {
-    env: launch.env,
-    cwd,
-  });
 }
 
 async function runTargetCommand(
@@ -157,34 +92,12 @@ export async function launchDefaultRin(parsed: ParsedArgs) {
       `rin_not_installed: run rin-install first or pass --user/-u explicitly (expected ${installConfigPath()})`,
     );
   }
-  if (parsed.hiddenSessionName && parsed.hiddenSessionList)
-    throw new Error("rin_hidden_session_mode_conflict");
+  const { repoRoot, targetUser, runtimeEnv, tuiArgv } =
+    resolveLaunchContext(parsed);
 
-  const { repoRoot, targetUser, runtimeEnv, tuiArgv } = resolveLaunchContext(parsed);
-
-  if (parsed.hiddenSessionList) {
-    const result = await runTargetCommandCapture(
-      targetUser,
-      buildHiddenSessionListArgs(repoRoot),
-      runtimeEnv as Record<string, string>,
-      repoRoot,
-    );
-    if (result.stdout) process.stdout.write(result.stdout);
-    if (result.stderr) process.stderr.write(result.stderr);
-    process.exit(result.code);
-  }
-
-  const argv = parsed.hiddenSessionName
-    ? buildHiddenSessionAttachArgs(
-        repoRoot,
-        parsed.hiddenSessionName,
-        parsed.std,
-        parsed.passthrough,
-      )
-    : tuiArgv;
   const code = await runTargetCommand(
     targetUser,
-    argv,
+    tuiArgv,
     runtimeEnv as Record<string, string>,
     repoRoot,
   );
