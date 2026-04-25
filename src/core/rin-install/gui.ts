@@ -5,12 +5,17 @@ import { AddressInfo } from "node:net";
 
 import { escapeHtml } from "../rin-gui/web-assets.js";
 import { detectCurrentUser } from "./common.js";
+import { readJsonFile } from "./fs-utils.js";
 import {
   buildInstallPlanText,
   buildInstallSafetyBoundaryText,
 } from "./interactive.js";
 import { createInstallerI18n } from "./i18n.js";
 import { defaultInstallDirForHome } from "./paths.js";
+import {
+  computeAvailableThinkingLevels,
+  loadModelChoices,
+} from "./provider-auth.js";
 import { targetHomeForUser } from "./users.js";
 
 export type GuiInstallerOptions = {
@@ -24,7 +29,19 @@ export type GuiInstallerPlanInput = {
   currentUser?: string;
   targetUser?: string;
   installDir?: string;
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+  authAvailable?: boolean;
   setDefaultTarget?: boolean;
+};
+
+export type GuiInstallerModelChoice = {
+  provider: string;
+  id: string;
+  reasoning: boolean;
+  available: boolean;
+  thinkingLevels: string[];
 };
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -132,6 +149,35 @@ async function readJsonBody(request: http.IncomingMessage) {
   return raw ? JSON.parse(raw) : {};
 }
 
+export function normalizeGuiInstallerModelChoices(
+  models: Array<{
+    provider?: string;
+    id?: string;
+    reasoning?: boolean;
+    available?: boolean;
+  }>,
+): GuiInstallerModelChoice[] {
+  return models
+    .map((model) => ({
+      provider: String(model.provider || "").trim(),
+      id: String(model.id || "").trim(),
+      reasoning: Boolean(model.reasoning),
+      available: Boolean(model.available),
+      thinkingLevels: computeAvailableThinkingLevels(model as any),
+    }))
+    .filter((model) => model.provider && model.id)
+    .sort(
+      (a, b) =>
+        a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id),
+    );
+}
+
+export async function buildGuiInstallerModelChoices(installDir = "") {
+  return normalizeGuiInstallerModelChoices(
+    await loadModelChoices(installDir, readJsonFile),
+  );
+}
+
 export function buildGuiInstallerPlan(input: GuiInstallerPlanInput = {}) {
   const language = String(input.language || "en").trim() || "en";
   const i18n = createInstallerI18n(language);
@@ -141,16 +187,21 @@ export function buildGuiInstallerPlan(input: GuiInstallerPlanInput = {}) {
   const installDir =
     String(input.installDir || "").trim() ||
     defaultInstallDirForHome(targetHomeForUser(targetUser) || os.homedir());
+  const provider = String(input.provider || "pending").trim() || "pending";
+  const modelId = String(input.modelId || "pending").trim() || "pending";
+  const thinkingLevel =
+    String(input.thinkingLevel || "medium").trim() || "medium";
+  const authAvailable = Boolean(input.authAvailable);
   const setDefaultTarget = input.setDefaultTarget !== false;
   const planText = buildInstallPlanText(
     {
       currentUser,
       targetUser,
       installDir,
-      provider: "pending",
-      modelId: "pending",
-      thinkingLevel: "medium",
-      authAvailable: false,
+      provider,
+      modelId,
+      thinkingLevel,
+      authAvailable,
       chatDescription: i18n.chatDisabledDescription,
       chatDetail: "",
       language,
@@ -163,6 +214,10 @@ export function buildGuiInstallerPlan(input: GuiInstallerPlanInput = {}) {
     currentUser,
     targetUser,
     installDir,
+    provider,
+    modelId,
+    thinkingLevel,
+    authAvailable,
     setDefaultTarget,
     safety: buildInstallSafetyBoundaryText(i18n),
     planText,
@@ -209,6 +264,16 @@ export function buildGuiInstallerHtml() {
       <label class="wide">Install directory
         <input name="installDir" value="${escapeHtml(initialPlan.installDir)}" />
       </label>
+      <label>Provider
+        <select name="provider"><option value="pending">Loading providers…</option></select>
+      </label>
+      <label>Model
+        <select name="modelId"><option value="pending">Select a provider first</option></select>
+      </label>
+      <label>Thinking level
+        <select name="thinkingLevel"><option value="medium">medium</option></select>
+      </label>
+      <p id="model-status" class="notice wide">Loading local model and provider auth state…</p>
       <label class="wide"><input name="setDefaultTarget" type="checkbox" checked /> Set as the default target for this launcher user</label>
       <button class="wide" type="submit">Refresh plan</button>
     </form>
@@ -221,9 +286,53 @@ export function buildGuiInstallerHtml() {
     const form = document.getElementById('installer-form');
     const safety = document.getElementById('safety');
     const plan = document.getElementById('plan');
-    async function refreshPlan(event) {
-      event.preventDefault();
+    const providerSelect = form.elements.provider;
+    const modelSelect = form.elements.modelId;
+    const thinkingSelect = form.elements.thinkingLevel;
+    const modelStatus = document.getElementById('model-status');
+    let modelChoices = [];
+
+    function setOptions(select, values, selected) {
+      select.replaceChildren(...values.map((value) => {
+        const option = document.createElement('option');
+        option.value = value.value;
+        option.textContent = value.label;
+        if (value.value === selected) option.selected = true;
+        return option;
+      }));
+    }
+
+    function selectedModel() {
+      return modelChoices.find((model) => model.provider === providerSelect.value && model.id === modelSelect.value);
+    }
+
+    function refreshModelFields() {
+      const provider = providerSelect.value;
+      const models = modelChoices.filter((model) => model.provider === provider);
+      setOptions(modelSelect, models.length ? models.map((model) => ({ value: model.id, label: model.available ? model.id + ' · auth ready' : model.id + ' · auth needed' })) : [{ value: 'pending', label: 'No models found for this provider' }], modelSelect.value);
+      const model = selectedModel() || models[0];
+      if (model) modelSelect.value = model.id;
+      const levels = (model && model.thinkingLevels.length ? model.thinkingLevels : ['medium']).map((level) => ({ value: level, label: level }));
+      setOptions(thinkingSelect, levels, thinkingSelect.value || 'medium');
+      modelStatus.textContent = model ? (model.available ? 'Provider auth already exists for the selected model.' : 'Provider auth is still required before final install.') : 'No local models are available yet.';
+    }
+
+    async function loadModels() {
       const data = new FormData(form);
+      const installDir = String(data.get('installDir') || '');
+      const response = await fetch('/api/models?installDir=' + encodeURIComponent(installDir));
+      const payload = await response.json();
+      modelChoices = payload.models || [];
+      const providers = [...new Set(modelChoices.map((model) => model.provider))];
+      setOptions(providerSelect, providers.length ? providers.map((provider) => ({ value: provider, label: provider })) : [{ value: 'pending', label: 'No providers found' }], providerSelect.value);
+      refreshModelFields();
+      await refreshPlan();
+    }
+
+    async function refreshPlan(event) {
+      if (event) event.preventDefault();
+      const data = new FormData(form);
+      const model = selectedModel();
       const response = await fetch('/api/plan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -231,6 +340,10 @@ export function buildGuiInstallerHtml() {
           language: data.get('language'),
           targetUser: data.get('targetUser'),
           installDir: data.get('installDir'),
+          provider: data.get('provider'),
+          modelId: data.get('modelId'),
+          thinkingLevel: data.get('thinkingLevel'),
+          authAvailable: Boolean(model && model.available),
           setDefaultTarget: data.get('setDefaultTarget') === 'on',
         }),
       });
@@ -238,7 +351,12 @@ export function buildGuiInstallerHtml() {
       safety.textContent = next.safety || '';
       plan.textContent = next.planText || next.error || '';
     }
+    form.elements.installDir.addEventListener('change', () => { void loadModels(); });
+    providerSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
+    modelSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
+    thinkingSelect.addEventListener('change', () => { void refreshPlan(); });
     form.addEventListener('submit', refreshPlan);
+    void loadModels().catch((error) => { modelStatus.textContent = String(error && error.message || error); });
   </script>
 </body>
 </html>`;
@@ -253,6 +371,20 @@ export async function runGuiInstaller(
     const url = new URL(request.url || "/", "http://localhost");
     if (url.pathname === "/healthz") {
       sendJson(response, 200, { ok: true });
+      return;
+    }
+    if (url.pathname === "/api/models") {
+      void buildGuiInstallerModelChoices(
+        url.searchParams.get("installDir") || "",
+      )
+        .then((models) => sendJson(response, 200, { models }))
+        .catch((error: any) =>
+          sendJson(response, 500, {
+            error: String(
+              error?.message || error || "rin_installer_gui_models_failed",
+            ),
+          }),
+        );
       return;
     }
     if (url.pathname === "/api/plan" && request.method === "POST") {
