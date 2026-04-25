@@ -217,11 +217,16 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   if (hasRead && loadedSkills.length > 0) {
     prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
   }
+  prompt = applyPersistedSystemPromptBlocks(
+    prompt,
+    readPersistedSessionSystemPromptBlocks(session),
+  );
   return `${PROMPT_PREFIX}\n\n${prompt}`.trimEnd();
 }
 
 const LAZY_SYSTEM_PROMPT_STATE_KEY = Symbol.for("rin.lazySystemPromptState");
 const SESSION_SYSTEM_PROMPT_ENTRY_TYPE = "rin-system-prompt-state";
+const SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE = "rin-system-prompt-blocks";
 
 type LazySystemPromptState = {
   materialized: boolean;
@@ -254,11 +259,48 @@ function findPersistedSessionBaseSystemPrompt(entries: any[]) {
   return "";
 }
 
+function readPersistedSessionSystemPromptBlocks(session: any) {
+  const entries = session?.sessionManager?.getBranch?.();
+  if (!Array.isArray(entries)) return [];
+  const blocks: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (
+      entry?.type !== "custom" ||
+      String(entry?.customType || "") !==
+        SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE
+    ) {
+      continue;
+    }
+    const rows = Array.isArray(entry?.data?.blocks) ? entry.data.blocks : [];
+    for (const row of rows) {
+      const block = String(row || "").trim();
+      if (!block || seen.has(block)) continue;
+      seen.add(block);
+      blocks.push(block);
+    }
+  }
+  return blocks;
+}
+
+function applyPersistedSystemPromptBlocks(prompt: string, blocks: string[]) {
+  let next = String(prompt || "").trimEnd();
+  for (const block of blocks) {
+    const normalized = String(block || "").trim();
+    if (!normalized || next.includes(normalized)) continue;
+    next = `${next}\n\n${normalized}`.trimEnd();
+  }
+  return next;
+}
+
 function readPersistedSessionBaseSystemPrompt(session: any) {
-  const manager = session?.sessionManager;
-  return (
-    findPersistedSessionBaseSystemPrompt(manager?.getBranch?.()) ||
-    findPersistedSessionBaseSystemPrompt(manager?.getEntries?.())
+  const prompt = findPersistedSessionBaseSystemPrompt(
+    session?.sessionManager?.getBranch?.(),
+  );
+  if (!prompt) return "";
+  return applyPersistedSystemPromptBlocks(
+    prompt,
+    readPersistedSessionSystemPromptBlocks(session),
   );
 }
 

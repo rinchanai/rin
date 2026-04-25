@@ -21,12 +21,17 @@ const promptContextMod = await import(
 
 function createPi() {
   const handlers = new Map();
+  const entries = [];
   return {
     handlers,
+    entries,
     on(event, handler) {
       const list = handlers.get(event) || [];
       list.push(handler);
       handlers.set(event, list);
+    },
+    appendEntry(customType, data) {
+      entries.push({ customType, data });
     },
   };
 }
@@ -73,6 +78,46 @@ test("chat message header focuses sender identity guidance in the system prompt"
   assert.ok(header.includes("sender nickname: Alice"));
   assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: other chat user"));
+});
+
+test("chat message header remembers stable system prompt blocks for forked sessions", async () => {
+  const pi = createPi();
+  messageHeaderMod.default(pi);
+
+  promptContextMod.enqueueChatPromptContext({
+    source: "chat-bridge",
+    sentAt: Date.now(),
+    chatKey: "telegram/1:2",
+    chatType: "group",
+    userId: "guest-1",
+    nickname: "Alice",
+    identity: "OTHER",
+  });
+
+  await pi.handlers.get("input")[0]({
+    source: "chat-bridge",
+    text: "你好",
+  });
+
+  await pi.handlers.get("before_agent_start")[0](
+    {
+      prompt: "你好",
+      systemPrompt: "Base prompt",
+    },
+    {
+      sessionManager: {
+        getBranch: () => [],
+      },
+    },
+  );
+
+  assert.equal(pi.entries.length, 1);
+  assert.equal(pi.entries[0].customType, "rin-system-prompt-blocks");
+  assert.ok(
+    pi.entries[0].data.blocks.some((block) =>
+      block.includes("Chat bridge guidelines:"),
+    ),
+  );
 });
 
 test("chat message header keeps owner senders marked as owner", async () => {

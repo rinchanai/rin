@@ -23,6 +23,7 @@ type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 
 const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
 const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
+const SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE = "rin-system-prompt-blocks";
 
 function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
   const chatKey = safeString(meta.chatKey).trim();
@@ -76,6 +77,43 @@ function buildCrossUserSystemPromptBlock(
     "System user guidance:",
     `- The agent is currently running as the local system user ${agentSystemUser}, while the human user is currently using the machine as ${invokingSystemUser}.`,
   ].join("\n");
+}
+
+function getRememberedSystemPromptBlocks(ctx: any) {
+  const branch = ctx?.sessionManager?.getBranch?.();
+  if (!Array.isArray(branch)) return new Set<string>();
+  const blocks = new Set<string>();
+  for (const entry of branch) {
+    if (
+      entry?.type !== "custom" ||
+      safeString(entry?.customType).trim() !==
+        SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE
+    ) {
+      continue;
+    }
+    const rows = Array.isArray(entry?.data?.blocks) ? entry.data.blocks : [];
+    for (const row of rows) {
+      const block = safeString(row).trim();
+      if (block) blocks.add(block);
+    }
+  }
+  return blocks;
+}
+
+function rememberSystemPromptBlocks(
+  pi: BuiltinModuleApi,
+  ctx: any,
+  blocks: string[],
+) {
+  const remembered = getRememberedSystemPromptBlocks(ctx);
+  const missing = blocks
+    .map((block) => safeString(block).trim())
+    .filter((block) => block && !remembered.has(block));
+  if (!missing.length) return;
+  pi.appendEntry(SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE, {
+    version: 1,
+    blocks: missing,
+  });
 }
 
 function pad2(value: number) {
@@ -293,7 +331,7 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
     return { action: "continue" };
   });
 
-  pi.on("before_agent_start", async (event) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     const fallback = decodePromptMeta(safeString(event.prompt));
     const current = pendingContexts.shift() || {
       meta: fallback.meta,
@@ -322,6 +360,7 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
     ].filter(Boolean);
 
     if (blocks.length > 0) {
+      rememberSystemPromptBlocks(pi, ctx, blocks);
       const currentPrompt = safeString(event.systemPrompt).trimEnd();
       const missingBlocks = blocks.filter(
         (block) => !currentPrompt.includes(block),

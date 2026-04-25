@@ -17,6 +17,9 @@ const runtimeMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
     .href
 );
+const sessionForkMod = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "session", "fork.js")).href
+);
 const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 
 test("createConfiguredAgentSession keeps system prompt empty until first turn", async () => {
@@ -251,6 +254,86 @@ test("persisted system prompt restores across resume and refreshes on reload", a
   assert.notEqual(reloadedPrompt, firstPrompt);
   assert.ok(reloadedPrompt.includes("Updated fact after resume."));
   await resumedRuntime.runtime.dispose();
+});
+
+test("stored system prompt blocks participate in frozen prompts", async () => {
+  const cwd = fs.mkdtempSync(path.join(rootDir, ".tmp-rin-block-prompt-cwd-"));
+  const agentDir = fs.mkdtempSync(
+    path.join(rootDir, ".tmp-rin-block-prompt-agent-"),
+  );
+  const { session, runtime } = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+  });
+
+  session.sessionManager.appendCustomEntry("rin-system-prompt-blocks", {
+    version: 1,
+    blocks: ["Stable chat bridge block."],
+  });
+  const prompt = runtimeMod.ensureSessionBaseSystemPrompt(session);
+
+  assert.ok(prompt.includes("Stable chat bridge block."));
+  assert.equal(
+    prompt.indexOf("Stable chat bridge block."),
+    prompt.lastIndexOf("Stable chat bridge block."),
+  );
+  await runtime.dispose();
+});
+
+test("forked sessions restore the source persisted system prompt", async () => {
+  const cwd = fs.mkdtempSync(path.join(rootDir, ".tmp-rin-fork-prompt-cwd-"));
+  const agentDir = fs.mkdtempSync(
+    path.join(rootDir, ".tmp-rin-fork-prompt-agent-"),
+  );
+  const promptDir = path.join(agentDir, "self_improve", "prompts");
+  fs.mkdirSync(promptDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(promptDir, "core_facts.md"),
+    "Original fork fact.\n",
+  );
+
+  const sourceRuntime = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+  });
+  const sourcePrompt = runtimeMod.ensureSessionBaseSystemPrompt(
+    sourceRuntime.session,
+  );
+  const sessionFile = sourceRuntime.session.sessionFile;
+  sourceRuntime.session.sessionManager.appendMessage({
+    role: "assistant",
+    content: [],
+    provider: "test",
+    model: "test",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: {} },
+    stopReason: "end_turn",
+    timestamp: Date.now(),
+  });
+  await sourceRuntime.runtime.dispose();
+
+  fs.writeFileSync(
+    path.join(promptDir, "core_facts.md"),
+    "Updated fact after fork.\n",
+  );
+  const forkManager = sessionForkMod.forkSessionManagerCompat(
+    SessionManager,
+    sessionFile,
+    cwd,
+    undefined,
+    { persist: false },
+  );
+  const forkRuntime = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+    sessionManager: forkManager,
+  });
+  const forkPrompt = runtimeMod.ensureSessionBaseSystemPrompt(
+    forkRuntime.session,
+  );
+
+  assert.equal(forkPrompt, sourcePrompt);
+  assert.equal(forkPrompt.includes("Updated fact after fork."), false);
+  await forkRuntime.runtime.dispose();
 });
 
 test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async () => {
