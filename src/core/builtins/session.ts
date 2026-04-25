@@ -1,16 +1,13 @@
-import {
-  BuiltinModuleHost,
-  CompositeBuiltinRunner,
-} from "./host.js";
+import { BuiltinModuleHost, CompositeBuiltinRunner } from "./host.js";
 
 type SessionStartReason = "startup" | "reload" | "new" | "resume" | "fork";
 
 function hasExtensionBindings(session: any) {
   return Boolean(
     session?._extensionUIContext ||
-      session?._extensionCommandContextActions ||
-      session?._extensionShutdownHandler ||
-      session?._extensionErrorListener,
+    session?._extensionCommandContextActions ||
+    session?._extensionShutdownHandler ||
+    session?._extensionErrorListener,
   );
 }
 
@@ -64,7 +61,9 @@ function bindBuiltinHostToSession(host: BuiltinModuleHost, session: any) {
             const result = await session.compact?.(options?.customInstructions);
             options?.onComplete?.(result);
           } catch (error: any) {
-            options?.onError?.(error instanceof Error ? error : new Error(String(error)));
+            options?.onError?.(
+              error instanceof Error ? error : new Error(String(error)),
+            );
           }
         })();
       },
@@ -75,7 +74,11 @@ function bindBuiltinHostToSession(host: BuiltinModuleHost, session: any) {
   host.bindCommandContext(session._extensionCommandContextActions);
 }
 
-async function emitBuiltinSessionStart(host: BuiltinModuleHost, reason: SessionStartReason, previousSessionFile?: string) {
+async function emitBuiltinSessionStart(
+  host: BuiltinModuleHost,
+  reason: SessionStartReason,
+  previousSessionFile?: string,
+) {
   if (!host.hasHandlers("session_start")) return;
   await host.emit({
     type: "session_start",
@@ -112,12 +115,12 @@ export async function attachBuiltinModulesToSession(
   }
   session._extensionRunner = compositeRunner;
 
-  if (
-    options.reason &&
-    options.reason !== "reload" &&
-    hasExtensionBindings(session)
-  ) {
-    await emitBuiltinSessionStart(host, options.reason, options.previousSessionFile);
+  if (options.reason && options.reason !== "reload") {
+    await emitBuiltinSessionStart(
+      host,
+      options.reason,
+      options.previousSessionFile,
+    );
   }
 
   if (session.__rinBuiltinCapabilitiesPatched) {
