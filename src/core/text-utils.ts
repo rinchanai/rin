@@ -16,13 +16,9 @@ function normalizeWhitespace(value: unknown): string {
   return safeString(value).replace(/\s+/g, " ").trim();
 }
 
-function normalizeStringKey(value: unknown): string {
-  return normalizeTrimmedString(value).toLowerCase();
-}
-
 function normalizeStringEntry(value: unknown) {
   const text = normalizeTrimmedString(value);
-  const key = normalizeStringKey(text);
+  const key = text.toLowerCase();
   return key ? { text, key } : null;
 }
 
