@@ -51,6 +51,31 @@ test("install git hooks configures fresh worktrees", () => {
   }
 });
 
+test("install git hooks resolves the worktree root from nested directories", () => {
+  const tempDir = makeTempDir("rin-install-hooks-nested-");
+  try {
+    run("git", ["init", "-b", "main"], tempDir);
+    const hooksDir = path.join(tempDir, ".githooks");
+    const nestedDir = path.join(tempDir, "packages", "demo");
+    fs.mkdirSync(hooksDir);
+    fs.mkdirSync(nestedDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooksDir, "pre-commit"),
+      "#!/usr/bin/env bash\nexit 0\n",
+      "utf8",
+    );
+
+    const output = run(process.execPath, [scriptPath], nestedDir);
+    assert.match(output, /configured core\.hooksPath=\.githooks/);
+    assert.equal(
+      run("git", ["config", "--get", "core.hooksPath"], tempDir),
+      ".githooks",
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("install git hooks is a no-op outside a worktree", () => {
   const tempDir = makeTempDir("rin-install-hooks-noop-");
   try {

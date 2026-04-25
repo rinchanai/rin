@@ -12,10 +12,8 @@ function runGit(args, options = {}) {
 }
 
 function findRepoRoot(cwd) {
-  const dotGit = path.join(cwd, ".git");
-  if (!fs.existsSync(dotGit)) return null;
   try {
-    return runGit(["rev-parse", "--show-toplevel"], { cwd });
+    return runGit(["rev-parse", "--show-toplevel"], { cwd }) || null;
   } catch {
     return null;
   }
