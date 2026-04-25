@@ -52,15 +52,28 @@ function isRpcTransportControlled(instance: any) {
   return typeof instance?.session?.getFrontendStatusEvent === "function";
 }
 
+function isRpcCompactionStatus(instance: any, status: any) {
+  return (
+    status?.phase === "compacting" ||
+    (status?.phase === "working" && instance?.session?.isCompacting)
+  );
+}
+
+function getRpcTransportLabel(status: any) {
+  if (!status || status.phase === "idle") return undefined;
+  return `${String(status.label || "Working")}...`;
+}
+
 function syncRpcTransportLoader(instance: any) {
   if (!isRpcTransportControlled(instance)) return;
   const status = instance.session.getFrontendStatusEvent?.();
-  ensureTransportLoader(
-    instance,
-    !status || status.phase === "idle"
-      ? undefined
-      : `${String(status.label || "Working")}...`,
-  );
+  if (
+    isRpcCompactionStatus(instance, status) &&
+    instance.autoCompactionLoader
+  ) {
+    return;
+  }
+  ensureTransportLoader(instance, getRpcTransportLabel(status));
 }
 
 function syncLocalTransportLoader(instance: any) {
@@ -76,7 +89,9 @@ function syncLocalTransportLoader(instance: any) {
       : "";
   ensureTransportLoader(
     instance,
-    currentLabel || queuedLabel || String(instance?.defaultWorkingMessage || "Working..."),
+    currentLabel ||
+      queuedLabel ||
+      String(instance?.defaultWorkingMessage || "Working..."),
   );
 }
 
@@ -143,9 +158,7 @@ export async function applyRinTuiOverrides() {
 
   const originalRender = footerProto?.render;
   if (typeof originalRender === "function") {
-    footerProto.render = function renderWithoutCwd(
-      width: number,
-    ) {
+    footerProto.render = function renderWithoutCwd(width: number) {
       const lines = originalRender.call(this, width);
       if (!Array.isArray(lines) || lines.length === 0) return lines;
 
@@ -180,11 +193,8 @@ export async function applyRinTuiOverrides() {
     interactiveModeProto.showSessionSelector =
       function showSessionSelectorFromRootSessionDir() {
         this.showSelector((done: any) => {
-          const {
-            currentSessionsLoader,
-            allSessionsLoader,
-            renameSession,
-          } = createSessionSelectorLoaders(this);
+          const { currentSessionsLoader, allSessionsLoader, renameSession } =
+            createSessionSelectorLoaders(this);
           const selector = new SessionSelectorComponent(
             currentSessionsLoader,
             allSessionsLoader,
@@ -238,12 +248,10 @@ export async function applyRinTuiOverrides() {
       }
 
       if (event?.type === "rpc_frontend_status") {
-        ensureTransportLoader(
-          this,
-          event.phase === "idle"
-            ? undefined
-            : `${String(event.label || "Working")}...`,
-        );
+        if (isRpcCompactionStatus(this, event) && this.autoCompactionLoader) {
+          return;
+        }
+        ensureTransportLoader(this, getRpcTransportLabel(event));
         return;
       }
 
@@ -284,7 +292,6 @@ export async function applyRinTuiOverrides() {
       const shouldReapplyRpcTransport =
         isRpcTransportControlled(this) &&
         (event?.type === "agent_end" ||
-          event?.type === "compaction_start" ||
           event?.type === "compaction_end" ||
           event?.type === "auto_retry_start" ||
           event?.type === "auto_retry_end");

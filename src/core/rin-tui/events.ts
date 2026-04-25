@@ -77,7 +77,10 @@ export async function handleRpcSessionEvent(
     void refreshMessages();
   }
   target.emitEvent(payload);
-  if (payload.type === "compaction_start" || payload.type === "compaction_end") {
+  if (
+    payload.type === "compaction_start" ||
+    payload.type === "compaction_end"
+  ) {
     emitFrontendStatus();
   }
 }

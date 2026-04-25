@@ -244,7 +244,7 @@ test("rpc interactive session stays in connecting until session recovery succeed
   });
 });
 
-test("rpc interactive session keeps working status during compaction", () => {
+test("rpc interactive session exposes compaction as a distinct frontend phase", () => {
   const client = { isConnected: () => true };
   const session = new RpcInteractiveSession(client);
   session.rpcConnected = true;
@@ -253,8 +253,8 @@ test("rpc interactive session keeps working status during compaction", () => {
 
   assert.deepEqual(session.getFrontendStatusEvent(), {
     type: "rpc_frontend_status",
-    phase: "working",
-    label: "Working",
+    phase: "compacting",
+    label: "Compacting context",
     connected: true,
   });
 });
