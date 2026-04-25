@@ -65,15 +65,10 @@ test("chat message header focuses sender identity guidance in the system prompt"
   );
   assert.ok(
     systemPrompt.includes(
-      "Use the injected sender identity fields in that header to determine who is speaking.",
+      "Use `sender trust` to identify who is speaking: `owner` means the owner, `trusted user` means a known trusted chat user, and `other chat user` means any other chat user.",
     ),
   );
-  assert.equal(
-    systemPrompt.includes(
-      "`sender trust` is `owner`, `trusted user`, or `other chat user`.",
-    ),
-    false,
-  );
+  assert.equal(systemPrompt.includes("owner-only"), false);
   assert.ok(header.includes("sender nickname: Alice"));
   assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: other chat user"));
@@ -106,11 +101,7 @@ test("chat message header keeps owner senders marked as owner", async () => {
 
   const systemPrompt = String(beforeStart?.systemPrompt || "");
   const header = String(beforeStart?.message?.content || "");
-  assert.ok(
-    systemPrompt.includes(
-      "Only `sender trust: owner` should receive owner-only forms of address or owner-only authority",
-    ),
-  );
+  assert.equal(systemPrompt.includes("owner-only"), false);
   assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: owner"));
 });
