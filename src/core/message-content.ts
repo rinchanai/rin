@@ -195,7 +195,7 @@ function normalizeFileUrlPath(rawUrl: string) {
 }
 
 function isExistingFile(filePath: string) {
-  if (!filePath || !fs.existsSync(filePath)) return false;
+  if (!filePath) return false;
   try {
     return fs.statSync(filePath).isFile();
   } catch {
