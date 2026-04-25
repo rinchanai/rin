@@ -169,6 +169,56 @@ test("headless builtin attachment emits session_start for runtime state restorat
   assert.deepEqual(appendedEntries, []);
 });
 
+test("headless builtin reload emits session_start for runtime state restoration", async () => {
+  const frozenPrompt = "frozen prompt after reload";
+  const appendedEntries: unknown[] = [];
+  const session = {
+    sessionManager: {
+      getBranch: () => [
+        {
+          type: "custom",
+          customType: "frozen-system-prompt",
+          data: {
+            version: 1,
+            systemPrompt: frozenPrompt,
+            updatedAt: "2026-04-25T00:00:00.000Z",
+          },
+        },
+      ],
+      appendCustomEntry: (customType: string, data: unknown) => {
+        appendedEntries.push({ customType, data });
+      },
+    },
+    modelRegistry: {},
+    getActiveToolNames: () => [],
+    getAllTools: () => [],
+    setActiveToolsByName: () => {},
+    _refreshToolRegistry: () => {},
+    reload: async () => {},
+  };
+  const disabledNames = builtinRegistry.BUILTIN_MODULE_ORDER.filter(
+    (name: string) => name !== "freeze-session-runtime",
+  );
+
+  await attachBuiltinModulesToSession(session, {
+    cwd: "/tmp/rin-cwd",
+    agentDir: "/tmp/rin-agent",
+    disabledNames,
+    reason: "startup",
+  });
+
+  await session.reload();
+
+  const result = await session._extensionRunner.emitBeforeAgentStart(
+    "prompt",
+    undefined,
+    "fresh rebuilt prompt",
+  );
+
+  assert.equal(result.systemPrompt, frozenPrompt);
+  assert.deepEqual(appendedEntries, []);
+});
+
 test("builtin registry normalizes disabled module names once", () => {
   assert.deepEqual(
     builtinRegistry.normalizeBuiltinModuleNames([

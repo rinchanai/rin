@@ -139,9 +139,7 @@ export async function attachBuiltinModulesToSession(
         disabledNames: options.disabledNames,
         reason: "reload",
       });
-      if (hasExtensionBindings(session)) {
-        await emitBuiltinSessionStart(reattached.host, "reload");
-      }
+      await emitBuiltinSessionStart(reattached.host, "reload");
       return result;
     };
   }
