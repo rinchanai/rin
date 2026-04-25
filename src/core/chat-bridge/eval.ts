@@ -8,6 +8,7 @@ const MAX_CHAT_BRIDGE_STRING_CHARS = 4_000;
 const MAX_CHAT_BRIDGE_ARRAY_ITEMS = 100;
 const MAX_CHAT_BRIDGE_OBJECT_KEYS = 100;
 const MAX_CHAT_BRIDGE_DEPTH = 6;
+const TRUNCATED_STRING_SUFFIX_BUDGET = 16;
 
 let cachedTypeScriptModule: any | null | undefined;
 
@@ -24,7 +25,8 @@ async function loadTypeScriptModule() {
 
 function truncateString(text: string, maxChars = MAX_CHAT_BRIDGE_STRING_CHARS) {
   if (text.length <= maxChars) return text;
-  return `${text.slice(0, Math.max(0, maxChars - 16))}… [${text.length - maxChars} more chars]`;
+  const keepChars = Math.max(0, maxChars - TRUNCATED_STRING_SUFFIX_BUDGET);
+  return `${text.slice(0, keepChars)}… [${text.length - keepChars} more chars]`;
 }
 
 function formatDiagnostic(ts: any, diagnostic: any) {

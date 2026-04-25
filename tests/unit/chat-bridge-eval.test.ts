@@ -140,6 +140,13 @@ return {
   });
 });
 
+test("chat bridge eval reports the actual omitted string length", () => {
+  const serialized = evalModule.serializeBridgeValue("x".repeat(4100));
+  assert.equal(typeof serialized, "string");
+  assert.match(serialized, /… \[116 more chars\]$/);
+  assert.equal(serialized.length, 4002);
+});
+
 test("chat bridge eval serializes thrown errors", async () => {
   await assert.rejects(
     () =>
