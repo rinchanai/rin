@@ -240,21 +240,6 @@ test("store executeSelfImproveAction compiles saved self-improve prompts", async
   });
 });
 
-test("queued maintenance carries the source session system prompt snapshot", async () => {
-  await withTempRoot(async (root) => {
-    await asyncJobs.enqueueMemoryMaintenanceJob({
-      agentDir: root,
-      sessionFile: "/tmp/session-a.jsonl",
-      trigger: "self_improve:periodic_review",
-      systemPromptSnapshot: "stable source system prompt",
-    });
-
-    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
-    assert.equal(queue.length, 1);
-    assert.equal(queue[0].systemPromptSnapshot, "stable source system prompt");
-  });
-});
-
 test("queued memory maintenance jobs deduplicate by session file", async () => {
   await withTempRoot(async (root) => {
     await asyncJobs.enqueueMemoryMaintenanceJob({

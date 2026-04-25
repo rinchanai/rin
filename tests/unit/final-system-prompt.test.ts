@@ -17,6 +17,7 @@ const runtimeMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
     .href
 );
+const { SessionManager } = await import("@mariozechner/pi-coding-agent");
 
 test("createConfiguredAgentSession keeps system prompt empty until first turn", async () => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "rin-lazy-prompt-cwd-"));
@@ -175,6 +176,81 @@ test("system prompt stays frozen until reload", async () => {
   assert.ok(
     reloadedPrompt.includes("Updated preference after materialization."),
   );
+});
+
+test("persisted system prompt restores across resume and refreshes on reload", async () => {
+  const cwd = fs.mkdtempSync(
+    path.join(rootDir, ".tmp-rin-persist-prompt-cwd-"),
+  );
+  const agentDir = fs.mkdtempSync(
+    path.join(rootDir, ".tmp-rin-persist-prompt-agent-"),
+  );
+  const promptDir = path.join(agentDir, "self_improve", "prompts");
+  fs.mkdirSync(promptDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(promptDir, "core_facts.md"),
+    "Original persisted fact.\n",
+  );
+
+  const firstRuntime = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+  });
+  const firstPrompt = runtimeMod.ensureSessionBaseSystemPrompt(
+    firstRuntime.session,
+  );
+  const sessionFile = firstRuntime.session.sessionFile;
+  assert.ok(sessionFile);
+  assert.ok(firstPrompt.includes("Original persisted fact."));
+
+  const entries = firstRuntime.session.sessionManager.getEntries();
+  assert.ok(
+    entries.some(
+      (entry) =>
+        entry.type === "custom" &&
+        entry.customType === "rin-system-prompt-state" &&
+        entry.data?.systemPrompt === firstPrompt,
+    ),
+  );
+  firstRuntime.session.sessionManager.appendMessage({
+    role: "assistant",
+    content: [],
+    provider: "test",
+    model: "test",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: {} },
+    stopReason: "end_turn",
+    timestamp: Date.now(),
+  });
+  assert.ok(fs.existsSync(sessionFile));
+  await firstRuntime.runtime.dispose();
+
+  fs.writeFileSync(
+    path.join(promptDir, "core_facts.md"),
+    "Updated fact after resume.\n",
+  );
+
+  const resumedManager = SessionManager.open(
+    sessionFile,
+    path.dirname(sessionFile),
+  );
+  const resumedRuntime = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+    sessionManager: resumedManager,
+  });
+  const resumedPrompt = runtimeMod.ensureSessionBaseSystemPrompt(
+    resumedRuntime.session,
+  );
+  assert.equal(resumedPrompt, firstPrompt);
+  assert.equal(resumedPrompt.includes("Updated fact after resume."), false);
+
+  await resumedRuntime.session.reload();
+  const reloadedPrompt = runtimeMod.ensureSessionBaseSystemPrompt(
+    resumedRuntime.session,
+  );
+  assert.notEqual(reloadedPrompt, firstPrompt);
+  assert.ok(reloadedPrompt.includes("Updated fact after resume."));
+  await resumedRuntime.runtime.dispose();
 });
 
 test("buildFinalAppSystemPrompt keeps self-improve prompts before skills", async () => {

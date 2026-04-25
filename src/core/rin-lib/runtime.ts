@@ -221,6 +221,13 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
 }
 
 const LAZY_SYSTEM_PROMPT_STATE_KEY = Symbol.for("rin.lazySystemPromptState");
+const SESSION_SYSTEM_PROMPT_ENTRY_TYPE = "rin-system-prompt-state";
+
+type LazySystemPromptState = {
+  materialized: boolean;
+  compute: (toolNames: string[]) => string;
+  ignorePersistedPrompt: boolean;
+};
 
 function getSessionActiveToolNames(session: any): string[] {
   try {
@@ -230,6 +237,40 @@ function getSessionActiveToolNames(session: any): string[] {
     }
   } catch {}
   return [];
+}
+
+function findPersistedSessionBaseSystemPrompt(entries: any[]) {
+  if (!Array.isArray(entries)) return "";
+  for (const entry of [...entries].reverse()) {
+    if (
+      entry?.type !== "custom" ||
+      String(entry?.customType || "") !== SESSION_SYSTEM_PROMPT_ENTRY_TYPE
+    ) {
+      continue;
+    }
+    const prompt = String(entry?.data?.systemPrompt || "");
+    if (prompt.trim()) return prompt;
+  }
+  return "";
+}
+
+function readPersistedSessionBaseSystemPrompt(session: any) {
+  const manager = session?.sessionManager;
+  return (
+    findPersistedSessionBaseSystemPrompt(manager?.getBranch?.()) ||
+    findPersistedSessionBaseSystemPrompt(manager?.getEntries?.())
+  );
+}
+
+function persistSessionBaseSystemPrompt(session: any, systemPrompt: string) {
+  const prompt = String(systemPrompt || "");
+  if (!prompt.trim()) return;
+  if (typeof session?.sessionManager?.appendCustomEntry !== "function") return;
+  if (readPersistedSessionBaseSystemPrompt(session) === prompt) return;
+  session.sessionManager.appendCustomEntry(SESSION_SYSTEM_PROMPT_ENTRY_TYPE, {
+    version: 1,
+    systemPrompt: prompt,
+  });
 }
 
 export function applySessionBaseSystemPrompt(
@@ -247,30 +288,28 @@ export function applySessionBaseSystemPrompt(
   }
 }
 
-export function clearSessionBaseSystemPrompt(session: any) {
+export function clearSessionBaseSystemPrompt(
+  session: any,
+  options: { ignorePersistedPrompt?: boolean } = {},
+) {
   if (!session || typeof session !== "object") return;
-  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
+  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY] as
+    | LazySystemPromptState
+    | undefined;
   if (state && typeof state === "object") {
     state.materialized = false;
+    if (options.ignorePersistedPrompt) {
+      state.ignorePersistedPrompt = true;
+    }
   }
   applySessionBaseSystemPrompt(session, "");
 }
 
-export function freezeSessionBaseSystemPrompt(
-  session: any,
-  systemPrompt: string,
-) {
-  if (!session || typeof session !== "object") return;
-  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
-  if (state && typeof state === "object") {
-    state.materialized = true;
-  }
-  applySessionBaseSystemPrompt(session, systemPrompt);
-}
-
 export function ensureSessionBaseSystemPrompt(session: any): string {
   if (!session || typeof session !== "object") return "";
-  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
+  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY] as
+    | LazySystemPromptState
+    | undefined;
   if (!state || typeof state.compute !== "function") {
     return String(
       session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
@@ -281,9 +320,19 @@ export function ensureSessionBaseSystemPrompt(session: any): string {
       session._baseSystemPrompt || session.agent?.state?.systemPrompt || "",
     );
   }
+  if (!state.ignorePersistedPrompt) {
+    const persisted = readPersistedSessionBaseSystemPrompt(session);
+    if (persisted) {
+      state.materialized = true;
+      applySessionBaseSystemPrompt(session, persisted);
+      return persisted;
+    }
+  }
   const next = state.compute(getSessionActiveToolNames(session));
   state.materialized = true;
+  state.ignorePersistedPrompt = false;
   applySessionBaseSystemPrompt(session, next);
+  persistSessionBaseSystemPrompt(session, next);
   return next;
 }
 
@@ -306,9 +355,10 @@ function applyRinPromptBuilder(session: any) {
     }
   };
 
-  const state = {
+  const state: LazySystemPromptState = {
     materialized: false,
     compute: computePrompt,
+    ignorePersistedPrompt: false,
   };
   session[LAZY_SYSTEM_PROMPT_STATE_KEY] = state;
 
@@ -330,7 +380,7 @@ function applyRinPromptBuilder(session: any) {
     typeof session.reload === "function" ? session.reload.bind(session) : null;
   if (originalReload) {
     session.reload = async (...args: any[]) => {
-      clearSessionBaseSystemPrompt(session);
+      clearSessionBaseSystemPrompt(session, { ignorePersistedPrompt: true });
       return await originalReload(...args);
     };
   }

@@ -39,15 +39,6 @@ function getSessionReviewState(sessionId: string) {
   return current;
 }
 
-function captureSystemPromptSnapshot(ctx: any) {
-  try {
-    const prompt = String(ctx?.getSystemPrompt?.() || "");
-    return prompt.trim() ? prompt : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function triggerInitConversation(
   pi: BuiltinModuleApi,
   _mode: "auto" | "manual",
@@ -84,7 +75,6 @@ async function processSelfImproveReview(
     leafId: meta.leafId || undefined,
     trigger: opts.trigger,
     snapshotKey: opts.snapshotKey,
-    systemPromptSnapshot: captureSystemPromptSnapshot(ctx),
   });
   spawnQueuedMemoryWorker(agentDir);
 }
@@ -104,7 +94,6 @@ async function processSessionSummaryUpdate(
     sessionFile,
     leafId: meta.leafId || undefined,
     trigger: opts.trigger,
-    systemPromptSnapshot: captureSystemPromptSnapshot(ctx),
   });
   spawnQueuedMemoryWorker(agentDir);
 }

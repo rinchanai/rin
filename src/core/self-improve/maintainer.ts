@@ -10,7 +10,6 @@ const HOME_DIR = os.homedir();
 
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../rin-lib/memory-task-config.js";
-import { freezeSessionBaseSystemPrompt } from "../rin-lib/runtime.js";
 import { openBoundSession } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
 import { readSessionMetadata } from "../session/metadata.js";
@@ -141,7 +140,6 @@ async function runForkedSessionPrompt(options: {
   leafId?: string;
   prompt: string;
   additionalExtensionPaths?: string[];
-  systemPromptSnapshot?: string;
 }) {
   const fork = await createForkedSessionManager({
     sessionFile: options.sessionFile,
@@ -154,10 +152,6 @@ async function runForkedSessionPrompt(options: {
     sessionManager: fork.sessionManager,
     thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
   });
-  const systemPromptSnapshot = safeString(options.systemPromptSnapshot);
-  if (systemPromptSnapshot.trim()) {
-    freezeSessionBaseSystemPrompt(session, systemPromptSnapshot);
-  }
   try {
     await session.prompt(options.prompt, {
       expandPromptTemplates: false,
@@ -265,7 +259,6 @@ async function runForkedSessionSelfImproveReview(options: {
   leafId?: string;
   trigger?: string;
   additionalExtensionPaths?: string[];
-  systemPromptSnapshot?: string;
 }) {
   const before = await captureManagedArtifactSnapshot(options.agentDir);
   const finalText = await runForkedSessionPrompt({
@@ -274,7 +267,6 @@ async function runForkedSessionSelfImproveReview(options: {
     leafId: options.leafId,
     prompt: buildSelfImproveReviewPrompt(safeString(options.trigger).trim()),
     additionalExtensionPaths: options.additionalExtensionPaths,
-    systemPromptSnapshot: options.systemPromptSnapshot,
   });
   const after = await captureManagedArtifactSnapshot(options.agentDir);
   return {
@@ -294,7 +286,6 @@ export async function maintainMemory(
     leafId?: string;
     trigger?: string;
     additionalExtensionPaths?: string[];
-    systemPromptSnapshot?: string;
   } = {},
 ) {
   const session = readSessionMetadata(opts);
@@ -308,7 +299,6 @@ export async function maintainMemory(
     leafId,
     trigger,
     additionalExtensionPaths: opts.additionalExtensionPaths,
-    systemPromptSnapshot: opts.systemPromptSnapshot,
   });
   return {
     ...extracted,
@@ -326,7 +316,6 @@ export async function maintainSessionSummary(
     sessionFile?: string;
     leafId?: string;
     trigger?: string;
-    systemPromptSnapshot?: string;
   } = {},
 ) {
   const session = readSessionMetadata(opts);
@@ -340,7 +329,6 @@ export async function maintainSessionSummary(
     sessionFile,
     leafId,
     prompt: buildSessionRecallSummaryPrompt(sessionFile),
-    systemPromptSnapshot: opts.systemPromptSnapshot,
   });
   const applied = await storeSessionSummaryInTranscriptArchive({
     agentDir,
