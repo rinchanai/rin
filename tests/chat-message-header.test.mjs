@@ -30,7 +30,7 @@ function createPi() {
   };
 }
 
-test("chat message header explains sender identity tiers in the system prompt", async () => {
+test("chat message header focuses sender identity guidance in the system prompt", async () => {
   const pi = createPi();
   messageHeaderMod.default(pi);
 
@@ -65,8 +65,14 @@ test("chat message header explains sender identity tiers in the system prompt", 
   );
   assert.ok(
     systemPrompt.includes(
+      "Use the injected sender identity fields in that header to determine who is speaking.",
+    ),
+  );
+  assert.equal(
+    systemPrompt.includes(
       "`sender trust` is `owner`, `trusted user`, or `other chat user`.",
     ),
+    false,
   );
   assert.ok(header.includes("sender nickname: Alice"));
   assert.equal(header.includes("sender is owner:"), false);
