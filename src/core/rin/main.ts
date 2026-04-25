@@ -4,6 +4,7 @@ import { cac } from "cac";
 import { runStart, runStop, runRestart } from "./control.js";
 import { runDoctor } from "./doctor.js";
 import { launchDefaultRin } from "./launch.js";
+import { runGui } from "../rin-gui/main.js";
 import { runMemoryIndex, runMemoryIndexInternal } from "./memory-index.js";
 import {
   hasSubcommandHelpFlag,
@@ -24,6 +25,7 @@ const RIN_COMMANDS = [
   ["stop", "Stop the target user daemon"],
   ["restart", "Restart the target user daemon"],
   ["doctor", "Show daemon/socket diagnostics for the target user"],
+  ["gui", "Start the cross-platform Rin GUI shell"],
   ["usage", "Show token telemetry dashboard and grouped usage stats"],
   ["memory-index", "Repair the memory search index from archived transcripts"],
   ["version", "Show Rin version"],
@@ -82,6 +84,12 @@ export function resolveInternalRinDispatch(rawArgv: string[]) {
   return undefined;
 }
 
+export function defaultLaunchModeForPlatform(
+  platform: NodeJS.Platform = process.platform,
+) {
+  return platform === "win32" ? "gui" : "tui";
+}
+
 export async function startRinCli() {
   const rawArgv = process.argv.slice(2);
   const internalDispatch = resolveInternalRinDispatch(rawArgv);
@@ -105,12 +113,19 @@ export async function startRinCli() {
   if (parsed.command === "stop") return await runStop(parsed);
   if (parsed.command === "restart") return await runRestart(parsed);
   if (parsed.command === "doctor") return await runDoctor(parsed);
+  if (parsed.command === "gui")
+    return await runGui(parsed, process.argv.slice(2));
   if (parsed.command === "usage")
     return await runUsage(parsed, process.argv.slice(2));
   if (parsed.command === "memory-index")
     return await runMemoryIndex(parsed, process.argv.slice(2));
   if (parsed.command === "version") {
     console.log(readRinPackageVersion());
+    return;
+  }
+
+  if (defaultLaunchModeForPlatform() === "gui") {
+    await runGui(parsed, process.argv.slice(2));
     return;
   }
 
