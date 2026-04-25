@@ -68,10 +68,6 @@ async function launchInstallerInitTui(options: {
   sourceRoot: string;
 }) {
   return await runCommand(options.rinPath, [], {
-    env: {
-      ...process.env,
-      RIN_INSTALL_AUTO_INIT: "1",
-    },
     cwd: options.sourceRoot,
   });
 }
@@ -269,7 +265,9 @@ export async function startInstaller() {
       `${i18n.writtenPathLabel}: ${publishedRuntime.releaseRoot}`,
       installedDocsDir ? `${i18n.writtenPathLabel}: ${installedDocsDir}` : "",
       ...(Array.isArray(installedDocs?.pi)
-        ? installedDocs.pi.map((item: string) => `${i18n.writtenPathLabel}: ${item}`)
+        ? installedDocs.pi.map(
+            (item: string) => `${i18n.writtenPathLabel}: ${item}`,
+          )
         : []),
       installedService
         ? `${i18n.writtenPathLabel}: ${installedService.servicePath}`

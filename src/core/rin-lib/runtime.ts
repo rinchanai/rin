@@ -16,6 +16,10 @@ import {
   writeCompactionContinuationMarker,
 } from "./compaction-continuation.js";
 import { attachBuiltinModulesToSession } from "../builtins/session.js";
+import { compileSelfImproveSync } from "../self-improve/store.js";
+import { buildSystemPromptSelfImprove } from "../self-improve/format.js";
+
+const PROMPT_PREFIX = "As the assistant, you must fulfill the user's requests.";
 
 const DEFAULT_PI_GUIDELINES = [
   "Be concise in your responses",
@@ -102,6 +106,14 @@ export function getManagedSkillPaths(agentDir: string): string[] {
   ];
 }
 
+function buildSelfImprovePromptBlock(agentDir: string) {
+  try {
+    return buildSystemPromptSelfImprove(compileSelfImproveSync({}, agentDir));
+  } catch {
+    return "";
+  }
+}
+
 function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const validToolNames = toolNames.filter((name) =>
     session._toolRegistry.has(name),
@@ -169,6 +181,7 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   const configuredLanguageBlock = buildConfiguredLanguageSystemPrompt(
     readConfiguredLanguageFromSettings(promptAgentDir),
   );
+  const selfImprovePromptBlock = buildSelfImprovePromptBlock(promptAgentDir);
 
   let prompt = String(loaderSystemPrompt || "").trim();
   if (!prompt) {
@@ -198,10 +211,13 @@ function buildRinSystemPrompt(session: any, toolNames: string[]) {
   if (agentsBlock) {
     prompt += `\n\n${agentsBlock}`;
   }
+  if (selfImprovePromptBlock) {
+    prompt += `\n\n${selfImprovePromptBlock}`;
+  }
   if (hasRead && loadedSkills.length > 0) {
     prompt += `\n\n${formatSkillsForPrompt(loadedSkills)}`;
   }
-  return prompt.trimEnd();
+  return `${PROMPT_PREFIX}\n\n${prompt}`.trimEnd();
 }
 
 const LAZY_SYSTEM_PROMPT_STATE_KEY = Symbol.for("rin.lazySystemPromptState");
@@ -281,9 +297,9 @@ function applyRinPromptBuilder(session: any) {
   };
   session[LAZY_SYSTEM_PROMPT_STATE_KEY] = state;
 
-  session._rebuildSystemPrompt = (toolNames: string[]) => {
+  session._rebuildSystemPrompt = () => {
     if (!state.materialized) return "";
-    return state.compute(Array.isArray(toolNames) ? toolNames : []);
+    return String(session._baseSystemPrompt || "");
   };
 
   const originalPrompt =

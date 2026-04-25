@@ -11,10 +11,6 @@ const rootDir = path.resolve(
 const { BuiltinModuleHost, CompositeBuiltinRunner } = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "host.js")).href
 );
-const { attachBuiltinModulesToSession } = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "session.js"))
-    .href
-);
 const builtinRegistry = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "builtins", "registry.js"))
     .href
@@ -120,107 +116,6 @@ test("composite builtin runner returns wrapped builtin tools for registry refres
       },
     },
   ]);
-});
-
-test("headless builtin attachment emits session_start for runtime state restoration", async () => {
-  const frozenPrompt = "frozen prompt from source session";
-  const appendedEntries: unknown[] = [];
-  const session = {
-    sessionManager: {
-      getBranch: () => [
-        {
-          type: "custom",
-          customType: "frozen-system-prompt",
-          data: {
-            version: 1,
-            systemPrompt: frozenPrompt,
-            updatedAt: "2026-04-25T00:00:00.000Z",
-          },
-        },
-      ],
-      appendCustomEntry: (customType: string, data: unknown) => {
-        appendedEntries.push({ customType, data });
-      },
-    },
-    modelRegistry: {},
-    getActiveToolNames: () => [],
-    getAllTools: () => [],
-    setActiveToolsByName: () => {},
-    _refreshToolRegistry: () => {},
-  };
-  const disabledNames = builtinRegistry.BUILTIN_MODULE_ORDER.filter(
-    (name: string) => name !== "freeze-session-runtime",
-  );
-
-  await attachBuiltinModulesToSession(session, {
-    cwd: "/tmp/rin-cwd",
-    agentDir: "/tmp/rin-agent",
-    disabledNames,
-    reason: "startup",
-  });
-
-  const result = await session._extensionRunner.emitBeforeAgentStart(
-    "prompt",
-    undefined,
-    "fresh rebuilt prompt",
-  );
-
-  assert.equal(result.systemPrompt, frozenPrompt);
-  assert.deepEqual(appendedEntries, []);
-});
-
-test("headless builtin reload refreshes frozen runtime state", async () => {
-  const frozenPrompt = "frozen prompt before reload";
-  const appendedEntries: unknown[] = [];
-  const session = {
-    sessionManager: {
-      getBranch: () => [
-        {
-          type: "custom",
-          customType: "frozen-system-prompt",
-          data: {
-            version: 1,
-            systemPrompt: frozenPrompt,
-            updatedAt: "2026-04-25T00:00:00.000Z",
-          },
-        },
-      ],
-      appendCustomEntry: (customType: string, data: unknown) => {
-        appendedEntries.push({ customType, data });
-      },
-    },
-    modelRegistry: {},
-    getActiveToolNames: () => [],
-    getAllTools: () => [],
-    setActiveToolsByName: () => {},
-    _refreshToolRegistry: () => {},
-    reload: async function (this: any) {
-      this._extensionRunner = undefined;
-    },
-  };
-  const disabledNames = builtinRegistry.BUILTIN_MODULE_ORDER.filter(
-    (name: string) => name !== "freeze-session-runtime",
-  );
-
-  await attachBuiltinModulesToSession(session, {
-    cwd: "/tmp/rin-cwd",
-    agentDir: "/tmp/rin-agent",
-    disabledNames,
-    reason: "startup",
-  });
-
-  await session.reload();
-
-  const result = await session._extensionRunner.emitBeforeAgentStart(
-    "prompt",
-    undefined,
-    "fresh rebuilt prompt",
-  );
-
-  assert.equal(result.systemPrompt, "fresh rebuilt prompt");
-  assert.equal(appendedEntries.length, 1);
-  assert.equal(appendedEntries[0].customType, "frozen-system-prompt");
-  assert.equal(appendedEntries[0].data.systemPrompt, "fresh rebuilt prompt");
 });
 
 test("builtin registry normalizes disabled module names once", () => {

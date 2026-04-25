@@ -8,25 +8,17 @@ import {
   spawnQueuedMemoryWorker,
 } from "./async-jobs.js";
 import {
-  buildOnboardingPrompt,
-  compileSelfImprovePrompt,
   executeSelfImproveTool,
   formatSelfImproveAgentResult,
   formatSelfImproveResult,
-  getOnboardingState,
-  isOnboardingActive,
   markOnboardingPrompted,
-  refreshOnboardingCompletion,
   resolveAgentDir,
-  loadSelfImproveStore,
 } from "./lib.js";
 import {
   describeSelfImprovePromptSlot,
   refineSelfImprovePromptSlot,
 } from "./processing.js";
 import { readSessionMetadata } from "../session/metadata.js";
-
-let installerAutoInitConsumed = false;
 
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
 const reviewStateBySession = new Map<
@@ -383,65 +375,5 @@ export default function selfImproveModule(pi: BuiltinModuleApi) {
       );
       triggerInitConversation(pi, "manual", !ctx.isIdle());
     },
-  });
-
-  pi.on("before_agent_start", async (event) => {
-    if (
-      !installerAutoInitConsumed &&
-      String(process.env.RIN_INSTALL_AUTO_INIT || "").trim() === "1"
-    ) {
-      await markOnboardingPrompted(resolveAgentDir, "auto:installer");
-      installerAutoInitConsumed = true;
-      process.env.RIN_INSTALL_AUTO_INIT = "";
-    }
-    await refreshOnboardingCompletion(resolveAgentDir, loadSelfImproveStore);
-    const { systemPrompt } = await compileSelfImprovePrompt();
-    const blocks: string[] = [];
-    if (
-      systemPrompt &&
-      !String(event.systemPrompt || "").includes(systemPrompt)
-    ) {
-      blocks.push(systemPrompt);
-    }
-    const onboarding = getOnboardingState(resolveAgentDir);
-    if (isOnboardingActive(resolveAgentDir, onboarding)) {
-      blocks.push(
-        buildOnboardingPrompt(
-          String(onboarding.lastTrigger || "").startsWith("auto:")
-            ? "auto"
-            : "manual",
-        ),
-      );
-    }
-    if (!blocks.length) return;
-    const current = String(event.systemPrompt || "").trimEnd();
-    const promptsBlock = blocks[0] || "";
-
-    const insertBeforeMarker = (
-      source: string,
-      marker: string,
-      blockText: string,
-    ) => {
-      const text = String(blockText || "").trim();
-      if (!text) return source;
-      const idx = source.indexOf(marker);
-      if (idx < 0) return source;
-      return `${source.slice(0, idx).trimEnd()}\n\n${text}\n\n${source.slice(idx)}`.trimEnd();
-    };
-
-    const skillsMarker =
-      "\n\nAvailable skills provide specialized instructions for specific tasks.\n\n";
-
-    let next = current;
-    if (promptsBlock) {
-      if (next.includes(skillsMarker)) {
-        next = insertBeforeMarker(next, skillsMarker, promptsBlock);
-      } else {
-        next = `${next}\n\n${promptsBlock}`.trimEnd();
-      }
-    }
-    return {
-      systemPrompt: next.trimEnd(),
-    };
   });
 }

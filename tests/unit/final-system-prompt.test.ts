@@ -15,7 +15,7 @@ const rootDir = path.resolve(
 );
 const runtimeMod = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-lib", "runtime.js"))
-    .href,
+    .href
 );
 
 test("createConfiguredAgentSession keeps system prompt empty until first turn", async () => {
@@ -33,6 +33,11 @@ test("createConfiguredAgentSession keeps system prompt empty until first turn", 
   assert.equal(String(session.agent?.state?.systemPrompt || ""), "");
 
   const baseSystemPrompt = runtimeMod.ensureSessionBaseSystemPrompt(session);
+  assert.ok(
+    baseSystemPrompt.startsWith(
+      "As the assistant, you must fulfill the user's requests.",
+    ),
+  );
   assert.ok(baseSystemPrompt.includes("Available tools:"));
   assert.equal(String(session._baseSystemPrompt || ""), baseSystemPrompt);
   assert.equal(
@@ -41,7 +46,7 @@ test("createConfiguredAgentSession keeps system prompt empty until first turn", 
   );
 });
 
-test("buildFinalAppSystemPrompt includes app-level before_agent_start prompt layers", async () => {
+test("buildFinalAppSystemPrompt includes app-level prompt layers", async () => {
   const { baseSystemPrompt, finalSystemPrompt } =
     await buildFinalAppSystemPrompt();
 
@@ -74,10 +79,11 @@ test("buildFinalAppSystemPrompt injects configured language from settings", asyn
     "utf8",
   );
 
-  const { baseSystemPrompt, finalSystemPrompt } = await buildFinalAppSystemPrompt({
-    cwd,
-    agentDir,
-  });
+  const { baseSystemPrompt, finalSystemPrompt } =
+    await buildFinalAppSystemPrompt({
+      cwd,
+      agentDir,
+    });
 
   assert.ok(baseSystemPrompt.includes("Configured runtime defaults:"));
   assert.ok(baseSystemPrompt.includes("Preferred language: zh-CN"));
@@ -122,14 +128,52 @@ test("buildFinalAppSystemPrompt injects a continuation prompt after automatic co
     undefined,
     baseSystemPrompt,
   );
-  const secondPrompt = String(
-    afterConsume?.systemPrompt || baseSystemPrompt,
-  );
+  const secondPrompt = String(afterConsume?.systemPrompt || baseSystemPrompt);
   assert.equal(
     secondPrompt.includes(
       "Context compacted; treat this as a routine internal checkpoint.",
     ),
     false,
+  );
+});
+
+test("system prompt stays frozen until reload", async () => {
+  const cwd = fs.mkdtempSync(path.join(rootDir, ".tmp-rin-frozen-prompt-cwd-"));
+  const agentDir = fs.mkdtempSync(
+    path.join(rootDir, ".tmp-rin-frozen-prompt-agent-"),
+  );
+  const promptDir = path.join(agentDir, "self_improve", "prompts");
+  fs.mkdirSync(promptDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(promptDir, "user_profile.md"),
+    "Original stable preference.\n",
+  );
+
+  const { session } = await runtimeMod.createConfiguredAgentSession({
+    cwd,
+    agentDir,
+  });
+  const firstPrompt = runtimeMod.ensureSessionBaseSystemPrompt(session);
+  assert.ok(firstPrompt.includes("Original stable preference."));
+
+  fs.writeFileSync(
+    path.join(promptDir, "user_profile.md"),
+    "Updated preference after materialization.\n",
+  );
+  session.setActiveToolsByName(session.getActiveToolNames());
+
+  assert.equal(String(session._baseSystemPrompt || ""), firstPrompt);
+  assert.equal(
+    String(session._baseSystemPrompt || "").includes(
+      "Updated preference after materialization.",
+    ),
+    false,
+  );
+
+  await session.reload();
+  const reloadedPrompt = runtimeMod.ensureSessionBaseSystemPrompt(session);
+  assert.ok(
+    reloadedPrompt.includes("Updated preference after materialization."),
   );
 });
 
