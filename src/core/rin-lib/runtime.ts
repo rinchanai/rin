@@ -232,7 +232,10 @@ function getSessionActiveToolNames(session: any): string[] {
   return [];
 }
 
-function applySessionBaseSystemPrompt(session: any, systemPrompt: string) {
+export function applySessionBaseSystemPrompt(
+  session: any,
+  systemPrompt: string,
+) {
   if (!session || typeof session !== "object") return;
   const next = String(systemPrompt || "");
   session._baseSystemPrompt = next;
@@ -251,6 +254,18 @@ export function clearSessionBaseSystemPrompt(session: any) {
     state.materialized = false;
   }
   applySessionBaseSystemPrompt(session, "");
+}
+
+export function freezeSessionBaseSystemPrompt(
+  session: any,
+  systemPrompt: string,
+) {
+  if (!session || typeof session !== "object") return;
+  const state = session[LAZY_SYSTEM_PROMPT_STATE_KEY];
+  if (state && typeof state === "object") {
+    state.materialized = true;
+  }
+  applySessionBaseSystemPrompt(session, systemPrompt);
 }
 
 export function ensureSessionBaseSystemPrompt(session: any): string {

@@ -31,6 +31,7 @@ export type MaintenanceJob = {
   trigger: string;
   snapshotKey?: string;
   additionalExtensionPaths?: string[];
+  systemPromptSnapshot?: string;
   attempts?: number;
   lastError?: string;
   lastAttemptAt?: string;
@@ -142,6 +143,10 @@ async function enqueueMaintenanceJob(
     existing.additionalExtensionPaths = normalizeAdditionalExtensionPaths(
       input.additionalExtensionPaths,
     );
+    const systemPromptSnapshot = safeString(input.systemPromptSnapshot);
+    existing.systemPromptSnapshot = systemPromptSnapshot.trim()
+      ? systemPromptSnapshot
+      : undefined;
     existing.attempts = undefined;
     existing.lastError = undefined;
     existing.lastAttemptAt = undefined;
@@ -159,6 +164,9 @@ async function enqueueMaintenanceJob(
       additionalExtensionPaths: normalizeAdditionalExtensionPaths(
         input.additionalExtensionPaths,
       ),
+      systemPromptSnapshot: safeString(input.systemPromptSnapshot).trim()
+        ? safeString(input.systemPromptSnapshot)
+        : undefined,
     });
   }
   await saveQueue(agentDir, jobs);
@@ -326,6 +334,7 @@ async function processJob(job: MaintenanceJob) {
       sessionFile,
       leafId,
       trigger: job.trigger,
+      systemPromptSnapshot: job.systemPromptSnapshot,
     });
   }
   return await maintainMemory({} as any, {
@@ -334,6 +343,7 @@ async function processJob(job: MaintenanceJob) {
     leafId,
     trigger: job.trigger,
     additionalExtensionPaths: job.additionalExtensionPaths,
+    systemPromptSnapshot: job.systemPromptSnapshot,
   });
 }
 

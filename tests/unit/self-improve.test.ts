@@ -40,11 +40,6 @@ const selfImproveIndex = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "self-improve", "index.js"))
     .href
 );
-const maintainer = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "self-improve", "maintainer.js"),
-  ).href
-);
 
 async function withTempRoot(fn) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-memory-test-"));
@@ -245,54 +240,19 @@ test("store executeSelfImproveAction compiles saved self-improve prompts", async
   });
 });
 
-test("self-improve review context stays bounded and omits tool output", () => {
-  const hugeToolOutput = "tool-noise ".repeat(20_000);
-  const entries = [
-    {
-      type: "message",
-      message: {
-        role: "user",
-        content: [{ type: "text", text: "Remember I prefer concise replies." }],
-      },
-    },
-    {
-      type: "message",
-      message: {
-        role: "toolResult",
-        content: [{ type: "text", text: hugeToolOutput }],
-      },
-    },
-    {
-      type: "message",
-      message: {
-        role: "assistant",
-        content: [
-          { type: "thinking", thinking: "hidden chain" },
-          { type: "text", text: "Saved a durable preference." },
-        ],
-      },
-    },
-    ...Array.from({ length: 80 }, (_, index) => ({
-      type: "message",
-      message: {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: `later durable note ${index} ${"x".repeat(900)}`,
-          },
-        ],
-      },
-    })),
-  ];
+test("queued maintenance carries the source session system prompt snapshot", async () => {
+  await withTempRoot(async (root) => {
+    await asyncJobs.enqueueMemoryMaintenanceJob({
+      agentDir: root,
+      sessionFile: "/tmp/session-a.jsonl",
+      trigger: "self_improve:periodic_review",
+      systemPromptSnapshot: "stable source system prompt",
+    });
 
-  const context = maintainer.buildSelfImproveReviewContext(entries);
-
-  assert.ok(context.length <= 32_500);
-  assert.ok(context.includes("Bounded source conversation context follows."));
-  assert.ok(context.includes("later durable note 79"));
-  assert.equal(context.includes("tool-noise"), false);
-  assert.equal(context.includes("hidden chain"), false);
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].systemPromptSnapshot, "stable source system prompt");
+  });
 });
 
 test("queued memory maintenance jobs deduplicate by session file", async () => {

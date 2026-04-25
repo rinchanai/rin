@@ -10,13 +10,10 @@ const HOME_DIR = os.homedir();
 
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
 import { MEMORY_TASK_THINKING_LEVEL } from "../rin-lib/memory-task-config.js";
+import { freezeSessionBaseSystemPrompt } from "../rin-lib/runtime.js";
 import { openBoundSession } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
 import { readSessionMetadata } from "../session/metadata.js";
-import {
-  normalizeMessageText,
-  extractMessageText,
-} from "../message-content.js";
 import { normalizeSessionValue } from "../session/ref.js";
 import {
   buildSessionRecallSummaryPrompt,
@@ -97,99 +94,14 @@ function diffManagedArtifactSnapshots(
   return changed;
 }
 
-const MAX_SELF_IMPROVE_REVIEW_CONTEXT_CHARS = 32_000;
-const MAX_SELF_IMPROVE_REVIEW_ENTRY_CHARS = 1_800;
-
-function truncateText(value: string, maxChars: number): string {
-  const text = safeString(value).trim();
-  const limit = Math.max(0, Math.trunc(maxChars));
-  if (!limit || text.length <= limit) return text;
-  return `${text.slice(0, Math.max(0, limit - 18)).trimEnd()} …[truncated]`;
-}
-
-function formatReviewEntry(entry: any): string {
-  if (!entry || typeof entry !== "object") return "";
-  if (entry.type === "compaction") {
-    const summary = normalizeMessageText(entry.summary || "");
-    return summary
-      ? `[compaction summary]\n${truncateText(summary, MAX_SELF_IMPROVE_REVIEW_ENTRY_CHARS)}`
-      : "";
-  }
-
-  if (entry.type === "custom" && isSessionSummaryEntry(entry)) {
-    const summary = normalizeMessageText(
-      entry.data?.summary || entry.data?.text || "",
-    );
-    return summary
-      ? `[session summary]\n${truncateText(summary, MAX_SELF_IMPROVE_REVIEW_ENTRY_CHARS)}`
-      : "";
-  }
-
-  const message = entry.type === "message" ? entry.message : undefined;
-  const role = safeString(message?.role || "").trim();
-  if (role !== "user" && role !== "assistant" && role !== "custom") return "";
-
-  const text = normalizeMessageText(
-    extractMessageText(message?.content ?? message?.text ?? "", {
-      includeThinking: false,
-      trim: true,
-    }),
-  );
-  if (!text) return "";
-  return `[${role}]\n${truncateText(text, MAX_SELF_IMPROVE_REVIEW_ENTRY_CHARS)}`;
-}
-
-function boundReviewEntries(entries: string[], maxChars: number): string {
-  const header = [
-    "Bounded source conversation context follows.",
-    "Tool outputs, bash logs, and hidden thinking are intentionally omitted; older material may already be covered by existing prompt slots and skills.",
-  ].join("\n");
-  const footer = "End bounded source conversation context.";
-  const normalized = entries.map((entry) => entry.trim()).filter(Boolean);
-  const kept: string[] = [];
-  let total = header.length + footer.length + 8;
-  for (const entry of [...normalized].reverse()) {
-    const nextLen = entry.length + 8;
-    if (kept.length > 0 && total + nextLen > maxChars) break;
-    kept.push(entry);
-    total += nextLen;
-  }
-  kept.reverse();
-  const omitted = normalized.length - kept.length;
-  return [
-    header,
-    omitted > 0
-      ? `[${omitted} older entries omitted by bounded review context]`
-      : "",
-    ...kept,
-    footer,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
-
-export function buildSelfImproveReviewContext(entries: any[]): string {
-  const rows = (Array.isArray(entries) ? entries : [])
-    .map((entry) => formatReviewEntry(entry))
-    .filter(Boolean);
-  return boundReviewEntries(rows, MAX_SELF_IMPROVE_REVIEW_CONTEXT_CHARS);
-}
-
-function buildSelfImproveReviewPrompt(
-  _trigger: string,
-  reviewContext: string,
-): string {
+function buildSelfImproveReviewPrompt(_trigger: string): string {
   const prompt = [
-    "Review the bounded conversation context and derive durable conclusions that should still matter across sessions.",
-    "Base the review on the bounded context below; it is already curated for this maintenance turn.",
+    "Review the conversation and derive durable conclusions that should still matter across sessions.",
     "Use save_prompts for prompt baselines and skills for reusable procedures, materials, and knowledge.",
     "Simultaneously consolidate, compress, and improve existing prompt slots and skills instead of only adding new content.",
-    "If the bounded context contains no durable learning, say so briefly and make no changes.",
-    "",
-    reviewContext,
   ];
 
-  return prompt.join("\n").trimEnd();
+  return prompt.join(" ");
 }
 
 async function createForkedSessionManager(options: {
@@ -229,6 +141,7 @@ async function runForkedSessionPrompt(options: {
   leafId?: string;
   prompt: string;
   additionalExtensionPaths?: string[];
+  systemPromptSnapshot?: string;
 }) {
   const fork = await createForkedSessionManager({
     sessionFile: options.sessionFile,
@@ -241,6 +154,10 @@ async function runForkedSessionPrompt(options: {
     sessionManager: fork.sessionManager,
     thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
   });
+  const systemPromptSnapshot = safeString(options.systemPromptSnapshot);
+  if (systemPromptSnapshot.trim()) {
+    freezeSessionBaseSystemPrompt(session, systemPromptSnapshot);
+  }
   try {
     await session.prompt(options.prompt, {
       expandPromptTemplates: false,
@@ -342,65 +259,27 @@ async function storeSessionSummaryInTranscriptArchive(options: {
   };
 }
 
-async function runBoundedSessionSelfImproveReview(options: {
+async function runForkedSessionSelfImproveReview(options: {
   agentDir: string;
   sessionFile: string;
   leafId?: string;
   trigger?: string;
   additionalExtensionPaths?: string[];
+  systemPromptSnapshot?: string;
 }) {
-  const session = readSessionMetadata(options);
-  const sessionFile = session.sessionFile
-    ? path.resolve(session.sessionFile)
-    : "";
-  if (!sessionFile) throw new Error("session_file_required");
-  const leafId = session.leafId || undefined;
-  const { SessionManager } = await loadRinSessionManagerModule();
-  const sourceManager = SessionManager.open(
-    sessionFile,
-    path.dirname(sessionFile),
-  );
-  const cwd = safeString(sourceManager.getCwd?.() || "").trim() || HOME_DIR;
-  const reviewContext = buildSelfImproveReviewContext(
-    sourceManager.getBranch(leafId),
-  );
-  const reviewManager = SessionManager.inMemory(cwd);
-
   const before = await captureManagedArtifactSnapshot(options.agentDir);
-  const { session: reviewSession, runtime } = await openBoundSession({
-    cwd,
+  const finalText = await runForkedSessionPrompt({
     agentDir: options.agentDir,
+    sessionFile: options.sessionFile,
+    leafId: options.leafId,
+    prompt: buildSelfImproveReviewPrompt(safeString(options.trigger).trim()),
     additionalExtensionPaths: options.additionalExtensionPaths,
-    sessionManager: reviewManager,
-    thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
+    systemPromptSnapshot: options.systemPromptSnapshot,
   });
-  let finalText = "";
-  try {
-    await reviewSession.prompt(
-      buildSelfImproveReviewPrompt(
-        safeString(options.trigger).trim(),
-        reviewContext,
-      ),
-      {
-        expandPromptTemplates: false,
-        source: "builtin:self-improve",
-      },
-    );
-    await reviewSession.agent.waitForIdle();
-    finalText = safeString(reviewSession.getLastAssistantText?.() || "").trim();
-  } finally {
-    try {
-      await reviewSession.abort();
-    } catch {}
-    try {
-      await runtime.dispose();
-    } catch {}
-  }
   const after = await captureManagedArtifactSnapshot(options.agentDir);
   return {
     skipped: "",
-    forked: false,
-    bounded: true,
+    forked: true,
     saved: true,
     output: finalText,
     changedFiles: diffManagedArtifactSnapshots(before, after),
@@ -415,6 +294,7 @@ export async function maintainMemory(
     leafId?: string;
     trigger?: string;
     additionalExtensionPaths?: string[];
+    systemPromptSnapshot?: string;
   } = {},
 ) {
   const session = readSessionMetadata(opts);
@@ -422,12 +302,13 @@ export async function maintainMemory(
   if (!sessionFile) return { skipped: "no-session-file" };
   const trigger = safeString(opts.trigger || "self_improve:review").trim();
   const leafId = session.leafId || undefined;
-  const extracted = await runBoundedSessionSelfImproveReview({
+  const extracted = await runForkedSessionSelfImproveReview({
     agentDir: resolveAgentDir(opts.agentDir),
     sessionFile,
     leafId,
     trigger,
     additionalExtensionPaths: opts.additionalExtensionPaths,
+    systemPromptSnapshot: opts.systemPromptSnapshot,
   });
   return {
     ...extracted,
@@ -445,6 +326,7 @@ export async function maintainSessionSummary(
     sessionFile?: string;
     leafId?: string;
     trigger?: string;
+    systemPromptSnapshot?: string;
   } = {},
 ) {
   const session = readSessionMetadata(opts);
@@ -458,6 +340,7 @@ export async function maintainSessionSummary(
     sessionFile,
     leafId,
     prompt: buildSessionRecallSummaryPrompt(sessionFile),
+    systemPromptSnapshot: opts.systemPromptSnapshot,
   });
   const applied = await storeSessionSummaryInTranscriptArchive({
     agentDir,
