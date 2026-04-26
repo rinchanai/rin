@@ -81,6 +81,26 @@ test("render utils format shared hidden result notices", () => {
   assert.equal(renderUtils.formatHiddenResultsNotice(5, 0), "");
 });
 
+test("render utils style structured tool output lines", () => {
+  const theme = {
+    fg: (kind, text) => `<${kind}>${text}</${kind}>`,
+    bold: (text) => `**${text}**`,
+  };
+
+  assert.equal(
+    renderUtils.styleToolOutputLine("path=/tmp/demo.txt", theme),
+    "<muted>path</muted><dim>=</dim><accent>/tmp/demo.txt</accent>",
+  );
+  assert.equal(
+    renderUtils.styleToolOutputLine("1. Example Result | 2026-04-17", theme),
+    "<toolTitle>1. </toolTitle><toolOutput>**Example Result**</toolOutput><muted> | 2026-04-17</muted>",
+  );
+  assert.equal(
+    renderUtils.styleToolOutputLine("Saved task: nightly cleanup", theme),
+    "<toolTitle>**Saved task:**</toolTitle> <toolOutput>nightly cleanup</toolOutput>",
+  );
+});
+
 test("render utils render shared text tool previews", () => {
   const theme = {
     fg: (kind, text) => `<${kind}>${text}</${kind}>`,
@@ -129,6 +149,17 @@ test("render utils render shared text tool previews", () => {
 
   assert.equal(
     renderUtils.renderTextToolResult(
+      { content: [{ type: "text", text: "" }] },
+      { expanded: true },
+      theme,
+      false,
+      { emptyMessage: "No results." },
+    ),
+    "\n<muted>No results.</muted>",
+  );
+
+  assert.equal(
+    renderUtils.renderTextToolResult(
       { content: [{ type: "text", text: "ignored" }] },
       { expanded: false, isPartial: true },
       theme,
@@ -136,6 +167,40 @@ test("render utils render shared text tool previews", () => {
       { partialText: "Fetching..." },
     ),
     "<warning>Fetching...</warning>",
+  );
+});
+
+test("render utils render expanded tool warnings", () => {
+  const theme = {
+    fg: (kind, text) => `<${kind}>${text}</${kind}>`,
+    bold: (text) => `**${text}**`,
+  };
+
+  const rendered = renderUtils.renderTextToolResult(
+    {
+      content: [{ type: "text", text: "web_search 2\npath=/tmp/demo.txt" }],
+      details: {
+        truncation: {
+          truncated: true,
+          truncatedBy: "lines",
+          outputLines: 2,
+          totalLines: 8,
+          maxLines: 2,
+        },
+      },
+    },
+    { expanded: true },
+    theme,
+    false,
+  );
+
+  assert.match(
+    rendered,
+    /<toolTitle>\*\*web_search\*\*<\/toolTitle> <success>2<\/success>/,
+  );
+  assert.match(
+    rendered,
+    /<warning>\[Truncated: showing 2 of 8 lines \(2 line limit\)\]<\/warning>/,
   );
 });
 
