@@ -4,9 +4,16 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 const packageJsonPath = path.join(repoRoot, "package.json");
-const preferredTempRoot = [process.env.RIN_TMP_DIR, "/home/rin/tmp", os.tmpdir()]
+const preferredTempRoot = [
+  process.env.RIN_TMP_DIR,
+  "/home/rin/tmp",
+  os.tmpdir(),
+]
   .map((value) => String(value || "").trim())
   .find(Boolean);
 
@@ -24,6 +31,8 @@ function normalizeVersion(value) {
   return match ? match[0] : raw;
 }
 
+const optionValueNames = new Set(["ref", "repo", "sourceSubdir"]);
+
 function parseArgs(argv) {
   const positional = [];
   const options = {};
@@ -35,6 +44,14 @@ function parseArgs(argv) {
     }
     const key = current.slice(2);
     const next = argv[i + 1];
+    if (optionValueNames.has(key)) {
+      if (!next || next.startsWith("--")) {
+        throw new Error(`Missing value for --${key}`);
+      }
+      options[key] = next;
+      i += 1;
+      continue;
+    }
     if (!next || next.startsWith("--")) {
       options[key] = true;
       continue;
@@ -64,7 +81,9 @@ const piPackageVersion = normalizeVersion(
   packageJson?.dependencies?.["@mariozechner/pi-coding-agent"],
 );
 if (!piPackageVersion) {
-  throw new Error("Unable to determine @mariozechner/pi-coding-agent version from package.json");
+  throw new Error(
+    "Unable to determine @mariozechner/pi-coding-agent version from package.json",
+  );
 }
 
 const mirrors = {
@@ -95,7 +114,9 @@ function resolveMirrorRef(mirror, existingMeta, options = {}) {
   if (!defaultRef) return existingRef;
   if (!mirror.packageVersion) return existingRef || defaultRef;
 
-  const existingPackageVersion = String(existingMeta.packageVersion || "").trim();
+  const existingPackageVersion = String(
+    existingMeta.packageVersion || "",
+  ).trim();
   if (existingPackageVersion === mirror.packageVersion && existingRef) {
     return existingRef;
   }
@@ -114,13 +135,25 @@ function syncMirror(name, options = {}) {
     options.sourceSubdir || existingMeta.sourceSubdir || mirror.sourceSubdir,
   ).trim();
   const ref = resolveMirrorRef(mirror, existingMeta, options);
-  const tempRoot = fs.mkdtempSync(path.join(preferredTempRoot, `rin-sync-${name}-`));
+  const tempRoot = fs.mkdtempSync(
+    path.join(preferredTempRoot, `rin-sync-${name}-`),
+  );
   const cloneDir = path.join(tempRoot, "upstream");
 
   try {
     execFileSync(
       "git",
-      ["clone", "--depth", "1", "--branch", ref, "--filter=blob:none", "--sparse", repo, cloneDir],
+      [
+        "clone",
+        "--depth",
+        "1",
+        "--branch",
+        ref,
+        "--filter=blob:none",
+        "--sparse",
+        repo,
+        cloneDir,
+      ],
       { stdio: "inherit" },
     );
     execFileSync("git", ["sparse-checkout", "set", sourceSubdir], {
@@ -152,7 +185,11 @@ function syncMirror(name, options = {}) {
     if (mirror.packageName) nextMeta.packageName = mirror.packageName;
     if (mirror.packageVersion) nextMeta.packageVersion = mirror.packageVersion;
     if (Array.isArray(mirror.paths)) nextMeta.paths = mirror.paths;
-    fs.writeFileSync(upstreamMetaPath, `${JSON.stringify(nextMeta, null, 2)}\n`, "utf8");
+    fs.writeFileSync(
+      upstreamMetaPath,
+      `${JSON.stringify(nextMeta, null, 2)}\n`,
+      "utf8",
+    );
 
     process.stdout.write(
       [

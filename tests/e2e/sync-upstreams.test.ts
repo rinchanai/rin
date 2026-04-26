@@ -27,16 +27,53 @@ function writeMirrorSnapshot(root: string, version: string) {
   const sourceRoot = path.join(root, "packages", "coding-agent");
   fs.mkdirSync(path.join(sourceRoot, "docs"), { recursive: true });
   fs.mkdirSync(path.join(sourceRoot, "examples"), { recursive: true });
-  fs.writeFileSync(path.join(sourceRoot, "README.md"), `README ${version}\n`, "utf8");
-  fs.writeFileSync(path.join(sourceRoot, "CHANGELOG.md"), `# ${version}\n`, "utf8");
-  fs.writeFileSync(path.join(sourceRoot, "docs", "version.txt"), `${version}\n`, "utf8");
-  fs.writeFileSync(path.join(sourceRoot, "examples", "version.txt"), `${version}\n`, "utf8");
+  fs.writeFileSync(
+    path.join(sourceRoot, "README.md"),
+    `README ${version}\n`,
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(sourceRoot, "CHANGELOG.md"),
+    `# ${version}\n`,
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(sourceRoot, "docs", "version.txt"),
+    `${version}\n`,
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(sourceRoot, "examples", "version.txt"),
+    `${version}\n`,
+    "utf8",
+  );
 }
 
 function commitTag(root: string, version: string) {
   run("git", ["add", "."], root);
   run("git", ["commit", "-m", `snapshot ${version}`], root);
   run("git", ["tag", `v${version}`], root);
+}
+
+function writeSyncWorkspace(workspace: string, packageVersion: string) {
+  fs.mkdirSync(path.join(workspace, "scripts"), { recursive: true });
+  fs.copyFileSync(
+    path.join(rootDir, "scripts", "sync-upstreams.mjs"),
+    path.join(workspace, "scripts", "sync-upstreams.mjs"),
+  );
+  fs.writeFileSync(
+    path.join(workspace, "package.json"),
+    JSON.stringify(
+      {
+        dependencies: {
+          "@mariozechner/pi-coding-agent": `^${packageVersion}`,
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
 }
 
 test("sync-upstreams uses the current pi package version tag instead of a stale _upstream ref", () => {
@@ -47,32 +84,19 @@ test("sync-upstreams uses the current pi package version tag instead of a stale 
     fs.mkdirSync(mirrorRepo, { recursive: true });
     run("git", ["init", "-b", "main"], mirrorRepo);
     run("git", ["config", "user.name", "Rin Tests"], mirrorRepo);
-    run("git", ["config", "user.email", "rin-tests@example.invalid"], mirrorRepo);
+    run(
+      "git",
+      ["config", "user.email", "rin-tests@example.invalid"],
+      mirrorRepo,
+    );
 
     writeMirrorSnapshot(mirrorRepo, "0.69.0");
     commitTag(mirrorRepo, "0.69.0");
     writeMirrorSnapshot(mirrorRepo, "0.70.0");
     commitTag(mirrorRepo, "0.70.0");
 
-    fs.mkdirSync(path.join(workspace, "scripts"), { recursive: true });
     fs.mkdirSync(path.join(workspace, "upstream", "pi"), { recursive: true });
-    fs.copyFileSync(
-      path.join(rootDir, "scripts", "sync-upstreams.mjs"),
-      path.join(workspace, "scripts", "sync-upstreams.mjs"),
-    );
-    fs.writeFileSync(
-      path.join(workspace, "package.json"),
-      JSON.stringify(
-        {
-          dependencies: {
-            "@mariozechner/pi-coding-agent": "^0.70.0",
-          },
-        },
-        null,
-        2,
-      ) + "\n",
-      "utf8",
-    );
+    writeSyncWorkspace(workspace, "0.70.0");
     fs.writeFileSync(
       path.join(workspace, "upstream", "pi", "_upstream.json"),
       JSON.stringify(
@@ -95,13 +119,42 @@ test("sync-upstreams uses the current pi package version tag instead of a stale 
     );
 
     const nextMeta = JSON.parse(
-      fs.readFileSync(path.join(workspace, "upstream", "pi", "_upstream.json"), "utf8"),
+      fs.readFileSync(
+        path.join(workspace, "upstream", "pi", "_upstream.json"),
+        "utf8",
+      ),
     );
     assert.equal(nextMeta.ref, "v0.70.0");
     assert.equal(nextMeta.packageVersion, "0.70.0");
     assert.equal(
-      fs.readFileSync(path.join(workspace, "upstream", "pi", "README.md"), "utf8"),
+      fs.readFileSync(
+        path.join(workspace, "upstream", "pi", "README.md"),
+        "utf8",
+      ),
       "README 0.70.0\n",
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("sync-upstreams rejects value options without explicit values", () => {
+  const tempDir = makeTempDir("rin-sync-upstreams-args-");
+  const workspace = path.join(tempDir, "workspace");
+  try {
+    writeSyncWorkspace(workspace, "0.70.0");
+    assert.throws(
+      () =>
+        run(
+          process.execPath,
+          [
+            path.join(workspace, "scripts", "sync-upstreams.mjs"),
+            "pi",
+            "--ref",
+          ],
+          workspace,
+        ),
+      /Missing value for --ref/,
     );
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
