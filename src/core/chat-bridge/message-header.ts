@@ -15,12 +15,6 @@ type TurnPromptMeta = {
   nickname?: string;
   identity?: string;
   replyToMessageId?: string;
-  replyMessage?: {
-    messageId?: string;
-    userId?: string;
-    nickname?: string;
-    text?: string;
-  };
   attachedFiles?: Array<{ name?: string; path?: string }>;
   invokingSystemUser?: string;
 };
@@ -56,7 +50,7 @@ function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
   }
   if (safeString(meta.replyToMessageId).trim()) {
     lines.push(
-      "- The injected header includes the available replied-message content. Use `get_chat_msg` with that message id only when the header content is missing or you need the full stored record before replying.",
+      "- When the injected header includes `reply to message id`, inspect the replied message before answering by calling `get_chat_msg` with that exact message id. Only skip this if the user's current request clearly does not depend on the replied message.",
     );
   }
   if (!isScheduledTask) {
@@ -230,21 +224,6 @@ function formatTriggerKind(triggerKind: unknown) {
   return value.replace(/-/g, " ");
 }
 
-function truncateHeaderValue(value: unknown, maxLength = 2000) {
-  const text = safeString(value).trim();
-  if (!text || text.length <= maxLength) return text;
-  return `${text.slice(0, maxLength).trimEnd()}…`;
-}
-
-function pushHeaderBlock(lines: string[], label: string, value: unknown) {
-  const text = truncateHeaderValue(value);
-  if (!text) return;
-  lines.push(`${label}:`);
-  for (const line of text.split(/\r?\n/)) {
-    lines.push(`  ${line}`);
-  }
-}
-
 function buildHeader(
   body: string,
   meta: TurnPromptMeta | null,
@@ -271,20 +250,6 @@ function buildHeader(
       lines.push(
         `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
       );
-    const replyMessage =
-      meta.replyMessage && typeof meta.replyMessage === "object"
-        ? meta.replyMessage
-        : null;
-    if (replyMessage) {
-      lines.push("reply message:");
-      const replyMessageId = safeString(replyMessage.messageId).trim();
-      const replyUserId = safeString(replyMessage.userId).trim();
-      const replyNickname = safeString(replyMessage.nickname).trim();
-      if (replyMessageId) lines.push(`  message id: ${replyMessageId}`);
-      if (replyUserId) lines.push(`  user id: ${replyUserId}`);
-      if (replyNickname) lines.push(`  nickname: ${replyNickname}`);
-      pushHeaderBlock(lines, "  text", replyMessage.text);
-    }
     const attachedFiles = Array.isArray(meta.attachedFiles)
       ? meta.attachedFiles
           .map((item) => ({

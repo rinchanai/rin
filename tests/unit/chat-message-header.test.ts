@@ -182,7 +182,7 @@ test("chat message header keeps trusted senders distinct from owner", async () =
   assert.ok(header.includes("sender trust: trusted user"));
 });
 
-test("chat message header injects available reply message content", async () => {
+test("chat message header requires reply lookup without injecting replied text", async () => {
   const pi = createPi();
   messageHeaderMod.default(pi);
 
@@ -195,12 +195,6 @@ test("chat message header injects available reply message content", async () => 
     nickname: "Alice",
     identity: "OTHER",
     replyToMessageId: "quoted-42",
-    replyMessage: {
-      messageId: "quoted-42",
-      userId: "guest-2",
-      nickname: "Carol",
-      text: "第一行\n第二行",
-    },
   });
 
   const inputResult = await pi.handlers.get("input")[0]({
@@ -217,10 +211,9 @@ test("chat message header injects available reply message content", async () => 
   const systemPrompt = String(beforeStart?.systemPrompt || "");
   const header = String(beforeStart?.message?.content || "");
   assert.ok(header.includes("reply to message id: quoted-42"));
-  assert.ok(header.includes("reply message:"));
-  assert.ok(header.includes("  nickname: Carol"));
-  assert.ok(header.includes("  text:\n  第一行\n  第二行"));
+  assert.equal(header.includes("reply message:"), false);
+  assert.equal(header.includes("第一行"), false);
   assert.ok(
-    systemPrompt.includes("includes the available replied-message content"),
+    systemPrompt.includes("calling `get_chat_msg` with that exact message id"),
   );
 });
