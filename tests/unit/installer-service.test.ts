@@ -112,10 +112,16 @@ test("installer service helpers prefer current daemon entry, quote systemd value
     );
     assert.ok(plist.plist.includes(`<string>/usr/bin/env</string>`));
     assert.ok(plist.plist.includes(`<string>node</string>`));
-    assert.ok(plist.plist.includes(`<string>${escapeXml(currentDaemon)}</string>`));
+    assert.ok(
+      plist.plist.includes(`<string>${escapeXml(currentDaemon)}</string>`),
+    );
     assert.ok(plist.plist.includes(`<key>PATH</key>`));
-    assert.ok(plist.plist.includes(`<string>${escapeXml(installDir)}</string>`));
-    assert.ok(plist.plist.includes(`<string>${escapeXml(targetMacHome)}</string>`));
+    assert.ok(
+      plist.plist.includes(`<string>${escapeXml(installDir)}</string>`),
+    );
+    assert.ok(
+      plist.plist.includes(`<string>${escapeXml(targetMacHome)}</string>`),
+    );
   });
 });
 
@@ -221,7 +227,11 @@ test("systemd user command helpers use direct local args for self and machine-ho
     ["--user", "daemon-reload"],
   );
   assert.deepEqual(
-    service.systemctlCommandArgsForTargetUser("demo.user+test", ["daemon-reload"], "root"),
+    service.systemctlCommandArgsForTargetUser(
+      "demo.user+test",
+      ["daemon-reload"],
+      "root",
+    ),
     ["--machine", "demo.user+test@.host", "--user", "daemon-reload"],
   );
 });
@@ -247,10 +257,21 @@ test("managed systemd helpers prefer richer successful snapshots while keeping a
   );
   assert.deepEqual(status, {
     unit: "rin-daemon-demo.service",
-    lines: [
-      "● rin-daemon-demo.service - Demo",
-      "   Active: active (running)",
-    ],
+    lines: ["● rin-daemon-demo.service - Demo", "   Active: active (running)"],
+  });
+
+  const errorStatus = managedService.findManagedSystemdStatusSnapshot(
+    ["blank-stdout.service"],
+    () => {
+      throw {
+        stdout: "   \n",
+        stderr: "Unit blank-stdout.service could not be found\nHint line",
+      };
+    },
+  );
+  assert.deepEqual(errorStatus, {
+    unit: "blank-stdout.service",
+    lines: ["Unit blank-stdout.service could not be found", "Hint line"],
   });
 
   const journal = managedService.findManagedSystemdJournalSnapshot(

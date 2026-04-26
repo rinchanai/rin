@@ -2,12 +2,19 @@ function normalizeCommandText(value: unknown) {
   return String(value ?? "").trim();
 }
 
+function firstNonEmptyCommandText(...values: unknown[]) {
+  for (const value of values) {
+    const text = normalizeCommandText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
 function commandErrorText(error: unknown) {
-  return normalizeCommandText(
-    (error as any)?.stdout ||
-      (error as any)?.stderr ||
-      (error as any)?.message ||
-      "",
+  return firstNonEmptyCommandText(
+    (error as any)?.stdout,
+    (error as any)?.stderr,
+    (error as any)?.message,
   );
 }
 
