@@ -12,20 +12,7 @@ const rootDir = path.resolve(
   "..",
 );
 
-function decodePromptText(text: string) {
-  const prefix = "[[rin-runtime-prompt-meta:";
-  const end = text.indexOf("]]\n");
-  assert.ok(text.startsWith(prefix), "missing prompt metadata prefix");
-  assert.ok(end > prefix.length, "missing prompt metadata terminator");
-  return {
-    meta: JSON.parse(
-      Buffer.from(text.slice(prefix.length, end), "base64").toString("utf8"),
-    ),
-    body: text.slice(end + 3),
-  };
-}
-
-test("chat main carries sender metadata across the prompt text boundary", async () => {
+test("chat main carries sender metadata to the controller with the prompt body", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
   const agentDir = await fs.mkdtemp(path.join(tempRoot, "rin-chat-main-meta-"));
@@ -54,11 +41,7 @@ test("chat main carries sender metadata across the prompt text boundary", async 
       });
 
       controllerMod.ChatController.prototype.runTurn = async function (input, mode) {
-        seen.push({
-          mode,
-          text: input?.text || "",
-          promptMeta: input?.promptMeta || null,
-        });
+        seen.push({ mode, text: input?.text || "", promptMeta: input?.promptMeta || null });
         return { retry: false };
       };
 
@@ -118,7 +101,6 @@ test("chat main carries sender metadata across the prompt text boundary", async 
     const seen = JSON.parse(rows.at(-1) || "[]");
     assert.equal(seen.length, 1);
     assert.equal(seen[0].mode, "prompt");
-
     assert.equal(seen[0].text, "my name is?");
     assert.equal(seen[0].promptMeta.source, "chat-bridge");
     assert.equal(seen[0].promptMeta.chatKey, "telegram/1:2");
@@ -130,7 +112,7 @@ test("chat main carries sender metadata across the prompt text boundary", async 
   }
 });
 
-test("chat controller encodes prompt metadata at the session prompt boundary", async () => {
+test("chat controller packages sender metadata directly into the session prompt text", async () => {
   const tempRoot = "/home/rin/tmp";
   await fs.mkdir(tempRoot, { recursive: true });
   const agentDir = await fs.mkdtemp(
@@ -210,13 +192,12 @@ test("chat controller encodes prompt metadata at the session prompt boundary", a
       .filter((line) => line.startsWith("["));
     const seen = JSON.parse(rows.at(-1) || "[]");
     assert.equal(seen.length, 1);
-    const decoded = decodePromptText(seen[0].text);
-    assert.equal(decoded.body, "my name is?");
-    assert.equal(decoded.meta.source, "chat-bridge");
-    assert.equal(decoded.meta.chatKey, "telegram/1:2");
-    assert.equal(decoded.meta.userId, "guest-1");
-    assert.equal(decoded.meta.nickname, "很酷");
-    assert.equal(decoded.meta.identity, "TRUSTED");
+    assert.match(seen[0].text, /^time: /);
+    assert.ok(seen[0].text.includes("chatKey: telegram/1:2"));
+    assert.ok(seen[0].text.includes("sender user id: guest-1"));
+    assert.ok(seen[0].text.includes("sender nickname: 很酷"));
+    assert.ok(seen[0].text.includes("sender trust: trusted user"));
+    assert.ok(seen[0].text.endsWith("---\nmy name is?"));
   } finally {
     await fs.rm(agentDir, { recursive: true, force: true });
   }

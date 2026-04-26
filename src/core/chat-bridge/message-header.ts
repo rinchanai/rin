@@ -1,8 +1,8 @@
 import type { BuiltinModuleApi } from "../builtins/host.js";
 
 import {
-  RIN_RUNTIME_PROMPT_META_PREFIX,
   consumeChatPromptContext,
+  formatPromptContext,
 } from "./prompt-context.js";
 import { safeString } from "../text-utils.js";
 
@@ -18,6 +18,7 @@ type TurnPromptMeta = {
   identity?: string;
   replyToMessageId?: string;
   attachedFiles?: Array<{ name?: string; path?: string }>;
+  bodyAlreadyFormatted?: boolean;
 };
 
 type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
@@ -103,143 +104,11 @@ function rememberSystemPromptBlocks(
   });
 }
 
-function pad2(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-function formatTimestamp(value: number) {
-  const date = new Date(Number.isFinite(value) ? value : Date.now());
-  const year = date.getFullYear();
-  const month = pad2(date.getMonth() + 1);
-  const day = pad2(date.getDate());
-  const hour = pad2(date.getHours());
-  const minute = pad2(date.getMinutes());
-  const second = pad2(date.getSeconds());
-  const offsetMinutes = -date.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const offsetHours = pad2(Math.floor(Math.abs(offsetMinutes) / 60));
-  const offsetRemainder = pad2(Math.abs(offsetMinutes) % 60);
-  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${sign}${offsetHours}:${offsetRemainder}`;
-}
-
-function tryDecodePromptMeta(text: string, prefix: string) {
-  const input = safeString(text);
-  if (!input.startsWith(prefix)) {
-    return {
-      found: false,
-      meta: null as TurnPromptMeta | null,
-      body: input,
-    };
-  }
-  const end = input.indexOf("]]");
-  if (end < 0) {
-    return {
-      found: false,
-      meta: null as TurnPromptMeta | null,
-      body: input,
-    };
-  }
-  const encoded = input.slice(prefix.length, end).trim();
-  if (!encoded) {
-    return {
-      found: false,
-      meta: null as TurnPromptMeta | null,
-      body: input,
-    };
-  }
-  try {
-    const meta = JSON.parse(
-      Buffer.from(encoded, "base64").toString("utf8"),
-    ) as TurnPromptMeta;
-    const body = input.slice(end + 2).replace(/^\s*\n/, "");
-    return { found: true, meta, body };
-  } catch {
-    return {
-      found: false,
-      meta: null as TurnPromptMeta | null,
-      body: input,
-    };
-  }
-}
-
-function decodePromptMeta(text: string) {
-  const runtimeMeta = tryDecodePromptMeta(
-    safeString(text),
-    RIN_RUNTIME_PROMPT_META_PREFIX,
-  );
-  return {
-    meta: runtimeMeta.found ? runtimeMeta.meta : null,
-    body: runtimeMeta.body,
-  };
-}
-
 function getRuntimeRole(): RuntimeRole {
   const argv = process.argv.slice(1);
   if (argv.includes("--rpc")) return "rpc-frontend";
   if (argv.includes("--std")) return "std-tui";
   return "agent-runtime";
-}
-
-function describeSenderTrust(identity: unknown) {
-  const value = safeString(identity).trim();
-  if (value === "OWNER") return "owner";
-  if (value === "TRUSTED") return "trusted user";
-  if (value === "OTHER") return "other chat user";
-  if (value) return value;
-  return "other chat user";
-}
-
-function formatTriggerKind(triggerKind: unknown) {
-  const value = safeString(triggerKind).trim();
-  if (value === "scheduled-task") return "scheduled task";
-  if (!value) return "";
-  return value.replace(/-/g, " ");
-}
-
-function buildHeader(
-  body: string,
-  meta: TurnPromptMeta | null,
-  fallbackTimestamp: number,
-) {
-  const lines = [
-    `time: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`,
-  ];
-  if (meta?.source === "chat-bridge") {
-    const triggerKind = formatTriggerKind(meta.triggerKind);
-    const isScheduledTask =
-      safeString(meta.triggerKind).trim() === "scheduled-task";
-    if (triggerKind) lines.push(`chat trigger: ${triggerKind}`);
-    if (!isScheduledTask) {
-      lines.push(
-        `sender user id: ${safeString(meta.userId).trim() || "unknown"}`,
-      );
-      lines.push(
-        `sender nickname: ${safeString(meta.nickname).trim() || "unknown"}`,
-      );
-      lines.push(`sender trust: ${describeSenderTrust(meta.identity)}`);
-    }
-    if (safeString(meta.replyToMessageId).trim())
-      lines.push(
-        `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
-      );
-    const attachedFiles = Array.isArray(meta.attachedFiles)
-      ? meta.attachedFiles
-          .map((item) => ({
-            name: safeString(item?.name).trim(),
-            path: safeString(item?.path).trim(),
-          }))
-          .filter((item) => item.path)
-      : [];
-    if (attachedFiles.length > 0) {
-      lines.push("attached files:");
-      lines.push(
-        ...attachedFiles.map(
-          (item) => `- ${item.name || "(unnamed)"}: ${item.path}`,
-        ),
-      );
-    }
-  }
-  return `${lines.join("\n")}\n---\n${body}`;
 }
 
 export default function messageHeaderModule(pi: BuiltinModuleApi) {
@@ -253,8 +122,6 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
   pi.on("input", async (event) => {
     if (event.source === "extension") return { action: "continue" };
 
-    const input = safeString(event.text);
-    const decoded = decodePromptMeta(input);
     const queuedChatMeta =
       safeString(event.source).trim() === "chat-bridge"
         ? consumeChatPromptContext()
@@ -264,43 +131,36 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
       return { action: "continue" };
     }
 
-    const mergedMeta = {
-      ...(decoded.meta || {}),
-      ...(queuedChatMeta || {}),
-    };
-    const hasMeta = Object.keys(mergedMeta).length > 0;
     pendingContexts.push({
-      meta: hasMeta ? mergedMeta : null,
-      body: decoded.body,
-      sentAt:
-        Number(queuedChatMeta?.sentAt) ||
-        Number(decoded.meta?.sentAt) ||
-        Date.now(),
+      meta: queuedChatMeta,
+      body: safeString(event.text),
+      sentAt: Number(queuedChatMeta?.sentAt) || Date.now(),
     });
 
-    if (decoded.meta) {
-      return { action: "transform", text: decoded.body };
-    }
     return { action: "continue" };
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
-    const fallback = decodePromptMeta(safeString(event.prompt));
     const current = pendingContexts.shift() || {
-      meta: fallback.meta,
-      body: fallback.body,
-      sentAt: Number(fallback.meta?.sentAt) || Date.now(),
+      meta: null,
+      body: safeString(event.prompt),
+      sentAt: Date.now(),
     };
     const result: {
       systemPrompt?: string;
       message?: { customType: string; content: string; display: boolean };
-    } = {
-      message: {
+    } = {};
+    if (!current.meta?.bodyAlreadyFormatted) {
+      result.message = {
         customType: "message-header-context",
-        content: buildHeader(current.body, current.meta, current.sentAt),
+        content: formatPromptContext(
+          current.meta,
+          current.body,
+          current.sentAt,
+        ),
         display: false,
-      },
-    };
+      };
+    }
 
     const blocks = [
       current.meta?.source === "chat-bridge"

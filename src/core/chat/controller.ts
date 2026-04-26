@@ -6,7 +6,7 @@ import prettyMilliseconds from "pretty-ms";
 import type { RpcFrontendClient } from "../rin-tui/frontend-surface.js";
 import { ChatFrontendDriver } from "../rin-tui/chat-frontend-driver.js";
 import {
-  encodePromptContext,
+  formatPromptContext,
   type PromptContextMeta,
 } from "../chat-bridge/prompt-context.js";
 import {
@@ -732,7 +732,7 @@ export class ChatController {
         startedAt: Date.now(),
       });
       const promptText = input.promptMeta
-        ? encodePromptContext(input.promptMeta, text)
+        ? formatPromptContext(input.promptMeta, text)
         : text;
       const result = await this.driver.runTurn({
         text: promptText,
@@ -785,7 +785,7 @@ export class ChatController {
       void this.pollTyping().catch(() => {});
       try {
         const promptText = input.promptMeta
-          ? encodePromptContext(input.promptMeta, text)
+          ? formatPromptContext(input.promptMeta, text)
           : text;
         const result = await this.driver.runTurn({
           text: promptText,

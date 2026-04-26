@@ -12,9 +12,8 @@ export type PromptContextMeta = {
   identity?: string;
   replyToMessageId?: string;
   attachedFiles?: Array<{ name?: string; path?: string }>;
+  bodyAlreadyFormatted?: boolean;
 };
-
-export const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
 
 const chatPromptContextQueue: PromptContextMeta[] = [];
 
@@ -26,9 +25,88 @@ export function consumeChatPromptContext(): PromptContextMeta | null {
   return chatPromptContextQueue.shift() || null;
 }
 
-export function encodePromptContext(meta: PromptContextMeta, body: string) {
-  const encoded = Buffer.from(JSON.stringify({ ...meta }), "utf8").toString(
-    "base64",
-  );
-  return `${RIN_RUNTIME_PROMPT_META_PREFIX}${encoded}]]\n${safeString(body)}`;
+function pad2(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function formatTimestamp(value: number) {
+  const date = new Date(Number.isFinite(value) ? value : Date.now());
+  const year = date.getFullYear();
+  const month = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const hour = pad2(date.getHours());
+  const minute = pad2(date.getMinutes());
+  const second = pad2(date.getSeconds());
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const offsetHours = pad2(Math.floor(Math.abs(offsetMinutes) / 60));
+  const offsetRemainder = pad2(Math.abs(offsetMinutes) % 60);
+  return `${year}-${month}-${day} ${hour}:${minute}:${second} ${sign}${offsetHours}:${offsetRemainder}`;
+}
+
+function describeSenderTrust(identity: unknown) {
+  const value = safeString(identity).trim();
+  if (value === "OWNER") return "owner";
+  if (value === "TRUSTED") return "trusted user";
+  if (value === "OTHER") return "other chat user";
+  if (value) return value;
+  return "other chat user";
+}
+
+function formatTriggerKind(triggerKind: unknown) {
+  const value = safeString(triggerKind).trim();
+  if (value === "scheduled-task") return "scheduled task";
+  if (!value) return "";
+  return value.replace(/-/g, " ");
+}
+
+export function formatPromptContext(
+  meta: PromptContextMeta | null,
+  body: string,
+  fallbackTimestamp = Date.now(),
+) {
+  const lines = [
+    `time: ${formatTimestamp(Number(meta?.sentAt) || fallbackTimestamp)}`,
+  ];
+  if (meta?.source === "chat-bridge") {
+    const chatKey = safeString(meta.chatKey).trim();
+    const chatName = safeString(meta.chatName).trim();
+    if (chatKey) lines.push(`chatKey: ${chatKey}`);
+    if (chatName) lines.push(`chat name: ${chatName}`);
+    const triggerKind = formatTriggerKind(meta.triggerKind);
+    const isScheduledTask =
+      safeString(meta.triggerKind).trim() === "scheduled-task";
+    if (triggerKind) lines.push(`chat trigger: ${triggerKind}`);
+    if (!isScheduledTask) {
+      lines.push(
+        `sender user id: ${safeString(meta.userId).trim() || "unknown"}`,
+      );
+      lines.push(
+        `sender nickname: ${safeString(meta.nickname).trim() || "unknown"}`,
+      );
+      lines.push(`sender trust: ${describeSenderTrust(meta.identity)}`);
+    }
+    if (safeString(meta.replyToMessageId).trim()) {
+      lines.push(
+        `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
+      );
+    }
+    const attachedFiles = Array.isArray(meta.attachedFiles)
+      ? meta.attachedFiles
+          .map((item) => ({
+            name: safeString(item?.name).trim(),
+            path: safeString(item?.path).trim(),
+          }))
+          .filter((item) => item.path)
+      : [];
+    if (attachedFiles.length > 0) {
+      lines.push("attached files:");
+      lines.push(
+        ...attachedFiles.map(
+          (item) => `- ${item.name || "(unnamed)"}: ${item.path}`,
+        ),
+      );
+    }
+  }
+  return `${lines.join("\n")}\n---\n${safeString(body)}`;
 }

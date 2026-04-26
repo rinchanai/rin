@@ -493,7 +493,7 @@ export async function startChatBridge(
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
     };
-    enqueueChatPromptContext(promptMeta);
+    enqueueChatPromptContext({ ...promptMeta, bodyAlreadyFormatted: true });
     const handleTurnFailure = async (
       error: any,
       sessionFile = linkedSessionFile,
