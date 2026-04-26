@@ -179,7 +179,7 @@ test("chat controller delivers visible non-transient command errors", async () =
   };
 
   await assert.rejects(controller.runCommand("/reload"), /boom/);
-  assert.deepEqual(deliveries, ["Chat bridge error: boom"]);
+  assert.deepEqual(deliveries, ["boom"]);
 });
 
 test("chat controller keeps transient daemon command errors out of chat replies", async () => {

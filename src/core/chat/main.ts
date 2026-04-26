@@ -510,7 +510,7 @@ export async function startChatBridge(
             type: "text_delivery",
             createdAt: new Date().toISOString(),
             chatKey: decision.chatKey,
-            text: `Chat bridge error: ${errorMessage || "chat_bridge_turn_failed"}`,
+            text: errorMessage || "chat_bridge_turn_failed",
             replyToMessageId: messageId || undefined,
             sessionFile: sessionFile || undefined,
           },

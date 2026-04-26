@@ -690,7 +690,7 @@ export class ChatController {
         const errorMessage =
           safeString(error?.message || error).trim() || "chat_command_failed";
         await this.deliverAssistantReply({
-          text: `Chat bridge error: ${errorMessage}`,
+          text: errorMessage,
           replyToMessageId: replyToMessageId || undefined,
           incomingMessageId,
           clearProcessing: true,
