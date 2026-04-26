@@ -31,11 +31,12 @@ function uniqueNonEmptyStrings(values: Array<string | undefined | null>) {
 
 const SUPPORTED_HOME_DISCOVERY_PLATFORMS = ["linux", "darwin"] as const;
 
-function pathCandidatesForPlatforms(
-  platforms: readonly NodeJS.Platform[],
+function pathCandidatesForSupportedHomeDiscoveryPlatforms(
   buildPath: (platform: NodeJS.Platform) => string,
 ) {
-  return uniqueNonEmptyStrings(platforms.map((platform) => buildPath(platform)));
+  return uniqueNonEmptyStrings(
+    SUPPORTED_HOME_DISCOVERY_PLATFORMS.map((platform) => buildPath(platform)),
+  );
 }
 
 export function defaultHomeRoot(platform = process.platform) {
@@ -43,10 +44,7 @@ export function defaultHomeRoot(platform = process.platform) {
 }
 
 export function installDiscoveryHomeRoots() {
-  return pathCandidatesForPlatforms(
-    SUPPORTED_HOME_DISCOVERY_PLATFORMS,
-    defaultHomeRoot,
-  );
+  return pathCandidatesForSupportedHomeDiscoveryPlatforms(defaultHomeRoot);
 }
 
 export function defaultHomeForUser(user: string, platform = process.platform) {
@@ -262,16 +260,18 @@ export function launcherMetadataPathForHome(
   home: string,
   platform = process.platform,
 ) {
-  return path.join(appConfigDirForHome(home, platform), LAUNCHER_METADATA_FILE_NAME);
+  return path.join(
+    appConfigDirForHome(home, platform),
+    LAUNCHER_METADATA_FILE_NAME,
+  );
 }
 
 function alternateLauncherMetadataPathForHome(
   home: string,
   currentPlatformPath: string,
 ) {
-  return pathCandidatesForPlatforms(
-    SUPPORTED_HOME_DISCOVERY_PLATFORMS,
-    (platform) => launcherMetadataPathForHome(home, platform),
+  return pathCandidatesForSupportedHomeDiscoveryPlatforms((platform) =>
+    launcherMetadataPathForHome(home, platform),
   ).find((candidate) => candidate !== currentPlatformPath);
 }
 
@@ -284,7 +284,9 @@ export function launcherMetadataPathsForHome(home: string) {
   return {
     currentPlatformPath,
     alternatePlatformPath,
-    recoveryPaths: buildPathCandidates(currentPlatformPath, [alternatePlatformPath]),
+    recoveryPaths: buildPathCandidates(currentPlatformPath, [
+      alternatePlatformPath,
+    ]),
   };
 }
 
@@ -417,12 +419,20 @@ export function daemonSocketPathForHome(
   const platform = options.platform || process.platform;
   const uid = Number(options.uid ?? -1);
   if (platform === "darwin") {
-    return path.join(userCacheDirForHome(home, platform), "rin-daemon", "daemon.sock");
+    return path.join(
+      userCacheDirForHome(home, platform),
+      "rin-daemon",
+      "daemon.sock",
+    );
   }
   if (uid >= 0) {
     return path.join("/run/user", String(uid), "rin-daemon", "daemon.sock");
   }
-  return path.join(userCacheDirForHome(home, platform), "rin-daemon", "daemon.sock");
+  return path.join(
+    userCacheDirForHome(home, platform),
+    "rin-daemon",
+    "daemon.sock",
+  );
 }
 
 export function daemonLogsDir(installDir: string) {
