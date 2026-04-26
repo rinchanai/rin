@@ -4,19 +4,29 @@ import { spawn } from "node:child_process";
 import { AddressInfo } from "node:net";
 
 import { escapeHtml } from "../rin-gui/web-assets.js";
+import { releaseInfoFromEnv } from "../rin-lib/release.js";
+import {
+  runFinalizeInstallPlanInChild,
+  type FinalizeInstallOptions,
+} from "./apply-plan.js";
 import { detectCurrentUser } from "./common.js";
 import { readJsonFile } from "./fs-utils.js";
 import {
+  buildFinalRequirements,
   buildInstallPlanText,
   buildInstallSafetyBoundaryText,
 } from "./interactive.js";
 import { createInstallerI18n } from "./i18n.js";
-import { defaultInstallDirForHome } from "./paths.js";
+import { defaultInstallDirForHome, installAuthPath } from "./paths.js";
 import {
   computeAvailableThinkingLevels,
   loadModelChoices,
 } from "./provider-auth.js";
-import { targetHomeForUser } from "./users.js";
+import {
+  describeOwnership,
+  shouldUseElevatedWrite,
+  targetHomeForUser,
+} from "./users.js";
 
 export type GuiInstallerOptions = {
   host: string;
@@ -42,6 +52,13 @@ export type GuiInstallerModelChoice = {
   reasoning: boolean;
   available: boolean;
   thinkingLevels: string[];
+};
+
+export type GuiInstallerFinalizePlan = {
+  options: FinalizeInstallOptions;
+  needsElevatedWrite: boolean;
+  needsElevatedService: boolean;
+  finalRequirements: string[];
 };
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -178,6 +195,23 @@ export async function buildGuiInstallerModelChoices(installDir = "") {
   );
 }
 
+function normalizeRecord(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, any>)
+    : {};
+}
+
+function assertSelectedProviderModel(
+  plan: ReturnType<typeof buildGuiInstallerPlan>,
+) {
+  if (!plan.provider || plan.provider === "pending") {
+    throw new Error("rin_installer_gui_provider_required");
+  }
+  if (!plan.modelId || plan.modelId === "pending") {
+    throw new Error("rin_installer_gui_model_required");
+  }
+}
+
 export function buildGuiInstallerPlan(input: GuiInstallerPlanInput = {}) {
   const language = String(input.language || "en").trim() || "en";
   const i18n = createInstallerI18n(language);
@@ -221,6 +255,64 @@ export function buildGuiInstallerPlan(input: GuiInstallerPlanInput = {}) {
     setDefaultTarget,
     safety: buildInstallSafetyBoundaryText(i18n),
     planText,
+  };
+}
+
+export function buildGuiInstallerFinalizePlan(
+  input: GuiInstallerPlanInput = {},
+  deps: {
+    readJsonFile?: typeof readJsonFile;
+    releaseInfoFromEnv?: typeof releaseInfoFromEnv;
+    describeOwnership?: typeof describeOwnership;
+    shouldUseElevatedWrite?: typeof shouldUseElevatedWrite;
+    platform?: NodeJS.Platform;
+  } = {},
+): GuiInstallerFinalizePlan {
+  const plan = buildGuiInstallerPlan(input);
+  assertSelectedProviderModel(plan);
+  const readAuthJson = deps.readJsonFile || readJsonFile;
+  const authData = normalizeRecord(
+    readAuthJson<any>(installAuthPath(plan.installDir), {}),
+  );
+  if (!Object.prototype.hasOwnProperty.call(authData, plan.provider)) {
+    throw new Error(
+      `rin_installer_gui_provider_auth_required:${plan.provider}`,
+    );
+  }
+  const i18n = createInstallerI18n(plan.language);
+  const ownership = (deps.describeOwnership || describeOwnership)(
+    plan.targetUser,
+    plan.installDir,
+  );
+  const platform = deps.platform || process.platform;
+  const installServiceNow = platform === "darwin" || platform === "linux";
+  const needsElevatedWrite = (
+    deps.shouldUseElevatedWrite || shouldUseElevatedWrite
+  )(plan.targetUser, ownership);
+  const needsElevatedService =
+    installServiceNow && plan.targetUser !== plan.currentUser;
+  return {
+    options: {
+      currentUser: plan.currentUser,
+      targetUser: plan.targetUser,
+      installDir: plan.installDir,
+      provider: plan.provider,
+      modelId: plan.modelId,
+      thinkingLevel: plan.thinkingLevel,
+      language: plan.language,
+      setDefaultTarget: plan.setDefaultTarget,
+      chatDescription: i18n.chatDisabledDescription,
+      chatDetail: "",
+      chatConfig: null,
+      authData,
+      release: (deps.releaseInfoFromEnv || releaseInfoFromEnv)(),
+    },
+    needsElevatedWrite,
+    needsElevatedService,
+    finalRequirements: buildFinalRequirements(
+      { installServiceNow, needsElevatedWrite, needsElevatedService },
+      i18n,
+    ),
   };
 }
 
@@ -276,6 +368,8 @@ export function buildGuiInstallerHtml() {
       <p id="model-status" class="notice wide">Loading local model and provider auth state…</p>
       <label class="wide"><input name="setDefaultTarget" type="checkbox" checked /> Set as the default target for this launcher user</label>
       <button class="wide" type="submit">Refresh plan</button>
+      <button id="apply-button" class="wide" type="button">Apply installation</button>
+      <p id="apply-status" class="notice wide">Review the plan, then apply when provider auth is ready.</p>
     </form>
     <h2>Safety boundary</h2>
     <pre id="safety">${escapeHtml(initialPlan.safety)}</pre>
@@ -290,6 +384,8 @@ export function buildGuiInstallerHtml() {
     const modelSelect = form.elements.modelId;
     const thinkingSelect = form.elements.thinkingLevel;
     const modelStatus = document.getElementById('model-status');
+    const applyButton = document.getElementById('apply-button');
+    const applyStatus = document.getElementById('apply-status');
     let modelChoices = [];
 
     function setOptions(select, values, selected) {
@@ -329,32 +425,57 @@ export function buildGuiInstallerHtml() {
       await refreshPlan();
     }
 
-    async function refreshPlan(event) {
-      if (event) event.preventDefault();
+    function installerPayload() {
       const data = new FormData(form);
       const model = selectedModel();
+      return {
+        language: data.get('language'),
+        targetUser: data.get('targetUser'),
+        installDir: data.get('installDir'),
+        provider: data.get('provider'),
+        modelId: data.get('modelId'),
+        thinkingLevel: data.get('thinkingLevel'),
+        authAvailable: Boolean(model && model.available),
+        setDefaultTarget: data.get('setDefaultTarget') === 'on',
+      };
+    }
+
+    async function refreshPlan(event) {
+      if (event) event.preventDefault();
       const response = await fetch('/api/plan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          language: data.get('language'),
-          targetUser: data.get('targetUser'),
-          installDir: data.get('installDir'),
-          provider: data.get('provider'),
-          modelId: data.get('modelId'),
-          thinkingLevel: data.get('thinkingLevel'),
-          authAvailable: Boolean(model && model.available),
-          setDefaultTarget: data.get('setDefaultTarget') === 'on',
-        }),
+        body: JSON.stringify(installerPayload()),
       });
       const next = await response.json();
       safety.textContent = next.safety || '';
       plan.textContent = next.planText || next.error || '';
     }
+
+    async function applyInstallation() {
+      applyButton.disabled = true;
+      applyStatus.textContent = 'Applying installation… keep this browser tab open.';
+      try {
+        const response = await fetch('/api/apply', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(installerPayload()),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'rin_installer_gui_apply_failed');
+        applyStatus.textContent = 'Installation applied. Settings: ' + (payload.result && payload.result.written && payload.result.written.settingsPath || 'written');
+      } catch (error) {
+        applyStatus.textContent = String(error && error.message || error);
+      } finally {
+        applyButton.disabled = false;
+      }
+    }
+
     form.elements.installDir.addEventListener('change', () => { void loadModels(); });
     providerSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
     modelSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
     thinkingSelect.addEventListener('change', () => { void refreshPlan(); });
+    applyButton.addEventListener('click', () => { void applyInstallation(); });
     form.addEventListener('submit', refreshPlan);
     void loadModels().catch((error) => { modelStatus.textContent = String(error && error.message || error); });
   </script>
@@ -394,6 +515,42 @@ export async function runGuiInstaller(
           sendJson(response, 400, {
             error: String(
               error?.message || error || "rin_installer_gui_plan_failed",
+            ),
+          }),
+        );
+      return;
+    }
+    if (url.pathname === "/api/apply" && request.method === "POST") {
+      void readJsonBody(request)
+        .then(async (body) => {
+          const finalPlan = buildGuiInstallerFinalizePlan(body);
+          if (finalPlan.needsElevatedWrite) {
+            sendJson(response, 409, {
+              error: "rin_installer_gui_elevated_write_requires_terminal",
+              finalRequirements: finalPlan.finalRequirements,
+            });
+            return;
+          }
+          const result = await runFinalizeInstallPlanInChild(
+            finalPlan.options,
+            "rin install gui: applying install plan",
+            {
+              ensureNotCancelled(value) {
+                if (typeof value === "symbol") {
+                  throw new Error("rin_installer_gui_apply_cancelled");
+                }
+                return value;
+              },
+              i18n: createInstallerI18n(finalPlan.options.language),
+              writeStatus: () => {},
+            },
+          );
+          sendJson(response, 200, { ok: true, result });
+        })
+        .catch((error: any) =>
+          sendJson(response, 400, {
+            error: String(
+              error?.message || error || "rin_installer_gui_apply_failed",
             ),
           }),
         );

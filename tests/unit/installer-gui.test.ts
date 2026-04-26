@@ -82,7 +82,71 @@ test("installer GUI plan reuses installer plan text and escapes the HTML shell",
   assert.match(html, /Rin Installer/);
   assert.match(html, /\/api\/plan/);
   assert.match(html, /\/api\/models/);
+  assert.match(html, /\/api\/apply/);
   assert.doesNotMatch(html, /<script src=/);
+});
+
+test("installer GUI builds final apply options from auth-ready selections", () => {
+  const finalPlan = gui.buildGuiInstallerFinalizePlan(
+    {
+      language: "en",
+      currentUser: "alice",
+      targetUser: "alice",
+      installDir: "/home/alice/.rin",
+      provider: "copilot",
+      modelId: "gpt-5.1",
+      thinkingLevel: "medium",
+      setDefaultTarget: true,
+    },
+    {
+      readJsonFile() {
+        return { copilot: { type: "oauth" } };
+      },
+      releaseInfoFromEnv() {
+        return { channel: "git", version: "0.0.0", sourceRef: "main" };
+      },
+      describeOwnership() {
+        return {
+          ownerMatches: true,
+          writable: true,
+          statUid: 1000,
+          statGid: 1000,
+          targetUid: 1000,
+          targetGid: 1000,
+        };
+      },
+      shouldUseElevatedWrite() {
+        return false;
+      },
+      platform: "win32",
+    },
+  );
+  assert.equal(finalPlan.needsElevatedWrite, false);
+  assert.equal(finalPlan.needsElevatedService, false);
+  assert.equal(finalPlan.options.provider, "copilot");
+  assert.equal(finalPlan.options.modelId, "gpt-5.1");
+  assert.deepEqual(finalPlan.options.authData, { copilot: { type: "oauth" } });
+});
+
+test("installer GUI rejects final apply when provider auth is missing", () => {
+  assert.throws(
+    () =>
+      gui.buildGuiInstallerFinalizePlan(
+        {
+          currentUser: "alice",
+          targetUser: "alice",
+          installDir: "/home/alice/.rin",
+          provider: "copilot",
+          modelId: "gpt-5.1",
+        },
+        {
+          readJsonFile() {
+            return {};
+          },
+        },
+      ),
+    /rin_installer_gui_provider_auth_required:copilot/,
+  );
 });
 
 test("installer GUI normalizes local model choices for browser selection", () => {

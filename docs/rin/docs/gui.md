@@ -24,8 +24,8 @@ On Windows, the default `rin` launch path is GUI-first; Linux and macOS keep the
 rin-install --gui
 ```
 
-On Windows, interactive `rin-install` starts the browser-hosted installer shell by default unless `--tui` or `--no-gui` is passed. The GUI installer currently owns the first planning surface: language, target user, install directory, provider/model/thinking-level selection from the local model registry, default-target choice, safety boundary, and install plan preview. Apply-plan, update mode, and non-interactive child install paths stay non-GUI so elevated writes and release updates keep their existing automation boundary.
+On Windows, interactive `rin-install` starts the browser-hosted installer shell by default unless `--tui` or `--no-gui` is passed. The GUI installer currently owns the first planning surface: language, target user, install directory, provider/model/thinking-level selection from the local model registry, default-target choice, safety boundary, and install plan preview. When the selected provider already has stored auth and the target does not require a terminal privilege prompt, the browser can apply the installation directly through the existing child apply-plan boundary. Update mode and non-interactive child install paths stay non-GUI so release updates keep their existing automation boundary.
 
 ## Scope
 
-This is the minimal GUI host/runtime and installer-planning substrate for issue #85. It does not replace the provider-auth login flow, final elevated write flow, target-user Windows service parity, or packaged desktop shell yet; those build on top of this shared frontend boundary.
+This is the minimal GUI host/runtime and installer-planning/apply substrate for issue #85. It does not replace the provider-auth login flow, terminal privilege prompts for cross-user writes, target-user Windows service parity, or packaged desktop shell yet; those build on top of this shared frontend boundary.
