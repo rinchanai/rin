@@ -2,7 +2,11 @@ import type { RpcFrontendClient } from "./frontend-surface.js";
 import { createAuthStorageProxy } from "./rpc-auth.js";
 
 export function createModelRegistry(client: RpcFrontendClient) {
-  const state = { models: [] as any[], error: undefined as string | undefined };
+  const state = {
+    allModels: [] as any[],
+    availableModels: [] as any[],
+    error: undefined as string | undefined,
+  };
   const authStorage = createAuthStorageProxy(client);
   return {
     authStorage,
@@ -12,11 +16,14 @@ export function createModelRegistry(client: RpcFrontendClient) {
     getError() {
       return state.error;
     },
+    getAll() {
+      return [...state.allModels];
+    },
     getAvailable() {
-      return [...state.models];
+      return [...state.availableModels];
     },
     find(provider: string, modelId: string) {
-      return state.models.find(
+      return state.allModels.find(
         (model) => model.provider === provider && model.id === modelId,
       );
     },
@@ -25,15 +32,24 @@ export function createModelRegistry(client: RpcFrontendClient) {
     },
     async sync() {
       try {
-        const [modelsResponse, oauthResponse]: any = await Promise.all([
-          client.send({ type: "get_available_models" }),
-          client.send({ type: "get_oauth_state" }),
-        ]);
+        const [allModelsResponse, modelsResponse, oauthResponse]: any =
+          await Promise.all([
+            client.send({ type: "get_all_models" }),
+            client.send({ type: "get_available_models" }),
+            client.send({ type: "get_oauth_state" }),
+          ]);
+        const allModelsData: any =
+          allModelsResponse && allModelsResponse.success === true
+            ? allModelsResponse.data
+            : null;
         const modelsData: any =
           modelsResponse && modelsResponse.success === true
             ? modelsResponse.data
             : null;
-        state.models = Array.isArray(modelsData?.models)
+        state.allModels = Array.isArray(allModelsData?.models)
+          ? allModelsData.models
+          : [];
+        state.availableModels = Array.isArray(modelsData?.models)
           ? modelsData.models
           : [];
         state.error = undefined;

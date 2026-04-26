@@ -32,6 +32,7 @@ import { getWebSearchStatus } from "../rin-web-search/service.js";
 import { CronScheduler } from "./cron.js";
 import {
   getCatalogOAuthState,
+  listCatalogAllModels,
   listCatalogCommands,
   listCatalogModels,
 } from "./catalog.js";
@@ -191,6 +192,11 @@ export async function startDaemon(
     get_commands: async () => ({
       data: {
         commands: await listCatalogCommands(catalogOptions),
+      },
+    }),
+    get_all_models: async () => ({
+      data: {
+        models: await listCatalogAllModels(catalogOptions),
       },
     }),
     get_available_models: async () => ({

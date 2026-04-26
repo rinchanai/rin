@@ -430,6 +430,8 @@ export async function runCustomRpcMode(
           () => session.cycleModel(),
           (value) => value ?? null,
         );
+      case "get_all_models":
+        return done(id, type, { models: session.modelRegistry.getAll() });
       case "get_available_models":
         return run(
           id,

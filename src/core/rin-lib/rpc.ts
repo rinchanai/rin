@@ -47,6 +47,7 @@ const SESSION_SCOPED_COMMAND_NAMES = [
   "abort",
   "get_state",
   "cycle_model",
+  "get_all_models",
   "get_available_models",
   "get_oauth_state",
   "set_thinking_level",
