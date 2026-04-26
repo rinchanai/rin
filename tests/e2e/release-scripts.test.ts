@@ -256,6 +256,34 @@ test("plan-release script computes beta nightly and stable promotion versions", 
       promotionVersion: "1.2.4",
       version: "1.2.5",
     });
+
+    fs.writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        stable: { version: "2.3.4" },
+      }),
+    );
+    const implicitSeriesBetaPlan = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          path.join(rootDir, "scripts", "release", "plan-release.mjs"),
+          "--manifest",
+          manifestPath,
+          "--channel",
+          " beta ",
+          "--date",
+          "20260427",
+        ],
+        { cwd: rootDir, stdio: "pipe", encoding: "utf8" },
+      ),
+    );
+    assert.deepEqual(implicitSeriesBetaPlan, {
+      series: "2.3",
+      promotionVersion: "2.3.5",
+      version: "2.3.5-beta.20260427",
+    });
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

@@ -2,6 +2,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
+function trim(value) {
+  return String(value || "").trim();
+}
+
+function nextArgValue(argv, index) {
+  return trim(argv[index + 1]);
+}
+
 function parseArgs(argv) {
   const args = {
     manifest: "release-manifest.json",
@@ -12,12 +20,22 @@ function parseArgs(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--manifest") args.manifest = String(argv[++index] || "").trim();
-    else if (arg === "--channel") args.channel = String(argv[++index] || "").trim();
-    else if (arg === "--beta-version") args.betaVersion = String(argv[++index] || "").trim();
-    else if (arg === "--ref") args.ref = String(argv[++index] || "").trim();
-    else if (arg === "--date") args.date = String(argv[++index] || "").trim();
-    else if (arg === "-h" || arg === "--help") {
+    if (arg === "--manifest") {
+      args.manifest = nextArgValue(argv, index);
+      index += 1;
+    } else if (arg === "--channel") {
+      args.channel = nextArgValue(argv, index);
+      index += 1;
+    } else if (arg === "--beta-version") {
+      args.betaVersion = nextArgValue(argv, index);
+      index += 1;
+    } else if (arg === "--ref") {
+      args.ref = nextArgValue(argv, index);
+      index += 1;
+    } else if (arg === "--date") {
+      args.date = nextArgValue(argv, index);
+      index += 1;
+    } else if (arg === "-h" || arg === "--help") {
       console.log(
         "Usage: node scripts/release/plan-release.mjs --channel nightly|beta|stable-promotion [--manifest <path>] [--ref <sha>] [--beta-version <x.y.z-beta...>] [--date <YYYYMMDD>]",
       );
@@ -27,10 +45,6 @@ function parseArgs(argv) {
     }
   }
   return args;
-}
-
-function trim(value) {
-  return String(value || "").trim();
 }
 
 function readJson(filePath) {
@@ -81,14 +95,24 @@ function resolveSeries(manifest) {
   return `${stable.major}.${stable.minor}`;
 }
 
+function parseSeries(series) {
+  const [major, minor] = trim(series)
+    .split(".")
+    .map((value) => Number(value || 0));
+  return { major, minor };
+}
+
 function nextPromotionVersion(manifest) {
   const series = resolveSeries(manifest);
-  const [seriesMajor, seriesMinor] = series.split(".").map((value) => Number(value || 0));
+  const seriesCore = parseSeries(series);
   const stableCore = parseCore(trim(manifest.stable?.version) || "0.0.0");
-  if (stableCore.major === seriesMajor && stableCore.minor === seriesMinor) {
-    return `${seriesMajor}.${seriesMinor}.${stableCore.patch + 1}`;
+  if (
+    stableCore.major === seriesCore.major &&
+    stableCore.minor === seriesCore.minor
+  ) {
+    return `${seriesCore.major}.${seriesCore.minor}.${stableCore.patch + 1}`;
   }
-  return `${seriesMajor}.${seriesMinor}.0`;
+  return `${seriesCore.major}.${seriesCore.minor}.0`;
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -120,7 +144,10 @@ if (channel === "nightly") {
   const basePromotionVersion = stripPrerelease(betaVersion);
   const currentStableVersion = trim(manifest.stable?.version) || "0.0.0";
   const targetVersion =
-    compareCore(parseCore(basePromotionVersion), parseCore(currentStableVersion)) <= 0
+    compareCore(
+      parseCore(basePromotionVersion),
+      parseCore(currentStableVersion),
+    ) <= 0
       ? incrementPatch(currentStableVersion)
       : basePromotionVersion;
   result = {
