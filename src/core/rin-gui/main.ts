@@ -11,6 +11,7 @@ import {
   ParsedArgs,
 } from "../rin/shared.js";
 
+import { runWindowsNativeGui } from "./native-windows.js";
 import { buildGuiHtml, parseRinGuiArgs } from "./web-assets.js";
 
 function sendJson(socket: WebSocket, payload: unknown) {
@@ -73,6 +74,20 @@ export async function runGui(parsed: ParsedArgs, rawArgv: string[] = []) {
   const context = createTargetExecutionContext(parsed);
 
   await ensureDaemonAvailable(context);
+
+  if (
+    options.surface !== "web" &&
+    (options.surface === "native" || process.platform === "win32")
+  ) {
+    const client = new RinDaemonFrontendClient(context.socketPath);
+    await client.connect();
+    try {
+      await runWindowsNativeGui({ client, title: "Rin" });
+    } finally {
+      await client.disconnect();
+    }
+    return;
+  }
 
   const html = buildGuiHtml({ title: "Rin" });
   const server = http.createServer((request, response) => {

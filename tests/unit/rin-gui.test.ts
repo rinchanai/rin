@@ -17,6 +17,11 @@ const main = await import(
 const guiMain = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin-gui", "main.js")).href
 );
+const nativeWindows = await import(
+  pathToFileURL(
+    path.join(rootDir, "dist", "core", "rin-gui", "native-windows.js"),
+  ).href
+);
 
 test("GUI HTML escapes title and keeps the browser RPC endpoint local", () => {
   const html = gui.buildGuiHtml({ title: "<Rin & GUI>" });
@@ -35,6 +40,7 @@ test("GUI args parse local host, ephemeral port, and browser opening switch", ()
       port: 0,
       open: false,
       app: false,
+      surface: "auto",
     },
   );
   assert.deepEqual(
@@ -44,12 +50,14 @@ test("GUI args parse local host, ephemeral port, and browser opening switch", ()
       "4317",
       "--open",
       "--app",
+      "--native",
     ]),
     {
       host: "localhost",
       port: 4317,
       open: true,
       app: true,
+      surface: "native",
     },
   );
   assert.throws(
@@ -69,6 +77,16 @@ test("GUI app-mode browser invocation uses desktop app windows", () => {
       args: ["/c", "start", "", "msedge", "--app=http://127.0.0.1:1/"],
     },
   );
+});
+
+test("Windows native GUI script builds a WPF frontend without browser hosting", () => {
+  const script = nativeWindows.buildWindowsNativeGuiScript({ title: "Rin" });
+
+  assert.match(script, /Add-Type -AssemblyName PresentationFramework/);
+  assert.match(script, /System\.Windows\.Window/);
+  assert.match(script, /Send-RinGuiCommand/);
+  assert.doesNotMatch(script, /WebSocket/);
+  assert.doesNotMatch(script, /http:\/\//);
 });
 
 test("Windows default launch mode is GUI-first while other platforms keep TUI", () => {

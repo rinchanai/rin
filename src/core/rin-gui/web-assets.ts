@@ -1,8 +1,11 @@
+export type RinGuiSurface = "auto" | "native" | "web";
+
 export type RinGuiOptions = {
   host: string;
   port: number;
   open: boolean;
   app: boolean;
+  surface: RinGuiSurface;
 };
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -23,6 +26,7 @@ export function parseRinGuiArgs(argv: string[]): RinGuiOptions {
     port: DEFAULT_PORT,
     open: true,
     app: false,
+    surface: "auto",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -56,6 +60,14 @@ export function parseRinGuiArgs(argv: string[]): RinGuiOptions {
     }
     if (arg === "--app") {
       options.app = true;
+      continue;
+    }
+    if (arg === "--native") {
+      options.surface = "native";
+      continue;
+    }
+    if (arg === "--web") {
+      options.surface = "web";
       continue;
     }
   }
