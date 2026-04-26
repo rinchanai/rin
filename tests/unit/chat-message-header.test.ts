@@ -80,6 +80,43 @@ test("chat message header focuses sender identity guidance in the system prompt"
   assert.ok(header.includes("sender trust: other chat user"));
 });
 
+test("chat message header decodes sender metadata from the prompt text", async () => {
+  const pi = createPi();
+  messageHeaderMod.default(pi);
+
+  const promptText = promptContextMod.encodePromptContext(
+    {
+      source: "chat-bridge",
+      sentAt: Date.now(),
+      chatKey: "onebot/1:2",
+      chatType: "group",
+      userId: "guest-1",
+      nickname: "很酷",
+      identity: "OTHER",
+    },
+    "@☆铃酱☆ my name is?",
+  );
+
+  const inputResult = await pi.handlers.get("input")[0]({
+    source: "chat-bridge",
+    text: promptText,
+  });
+  assert.deepEqual(inputResult, {
+    action: "transform",
+    text: "@☆铃酱☆ my name is?",
+  });
+
+  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
+    prompt: "@☆铃酱☆ my name is?",
+    systemPrompt: "Base prompt",
+  });
+
+  const header = String(beforeStart?.message?.content || "");
+  assert.ok(header.includes("sender nickname: 很酷"));
+  assert.ok(header.includes("sender trust: other chat user"));
+  assert.ok(header.endsWith("---\n@☆铃酱☆ my name is?"));
+});
+
 test("chat message header omits local system user guidance", async () => {
   const previous = process.env.RIN_INVOKING_SYSTEM_USER;
   process.env.RIN_INVOKING_SYSTEM_USER = "different-local-user-for-test";

@@ -1,6 +1,9 @@
 import type { BuiltinModuleApi } from "../builtins/host.js";
 
-import { consumeChatPromptContext } from "./prompt-context.js";
+import {
+  RIN_RUNTIME_PROMPT_META_PREFIX,
+  consumeChatPromptContext,
+} from "./prompt-context.js";
 import { safeString } from "../text-utils.js";
 
 type TurnPromptMeta = {
@@ -19,7 +22,6 @@ type TurnPromptMeta = {
 
 type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 
-const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
 const SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE = "rin-system-prompt-blocks";
 
 function buildChatSystemPromptBlock(meta: TurnPromptMeta) {

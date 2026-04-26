@@ -471,7 +471,7 @@ export async function startChatBridge(
     const promptBody = inboundAttachmentNotice
       ? `${decision.text}\n\n${inboundAttachmentNotice}`
       : decision.text;
-    enqueueChatPromptContext({
+    const promptMeta = {
       source: "chat-bridge",
       sentAt: Number.isFinite(Number(session?.timestamp))
         ? Number(session.timestamp)
@@ -492,7 +492,8 @@ export async function startChatBridge(
       attachedFiles: attachments
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
-    });
+    };
+    enqueueChatPromptContext(promptMeta);
     const handleTurnFailure = async (
       error: any,
       sessionFile = linkedSessionFile,
@@ -525,6 +526,7 @@ export async function startChatBridge(
         {
           text: promptBody,
           attachments,
+          promptMeta,
           replyToMessageId: messageId,
           incomingMessageId: messageId,
           sessionFile: linkedSessionFile || undefined,
