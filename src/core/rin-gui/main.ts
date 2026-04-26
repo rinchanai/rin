@@ -11,7 +11,7 @@ import { parseRinGuiArgs } from "./web-assets.js";
 
 export async function runGui(parsed: ParsedArgs, rawArgv: string[] = []) {
   const guiArgs = extractSubcommandArgv(rawArgv, "gui");
-  const options = parseRinGuiArgs(guiArgs);
+  parseRinGuiArgs(guiArgs);
   const context = createTargetExecutionContext(parsed);
 
   await ensureDaemonAvailable(context);
@@ -19,11 +19,7 @@ export async function runGui(parsed: ParsedArgs, rawArgv: string[] = []) {
   const client = new RinDaemonFrontendClient(context.socketPath);
   await client.connect();
   try {
-    await runNativeDesktopGui({
-      client,
-      title: "Rin",
-      platform: options.platform,
-    });
+    await runNativeDesktopGui({ client });
   } finally {
     await client.disconnect();
   }

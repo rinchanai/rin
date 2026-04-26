@@ -1,25 +1,20 @@
 # GUI shell
 
-Rin's user-facing `rin gui` shell is a native desktop surface, not a browser-hosted page. It uses the same daemon RPC frontend boundary as the TUI so the agent runtime, session ownership, abort handling, and daemon recovery stay shared across frontends.
+Rin's user-facing `rin gui` shell is a native desktop surface, not a browser-hosted page. The Rin runtime side owns one reusable native desktop host contract: start the target user's daemon, launch a single desktop host over stdio, then bridge UI commands and daemon events as JSON lines.
+
+The desktop host is intentionally one replaceable implementation boundary, not separate platform-specific UI implementations in core Rin. Core Rin should not keep browser fallback routes or compatibility flags for rejected GUI experiments.
 
 ## Launch
 
 ```bash
 rin gui
-rin gui --native
 ```
 
-The command starts the target user's Rin daemon when needed, connects a native desktop host to the daemon, and then bridges UI commands and daemon events over local JSON lines. There is no browser fallback for this command.
+`rin gui` starts the target user's Rin daemon when needed and launches the native desktop host command. The default host command is `rin-desktop-host --stdio`; advanced packaging or local development can point `RIN_GUI_NATIVE_HOST` at another compatible host command while preserving the same stdio JSON protocol.
 
-Current native desktop hosts:
+No browser fallback is exposed. Browser-style switches such as `--web`, `--host`, `--port`, `--open`, `--no-open`, and `--app` are rejected. The former `--native` compatibility spelling is also rejected instead of being kept as a no-op before that interface has shipped.
 
-- Windows: PowerShell/WPF window with status, conversation, prompt input, Send, and Abort controls.
-- macOS: Cocoa window launched through the system `osascript` JavaScript bridge.
-- Linux: Tk desktop window launched through the system Python/Tk bridge.
-
-`--native` is accepted as an explicit no-op for scripts that want to state the intended surface. Browser-style switches such as `--web`, `--host`, `--port`, `--open`, `--no-open`, and `--app` are rejected so a rejected browser-hosted GUI cannot silently remain as the product fallback.
-
-On Windows, the default `rin` launch path is GUI-first and uses the native desktop surface. Linux and macOS keep the existing TUI default, while still allowing explicit `rin gui` for the native desktop shell.
+On Windows, the default `rin` launch path is GUI-first and enters `rin gui`. Linux and macOS keep the existing TUI default, while still allowing explicit `rin gui` once a native desktop host is installed.
 
 ## GUI installer shell
 
