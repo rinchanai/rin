@@ -12,6 +12,7 @@ import { resolveTurnCompletion } from "../session/turn-result.js";
 import { safeString } from "../text-utils.js";
 import {
   getOAuthState,
+  getResourceDiagnostics,
   getSessionState,
   getSlashCommands,
   runBuiltinCommand,
@@ -441,6 +442,8 @@ export async function runCustomRpcMode(
         );
       case "get_oauth_state":
         return done(id, type, getOAuthState(session));
+      case "get_resource_diagnostics":
+        return done(id, type, getResourceDiagnostics(session));
       case "set_thinking_level":
         return run(id, type, () => session.setThinkingLevel(command.level));
       case "cycle_thinking_level":

@@ -12,6 +12,7 @@ export type RinRpcCommandType =
   | "get_all_models"
   | "get_available_models"
   | "get_oauth_state"
+  | "get_resource_diagnostics"
   | "list_sessions"
   | "attach_session"
   | "select_session"

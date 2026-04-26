@@ -50,6 +50,7 @@ const SESSION_SCOPED_COMMAND_NAMES = [
   "get_all_models",
   "get_available_models",
   "get_oauth_state",
+  "get_resource_diagnostics",
   "set_thinking_level",
   "cycle_thinking_level",
   "set_steering_mode",
