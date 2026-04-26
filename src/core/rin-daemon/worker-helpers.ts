@@ -32,6 +32,110 @@ export {
   getSessionSlashCommands as getSlashCommands,
 } from "./catalog-helpers.js";
 
+function sanitizeResourceDiagnostic(diagnostic: any) {
+  if (!diagnostic || typeof diagnostic !== "object") {
+    return { type: "warning", message: String(diagnostic || "") };
+  }
+  const result: any = {
+    type: String(diagnostic.type || "warning"),
+    message: String(diagnostic.message || ""),
+  };
+  if (typeof diagnostic.path === "string") result.path = diagnostic.path;
+  if (diagnostic.collision && typeof diagnostic.collision === "object") {
+    result.collision = {
+      name: String(diagnostic.collision.name || ""),
+      winnerPath: String(diagnostic.collision.winnerPath || ""),
+      loserPath: String(diagnostic.collision.loserPath || ""),
+    };
+  }
+  return result;
+}
+
+function sanitizeSourceInfo(sourceInfo: any) {
+  if (!sourceInfo || typeof sourceInfo !== "object") return undefined;
+  const result: any = {};
+  if (typeof sourceInfo.scope === "string") result.scope = sourceInfo.scope;
+  if (typeof sourceInfo.packageName === "string") {
+    result.packageName = sourceInfo.packageName;
+  }
+  if (typeof sourceInfo.packageRoot === "string") {
+    result.packageRoot = sourceInfo.packageRoot;
+  }
+  if (typeof sourceInfo.sourcePath === "string") {
+    result.sourcePath = sourceInfo.sourcePath;
+  }
+  return result;
+}
+
+function sanitizeSkill(skill: any) {
+  return {
+    name: String(skill?.name || ""),
+    description: String(skill?.description || ""),
+    filePath: String(skill?.filePath || ""),
+    baseDir: String(skill?.baseDir || ""),
+    disableModelInvocation: Boolean(skill?.disableModelInvocation),
+    sourceInfo: sanitizeSourceInfo(skill?.sourceInfo),
+  };
+}
+
+function sanitizePrompt(prompt: any) {
+  return {
+    name: String(prompt?.name || ""),
+    description: String(prompt?.description || ""),
+    filePath: String(prompt?.filePath || ""),
+    sourceInfo: sanitizeSourceInfo(prompt?.sourceInfo),
+  };
+}
+
+function sanitizeTheme(theme: any) {
+  return {
+    name: typeof theme?.name === "string" ? theme.name : undefined,
+    sourcePath:
+      typeof theme?.sourcePath === "string" ? theme.sourcePath : undefined,
+    sourceInfo: sanitizeSourceInfo(theme?.sourceInfo),
+  };
+}
+
+function sanitizeExtension(extension: any) {
+  return {
+    path: String(extension?.path || ""),
+    sourceInfo: sanitizeSourceInfo(extension?.sourceInfo),
+  };
+}
+
+function sanitizeExtensionError(error: any) {
+  return {
+    path: String(error?.path || ""),
+    error: String(error?.error || error?.message || ""),
+  };
+}
+
+export function getResourceDiagnostics(session: any) {
+  const resourceLoader = session?.resourceLoader;
+  const skills = resourceLoader?.getSkills?.() || {};
+  const prompts = resourceLoader?.getPrompts?.() || {};
+  const themes = resourceLoader?.getThemes?.() || {};
+  const extensions = resourceLoader?.getExtensions?.() || {};
+  return {
+    skills: {
+      skills: (skills.skills || []).map(sanitizeSkill),
+      diagnostics: (skills.diagnostics || []).map(sanitizeResourceDiagnostic),
+    },
+    prompts: {
+      prompts: (prompts.prompts || []).map(sanitizePrompt),
+      diagnostics: (prompts.diagnostics || []).map(sanitizeResourceDiagnostic),
+    },
+    themes: {
+      themes: (themes.themes || []).map(sanitizeTheme),
+      diagnostics: (themes.diagnostics || []).map(sanitizeResourceDiagnostic),
+    },
+    extensions: {
+      extensions: (extensions.extensions || []).map(sanitizeExtension),
+      errors: (extensions.errors || []).map(sanitizeExtensionError),
+    },
+  };
+}
+
 export function splitCommandArgs(text: string) {
   const args: string[] = [];
   let current = "";
@@ -85,11 +189,7 @@ function formatLabelValueLine(label: string, value: string) {
   return `${label}: ${value}`;
 }
 
-function formatSectionList(
-  title: string,
-  lines: string[],
-  emptyText: string,
-) {
+function formatSectionList(title: string, lines: string[], emptyText: string) {
   return lines.length ? [title, ...lines].join("\n") : emptyText;
 }
 

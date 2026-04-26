@@ -161,6 +161,100 @@ test("rpc runtime keeps control methods bound to the session instance", async ()
   );
 });
 
+test("rpc runtime loads worker resource diagnostics after remote session setup", async () => {
+  const sent = [];
+  let remoteCreated = false;
+  const skillPath = "/tmp/rin-test/self_improve/skills/broken/SKILL.md";
+  const session = new RpcInteractiveSession({
+    send(payload) {
+      sent.push(payload);
+      switch (payload.type) {
+        case "new_session":
+          remoteCreated = true;
+          return Promise.resolve({
+            success: true,
+            data: { sessionId: "s1", sessionFile: "/tmp/s1.jsonl" },
+          });
+        case "get_resource_diagnostics":
+          return Promise.resolve({
+            success: true,
+            data: {
+              skills: {
+                skills: [],
+                diagnostics: [
+                  {
+                    type: "warning",
+                    message: "Nested mappings are not allowed",
+                    path: skillPath,
+                  },
+                ],
+              },
+              prompts: { prompts: [], diagnostics: [] },
+              themes: { themes: [], diagnostics: [] },
+              extensions: { extensions: [], errors: [] },
+            },
+          });
+        case "get_state":
+          return Promise.resolve({
+            success: true,
+            data: {
+              sessionId: remoteCreated ? "s1" : "",
+              sessionFile: remoteCreated ? "/tmp/s1.jsonl" : undefined,
+              thinkingLevel: "medium",
+              steeringMode: "all",
+              followUpMode: "one-at-a-time",
+              autoCompactionEnabled: false,
+            },
+          });
+        case "get_session_entries":
+          return Promise.resolve({ success: true, data: { entries: [] } });
+        case "get_session_tree":
+          return Promise.resolve({
+            success: true,
+            data: { tree: [], leafId: null },
+          });
+        case "get_all_models":
+          return Promise.resolve({ success: true, data: { models: [] } });
+        case "get_available_models":
+          return Promise.resolve({ success: true, data: { models: [] } });
+        case "get_oauth_state":
+          return Promise.resolve({ success: true, data: {} });
+        default:
+          return Promise.resolve({ success: true, data: {} });
+      }
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  await session.connect();
+  await session.ensureSessionReady();
+
+  assert.deepEqual(session.resourceLoader.getSkills().diagnostics, [
+    {
+      type: "warning",
+      message: "Nested mappings are not allowed",
+      path: skillPath,
+    },
+  ]);
+  const sentTypes = sent.map((entry) => entry.type);
+  assert.ok(sentTypes.includes("new_session"));
+  assert.equal(sentTypes.at(-1), "get_resource_diagnostics");
+});
+
 test("rpc runtime executes local extension commands immediately through prompt", async () => {
   const session = new RpcInteractiveSession({
     send() {

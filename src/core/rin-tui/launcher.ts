@@ -112,6 +112,7 @@ async function startRpcTui(
   );
   try {
     await rpcSession.connect();
+    await rpcSession.ensureSessionReady();
   } catch (error) {
     throw new Error(formatTuiStartupError(error), { cause: error });
   }

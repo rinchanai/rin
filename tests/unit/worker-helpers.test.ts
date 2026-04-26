@@ -11,7 +11,7 @@ const rootDir = path.resolve(
 const workerHelpers = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-daemon", "worker-helpers.js"),
-  ).href,
+  ).href
 );
 
 function createAuthStorageFixture() {
@@ -86,6 +86,35 @@ test("worker helpers split command args and format stats", () => {
   assert.ok(text.includes("Tool Calls: 2"));
 });
 
+test("worker helpers expose resource diagnostics from the active session", () => {
+  const skillPath = "/tmp/rin-test/self_improve/skills/broken/SKILL.md";
+  const diagnostics = workerHelpers.getResourceDiagnostics({
+    resourceLoader: {
+      getSkills: () => ({
+        skills: [],
+        diagnostics: [
+          {
+            type: "warning",
+            message: "Nested mappings are not allowed",
+            path: skillPath,
+          },
+        ],
+      }),
+      getPrompts: () => ({ prompts: [], diagnostics: [] }),
+      getThemes: () => ({ themes: [], diagnostics: [] }),
+      getExtensions: () => ({ extensions: [], errors: [] }),
+    },
+  });
+
+  assert.deepEqual(diagnostics.skills.diagnostics, [
+    {
+      type: "warning",
+      message: "Nested mappings are not allowed",
+      path: skillPath,
+    },
+  ]);
+});
+
 test("worker helpers expose normalized slash commands and oauth state", () => {
   const session = createSessionFixture();
   const commands = workerHelpers.getSlashCommands(session);
@@ -110,7 +139,10 @@ test("worker helpers expose normalized slash commands and oauth state", () => {
         command.source === "skill",
     ),
   );
-  assert.equal(commands.some((command) => command.name === "model"), true);
+  assert.equal(
+    commands.some((command) => command.name === "model"),
+    true,
+  );
   assert.deepEqual(workerHelpers.getOAuthState(session), {
     credentials: {
       gemini: { type: "api_key" },

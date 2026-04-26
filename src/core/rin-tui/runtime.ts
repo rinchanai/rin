@@ -57,6 +57,65 @@ type RpcExtensionBindings = {
   onError?: (error: any) => void;
 };
 
+type RpcResourceSnapshot = {
+  skills: { skills: any[]; diagnostics: any[] };
+  prompts: { prompts: any[]; diagnostics: any[] };
+  themes: { themes: any[]; diagnostics: any[] };
+  extensions: { extensions: any[]; errors: any[] };
+};
+
+function emptyRpcResourceSnapshot(): RpcResourceSnapshot {
+  return {
+    skills: { skills: [], diagnostics: [] },
+    prompts: { prompts: [], diagnostics: [] },
+    themes: { themes: [], diagnostics: [] },
+    extensions: { extensions: [], errors: [] },
+  };
+}
+
+function normalizeResourceSection(value: any, itemKey: string) {
+  return {
+    [itemKey]: Array.isArray(value?.[itemKey]) ? value[itemKey] : [],
+    diagnostics: Array.isArray(value?.diagnostics) ? value.diagnostics : [],
+  };
+}
+
+function normalizeRpcResourceSnapshot(value: any): RpcResourceSnapshot {
+  return {
+    skills: normalizeResourceSection(value?.skills, "skills") as {
+      skills: any[];
+      diagnostics: any[];
+    },
+    prompts: normalizeResourceSection(value?.prompts, "prompts") as {
+      prompts: any[];
+      diagnostics: any[];
+    },
+    themes: normalizeResourceSection(value?.themes, "themes") as {
+      themes: any[];
+      diagnostics: any[];
+    },
+    extensions: {
+      extensions: Array.isArray(value?.extensions?.extensions)
+        ? value.extensions.extensions
+        : [],
+      errors: Array.isArray(value?.extensions?.errors)
+        ? value.extensions.errors
+        : [],
+    },
+  };
+}
+
+function createRpcResourceLoader(getSnapshot: () => RpcResourceSnapshot) {
+  return {
+    getThemes: () => getSnapshot().themes,
+    getSkills: () => getSnapshot().skills,
+    getPrompts: () => getSnapshot().prompts,
+    getExtensions: () => getSnapshot().extensions,
+    getAgentsFiles: () => ({ agentsFiles: [] }),
+    getPathMetadata: () => new Map(),
+  };
+}
+
 const REFRESH_MESSAGES = { messages: true } as const;
 const REFRESH_MODELS = { models: true } as const;
 const REFRESH_SESSION = { session: true } as const;
@@ -198,6 +257,7 @@ export class RpcInteractiveSession {
   private waitForDaemonPromise: Promise<void> | null = null;
   private waitForDaemonHintTimer: NodeJS.Timeout | null = null;
   private startupPending = true;
+  private resourceSnapshot = emptyRpcResourceSnapshot();
   private sessionOperationPending = false;
   private recoveryPending = false;
   private lastFrontendPhase: RpcFrontendPhase | null = null;
@@ -218,14 +278,7 @@ export class RpcInteractiveSession {
     this.agent = new RemoteAgent(client);
     this.settingsManager = undefined;
     this.modelRegistry = createModelRegistry(client);
-    this.resourceLoader = {
-      getThemes: () => ({ themes: [], diagnostics: [] }),
-      getSkills: () => ({ skills: [], diagnostics: [] }),
-      getPrompts: () => ({ prompts: [], diagnostics: [] }),
-      getExtensions: () => ({ extensions: [], errors: [] }),
-      getAgentsFiles: () => ({ agentsFiles: [] }),
-      getPathMetadata: () => new Map(),
-    };
+    this.resourceLoader = createRpcResourceLoader(() => this.resourceSnapshot);
     this.sessionManager = {
       getSessionFile: () => this.sessionFile,
       getSessionId: () => this.sessionId,
@@ -524,6 +577,7 @@ export class RpcInteractiveSession {
 
   async ensureSessionReady() {
     await this.ensureRemoteSession();
+    await this.refreshResourceDiagnostics();
     return {
       sessionFile: this.sessionFile,
       sessionId: this.sessionId,
@@ -701,6 +755,7 @@ export class RpcInteractiveSession {
 
   async reload() {
     await this.modelRegistry.sync();
+    await this.refreshResourceDiagnostics().catch(() => {});
     await this.refreshState(REFRESH_MESSAGES_AND_SESSION);
     if (this.extensionRunner) {
       await this.loadLocalExtensions(true);
@@ -1071,6 +1126,12 @@ export class RpcInteractiveSession {
     payload: Record<string, unknown>,
   ) {
     return payload;
+  }
+
+  private async refreshResourceDiagnostics() {
+    this.resourceSnapshot = normalizeRpcResourceSnapshot(
+      await this.call("get_resource_diagnostics"),
+    );
   }
 
   private async call(type: string, payload: Record<string, unknown> = {}) {
