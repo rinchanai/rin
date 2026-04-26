@@ -1,4 +1,7 @@
-import { InteractiveMode } from "@mariozechner/pi-coding-agent";
+import {
+  InteractiveMode,
+  type InteractiveModeOptions,
+} from "@mariozechner/pi-coding-agent";
 
 import {
   applyRuntimeProfileEnvironment,
@@ -14,6 +17,7 @@ import { applyRinTuiOverrides } from "./upstream-overrides.js";
 const VALID_TUI_MODES = ["rpc", "std"] as const;
 
 type TuiMode = (typeof VALID_TUI_MODES)[number];
+type TuiInteractiveOptions = Pick<InteractiveModeOptions, "verbose">;
 const RPC_TUI_STARTUP_CONNECT_ERROR_RE =
   /\bconnect (?:ENOENT|ECONNREFUSED|ECONNRESET|EPIPE)\b/;
 
@@ -88,22 +92,47 @@ export function resolveTuiMode(
   return envMode || argvMode || "rpc";
 }
 
+export function resolveTuiInteractiveOptions(
+  argv: string[],
+): TuiInteractiveOptions {
+  return {
+    verbose: argv.includes("--verbose") || undefined,
+  };
+}
+
+export function shouldPrintStartupSeparator(
+  sessionLike: any,
+  options: TuiInteractiveOptions = {},
+) {
+  if (options.verbose) return true;
+  const getQuietStartup = sessionLike?.settingsManager?.getQuietStartup;
+  if (typeof getQuietStartup !== "function") return true;
+  return !Boolean(getQuietStartup.call(sessionLike.settingsManager));
+}
+
 async function startStdTui(
   options: { additionalExtensionPaths?: string[] },
   profile: ReturnType<typeof startupProfiler>,
+  interactiveOptions: TuiInteractiveOptions,
 ) {
   const { runtime: sessionRuntime } = await createConfiguredAgentSession({
     additionalExtensionPaths: options.additionalExtensionPaths,
   });
   profile.mark("std-session-created");
-  console.log();
-  const interactiveMode = new InteractiveMode(sessionRuntime);
+  if (shouldPrintStartupSeparator(sessionRuntime.session, interactiveOptions)) {
+    console.log();
+  }
+  const interactiveMode = new InteractiveMode(
+    sessionRuntime,
+    interactiveOptions,
+  );
   await interactiveMode.run();
 }
 
 async function startRpcTui(
   options: { additionalExtensionPaths?: string[] },
   profile: ReturnType<typeof startupProfiler>,
+  interactiveOptions: TuiInteractiveOptions,
 ) {
   const client = new RinDaemonFrontendClient();
   const rpcSession = new RpcInteractiveSession(
@@ -121,8 +150,13 @@ async function startRpcTui(
   try {
     runtimeHost = createRpcRuntimeHost(rpcSession);
     profile.mark("rpc-session-created");
-    console.log();
-    const interactiveMode = new InteractiveMode(runtimeHost as any);
+    if (shouldPrintStartupSeparator(rpcSession, interactiveOptions)) {
+      console.log();
+    }
+    const interactiveMode = new InteractiveMode(
+      runtimeHost as any,
+      interactiveOptions,
+    );
     await interactiveMode.run();
   } finally {
     if (runtimeHost) {
@@ -134,7 +168,7 @@ async function startRpcTui(
 }
 
 export async function startTui(
-  options: { additionalExtensionPaths?: string[] } = {},
+  options: { additionalExtensionPaths?: string[]; argv?: string[] } = {},
 ) {
   const profile = startupProfiler();
   const runtime = resolveRuntimeProfile();
@@ -144,15 +178,17 @@ export async function startTui(
     process.chdir(runtime.cwd);
   }
 
-  const mode = resolveTuiMode(process.argv.slice(2));
+  const argv = options.argv ?? process.argv.slice(2);
+  const mode = resolveTuiMode(argv);
+  const interactiveOptions = resolveTuiInteractiveOptions(argv);
   profile.mark(`mode=${mode}`);
 
   await applyRinTuiOverrides();
 
   if (mode === "std") {
-    await startStdTui(options, profile);
+    await startStdTui(options, profile, interactiveOptions);
     return;
   }
 
-  await startRpcTui(options, profile);
+  await startRpcTui(options, profile, interactiveOptions);
 }

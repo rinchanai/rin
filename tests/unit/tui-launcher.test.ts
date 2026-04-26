@@ -22,6 +22,36 @@ test("tui launcher normalizes explicit mode inputs", () => {
   assert.equal(launcher.resolveTuiMode([], { RIN_TUI_MODE: " std " }), "std");
 });
 
+test("tui launcher resolves interactive startup verbosity", () => {
+  assert.deepEqual(launcher.resolveTuiInteractiveOptions([]), {
+    verbose: undefined,
+  });
+  assert.deepEqual(launcher.resolveTuiInteractiveOptions(["--verbose"]), {
+    verbose: true,
+  });
+});
+
+test("tui launcher suppresses its startup separator when quiet startup is enabled", () => {
+  const quietSession = {
+    settingsManager: {
+      getQuietStartup: () => true,
+    },
+  };
+  const loudSession = {
+    settingsManager: {
+      getQuietStartup: () => false,
+    },
+  };
+
+  assert.equal(launcher.shouldPrintStartupSeparator(quietSession), false);
+  assert.equal(launcher.shouldPrintStartupSeparator(loudSession), true);
+  assert.equal(
+    launcher.shouldPrintStartupSeparator(quietSession, { verbose: true }),
+    true,
+  );
+  assert.equal(launcher.shouldPrintStartupSeparator({}), true);
+});
+
 test("tui launcher rejects invalid or conflicting mode requests", () => {
   assert.throws(
     () => launcher.resolveTuiMode([], { RIN_TUI_MODE: "broken" }),
