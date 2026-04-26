@@ -200,28 +200,7 @@ test("processing normalizes revised full-slot content and enforces limits", asyn
   );
 });
 
-test("self-improve skips automatic maintenance for managed task sessions", () => {
-  assert.equal(
-    selfImproveIndex.isManagedTaskSessionFile(
-      "/tmp/agent/sessions/managed/task/cron_demo.jsonl",
-    ),
-    true,
-  );
-  assert.equal(
-    selfImproveIndex.isManagedTaskSessionFile(
-      "C:\\Users\\rin\\.rin\\sessions\\managed\\task\\cron_demo.jsonl",
-    ),
-    true,
-  );
-  assert.equal(
-    selfImproveIndex.isManagedTaskSessionFile(
-      "/tmp/agent/sessions/issue-automation/rinchanai-rin-issue-1.jsonl",
-    ),
-    false,
-  );
-});
-
-test("automatic self-improve handlers do not queue managed task sessions", async () => {
+test("automatic self-improve handlers queue managed task sessions", async () => {
   await withTempRoot(async (root) => {
     const handlers = new Map();
     selfImproveIndex.default({
@@ -258,7 +237,10 @@ test("automatic self-improve handlers do not queue managed task sessions", async
       await messageEnd({ message: { role: "assistant" } }, ctx);
     }
 
-    await assert.rejects(() => fs.readFile(queuePath(root), "utf8"), /ENOENT/);
+    const queue = JSON.parse(await fs.readFile(queuePath(root), "utf8"));
+    assert.equal(queue.length, 1);
+    assert.equal(queue[0].kind, "self_improve_review");
+    assert.equal(queue[0].sessionFile, managedSessionFile);
   });
 });
 

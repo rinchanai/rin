@@ -22,7 +22,6 @@ import {
 import { readSessionMetadata } from "../session/metadata.js";
 
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
-const MANAGED_TASK_SESSION_SEGMENT = "/managed/task/";
 const reviewStateBySession = new Map<
   string,
   { userTurns: number; lastQueuedTurn: number }
@@ -30,13 +29,8 @@ const reviewStateBySession = new Map<
 
 const sessionMeta = readSessionMetadata;
 
-export function isManagedTaskSessionFile(sessionFile: string) {
-  const normalized = String(sessionFile || "").replace(/\\+/g, "/");
-  return normalized.includes(MANAGED_TASK_SESSION_SEGMENT);
-}
-
 function shouldSkipAutomaticMaintenance(sessionFile: string) {
-  return isManagedTaskSessionFile(sessionFile) || !existsSync(sessionFile);
+  return !existsSync(sessionFile);
 }
 
 function getSessionReviewState(sessionId: string) {
