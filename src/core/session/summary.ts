@@ -1,5 +1,14 @@
 import { safeString } from "../text-utils.js";
 
+const DEFAULT_SESSION_SUMMARY_MAX_LENGTH = 180;
+
+function normalizeSessionSummaryMaxLength(max: unknown) {
+  if (typeof max !== "number" || !Number.isFinite(max) || max <= 0) {
+    return DEFAULT_SESSION_SUMMARY_MAX_LENGTH;
+  }
+  return Math.trunc(max);
+}
+
 export function buildSessionRecallSummaryPrompt(sessionPath: string): string {
   const normalizedSessionPath = safeString(sessionPath).trim() || "(unknown)";
   return [
@@ -13,12 +22,12 @@ export function buildSessionRecallSummaryPrompt(sessionPath: string): string {
 
 export function normalizeSessionSummaryText(
   summary: string,
-  max = 180,
+  max = DEFAULT_SESSION_SUMMARY_MAX_LENGTH,
 ): string {
-  const text = safeString(summary)
-    .replace(/\s+/g, " ")
-    .trim();
+  const maxLength = normalizeSessionSummaryMaxLength(max);
+  const text = safeString(summary).replace(/\s+/g, " ").trim();
   if (!text) return "";
-  if (text.length <= max) return text;
-  return `${text.slice(0, Math.max(1, max - 1)).trimEnd()}…`;
+  if (text.length <= maxLength) return text;
+  if (maxLength === 1) return "…";
+  return `${text.slice(0, maxLength - 1).trimEnd()}…`;
 }
