@@ -8,7 +8,7 @@ const rootDir = path.resolve(
   "../..",
 );
 const jsonUtils = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "json-utils.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "json-utils.js")).href
 );
 
 test("json utils clone helpers return detached JSON-safe copies", () => {
@@ -37,6 +37,10 @@ test("json utils object helpers preserve object guards", () => {
   assert.deepEqual(jsonUtils.cloneJsonIfObject(undefined), undefined);
   assert.deepEqual(jsonUtils.cloneJsonIfObject(null), undefined);
   assert.deepEqual(jsonUtils.cloneJsonIfObject("text"), undefined);
+  assert.deepEqual(
+    jsonUtils.cloneJsonIfObject(() => undefined),
+    undefined,
+  );
   assert.equal(jsonUtils.isJsonRecord({ demo: true }), true);
   assert.equal(jsonUtils.isJsonRecord([]), false);
   assert.equal(jsonUtils.isJsonRecord(null), false);

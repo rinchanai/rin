@@ -1,4 +1,4 @@
-function isNonNullObject(value: unknown): value is Record<string, any> {
+function isObjectValue(value: unknown): value is object {
   return Boolean(value) && typeof value === "object";
 }
 
@@ -7,9 +7,9 @@ export function cloneJson<T>(value: T): T {
 }
 
 export function cloneJsonIfObject<T>(value: T): T | undefined {
-  return isNonNullObject(value) ? cloneJson(value) : undefined;
+  return isObjectValue(value) ? cloneJson(value) : undefined;
 }
 
 export function isJsonRecord(value: unknown): value is Record<string, any> {
-  return isNonNullObject(value) && !Array.isArray(value);
+  return isObjectValue(value) && !Array.isArray(value);
 }
