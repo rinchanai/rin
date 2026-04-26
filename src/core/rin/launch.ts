@@ -35,7 +35,6 @@ export function buildTuiRuntimeEnv(
         }
       : {}),
     RIN_DAEMON_SOCKET_PATH: socketPathForUser(targetUser),
-    RIN_INVOKING_SYSTEM_USER: currentUser,
   });
 }
 

@@ -1,5 +1,4 @@
 import type { BuiltinModuleApi } from "../builtins/host.js";
-import os from "node:os";
 
 import { consumeChatPromptContext } from "./prompt-context.js";
 import { safeString } from "../text-utils.js";
@@ -16,13 +15,11 @@ type TurnPromptMeta = {
   identity?: string;
   replyToMessageId?: string;
   attachedFiles?: Array<{ name?: string; path?: string }>;
-  invokingSystemUser?: string;
 };
 
 type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 
 const RIN_RUNTIME_PROMPT_META_PREFIX = "[[rin-runtime-prompt-meta:";
-const INVOKING_SYSTEM_USER_ENV = "RIN_INVOKING_SYSTEM_USER";
 const SESSION_SYSTEM_PROMPT_BLOCKS_ENTRY_TYPE = "rin-system-prompt-blocks";
 
 function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
@@ -65,18 +62,6 @@ function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
     );
   }
   return lines.join("\n");
-}
-
-function buildCrossUserSystemPromptBlock(
-  meta: TurnPromptMeta,
-  agentSystemUser: string,
-) {
-  const invokingSystemUser = safeString(meta.invokingSystemUser).trim();
-  if (!invokingSystemUser || invokingSystemUser === agentSystemUser) return "";
-  return [
-    "System user guidance:",
-    `- The agent is currently running as the local system user ${agentSystemUser}, while the human user is currently using the machine as ${invokingSystemUser}.`,
-  ].join("\n");
 }
 
 function getRememberedSystemPromptBlocks(ctx: any) {
@@ -135,11 +120,6 @@ function formatTimestamp(value: number) {
   return `${year}-${month}-${day} ${hour}:${minute}:${second} ${sign}${offsetHours}:${offsetRemainder}`;
 }
 
-function encodePromptMeta(prefix: string, meta: TurnPromptMeta, body: string) {
-  const encoded = Buffer.from(JSON.stringify(meta), "utf8").toString("base64");
-  return `${prefix}${encoded}]]\n${body}`;
-}
-
 function tryDecodePromptMeta(text: string, prefix: string) {
   const input = safeString(text);
   if (!input.startsWith(prefix)) {
@@ -196,16 +176,6 @@ function getRuntimeRole(): RuntimeRole {
   if (argv.includes("--rpc")) return "rpc-frontend";
   if (argv.includes("--std")) return "std-tui";
   return "agent-runtime";
-}
-
-function getCrossUserPromptMeta(): TurnPromptMeta | null {
-  const invokingSystemUser = safeString(
-    process.env[INVOKING_SYSTEM_USER_ENV],
-  ).trim();
-  const agentSystemUser = safeString(os.userInfo().username).trim();
-  if (!invokingSystemUser || !agentSystemUser) return null;
-  if (invokingSystemUser === agentSystemUser) return null;
-  return { invokingSystemUser };
 }
 
 function describeSenderTrust(identity: unknown) {
@@ -267,14 +237,6 @@ function buildHeader(
       );
     }
   }
-  if (safeString(meta?.invokingSystemUser).trim()) {
-    lines.push(
-      `invoking system user: ${safeString(meta?.invokingSystemUser).trim()}`,
-    );
-    lines.push(
-      `agent system user: ${safeString(os.userInfo().username).trim()}`,
-    );
-  }
   return `${lines.join("\n")}\n---\n${body}`;
 }
 
@@ -295,25 +257,14 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
       safeString(event.source).trim() === "chat-bridge"
         ? consumeChatPromptContext()
         : null;
-    const crossUserMeta = getCrossUserPromptMeta();
 
     if (runtimeRole === "rpc-frontend") {
-      if (decoded.meta) return { action: "continue" };
-      if (!crossUserMeta) return { action: "continue" };
-      return {
-        action: "transform",
-        text: encodePromptMeta(
-          RIN_RUNTIME_PROMPT_META_PREFIX,
-          crossUserMeta,
-          input,
-        ),
-      };
+      return { action: "continue" };
     }
 
     const mergedMeta = {
       ...(decoded.meta || {}),
       ...(queuedChatMeta || {}),
-      ...(runtimeRole === "std-tui" ? crossUserMeta || {} : {}),
     };
     const hasMeta = Object.keys(mergedMeta).length > 0;
     pendingContexts.push({
@@ -353,10 +304,6 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
       current.meta?.source === "chat-bridge"
         ? buildChatSystemPromptBlock(current.meta)
         : "",
-      buildCrossUserSystemPromptBlock(
-        current.meta || {},
-        safeString(os.userInfo().username).trim() || "unknown",
-      ),
     ].filter(Boolean);
 
     if (blocks.length > 0) {

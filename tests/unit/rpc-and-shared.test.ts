@@ -207,7 +207,7 @@ test("tui runtime env targets the target user's direct daemon socket", () => {
   const env = launch.buildTuiRuntimeEnv(currentUser, "THE_cattail", installDir);
   assert.equal(env.RIN_DIR, installDir);
   assert.equal(env.PI_CODING_AGENT_DIR, installDir);
-  assert.equal(env.RIN_INVOKING_SYSTEM_USER, "THE_cattail");
+  assert.equal("RIN_INVOKING_SYSTEM_USER" in env, false);
   assert.ok(String(env.RIN_DAEMON_SOCKET_PATH || "").includes("rin-daemon"));
   assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));
 });
