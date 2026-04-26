@@ -195,9 +195,17 @@ class TelegramAdapter {
     this.logger = createPrefixedLogger("chat-runtime:telegram", logger);
     this.cacheDir = path.join(dataDir, "chat-runtime-cache", "telegram");
     const cursorKey =
-      safeString(config?.token).trim().split(":")[0]?.replace(/[^A-Za-z0-9._-]+/g, "_") ||
-      "default";
-    this.cursorPath = path.join(dataDir, "chat-runtime-state", "telegram", cursorKey, "cursor.json");
+      safeString(config?.token)
+        .trim()
+        .split(":")[0]
+        ?.replace(/[^A-Za-z0-9._-]+/g, "_") || "default";
+    this.cursorPath = path.join(
+      dataDir,
+      "chat-runtime-state",
+      "telegram",
+      cursorKey,
+      "cursor.json",
+    );
     ensureDir(this.cacheDir);
     this.bot = {
       platform: "telegram",
@@ -793,7 +801,10 @@ const NAPCAT_ONEBOT_EMOJI_ID_OVERRIDES: Record<string, string> = {
   "🎉": "127881",
   "🌹": "127801",
   "👀": "128064",
-  "🤔": "129300",
+  // NapCat routes <=3-digit reaction IDs as QQ system faces. QQ desktop does
+  // not render the Unicode 🤔 code point as a visible reaction, so use the
+  // cross-client /托腮 face instead.
+  "🤔": "212",
 };
 
 function toOneBotReactionEmojiId(value: string) {
