@@ -69,6 +69,9 @@ export async function handleRpcSessionEvent(
       void refreshMessagesAndSession();
     }
   }
+  if (payload.type === "queue_update") {
+    target.applyQueueUpdate?.(payload);
+  }
   if (
     payload.type === "message_end" ||
     payload.type === "tool_execution_end" ||

@@ -575,6 +575,7 @@ test("rpc runtime keeps steer prompts pending until the remote turn starts", asy
   assert.deepEqual(session.getSteeringMessages(), ["hello"]);
   assert.equal(session.pendingMessageCount, 1);
   assert.deepEqual(seen, [
+    { type: "queue_update", steering: ["hello"], followUp: [] },
     {
       type: "rpc_frontend_status",
       phase: "sending",
@@ -590,6 +591,66 @@ test("rpc runtime keeps steer prompts pending until the remote turn starts", asy
   assert.equal(sent.length, 1);
   assert.equal(sent[0]?.type, "prompt");
   assert.equal(sent[0]?.streamingBehavior, "steer");
+});
+
+test("rpc runtime applies daemon queue updates before the user message starts", async () => {
+  const session = new RpcInteractiveSession({
+    send() {
+      return Promise.resolve({ success: true, data: {} });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  session.sessionId = "s1";
+  session.rpcConnected = true;
+  session.startupPending = false;
+
+  const seen = [];
+  session.subscribe((event) => seen.push(event));
+  seen.length = 0;
+
+  await session.prompt("hello", {
+    expandPromptTemplates: false,
+    streamingBehavior: "steer",
+  });
+  assert.deepEqual(session.getSteeringMessages(), ["hello"]);
+  seen.length = 0;
+
+  session.handleRpcEvent({ type: "queue_update", steering: [], followUp: [] });
+  session.handleRpcEvent({
+    type: "message_start",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    },
+  });
+
+  assert.deepEqual(session.getSteeringMessages(), []);
+  assert.equal(session.pendingMessageCount, 0);
+  assert.deepEqual(seen, [
+    { type: "queue_update", steering: [], followUp: [] },
+    {
+      type: "message_start",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "hello" }],
+      },
+    },
+  ]);
 });
 
 test("rpc runtime marks a connected prompt as sending before remote session setup finishes", async () => {
