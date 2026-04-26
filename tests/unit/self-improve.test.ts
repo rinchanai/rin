@@ -200,6 +200,105 @@ test("processing normalizes revised full-slot content and enforces limits", asyn
   );
 });
 
+test("self-improve skips automatic maintenance for managed task sessions", () => {
+  assert.equal(
+    selfImproveIndex.isManagedTaskSessionFile(
+      "/tmp/agent/sessions/managed/task/cron_demo.jsonl",
+    ),
+    true,
+  );
+  assert.equal(
+    selfImproveIndex.isManagedTaskSessionFile(
+      "C:\\Users\\rin\\.rin\\sessions\\managed\\task\\cron_demo.jsonl",
+    ),
+    true,
+  );
+  assert.equal(
+    selfImproveIndex.isManagedTaskSessionFile(
+      "/tmp/agent/sessions/issue-automation/rinchanai-rin-issue-1.jsonl",
+    ),
+    false,
+  );
+});
+
+test("automatic self-improve handlers do not queue managed task sessions", async () => {
+  await withTempRoot(async (root) => {
+    const handlers = new Map();
+    selfImproveIndex.default({
+      registerTool() {},
+      registerCommand() {},
+      on(event, handler) {
+        const list = handlers.get(event) || [];
+        list.push(handler);
+        handlers.set(event, list);
+      },
+    });
+    const messageEnd = handlers.get("message_end")[0];
+    const managedSessionFile = path.join(
+      root,
+      "sessions",
+      "managed",
+      "task",
+      "cron_demo.jsonl",
+    );
+    await fs.mkdir(path.dirname(managedSessionFile), { recursive: true });
+    await fs.writeFile(managedSessionFile, "", "utf8");
+    const ctx = {
+      agentDir: root,
+      sessionManager: {
+        getSessionId: () => "managed-task-session-test",
+        getSessionFile: () => managedSessionFile,
+        getLeafId: () => "leaf-managed-task",
+        isPersisted: () => true,
+      },
+    };
+
+    for (let i = 0; i < 8; i += 1) {
+      await messageEnd({ message: { role: "user" } }, ctx);
+      await messageEnd({ message: { role: "assistant" } }, ctx);
+    }
+
+    await assert.rejects(() => fs.readFile(queuePath(root), "utf8"), /ENOENT/);
+  });
+});
+
+test("automatic self-improve handlers require persisted sessions", async () => {
+  await withTempRoot(async (root) => {
+    const handlers = new Map();
+    selfImproveIndex.default({
+      registerTool() {},
+      registerCommand() {},
+      on(event, handler) {
+        const list = handlers.get(event) || [];
+        list.push(handler);
+        handlers.set(event, list);
+      },
+    });
+    const messageEnd = handlers.get("message_end")[0];
+    const shutdown = handlers.get("session_shutdown")[0];
+    const sessionFile = path.join(root, "sessions", "short-lived.jsonl");
+    await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+    await fs.writeFile(sessionFile, "", "utf8");
+    const ctx = {
+      agentDir: root,
+      sessionManager: {
+        getSessionId: () => "non-persisted-session-test",
+        getSessionFile: () => sessionFile,
+        getLeafId: () => "leaf-short-lived",
+        isPersisted: () => false,
+      },
+    };
+
+    for (let i = 0; i < 8; i += 1) {
+      await messageEnd({ message: { role: "user" } }, ctx);
+      await messageEnd({ message: { role: "assistant" } }, ctx);
+    }
+    await shutdown({}, ctx);
+
+    await assert.rejects(() => fs.readFile(queuePath(root), "utf8"), /ENOENT/);
+  });
+});
+
 test("save_prompts describes agent_profile as including standing user expectations", () => {
   const tools = [];
   selfImproveIndex.default({

@@ -1,4 +1,5 @@
 import type { BuiltinModuleApi } from "../builtins/host.js";
+import { existsSync } from "fs";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
@@ -21,12 +22,22 @@ import {
 import { readSessionMetadata } from "../session/metadata.js";
 
 const SELF_IMPROVE_REVIEW_INTERVAL = 8;
+const MANAGED_TASK_SESSION_SEGMENT = "/managed/task/";
 const reviewStateBySession = new Map<
   string,
   { userTurns: number; lastQueuedTurn: number }
 >();
 
 const sessionMeta = readSessionMetadata;
+
+export function isManagedTaskSessionFile(sessionFile: string) {
+  const normalized = String(sessionFile || "").replace(/\\+/g, "/");
+  return normalized.includes(MANAGED_TASK_SESSION_SEGMENT);
+}
+
+function shouldSkipAutomaticMaintenance(sessionFile: string) {
+  return isManagedTaskSessionFile(sessionFile) || !existsSync(sessionFile);
+}
 
 function getSessionReviewState(sessionId: string) {
   const key = String(sessionId || "").trim();
@@ -68,6 +79,9 @@ async function processSelfImproveReview(
   if (!sessionFile || !agentDir) {
     return;
   }
+  if (shouldSkipAutomaticMaintenance(sessionFile)) {
+    return;
+  }
   const meta = readSessionMetadata(opts);
   await enqueueMemoryMaintenanceJob({
     agentDir,
@@ -86,6 +100,9 @@ async function processSessionSummaryUpdate(
   const sessionFile = String(opts.sessionFile || "").trim();
   const agentDir = String(ctx?.agentDir || "").trim();
   if (!sessionFile || !agentDir) {
+    return;
+  }
+  if (shouldSkipAutomaticMaintenance(sessionFile)) {
     return;
   }
   const meta = readSessionMetadata(opts);
@@ -315,7 +332,7 @@ export default function selfImproveModule(pi: BuiltinModuleApi) {
     const role = String(event?.message?.role || "").trim();
     const meta = sessionMeta(ctx);
     const state = getSessionReviewState(meta.sessionId);
-    if (!state || !meta.sessionFile) return;
+    if (!state || !meta.sessionFile || !meta.sessionPersisted) return;
 
     if (role === "user") {
       state.userTurns += 1;
@@ -339,7 +356,7 @@ export default function selfImproveModule(pi: BuiltinModuleApi) {
 
   pi.on("session_before_compact", async (_event, ctx) => {
     const meta = sessionMeta(ctx);
-    if (!meta.sessionFile) return;
+    if (!meta.sessionFile || !meta.sessionPersisted) return;
     await processSelfImproveReview(ctx, {
       sessionFile: meta.sessionFile,
       leafId: meta.leafId,
@@ -350,6 +367,10 @@ export default function selfImproveModule(pi: BuiltinModuleApi) {
 
   pi.on("session_shutdown", async (_event, ctx) => {
     const meta = sessionMeta(ctx);
+    if (!meta.sessionPersisted) {
+      if (meta.sessionId) reviewStateBySession.delete(meta.sessionId);
+      return;
+    }
     await processSelfImproveReview(ctx, {
       sessionFile: meta.sessionFile,
       leafId: meta.leafId,
