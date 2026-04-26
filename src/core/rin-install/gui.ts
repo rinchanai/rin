@@ -10,7 +10,7 @@ import {
   type FinalizeInstallOptions,
 } from "./apply-plan.js";
 import { detectCurrentUser } from "./common.js";
-import { readJsonFile } from "./fs-utils.js";
+import { readJsonFile, writeJsonFile } from "./fs-utils.js";
 import {
   buildFinalRequirements,
   buildInstallPlanText,
@@ -212,6 +212,34 @@ function assertSelectedProviderModel(
   }
 }
 
+export function saveGuiInstallerApiKeyAuth(
+  input: { installDir?: string; provider?: string; token?: string },
+  deps: {
+    readJsonFile?: typeof readJsonFile;
+    writeJsonFile?: typeof writeJsonFile;
+  } = {},
+) {
+  const installDir = String(input.installDir || "").trim();
+  const provider = String(input.provider || "").trim();
+  const token = String(input.token || "").trim();
+  if (!installDir) throw new Error("rin_installer_gui_install_dir_required");
+  if (!provider || provider === "pending") {
+    throw new Error("rin_installer_gui_provider_required");
+  }
+  if (!token) throw new Error("rin_installer_gui_token_required");
+
+  const authPath = installAuthPath(installDir);
+  const readAuthJson = deps.readJsonFile || readJsonFile;
+  const writeAuthJson = deps.writeJsonFile || writeJsonFile;
+  const authData = normalizeRecord(readAuthJson<any>(authPath, {}));
+  const nextAuthData = {
+    ...authData,
+    [provider]: { type: "api_key", key: token },
+  };
+  writeAuthJson(authPath, nextAuthData);
+  return { provider, authPath, available: true };
+}
+
 export function buildGuiInstallerPlan(input: GuiInstallerPlanInput = {}) {
   const language = String(input.language || "en").trim() || "en";
   const i18n = createInstallerI18n(language);
@@ -366,6 +394,11 @@ export function buildGuiInstallerHtml() {
         <select name="thinkingLevel"><option value="medium">medium</option></select>
       </label>
       <p id="model-status" class="notice wide">Loading local model and provider auth state…</p>
+      <label class="wide">API key / manual token for selected provider
+        <input name="apiKey" type="password" autocomplete="off" placeholder="Leave blank when existing auth is ready" />
+      </label>
+      <button id="save-auth-button" class="wide" type="button">Save provider auth</button>
+      <p id="auth-status" class="notice wide">Use this only on the local installer page; tokens are saved to the selected install directory.</p>
       <label class="wide"><input name="setDefaultTarget" type="checkbox" checked /> Set as the default target for this launcher user</label>
       <button class="wide" type="submit">Refresh plan</button>
       <button id="apply-button" class="wide" type="button">Apply installation</button>
@@ -386,6 +419,8 @@ export function buildGuiInstallerHtml() {
     const modelStatus = document.getElementById('model-status');
     const applyButton = document.getElementById('apply-button');
     const applyStatus = document.getElementById('apply-status');
+    const saveAuthButton = document.getElementById('save-auth-button');
+    const authStatus = document.getElementById('auth-status');
     let modelChoices = [];
 
     function setOptions(select, values, selected) {
@@ -452,6 +487,32 @@ export function buildGuiInstallerHtml() {
       plan.textContent = next.planText || next.error || '';
     }
 
+    async function saveProviderAuth() {
+      saveAuthButton.disabled = true;
+      authStatus.textContent = 'Saving provider auth…';
+      const data = new FormData(form);
+      try {
+        const response = await fetch('/api/auth/api-key', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            installDir: data.get('installDir'),
+            provider: data.get('provider'),
+            token: data.get('apiKey'),
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'rin_installer_gui_auth_failed');
+        form.elements.apiKey.value = '';
+        authStatus.textContent = 'Provider auth saved for ' + payload.provider + '.';
+        await loadModels();
+      } catch (error) {
+        authStatus.textContent = String(error && error.message || error);
+      } finally {
+        saveAuthButton.disabled = false;
+      }
+    }
+
     async function applyInstallation() {
       applyButton.disabled = true;
       applyStatus.textContent = 'Applying installation… keep this browser tab open.';
@@ -475,6 +536,7 @@ export function buildGuiInstallerHtml() {
     providerSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
     modelSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
     thinkingSelect.addEventListener('change', () => { void refreshPlan(); });
+    saveAuthButton.addEventListener('click', () => { void saveProviderAuth(); });
     applyButton.addEventListener('click', () => { void applyInstallation(); });
     form.addEventListener('submit', refreshPlan);
     void loadModels().catch((error) => { modelStatus.textContent = String(error && error.message || error); });
@@ -515,6 +577,20 @@ export async function runGuiInstaller(
           sendJson(response, 400, {
             error: String(
               error?.message || error || "rin_installer_gui_plan_failed",
+            ),
+          }),
+        );
+      return;
+    }
+    if (url.pathname === "/api/auth/api-key" && request.method === "POST") {
+      void readJsonBody(request)
+        .then((body) =>
+          sendJson(response, 200, saveGuiInstallerApiKeyAuth(body)),
+        )
+        .catch((error: any) =>
+          sendJson(response, 400, {
+            error: String(
+              error?.message || error || "rin_installer_gui_auth_failed",
             ),
           }),
         );

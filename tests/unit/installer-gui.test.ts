@@ -82,8 +82,33 @@ test("installer GUI plan reuses installer plan text and escapes the HTML shell",
   assert.match(html, /Rin Installer/);
   assert.match(html, /\/api\/plan/);
   assert.match(html, /\/api\/models/);
+  assert.match(html, /\/api\/auth\/api-key/);
   assert.match(html, /\/api\/apply/);
   assert.doesNotMatch(html, /<script src=/);
+});
+
+test("installer GUI saves API key provider auth for browser install", () => {
+  let writtenPath = "";
+  let writtenValue: any = null;
+  const result = gui.saveGuiInstallerApiKeyAuth(
+    { installDir: "/home/alice/.rin", provider: "openai", token: "sk-test" },
+    {
+      readJsonFile() {
+        return { existing: { type: "api_key", key: "keep" } };
+      },
+      writeJsonFile(filePath, value) {
+        writtenPath = filePath;
+        writtenValue = value;
+      },
+    },
+  );
+  assert.equal(result.provider, "openai");
+  assert.equal(result.available, true);
+  assert.equal(writtenPath, "/home/alice/.rin/auth.json");
+  assert.deepEqual(writtenValue, {
+    existing: { type: "api_key", key: "keep" },
+    openai: { type: "api_key", key: "sk-test" },
+  });
 });
 
 test("installer GUI builds final apply options from auth-ready selections", () => {
