@@ -9,6 +9,12 @@ type PromptContextMeta = {
   nickname?: string;
   identity?: string;
   replyToMessageId?: string;
+  replyMessage?: {
+    messageId?: string;
+    userId?: string;
+    nickname?: string;
+    text?: string;
+  };
   attachedFiles?: Array<{ name?: string; path?: string }>;
 };
 

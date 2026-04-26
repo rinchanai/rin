@@ -181,3 +181,46 @@ test("chat message header keeps trusted senders distinct from owner", async () =
   assert.equal(header.includes("sender is owner:"), false);
   assert.ok(header.includes("sender trust: trusted user"));
 });
+
+test("chat message header injects available reply message content", async () => {
+  const pi = createPi();
+  messageHeaderMod.default(pi);
+
+  promptContextMod.enqueueChatPromptContext({
+    source: "chat-bridge",
+    sentAt: Date.now(),
+    chatKey: "telegram/1:2",
+    chatType: "group",
+    userId: "guest-1",
+    nickname: "Alice",
+    identity: "OTHER",
+    replyToMessageId: "quoted-42",
+    replyMessage: {
+      messageId: "quoted-42",
+      userId: "guest-2",
+      nickname: "Carol",
+      text: "第一行\n第二行",
+    },
+  });
+
+  const inputResult = await pi.handlers.get("input")[0]({
+    source: "chat-bridge",
+    text: "这条是什么意思？",
+  });
+  assert.deepEqual(inputResult, { action: "continue" });
+
+  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
+    prompt: "这条是什么意思？",
+    systemPrompt: "Base prompt",
+  });
+
+  const systemPrompt = String(beforeStart?.systemPrompt || "");
+  const header = String(beforeStart?.message?.content || "");
+  assert.ok(header.includes("reply to message id: quoted-42"));
+  assert.ok(header.includes("reply message:"));
+  assert.ok(header.includes("  nickname: Carol"));
+  assert.ok(header.includes("  text:\n  第一行\n  第二行"));
+  assert.ok(
+    systemPrompt.includes("includes the available replied-message content"),
+  );
+});

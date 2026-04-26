@@ -40,6 +40,7 @@ import {
   pickSenderNickname,
   pickUserId,
   safeString,
+  summarizeQuote,
 } from "./chat-helpers.js";
 import { buildInboundChatLogInput } from "./inbound-normalization.js";
 import { ChatController, loadChatSettings } from "./controller.js";
@@ -62,11 +63,37 @@ import {
 } from "../chat-runtime/index.js";
 import { listChatRuntimeAdapterEntries } from "./runtime-config.js";
 import { composeChatKey, loadIdentity, trustOf } from "./support.js";
-import { getChatMessage } from "./message-store.js";
+import {
+  getChatMessage,
+  normalizeStoredChatMessageText,
+} from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { normalizeSessionRef } from "../session/ref.js";
 import { isTransientChatRuntimeError } from "./runtime-errors.js";
+
+function buildReplyPromptMessage(session: any, linkedMessage: any) {
+  const quote = summarizeQuote(session);
+  const messageId =
+    safeString(linkedMessage?.messageId).trim() ||
+    safeString(quote?.messageId).trim();
+  const userId =
+    safeString(linkedMessage?.userId).trim() ||
+    safeString(quote?.userId).trim();
+  const nickname =
+    safeString(linkedMessage?.nickname).trim() ||
+    safeString(quote?.nickname).trim();
+  const text =
+    normalizeStoredChatMessageText(linkedMessage) ||
+    safeString(quote?.content).trim();
+  if (!messageId && !userId && !nickname && !text) return undefined;
+  return {
+    messageId: messageId || undefined,
+    userId: userId || undefined,
+    nickname: nickname || undefined,
+    text: text || undefined,
+  };
+}
 
 function createLogger(name: string) {
   const prefix = `[${name}]`;
@@ -498,6 +525,7 @@ export async function startChatBridge(
         pickUserId(session),
       ),
       replyToMessageId: replyToMessageId || undefined,
+      replyMessage: buildReplyPromptMessage(session, replySession?.linked),
       attachedFiles: attachments
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
