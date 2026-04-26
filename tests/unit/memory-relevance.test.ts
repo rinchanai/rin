@@ -65,7 +65,14 @@ test("memory relevance scores docs, events, and relations consistently", () => {
   });
   const inactiveDoc = buildDoc({ status: "superseded" });
   const chronicleDoc = buildDoc({ tags: ["search", "chronicle"] });
-  const malformedDoc = buildDoc({ tags: "search,chronicle", aliases: "search stack" });
+  const malformedDoc = buildDoc({
+    tags: "search,chronicle",
+    aliases: "search stack",
+  });
+  const caseVariantTagDoc = buildDoc({
+    id: "c",
+    tags: " Search , notes ",
+  });
   const recentEvent = buildEvent();
   const staleEvent = buildEvent({
     created_at: new Date(Date.now() - 72 * 3_600_000).toISOString(),
@@ -81,9 +88,7 @@ test("memory relevance scores docs, events, and relations consistently", () => {
     relevance.lexicalScore("search", chronicleDoc) <
       relevance.lexicalScore("search", docA),
   );
-  assert.ok(
-    relevance.lexicalScore("recent search history", chronicleDoc) > 0,
-  );
+  assert.ok(relevance.lexicalScore("recent search history", chronicleDoc) > 0);
   assert.ok(relevance.lexicalScore("search stack", malformedDoc) > 0);
   assert.ok(
     relevance.eventScore("search", recentEvent) >
@@ -92,8 +97,18 @@ test("memory relevance scores docs, events, and relations consistently", () => {
   assert.ok(Number.isFinite(relevance.eventScore("search", invalidEvent)));
   assert.ok(relevance.relationScore(docA, docB).score > 0);
   assert.equal(relevance.relationScore(docA, docB).reason, "shared-tags");
-  assert.equal(relevance.shouldInjectRecentHistory("what happened recently"), true);
-  assert.equal(relevance.shouldInjectRecentHistory("why did we roll back"), true);
+  assert.equal(
+    relevance.relationScore(docA, caseVariantTagDoc).reason,
+    "shared-tags",
+  );
+  assert.equal(
+    relevance.shouldInjectRecentHistory("what happened recently"),
+    true,
+  );
+  assert.equal(
+    relevance.shouldInjectRecentHistory("why did we roll back"),
+    true,
+  );
   assert.equal(relevance.shouldInjectRecentHistory(null), false);
 });
 
@@ -153,7 +168,9 @@ test("self-improve compile renders prompt slots", () => {
     "/tmp/memory",
   );
   assert.ok(
-    out.self_improve_prompt_context.includes("[agent_profile] Concise and natural"),
+    out.self_improve_prompt_context.includes(
+      "[agent_profile] Concise and natural",
+    ),
   );
   assert.ok(
     out.self_improve_prompt_context.includes(

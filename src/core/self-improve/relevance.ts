@@ -47,6 +47,19 @@ function normalizeEventTags(event: Partial<MemoryEvent>): string[] {
   return normalizeList(event?.tags);
 }
 
+function normalizeFeatureValues(values: string[]): string[] {
+  return uniqueStrings(
+    values.map((item) => normalizeNeedle(item)).filter(Boolean),
+  );
+}
+
+function sharedNormalizedDocTags(a: Partial<MemoryDoc>, b: Partial<MemoryDoc>) {
+  const bTagSet = new Set(normalizeFeatureValues(normalizeDocTags(b)));
+  return normalizeFeatureValues(normalizeDocTags(a)).filter((tag) =>
+    bTagSet.has(tag),
+  );
+}
+
 function normalizeEventAgeHours(value: unknown): number {
   const timestamp = Date.parse(safeString(value).trim() || nowIso());
   if (!Number.isFinite(timestamp)) return 0;
@@ -100,7 +113,8 @@ export function lexicalScore(query: string, doc: MemoryDoc): number {
     cjkBigram: 0.45,
   });
   if (safeString(doc?.id) === normalizedQuery.normalized) score += 6;
-  if (safeString(doc?.self_improve_prompt_slot) === normalizedQuery.normalized) score += 6;
+  if (safeString(doc?.self_improve_prompt_slot) === normalizedQuery.normalized)
+    score += 6;
   if (doc?.exposure === "self_improve_prompts") score += 0.2;
   if (doc?.status !== "active") score -= 8;
   if (tags.includes(CHRONICLE_TAG) && !shouldInjectRecentHistory(query)) {
@@ -161,8 +175,8 @@ function memoryRelationFeatures(doc: MemoryDoc): string[] {
       ...conceptTokens(safeString(doc?.name)),
       ...conceptTokens(safeString(doc?.description)),
       ...conceptTokens(contentSample),
-      ...normalizeDocTags(doc).map((item) => normalizeNeedle(item)),
-      ...normalizeDocAliases(doc).map((item) => normalizeNeedle(item)),
+      ...normalizeFeatureValues(normalizeDocTags(doc)),
+      ...normalizeFeatureValues(normalizeDocAliases(doc)),
       normalizeNeedle(safeString(doc?.scope)),
       normalizeNeedle(safeString(doc?.kind)),
     ].filter(Boolean),
@@ -179,12 +193,7 @@ export function relationScore(
   for (const feature of aFeatures) {
     if (bFeatures.has(feature)) overlap += 1;
   }
-  const aTags = normalizeDocTags(a);
-  const bTags = normalizeDocTags(b);
-  const bTagSet = new Set(bTags.map((item) => normalizeNeedle(item)).filter(Boolean));
-  const sharedTags = uniqueStrings(aTags).filter((item) =>
-    bTagSet.has(normalizeNeedle(item)),
-  );
+  const sharedTags = sharedNormalizedDocTags(a, b);
   let score = Math.min(6, overlap) * 0.7 + sharedTags.length * 1.3;
   if (safeString(a?.scope) && a.scope === b.scope) score += 0.5;
   if (safeString(a?.kind) && a.kind === b.kind) score += 0.35;
