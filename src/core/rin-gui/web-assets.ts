@@ -2,6 +2,7 @@ export type RinGuiOptions = {
   host: string;
   port: number;
   open: boolean;
+  app: boolean;
 };
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -21,6 +22,7 @@ export function parseRinGuiArgs(argv: string[]): RinGuiOptions {
     host: DEFAULT_HOST,
     port: DEFAULT_PORT,
     open: true,
+    app: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -50,6 +52,10 @@ export function parseRinGuiArgs(argv: string[]): RinGuiOptions {
     }
     if (arg === "--open") {
       options.open = true;
+      continue;
+    }
+    if (arg === "--app") {
+      options.app = true;
       continue;
     }
   }

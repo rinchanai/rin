@@ -217,6 +217,10 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     path.join(linuxHome, ".local", "bin", "rin"),
   );
   assert.equal(
+    pathsMod.launcherPathForHome(linuxHome, "rin-gui"),
+    path.join(linuxHome, ".local", "bin", "rin-gui"),
+  );
+  assert.equal(
     pathsMod.launcherMetadataPathForHome(linuxHome, "linux"),
     path.join(linuxHome, ".config", "rin", "install.json"),
   );
@@ -241,6 +245,23 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
       "Startup",
       "Rin Daemon.cmd",
     ),
+  );
+  assert.equal(
+    pathsMod.windowsGuiStartMenuLauncherPathForHome("C:\\Users\\demo"),
+    path.join(
+      "C:\\Users\\demo",
+      "AppData",
+      "Roaming",
+      "Microsoft",
+      "Windows",
+      "Start Menu",
+      "Programs",
+      "Rin GUI.cmd",
+    ),
+  );
+  assert.equal(
+    pathsMod.windowsGuiDesktopLauncherPathForHome("C:\\Users\\demo"),
+    path.join("C:\\Users\\demo", "Desktop", "Rin GUI.cmd"),
   );
   const alternateLauncherMetadataPath = pathsMod.launcherMetadataPathForHome(
     linuxHome,

@@ -14,6 +14,9 @@ const gui = await import(
 const main = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "main.js")).href
 );
+const guiMain = await import(
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-gui", "main.js")).href
+);
 
 test("GUI HTML escapes title and keeps the browser RPC endpoint local", () => {
   const html = gui.buildGuiHtml({ title: "<Rin & GUI>" });
@@ -31,19 +34,40 @@ test("GUI args parse local host, ephemeral port, and browser opening switch", ()
       host: "0.0.0.0",
       port: 0,
       open: false,
+      app: false,
     },
   );
   assert.deepEqual(
-    gui.parseRinGuiArgs(["--host=localhost", "--port", "4317", "--open"]),
+    gui.parseRinGuiArgs([
+      "--host=localhost",
+      "--port",
+      "4317",
+      "--open",
+      "--app",
+    ]),
     {
       host: "localhost",
       port: 4317,
       open: true,
+      app: true,
     },
   );
   assert.throws(
     () => gui.parseRinGuiArgs(["--port", "70000"]),
     /rin_gui_invalid_port:70000/,
+  );
+});
+
+test("GUI app-mode browser invocation uses desktop app windows", () => {
+  assert.deepEqual(
+    guiMain.buildOpenBrowserInvocation("http://127.0.0.1:1/", {
+      app: true,
+      platform: "win32",
+    }),
+    {
+      command: "cmd",
+      args: ["/c", "start", "", "msedge", "--app=http://127.0.0.1:1/"],
+    },
   );
 });
 

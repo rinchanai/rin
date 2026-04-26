@@ -18,16 +18,42 @@ function sendJson(socket: WebSocket, payload: unknown) {
   socket.send(JSON.stringify(payload));
 }
 
-function openBrowser(url: string) {
+export function buildOpenBrowserInvocation(
+  url: string,
+  options: { app?: boolean; platform?: NodeJS.Platform } = {},
+) {
+  const platform = options.platform || process.platform;
+  if (options.app) {
+    if (platform === "win32") {
+      return {
+        command: "cmd",
+        args: ["/c", "start", "", "msedge", `--app=${url}`],
+      };
+    }
+    if (platform === "darwin") {
+      return {
+        command: "open",
+        args: ["-a", "Google Chrome", "--args", `--app=${url}`],
+      };
+    }
+    return {
+      command: "sh",
+      args: [
+        "-lc",
+        `google-chrome --app=${JSON.stringify(url)} || chromium --app=${JSON.stringify(url)} || xdg-open ${JSON.stringify(url)}`,
+      ],
+    };
+  }
   const command =
-    process.platform === "win32"
-      ? "cmd"
-      : process.platform === "darwin"
-        ? "open"
-        : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+    platform === "win32" ? "cmd" : platform === "darwin" ? "open" : "xdg-open";
+  const args = platform === "win32" ? ["/c", "start", "", url] : [url];
+  return { command, args };
+}
+
+function openBrowser(url: string, options: { app?: boolean } = {}) {
+  const invocation = buildOpenBrowserInvocation(url, options);
   try {
-    const child = spawn(command, args, {
+    const child = spawn(invocation.command, invocation.args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
@@ -131,5 +157,5 @@ export async function runGui(parsed: ParsedArgs, rawArgv: string[] = []) {
   const address = server.address() as AddressInfo;
   const url = `http://${normalizeHostForUrl(options.host)}:${address.port}/`;
   console.log(`rin gui: ${url}`);
-  if (options.open) openBrowser(url);
+  if (options.open) openBrowser(url, { app: options.app });
 }
