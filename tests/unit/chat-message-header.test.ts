@@ -80,6 +80,37 @@ test("chat message header focuses sender identity guidance in the system prompt"
   assert.ok(header.includes("sender trust: other chat user"));
 });
 
+test("chat message header omits local system user guidance", async () => {
+  const previous = process.env.RIN_INVOKING_SYSTEM_USER;
+  process.env.RIN_INVOKING_SYSTEM_USER = "different-local-user-for-test";
+
+  try {
+    const pi = createPi();
+    messageHeaderMod.default(pi);
+
+    const inputResult = await pi.handlers.get("input")[0]({
+      source: "user",
+      text: "你好",
+    });
+    assert.deepEqual(inputResult, { action: "continue" });
+
+    const beforeStart = await pi.handlers.get("before_agent_start")[0]({
+      prompt: "你好",
+      systemPrompt: "Base prompt",
+    });
+
+    const systemPrompt = String(beforeStart?.systemPrompt || "");
+    const header = String(beforeStart?.message?.content || "");
+    assert.equal(systemPrompt.includes("System user guidance:"), false);
+    assert.equal(systemPrompt.includes("local system user"), false);
+    assert.equal(header.includes("invoking system user:"), false);
+    assert.equal(header.includes("agent system user:"), false);
+  } finally {
+    if (previous === undefined) delete process.env.RIN_INVOKING_SYSTEM_USER;
+    else process.env.RIN_INVOKING_SYSTEM_USER = previous;
+  }
+});
+
 test("chat message header remembers stable system prompt blocks for forked sessions", async () => {
   const pi = createPi();
   messageHeaderMod.default(pi);
