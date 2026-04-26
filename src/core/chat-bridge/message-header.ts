@@ -50,7 +50,7 @@ function buildChatSystemPromptBlock(meta: TurnPromptMeta) {
   }
   if (safeString(meta.replyToMessageId).trim()) {
     lines.push(
-      "- Use `get_chat_msg` with that message id before replying when the reply context matters.",
+      "- When the injected header includes `reply to message id`, inspect the replied message before answering by calling `get_chat_msg` with that exact message id. Only skip this if the user's current request clearly does not depend on the replied message.",
     );
   }
   if (!isScheduledTask) {
