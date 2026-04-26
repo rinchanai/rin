@@ -54,6 +54,23 @@ test("native desktop launcher uses one reusable stdio host contract", () => {
   );
 });
 
+test("Electron desktop host is the concrete GUI framework behind the host contract", () => {
+  const preload = nativeDesktop.buildElectronDesktopHostPreloadScript();
+  const mainScript = nativeDesktop.buildElectronDesktopHostMainScript({
+    preloadPath: "/tmp/preload.cjs",
+    title: "Rin",
+  });
+
+  assert.match(mainScript, /BrowserWindow/);
+  assert.match(mainScript, /ipcMain/);
+  assert.match(preload, /contextBridge/);
+  assert.match(preload, /ipcRenderer/);
+  assert.match(mainScript, /rin-command/);
+  assert.match(mainScript, /rin-event/);
+  assert.doesNotMatch(mainScript, /createServer|WebSocketServer|xdg-open/);
+  assert.doesNotMatch(preload, /createServer|WebSocketServer|xdg-open/);
+});
+
 test("Windows default launch mode is GUI-first while other platforms keep TUI", () => {
   assert.equal(main.defaultLaunchModeForPlatform("win32"), "gui");
   assert.equal(main.defaultLaunchModeForPlatform("linux"), "tui");
