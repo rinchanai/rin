@@ -13,9 +13,7 @@ const tuiReport = await import(
 
 test("renderReportSection keeps compact note-friendly text", () => {
   const text = tuiReport.renderReportSection({
-    title: "Demo",
     lines: ["alpha", "", "beta  ", ""],
   });
   assert.equal(text, "alpha\nbeta");
 });
-

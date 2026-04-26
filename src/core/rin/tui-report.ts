@@ -1,5 +1,4 @@
 export type ReportSection = {
-  title: string;
   lines: string[];
 };
 
