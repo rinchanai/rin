@@ -591,6 +591,44 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
   assert.deepEqual(deliveries, [{ replyToMessageId: "m1", text: "Working……" }]);
 });
 
+test("chat controller sends only one onebot Working notice when polls overlap", async () => {
+  const controller = await createController("onebot/1:private:2");
+  const deliveries = [];
+  let releaseDelivery;
+  const deliveryGate = new Promise((resolve) => {
+    releaseDelivery = resolve;
+  });
+  controller.app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "1",
+        async sendMessage(chatId, content) {
+          deliveries.push({ chatId, content });
+          await deliveryGate;
+          return [`out-${deliveries.length}`];
+        },
+      },
+    ],
+  };
+  controller.currentTurn = {
+    startedAt: Date.now(),
+    incomingMessageId: "m-overlap",
+    workingNoticeSent: false,
+  };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
+
+  const firstPoll = controller.pollTyping();
+  const secondPoll = controller.pollTyping();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(deliveries.length, 1);
+  releaseDelivery();
+  assert.deepEqual(await Promise.all([firstPoll, secondPoll]), [true, false]);
+  assert.equal(controller.currentTurn.workingNoticeSent, true);
+});
+
 test("chat controller does not keep typing from stale currentTurn metadata alone", async () => {
   const controller = await createController("telegram/1:2");
   const actions = [];

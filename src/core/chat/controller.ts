@@ -305,21 +305,28 @@ export class ChatController {
     if (!this.deliveryEnabled) return false;
     const currentTurn = this.currentTurn;
     if (!currentTurn || currentTurn.workingNoticeSent) return false;
+    currentTurn.workingNoticeSent = true;
     const replyToMessageId = this.currentReplyToMessageId() || undefined;
-    await sendOutboxPayload(
-      this.app,
-      this.agentDir,
-      {
-        type: "text_delivery",
-        chatKey: this.chatKey,
-        text: "Working……",
-        replyToMessageId,
-        sessionFile: this.currentSessionFile(),
-        createdAt: new Date().toISOString(),
-      },
-      this.h,
-    );
-    if (this.currentTurn) this.currentTurn.workingNoticeSent = true;
+    try {
+      await sendOutboxPayload(
+        this.app,
+        this.agentDir,
+        {
+          type: "text_delivery",
+          chatKey: this.chatKey,
+          text: "Working……",
+          replyToMessageId,
+          sessionFile: this.currentSessionFile(),
+          createdAt: new Date().toISOString(),
+        },
+        this.h,
+      );
+    } catch (error) {
+      if (this.currentTurn === currentTurn) {
+        currentTurn.workingNoticeSent = false;
+      }
+      throw error;
+    }
     return true;
   }
 
