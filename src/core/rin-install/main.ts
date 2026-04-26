@@ -261,6 +261,13 @@ export async function startInstaller() {
       `${i18n.writtenPathLabel}: ${written.launcherPath}`,
       `${i18n.writtenPathLabel}: ${written.rinPath}`,
       `${i18n.writtenPathLabel}: ${written.rinInstallPath}`,
+      written.targetRinPath && written.targetRinPath !== written.rinPath
+        ? `${i18n.writtenPathLabel}: ${written.targetRinPath}`
+        : "",
+      written.targetRinInstallPath &&
+      written.targetRinInstallPath !== written.rinInstallPath
+        ? `${i18n.writtenPathLabel}: ${written.targetRinInstallPath}`
+        : "",
       `${i18n.writtenPathLabel}: ${publishedRuntime.currentLink}`,
       `${i18n.writtenPathLabel}: ${publishedRuntime.releaseRoot}`,
       installedDocsDir ? `${i18n.writtenPathLabel}: ${installedDocsDir}` : "",

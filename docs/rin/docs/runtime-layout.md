@@ -32,24 +32,15 @@ Typical metadata paths:
 - Linux: `~/.config/rin/install.json`
 - macOS: `~/Library/Application Support/rin/install.json`
 
-This metadata records the current user's default `targetUser` and `installDir`.
-It is useful only when you are operating as the same user who owns the launcher.
-It is also a fallback discovery source for `rin update` when the launcher-owning account is available but managed service files or install manifests are missing.
-If the current account already has no `rin` command, prefer jumping to the target install manifest workflow instead of inspecting the current account's launcher metadata.
+The installer writes these launchers for both the current installer user and the selected daemon target user when those accounts differ. Current and target users can therefore both run `rin` after install.
+
+This metadata records the current user's default `targetUser` and `installDir`. It is useful when recovering or auditing an installed target, but normal agent-facing guidance should use the `rin` command instead of asking agents to locate runtime entry files.
 
 Important implications for the agent:
 
-- do not assume the current local account always has a `rin` command in PATH
-- the user who owns the launcher can differ from the daemon target user
-- the account currently running the agent can also differ from both of the above
-- the current local account may be only an execution account rather than the interactive account that owns the launcher
-- when `rin` is missing on the current account, that can be normal and does not by itself mean Rin is not installed
-
-In other words, keep these roles separate:
-
-- launcher-owning interactive user
-- daemon target user
-- current local account running the agent
+- prefer the `rin` command for normal use and self-update
+- if either expected account has no `rin` launcher, treat that as an installation repair or migration issue rather than normal runtime discovery work
+- keep the current installer user, daemon target user, and current local execution account distinct when auditing ownership or permissions
 
 ## Install manifests and service files
 
@@ -62,22 +53,14 @@ Useful locations:
 - Linux user service: `~/.config/systemd/user/rin-daemon*.service`
 - macOS launch agent: `~/Library/LaunchAgents/com.rin.daemon.*.plist`
 
-These files are the main way to recover `installDir` and `targetUser` when the current account does not have a working `rin` command.
+These files are the main way to audit `installDir` and `targetUser` or repair an installation whose launchers are missing.
 Service files expose the runtime directory through `RIN_DIR`, and once `installDir` is known the next stop should be `<installDir>/installer.json`.
 
-## Installed update recovery path
+## Installed update path
 
-Keep `rin update` as the canonical workflow when the current account already has a working launcher.
+Keep `rin update` as the canonical workflow. If the launcher is missing for an account that should have it, repair or rerun the installer/update path so the launcher is restored instead of documenting ad-hoc direct runtime entry invocations as the normal agent workflow.
 
-If `rin` is missing on the current account, treat that as a launcher-placement clue rather than as evidence that Rin is not installed.
-In that case, prefer this recovery order:
-
-1. find `installDir` from a managed service file or a known target home
-2. open `<installDir>/installer.json` to confirm `targetUser`
-3. invoke the stable installed runtime entry directly:
-   - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
-
-Typical places to recover `installDir`:
+Typical places to audit `installDir` during repair:
 
 - `<targetHome>/.rin/installer.json`
 - Linux: `~/.config/systemd/user/rin-daemon*.service`
