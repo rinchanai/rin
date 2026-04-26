@@ -37,7 +37,7 @@ test("session fork compat uses native option-aware fork APIs when available", ()
       "/tmp/source.jsonl",
       "/tmp/cwd",
       "/tmp/sessions",
-      { persist: false, leafId: "leaf-1" },
+      { persist: false, leafId: "leaf-1", preserveSourceSessionId: false },
     ],
   ]);
   assert.deepEqual(result, { mode: "native" });
@@ -173,6 +173,69 @@ test("session fork compat falls back to full entries when the requested branch i
     { id: "full-u1" },
     { id: "full-a1" },
   ]);
+});
+
+test("session fork compat can preserve source session id for temporary cache-equivalent forks", () => {
+  class FallbackSessionManager {
+    constructor(cwd, sessionDir, _unused, persisted) {
+      this.cwd = cwd;
+      this.sessionDir = sessionDir;
+      this.persisted = persisted;
+      this.fileEntries = [];
+      this.sessionId = "";
+      this.sessionFile = "/tmp/should-clear.jsonl";
+    }
+
+    static open() {
+      return {
+        getHeader() {
+          return { id: "source-session-id", version: 7 };
+        },
+        getBranch() {
+          return [{ id: "u1" }, { id: "a1" }];
+        },
+      };
+    }
+
+    _buildIndex() {
+      this.indexBuilt = true;
+    }
+
+    isPersisted() {
+      return this.persisted;
+    }
+
+    getSessionFile() {
+      return this.sessionFile;
+    }
+
+    getSessionId() {
+      return this.sessionId;
+    }
+
+    getEntries() {
+      return this.fileEntries;
+    }
+  }
+
+  const fork = sessionFork.forkSessionManagerCompat(
+    FallbackSessionManager,
+    "/tmp/source.jsonl",
+    "/tmp/cwd",
+    "/tmp/sessions",
+    {
+      persist: false,
+      leafId: "leaf-1",
+      preserveSourceSessionId: true,
+    },
+  );
+
+  assert.equal(fork.isPersisted(), false);
+  assert.equal(fork.getSessionFile(), undefined);
+  assert.equal(fork.getSessionId(), "source-session-id");
+  assert.equal(fork.getEntries()[0].id, "source-session-id");
+  assert.equal(fork.getEntries()[0].parentSession, "/tmp/source.jsonl");
+  assert.deepEqual(fork.getEntries().slice(1), [{ id: "u1" }, { id: "a1" }]);
 });
 
 test("session fork compat reports unsupported persisted and ephemeral capabilities clearly", () => {

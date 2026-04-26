@@ -128,6 +128,12 @@ async function createForkedSessionManager(options: {
       {
         persist: false,
         leafId,
+        // Self-improve needs a temporary, non-persisted fork that behaves like
+        // appending one maintenance turn to the source conversation for
+        // provider prefix-cache purposes. Keep the source session id as the
+        // provider cache key while still preventing maintenance messages from
+        // being written back to the source transcript.
+        preserveSourceSessionId: true,
       },
     ),
   };

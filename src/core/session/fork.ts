@@ -10,13 +10,18 @@ function normalizeLeafId(value: unknown) {
   return leafId || undefined;
 }
 
-function normalizeForkOptions(
-  options: { persist?: boolean; leafId?: string } = {},
-) {
+type ForkSessionOptions = {
+  persist?: boolean;
+  leafId?: string;
+  preserveSourceSessionId?: boolean;
+};
+
+function normalizeForkOptions(options: ForkSessionOptions = {}) {
   return {
     ...options,
     leafId: normalizeLeafId(options.leafId),
     persist: options.persist !== false,
+    preserveSourceSessionId: options.preserveSourceSessionId === true,
   };
 }
 
@@ -43,6 +48,7 @@ function createEphemeralForkManager(
   targetCwd: string,
   sessionDir: string | undefined,
   leafId: string | undefined,
+  preserveSourceSessionId: boolean,
 ) {
   if (
     typeof SessionManager?.open !== "function" ||
@@ -53,6 +59,11 @@ function createEphemeralForkManager(
 
   const sourceManager = SessionManager.open(sourcePath, sessionDir, undefined);
   const sourceHeader = sourceManager.getHeader?.() || {};
+  const sourceSessionId = String(
+    sourceHeader?.id || sourceManager.getSessionId?.() || "",
+  ).trim();
+  const forkSessionId =
+    preserveSourceSessionId && sourceSessionId ? sourceSessionId : randomUUID();
   const manager = new SessionManager(
     targetCwd,
     sessionDir || "",
@@ -64,14 +75,14 @@ function createEphemeralForkManager(
       ...sourceHeader,
       type: "session",
       version: Number(sourceHeader?.version || 3),
-      id: randomUUID(),
+      id: forkSessionId,
       timestamp: new Date().toISOString(),
       cwd: targetCwd,
       parentSession: sourcePath,
     },
     ...resolveForkEntries(sourceManager, leafId),
   ];
-  manager.sessionId = manager.fileEntries[0].id;
+  manager.sessionId = forkSessionId;
   manager.sessionFile = undefined;
   manager.flushed = false;
   manager._buildIndex?.();
@@ -83,12 +94,18 @@ export function forkSessionManagerCompat(
   sourcePath: string,
   targetCwd: string,
   sessionDir?: string,
-  options: { persist?: boolean; leafId?: string } = {},
+  options: ForkSessionOptions = {},
 ) {
   const normalizedOptions = normalizeForkOptions(options);
   const capabilities = getForkCapabilities(SessionManager);
 
-  if (capabilities.optionAware) {
+  if (normalizedOptions.preserveSourceSessionId && normalizedOptions.persist) {
+    throw new Error(
+      "session_fork_unsupported:preserve_source_session_id_persisted",
+    );
+  }
+
+  if (capabilities.optionAware && !normalizedOptions.preserveSourceSessionId) {
     return SessionManager.forkFrom(
       sourcePath,
       targetCwd,
@@ -110,5 +127,6 @@ export function forkSessionManagerCompat(
     targetCwd,
     sessionDir,
     normalizedOptions.leafId,
+    normalizedOptions.preserveSourceSessionId,
   );
 }
