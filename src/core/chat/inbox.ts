@@ -13,6 +13,7 @@ import {
   buildChatInboxRouting,
   serializeChatInboxSession,
 } from "./inbound-normalization.js";
+import { hasInboundChatMessageReplyBoundary } from "./chat-helpers.js";
 import { readJsonFile } from "./support.js";
 import { safeString } from "../text-utils.js";
 
@@ -291,6 +292,12 @@ export function restoreProcessingChatInboxFiles(agentDir: string) {
   for (const filePath of listProcessingChatInboxFiles(agentDir)) {
     const item = readChatInboxItem(filePath);
     if (!item) {
+      completeChatInboxFile(filePath);
+      continue;
+    }
+    if (
+      hasInboundChatMessageReplyBoundary(agentDir, item.chatKey, item.messageId)
+    ) {
       completeChatInboxFile(filePath);
       continue;
     }

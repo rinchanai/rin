@@ -5,6 +5,7 @@ import { ensureExtension, ensureFileName, fileNameFromUrl } from "./support.js";
 import { ensureDir } from "../platform/fs.js";
 import {
   findChatMessageByChatAndId,
+  listChatMessagesByReplyTo,
   saveChatMessage,
   updateChatMessage,
 } from "./message-store.js";
@@ -144,6 +145,51 @@ export function lookupReplySession(
     linked,
     sessionFile: resolveStoredSessionFile(agentDir, linked.sessionFile),
   };
+}
+
+function isSubstantiveAssistantChatText(text: unknown) {
+  const value = safeString(text).trim();
+  return Boolean(value && value !== "Working……");
+}
+
+export function hasDeliveredAssistantReplyForMessage(
+  agentDir: string,
+  chatKey: string,
+  messageId: string,
+) {
+  return listChatMessagesByReplyTo(agentDir, chatKey, messageId).some(
+    (item) =>
+      item.role === "assistant" &&
+      isSubstantiveAssistantChatText(item.text || item.rawContent) &&
+      Boolean(safeString(item.processedAt).trim()),
+  );
+}
+
+export function isInboundChatMessageProcessed(
+  agentDir: string,
+  chatKey: string,
+  messageId: string,
+) {
+  const nextChatKey = safeString(chatKey).trim();
+  const nextMessageId = safeString(messageId).trim();
+  if (!nextChatKey || !nextMessageId) return false;
+  return Boolean(
+    safeString(
+      findChatMessageByChatAndId(agentDir, nextChatKey, nextMessageId)
+        ?.processedAt || "",
+    ).trim(),
+  );
+}
+
+export function hasInboundChatMessageReplyBoundary(
+  agentDir: string,
+  chatKey: string,
+  messageId: string,
+) {
+  return (
+    isInboundChatMessageProcessed(agentDir, chatKey, messageId) ||
+    hasDeliveredAssistantReplyForMessage(agentDir, chatKey, messageId)
+  );
 }
 
 export function markProcessedChatMessage(

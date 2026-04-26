@@ -575,21 +575,27 @@ export class ChatController {
     const trimmed = safeString(text).trim();
     if (!trimmed) return false;
     if (!this.deliveryEnabled) return true;
+    const incomingMessageId = this.currentIncomingMessageId();
     const replyToMessageId = this.currentReplyToMessageId();
-    await sendOutboxPayload(
-      this.app,
-      this.agentDir,
-      {
-        type: "text_delivery",
-        createdAt: new Date().toISOString(),
-        chatKey: this.chatKey,
-        text: `${INTERIM_PREFIX}${trimmed}`,
-        replyToMessageId: replyToMessageId || undefined,
-        sessionFile: this.currentSessionFile(),
-      },
-      this.h,
-    ).catch(() => {});
-    return true;
+    try {
+      await sendOutboxPayload(
+        this.app,
+        this.agentDir,
+        {
+          type: "text_delivery",
+          createdAt: new Date().toISOString(),
+          chatKey: this.chatKey,
+          text: `${INTERIM_PREFIX}${trimmed}`,
+          replyToMessageId: replyToMessageId || undefined,
+          sessionFile: this.currentSessionFile(),
+        },
+        this.h,
+      );
+      this.markProcessedMessage(incomingMessageId);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async resumeSessionFile(sessionFile: string) {

@@ -40,6 +40,7 @@ import {
   pickSenderNickname,
   pickUserId,
   safeString,
+  hasInboundChatMessageReplyBoundary,
 } from "./chat-helpers.js";
 import { buildInboundChatLogInput } from "./inbound-normalization.js";
 import { ChatController, loadChatSettings } from "./controller.js";
@@ -62,7 +63,6 @@ import {
 } from "../chat-runtime/index.js";
 import { listChatRuntimeAdapterEntries } from "./runtime-config.js";
 import { composeChatKey, loadIdentity, trustOf } from "./support.js";
-import { getChatMessage } from "./message-store.js";
 import { sendOutboxPayload } from "./transport.js";
 import type { ChatOutboxPayload } from "../rin-lib/chat-outbox.js";
 import { normalizeSessionRef } from "../session/ref.js";
@@ -361,17 +361,8 @@ export async function startChatBridge(
         safeString(bot?.platform).trim() === safeString(platform).trim() &&
         safeString(bot?.selfId).trim() === safeString(selfId).trim(),
     );
-  const isInboundMessageProcessed = (chatKey: string, messageId: string) => {
-    const nextChatKey = safeString(chatKey).trim();
-    const nextMessageId = safeString(messageId).trim();
-    if (!nextChatKey || !nextMessageId) return false;
-    return Boolean(
-      safeString(
-        getChatMessage(runtime.agentDir, nextChatKey, nextMessageId)
-          ?.processedAt || "",
-      ).trim(),
-    );
-  };
+  const isInboundMessageProcessed = (chatKey: string, messageId: string) =>
+    hasInboundChatMessageReplyBoundary(runtime.agentDir, chatKey, messageId);
   const handleCommandSession = async (
     session: any,
     command: { name: string; argsText: string },

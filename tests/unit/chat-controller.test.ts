@@ -330,6 +330,99 @@ test("chat controller flushes a completed interim assistant message before a lat
   ]);
 });
 
+test("chat controller treats delivered interim assistant text as an inbound reply boundary", async () => {
+  const controller = await createController("telegram/1:2");
+  const chatKey = "telegram/1:2";
+  let sendCount = 0;
+  controller.app = {
+    bots: [
+      {
+        platform: "telegram",
+        selfId: "1",
+        async sendMessage() {
+          sendCount += 1;
+          return [`assistant-${sendCount}`];
+        },
+        async createReaction() {},
+        async deleteReaction() {},
+        internal: {
+          async sendChatAction() {},
+        },
+      },
+    ],
+  };
+
+  const sessionFile = path.join(
+    controller.agentDir,
+    "sessions",
+    "interim-boundary-chat.jsonl",
+  );
+  await fs.mkdir(path.dirname(sessionFile), { recursive: true });
+  await fs.writeFile(sessionFile, "", "utf8");
+  saveChatMessage(controller.agentDir, {
+    chatKey,
+    platform: "telegram",
+    botId: "1",
+    chatId: "2",
+    chatType: "private",
+    messageId: "m-interim-boundary",
+    role: "user",
+    receivedAt: new Date().toISOString(),
+    text: "hello",
+  });
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => sessionFile,
+      getSessionId: () => "session-interim-boundary",
+      getSessionName: () => chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile,
+      sessionId: "session-interim-boundary",
+    }),
+    prompt: async () => {
+      await controller.handleSessionEvent({ type: "agent_start" });
+      await controller.handleSessionEvent({
+        type: "message_end",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "我先查一下" }],
+        },
+      });
+      await controller.handleSessionEvent({ type: "tool_execution_start" });
+      throw new Error("chat_controller_disposed");
+    },
+    switchSession: async () => {},
+  };
+
+  await assert.rejects(
+    controller.runTurn({
+      text: "hello",
+      attachments: [],
+      incomingMessageId: "m-interim-boundary",
+      replyToMessageId: "m-interim-boundary",
+    }),
+    /chat_controller_disposed/,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const inbound = getChatMessage(
+    controller.agentDir,
+    chatKey,
+    "m-interim-boundary",
+  );
+  const assistant = getChatMessage(controller.agentDir, chatKey, "assistant-1");
+  assert.ok(inbound?.processedAt);
+  assert.equal(inbound?.sessionFile, "interim-boundary-chat.jsonl");
+  assert.equal(assistant?.role, "assistant");
+  assert.equal(assistant?.replyToMessageId, "m-interim-boundary");
+  assert.equal(assistant?.text, "··· 我先查一下");
+  assert.equal(assistant?.sessionFile, "interim-boundary-chat.jsonl");
+});
+
 test("chat controller does not treat assistant message updates as interim when a tool boundary follows", async () => {
   const controller = await createController("telegram/1:2");
   const chatKey = "telegram/1:2";
