@@ -1,9 +1,3 @@
-export function isNonArrayObject(
-  value: unknown,
-): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 export function loadFirstValidCandidate<T>(
   filePaths: string[],
   readCandidate: (filePath: string) => unknown,

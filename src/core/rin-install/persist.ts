@@ -6,13 +6,11 @@ import {
   listChatStateFiles,
   listDetachedControllerStateFiles,
 } from "../chat/support.js";
+import { isJsonRecord } from "../json-utils.js";
 import { normalizeLanguageTag } from "../language.js";
 import { stringifyJson } from "../platform/fs.js";
 import { safeString } from "../text-utils.js";
-import {
-  isNonArrayObject,
-  loadFirstValidCandidate,
-} from "./candidate-loader.js";
+import { loadFirstValidCandidate } from "./candidate-loader.js";
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 import {
   defaultHomeForUser,
@@ -315,11 +313,11 @@ export function applyInstallUpgradeMigrations(
 }
 
 function normalizeInstallerRecord(value: unknown) {
-  return isNonArrayObject(value) ? value : {};
+  return isJsonRecord(value) ? value : {};
 }
 
 function normalizeChatConfigRoot(chatConfig: unknown) {
-  return isNonArrayObject(chatConfig) ? chatConfig : null;
+  return isJsonRecord(chatConfig) ? chatConfig : null;
 }
 
 function normalizeConfiguredLanguage(language: unknown) {
@@ -465,7 +463,7 @@ export function reconcileInstallerManifest(
       manifestPaths.recoveryPaths,
       (filePath) =>
         deps.readInstallerJson<any>(filePath, null, Boolean(options.elevated)),
-      (value) => (isNonArrayObject(value) ? value : null),
+      (value) => (isJsonRecord(value) ? value : null),
     ) || {},
     options.chatConfig,
   );
