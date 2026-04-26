@@ -18,15 +18,20 @@ export function buildTuiModeArg(std: boolean) {
   return std ? "--std" : "--rpc";
 }
 
+function resolveTuiRuntimeAgentDir(installDir?: string) {
+  return (
+    String(process.env[RIN_DIR_ENV] || "").trim() ||
+    String(process.env[PI_AGENT_DIR_ENV] || "").trim() ||
+    String(installDir || "").trim()
+  );
+}
+
 export function buildTuiRuntimeEnv(
   targetUser: string,
   currentUser: string,
   installDir?: string,
 ) {
-  const runtimeAgentDir =
-    String(process.env[RIN_DIR_ENV] || "").trim() ||
-    String(process.env[PI_AGENT_DIR_ENV] || "").trim() ||
-    String(installDir || "").trim();
+  const runtimeAgentDir = resolveTuiRuntimeAgentDir(installDir);
   return targetUserRuntimeEnv(targetUser, {
     ...(runtimeAgentDir
       ? {

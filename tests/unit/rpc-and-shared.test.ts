@@ -212,21 +212,31 @@ test("tui runtime env targets the target user's direct daemon socket", () => {
   assert.ok(!String(env.RIN_DAEMON_SOCKET_PATH || "").includes("bridge.sock"));
 });
 
-test("tui runtime env preserves an explicit agent dir override for isolated runs", () => {
+test("tui runtime env preserves explicit agent dir override precedence", () => {
   const currentUser = os.userInfo().username;
   const previousRinDir = process.env.RIN_DIR;
   const previousPiAgentDir = process.env.PI_CODING_AGENT_DIR;
-  process.env.RIN_DIR = "/tmp/custom-rin-dir";
-  delete process.env.PI_CODING_AGENT_DIR;
 
   try {
-    const env = launch.buildTuiRuntimeEnv(
+    process.env.RIN_DIR = "/tmp/custom-rin-dir";
+    delete process.env.PI_CODING_AGENT_DIR;
+    const rinEnv = launch.buildTuiRuntimeEnv(
       currentUser,
       "THE_cattail",
       installPaths.defaultInstallDirForHome(os.homedir()),
     );
-    assert.equal(env.RIN_DIR, "/tmp/custom-rin-dir");
-    assert.equal(env.PI_CODING_AGENT_DIR, "/tmp/custom-rin-dir");
+    assert.equal(rinEnv.RIN_DIR, "/tmp/custom-rin-dir");
+    assert.equal(rinEnv.PI_CODING_AGENT_DIR, "/tmp/custom-rin-dir");
+
+    process.env.RIN_DIR = "   ";
+    process.env.PI_CODING_AGENT_DIR = "/tmp/custom-pi-dir";
+    const piEnv = launch.buildTuiRuntimeEnv(
+      currentUser,
+      "THE_cattail",
+      installPaths.defaultInstallDirForHome(os.homedir()),
+    );
+    assert.equal(piEnv.RIN_DIR, "/tmp/custom-pi-dir");
+    assert.equal(piEnv.PI_CODING_AGENT_DIR, "/tmp/custom-pi-dir");
   } finally {
     if (previousRinDir === undefined) delete process.env.RIN_DIR;
     else process.env.RIN_DIR = previousRinDir;
