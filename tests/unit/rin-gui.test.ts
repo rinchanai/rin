@@ -14,79 +14,75 @@ const gui = await import(
 const main = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "rin", "main.js")).href
 );
-const guiMain = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "rin-gui", "main.js")).href
-);
-const nativeWindows = await import(
+const nativeDesktop = await import(
   pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-gui", "native-windows.js"),
+    path.join(rootDir, "dist", "core", "rin-gui", "native-desktop.js"),
   ).href
 );
 
-test("GUI HTML escapes title and keeps the browser RPC endpoint local", () => {
-  const html = gui.buildGuiHtml({ title: "<Rin & GUI>" });
-
-  assert.match(html, /&lt;Rin &amp; GUI&gt;/);
-  assert.match(html, /new WebSocket/);
-  assert.match(html, /location\.host \+ '\/rpc'/);
-  assert.doesNotMatch(html, /<Rin & GUI>/);
-});
-
-test("GUI args parse local host, ephemeral port, and browser opening switch", () => {
-  assert.deepEqual(
-    gui.parseRinGuiArgs(["gui", "--host", "0.0.0.0", "--port=0", "--no-open"]),
-    {
-      host: "0.0.0.0",
-      port: 0,
-      open: false,
-      app: false,
-      surface: "auto",
-    },
-  );
-  assert.deepEqual(
-    gui.parseRinGuiArgs([
-      "--host=localhost",
-      "--port",
-      "4317",
-      "--open",
-      "--app",
-      "--native",
-    ]),
-    {
-      host: "localhost",
-      port: 4317,
-      open: true,
-      app: true,
-      surface: "native",
-    },
+test("GUI args keep the native desktop surface and reject browser fallback switches", () => {
+  assert.deepEqual(gui.parseRinGuiArgs(["gui", "--native"]), {});
+  assert.deepEqual(gui.parseRinGuiArgs(["--platform=darwin"]), {
+    platform: "darwin",
+  });
+  assert.throws(
+    () => gui.parseRinGuiArgs(["--web"]),
+    /rin_gui_browser_surface_removed:--web/,
   );
   assert.throws(
-    () => gui.parseRinGuiArgs(["--port", "70000"]),
-    /rin_gui_invalid_port:70000/,
+    () => gui.parseRinGuiArgs(["--host", "127.0.0.1"]),
+    /rin_gui_browser_surface_removed:--host/,
+  );
+  assert.throws(
+    () => gui.parseRinGuiArgs(["--app"]),
+    /rin_gui_browser_surface_removed:--app/,
   );
 });
 
-test("GUI app-mode browser invocation uses desktop app windows", () => {
-  assert.deepEqual(
-    guiMain.buildOpenBrowserInvocation("http://127.0.0.1:1/", {
-      app: true,
-      platform: "win32",
-    }),
-    {
-      command: "cmd",
-      args: ["/c", "start", "", "msedge", "--app=http://127.0.0.1:1/"],
-    },
+test("native desktop platform resolution is explicitly cross-platform", () => {
+  assert.equal(nativeDesktop.nativeDesktopPlatformFor("win32"), "win32");
+  assert.equal(nativeDesktop.nativeDesktopPlatformFor("darwin"), "darwin");
+  assert.equal(nativeDesktop.nativeDesktopPlatformFor("linux"), "linux");
+  assert.throws(
+    () => nativeDesktop.nativeDesktopPlatformFor("freebsd"),
+    /rin_gui_native_platform_unsupported:freebsd/,
   );
 });
 
-test("Windows native GUI script builds a WPF frontend without browser hosting", () => {
-  const script = nativeWindows.buildWindowsNativeGuiScript({ title: "Rin" });
+test("native desktop scripts use OS GUI toolkits without browser hosting", () => {
+  const windows = nativeDesktop.buildNativeDesktopGuiScript({
+    title: "Rin",
+    platform: "win32",
+  });
+  const macos = nativeDesktop.buildNativeDesktopGuiScript({
+    title: "Rin",
+    platform: "darwin",
+  });
+  const linux = nativeDesktop.buildNativeDesktopGuiScript({
+    title: "Rin",
+    platform: "linux",
+  });
 
-  assert.match(script, /Add-Type -AssemblyName PresentationFramework/);
-  assert.match(script, /System\.Windows\.Window/);
-  assert.match(script, /Send-RinGuiCommand/);
-  assert.doesNotMatch(script, /WebSocket/);
-  assert.doesNotMatch(script, /http:\/\//);
+  assert.equal(windows.command, "powershell.exe");
+  assert.match(windows.source, /Add-Type -AssemblyName PresentationFramework/);
+  assert.match(windows.source, /System\.Windows\.Window/);
+
+  assert.equal(macos.command, "osascript");
+  assert.match(macos.source, /ObjC\.import\('Cocoa'\)/);
+  assert.match(macos.source, /NSWindow/);
+
+  assert.equal(linux.command, "python3");
+  assert.match(linux.source, /import tkinter as tk/);
+  assert.match(linux.source, /root = tk\.Tk\(\)/);
+
+  for (const script of [windows, macos, linux]) {
+    assert.doesNotMatch(script.source, /WebSocket/);
+    assert.doesNotMatch(script.source, /http:\/\//);
+    assert.doesNotMatch(
+      script.source,
+      /msedge|chromium|google-chrome|xdg-open/,
+    );
+  }
 });
 
 test("Windows default launch mode is GUI-first while other platforms keep TUI", () => {
