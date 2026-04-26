@@ -11,14 +11,17 @@ const rootDir = path.resolve(
   "..",
 );
 const runtime = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js")).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js"))
+    .href
 );
 const inbox = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat", "inbox.js")).href
 );
 
 test("chat runtime persists inbound sessions before emitting message events", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-runtime-"),
+  );
   const app = runtime.createChatRuntimeApp(agentDir);
   const seen = [];
   app.on("message", (session) => {
@@ -50,7 +53,9 @@ test("chat runtime persists inbound sessions before emitting message events", as
 });
 
 test("chat runtime derives the durable chat key from normalized chat identity", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-runtime-"),
+  );
   const app = runtime.createChatRuntimeApp(agentDir);
 
   const session = {
@@ -76,7 +81,9 @@ test("chat runtime derives the durable chat key from normalized chat identity", 
 });
 
 test("telegram runtime advances the poll cursor only after the update is handled", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-runtime-"),
+  );
   const app = runtime.createChatRuntimeApp(agentDir);
   runtime.instantiateBuiltInChatRuntimeAdapters(app, {
     dataDir: path.join(agentDir, "data"),
@@ -108,7 +115,9 @@ test("telegram runtime advances the poll cursor only after the update is handled
 });
 
 test("telegram runtime does not advance the poll cursor when update handling fails", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-runtime-"),
+  );
   const app = runtime.createChatRuntimeApp(agentDir);
   runtime.instantiateBuiltInChatRuntimeAdapters(app, {
     dataDir: path.join(agentDir, "data"),
@@ -137,7 +146,9 @@ test("telegram runtime does not advance the poll cursor when update handling fai
 });
 
 test("slack runtime acks only after the inbound event is emitted", async () => {
-  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-runtime-"),
+  );
   const app = runtime.createChatRuntimeApp(agentDir);
   runtime.instantiateBuiltInChatRuntimeAdapters(app, {
     dataDir: path.join(agentDir, "data"),
@@ -180,4 +191,42 @@ test("slack runtime acks only after the inbound event is emitted", async () => {
   await adapter.handleSlackEvent(envelope);
 
   assert.deepEqual(order, ["emit", "ack:1"]);
+});
+
+test("onebot runtime maps the working thinking reaction to a QQ desktop-visible face", async () => {
+  const agentDir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "rin-chat-runtime-"),
+  );
+  const app = runtime.createChatRuntimeApp(agentDir);
+  runtime.instantiateBuiltInChatRuntimeAdapters(app, {
+    dataDir: path.join(agentDir, "data"),
+    settings: {},
+    adapterEntries: [
+      {
+        key: "onebot",
+        name: "OneBot",
+        config: { endpoint: "ws://127.0.0.1:1" },
+      },
+    ],
+  });
+  const adapter = [...app.adapters][0];
+  const calls = [];
+  adapter.callAction = async (action, params) => {
+    calls.push({ action, params });
+    return {};
+  };
+
+  await adapter.createReaction("1067390680", "52", "🤔");
+  await adapter.deleteReaction("1067390680", "52", "🤔");
+
+  assert.deepEqual(calls, [
+    {
+      action: "set_msg_emoji_like",
+      params: { message_id: 52, emoji_id: "212", set: true },
+    },
+    {
+      action: "set_msg_emoji_like",
+      params: { message_id: 52, emoji_id: "212", set: false },
+    },
+  ]);
 });
