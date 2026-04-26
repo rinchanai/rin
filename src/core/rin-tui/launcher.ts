@@ -11,9 +11,9 @@ import { RpcInteractiveSession } from "./runtime.js";
 import { createRpcRuntimeHost } from "./runtime-host.js";
 import { applyRinTuiOverrides } from "./upstream-overrides.js";
 
-type TuiMode = "rpc" | "std";
+const VALID_TUI_MODES = ["rpc", "std"] as const;
 
-const VALID_TUI_MODES: TuiMode[] = ["rpc", "std"];
+type TuiMode = (typeof VALID_TUI_MODES)[number];
 const RPC_TUI_STARTUP_CONNECT_ERROR_RE =
   /\bconnect (?:ENOENT|ECONNREFUSED|ECONNRESET|EPIPE)\b/;
 
@@ -56,13 +56,14 @@ function tuiModeFlag(mode: TuiMode): "--rpc" | "--std" {
 }
 
 function resolveArgvTuiMode(argv: string[]): TuiMode | undefined {
-  const modes = new Set<TuiMode>();
-  if (argv.includes("--std")) modes.add("std");
-  if (argv.includes("--rpc")) modes.add("rpc");
-  if (modes.size > 1) {
+  const wantsStd = argv.includes("--std");
+  const wantsRpc = argv.includes("--rpc");
+  if (wantsStd && wantsRpc) {
     throw new Error("Conflicting TUI mode flags: --std, --rpc.");
   }
-  return [...modes][0];
+  if (wantsStd) return "std";
+  if (wantsRpc) return "rpc";
+  return undefined;
 }
 
 export function resolveTuiMode(
