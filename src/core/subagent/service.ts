@@ -197,6 +197,13 @@ export async function getSubagentBackendInfo(
   };
 }
 
+export function shouldApplyCurrentSubagentDefaults(
+  session: SubagentSessionConfig | undefined,
+): boolean {
+  const sessionConfig = normalizeSubagentSessionConfig(session);
+  return sessionConfig.mode !== "resume" && sessionConfig.mode !== "fork";
+}
+
 function normalizeSubagentTask(
   task: SubagentTask,
   defaults: {
@@ -232,6 +239,7 @@ function buildTask(
     };
   }
 
+  const useCurrentDefaults = shouldApplyCurrentSubagentDefaults(params.session);
   return {
     ok: true,
     task: normalizeSubagentTask(
@@ -242,10 +250,14 @@ function buildTask(
         session: params.session,
         disabledExtensions: params.disabledExtensions,
       },
-      {
-        model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
-        thinkingLevel: currentThinkingLevel,
-      },
+      useCurrentDefaults
+        ? {
+            model: ctx.model
+              ? `${ctx.model.provider}/${ctx.model.id}`
+              : undefined,
+            thinkingLevel: currentThinkingLevel,
+          }
+        : {},
     ),
   };
 }

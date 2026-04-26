@@ -271,6 +271,25 @@ test("subagent task preferences are construction-time only", async () => {
   });
 });
 
+test("subagent defaults do not override resume or fork session model settings", () => {
+  assert.equal(
+    subagentService.shouldApplyCurrentSubagentDefaults({ mode: "memory" }),
+    true,
+  );
+  assert.equal(
+    subagentService.shouldApplyCurrentSubagentDefaults({ mode: "persist" }),
+    true,
+  );
+  assert.equal(
+    subagentService.shouldApplyCurrentSubagentDefaults({ mode: "resume" }),
+    false,
+  );
+  assert.equal(
+    subagentService.shouldApplyCurrentSubagentDefaults({ mode: "fork" }),
+    false,
+  );
+});
+
 test("subagent service can hide builtin modules from worker runtime", () => {
   const disabled = subagentService.resolveSubagentDisabledBuiltinModules([
     " memory ",
