@@ -43,6 +43,10 @@ test("installer users normalize lookup and home fallback behavior", () => {
   assert.equal(users.findSystemUser("   "), undefined);
   assert.equal(users.homeForUser(" demo-user "), "/home/demo-user");
   assert.equal(users.targetHomeForUser(" demo-user "), "/home/demo-user");
+  assert.equal(
+    users.targetHomeForUser(" demo-user "),
+    users.homeForUser(" demo-user "),
+  );
 });
 
 test("installer users keep macOS dscl users when home key is missing", async () => {

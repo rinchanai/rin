@@ -52,12 +52,6 @@ function pushSystemUser(
   users.push(normalized);
 }
 
-function resolveUserHome(targetUser: string) {
-  const nextTargetUser = normalizeUserName(targetUser);
-  const matched = nextTargetUser ? findSystemUser(nextTargetUser) : undefined;
-  return matched?.home || defaultHomeForUser(nextTargetUser);
-}
-
 function readDarwinUserAttribute(name: string, attribute: string) {
   try {
     const raw = execFileSync(
@@ -120,11 +114,13 @@ export function findSystemUser(targetUser: string) {
 }
 
 export function homeForUser(targetUser: string) {
-  return resolveUserHome(targetUser);
+  const nextTargetUser = normalizeUserName(targetUser);
+  const matched = nextTargetUser ? findSystemUser(nextTargetUser) : undefined;
+  return matched?.home || defaultHomeForUser(nextTargetUser);
 }
 
 export function targetHomeForUser(targetUser: string) {
-  return resolveUserHome(targetUser);
+  return homeForUser(targetUser);
 }
 
 export function describeOwnership(targetUser: string, installDir: string) {
