@@ -9,7 +9,6 @@ import type { Model } from "@mariozechner/pi-ai";
 const HOME_DIR = os.homedir();
 
 import { loadRinSessionManagerModule } from "../rin-lib/loader.js";
-import { MEMORY_TASK_THINKING_LEVEL } from "../rin-lib/memory-task-config.js";
 import { openBoundSession } from "../session/factory.js";
 import { forkSessionManagerCompat } from "../session/fork.js";
 import { readSessionMetadata } from "../session/metadata.js";
@@ -150,7 +149,9 @@ async function runForkedSessionPrompt(options: {
     agentDir: options.agentDir,
     additionalExtensionPaths: options.additionalExtensionPaths,
     sessionManager: fork.sessionManager,
-    thinkingLevel: MEMORY_TASK_THINKING_LEVEL,
+    // Do not override thinkingLevel here. The fork must inherit the source
+    // session's model options so provider prefix caching matches a normal
+    // appended turn on the same conversation.
   });
   try {
     await session.prompt(options.prompt, {
