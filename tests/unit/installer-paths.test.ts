@@ -66,10 +66,19 @@ test("installer path helpers centralize installed entrypoints", () => {
       ),
     ],
   );
-  assert.deepEqual(
-    pathsMod.installedAppEntryPaths(installDir, "rin-daemon"),
-    {
-      currentPath: path.join(
+  assert.deepEqual(pathsMod.installedAppEntryPaths(installDir, "rin-daemon"), {
+    currentPath: path.join(
+      installDir,
+      "app",
+      "current",
+      "dist",
+      "app",
+      "rin-daemon",
+      "daemon.js",
+    ),
+    legacyPath: path.join(installDir, "app", "current", "dist", "daemon.js"),
+    candidates: [
+      path.join(
         installDir,
         "app",
         "current",
@@ -78,21 +87,9 @@ test("installer path helpers centralize installed entrypoints", () => {
         "rin-daemon",
         "daemon.js",
       ),
-      legacyPath: path.join(installDir, "app", "current", "dist", "daemon.js"),
-      candidates: [
-        path.join(
-          installDir,
-          "app",
-          "current",
-          "dist",
-          "app",
-          "rin-daemon",
-          "daemon.js",
-        ),
-        path.join(installDir, "app", "current", "dist", "daemon.js"),
-      ],
-    },
-  );
+      path.join(installDir, "app", "current", "dist", "daemon.js"),
+    ],
+  });
 
   const daemonCandidates = pathsMod.installedAppEntryCandidates(
     installDir,
@@ -112,7 +109,11 @@ test("installer path helpers centralize installed entrypoints", () => {
   );
   assert.deepEqual(seen, daemonCandidates);
   assert.equal(
-    pathsMod.resolveInstalledAppEntryPath(installDir, "rin-install", () => false),
+    pathsMod.resolveInstalledAppEntryPath(
+      installDir,
+      "rin-install",
+      () => false,
+    ),
     null,
   );
 });
@@ -124,6 +125,7 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
 
   assert.equal(pathsMod.defaultHomeRoot("linux"), "/home");
   assert.equal(pathsMod.defaultHomeRoot("darwin"), "/Users");
+  assert.equal(pathsMod.defaultHomeRoot("win32"), "C:\\Users");
   assert.deepEqual(pathsMod.installDiscoveryHomeRoots(), ["/home", "/Users"]);
   assert.equal(pathsMod.defaultHomeForUser("demo", "linux"), linuxHome);
   assert.equal(pathsMod.defaultHomeForUser("demo", "darwin"), macHome);
@@ -159,34 +161,31 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     path.join(linuxHome, ".rin", "installer.json"),
     path.join(linuxHome, ".rin", "config", "installer.json"),
   ]);
-  assert.deepEqual(
-    pathsMod.installerManifestPaths(installDir, linuxHome),
-    {
-      manifestPath: path.join(installDir, "installer.json"),
-      locatorManifestPath: path.join(linuxHome, ".rin", "installer.json"),
-      legacyManifestPath: path.join(installDir, "config", "installer.json"),
-      legacyLocatorManifestPath: path.join(
-        linuxHome,
-        ".rin",
-        "config",
-        "installer.json",
-      ),
-      writePaths: [
-        path.join(installDir, "installer.json"),
-        path.join(linuxHome, ".rin", "installer.json"),
-      ],
-      cleanupPaths: [
-        path.join(installDir, "config", "installer.json"),
-        path.join(linuxHome, ".rin", "config", "installer.json"),
-      ],
-      recoveryPaths: [
-        path.join(installDir, "installer.json"),
-        path.join(linuxHome, ".rin", "installer.json"),
-        path.join(installDir, "config", "installer.json"),
-        path.join(linuxHome, ".rin", "config", "installer.json"),
-      ],
-    },
-  );
+  assert.deepEqual(pathsMod.installerManifestPaths(installDir, linuxHome), {
+    manifestPath: path.join(installDir, "installer.json"),
+    locatorManifestPath: path.join(linuxHome, ".rin", "installer.json"),
+    legacyManifestPath: path.join(installDir, "config", "installer.json"),
+    legacyLocatorManifestPath: path.join(
+      linuxHome,
+      ".rin",
+      "config",
+      "installer.json",
+    ),
+    writePaths: [
+      path.join(installDir, "installer.json"),
+      path.join(linuxHome, ".rin", "installer.json"),
+    ],
+    cleanupPaths: [
+      path.join(installDir, "config", "installer.json"),
+      path.join(linuxHome, ".rin", "config", "installer.json"),
+    ],
+    recoveryPaths: [
+      path.join(installDir, "installer.json"),
+      path.join(linuxHome, ".rin", "installer.json"),
+      path.join(installDir, "config", "installer.json"),
+      path.join(linuxHome, ".rin", "config", "installer.json"),
+    ],
+  });
   assert.deepEqual(
     pathsMod.installerManifestPaths(path.join(linuxHome, ".rin"), linuxHome)
       .writePaths,
@@ -224,6 +223,24 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
   assert.equal(
     pathsMod.launcherMetadataPathForHome(macHome, "darwin"),
     path.join(macHome, "Library", "Application Support", "rin", "install.json"),
+  );
+  assert.equal(
+    pathsMod.launcherMetadataPathForHome("C:\\Users\\demo", "win32"),
+    path.join("C:\\Users\\demo", "AppData", "Roaming", "rin", "install.json"),
+  );
+  assert.equal(
+    pathsMod.windowsStartupLauncherPathForHome("C:\\Users\\demo"),
+    path.join(
+      "C:\\Users\\demo",
+      "AppData",
+      "Roaming",
+      "Microsoft",
+      "Windows",
+      "Start Menu",
+      "Programs",
+      "Startup",
+      "Rin Daemon.cmd",
+    ),
   );
   const alternateLauncherMetadataPath = pathsMod.launcherMetadataPathForHome(
     linuxHome,
@@ -278,12 +295,18 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     ),
     path.join(macHome, "Library", "LaunchAgents", "com.rin.daemon.demo.plist"),
   );
-  assert.equal(pathsMod.isManagedLaunchdPlistName("com.rin.daemon.demo.plist"), true);
+  assert.equal(
+    pathsMod.isManagedLaunchdPlistName("com.rin.daemon.demo.plist"),
+    true,
+  );
   assert.equal(
     pathsMod.isManagedLaunchdPlistName("  com.rin.daemon.demo.plist  "),
     true,
   );
-  assert.equal(pathsMod.isManagedLaunchdPlistName("com.example.demo.plist"), false);
+  assert.equal(
+    pathsMod.isManagedLaunchdPlistName("com.example.demo.plist"),
+    false,
+  );
   assert.equal(
     pathsMod.installDirFromManagedLaunchdPlist(
       "\n<key>RIN_DIR</key>\n<string>/Users/demo/.rin</string>\n",
@@ -298,8 +321,14 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     "rin-daemon-demo.service",
     "rin-daemon.service",
   ]);
-  assert.equal(pathsMod.isManagedSystemdUnitName("rin-daemon-demo.service"), true);
-  assert.equal(pathsMod.isManagedSystemdUnitName("  rin-daemon.service  "), true);
+  assert.equal(
+    pathsMod.isManagedSystemdUnitName("rin-daemon-demo.service"),
+    true,
+  );
+  assert.equal(
+    pathsMod.isManagedSystemdUnitName("  rin-daemon.service  "),
+    true,
+  );
   assert.equal(pathsMod.isManagedSystemdUnitName("other.service"), false);
   assert.equal(
     pathsMod.installDirFromManagedSystemdUnit(
@@ -309,7 +338,7 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
   );
   assert.equal(
     pathsMod.installDirFromManagedSystemdUnit(
-      "\nEnvironment=\"RIN_DIR=/srv/rin-demo quoted\"\nExecStart=node daemon.js\n",
+      '\nEnvironment="RIN_DIR=/srv/rin-demo quoted"\nExecStart=node daemon.js\n',
     ),
     "/srv/rin-demo quoted",
   );
@@ -327,7 +356,13 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     ),
   );
   assert.deepEqual(pathsMod.managedSystemdUnitPathsForHome(linuxHome, "demo"), [
-    path.join(linuxHome, ".config", "systemd", "user", "rin-daemon-demo.service"),
+    path.join(
+      linuxHome,
+      ".config",
+      "systemd",
+      "user",
+      "rin-daemon-demo.service",
+    ),
     path.join(linuxHome, ".config", "systemd", "user", "rin-daemon.service"),
   ]);
   assert.equal(
@@ -335,7 +370,10 @@ test("installer path helpers centralize home, manifest, config, service, doc, an
     path.join(macHome, "Library", "Caches", "rin-daemon", "daemon.sock"),
   );
   assert.equal(
-    pathsMod.daemonSocketPathForHome(linuxHome, { uid: 123, platform: "linux" }),
+    pathsMod.daemonSocketPathForHome(linuxHome, {
+      uid: 123,
+      platform: "linux",
+    }),
     path.join("/run/user", "123", "rin-daemon", "daemon.sock"),
   );
   assert.equal(

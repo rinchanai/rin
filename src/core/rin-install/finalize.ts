@@ -60,8 +60,9 @@ async function applyInstalledRuntime(
   const release = options.release;
 
   const ownership = describeOwnership(targetUser, installDir);
-  const installServiceNow =
-    process.platform === "darwin" || process.platform === "linux";
+  const installServiceNow = ["darwin", "linux", "win32"].includes(
+    process.platform,
+  );
   const useElevatedWrite = shouldUseElevatedWrite(targetUser, ownership);
   const useElevatedService = installServiceNow && targetUser !== currentUser;
   const serviceDeps = { findSystemUser, targetHomeForUser };
@@ -171,7 +172,7 @@ async function applyInstalledRuntime(
       );
 
   let installedService: null | {
-    kind: "launchd" | "systemd";
+    kind: "launchd" | "systemd" | "windows-startup";
     label: string;
     servicePath: string;
     stdoutPath?: string;
@@ -227,7 +228,9 @@ async function applyInstalledRuntime(
           ? installServiceNow
             ? "A Linux user service will be installed and started for this daemon when supported."
             : "You skipped dedicated Linux service installation for now; start the daemon explicitly when needed."
-          : "No dedicated service was installed; the installer will not start the daemon for you.",
+          : process.platform === "win32"
+            ? "A Windows Startup launcher will be installed for this daemon."
+            : "No dedicated service was installed; the installer will not start the daemon for you.",
   };
 }
 

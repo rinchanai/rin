@@ -40,7 +40,9 @@ function pathCandidatesForSupportedHomeDiscoveryPlatforms(
 }
 
 export function defaultHomeRoot(platform = process.platform) {
-  return platform === "darwin" ? "/Users" : "/home";
+  if (platform === "darwin") return "/Users";
+  if (platform === "win32") return "C:\\Users";
+  return "/home";
 }
 
 export function installDiscoveryHomeRoots() {
@@ -249,9 +251,29 @@ export function launcherPathForHome(home: string, name: "rin" | "rin-install") {
   return path.join(localBinDirForHome(home), name);
 }
 
+export function windowsStartupDirForHome(home: string) {
+  return path.join(
+    home,
+    "AppData",
+    "Roaming",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+  );
+}
+
+export function windowsStartupLauncherPathForHome(home: string) {
+  return path.join(windowsStartupDirForHome(home), "Rin Daemon.cmd");
+}
+
 export function appConfigDirForHome(home: string, platform = process.platform) {
   if (platform === "darwin") {
     return path.join(home, "Library", "Application Support", "rin");
+  }
+  if (platform === "win32") {
+    return path.join(home, "AppData", "Roaming", "rin");
   }
   return path.join(home, ".config", "rin");
 }

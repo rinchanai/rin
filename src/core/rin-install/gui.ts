@@ -6,8 +6,10 @@ import { AddressInfo } from "node:net";
 import { escapeHtml } from "../rin-gui/web-assets.js";
 import { releaseInfoFromEnv } from "../rin-lib/release.js";
 import {
+  buildFinalizeInstallPlanCommand,
   runFinalizeInstallPlanInChild,
   type FinalizeInstallOptions,
+  writeFinalizeInstallPlanFile,
 } from "./apply-plan.js";
 import { detectCurrentUser } from "./common.js";
 import { readJsonFile, writeJsonFile } from "./fs-utils.js";
@@ -313,7 +315,7 @@ export function buildGuiInstallerFinalizePlan(
     plan.installDir,
   );
   const platform = deps.platform || process.platform;
-  const installServiceNow = platform === "darwin" || platform === "linux";
+  const installServiceNow = ["darwin", "linux", "win32"].includes(platform);
   const needsElevatedWrite = (
     deps.shouldUseElevatedWrite || shouldUseElevatedWrite
   )(plan.targetUser, ownership);
@@ -523,7 +525,13 @@ export function buildGuiInstallerHtml() {
           body: JSON.stringify(installerPayload()),
         });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || 'rin_installer_gui_apply_failed');
+        if (!response.ok) {
+          if (payload.terminalCommand) {
+            applyStatus.textContent = 'Terminal confirmation required. Run this command in the launch terminal: ' + payload.terminalCommand;
+            return;
+          }
+          throw new Error(payload.error || 'rin_installer_gui_apply_failed');
+        }
         applyStatus.textContent = 'Installation applied. Settings: ' + (payload.result && payload.result.written && payload.result.written.settingsPath || 'written');
       } catch (error) {
         applyStatus.textContent = String(error && error.message || error);
@@ -600,10 +608,13 @@ export async function runGuiInstaller(
       void readJsonBody(request)
         .then(async (body) => {
           const finalPlan = buildGuiInstallerFinalizePlan(body);
-          if (finalPlan.needsElevatedWrite) {
+          if (finalPlan.needsElevatedWrite || finalPlan.needsElevatedService) {
+            const planPath = writeFinalizeInstallPlanFile(finalPlan.options);
             sendJson(response, 409, {
-              error: "rin_installer_gui_elevated_write_requires_terminal",
+              error: "rin_installer_gui_terminal_handoff_required",
               finalRequirements: finalPlan.finalRequirements,
+              planPath,
+              terminalCommand: buildFinalizeInstallPlanCommand(planPath),
             });
             return;
           }

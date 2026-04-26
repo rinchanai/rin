@@ -75,14 +75,18 @@ async function launchInstallerInitTui(options: {
 
 export async function startInstaller() {
   const applyPlanRaw = String(process.env.RIN_INSTALL_APPLY_PLAN || "").trim();
-  if (applyPlanRaw) {
+  const applyPlanFile = String(
+    process.env.RIN_INSTALL_APPLY_PLAN_FILE || "",
+  ).trim();
+  if (applyPlanRaw || applyPlanFile) {
     const resultPath = String(
       process.env.RIN_INSTALL_APPLY_RESULT || "",
     ).trim();
     const errorPath = String(process.env.RIN_INSTALL_APPLY_ERROR || "").trim();
     try {
+      const rawPlan = applyPlanRaw || fs.readFileSync(applyPlanFile, "utf8");
       const result = await finalizeInstallPlan(
-        JSON.parse(applyPlanRaw) as FinalizeInstallOptions,
+        JSON.parse(rawPlan) as FinalizeInstallOptions,
       );
       if (resultPath)
         fs.writeFileSync(resultPath, `${JSON.stringify(result)}\n`, "utf8");
