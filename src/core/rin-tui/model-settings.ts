@@ -5,6 +5,8 @@ import { resolveRuntimeProfile } from "../rin-lib/runtime.js";
 import { computeAvailableThinkingLevels } from "./session-helpers.js";
 
 const RPC_MODE_VALUES = ["all", "one-at-a-time"] as const;
+type RpcModeValue = (typeof RPC_MODE_VALUES)[number];
+type RpcModeStateKey = "steeringMode" | "followUpMode";
 const DEFAULT_RPC_MODE = "one-at-a-time";
 
 let persistentSettingsManagerPromise: Promise<any> | null = null;
@@ -22,10 +24,10 @@ function sendRpcClientMessage(target: any, payload: Record<string, unknown>) {
 
 function normalizeRpcMode(
   mode: string,
-  fallback: (typeof RPC_MODE_VALUES)[number] = DEFAULT_RPC_MODE,
-): (typeof RPC_MODE_VALUES)[number] {
-  return RPC_MODE_VALUES.includes(mode as (typeof RPC_MODE_VALUES)[number])
-    ? (mode as (typeof RPC_MODE_VALUES)[number])
+  fallback: RpcModeValue = DEFAULT_RPC_MODE,
+): RpcModeValue {
+  return RPC_MODE_VALUES.includes(mode as RpcModeValue)
+    ? (mode as RpcModeValue)
     : fallback;
 }
 
@@ -120,21 +122,43 @@ export function cycleRpcThinkingLevel(target: any): ThinkingLevel | undefined {
   return next;
 }
 
+function setRpcModeOption(
+  target: any,
+  options: {
+    mode: RpcModeValue;
+    stateKey: RpcModeStateKey;
+    fallback: RpcModeValue;
+    settingsSetter: "setSteeringMode" | "setFollowUpMode";
+    commandType: "set_steering_mode" | "set_follow_up_mode";
+  },
+) {
+  const next = normalizeRpcMode(
+    options.mode,
+    normalizeRpcMode(target?.[options.stateKey], options.fallback),
+  );
+  setRpcTargetState(target, options.stateKey, next);
+  target?.settingsManager?.[options.settingsSetter]?.(next);
+  sendRpcClientMessage(target, { type: options.commandType, mode: next });
+}
+
 export function setRpcSteeringMode(target: any, mode: "all" | "one-at-a-time") {
-  const next = normalizeRpcMode(mode, normalizeRpcMode(target?.steeringMode, "all"));
-  setRpcTargetState(target, "steeringMode", next);
-  target?.settingsManager?.setSteeringMode?.(next);
-  sendRpcClientMessage(target, { type: "set_steering_mode", mode: next });
+  setRpcModeOption(target, {
+    mode,
+    stateKey: "steeringMode",
+    fallback: "all",
+    settingsSetter: "setSteeringMode",
+    commandType: "set_steering_mode",
+  });
 }
 
 export function setRpcFollowUpMode(target: any, mode: "all" | "one-at-a-time") {
-  const next = normalizeRpcMode(
+  setRpcModeOption(target, {
     mode,
-    normalizeRpcMode(target?.followUpMode, DEFAULT_RPC_MODE),
-  );
-  setRpcTargetState(target, "followUpMode", next);
-  target?.settingsManager?.setFollowUpMode?.(next);
-  sendRpcClientMessage(target, { type: "set_follow_up_mode", mode: next });
+    stateKey: "followUpMode",
+    fallback: DEFAULT_RPC_MODE,
+    settingsSetter: "setFollowUpMode",
+    commandType: "set_follow_up_mode",
+  });
 }
 
 export function setRpcAutoCompaction(target: any, enabled: boolean) {
