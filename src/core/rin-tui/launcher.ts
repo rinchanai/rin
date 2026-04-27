@@ -17,7 +17,10 @@ import { applyRinTuiOverrides } from "./upstream-overrides.js";
 const VALID_TUI_MODES = ["rpc", "std"] as const;
 
 type TuiMode = (typeof VALID_TUI_MODES)[number];
-type TuiInteractiveOptions = Pick<InteractiveModeOptions, "verbose">;
+type TuiInteractiveOptions = Pick<
+  InteractiveModeOptions,
+  "initialMessage" | "initialMessages" | "verbose"
+>;
 const RPC_TUI_STARTUP_CONNECT_ERROR_RE =
   /\bconnect (?:ENOENT|ECONNREFUSED|ECONNRESET|EPIPE)\b/;
 
@@ -95,7 +98,29 @@ export function resolveTuiMode(
 export function resolveTuiInteractiveOptions(
   argv: string[],
 ): TuiInteractiveOptions {
+  const messages: string[] = [];
+  let passThroughMessages = false;
+  for (const rawArg of argv) {
+    const arg = String(rawArg || "").trim();
+    if (!arg) continue;
+    if (passThroughMessages) {
+      messages.push(arg);
+      continue;
+    }
+    if (arg === "--") {
+      passThroughMessages = true;
+      continue;
+    }
+    if (arg === "--rpc" || arg === "--std" || arg === "--verbose") {
+      continue;
+    }
+    if (arg.startsWith("-")) continue;
+    messages.push(arg);
+  }
+
   return {
+    initialMessage: messages[0],
+    initialMessages: messages.length > 1 ? messages.slice(1) : undefined,
     verbose: argv.includes("--verbose") || undefined,
   };
 }
