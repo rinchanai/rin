@@ -99,6 +99,50 @@ test("installer interactive helpers compute final requirements", () => {
   );
 });
 
+test("promptTargetInstall falls back to all users when no other user exists", async () => {
+  const seen = { selects: [] };
+  const result = await interactive.promptTargetInstall(
+    {
+      ensureNotCancelled(value) {
+        return value;
+      },
+      async select(options) {
+        seen.selects.push(options);
+        return seen.selects.length === 1 ? "existing" : "alice";
+      },
+      async text(options) {
+        return options.defaultValue;
+      },
+      async confirm() {
+        throw new Error("confirm should not be used");
+      },
+    },
+    "alice",
+    [
+      {
+        name: "alice",
+        uid: 1000,
+        gid: 1000,
+        home: "/home/alice",
+        shell: "/bin/bash",
+      },
+    ],
+    (user) => `/home/${user}`,
+  );
+
+  assert.equal(result.cancelled, false);
+  assert.equal(result.targetUser, "alice");
+  assert.equal(result.installDir, "/home/alice/.rin");
+  assert.deepEqual(
+    result.existingCandidates.map((entry) => entry.name),
+    ["alice"],
+  );
+  assert.deepEqual(
+    seen.selects[1].options.map((option) => option.value),
+    ["alice"],
+  );
+});
+
 test("promptDefaultTargetUser returns the installer choice", async () => {
   const result = await interactive.promptDefaultTargetUser(
     {

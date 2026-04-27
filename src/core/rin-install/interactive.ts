@@ -38,11 +38,7 @@ export async function promptTargetInstall(
   i18n: InstallerI18n = createInstallerI18n(),
 ) {
   const otherUsers = allUsers.filter((entry) => entry.name !== currentUser);
-  const existingCandidates = otherUsers.length
-    ? otherUsers
-    : allUsers.filter((entry) => entry.name !== currentUser).length
-      ? allUsers.filter((entry) => entry.name !== currentUser)
-      : allUsers;
+  const existingCandidates = otherUsers.length ? otherUsers : allUsers;
 
   const targetMode = prompt.ensureNotCancelled(
     await prompt.select({
