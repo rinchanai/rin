@@ -7,9 +7,9 @@ import path from "node:path";
 import {
   appendSessionTurnState,
   initializeTerminalTurnStateBaseline,
-  listResumableSessionFiles,
+  listInterruptedTurnSessionFiles,
   readSessionTurnState,
-  shouldResumeSessionFile,
+  shouldResumeInterruptedTurn,
 } from "../../src/core/session/turn-state.js";
 
 test("session turn state uses the latest durable marker", async () => {
@@ -37,13 +37,13 @@ test("session turn state uses the latest durable marker", async () => {
       status: "completed",
       timestamp: "2",
     });
-    assert.equal(shouldResumeSessionFile(sessionFile), false);
+    assert.equal(shouldResumeInterruptedTurn(sessionFile), false);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
-test("session turn state treats missing, active, or post-terminal user tails as resumable", async () => {
+test("session turn state treats missing, active, or post-terminal user tails as interrupted turns", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {
     const unmarked = path.join(dir, "unmarked.jsonl");
@@ -104,18 +104,21 @@ test("session turn state treats missing, active, or post-terminal user tails as 
       ].join("\n"),
     );
 
-    assert.deepEqual(listResumableSessionFiles(dir), [
+    assert.deepEqual(listInterruptedTurnSessionFiles(dir), [
       active,
       completedWithUserTail,
       unmarked,
     ]);
-    assert.equal(shouldResumeSessionFile(completedWithAssistantTail), false);
+    assert.equal(
+      shouldResumeInterruptedTurn(completedWithAssistantTail),
+      false,
+    );
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
-test("terminal turn state baseline marks legacy untracked sessions completed once", async () => {
+test("terminal turn state baseline leaves legacy sessions recoverable without mutating logs", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {
     const baselineFile = path.join(dir, "data", "baseline.json");
@@ -131,21 +134,36 @@ test("terminal turn state baseline marks legacy untracked sessions completed onc
       `${JSON.stringify({ type: "custom", customType: "rin-turn-state", data: { status: "active" }, id: "c1", parentId: null })}\n`,
     );
 
-    initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile);
+    const baselineTimestamp = initializeTerminalTurnStateBaseline(
+      path.dirname(legacy),
+      baselineFile,
+    );
 
-    assert.equal(readSessionTurnState(legacy)?.status, "completed");
+    assert.equal(readSessionTurnState(legacy), undefined);
     assert.equal(readSessionTurnState(active)?.status, "active");
-    assert.deepEqual(listResumableSessionFiles(path.dirname(legacy)), [active]);
+    assert.deepEqual(listInterruptedTurnSessionFiles(path.dirname(legacy)), [
+      active,
+      legacy,
+    ]);
+    assert.deepEqual(
+      listInterruptedTurnSessionFiles(path.dirname(legacy), {
+        terminalBaselineTimestamp: baselineTimestamp,
+      }),
+      [active],
+    );
 
     const legacyBefore = await fs.readFile(legacy, "utf8");
-    initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile);
+    assert.equal(
+      initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile),
+      baselineTimestamp,
+    );
     assert.equal(await fs.readFile(legacy, "utf8"), legacyBefore);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
-test("terminal turn state baseline preserves unmarked interrupted sessions", async () => {
+test("terminal turn state baseline preserves unmarked interrupted turns", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {
     const baselineFile = path.join(dir, "data", "baseline.json");
@@ -209,23 +227,27 @@ test("terminal turn state baseline preserves unmarked interrupted sessions", asy
       `${JSON.stringify({ type: "message", message: { role: "assistant", content: "done" }, id: "a4", parentId: null })}\n`,
     );
 
-    initializeTerminalTurnStateBaseline(sessionsDir, baselineFile);
+    const baselineTimestamp = initializeTerminalTurnStateBaseline(
+      sessionsDir,
+      baselineFile,
+    );
 
     assert.equal(readSessionTurnState(assistantToolCall), undefined);
     assert.equal(readSessionTurnState(toolResultTail), undefined);
     assert.equal(readSessionTurnState(userTail), undefined);
-    assert.equal(readSessionTurnState(completed)?.status, "completed");
-    assert.deepEqual(listResumableSessionFiles(sessionsDir), [
-      assistantToolCall,
-      toolResultTail,
-      userTail,
-    ]);
+    assert.equal(readSessionTurnState(completed), undefined);
+    assert.deepEqual(
+      listInterruptedTurnSessionFiles(sessionsDir, {
+        terminalBaselineTimestamp: baselineTimestamp,
+      }),
+      [assistantToolCall, toolResultTail, userTail],
+    );
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
 
-test("terminal turn state baseline ignores malformed lines while preserving the latest valid parent", async () => {
+test("terminal turn state baseline ignores malformed lines when classifying legacy tails", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {
     const baselineFile = path.join(dir, "data", "baseline.json");
@@ -251,23 +273,67 @@ test("terminal turn state baseline ignores malformed lines while preserving the 
       ].join("\n"),
     );
 
-    initializeTerminalTurnStateBaseline(path.dirname(legacy), baselineFile);
+    const legacyBefore = await fs.readFile(legacy, "utf8");
+    const baselineTimestamp = initializeTerminalTurnStateBaseline(
+      path.dirname(legacy),
+      baselineFile,
+    );
 
-    const entries = (await fs.readFile(legacy, "utf8"))
-      .trim()
-      .split(/\r?\n/g)
-      .map((line) => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-    const appended = entries.at(-1);
-    assert.equal(appended.customType, "rin-turn-state");
-    assert.equal(appended.data.status, "completed");
-    assert.equal(appended.parentId, "a2");
+    assert.equal(await fs.readFile(legacy, "utf8"), legacyBefore);
+    assert.deepEqual(
+      listInterruptedTurnSessionFiles(path.dirname(legacy), {
+        terminalBaselineTimestamp: baselineTimestamp,
+      }),
+      [],
+    );
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("terminal baseline markers classify by the previous session tail", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
+  try {
+    const completed = path.join(dir, "completed.jsonl");
+    const interrupted = path.join(dir, "interrupted.jsonl");
+    const baselineEntry = {
+      type: "custom",
+      customType: "rin-turn-state",
+      data: {
+        status: "completed",
+        timestamp: "2026-04-24T00:00:00.000Z",
+        reason: "terminal-state-baseline",
+      },
+    };
+    await fs.writeFile(
+      completed,
+      [
+        JSON.stringify({
+          type: "message",
+          message: { role: "assistant", content: "done" },
+        }),
+        JSON.stringify(baselineEntry),
+        "",
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      interrupted,
+      [
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "tool-1", name: "bash" }],
+          },
+        }),
+        JSON.stringify(baselineEntry),
+        "",
+      ].join("\n"),
+    );
+
+    assert.equal(shouldResumeInterruptedTurn(completed), false);
+    assert.equal(shouldResumeInterruptedTurn(interrupted), true);
+    assert.deepEqual(listInterruptedTurnSessionFiles(dir), [interrupted]);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
