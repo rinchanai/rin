@@ -16,9 +16,8 @@ const execMod = await import(
   ).href
 );
 const cronMod = await import(
-  pathToFileURL(
-    path.join(rootDir, "dist", "core", "rin-daemon", "cron.js"),
-  ).href
+  pathToFileURL(path.join(rootDir, "dist", "core", "rin-daemon", "cron.js"))
+    .href
 );
 
 test("cron execution resolves session file preference", async () => {
@@ -34,6 +33,12 @@ test("cron execution resolves session file preference", async () => {
       dedicatedSessionFile: "/tmp/b",
     }),
     "/tmp/b",
+  );
+  assert.equal(
+    await execMod.resolveCronSessionFile({
+      session: { mode: "ephemeral" },
+    }),
+    undefined,
   );
 });
 
@@ -267,6 +272,63 @@ test("cron seeded dedicated agent task preserves its bound session", async () =>
   }
 });
 
+test("cron ephemeral agent task disposes and removes its transient session file", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
+  const transientSessionFile = path.join(
+    agentDir,
+    "sessions",
+    "managed",
+    "task",
+    "cron_ephemeral.jsonl",
+  );
+  const task = {
+    id: "cron_ephemeral",
+    chatKey: "telegram/demo:1",
+    session: { mode: "ephemeral" },
+    model: "openai-codex/gpt-5.5",
+    thinkingLevel: "low",
+    target: { kind: "agent_prompt", prompt: "hello" },
+  };
+  const calls = [];
+  try {
+    await fs.mkdir(path.dirname(transientSessionFile), { recursive: true });
+    await fs.writeFile(transientSessionFile, "temporary session", "utf8");
+    const result = await execMod.executeCronAgentTask(task, {
+      agentDir,
+      runId: "run-1",
+      chat: {
+        runTurn: async (payload) => {
+          calls.push(payload);
+          return {
+            finalText: "done",
+            sessionId: "s1",
+            sessionFile: transientSessionFile,
+          };
+        },
+      },
+    });
+    assert.equal(result.text, "done");
+    assert.equal(result.sessionFile, undefined);
+    await assert.rejects(fs.stat(transientSessionFile), /ENOENT/);
+    assert.equal(task.dedicatedSessionFile, undefined);
+    assert.deepEqual(calls, [
+      {
+        chatKey: "telegram/demo:1",
+        controllerKey: "cron_ephemeral",
+        deliveryEnabled: false,
+        affectChatBinding: false,
+        disposeAfterTurn: true,
+        text: "hello",
+        sessionFile: undefined,
+        model: "openai-codex/gpt-5.5",
+        thinkingLevel: "low",
+      },
+    ]);
+  } finally {
+    await fs.rm(agentDir, { recursive: true, force: true });
+  }
+});
+
 test("cron agent task falls back to canonical turn result text", async () => {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-cron-agent-"));
   const task = {
@@ -315,7 +377,9 @@ test("cron scheduler installs the built-in daily memory index repair task", asyn
   try {
     scheduler.start();
     assert.equal(
-      scheduler.listTasks().some((task) => task.id === "builtin_memory_index_repair_daily"),
+      scheduler
+        .listTasks()
+        .some((task) => task.id === "builtin_memory_index_repair_daily"),
       false,
     );
     const builtIn = scheduler.getTask("builtin_memory_index_repair_daily", {
@@ -424,5 +488,3 @@ test("cron scheduler derives running from live execution without persisting it",
     await fs.rm(agentDir, { recursive: true, force: true });
   }
 });
-
-

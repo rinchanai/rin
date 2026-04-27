@@ -97,7 +97,7 @@ function buildTaskTarget(target: CronTaskInput["target"]) {
 
 function buildTaskForSave(input: CronTaskInput, defaults: TaskSaveDefaults) {
   const taskId = String(input.id || "").trim() || createCronTaskId();
-  const session = input.session ?? { mode: "dedicated" as const };
+  const session = input.session ?? { mode: "ephemeral" as const };
   const chatKey =
     input.chatKey !== undefined ? input.chatKey : defaults.chatKey;
   return {
@@ -138,7 +138,13 @@ function renderTaskSession(task: TaskRecordLike) {
     : task.dedicatedSessionFile
       ? String(task.dedicatedSessionFile)
       : "";
-  return `session=${String(task.session?.mode || "")}${sessionFile ? `:${sessionFile}` : ""}`;
+  const options = [
+    task.model ? `model=${String(task.model)}` : "",
+    task.thinkingLevel ? `thinking=${String(task.thinkingLevel)}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `session=${String(task.session?.mode || "")}${sessionFile ? `:${sessionFile}` : ""}${options ? ` ${options}` : ""}`;
 }
 
 function renderTaskState(task: TaskRecordLike) {
@@ -246,6 +252,21 @@ const taskSchema = Type.Object({
       Type.Null(),
     ]),
   ),
+  model: Type.Optional(
+    Type.String({
+      description:
+        "Optional model override for agent_prompt tasks, in provider/model form such as openai-codex/gpt-5.5.",
+    }),
+  ),
+  thinkingLevel: Type.Optional(
+    createLooseEnumSchema(
+      ["off", "minimal", "low", "medium", "high", "xhigh"] as const,
+      {
+        description:
+          "Optional thinking level override for agent_prompt tasks. Allowed values: off, minimal, low, medium, high, xhigh.",
+      },
+    ),
+  ),
   trigger: Type.Object({
     kind: createLooseEnumSchema(["interval", "cron", "once"] as const, {
       description:
@@ -290,14 +311,17 @@ const taskSchema = Type.Object({
   ),
   session: Type.Optional(
     Type.Object({
-      mode: createLooseEnumSchema(["current", "dedicated"] as const, {
-        description:
-          "Session binding mode. Allowed values: `current` or `dedicated`.",
-      }),
+      mode: createLooseEnumSchema(
+        ["current", "dedicated", "ephemeral"] as const,
+        {
+          description:
+            "Session binding mode. Use `ephemeral` for stateless tasks that should not keep a session file; use `dedicated` when future runs should reuse context.",
+        },
+      ),
       sessionFile: Type.Optional(
         Type.String({
           description:
-            "Optional session path override. When mode=current, bind to that current session. When mode=dedicated, the first run creates a dedicated session automatically and later runs reuse it; provide this to seed or override that persistent dedicated session explicitly.",
+            "Optional session path override. When mode=current, bind to that current session. When mode=dedicated, the first run creates a dedicated session automatically and later runs reuse it; provide this to seed or override that persistent dedicated session explicitly. Ignored for mode=ephemeral.",
         }),
       ),
     }),

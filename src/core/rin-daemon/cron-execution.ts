@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -41,6 +41,7 @@ export async function sendChatText(
 export async function resolveCronSessionFile(task: CronTaskRecord) {
   if (task.session.mode === "current") return task.session.sessionFile;
   if (task.session.mode === "dedicated") return task.dedicatedSessionFile;
+  if (task.session.mode === "ephemeral") return undefined;
   throw new Error(
     `cron_invalid_session_mode:${String((task.session as any)?.mode || "unknown")}`,
   );
@@ -125,6 +126,25 @@ export async function executeCronShellTask(
   });
 }
 
+function isSafeEphemeralSessionFile(agentDir: string, sessionFile?: string) {
+  const resolved = String(sessionFile || "").trim();
+  if (!resolved) return false;
+  const sessionsDir = path.resolve(agentDir, "sessions");
+  const absolute = path.resolve(resolved);
+  return (
+    absolute.startsWith(`${sessionsDir}${path.sep}`) &&
+    path.basename(absolute).endsWith(".jsonl")
+  );
+}
+
+async function removeEphemeralSessionFile(
+  agentDir: string,
+  sessionFile?: string,
+) {
+  if (!isSafeEphemeralSessionFile(agentDir, sessionFile)) return;
+  await rm(path.resolve(String(sessionFile)), { force: true }).catch(() => {});
+}
+
 export async function executeCronAgentTask(
   task: CronTaskRecord,
   options: {
@@ -151,14 +171,19 @@ export async function executeCronAgentTask(
     controllerKey,
     deliveryEnabled: false,
     affectChatBinding: false,
-    disposeAfterTurn: false,
+    disposeAfterTurn: task.session.mode === "ephemeral",
     text: task.target.prompt,
     sessionFile,
+    ...(task.model ? { model: task.model } : {}),
+    ...(task.thinkingLevel ? { thinkingLevel: task.thinkingLevel } : {}),
   });
   const completion = resolveTurnCompletion(result);
   const finalText = summarizeText(completion.finalText, 4000);
   if (!finalText) throw new Error("cron_final_assistant_text_missing");
   const nextSessionFile = String(result?.sessionFile || "").trim() || undefined;
+  if (task.session.mode === "ephemeral") {
+    await removeEphemeralSessionFile(options.agentDir, nextSessionFile);
+  }
   if (task.session.mode === "dedicated") {
     task.dedicatedSessionFile = dedicatedSessionFile;
     if (nextSessionFile) {
@@ -175,7 +200,8 @@ export async function executeCronAgentTask(
   return {
     text: finalText,
     sessionId: String(result?.sessionId || "").trim() || undefined,
-    sessionFile: nextSessionFile,
+    sessionFile:
+      task.session.mode === "ephemeral" ? undefined : nextSessionFile,
   };
 }
 

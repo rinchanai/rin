@@ -738,6 +738,8 @@ export class ChatController {
       incomingMessageId?: string;
       sessionFile?: string;
       promptMeta?: PromptContextMeta;
+      model?: string;
+      thinkingLevel?: string;
     },
     mode: "prompt" | "steer" = "prompt",
   ) {
@@ -757,6 +759,8 @@ export class ChatController {
         images,
         sessionFile: wantedSessionFile,
         restoreSessionFile,
+        model: input.model,
+        thinkingLevel: input.thinkingLevel,
       });
       this.updateStoredSessionFile(
         result.sessionFile,
@@ -808,6 +812,8 @@ export class ChatController {
           images,
           sessionFile: wantedSessionFile,
           restoreSessionFile,
+          model: input.model,
+          thinkingLevel: input.thinkingLevel,
         });
         this.updateStoredSessionFile(
           result.sessionFile,

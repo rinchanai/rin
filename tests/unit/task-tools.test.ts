@@ -122,9 +122,11 @@ async function withTaskDaemon(dataForPayload, run, options = {}) {
   }
 }
 
-test("save_task exposes in-place update id and dedicated auto-reuse semantics", () => {
+test("save_task exposes session reuse, ephemeral, model and thinking options", () => {
   const saveTool = getTaskTool("save_task");
   assert.equal(saveTool.parameters.properties.id.type, "string");
+  assert.equal(saveTool.parameters.properties.model.type, "string");
+  assert.ok(saveTool.parameters.properties.thinkingLevel);
   assert.equal(
     saveTool.parameters.properties.session.properties.sessionFile.type,
     "string",
@@ -142,6 +144,12 @@ test("save_task exposes in-place update id and dedicated auto-reuse semantics", 
         .description || "",
     ),
     /later runs reuse it/,
+  );
+  assert.match(
+    String(
+      saveTool.parameters.properties.session.properties.mode.description || "",
+    ),
+    /ephemeral/,
   );
 });
 
@@ -321,7 +329,7 @@ test("save_task normalizes prompt and shell targets before sending them to the d
       );
 
       assert.equal(requests.length, 2);
-      assert.equal(requests[0].task?.session?.mode, "dedicated");
+      assert.equal(requests[0].task?.session?.mode, "ephemeral");
       assert.equal(requests[0].task?.target?.kind, "agent_prompt");
       assert.equal(requests[0].task?.target?.prompt, "hello world");
       assert.equal(requests[1].task?.chatKey, null);

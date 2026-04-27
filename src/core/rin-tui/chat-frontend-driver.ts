@@ -339,11 +339,43 @@ export class ChatFrontendDriver {
     };
   }
 
+  private async applyTurnModelOptions(options: {
+    model?: string;
+    thinkingLevel?: string;
+  }) {
+    if (!this.session) throw new Error("chat_session_not_connected");
+    const modelRef = safeString(options.model || "").trim();
+    if (modelRef) {
+      const [provider, ...modelIdParts] = modelRef.split("/");
+      const modelId = modelIdParts.join("/");
+      const models = await this.session.modelRegistry.getAvailable();
+      const model = models.find(
+        (item: any) => item?.provider === provider && item?.id === modelId,
+      );
+      if (!model) throw new Error(`chat_model_not_found:${modelRef}`);
+      await this.session.setModel(model);
+    }
+
+    const thinkingLevel = safeString(options.thinkingLevel || "").trim();
+    if (thinkingLevel) {
+      this.session.thinkingLevel = thinkingLevel;
+      if (this.session.state && typeof this.session.state === "object") {
+        this.session.state.thinkingLevel = thinkingLevel;
+      }
+      await this.session.client?.send?.({
+        type: "set_thinking_level",
+        level: thinkingLevel,
+      });
+    }
+  }
+
   async runTurn(input: {
     text: string;
     images?: any[];
     sessionFile?: string;
     restoreSessionFile?: string;
+    model?: string;
+    thinkingLevel?: string;
   }): Promise<DriverTurnResult> {
     const sessionFile = safeString(input.sessionFile || "").trim();
     const restoreSessionFile = safeString(
@@ -357,6 +389,10 @@ export class ChatFrontendDriver {
     const ready = await this.ensureSessionReady(
       sessionFile || restoreSessionFile,
     );
+    await this.applyTurnModelOptions({
+      model: input.model,
+      thinkingLevel: input.thinkingLevel,
+    });
     const text = safeString(input.text).trim();
     const images = Array.isArray(input.images) ? input.images : [];
 

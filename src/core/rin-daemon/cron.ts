@@ -50,9 +50,17 @@ export type CronTaskTermination = {
 };
 
 export type CronTaskSessionBinding = {
-  mode: "current" | "dedicated";
+  mode: "current" | "dedicated" | "ephemeral";
   sessionFile?: string;
 };
+
+export type CronTaskThinkingLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
 
 export type CronTaskRecord = {
   id: string;
@@ -71,6 +79,8 @@ export type CronTaskRecord = {
   completionReason?: string;
   pausedAt?: string;
   chatKey?: string;
+  model?: string;
+  thinkingLevel?: CronTaskThinkingLevel;
   trigger: CronTaskTrigger;
   termination?: CronTaskTermination;
   session: CronTaskSessionBinding;
@@ -91,11 +101,30 @@ export type CronTaskInput = {
   name?: string;
   enabled?: boolean;
   chatKey?: string | null;
+  model?: string;
+  thinkingLevel?: CronTaskThinkingLevel;
   trigger?: CronTaskTrigger;
   termination?: CronTaskTermination | null;
   session?: CronTaskSessionBinding;
   target?: CronTaskTarget;
 };
+
+function normalizeThinkingLevel(
+  value: unknown,
+): CronTaskThinkingLevel | undefined {
+  const level = safeString(value).trim();
+  if (
+    level === "off" ||
+    level === "minimal" ||
+    level === "low" ||
+    level === "medium" ||
+    level === "high" ||
+    level === "xhigh"
+  ) {
+    return level;
+  }
+  return undefined;
+}
 
 function createBuiltInMemoryIndexRepairTask(agentDir: string): CronTaskRecord {
   const createdAt = nowIso();
@@ -245,7 +274,11 @@ export class CronScheduler {
 
     const session = input.session ?? existing?.session;
     if (!session) throw new Error("cron_session_required");
-    if (session.mode !== "current" && session.mode !== "dedicated") {
+    if (
+      session.mode !== "current" &&
+      session.mode !== "dedicated" &&
+      session.mode !== "ephemeral"
+    ) {
       throw new Error(
         `cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`,
       );
@@ -264,6 +297,15 @@ export class CronScheduler {
             )
           : undefined,
     };
+    const model =
+      input.model !== undefined
+        ? safeString(input.model).trim() || undefined
+        : existing?.model;
+    const thinkingLevel = normalizeThinkingLevel(
+      input.thinkingLevel !== undefined
+        ? input.thinkingLevel
+        : existing?.thinkingLevel,
+    );
     const target = input.target ?? existing?.target;
     if (!target) throw new Error("cron_target_required");
     const normalizedTarget: CronTaskTarget =
@@ -328,6 +370,8 @@ export class CronScheduler {
       completionReason: existing?.completionReason,
       pausedAt: existing?.pausedAt,
       chatKey,
+      model,
+      thinkingLevel,
       trigger: normalizedTrigger,
       termination,
       session: normalizedSession,
@@ -406,6 +450,8 @@ export class CronScheduler {
       if (!row || typeof row !== "object" || !row.id) continue;
       row.running = false;
       row.lastError = row.lastError ? safeString(row.lastError) : undefined;
+      row.thinkingLevel = normalizeThinkingLevel(row.thinkingLevel);
+      row.model = safeString(row.model).trim() || undefined;
       if ((row.session as any)?.mode === "dedicated") {
         row.dedicatedSessionPersistent = true;
         if (
