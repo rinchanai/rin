@@ -118,13 +118,6 @@ Rin provides a `fetch` tool. As an agent, you should know that:
 - prefer it over `web_search` when discovery is not needed
 - it returns readable text content rather than downloading files
 
-## Attention resources
-
-Rin provides the `rules` tool. As an agent, you should know that:
-
-- it can discover ancestor `AGENTS.md` / `CLAUDE.md` files for a target directory
-- when you need project-specific rules, this is often one of the best first entrypoints
-
 ## Token usage telemetry
 
 Rin records detailed token telemetry for runtime events and assistant usage.

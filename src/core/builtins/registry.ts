@@ -1,7 +1,6 @@
 import { normalizeStringList } from "../text-utils.js";
 
 const BUILTIN_MODULES = [
-  ["rules", "../rules/index.js"],
   ["web-search", "../rin-web-search/index.js"],
   ["fetch", "../fetch/index.js"],
   ["memory", "../memory/index.js"],

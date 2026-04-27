@@ -9,7 +9,7 @@ const rootDir = path.resolve(
   "..",
 );
 const textUtils = await import(
-  pathToFileURL(path.join(rootDir, "dist", "core", "text-utils.js")).href,
+  pathToFileURL(path.join(rootDir, "dist", "core", "text-utils.js")).href
 );
 
 test("text utils normalize strings consistently", () => {
@@ -29,10 +29,10 @@ test("text utils normalize strings consistently", () => {
   );
   assert.deepEqual(textUtils.normalizeStringList(null), []);
   assert.deepEqual(
-    textUtils.normalizeStringList(new Set([" Rules ", "rules", "FETCH"]), {
+    textUtils.normalizeStringList(new Set([" Memory ", "memory", "FETCH"]), {
       lowercase: true,
     }),
-    ["rules", "fetch"],
+    ["memory", "fetch"],
   );
   assert.deepEqual(
     textUtils.normalizeStringList([" First ", "first", "SECOND"], {
@@ -40,10 +40,7 @@ test("text utils normalize strings consistently", () => {
     }),
     ["First", "SECOND"],
   );
-  assert.equal(
-    textUtils.normalizeNeedle("  Hello\nWORLD  "),
-    "hello world",
-  );
+  assert.equal(textUtils.normalizeNeedle("  Hello\nWORLD  "), "hello world");
   assert.deepEqual(
     textUtils.latinTokens("Demo/path demo_path B x yz HTTP/API"),
     ["demo/path", "demo_path", "http/api"],
@@ -52,8 +49,8 @@ test("text utils normalize strings consistently", () => {
     textUtils.latinTokens("foo//bar /baz/ gpt-5 gpt-5 __ cache__/tmp"),
     ["foo", "bar", "baz", "gpt-5", "cache", "tmp"],
   );
-  assert.deepEqual(
-    textUtils.latinTokens("HTTP/API http/api Gpt-5 gpt-5"),
-    ["http/api", "gpt-5"],
-  );
+  assert.deepEqual(textUtils.latinTokens("HTTP/API http/api Gpt-5 gpt-5"), [
+    "http/api",
+    "gpt-5",
+  ]);
 });

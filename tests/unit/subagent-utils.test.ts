@@ -298,7 +298,7 @@ test("subagent service can hide builtin modules from worker runtime", () => {
     "SubAgent",
   ]);
   assert.deepEqual(disabled, ["memory", "subagent"]);
-  assert.equal(disabled.includes("rules"), false);
+  assert.equal(disabled.includes("fetch"), false);
 });
 
 test("subagent service aggregates task state from current-run assistant messages", () => {

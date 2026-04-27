@@ -121,20 +121,20 @@ test("composite builtin runner returns wrapped builtin tools for registry refres
 test("builtin registry normalizes disabled module names once", () => {
   assert.deepEqual(
     builtinRegistry.normalizeBuiltinModuleNames([
-      " rules ",
-      "RULES",
+      " memory ",
+      "MEMORY",
       " fetch ",
       "",
     ]),
-    ["rules", "fetch"],
+    ["memory", "fetch"],
   );
 });
 
 test("builtin registry derives module order and paths from one table", () => {
   assert.deepEqual(
-    builtinRegistry.getBuiltinModuleNames([" rules ", "FETCH"]),
+    builtinRegistry.getBuiltinModuleNames([" memory ", "FETCH"]),
     builtinRegistry.BUILTIN_MODULE_ORDER.filter(
-      (name) => name !== "rules" && name !== "fetch",
+      (name) => name !== "memory" && name !== "fetch",
     ),
   );
   assert.equal(
