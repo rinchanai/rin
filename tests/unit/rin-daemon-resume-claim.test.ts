@@ -141,17 +141,21 @@ process.stdin.on("data", (chunk) => {
 
     const state = await rpc(socketPath, { id: "1", type: "get_state" });
     const messages = await rpc(socketPath, { id: "2", type: "get_messages" });
-    const entries = await rpc(socketPath, {
+    const snapshot = await rpc(socketPath, {
       id: "3",
+      type: "get_session_snapshot",
+    });
+    const entries = await rpc(socketPath, {
+      id: "4",
       type: "get_session_entries",
     });
-    const tree = await rpc(socketPath, { id: "4", type: "get_session_tree" });
-    const commands = await rpc(socketPath, { id: "5", type: "get_commands" });
+    const tree = await rpc(socketPath, { id: "5", type: "get_session_tree" });
+    const commands = await rpc(socketPath, { id: "6", type: "get_commands" });
     const models = await rpc(socketPath, {
-      id: "6",
+      id: "7",
       type: "get_available_models",
     });
-    const oauth = await rpc(socketPath, { id: "7", type: "get_oauth_state" });
+    const oauth = await rpc(socketPath, { id: "8", type: "get_oauth_state" });
 
     assert.equal(state.success, true);
     assert.equal(state.data?.sessionId, "");
@@ -159,6 +163,8 @@ process.stdin.on("data", (chunk) => {
     assert.equal(state.data?.messageCount, 0);
     assert.equal(messages.success, true);
     assert.deepEqual(messages.data, { messages: [] });
+    assert.equal(snapshot.success, true);
+    assert.deepEqual(snapshot.data, { entries: [], tree: [], leafId: null });
     assert.equal(entries.success, true);
     assert.deepEqual(entries.data, { entries: [] });
     assert.equal(tree.success, true);

@@ -475,6 +475,12 @@ export async function runCustomRpcMode(
         return run(id, type, () => session.abortBash());
       case "get_session_stats":
         return done(id, type, session.getSessionStats());
+      case "get_session_snapshot":
+        return done(id, type, {
+          entries: session.sessionManager.getEntries(),
+          tree: session.sessionManager.getTree(),
+          leafId: session.sessionManager.getLeafId(),
+        });
       case "get_session_entries":
         return done(id, type, { entries: session.sessionManager.getEntries() });
       case "get_session_tree":

@@ -64,19 +64,6 @@ type RpcResourceSnapshot = {
   extensions: { extensions: any[]; errors: any[] };
 };
 
-type FallbackSessionEntry = {
-  type: "message";
-  id: string;
-  parentId: string | null;
-  timestamp: string;
-  message: AgentMessage;
-};
-
-type FallbackSessionTreeNode = {
-  entry: FallbackSessionEntry;
-  children: FallbackSessionTreeNode[];
-};
-
 function emptyRpcResourceSnapshot(): RpcResourceSnapshot {
   return {
     skills: { skills: [], diagnostics: [] },
@@ -124,27 +111,6 @@ function normalizeQueuedMessages(value: any) {
     const text = String(item ?? "");
     return text ? [text] : [];
   });
-}
-
-function buildMessageFallbackSessionData(messages: AgentMessage[]) {
-  const timestamp = new Date(0).toISOString();
-  const entries = messages.flatMap((message, index) => {
-    if (!message || typeof message !== "object") return [];
-    const id = `rpc-message-${index + 1}`;
-    const parentId = index > 0 ? `rpc-message-${index}` : null;
-    return [{ type: "message" as const, id, parentId, timestamp, message }];
-  });
-  const tree: FallbackSessionTreeNode[] = [];
-  let currentChildren = tree;
-  for (const entry of entries) {
-    const node: FallbackSessionTreeNode = { entry, children: [] };
-    currentChildren.push(node);
-    currentChildren = node.children;
-  }
-  return {
-    entriesData: { entries },
-    treeData: { tree, leafId: entries.at(-1)?.id ?? null },
-  };
 }
 
 function createRpcResourceLoader(getSnapshot: () => RpcResourceSnapshot) {
@@ -1279,31 +1245,12 @@ export class RpcInteractiveSession {
   }
 
   private async refreshSessionData() {
-    const [entriesData, treeData] = await Promise.all([
-      this.call("get_session_entries"),
-      this.call("get_session_tree"),
-    ]);
-    const hasEntries = Array.isArray(entriesData?.entries)
-      ? entriesData.entries.length > 0
-      : false;
-    if (!hasEntries) {
-      const messagesData = await this.call("get_messages").catch(
-        () => undefined,
-      );
-      if (Array.isArray(messagesData?.messages)) {
-        const fallback = buildMessageFallbackSessionData(messagesData.messages);
-        if (fallback.entriesData.entries.length > 0) {
-          applyRpcSessionTree(
-            this as any,
-            fallback.entriesData,
-            fallback.treeData,
-          );
-          this.syncDerivedMessages();
-          return;
-        }
-      }
-    }
-    applyRpcSessionTree(this as any, entriesData, treeData);
+    const snapshot = await this.call("get_session_snapshot");
+    applyRpcSessionTree(
+      this as any,
+      { entries: snapshot?.entries },
+      { tree: snapshot?.tree, leafId: snapshot?.leafId },
+    );
     this.syncDerivedMessages();
   }
 

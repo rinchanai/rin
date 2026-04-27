@@ -187,6 +187,9 @@ export async function startDaemon(
   > = {
     get_state: () => ({ data: emptySessionState() }),
     get_messages: () => ({ data: { messages: [] } }),
+    get_session_snapshot: () => ({
+      data: { entries: [], tree: [], leafId: null },
+    }),
     get_session_entries: () => ({ data: { entries: [] } }),
     get_session_tree: () => ({ data: { tree: [], leafId: null } }),
     get_commands: async () => ({

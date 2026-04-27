@@ -6,6 +6,7 @@ export type RinRpcCommandType =
   | "abort"
   | "get_state"
   | "get_messages"
+  | "get_session_snapshot"
   | "get_session_entries"
   | "get_session_tree"
   | "get_commands"

@@ -206,12 +206,10 @@ test("rpc runtime loads worker resource diagnostics after remote session setup",
               autoCompactionEnabled: false,
             },
           });
-        case "get_session_entries":
-          return Promise.resolve({ success: true, data: { entries: [] } });
-        case "get_session_tree":
+        case "get_session_snapshot":
           return Promise.resolve({
             success: true,
-            data: { tree: [], leafId: null },
+            data: { entries: [], tree: [], leafId: null },
           });
         case "get_all_models":
           return Promise.resolve({ success: true, data: { models: [] } });
@@ -376,13 +374,10 @@ test("rpc runtime resumes a session through select_session", async () => {
           },
         });
       }
-      if (payload.type === "get_session_entries") {
-        return Promise.resolve({ success: true, data: { entries: [] } });
-      }
-      if (payload.type === "get_session_tree") {
+      if (payload.type === "get_session_snapshot") {
         return Promise.resolve({
           success: true,
-          data: { tree: [], leafId: null },
+          data: { entries: [], tree: [], leafId: null },
         });
       }
       if (payload.type === "get_available_models") {
@@ -417,9 +412,11 @@ test("rpc runtime resumes a session through select_session", async () => {
   assert.equal(sent[0]?.sessionPath, "/tmp/s2.jsonl");
 });
 
-test("rpc runtime falls back to worker messages when active session entries are unavailable", async () => {
+test("rpc runtime restores active session history from one daemon snapshot", async () => {
+  const sent = [];
   const session = new RpcInteractiveSession({
     send(payload) {
+      sent.push(payload);
       if (payload.type === "get_state") {
         return Promise.resolve({
           success: true,
@@ -437,23 +434,32 @@ test("rpc runtime falls back to worker messages when active session entries are 
           },
         });
       }
-      if (payload.type === "get_session_entries") {
-        return Promise.resolve({ success: true, data: { entries: [] } });
-      }
-      if (payload.type === "get_session_tree") {
-        return Promise.resolve({
-          success: true,
-          data: { tree: [], leafId: null },
-        });
-      }
-      if (payload.type === "get_messages") {
+      if (payload.type === "get_session_snapshot") {
+        const userEntry = {
+          id: "entry-1",
+          parentId: null,
+          timestamp: "2026-04-27T00:00:00.000Z",
+          type: "message",
+          message: { role: "user", content: "hello" },
+        };
+        const assistantEntry = {
+          id: "entry-2",
+          parentId: "entry-1",
+          timestamp: "2026-04-27T00:00:01.000Z",
+          type: "message",
+          message: { role: "assistant", content: "world" },
+        };
         return Promise.resolve({
           success: true,
           data: {
-            messages: [
-              { role: "user", content: "hello" },
-              { role: "assistant", content: "world" },
+            entries: [userEntry, assistantEntry],
+            tree: [
+              {
+                entry: userEntry,
+                children: [{ entry: assistantEntry, children: [] }],
+              },
             ],
+            leafId: "entry-2",
           },
         });
       }
@@ -490,6 +496,11 @@ test("rpc runtime falls back to worker messages when active session entries are 
     { role: "user", content: "hello" },
     { role: "assistant", content: "world" },
   ]);
+  const sentTypes = sent.map((payload) => payload.type);
+  assert.equal(sentTypes.includes("get_session_snapshot"), true);
+  assert.equal(sentTypes.includes("get_session_entries"), false);
+  assert.equal(sentTypes.includes("get_session_tree"), false);
+  assert.equal(sentTypes.includes("get_messages"), false);
 });
 
 test("rpc runtime normalizes daemon session listings into canonical session metadata", async () => {
