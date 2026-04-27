@@ -4,6 +4,58 @@ import {
 } from "../rin-install/managed-service.js";
 import { createTargetExecutionContext, ParsedArgs } from "./shared.js";
 
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asRecord(value: unknown) {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+export function renderWebSearchDoctorLines(webSearchStatus: unknown) {
+  const status = asRecord(webSearchStatus);
+  const runtime = asRecord(status?.runtime);
+  const providers = asArray(runtime?.providers);
+  const instances = asArray(status?.instances);
+  return [
+    `webSearchRuntimeReady=${runtime?.ready ? "yes" : "no"}`,
+    `webSearchMode=${String(runtime?.mode || "unknown")}`,
+    `webSearchProviderCount=${String(runtime?.providerCount ?? 0)}`,
+    `webSearchInstanceCount=${String(instances.length)}`,
+    ...providers.map((provider) => `webSearchProvider=${String(provider)}`),
+    ...instances.map((instance) => {
+      const value = asRecord(instance) ?? {};
+      return `webSearchInstance=${value.instanceId} pid=${String(value.pid || 0)} alive=${value.alive ? "yes" : "no"} port=${String(value.port || "")} baseUrl=${value.baseUrl || ""}`;
+    }),
+  ];
+}
+
+export function renderChatBridgeDoctorLines(chatStatus: unknown) {
+  const status = asRecord(chatStatus);
+  return [
+    `chatBridgeReady=${status?.ready ? "yes" : "no"}`,
+    `chatBridgeAdapterCount=${String(status?.adapterCount ?? 0)}`,
+    `chatBridgeBotCount=${String(status?.botCount ?? 0)}`,
+    `chatBridgeControllerCount=${String(status?.controllerCount ?? 0)}`,
+    `chatBridgeDetachedControllerCount=${String(status?.detachedControllerCount ?? 0)}`,
+  ];
+}
+
+export function renderDaemonWorkerDoctorLines(daemonStatus: unknown) {
+  const status = asRecord(daemonStatus);
+  if (!status) return [];
+  return [
+    `daemonWorkerCount=${String(status.workerCount ?? 0)}`,
+    ...asArray(status.workers).map((worker) => {
+      const value = asRecord(worker) ?? {};
+      const sessionFile = value.sessionFile ? String(value.sessionFile) : "-";
+      return `daemonWorker=${String(value.id)} pid=${String(value.pid)} role=${String(value.role)} attached=${String(value.attachedConnections)} pending=${String(value.pendingResponses)} streaming=${String(value.isStreaming)} compacting=${String(value.isCompacting)} session=${sessionFile}`;
+    }),
+  ];
+}
+
 export async function runDoctor(parsed: ParsedArgs) {
   const context = createTargetExecutionContext(parsed);
   const socketReady = await context.canConnectSocket();
@@ -21,44 +73,10 @@ export async function runDoctor(parsed: ParsedArgs) {
   ];
 
   lines.push(
-    `webSearchRuntimeReady=${webSearchStatus?.runtime?.ready ? "yes" : "no"}`,
-    `webSearchMode=${String(webSearchStatus?.runtime?.mode || "unknown")}`,
-    `webSearchProviderCount=${String(webSearchStatus?.runtime?.providerCount ?? 0)}`,
-    `webSearchInstanceCount=${String(Array.isArray(webSearchStatus?.instances) ? webSearchStatus.instances.length : 0)}`,
+    ...renderWebSearchDoctorLines(webSearchStatus),
+    ...renderChatBridgeDoctorLines(chatStatus),
+    ...renderDaemonWorkerDoctorLines(daemonStatus),
   );
-  for (const provider of Array.isArray(webSearchStatus?.runtime?.providers)
-    ? webSearchStatus.runtime.providers
-    : []) {
-    lines.push(`webSearchProvider=${String(provider)}`);
-  }
-  for (const instance of Array.isArray(webSearchStatus?.instances)
-    ? webSearchStatus.instances
-    : []) {
-    lines.push(
-      `webSearchInstance=${instance.instanceId} pid=${String(instance.pid || 0)} alive=${instance.alive ? "yes" : "no"} port=${String(instance.port || "")} baseUrl=${instance.baseUrl || ""}`,
-    );
-  }
-
-  lines.push(
-    `chatBridgeReady=${chatStatus?.ready ? "yes" : "no"}`,
-    `chatBridgeAdapterCount=${String(chatStatus?.adapterCount ?? 0)}`,
-    `chatBridgeBotCount=${String(chatStatus?.botCount ?? 0)}`,
-    `chatBridgeControllerCount=${String(chatStatus?.controllerCount ?? 0)}`,
-    `chatBridgeDetachedControllerCount=${String(chatStatus?.detachedControllerCount ?? 0)}`,
-  );
-
-  if (daemonStatus) {
-    lines.push(`daemonWorkerCount=${String(daemonStatus.workerCount ?? 0)}`);
-    const workerLines = Array.isArray(daemonStatus.workers)
-      ? daemonStatus.workers.map((worker: any) => {
-          const sessionFile = worker.sessionFile
-            ? String(worker.sessionFile)
-            : "-";
-          return `daemonWorker=${String(worker.id)} pid=${String(worker.pid)} role=${String(worker.role)} attached=${String(worker.attachedConnections)} pending=${String(worker.pendingResponses)} streaming=${String(worker.isStreaming)} compacting=${String(worker.isCompacting)} session=${sessionFile}`;
-        })
-      : [];
-    lines.push(...workerLines);
-  }
 
   if (context.systemctl) {
     const status = findManagedSystemdStatusSnapshot(
