@@ -32,6 +32,17 @@ export function buildNativeDesktopHostLaunch(
 function frontendEventText(event: any) {
   if (!event || typeof event !== "object") return "";
   if (event.type === "status") return String(event.text || "");
+  if (event.type === "message_delta") return String(event.delta || "");
+  if (event.type === "tool") {
+    const title = event.title || event.toolName || "tool";
+    const body = event.body ? `\n${event.body}` : "";
+    return `${title}${body}`;
+  }
+  if (event.type === "session_changed") {
+    return event.title
+      ? `Session: ${String(event.title)}`
+      : `Session changed: ${String(event.sessionId || "")}`;
+  }
   const payload = event.payload || event;
   if (typeof payload.delta === "string") return payload.delta;
   if (typeof payload.text === "string") return payload.text;
@@ -39,8 +50,85 @@ function frontendEventText(event: any) {
   return JSON.stringify(payload);
 }
 
+function nativeEventRole(event: any) {
+  if (event?.type === "status") return "system";
+  if (event?.type === "message_delta") return event.role || "assistant";
+  if (event?.type === "tool") return "tool";
+  return event?.type || "system";
+}
+
 function sendNativeEvent(stdin: NodeJS.WritableStream, payload: unknown) {
   stdin.write(`${JSON.stringify(payload)}\n`);
+}
+
+async function handleNativeDesktopCommand(
+  command: any,
+  client: RinDaemonFrontendClient,
+  stdin: NodeJS.WritableStream,
+) {
+  if (command?.type === "prompt") {
+    await client.submit(String(command.text || ""));
+    return;
+  }
+  if (command?.type === "abort") {
+    await client.abort();
+    return;
+  }
+  if (command?.type === "close") return "close";
+  if (command?.type === "sessions:list") {
+    sendNativeEvent(stdin, {
+      type: "sessions:list",
+      sessions: await client.listSessions(),
+    });
+    return;
+  }
+  if (command?.type === "session:resume") {
+    const sessionId = String(command.sessionId || "");
+    if (!sessionId) throw new Error("rin_native_gui_missing_session");
+    await client.resumeSession(sessionId);
+    sendNativeEvent(stdin, { type: "session:resumed", sessionId });
+    sendNativeEvent(stdin, {
+      type: "sessions:list",
+      sessions: await client.listSessions(),
+    });
+    return;
+  }
+  if (command?.type === "models:list") {
+    sendNativeEvent(stdin, {
+      type: "models:list",
+      models: await client.listModels(),
+    });
+    return;
+  }
+  if (command?.type === "commands:list") {
+    sendNativeEvent(stdin, {
+      type: "commands:list",
+      commands: await client.getCommands(),
+    });
+    return;
+  }
+  if (command?.type === "autocomplete:list") {
+    sendNativeEvent(stdin, {
+      type: "autocomplete:list",
+      items: await client.getAutocompleteItems(String(command.input || "")),
+    });
+    return;
+  }
+  if (command?.type === "dialog:open") {
+    sendNativeEvent(stdin, {
+      type: "dialog:open",
+      dialog: (await client.openDialog?.(String(command.id || ""))) || null,
+    });
+    return;
+  }
+  if (command?.type === "dialog:respond") {
+    await client.respondDialog?.(String(command.id || ""), command.payload);
+    sendNativeEvent(stdin, { type: "dialog:respond", ok: true });
+    return;
+  }
+  throw new Error(
+    `rin_native_gui_unknown_command:${String(command?.type || "")}`,
+  );
 }
 
 export async function runNativeDesktopGui(options: {
@@ -57,8 +145,9 @@ export async function runNativeDesktopGui(options: {
   const unsubscribe = client.subscribe((event) => {
     sendNativeEvent(child.stdin, {
       type: event.type === "status" ? "status" : "message",
-      role: event.type === "status" ? "system" : event.type,
+      role: nativeEventRole(event),
       text: frontendEventText(event),
+      event,
     });
   });
 
@@ -78,13 +167,12 @@ export async function runNativeDesktopGui(options: {
         } catch {
           return;
         }
-        if (command?.type === "prompt") {
-          await client.submit(String(command.text || ""));
-        } else if (command?.type === "abort") {
-          await client.abort();
-        } else if (command?.type === "close") {
-          child.kill();
-        }
+        const result = await handleNativeDesktopCommand(
+          command,
+          client,
+          child.stdin,
+        );
+        if (result === "close") child.kill();
       })().catch((error) => {
         sendNativeEvent(child.stdin, {
           type: "status",
@@ -99,6 +187,19 @@ export async function runNativeDesktopGui(options: {
   sendNativeEvent(child.stdin, {
     type: "status",
     text: "Connected to local Rin daemon",
+  });
+  sendNativeEvent(child.stdin, {
+    type: "surface:ready",
+    capabilities: [
+      "prompt",
+      "abort",
+      "sessions",
+      "session-resume",
+      "models",
+      "commands",
+      "autocomplete",
+      "dialogs",
+    ],
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -136,29 +237,62 @@ function buildChatDesktopHtml() {
   <style>
     :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; background: Canvas; color: CanvasText; }
-    main { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+    main { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+    aside { border-right: 1px solid color-mix(in srgb, CanvasText 18%, transparent); overflow: auto; padding: 14px; }
+    .workspace { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; }
     header { padding: 12px 16px; border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
     h1 { margin: 0; font-size: 18px; }
+    h2 { font-size: 13px; margin: 18px 0 8px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.72; }
     #status { font-size: 12px; opacity: 0.72; margin-top: 4px; }
     #messages { overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-    .message { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; }
+    .message { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; max-width: min(760px, 88%); }
     .message.user { align-self: flex-end; background: color-mix(in srgb, Highlight 14%, Canvas); }
-    .message.assistant { align-self: flex-start; background: color-mix(in srgb, CanvasText 5%, Canvas); }
+    .message.assistant, .message.message_delta { align-self: flex-start; background: color-mix(in srgb, CanvasText 5%, Canvas); }
+    .message.tool { align-self: flex-start; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .message.system { align-self: center; font-size: 12px; opacity: 0.72; }
     form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; padding: 12px 16px; border-top: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
     textarea { resize: vertical; min-height: 44px; max-height: 30vh; border-radius: 8px; padding: 10px; font: inherit; }
-    button { border-radius: 8px; padding: 0 14px; font: inherit; }
+    button { border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .list { display: grid; gap: 6px; }
+    .item { border: 1px solid color-mix(in srgb, CanvasText 15%, transparent); border-radius: 10px; padding: 8px; background: Canvas; text-align: left; }
+    .item.active { border-color: Highlight; background: color-mix(in srgb, Highlight 10%, Canvas); }
+    .item-title { font-weight: 650; }
+    .item-subtitle { font-size: 12px; opacity: 0.68; margin-top: 2px; }
+    .empty { font-size: 12px; opacity: 0.62; }
   </style>
 </head>
 <body>
   <main>
-    <header><h1>Rin</h1><div id="status">Connected to local Rin daemon</div></header>
-    <section id="messages" aria-live="polite"></section>
-    <form id="prompt-form">
-      <textarea id="prompt" placeholder="Ask Rin…" autofocus></textarea>
-      <button type="submit">Send</button>
-      <button id="abort" type="button">Abort</button>
-    </form>
+    <aside>
+      <h1>Rin</h1>
+      <div id="status">Connected to local Rin daemon</div>
+      <div class="toolbar">
+        <button id="refresh-runtime" type="button">Refresh runtime</button>
+      </div>
+      <h2>Sessions</h2>
+      <div id="sessions" class="list"><div class="empty">Loading sessions…</div></div>
+      <h2>Models</h2>
+      <div id="models" class="list"><div class="empty">Loading models…</div></div>
+      <h2>Commands</h2>
+      <div id="commands" class="list"><div class="empty">Loading commands…</div></div>
+    </aside>
+    <section class="workspace">
+      <header>
+        <h1>Chat</h1>
+        <div class="toolbar" aria-label="Runtime controls">
+          <button id="refresh-sessions" type="button">Sessions</button>
+          <button id="refresh-models" type="button">Models</button>
+          <button id="refresh-commands" type="button">Commands</button>
+        </div>
+      </header>
+      <section id="messages" aria-live="polite"></section>
+      <form id="prompt-form">
+        <textarea id="prompt" placeholder="Ask Rin, use /commands, or resume a session from the sidebar…" autofocus></textarea>
+        <button type="submit">Send</button>
+        <button id="abort" type="button">Abort</button>
+      </form>
+    </section>
   </main>
   <script>
     const statusEl = document.getElementById('status');
@@ -166,6 +300,12 @@ function buildChatDesktopHtml() {
     const form = document.getElementById('prompt-form');
     const promptEl = document.getElementById('prompt');
     const abortEl = document.getElementById('abort');
+    const sessionsEl = document.getElementById('sessions');
+    const modelsEl = document.getElementById('models');
+    const commandsEl = document.getElementById('commands');
+
+    function send(command) { window.rinDesktop.send(command); }
+
     function appendMessage(role, text) {
       if (!text) return;
       const node = document.createElement('div');
@@ -174,19 +314,96 @@ function buildChatDesktopHtml() {
       messagesEl.appendChild(node);
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+
+    function empty(text) {
+      const node = document.createElement('div');
+      node.className = 'empty';
+      node.textContent = text;
+      return node;
+    }
+
+    function item(title, subtitle, onClick, active) {
+      const node = document.createElement('button');
+      node.type = 'button';
+      node.className = 'item' + (active ? ' active' : '');
+      const titleEl = document.createElement('div');
+      titleEl.className = 'item-title';
+      titleEl.textContent = title;
+      node.appendChild(titleEl);
+      if (subtitle) {
+        const subtitleEl = document.createElement('div');
+        subtitleEl.className = 'item-subtitle';
+        subtitleEl.textContent = subtitle;
+        node.appendChild(subtitleEl);
+      }
+      node.addEventListener('click', onClick);
+      return node;
+    }
+
+    function renderSessions(sessions) {
+      const values = Array.isArray(sessions) ? sessions : [];
+      sessionsEl.replaceChildren(...(values.length ? values.map((session) => item(
+        session.title || session.id || 'Session',
+        session.subtitle || session.id || '',
+        () => send({ type: 'session:resume', sessionId: session.id }),
+        Boolean(session.isActive)
+      )) : [empty('No sessions found')]));
+    }
+
+    function renderModels(models) {
+      const values = Array.isArray(models) ? models : [];
+      modelsEl.replaceChildren(...(values.length ? values.slice(0, 8).map((model) => item(
+        model.label || model.id || 'Model',
+        [model.provider, model.description].filter(Boolean).join(' · '),
+        () => appendMessage('system', 'Model available: ' + (model.label || model.id || 'model')),
+        false
+      )) : [empty('No models reported')]));
+    }
+
+    function renderCommands(commands) {
+      const values = Array.isArray(commands) ? commands : [];
+      commandsEl.replaceChildren(...(values.length ? values.slice(0, 12).map((command) => item(
+        command.name || command.id || '/command',
+        command.description || command.category || '',
+        () => {
+          const name = command.name || command.id || '';
+          promptEl.value = name.startsWith('/') ? name + ' ' : '/' + name + ' ';
+          promptEl.focus();
+        },
+        false
+      )) : [empty('No commands available')]));
+    }
+
+    function refreshRuntime() {
+      send({ type: 'sessions:list' });
+      send({ type: 'models:list' });
+      send({ type: 'commands:list' });
+    }
+
     window.rinDesktop.onEvent((payload) => {
       if (payload.type === 'status') statusEl.textContent = payload.text || 'Status';
+      else if (payload.type === 'surface:ready') refreshRuntime();
+      else if (payload.type === 'sessions:list') renderSessions(payload.sessions);
+      else if (payload.type === 'session:resumed') appendMessage('system', 'Resumed session: ' + payload.sessionId);
+      else if (payload.type === 'models:list') renderModels(payload.models);
+      else if (payload.type === 'commands:list') renderCommands(payload.commands);
       else appendMessage(payload.role || payload.type, payload.text || JSON.stringify(payload));
     });
+
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const text = promptEl.value.trim();
       if (!text) return;
       appendMessage('user', text);
       promptEl.value = '';
-      window.rinDesktop.send({ type: 'prompt', text });
+      send({ type: 'prompt', text });
     });
-    abortEl.addEventListener('click', () => window.rinDesktop.send({ type: 'abort' }));
+    abortEl.addEventListener('click', () => send({ type: 'abort' }));
+    document.getElementById('refresh-runtime').addEventListener('click', refreshRuntime);
+    document.getElementById('refresh-sessions').addEventListener('click', () => send({ type: 'sessions:list' }));
+    document.getElementById('refresh-models').addEventListener('click', () => send({ type: 'models:list' }));
+    document.getElementById('refresh-commands').addEventListener('click', () => send({ type: 'commands:list' }));
+    refreshRuntime();
   </script>
 </body>
 </html>`;

@@ -71,6 +71,10 @@ test("Electron desktop host is the concrete GUI framework behind the host contra
   assert.match(preload, /ipcRenderer/);
   assert.match(mainScript, /rin-command/);
   assert.match(mainScript, /rin-event/);
+  assert.match(mainScript, /sessions:list/);
+  assert.match(mainScript, /models:list/);
+  assert.match(mainScript, /commands:list/);
+  assert.match(mainScript, /session:resume/);
   assert.match(installerScript, /Rin Installer/);
   assert.match(installerScript, /installer:apply/);
   assert.doesNotMatch(mainScript, /createServer|WebSocketServer|xdg-open/);
