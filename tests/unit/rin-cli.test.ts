@@ -107,6 +107,19 @@ test("usage and memory-index parsers ignore wrapper args around the subcommand",
     },
   );
 
+  assert.deepEqual(memoryIndex.parseMemoryIndexArgs(["memory-index"]), {
+    action: "repair",
+    help: false,
+  });
+
+  assert.deepEqual(
+    memoryIndex.parseMemoryIndexArgs(["memory-index", "repair"]),
+    {
+      action: "repair",
+      help: false,
+    },
+  );
+
   assert.deepEqual(
     memoryIndex.parseMemoryIndexArgs([
       "memory-index",

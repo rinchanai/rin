@@ -24,34 +24,30 @@ export type MemoryIndexCliOptions = {
 };
 
 function printMemoryIndexHelp() {
-  console.log([
-    "rin memory-index repair",
-    "",
-    "Commands:",
-    "  repair    rebuild the memory search index from archived transcripts",
-    "",
-    "Examples:",
-    "  rin memory-index repair",
-    "  rin -u rin memory-index repair",
-  ].join("\n"));
+  console.log(
+    [
+      "rin memory-index repair",
+      "",
+      "Commands:",
+      "  repair    rebuild the memory search index from archived transcripts",
+      "",
+      "Examples:",
+      "  rin memory-index repair",
+      "  rin -u rin memory-index repair",
+    ].join("\n"),
+  );
 }
 
 export function parseMemoryIndexArgs(rawArgv: string[]): MemoryIndexCliOptions {
   const args = extractSubcommandArgv(rawArgv, "memory-index");
-  let action = "repair" as const;
   let help = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = safeString(args[index]).trim();
-    if (!arg) continue;
-    if (arg === "--help" || arg === "-h") {
-      help = true;
-      continue;
-    }
-    action = "repair";
+    if (arg === "--help" || arg === "-h") help = true;
   }
 
-  return { action, help };
+  return { action: "repair", help };
 }
 
 function renderRepairResult(result: {
