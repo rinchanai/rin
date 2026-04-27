@@ -265,7 +265,7 @@ test("chat inbox restores stranded items after only a working notice", async () 
     replyToMessageId: "m-working",
     receivedAt: new Date().toISOString(),
     processedAt: new Date().toISOString(),
-    text: "Working……",
+    text: "Working...",
   });
   const [pendingPath] = inbox.listPendingChatInboxFiles(agentDir);
   inbox.claimChatInboxFile(agentDir, pendingPath);
@@ -275,6 +275,50 @@ test("chat inbox restores stranded items after only a working notice", async () 
   assert.equal(restored.length, 1);
   assert.equal(inbox.listProcessingChatInboxFiles(agentDir).length, 0);
   assert.equal(inbox.listPendingChatInboxFiles(agentDir).length, 1);
+});
+
+test("chat inbox treats previous working notice spelling as delivered text", async () => {
+  const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-inbox-"));
+  const chatKey = "onebot/1:private:2";
+  const session = {
+    platform: "onebot",
+    selfId: "1",
+    channelId: "private:2",
+    userId: "2",
+    messageId: "m-previous-working",
+    timestamp: Date.now(),
+    content: "hello again",
+    stripped: { content: "hello again" },
+  };
+  const elements = [{ type: "text", attrs: { content: "hello again" } }];
+
+  inbox.enqueueChatInboxItem(agentDir, {
+    chatKey,
+    messageId: "m-previous-working",
+    session,
+    elements,
+  });
+  saveChatMessage(agentDir, {
+    chatKey,
+    platform: "onebot",
+    botId: "1",
+    chatId: "private:2",
+    chatType: "private",
+    messageId: "assistant-previous-working",
+    role: "assistant",
+    replyToMessageId: "m-previous-working",
+    receivedAt: new Date().toISOString(),
+    processedAt: new Date().toISOString(),
+    text: "Working……",
+  });
+  const [pendingPath] = inbox.listPendingChatInboxFiles(agentDir);
+  inbox.claimChatInboxFile(agentDir, pendingPath);
+
+  const restored = inbox.restoreProcessingChatInboxFiles(agentDir);
+
+  assert.equal(restored.length, 0);
+  assert.equal(inbox.listProcessingChatInboxFiles(agentDir).length, 0);
+  assert.equal(inbox.listPendingChatInboxFiles(agentDir).length, 0);
 });
 
 test("chat inbox can claim, restore, and reschedule a queued envelope", async () => {

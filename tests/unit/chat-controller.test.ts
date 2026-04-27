@@ -738,7 +738,7 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
     if (this.currentTurn?.workingNoticeSent) return false;
     deliveries.push({
       replyToMessageId: this.currentTurn?.incomingMessageId,
-      text: "Working……",
+      text: "Working...",
     });
     if (this.currentTurn) this.currentTurn.workingNoticeSent = true;
     return true;
@@ -755,7 +755,9 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
   assert.equal(await controller.pollTyping(), true);
   assert.equal(await controller.pollTyping(), false);
   assert.equal(controller.currentTurn.workingNoticeSent, true);
-  assert.deepEqual(deliveries, [{ replyToMessageId: "m1", text: "Working……" }]);
+  assert.deepEqual(deliveries, [
+    { replyToMessageId: "m1", text: "Working..." },
+  ]);
 });
 
 test("chat controller sends only one onebot Working notice when polls overlap", async () => {
