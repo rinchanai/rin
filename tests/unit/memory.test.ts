@@ -226,7 +226,7 @@ test("memory can browse recent sessions without a query", async () => {
         sessionId: "session-1",
         sessionFile: "/tmp/session-1.jsonl",
         role: "assistant",
-        content: [{ type: "text", text: "这是较早的一次会话" }],
+        content: [{ type: "text", text: "This is an older session." }],
       },
       root,
     );
@@ -236,7 +236,7 @@ test("memory can browse recent sessions without a query", async () => {
         sessionId: "session-2",
         sessionFile: "/tmp/session-2.jsonl",
         role: "user",
-        content: [{ type: "text", text: "这是最近的一次会话" }],
+        content: [{ type: "text", text: "This is the latest session." }],
       },
       root,
     );
@@ -263,7 +263,10 @@ test("memory can browse recent sessions without a query", async () => {
             name: "browser_click",
             args: { selector: "Next" },
           },
-          { type: "text", text: "卡在验证码页面，下一步要收验证码。" },
+          {
+            type: "text",
+            text: "Stuck on the captcha page; next step is to receive the captcha.",
+          },
         ],
       },
       root,
@@ -278,7 +281,7 @@ test("memory can browse recent sessions without a query", async () => {
     assert.equal(results[0].sourceType, "session");
     assert.equal(results[0].sessionId, "session-2");
     assert.match(results[0].preview, /browser_click/);
-    assert.match(results[0].preview, /验证码/);
+    assert.match(results[0].preview, /captcha/);
     assert.doesNotMatch(results[0].preview, /tool output should not replace/);
     assert.ok(Array.isArray(results[0].messages));
     assert.ok(results[0].messages.length >= 1);
@@ -296,7 +299,7 @@ test("presentSessionResult shares ranked preview and message ordering while keep
         sessionId: "session-2",
         sessionFile: "/tmp/session-2.jsonl",
         role: "assistant",
-        text: '[tool:browser_click] {"selector":"Next"}\n卡在验证码页面，下一步要收验证码。',
+        text: '[tool:browser_click] {"selector":"Next"}\nStuck on the captcha page; next step is to receive the captcha.',
         toolName: "browser_click",
       },
       {
@@ -314,7 +317,7 @@ test("presentSessionResult shares ranked preview and message ordering while keep
         sessionId: "session-2",
         sessionFile: "/tmp/session-2.jsonl",
         role: "user",
-        text: "这是最近的一次会话",
+        text: "This is the latest session.",
       },
     ],
     7,

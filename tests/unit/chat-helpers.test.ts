@@ -55,9 +55,9 @@ test("chat chat helpers treat explicit at-elements as mentions even when strippe
     },
     elements: [
       { type: "at", attrs: { name: "THE_cattail_rin_chan_bot" } },
-      { type: "text", attrs: { content: " 滴度" } },
+      { type: "text", attrs: { content: " ping" } },
     ],
-    stripped: { content: "滴度" },
+    stripped: { content: "ping" },
   };
   assert.equal(helpers.mentionLike(session), true);
 });
@@ -81,27 +81,27 @@ test("chat chat helpers extract reply ids and quote text from canonical chat quo
 test("chat chat helpers derive incoming text from elements", () => {
   assert.equal(
     helpers.elementsToText([
-      { type: "text", attrs: { content: "看一下 /tmp/demo.log" } },
+      { type: "text", attrs: { content: "check /tmp/demo.log" } },
     ]),
-    "看一下 /tmp/demo.log",
+    "check /tmp/demo.log",
   );
   assert.equal(
     helpers.elementsToText([
       { type: "at", attrs: { id: "1" } },
-      { type: "text", attrs: { content: " 看一下 /tmp/demo.log" } },
+      { type: "text", attrs: { content: " check /tmp/demo.log" } },
     ]),
-    "看一下 /tmp/demo.log",
+    "check /tmp/demo.log",
   );
   assert.equal(
     helpers.elementsToText([
       {
         type: "paragraph",
-        children: [{ type: "text", attrs: { content: "第一行" } }],
+        children: [{ type: "text", attrs: { content: "first line" } }],
       },
       { type: "br" },
-      { type: "text", attrs: { content: "第二行" } },
+      { type: "text", attrs: { content: "second line" } },
     ]),
-    "第一行\n\n第二行",
+    "first line\n\nsecond line",
   );
   assert.equal(
     helpers.elementsToText([
@@ -109,14 +109,14 @@ test("chat chat helpers derive incoming text from elements", () => {
       {
         type: "p",
         children: [
-          { type: "text", attrs: { content: " 混合" } },
+          { type: "text", attrs: { content: " mixed" } },
           { type: "br" },
-          { type: "text", attrs: { content: "元素" } },
+          { type: "text", attrs: { content: "element" } },
         ],
       },
-      { type: "text", attrs: { content: " 结束" } },
+      { type: "text", attrs: { content: " done" } },
     ]),
-    "混合\n元素\n结束",
+    "mixed\nelement\ndone",
   );
   assert.equal(
     helpers.elementsToText([{ type: "img", attrs: { file: "demo.png" } }]),
@@ -140,9 +140,9 @@ test("chat chat helpers derive incoming text from elements", () => {
 test("chat chat helpers synthesize text elements only when upstream omitted elements", () => {
   assert.deepEqual(
     helpers.ensureSessionElements({
-      stripped: { content: "看一下 /tmp/demo.log" },
+      stripped: { content: "check /tmp/demo.log" },
     }),
-    [{ type: "text", attrs: { content: "看一下 /tmp/demo.log" } }],
+    [{ type: "text", attrs: { content: "check /tmp/demo.log" } }],
   );
 });
 
@@ -202,10 +202,7 @@ test("chat chat helpers report fetch failures consistently across media sources"
   await withTempDir(async (dir) => {
     const missingFileUrl = pathToFileURL(path.join(dir, "missing.txt")).href;
     const result = await helpers.extractInboundAttachments(
-      [
-        { type: "image", attrs: { src: missingFileUrl } },
-        { type: "file" },
-      ],
+      [{ type: "image", attrs: { src: missingFileUrl } }, { type: "file" }],
       dir,
     );
     assert.deepEqual(result.attachments, []);

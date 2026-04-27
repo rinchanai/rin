@@ -59,8 +59,13 @@ test("installer interactive helpers describe dir state and plan text", () => {
     ),
   );
 
-  const plainSection = interactive.buildPlainInstallerSection("安装选项", plan);
-  assert.ok(plainSection.startsWith("安装选项\n  Target daemon user: bob"));
+  const plainSection = interactive.buildPlainInstallerSection(
+    "Install options",
+    plan,
+  );
+  assert.ok(
+    plainSection.startsWith("Install options\n  Target daemon user: bob"),
+  );
   assert.ok(!plainSection.includes("╭"));
 
   const safety = interactive.buildInstallSafetyBoundaryText();
@@ -234,9 +239,12 @@ test("createInstallerI18n exposes localized post-install path labels", () => {
   assert.equal(en.targetInstallDirLabel, "Target install dir");
   assert.equal(en.writtenPathLabel, "Written");
   assert.equal(en.serviceLabelLabel, "label");
-  assert.equal(zh.targetInstallDirLabel, "目标安装目录");
-  assert.equal(zh.writtenPathLabel, "已写入");
-  assert.equal(zh.serviceLabelLabel, "标签");
+  assert.equal(
+    zh.targetInstallDirLabel,
+    "\u76ee\u6807\u5b89\u88c5\u76ee\u5f55",
+  );
+  assert.equal(zh.writtenPathLabel, "\u5df2\u5199\u5165");
+  assert.equal(zh.serviceLabelLabel, "\u6807\u7b7e");
 });
 
 test("promptProviderSetup reuses complete existing provider config", async () => {

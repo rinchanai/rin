@@ -28,16 +28,21 @@ test("chat decision keeps slash-containing owner text routable", async () => {
     {
       platform: "telegram",
       userId: "owner-1",
-      content: "路径 /tmp/demo.txt 怎么处理？",
-      stripped: { content: "路径 /tmp/demo.txt 怎么处理？" },
+      content: "How should /tmp/demo.txt be handled?",
+      stripped: { content: "How should /tmp/demo.txt be handled?" },
       isDirect: true,
     },
-    [{ type: "text", attrs: { content: "路径 /tmp/demo.txt 怎么处理？" } }],
+    [
+      {
+        type: "text",
+        attrs: { content: "How should /tmp/demo.txt be handled?" },
+      },
+    ],
     identity,
   );
 
   assert.equal(result.allow, true);
-  assert.equal(result.text, "路径 /tmp/demo.txt 怎么处理？");
+  assert.equal(result.text, "How should /tmp/demo.txt be handled?");
 });
 
 test("chat decision only enforces access policy, not custom slash-command guessing", async () => {
@@ -92,10 +97,10 @@ test("chat decision treats two-member owner groups as private-like", async () =>
           },
         },
       },
-      stripped: { content: "悄悄说" },
-      elements: [{ type: "text", attrs: { content: "悄悄说" } }],
+      stripped: { content: "private note" },
+      elements: [{ type: "text", attrs: { content: "private note" } }],
     },
-    [{ type: "text", attrs: { content: "悄悄说" } }],
+    [{ type: "text", attrs: { content: "private note" } }],
     identity,
   );
 
@@ -138,22 +143,22 @@ test("chat decision allows owner group messages that explicitly at the bot even 
         selfId: "8623230033",
         username: "THE_cattail_rin_chan_bot",
       },
-      stripped: { content: "滴度" },
+      stripped: { content: "ping" },
       elements: [
         { type: "at", attrs: { name: "THE_cattail_rin_chan_bot" } },
-        { type: "text", attrs: { content: " 滴度" } },
+        { type: "text", attrs: { content: " ping" } },
       ],
     },
     [
       { type: "at", attrs: { name: "THE_cattail_rin_chan_bot" } },
-      { type: "text", attrs: { content: " 滴度" } },
+      { type: "text", attrs: { content: " ping" } },
     ],
     identity,
   );
 
   assert.equal(result.allow, true);
   assert.equal(result.chatKey, "telegram/8623230033:-1001447529496");
-  assert.equal(result.text, "滴度");
+  assert.equal(result.text, "ping");
 });
 
 test("chat decision ignores owner group messages that only at other users", async () => {
@@ -168,20 +173,20 @@ test("chat decision ignores owner group messages that only at other users", asyn
         selfId: "8623230033",
         username: "THE_cattail_rin_chan_bot",
       },
-      stripped: { content: "你看这个" },
+      stripped: { content: "see this" },
       elements: [
         { type: "at", attrs: { name: "some_other_user" } },
-        { type: "text", attrs: { content: " 你看这个" } },
+        { type: "text", attrs: { content: " see this" } },
       ],
     },
     [
       { type: "at", attrs: { name: "some_other_user" } },
-      { type: "text", attrs: { content: " 你看这个" } },
+      { type: "text", attrs: { content: " see this" } },
     ],
     identity,
   );
 
   assert.equal(result.allow, false);
   assert.equal(result.chatKey, "telegram/8623230033:-1001447529496");
-  assert.equal(result.text, "你看这个");
+  assert.equal(result.text, "see this");
 });

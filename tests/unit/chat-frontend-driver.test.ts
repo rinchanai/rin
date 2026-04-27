@@ -11,7 +11,7 @@ const rootDir = path.resolve(
 const { ChatFrontendDriver } = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-tui", "chat-frontend-driver.js"),
-  ).href,
+  ).href
 );
 
 function createDriver() {
@@ -36,7 +36,11 @@ async function emitDriverEvent(driver: any, payload: any) {
   await driver.handleClientEvent({ type: "ui", payload });
 }
 
-async function emitRpcTurnComplete(driver: any, requestTag: string, finalText: string) {
+async function emitRpcTurnComplete(
+  driver: any,
+  requestTag: string,
+  finalText: string,
+) {
   await emitDriverEvent(driver, {
     type: "rpc_turn_event",
     event: "complete",
@@ -59,7 +63,7 @@ test("chat frontend driver does not leak growing final-answer prefixes as interi
 
   driver.session.prompt = async (_text: string, options: any = {}) => {
     await emitDriverEvent(driver, { type: "agent_start" });
-    for (const text of ["我", "我先", "我先查", "我先查一下"]) {
+    for (const text of ["I", "I will", "I will check", "I will check this"]) {
       await emitDriverEvent(driver, {
         type: "message_update",
         message: {
@@ -68,12 +72,16 @@ test("chat frontend driver does not leak growing final-answer prefixes as interi
         },
       });
     }
-    await emitRpcTurnComplete(driver, options.requestTag, "我先查一下，结果如下");
+    await emitRpcTurnComplete(
+      driver,
+      options.requestTag,
+      "I will check this; here are the results",
+    );
   };
 
   const result = await driver.runTurn({ text: "hello" });
 
-  assert.equal(result.finalText, "我先查一下，结果如下");
+  assert.equal(result.finalText, "I will check this; here are the results");
   assert.deepEqual(interimTexts, []);
 });
 
@@ -90,19 +98,19 @@ test("chat frontend driver does not treat a preview as interim when a tool bound
       type: "message_update",
       message: {
         role: "assistant",
-        content: [{ type: "text", text: "我先查一下" }],
+        content: [{ type: "text", text: "I will check this" }],
       },
     });
     await emitDriverEvent(driver, {
       type: "tool_execution_start",
       toolName: "read",
     });
-    await emitRpcTurnComplete(driver, options.requestTag, "最终答复");
+    await emitRpcTurnComplete(driver, options.requestTag, "Final answer");
   };
 
   const result = await driver.runTurn({ text: "hello" });
 
-  assert.equal(result.finalText, "最终答复");
+  assert.equal(result.finalText, "Final answer");
   assert.deepEqual(interimTexts, []);
 });
 
@@ -119,14 +127,14 @@ test("chat frontend driver emits a completed assistant segment as interim before
       type: "message_end",
       message: {
         role: "assistant",
-        content: [{ type: "text", text: "我先查一下" }],
+        content: [{ type: "text", text: "I will check this" }],
       },
     });
-    await emitRpcTurnComplete(driver, options.requestTag, "最终答复");
+    await emitRpcTurnComplete(driver, options.requestTag, "Final answer");
   };
 
   const result = await driver.runTurn({ text: "hello" });
 
-  assert.equal(result.finalText, "最终答复");
-  assert.deepEqual(interimTexts, ["我先查一下"]);
+  assert.equal(result.finalText, "Final answer");
+  assert.deepEqual(interimTexts, ["I will check this"]);
 });

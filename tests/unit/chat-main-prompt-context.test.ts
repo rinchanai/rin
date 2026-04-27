@@ -59,15 +59,15 @@ test("chat main carries sender metadata to the controller with the prompt body",
         selfId: "1",
         channelId: "2",
         guildId: "group-1",
-        bot: { selfId: "1", username: "☆铃酱☆" },
+        bot: { selfId: "1", username: "RinBot" },
         userId: "guest-1",
-        author: { nickname: "很酷" },
+        author: { nickname: "CoolUser" },
         messageId: "m-identity",
         isDirect: false,
-        content: "@☆铃酱☆ my name is?",
+        content: "@RinBot my name is?",
         stripped: { content: "my name is?", appel: true },
         elements: [
-          { type: "at", attrs: { name: "☆铃酱☆" } },
+          { type: "at", attrs: { name: "RinBot" } },
           h.createChatRuntimeH().text(" my name is?"),
         ],
       });
@@ -105,7 +105,7 @@ test("chat main carries sender metadata to the controller with the prompt body",
     assert.equal(seen[0].promptMeta.source, "chat-bridge");
     assert.equal(seen[0].promptMeta.chatKey, "telegram/1:2");
     assert.equal(seen[0].promptMeta.userId, "guest-1");
-    assert.equal(seen[0].promptMeta.nickname, "很酷");
+    assert.equal(seen[0].promptMeta.nickname, "CoolUser");
     assert.equal(seen[0].promptMeta.identity, "TRUSTED");
   } finally {
     await fs.rm(agentDir, { recursive: true, force: true });
@@ -164,7 +164,7 @@ test("chat controller packages sender metadata directly into the session prompt 
           chatKey: "telegram/1:2",
           chatType: "group",
           userId: "guest-1",
-          nickname: "很酷",
+          nickname: "CoolUser",
           identity: "TRUSTED",
         },
       });
@@ -195,7 +195,7 @@ test("chat controller packages sender metadata directly into the session prompt 
     assert.match(seen[0].text, /^time: /);
     assert.ok(seen[0].text.includes("chatKey: telegram/1:2"));
     assert.ok(seen[0].text.includes("sender user id: guest-1"));
-    assert.ok(seen[0].text.includes("sender nickname: 很酷"));
+    assert.ok(seen[0].text.includes("sender nickname: CoolUser"));
     assert.ok(seen[0].text.includes("sender trust: trusted user"));
     assert.ok(seen[0].text.endsWith("---\nmy name is?"));
   } finally {

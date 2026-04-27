@@ -42,7 +42,7 @@ test("chat prompt context packages sender identity guidance into the prompt text
       nickname: "Alice",
       identity: "OTHER",
     },
-    "你好",
+    "hello",
   );
 
   assert.ok(promptText.startsWith("time: "));
@@ -60,7 +60,7 @@ test("chat prompt context packages sender identity guidance into the prompt text
     ),
   );
   assert.equal(promptText.includes("sender is owner:"), false);
-  assert.ok(promptText.endsWith("---\n你好"));
+  assert.ok(promptText.endsWith("---\nhello"));
 });
 
 test("message header skips duplicate metadata for already formatted chat prompts", async () => {
@@ -74,10 +74,10 @@ test("message header skips duplicate metadata for already formatted chat prompts
       chatKey: "onebot/1:2",
       chatType: "group",
       userId: "guest-1",
-      nickname: "很酷",
+      nickname: "CoolUser",
       identity: "OTHER",
     },
-    "@☆铃酱☆ my name is?",
+    "@RinBot my name is?",
   );
 
   const inputResult = await pi.handlers.get("input")[0]({
@@ -100,18 +100,18 @@ test("message header still injects a local hidden timestamp for non-chat prompts
 
   const inputResult = await pi.handlers.get("input")[0]({
     source: "user",
-    text: "你好",
+    text: "hello",
   });
   assert.deepEqual(inputResult, { action: "continue" });
 
   const beforeStart = await pi.handlers.get("before_agent_start")[0]({
-    prompt: "你好",
+    prompt: "hello",
     systemPrompt: "Base prompt",
   });
 
   const header = String(beforeStart?.message?.content || "");
   assert.ok(header.startsWith("time: "));
-  assert.ok(header.endsWith("---\n你好"));
+  assert.ok(header.endsWith("---\nhello"));
   assert.equal(String(beforeStart?.systemPrompt || ""), "");
 });
 
@@ -127,12 +127,12 @@ test("chat prompt context requires reply lookup without injecting replied text",
       identity: "OTHER",
       replyToMessageId: "quoted-42",
     },
-    "这条是什么意思？",
+    "what does this mean?",
   );
 
   assert.ok(promptText.includes("reply to message id: quoted-42"));
   assert.equal(promptText.includes("reply message:"), false);
-  assert.equal(promptText.includes("第一行"), false);
+  assert.equal(promptText.includes("first line"), false);
   assert.ok(
     promptText.includes(
       "reply lookup: call get_chat_msg with that exact message id before answering",
@@ -151,7 +151,7 @@ test("chat prompt context keeps owner and trusted senders distinct", () => {
       nickname: "Master",
       identity: "OWNER",
     },
-    "你好",
+    "hello",
   );
   const trustedPrompt = promptContextMod.formatPromptContext(
     {
@@ -163,7 +163,7 @@ test("chat prompt context keeps owner and trusted senders distinct", () => {
       nickname: "Bob",
       identity: "TRUSTED",
     },
-    "你好",
+    "hello",
   );
 
   assert.ok(ownerPrompt.includes("sender trust: owner"));

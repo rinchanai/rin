@@ -308,10 +308,10 @@ test("chat controller flushes a completed interim assistant message before a lat
         type: "message_end",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "我先查一下" }],
+          content: [{ type: "text", text: "I will check this" }],
         },
       });
-      emitRpcTurnComplete(controller, options, "最终答复");
+      emitRpcTurnComplete(controller, options, "Final answer");
     },
     switchSession: async () => {},
   };
@@ -323,10 +323,10 @@ test("chat controller flushes a completed interim assistant message before a lat
     replyToMessageId: "m-interim",
   });
 
-  assert.equal(result.finalText, "最终答复");
+  assert.equal(result.finalText, "Final answer");
   assert.deepEqual(deliveries, [
-    { text: "··· 我先查一下", replyToMessageId: "m-interim" },
-    { text: "最终答复", replyToMessageId: "m-interim" },
+    { text: "··· I will check this", replyToMessageId: "m-interim" },
+    { text: "Final answer", replyToMessageId: "m-interim" },
   ]);
 });
 
@@ -389,7 +389,7 @@ test("chat controller treats delivered interim assistant text as an inbound repl
         type: "message_end",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "我先查一下" }],
+          content: [{ type: "text", text: "I will check this" }],
         },
       });
       await controller.handleSessionEvent({ type: "tool_execution_start" });
@@ -419,7 +419,7 @@ test("chat controller treats delivered interim assistant text as an inbound repl
   assert.equal(inbound?.sessionFile, "interim-boundary-chat.jsonl");
   assert.equal(assistant?.role, "assistant");
   assert.equal(assistant?.replyToMessageId, "m-interim-boundary");
-  assert.equal(assistant?.text, "··· 我先查一下");
+  assert.equal(assistant?.text, "··· I will check this");
   assert.equal(assistant?.sessionFile, "interim-boundary-chat.jsonl");
 });
 
@@ -478,14 +478,14 @@ test("chat controller does not treat assistant message updates as interim when a
         type: "message_update",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "我先查一下" }],
+          content: [{ type: "text", text: "I will check this" }],
         },
       });
       await controller.handleSessionEvent({
         type: "tool_execution_start",
         toolName: "read",
       });
-      emitRpcTurnComplete(controller, options, "最终答复");
+      emitRpcTurnComplete(controller, options, "Final answer");
     },
     switchSession: async () => {},
   };
@@ -497,9 +497,9 @@ test("chat controller does not treat assistant message updates as interim when a
     replyToMessageId: "m-update",
   });
 
-  assert.equal(result.finalText, "最终答复");
+  assert.equal(result.finalText, "Final answer");
   assert.deepEqual(deliveries, [
-    { text: "最终答复", replyToMessageId: "m-update" },
+    { text: "Final answer", replyToMessageId: "m-update" },
   ]);
 });
 
@@ -558,10 +558,10 @@ test("chat controller does not leak a buffered preview as interim before the fin
         type: "message_update",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "我先查一下" }],
+          content: [{ type: "text", text: "I will check this" }],
         },
       });
-      emitRpcTurnComplete(controller, options, "最终答复");
+      emitRpcTurnComplete(controller, options, "Final answer");
     },
     switchSession: async () => {},
   };
@@ -573,9 +573,9 @@ test("chat controller does not leak a buffered preview as interim before the fin
     replyToMessageId: "m-preview",
   });
 
-  assert.equal(result.finalText, "最终答复");
+  assert.equal(result.finalText, "Final answer");
   assert.deepEqual(deliveries, [
-    { text: "最终答复", replyToMessageId: "m-preview" },
+    { text: "Final answer", replyToMessageId: "m-preview" },
   ]);
 });
 
@@ -630,7 +630,7 @@ test("chat controller does not emit growing final-answer prefixes as interim rep
     }),
     prompt: async (_text, options = {}) => {
       await controller.handleSessionEvent({ type: "agent_start" });
-      for (const text of ["我", "我先", "我先查", "我先查一下"]) {
+      for (const text of ["I", "I will", "I will check", "I will check this"]) {
         await controller.handleSessionEvent({
           type: "message_update",
           message: {
@@ -639,7 +639,11 @@ test("chat controller does not emit growing final-answer prefixes as interim rep
           },
         });
       }
-      emitRpcTurnComplete(controller, options, "我先查一下，结果如下");
+      emitRpcTurnComplete(
+        controller,
+        options,
+        "I will check this; here are the results",
+      );
     },
     switchSession: async () => {},
   };
@@ -651,9 +655,12 @@ test("chat controller does not emit growing final-answer prefixes as interim rep
     replyToMessageId: "m-prefixes",
   });
 
-  assert.equal(result.finalText, "我先查一下，结果如下");
+  assert.equal(result.finalText, "I will check this; here are the results");
   assert.deepEqual(deliveries, [
-    { text: "我先查一下，结果如下", replyToMessageId: "m-prefixes" },
+    {
+      text: "I will check this; here are the results",
+      replyToMessageId: "m-prefixes",
+    },
   ]);
 });
 
@@ -1185,7 +1192,11 @@ test("chat controller drops superseded pending assistant text before steer", asy
     prompt: async (_text, options = {}) => {
       if (options.streamingBehavior === "steer") {
         controller.session.isStreaming = false;
-        emitRpcTurnComplete(controller, firstPromptOptions, "steer 后最终答复");
+        emitRpcTurnComplete(
+          controller,
+          firstPromptOptions,
+          "final answer after steer",
+        );
         return;
       }
 
@@ -1196,7 +1207,7 @@ test("chat controller drops superseded pending assistant text before steer", asy
         type: "message_end",
         message: {
           role: "assistant",
-          content: [{ type: "text", text: "被 steer 取代的旧答复" }],
+          content: [{ type: "text", text: "old answer replaced by steer" }],
         },
       });
       await controller.runTurn(
@@ -1219,9 +1230,9 @@ test("chat controller drops superseded pending assistant text before steer", asy
     replyToMessageId: "m-steer-old",
   });
 
-  assert.equal(result.finalText, "steer 后最终答复");
+  assert.equal(result.finalText, "final answer after steer");
   assert.deepEqual(deliveries, [
-    { text: "steer 后最终答复", replyToMessageId: "m-steer-old" },
+    { text: "final answer after steer", replyToMessageId: "m-steer-old" },
   ]);
 });
 

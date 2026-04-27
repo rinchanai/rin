@@ -50,22 +50,24 @@ test("message content helpers extract text with optional thinking and trimming",
   assert.equal(
     messageContent.extractMessageText([
       { type: "at", attrs: { id: "1" } },
-      { type: "text", attrs: { content: " 第一行" } },
+      { type: "text", attrs: { content: " first line" } },
       { type: "br" },
       {
         type: "paragraph",
         children: [
-          { type: "text", attrs: { content: "第二行" } },
+          { type: "text", attrs: { content: "second line" } },
           { type: "br" },
-          { type: "text", attrs: { content: " 继续" } },
+          { type: "text", attrs: { content: " continue" } },
         ],
       },
     ]),
-    " 第一行\n第二行\n 继续\n",
+    " first line\nsecond line\n continue\n",
   );
   assert.equal(
-    messageContent.normalizeMessageText(" 第一行\n\n\n  第二行\t \n第三行  "),
-    "第一行\n\n第二行\n第三行",
+    messageContent.normalizeMessageText(
+      " first line\n\n\n  second line\t \nthird line  ",
+    ),
+    "first line\n\nsecond line\nthird line",
   );
   assert.equal(
     messageContent.renderMessageText(
