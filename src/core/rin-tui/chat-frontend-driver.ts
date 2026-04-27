@@ -151,11 +151,15 @@ export class ChatFrontendDriver {
     liveTurn.reject(error);
   }
 
+  private setFrontendPhase(phase: FrontendPhase) {
+    this.frontendPhase = phase;
+    this.emit({ type: "frontend_status", phase: this.frontendPhase });
+  }
+
   private abortLiveTurn() {
     if (!this.liveTurn) return;
     this.clearPendingAssistantSegmentState();
-    this.frontendPhase = "idle";
-    this.emit({ type: "frontend_status", phase: this.frontendPhase });
+    this.setFrontendPhase("idle");
     this.failLiveTurn(new Error("chat_turn_aborted"));
   }
 
@@ -452,9 +456,9 @@ export class ChatFrontendDriver {
   private async handleSessionEvent(event: any) {
     if (!event || typeof event !== "object") return;
     if (event.type === "rpc_frontend_status") {
-      this.frontendPhase =
-        (safeString(event.phase).trim() as FrontendPhase) || "idle";
-      this.emit({ type: "frontend_status", phase: this.frontendPhase });
+      this.setFrontendPhase(
+        (safeString(event.phase).trim() as FrontendPhase) || "idle",
+      );
       return;
     }
     if (event.type === "rpc_turn_event") {
@@ -476,6 +480,7 @@ export class ChatFrontendDriver {
         }
         this.latestAssistantText = finalText;
         const session = normalizeSessionRef(event);
+        this.setFrontendPhase("idle");
         this.liveTurn.resolve({
           finalText,
           result: event.result,
@@ -485,6 +490,7 @@ export class ChatFrontendDriver {
         return;
       }
       if (event.event === "error") {
+        this.setFrontendPhase("idle");
         this.failLiveTurn(new Error(String(event.error || "rpc_turn_failed")));
         return;
       }

@@ -760,6 +760,69 @@ test("chat controller uses a fixed Working notice policy for onebot private chat
   ]);
 });
 
+test("chat controller treats a stale working frontend phase as a new onebot private prompt", async () => {
+  const controller = await createController("onebot/1:private:2");
+  const deliveries = [];
+  const promptCalls = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "onebot",
+        selfId: "1",
+        async sendMessage(chatId, content) {
+          deliveries.push({ chatId, content });
+          return [`out-${deliveries.length}`];
+        },
+      },
+    ],
+  };
+  controller.driver.frontendPhase = "working";
+
+  controller.session = {
+    isStreaming: false,
+    messages: [],
+    sessionManager: {
+      getSessionFile: () => "/tmp/stale-working-chat.jsonl",
+      getSessionId: () => "session-stale-working",
+      getSessionName: () => controller.chatKey,
+    },
+    ensureSessionReady: async () => ({
+      sessionFile: "/tmp/stale-working-chat.jsonl",
+      sessionId: "session-stale-working",
+    }),
+    prompt: async (_text, options = {}) => {
+      promptCalls.push({ streamingBehavior: options.streamingBehavior });
+      await new Promise((resolve) => setImmediate(resolve));
+      emitRpcTurnComplete(controller, options, "ok");
+    },
+    switchSession: async () => {},
+  };
+
+  const result = await controller.runTurn(
+    {
+      text: "new prompt",
+      attachments: [],
+      incomingMessageId: "m-new-onebot",
+      replyToMessageId: "m-new-onebot",
+    },
+    "steer",
+  );
+
+  assert.equal(result.finalText, "ok");
+  assert.deepEqual(promptCalls, [{ streamingBehavior: undefined }]);
+  assert.equal(deliveries.length, 2);
+  assert.equal(deliveries[0].chatId, "private:2");
+  assert.deepEqual(deliveries[0].content, [
+    { type: "quote", attrs: { id: "m-new-onebot" } },
+    { type: "text", attrs: { content: "Working..." } },
+  ]);
+  assert.equal(deliveries[1].chatId, "private:2");
+  assert.deepEqual(deliveries[1].content, [
+    { type: "quote", attrs: { id: "m-new-onebot" } },
+    { type: "text", attrs: { content: "ok" } },
+  ]);
+});
+
 test("chat controller sends only one onebot Working notice when polls overlap", async () => {
   const controller = await createController("onebot/1:private:2");
   const deliveries = [];

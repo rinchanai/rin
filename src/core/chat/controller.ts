@@ -252,11 +252,7 @@ export class ChatController {
 
   canSteerActiveTurn() {
     if (this.turnAbortRequested) return false;
-    return (
-      this.frontendPhase === "sending" ||
-      this.frontendPhase === "working" ||
-      Boolean(this.session?.isStreaming)
-    );
+    return Boolean(this.driver.liveTurn || this.session?.isStreaming);
   }
 
   private setCurrentTurn(input: {
