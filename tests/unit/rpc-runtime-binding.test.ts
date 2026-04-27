@@ -417,6 +417,81 @@ test("rpc runtime resumes a session through select_session", async () => {
   assert.equal(sent[0]?.sessionPath, "/tmp/s2.jsonl");
 });
 
+test("rpc runtime falls back to worker messages when active session entries are unavailable", async () => {
+  const session = new RpcInteractiveSession({
+    send(payload) {
+      if (payload.type === "get_state") {
+        return Promise.resolve({
+          success: true,
+          data: {
+            sessionId: "active-session",
+            sessionFile: "/tmp/active.jsonl",
+            thinkingLevel: "medium",
+            steeringMode: "all",
+            followUpMode: "one-at-a-time",
+            autoCompactionEnabled: false,
+            turnActive: true,
+            isStreaming: true,
+            isCompacting: false,
+            pendingMessageCount: 0,
+          },
+        });
+      }
+      if (payload.type === "get_session_entries") {
+        return Promise.resolve({ success: true, data: { entries: [] } });
+      }
+      if (payload.type === "get_session_tree") {
+        return Promise.resolve({
+          success: true,
+          data: { tree: [], leafId: null },
+        });
+      }
+      if (payload.type === "get_messages") {
+        return Promise.resolve({
+          success: true,
+          data: {
+            messages: [
+              { role: "user", content: "hello" },
+              { role: "assistant", content: "world" },
+            ],
+          },
+        });
+      }
+      return Promise.resolve({ success: true, data: { cancelled: false } });
+    },
+    subscribe() {
+      return () => {};
+    },
+    abort() {
+      return Promise.resolve();
+    },
+    isConnected() {
+      return true;
+    },
+    connect() {
+      return Promise.resolve();
+    },
+    disconnect() {
+      return Promise.resolve();
+    },
+  });
+
+  session.rpcConnected = true;
+  session.startupPending = false;
+
+  const completed = await session.switchSession("/tmp/active.jsonl");
+
+  assert.equal(completed, true);
+  assert.deepEqual(session.messages, [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "world" },
+  ]);
+  assert.deepEqual(session.sessionManager.buildSessionContext().messages, [
+    { role: "user", content: "hello" },
+    { role: "assistant", content: "world" },
+  ]);
+});
+
 test("rpc runtime normalizes daemon session listings into canonical session metadata", async () => {
   const session = new RpcInteractiveSession({
     send(payload) {
