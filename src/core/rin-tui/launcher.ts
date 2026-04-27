@@ -135,6 +135,19 @@ export function shouldPrintStartupSeparator(
   return !Boolean(getQuietStartup.call(sessionLike.settingsManager));
 }
 
+async function runInteractiveMode(
+  runtime: ConstructorParameters<typeof InteractiveMode>[0],
+  interactiveOptions: TuiInteractiveOptions,
+) {
+  const interactiveMode = new InteractiveMode(runtime, interactiveOptions);
+  try {
+    await interactiveMode.run();
+  } catch (error) {
+    interactiveMode.stop?.();
+    throw error;
+  }
+}
+
 async function startStdTui(
   options: { additionalExtensionPaths?: string[] },
   profile: ReturnType<typeof startupProfiler>,
@@ -147,16 +160,7 @@ async function startStdTui(
   if (shouldPrintStartupSeparator(sessionRuntime.session, interactiveOptions)) {
     console.log();
   }
-  const interactiveMode = new InteractiveMode(
-    sessionRuntime,
-    interactiveOptions,
-  );
-  try {
-    await interactiveMode.run();
-  } catch (error) {
-    interactiveMode.stop?.();
-    throw error;
-  }
+  await runInteractiveMode(sessionRuntime, interactiveOptions);
 }
 
 async function startRpcTui(
@@ -184,16 +188,7 @@ async function startRpcTui(
     if (shouldPrintStartupSeparator(rpcSession, interactiveOptions)) {
       console.log();
     }
-    const interactiveMode = new InteractiveMode(
-      runtimeHost as any,
-      interactiveOptions,
-    );
-    try {
-      await interactiveMode.run();
-    } catch (error) {
-      interactiveMode.stop?.();
-      throw error;
-    }
+    await runInteractiveMode(runtimeHost as any, interactiveOptions);
   } finally {
     if (runtimeHost) {
       await runtimeHost.dispose().catch(() => {});
