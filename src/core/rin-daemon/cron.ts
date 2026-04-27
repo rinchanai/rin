@@ -112,6 +112,13 @@ export type CronTaskInput = {
   target?: CronTaskTarget;
 };
 
+type CronTaskUpsertDefaults = {
+  sessionFile?: string;
+  sessionId?: string;
+  sessionName?: string;
+  chatKey?: string;
+};
+
 function normalizeThinkingLevel(
   value: unknown,
 ): CronTaskThinkingLevel | undefined {
@@ -123,6 +130,80 @@ function normalizeThinkingLevel(
 
 function normalizeModelOverride(value: unknown) {
   return safeString(value).trim() || undefined;
+}
+
+function failCronTaskValidation(errorCode: string): never {
+  throw new Error(errorCode);
+}
+
+function requireNonEmptyString(value: unknown, errorCode: string) {
+  const text = safeString(value).trim();
+  if (!text) failCronTaskValidation(errorCode);
+  return text;
+}
+
+function normalizeTaskTrigger(trigger: CronTaskTrigger | undefined) {
+  if (!trigger) throw new Error("cron_trigger_required");
+  return trigger.kind === "interval"
+    ? {
+        kind: "interval" as const,
+        intervalMs: Math.max(1_000, Number(trigger.intervalMs || 0)),
+        startAt: normalizeIso(trigger.startAt, "startAt"),
+      }
+    : trigger.kind === "cron"
+      ? {
+          kind: "cron" as const,
+          expression: safeString(trigger.expression).trim(),
+          timezone: "local" as const,
+        }
+      : {
+          kind: "once" as const,
+          runAt:
+            normalizeIso(trigger.runAt, "runAt") ||
+            failCronTaskValidation("cron_runAt_required"),
+        };
+}
+
+function normalizeTaskSession(
+  session: CronTaskSessionBinding | undefined,
+  defaults: CronTaskUpsertDefaults,
+) {
+  if (!session) throw new Error("cron_session_required");
+  if (
+    session.mode !== "current" &&
+    session.mode !== "dedicated" &&
+    session.mode !== "ephemeral"
+  ) {
+    throw new Error(
+      `cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`,
+    );
+  }
+  const explicitSessionFile = safeString(session.sessionFile).trim();
+  const normalizedSession: CronTaskSessionBinding = {
+    mode: session.mode,
+    sessionFile:
+      session.mode === "current"
+        ? path.resolve(
+            HOME_DIR,
+            safeString(session.sessionFile || defaults.sessionFile).trim() ||
+              failCronTaskValidation("cron_current_session_required"),
+          )
+        : undefined,
+  };
+  return { explicitSessionFile, normalizedSession };
+}
+
+function normalizeTaskTarget(target: CronTaskTarget | undefined) {
+  if (!target) throw new Error("cron_target_required");
+  return target.kind === "agent_prompt"
+    ? {
+        kind: "agent_prompt" as const,
+        prompt: requireNonEmptyString(target.prompt, "cron_prompt_required"),
+      }
+    : {
+        kind: "shell_command" as const,
+        command: requireNonEmptyString(target.command, "cron_command_required"),
+      };
 }
 
 function createBuiltInMemoryIndexRepairTask(agentDir: string): CronTaskRecord {
@@ -221,15 +302,7 @@ export class CronScheduler {
     return this.publicTask(task);
   }
 
-  upsertTask(
-    input: CronTaskInput,
-    defaults: {
-      sessionFile?: string;
-      sessionId?: string;
-      sessionName?: string;
-      chatKey?: string;
-    } = {},
-  ) {
+  upsertTask(input: CronTaskInput, defaults: CronTaskUpsertDefaults = {}) {
     const existing = input.id ? this.tasks.get(String(input.id)) : undefined;
     assertMutableTask(existing);
     const id =
@@ -247,55 +320,14 @@ export class CronScheduler {
           ? safeString(input.chatKey).trim() || undefined
           : existing?.chatKey;
 
-    const trigger = input.trigger ?? existing?.trigger;
-    if (!trigger) throw new Error("cron_trigger_required");
-    const normalizedTrigger: CronTaskTrigger =
-      trigger.kind === "interval"
-        ? {
-            kind: "interval",
-            intervalMs: Math.max(1_000, Number(trigger.intervalMs || 0)),
-            startAt: normalizeIso(trigger.startAt, "startAt"),
-          }
-        : trigger.kind === "cron"
-          ? {
-              kind: "cron",
-              expression: safeString(trigger.expression).trim(),
-              timezone: "local",
-            }
-          : {
-              kind: "once",
-              runAt:
-                normalizeIso(trigger.runAt, "runAt") ||
-                (() => {
-                  throw new Error("cron_runAt_required");
-                })(),
-            };
-
-    const session = input.session ?? existing?.session;
-    if (!session) throw new Error("cron_session_required");
-    if (
-      session.mode !== "current" &&
-      session.mode !== "dedicated" &&
-      session.mode !== "ephemeral"
-    ) {
-      throw new Error(
-        `cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`,
-      );
-    }
-    const explicitSessionFile = safeString(session.sessionFile).trim();
-    const normalizedSession: CronTaskSessionBinding = {
-      mode: session.mode,
-      sessionFile:
-        session.mode === "current"
-          ? path.resolve(
-              HOME_DIR,
-              safeString(session.sessionFile || defaults.sessionFile).trim() ||
-                (() => {
-                  throw new Error("cron_current_session_required");
-                })(),
-            )
-          : undefined,
-    };
+    const normalizedTrigger = normalizeTaskTrigger(
+      input.trigger ?? existing?.trigger,
+    );
+    const { explicitSessionFile, normalizedSession } = normalizeTaskSession(
+      input.session ?? existing?.session,
+      defaults,
+    );
+    const session = normalizedSession;
     const model =
       input.model !== undefined
         ? normalizeModelOverride(input.model)
@@ -305,26 +337,9 @@ export class CronScheduler {
         ? input.thinkingLevel
         : existing?.thinkingLevel,
     );
-    const target = input.target ?? existing?.target;
-    if (!target) throw new Error("cron_target_required");
-    const normalizedTarget: CronTaskTarget =
-      target.kind === "agent_prompt"
-        ? {
-            kind: "agent_prompt",
-            prompt:
-              safeString(target.prompt).trim() ||
-              (() => {
-                throw new Error("cron_prompt_required");
-              })(),
-          }
-        : {
-            kind: "shell_command",
-            command:
-              safeString(target.command).trim() ||
-              (() => {
-                throw new Error("cron_command_required");
-              })(),
-          };
+    const normalizedTarget = normalizeTaskTarget(
+      input.target ?? existing?.target,
+    );
     const dedicatedSessionPersistent =
       session.mode === "dedicated" ? true : undefined;
     const dedicatedSessionFile =
