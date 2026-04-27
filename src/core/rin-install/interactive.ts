@@ -358,6 +358,63 @@ export function buildInstallPlanText(
   });
 }
 
+function characterDisplayWidth(char: string) {
+  const codePoint = char.codePointAt(0) || 0;
+  if (codePoint === 0) return 0;
+  if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint < 0xa0)) return 0;
+  if (
+    (codePoint >= 0x1100 && codePoint <= 0x115f) ||
+    codePoint === 0x2329 ||
+    codePoint === 0x232a ||
+    (codePoint >= 0x2e80 && codePoint <= 0xa4cf) ||
+    (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+    (codePoint >= 0xfe30 && codePoint <= 0xfe6f) ||
+    (codePoint >= 0xff00 && codePoint <= 0xff60) ||
+    (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+  ) {
+    return 2;
+  }
+  return 1;
+}
+
+function textDisplayWidth(text: string) {
+  let width = 0;
+  for (const char of text) width += characterDisplayWidth(char);
+  return width;
+}
+
+function wrapInstallerLine(line: string, maxWidth: number) {
+  if (textDisplayWidth(line) <= maxWidth) return [line];
+  const leading = line.match(/^\s*/)?.[0] || "";
+  const bullet = line.match(/^(\s*[-*]\s+)/)?.[1] || "";
+  const continuation = bullet ? " ".repeat(bullet.length) : leading;
+  const rows: string[] = [];
+  let current = "";
+  let currentWidth = 0;
+  for (const char of line) {
+    const charWidth = characterDisplayWidth(char);
+    if (current && currentWidth + charWidth > maxWidth) {
+      rows.push(current.trimEnd());
+      current = continuation;
+      currentWidth = textDisplayWidth(current);
+    }
+    current += char;
+    currentWidth += charWidth;
+  }
+  if (current) rows.push(current.trimEnd());
+  return rows;
+}
+
+export function wrapInstallerNoteText(body: string, terminalColumns = 80) {
+  const maxWidth = Math.max(40, Math.min(72, terminalColumns - 8));
+  return String(body || "")
+    .split("\n")
+    .flatMap((line) => (line ? wrapInstallerLine(line, maxWidth) : [""]))
+    .join("\n");
+}
+
 export function buildPlainInstallerSection(title: string, body: string) {
   const header = String(title || "").trim();
   const lines = String(body || "").split("\n");

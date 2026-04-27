@@ -53,7 +53,9 @@ function formatOpenLinks(links?: string | string[]) {
   return list.join(" · ");
 }
 
-export async function promptInstallerLanguage(prompt: InstallerLanguagePromptApi) {
+export async function promptInstallerLanguage(
+  prompt: InstallerLanguagePromptApi,
+) {
   const detected = detectLocalLanguageTag("en");
   const copy = INSTALLER_LANGUAGE_PROMPT_COPY;
   const selected = String(
@@ -112,6 +114,8 @@ export function createInstallerI18n(languageTag = "en") {
     serviceLabelLabel: zh ? "标签" : "label",
     launchingInitTitle: zh ? "启动初始化" : "Launching init",
     afterInitTitle: zh ? "初始化后" : "After init",
+    confirmActiveLabel: zh ? "是" : "Yes",
+    confirmInactiveLabel: zh ? "否" : "No",
     existingDirectoryTitle: zh ? "已有目录" : "Existing directory",
     installDirectoryTitle: zh ? "安装目录" : "Install directory",
     currentUserLabel: zh ? "当前用户" : "Current user",
@@ -121,13 +125,15 @@ export function createInstallerI18n(languageTag = "en") {
     usersHint: (count: number) =>
       zh ? `共 ${count} 个用户` : `${count} user(s)`,
     newUserHint: zh ? "输入用户名" : "enter a username",
-    existingDirectoryText: (installDir: string, entryCount: number, sample: string[]) =>
+    existingDirectoryText: (
+      installDir: string,
+      entryCount: number,
+      sample: string[],
+    ) =>
       [
         `${zh ? "目录已存在" : "Directory exists"}: ${installDir}`,
         `${zh ? "现有条目数" : "Existing entries"}: ${entryCount}`,
-        sample.length
-          ? `${zh ? "示例" : "Sample"}: ${sample.join(", ")}`
-          : "",
+        sample.length ? `${zh ? "示例" : "Sample"}: ${sample.join(", ")}` : "",
         "",
         zh ? "安装器策略：" : "Installer policy:",
         zh ? "- 保留未知文件不动" : "- keep unknown files untouched",
@@ -176,9 +182,7 @@ export function createInstallerI18n(languageTag = "en") {
       zh ? `设为 ${targetUser}` : `set to ${targetUser}`,
     defaultTargetSkippedValue: zh ? "不设置" : "not set",
     directoryRequired: zh ? "目录不能为空。" : "Directory is required.",
-    directoryMustBeAbsolute: zh
-      ? "请输入绝对路径。"
-      : "Use an absolute path.",
+    directoryMustBeAbsolute: zh ? "请输入绝对路径。" : "Use an absolute path.",
     chooseProviderMessage: zh
       ? "选择要认证并使用的模型提供商。"
       : "Choose a provider to authenticate and use.",
@@ -431,7 +435,9 @@ export function createInstallerI18n(languageTag = "en") {
     }) {
       return [
         zh ? "写入配置与启动器" : "write configuration and launchers",
-        zh ? "将运行时发布到安装目录" : "publish the runtime into the install directory",
+        zh
+          ? "将运行时发布到安装目录"
+          : "publish the runtime into the install directory",
         options.installServiceNow
           ? zh
             ? "安装并启动守护进程服务"
@@ -456,7 +462,9 @@ export function createInstallerI18n(languageTag = "en") {
     },
     noEligibleUsersText(currentUser: string, visibleUsers: string[]) {
       return [
-        zh ? "在当前系统上未找到可选的现有用户。" : "No eligible existing users were found on this system.",
+        zh
+          ? "在当前系统上未找到可选的现有用户。"
+          : "No eligible existing users were found on this system.",
         `${zh ? "检测到的当前用户" : "Detected current user"}: ${currentUser}`,
         `${zh ? "可见用户" : "Visible users"}: ${visibleUsers.join(", ") || (zh ? "无" : "none")}`,
       ].join("\n");
@@ -518,9 +526,7 @@ export function createInstallerI18n(languageTag = "en") {
         ? `打开以下链接以继续登录：\n${url}${instructions ? `\n${instructions}` : ""}`
         : `Open this URL to continue login:\n${url}${instructions ? `\n${instructions}` : ""}`;
     },
-    enterLoginValueMessage: zh
-      ? "输入登录所需的值。"
-      : "Enter login value.",
+    enterLoginValueMessage: zh ? "输入登录所需的值。" : "Enter login value.",
     waitingForLogin(providerName: string) {
       return zh
         ? `正在等待 ${providerName} 登录……`
@@ -531,9 +537,7 @@ export function createInstallerI18n(languageTag = "en") {
       : "Paste the redirect URL or code from the browser.",
     manualCodePlaceholder(lastAuthUrl: string) {
       if (zh) {
-        return lastAuthUrl
-          ? "粘贴最终回调 URL 或设备验证码"
-          : "粘贴验证码";
+        return lastAuthUrl ? "粘贴最终回调 URL 或设备验证码" : "粘贴验证码";
       }
       return lastAuthUrl
         ? "paste the final redirect URL or device code"

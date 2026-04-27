@@ -68,6 +68,17 @@ test("installer interactive helpers describe dir state and plan text", () => {
   );
   assert.ok(!plainSection.includes("╭"));
 
+  const wrapped = interactive.wrapInstallerNoteText(
+    "- \u8fd9\u662f\u4e00\u884c\u8db3\u591f\u957f\u7684\u4e2d\u6587\u5b89\u88c5\u5668\u8bf4\u660e\uff0c\u9700\u8981\u5728\u8fdb\u5165 clack note \u524d\u5148\u6362\u884c\uff0c\u907f\u514d\u8fb9\u6846\u88ab\u957f\u884c\u6491\u574f\u3002",
+    56,
+  );
+  assert.ok(wrapped.split("\n").length > 1);
+  assert.ok(
+    wrapped
+      .split("\n")
+      .every((line) => line.length <= 30 || line.startsWith("  ")),
+  );
+
   const safety = interactive.buildInstallSafetyBoundaryText();
   assert.ok(safety.includes("YOLO mode"));
   assert.ok(safety.includes("memory extraction"));
@@ -289,6 +300,8 @@ test("createInstallerI18n exposes localized post-install path labels", () => {
   );
   assert.equal(zh.writtenPathLabel, "\u5df2\u5199\u5165");
   assert.equal(zh.serviceLabelLabel, "\u6807\u7b7e");
+  assert.equal(zh.confirmActiveLabel, "\u662f");
+  assert.equal(zh.confirmInactiveLabel, "\u5426");
 });
 
 test("promptProviderSetup reuses complete existing provider config", async () => {
