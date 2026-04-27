@@ -42,6 +42,22 @@ type InstallerDisplayCopy = {
   chatBridgeLabel: string;
   chatBridgeModeLabel: string;
   chatAuthorizationLabel: string;
+  confirmActiveLabel: string;
+  confirmInactiveLabel: string;
+  configureChatBridgeNowMessage: string;
+  telegramTokenDetail: string;
+  onebotEndpointGuide: string;
+  onebotSelfIdGuide: string;
+  onebotDetail: (protocol: string, endpoint: string) => string;
+  discordDetail: string;
+  qqDetail: string;
+  larkDetail: (platform: string) => string;
+  slackDetail: string;
+  minecraftUrlGuide: string;
+  minecraftSelfIdMessage: string;
+  minecraftDetail: (url: string) => string;
+  scheduledTaskAgentRunCost: string;
+  chatAuthorizationLine: string;
 };
 
 const INSTALLER_LANGUAGE_PROMPT_COPY = {
@@ -68,11 +84,60 @@ const INSTALLER_DISPLAY_COPY = {
     chatBridgeLabel: "Chat bridge",
     chatBridgeModeLabel: "Chat bridge mode",
     chatAuthorizationLabel: "Chat authorization",
+    confirmActiveLabel: "Yes",
+    confirmInactiveLabel: "No",
+    configureChatBridgeNowMessage: "Configure a chat bridge now?",
+    telegramTokenDetail:
+      "Chat bridge mode: polling · token saved to target settings.json",
+    onebotEndpointGuide:
+      "Your OneBot bridge or client config, for example NapCat, LLOneBot, or another OneBot server.",
+    onebotSelfIdGuide:
+      "Usually the bot QQ number from your OneBot client or bridge config.",
+    onebotDetail: (protocol: string, endpoint: string) =>
+      `Chat bridge mode: ${protocol} · endpoint: ${endpoint}`,
+    discordDetail: "Chat bridge token: [saved to target settings.json]",
+    qqDetail:
+      "Chat bridge mode: websocket · app credentials saved to target settings.json",
+    larkDetail: (platform: string) =>
+      `Chat bridge mode: ws · platform: ${platform} · app credentials saved to target settings.json`,
+    slackDetail: "Chat bridge mode: ws",
+    minecraftUrlGuide:
+      "Use the WebSocket address exposed by your QueQiao bridge or Minecraft adapter.",
+    minecraftSelfIdMessage:
+      "Enter the Minecraft bridge self ID if you want a custom one. Leave blank to use minecraft.",
+    minecraftDetail: (url: string) => `Chat bridge mode: ws · endpoint: ${url}`,
+    scheduledTaskAgentRunCost:
+      "- scheduled task / chat-bridge-triggered agent runs that create their own turns",
+    chatAuthorizationLine:
+      "Chat authorization: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.",
   },
   "zh-CN": {
     chatBridgeLabel: "聊天接入",
     chatBridgeModeLabel: "聊天接入模式",
     chatAuthorizationLabel: "聊天授权",
+    confirmActiveLabel: "是",
+    confirmInactiveLabel: "否",
+    configureChatBridgeNowMessage: "现在配置聊天接入吗？",
+    telegramTokenDetail:
+      "聊天接入模式：polling · 令牌已保存到目标 settings.json",
+    onebotEndpointGuide:
+      "你的 OneBot 接入服务或客户端配置，例如 NapCat、LLOneBot 或其他 OneBot 服务。",
+    onebotSelfIdGuide: "通常是 OneBot 客户端或接入配置中的机器人 QQ 号。",
+    onebotDetail: (protocol: string, endpoint: string) =>
+      `聊天接入模式：${protocol} · 端点：${endpoint}`,
+    discordDetail: "聊天接入令牌：[已保存到目标 settings.json]",
+    qqDetail: "聊天接入模式：websocket · 应用凭据已保存到目标 settings.json",
+    larkDetail: (platform: string) =>
+      `聊天接入模式：ws · 平台：${platform} · 应用凭据已保存到目标 settings.json`,
+    slackDetail: "聊天接入模式：ws",
+    minecraftUrlGuide:
+      "使用 QueQiao 接入服务或 Minecraft 适配器暴露出的 WebSocket 地址。",
+    minecraftSelfIdMessage:
+      "如果你想自定义 Minecraft 接入 self ID，请输入；否则留空使用 minecraft。",
+    minecraftDetail: (url: string) => `聊天接入模式：ws · 端点：${url}`,
+    scheduledTaskAgentRunCost: "- scheduled task / 聊天接入触发的 agent 运行",
+    chatAuthorizationLine:
+      "聊天授权：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。",
   },
 } satisfies Record<InstallerDisplayLanguage, InstallerDisplayCopy>;
 
@@ -146,8 +211,8 @@ export function createInstallerI18n(languageTag = "en") {
     serviceLabelLabel: zh ? "标签" : "label",
     launchingInitTitle: zh ? "启动初始化" : "Launching init",
     afterInitTitle: zh ? "初始化后" : "After init",
-    confirmActiveLabel: zh ? "是" : "Yes",
-    confirmInactiveLabel: zh ? "否" : "No",
+    confirmActiveLabel: copy.confirmActiveLabel,
+    confirmInactiveLabel: copy.confirmInactiveLabel,
     existingDirectoryTitle: zh ? "已有目录" : "Existing directory",
     installDirectoryTitle: zh ? "安装目录" : "Install directory",
     currentUserLabel: zh ? "当前用户" : "Current user",
@@ -234,9 +299,7 @@ export function createInstallerI18n(languageTag = "en") {
     fieldRequired: zh ? "此项必填。" : "This field is required.",
     valueRequired: zh ? "此项不能为空。" : "A value is required.",
     validUrlRequired: zh ? "请输入有效 URL。" : "Use a valid URL.",
-    configureChatBridgeNowMessage: zh
-      ? "现在配置聊天接入吗？"
-      : "Configure a chat bridge now?",
+    configureChatBridgeNowMessage: copy.configureChatBridgeNowMessage,
     chooseChatPlatformMessage: zh
       ? "选择聊天平台。"
       : "Choose a chat platform.",
@@ -258,21 +321,15 @@ export function createInstallerI18n(languageTag = "en") {
     telegramTokenGuide: zh
       ? "Telegram @BotFather → 选择你的机器人 → API token。"
       : "Telegram @BotFather → choose your bot → API token.",
-    telegramTokenDetail: zh
-      ? `${copy.chatBridgeModeLabel}：polling · 令牌已保存到目标 settings.json`
-      : `${copy.chatBridgeModeLabel}: polling · token saved to target settings.json`,
+    telegramTokenDetail: copy.telegramTokenDetail,
     onebotEndpointMessage: zh
       ? "输入 OneBot 端点 URL。"
       : "Enter the OneBot endpoint URL.",
-    onebotEndpointGuide: zh
-      ? "你的 OneBot 接入服务或客户端配置，例如 NapCat、LLOneBot 或其他 OneBot 服务。"
-      : "Your OneBot bridge or client config, for example NapCat, LLOneBot, or another OneBot server.",
+    onebotEndpointGuide: copy.onebotEndpointGuide,
     onebotSelfIdMessage: zh
       ? "如果你已经知道 OneBot self ID，请输入；否则留空稍后再填。"
       : "Enter the OneBot self ID if you already know it. Leave blank to fill later.",
-    onebotSelfIdGuide: zh
-      ? "通常是 OneBot 客户端或接入配置中的机器人 QQ 号。"
-      : "Usually the bot QQ number from your OneBot client or bridge config.",
+    onebotSelfIdGuide: copy.onebotSelfIdGuide,
     onebotTokenMessage: zh
       ? "如果需要，请输入 OneBot access token；否则留空。"
       : "Enter the OneBot access token if required. Leave blank otherwise.",
@@ -280,19 +337,14 @@ export function createInstallerI18n(languageTag = "en") {
       ? "仅在你的 OneBot 服务端配置启用了 access token 时填写。"
       : "Use the access token from your OneBot server config only if you enabled one.",
     optionalTokenPlaceholder: zh ? "可选令牌" : "optional token",
-    onebotDetail: (protocol: string, endpoint: string) =>
-      zh
-        ? `${copy.chatBridgeModeLabel}：${protocol} · 端点：${endpoint}`
-        : `${copy.chatBridgeModeLabel}: ${protocol} · endpoint: ${endpoint}`,
+    onebotDetail: copy.onebotDetail,
     discordTokenMessage: zh
       ? "输入 Discord 机器人令牌。"
       : "Enter the Discord bot token.",
     discordTokenGuide: zh
       ? "Discord Developer Portal → 你的应用 → Bot → Reset Token / Token。"
       : "Discord Developer Portal → your application → Bot → Reset Token / Token.",
-    discordDetail: zh
-      ? `${copy.chatBridgeLabel}令牌：[已保存到目标 settings.json]`
-      : `${copy.chatBridgeLabel} token: [saved to target settings.json]`,
+    discordDetail: copy.discordDetail,
     qqAppIdMessage: zh ? "输入 QQ 机器人 App ID。" : "Enter the QQ bot app ID.",
     qqCredentialsGuide: zh
       ? "QQ 机器人开发者文档 → 创建机器人应用 → app 凭据。"
@@ -305,9 +357,7 @@ export function createInstallerI18n(languageTag = "en") {
       : "Use the bot type shown in your QQ bot application settings.",
     publicLabel: zh ? "公开" : "Public",
     privateLabel: zh ? "私有" : "Private",
-    qqDetail: zh
-      ? `${copy.chatBridgeModeLabel}：websocket · 应用凭据已保存到目标 settings.json`
-      : `${copy.chatBridgeModeLabel}: websocket · app credentials saved to target settings.json`,
+    qqDetail: copy.qqDetail,
     larkPlatformMessage: zh
       ? "选择 Lark / 飞书区域。"
       : "Choose the Lark / Feishu region.",
@@ -327,10 +377,7 @@ export function createInstallerI18n(languageTag = "en") {
     larkAppSecretMessage: zh
       ? "输入 Lark / 飞书 app secret。"
       : "Enter the Lark / Feishu app secret.",
-    larkDetail: (platform: string) =>
-      zh
-        ? `${copy.chatBridgeModeLabel}：ws · 平台：${platform} · 应用凭据已保存到目标 settings.json`
-        : `${copy.chatBridgeModeLabel}: ws · platform: ${platform} · app credentials saved to target settings.json`,
+    larkDetail: copy.larkDetail,
     slackAppTokenMessage: zh
       ? "输入 Slack app-level token。"
       : "Enter the Slack app-level token.",
@@ -343,28 +390,19 @@ export function createInstallerI18n(languageTag = "en") {
     slackBotTokenGuide: zh
       ? "Slack 应用设置 → OAuth & Permissions → Bot User OAuth Token（以 xoxb- 开头）。"
       : "Slack app settings → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
-    slackDetail: zh
-      ? `${copy.chatBridgeModeLabel}：ws`
-      : `${copy.chatBridgeModeLabel}: ws`,
+    slackDetail: copy.slackDetail,
     minecraftUrlMessage: zh
       ? "输入 Minecraft QueQiao WebSocket URL。"
       : "Enter the Minecraft QueQiao WebSocket URL.",
-    minecraftUrlGuide: zh
-      ? "使用 QueQiao 接入服务或 Minecraft 适配器暴露出的 WebSocket 地址。"
-      : "Use the WebSocket address exposed by your QueQiao bridge or Minecraft adapter.",
-    minecraftSelfIdMessage: zh
-      ? "如果你想自定义 Minecraft 接入 self ID，请输入；否则留空使用 minecraft。"
-      : "Enter the Minecraft bridge self ID if you want a custom one. Leave blank to use minecraft.",
+    minecraftUrlGuide: copy.minecraftUrlGuide,
+    minecraftSelfIdMessage: copy.minecraftSelfIdMessage,
     minecraftServerNameMessage: zh
       ? "如果你希望聊天日志显示 Minecraft 服务器名称，请输入；否则留空。"
       : "Enter the Minecraft server name if you want it shown in chat logs. Leave blank otherwise.",
     minecraftTokenMessage: zh
       ? "如果需要，请输入 QueQiao access token；否则留空。"
       : "Enter the QueQiao access token if required. Leave blank otherwise.",
-    minecraftDetail: (url: string) =>
-      zh
-        ? `${copy.chatBridgeModeLabel}：ws · 端点：${url}`
-        : `${copy.chatBridgeModeLabel}: ws · endpoint: ${url}`,
+    minecraftDetail: copy.minecraftDetail,
     buildInstallSafetyBoundaryText() {
       return [
         zh ? "Rin 安全边界：" : "Rin safety boundary:",
@@ -403,9 +441,7 @@ export function createInstallerI18n(languageTag = "en") {
         zh
           ? "- assistant 主动选择或按要求委派的 subagent 运行"
           : "- subagent runs when the assistant chooses or is asked to delegate work",
-        zh
-          ? "- scheduled task / 聊天接入触发的 agent 运行"
-          : "- scheduled task / chat-bridge-triggered agent runs that create their own turns",
+        copy.scheduledTaskAgentRunCost,
         zh
           ? "- 使用 web search 时加入模型上下文的搜索结果文本"
           : "- web-search result text added into the model context when search is used",
@@ -434,11 +470,9 @@ export function createInstallerI18n(languageTag = "en") {
         `${this.defaultTargetLabel}: ${options.setDefaultTarget ? this.defaultTargetSetValue(options.targetUser) : this.defaultTargetSkippedValue}`,
         `${copy.chatBridgeLabel}: ${options.chatDescription}`,
         options.chatDetail,
-        options.chatDescription === (zh ? "暂不启用" : "disabled for now")
+        options.chatDescription === this.chatDisabledDescription
           ? ""
-          : zh
-            ? `${copy.chatAuthorizationLabel}：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。`
-            : `${copy.chatAuthorizationLabel}: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.`,
+          : copy.chatAuthorizationLine,
       ]
         .filter(Boolean)
         .join("\n");
