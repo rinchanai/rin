@@ -8,23 +8,6 @@ import { safeString } from "../text-utils.js";
 
 type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
 
-const CHAT_REPLY_LOOKUP_SYSTEM_PROMPT =
-  "Chat reply lookup rule: if the current message metadata contains `reply to message id: <id>`, always call `get_chat_msg` with that exact `<id>` before answering.";
-
-function hasReplyMessageIdMetadata(text: string) {
-  return /^reply to message id:\s*\S+/m.test(safeString(text));
-}
-
-function buildReplyLookupSystemPrompt(
-  systemPrompt: unknown,
-  promptText: string,
-) {
-  if (!hasReplyMessageIdMetadata(promptText)) return undefined;
-  const current = safeString(systemPrompt).trimEnd();
-  if (current.includes(CHAT_REPLY_LOOKUP_SYSTEM_PROMPT)) return undefined;
-  return `${current}\n\n${CHAT_REPLY_LOOKUP_SYSTEM_PROMPT}`.trim();
-}
-
 function getRuntimeRole(): RuntimeRole {
   const argv = process.argv.slice(1);
   if (argv.includes("--rpc")) return "rpc-frontend";
@@ -65,11 +48,7 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
     const body = safeString(event.prompt || current.body);
 
     if (current.source === "chat-bridge" && isPromptContextFormatted(body)) {
-      const systemPrompt = buildReplyLookupSystemPrompt(
-        event.systemPrompt,
-        body,
-      );
-      return systemPrompt ? { systemPrompt } : {};
+      return {};
     }
 
     return {

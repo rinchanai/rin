@@ -63,7 +63,9 @@ export default function chatGetMessageModule(pi: BuiltinModuleApi) {
     label: "Get Chat Message",
     description: "Get a specific chat message.",
     promptSnippet: "Get a specific chat message.",
-    promptGuidelines: [],
+    promptGuidelines: [
+      "If the current chat message metadata contains `reply to message id: <id>`, always call get_chat_msg with that exact message id before answering.",
+    ],
     parameters: Type.Object({
       messageId: Type.String({
         description: "Platform message ID to look up.",
