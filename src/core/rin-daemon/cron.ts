@@ -54,13 +54,16 @@ export type CronTaskSessionBinding = {
   sessionFile?: string;
 };
 
-export type CronTaskThinkingLevel =
-  | "off"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh";
+const CRON_TASK_THINKING_LEVELS = [
+  "off",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+
+export type CronTaskThinkingLevel = (typeof CRON_TASK_THINKING_LEVELS)[number];
 
 export type CronTaskRecord = {
   id: string;
@@ -113,17 +116,13 @@ function normalizeThinkingLevel(
   value: unknown,
 ): CronTaskThinkingLevel | undefined {
   const level = safeString(value).trim();
-  if (
-    level === "off" ||
-    level === "minimal" ||
-    level === "low" ||
-    level === "medium" ||
-    level === "high" ||
-    level === "xhigh"
-  ) {
-    return level;
-  }
-  return undefined;
+  return CRON_TASK_THINKING_LEVELS.includes(level as CronTaskThinkingLevel)
+    ? (level as CronTaskThinkingLevel)
+    : undefined;
+}
+
+function normalizeModelOverride(value: unknown) {
+  return safeString(value).trim() || undefined;
 }
 
 function createBuiltInMemoryIndexRepairTask(agentDir: string): CronTaskRecord {
@@ -299,7 +298,7 @@ export class CronScheduler {
     };
     const model =
       input.model !== undefined
-        ? safeString(input.model).trim() || undefined
+        ? normalizeModelOverride(input.model)
         : existing?.model;
     const thinkingLevel = normalizeThinkingLevel(
       input.thinkingLevel !== undefined
@@ -451,7 +450,7 @@ export class CronScheduler {
       row.running = false;
       row.lastError = row.lastError ? safeString(row.lastError) : undefined;
       row.thinkingLevel = normalizeThinkingLevel(row.thinkingLevel);
-      row.model = safeString(row.model).trim() || undefined;
+      row.model = normalizeModelOverride(row.model);
       if ((row.session as any)?.mode === "dedicated") {
         row.dedicatedSessionPersistent = true;
         if (
