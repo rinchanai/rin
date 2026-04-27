@@ -126,7 +126,12 @@ async function startStdTui(
     sessionRuntime,
     interactiveOptions,
   );
-  await interactiveMode.run();
+  try {
+    await interactiveMode.run();
+  } catch (error) {
+    interactiveMode.stop?.();
+    throw error;
+  }
 }
 
 async function startRpcTui(
@@ -158,7 +163,12 @@ async function startRpcTui(
       runtimeHost as any,
       interactiveOptions,
     );
-    await interactiveMode.run();
+    try {
+      await interactiveMode.run();
+    } catch (error) {
+      interactiveMode.stop?.();
+      throw error;
+    }
   } finally {
     if (runtimeHost) {
       await runtimeHost.dispose().catch(() => {});

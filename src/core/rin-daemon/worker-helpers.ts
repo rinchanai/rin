@@ -54,17 +54,19 @@ function sanitizeResourceDiagnostic(diagnostic: any) {
 function sanitizeSourceInfo(sourceInfo: any) {
   if (!sourceInfo || typeof sourceInfo !== "object") return undefined;
   const result: any = {};
-  if (typeof sourceInfo.scope === "string") result.scope = sourceInfo.scope;
-  if (typeof sourceInfo.packageName === "string") {
-    result.packageName = sourceInfo.packageName;
+  for (const key of [
+    "path",
+    "source",
+    "scope",
+    "origin",
+    "baseDir",
+    "packageName",
+    "packageRoot",
+    "sourcePath",
+  ]) {
+    if (typeof sourceInfo[key] === "string") result[key] = sourceInfo[key];
   }
-  if (typeof sourceInfo.packageRoot === "string") {
-    result.packageRoot = sourceInfo.packageRoot;
-  }
-  if (typeof sourceInfo.sourcePath === "string") {
-    result.sourcePath = sourceInfo.sourcePath;
-  }
-  return result;
+  return Object.keys(result).length > 0 ? result : undefined;
 }
 
 function sanitizeSkill(skill: any) {
