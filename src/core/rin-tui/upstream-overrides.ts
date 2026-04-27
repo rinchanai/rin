@@ -64,15 +64,21 @@ function getRpcTransportLabel(status: any) {
   return `${String(status.label || "Working")}...`;
 }
 
+function reattachExistingTransportLoader(instance: any) {
+  if (!instance?.loadingAnimation) return;
+  instance.statusContainer.clear();
+  instance.statusContainer.addChild(instance.loadingAnimation);
+  instance.ui.requestRender();
+}
+
 function syncRpcTransportLoader(instance: any) {
   if (!isRpcTransportControlled(instance)) return;
   const status = instance.session.getFrontendStatusEvent?.();
-  if (
-    isRpcCompactionStatus(instance, status) &&
-    instance.autoCompactionLoader
-  ) {
+  if (status?.phase === "working") {
+    reattachExistingTransportLoader(instance);
     return;
   }
+  if (isRpcCompactionStatus(instance, status)) return;
   ensureTransportLoader(instance, getRpcTransportLabel(status));
 }
 
@@ -248,9 +254,11 @@ export async function applyRinTuiOverrides() {
       }
 
       if (event?.type === "rpc_frontend_status") {
-        if (isRpcCompactionStatus(this, event) && this.autoCompactionLoader) {
+        if (event.phase === "working") {
+          reattachExistingTransportLoader(this);
           return;
         }
+        if (isRpcCompactionStatus(this, event)) return;
         ensureTransportLoader(this, getRpcTransportLabel(event));
         return;
       }
