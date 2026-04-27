@@ -38,6 +38,12 @@ type InstallerLanguagePromptCopy = {
   invalidLanguageTag: string;
 };
 
+type InstallerDisplayCopy = {
+  chatBridgeLabel: string;
+  chatBridgeModeLabel: string;
+  chatAuthorizationLabel: string;
+};
+
 const INSTALLER_LANGUAGE_PROMPT_COPY = {
   en: {
     chooseMessage: "Choose installer language",
@@ -56,6 +62,19 @@ const INSTALLER_LANGUAGE_PROMPT_COPY = {
     invalidLanguageTag: "请输入有效的 BCP 47 语言标签",
   },
 } satisfies Record<InstallerDisplayLanguage, InstallerLanguagePromptCopy>;
+
+const INSTALLER_DISPLAY_COPY = {
+  en: {
+    chatBridgeLabel: "Chat bridge",
+    chatBridgeModeLabel: "Chat bridge mode",
+    chatAuthorizationLabel: "Chat authorization",
+  },
+  "zh-CN": {
+    chatBridgeLabel: "聊天接入",
+    chatBridgeModeLabel: "聊天接入模式",
+    chatAuthorizationLabel: "聊天授权",
+  },
+} satisfies Record<InstallerDisplayLanguage, InstallerDisplayCopy>;
 
 function formatOpenLinks(links?: string | string[]) {
   const list = (Array.isArray(links) ? links : [links])
@@ -109,9 +128,7 @@ export function createInstallerI18n(languageTag = "en") {
   const language = normalizeLanguageTag(languageTag, "en");
   const displayLanguage = resolveInstallerDisplayLanguage(language);
   const zh = displayLanguage === "zh-CN";
-  const chatBridgeLabel = zh ? "聊天接入" : "Chat bridge";
-  const chatBridgeModeLabel = zh ? "聊天接入模式" : "Chat bridge mode";
-  const chatAuthorizationLabel = zh ? "聊天授权" : "Chat authorization";
+  const copy = INSTALLER_DISPLAY_COPY[displayLanguage];
 
   return {
     language,
@@ -242,8 +259,8 @@ export function createInstallerI18n(languageTag = "en") {
       ? "Telegram @BotFather → 选择你的机器人 → API token。"
       : "Telegram @BotFather → choose your bot → API token.",
     telegramTokenDetail: zh
-      ? `${chatBridgeModeLabel}：polling · 令牌已保存到目标 settings.json`
-      : `${chatBridgeModeLabel}: polling · token saved to target settings.json`,
+      ? `${copy.chatBridgeModeLabel}：polling · 令牌已保存到目标 settings.json`
+      : `${copy.chatBridgeModeLabel}: polling · token saved to target settings.json`,
     onebotEndpointMessage: zh
       ? "输入 OneBot 端点 URL。"
       : "Enter the OneBot endpoint URL.",
@@ -265,8 +282,8 @@ export function createInstallerI18n(languageTag = "en") {
     optionalTokenPlaceholder: zh ? "可选令牌" : "optional token",
     onebotDetail: (protocol: string, endpoint: string) =>
       zh
-        ? `${chatBridgeModeLabel}：${protocol} · 端点：${endpoint}`
-        : `${chatBridgeModeLabel}: ${protocol} · endpoint: ${endpoint}`,
+        ? `${copy.chatBridgeModeLabel}：${protocol} · 端点：${endpoint}`
+        : `${copy.chatBridgeModeLabel}: ${protocol} · endpoint: ${endpoint}`,
     discordTokenMessage: zh
       ? "输入 Discord 机器人令牌。"
       : "Enter the Discord bot token.",
@@ -274,8 +291,8 @@ export function createInstallerI18n(languageTag = "en") {
       ? "Discord Developer Portal → 你的应用 → Bot → Reset Token / Token。"
       : "Discord Developer Portal → your application → Bot → Reset Token / Token.",
     discordDetail: zh
-      ? `${chatBridgeLabel}令牌：[已保存到目标 settings.json]`
-      : `${chatBridgeLabel} token: [saved to target settings.json]`,
+      ? `${copy.chatBridgeLabel}令牌：[已保存到目标 settings.json]`
+      : `${copy.chatBridgeLabel} token: [saved to target settings.json]`,
     qqAppIdMessage: zh ? "输入 QQ 机器人 App ID。" : "Enter the QQ bot app ID.",
     qqCredentialsGuide: zh
       ? "QQ 机器人开发者文档 → 创建机器人应用 → app 凭据。"
@@ -289,8 +306,8 @@ export function createInstallerI18n(languageTag = "en") {
     publicLabel: zh ? "公开" : "Public",
     privateLabel: zh ? "私有" : "Private",
     qqDetail: zh
-      ? `${chatBridgeModeLabel}：websocket · 应用凭据已保存到目标 settings.json`
-      : `${chatBridgeModeLabel}: websocket · app credentials saved to target settings.json`,
+      ? `${copy.chatBridgeModeLabel}：websocket · 应用凭据已保存到目标 settings.json`
+      : `${copy.chatBridgeModeLabel}: websocket · app credentials saved to target settings.json`,
     larkPlatformMessage: zh
       ? "选择 Lark / 飞书区域。"
       : "Choose the Lark / Feishu region.",
@@ -312,8 +329,8 @@ export function createInstallerI18n(languageTag = "en") {
       : "Enter the Lark / Feishu app secret.",
     larkDetail: (platform: string) =>
       zh
-        ? `${chatBridgeModeLabel}：ws · 平台：${platform} · 应用凭据已保存到目标 settings.json`
-        : `${chatBridgeModeLabel}: ws · platform: ${platform} · app credentials saved to target settings.json`,
+        ? `${copy.chatBridgeModeLabel}：ws · 平台：${platform} · 应用凭据已保存到目标 settings.json`
+        : `${copy.chatBridgeModeLabel}: ws · platform: ${platform} · app credentials saved to target settings.json`,
     slackAppTokenMessage: zh
       ? "输入 Slack app-level token。"
       : "Enter the Slack app-level token.",
@@ -327,8 +344,8 @@ export function createInstallerI18n(languageTag = "en") {
       ? "Slack 应用设置 → OAuth & Permissions → Bot User OAuth Token（以 xoxb- 开头）。"
       : "Slack app settings → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
     slackDetail: zh
-      ? `${chatBridgeModeLabel}：ws`
-      : `${chatBridgeModeLabel}: ws`,
+      ? `${copy.chatBridgeModeLabel}：ws`
+      : `${copy.chatBridgeModeLabel}: ws`,
     minecraftUrlMessage: zh
       ? "输入 Minecraft QueQiao WebSocket URL。"
       : "Enter the Minecraft QueQiao WebSocket URL.",
@@ -346,8 +363,8 @@ export function createInstallerI18n(languageTag = "en") {
       : "Enter the QueQiao access token if required. Leave blank otherwise.",
     minecraftDetail: (url: string) =>
       zh
-        ? `${chatBridgeModeLabel}：ws · 端点：${url}`
-        : `${chatBridgeModeLabel}: ws · endpoint: ${url}`,
+        ? `${copy.chatBridgeModeLabel}：ws · 端点：${url}`
+        : `${copy.chatBridgeModeLabel}: ws · endpoint: ${url}`,
     buildInstallSafetyBoundaryText() {
       return [
         zh ? "Rin 安全边界：" : "Rin safety boundary:",
@@ -415,13 +432,13 @@ export function createInstallerI18n(languageTag = "en") {
         `${zh ? "思考强度" : "Thinking level"}: ${options.thinkingLevel || (zh ? "暂不设置" : "skipped for now")}`,
         `${zh ? "模型认证状态" : "Model auth status"}: ${options.provider ? (options.authAvailable ? (zh ? "已就绪" : "ready") : zh ? "稍后需要认证/配置" : "needs auth/config later") : zh ? "暂不设置" : "skipped for now"}`,
         `${this.defaultTargetLabel}: ${options.setDefaultTarget ? this.defaultTargetSetValue(options.targetUser) : this.defaultTargetSkippedValue}`,
-        `${chatBridgeLabel}: ${options.chatDescription}`,
+        `${copy.chatBridgeLabel}: ${options.chatDescription}`,
         options.chatDetail,
         options.chatDescription === (zh ? "暂不启用" : "disabled for now")
           ? ""
           : zh
-            ? `${chatAuthorizationLabel}：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。`
-            : `${chatAuthorizationLabel}: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.`,
+            ? `${copy.chatAuthorizationLabel}：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。`
+            : `${copy.chatAuthorizationLabel}: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.`,
       ]
         .filter(Boolean)
         .join("\n");
