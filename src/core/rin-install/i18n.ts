@@ -2,6 +2,7 @@ import {
   detectLocalLanguageTag,
   normalizeLanguageTag,
   resolveInstallerDisplayLanguage,
+  type InstallerDisplayLanguage,
 } from "../language.js";
 
 export type InstallerI18n = ReturnType<typeof createInstallerI18n>;
@@ -37,14 +38,24 @@ type InstallerLanguagePromptCopy = {
   invalidLanguageTag: string;
 };
 
-const INSTALLER_LANGUAGE_PROMPT_COPY: InstallerLanguagePromptCopy = {
-  chooseMessage: "Choose installer language",
-  detectedSuffix: "detected",
-  customLabel: "Other",
-  customHint: "Enter any BCP 47 language tag",
-  textMessage: "Enter language tag (BCP 47)",
-  invalidLanguageTag: "Use a valid BCP 47 language tag",
-};
+const INSTALLER_LANGUAGE_PROMPT_COPY = {
+  en: {
+    chooseMessage: "Choose installer language",
+    detectedSuffix: "detected",
+    customLabel: "Other",
+    customHint: "Enter any BCP 47 language tag",
+    textMessage: "Enter language tag (BCP 47)",
+    invalidLanguageTag: "Use a valid BCP 47 language tag",
+  },
+  "zh-CN": {
+    chooseMessage: "选择安装器语言",
+    detectedSuffix: "已检测",
+    customLabel: "其他",
+    customHint: "输入任意 BCP 47 语言标签",
+    textMessage: "输入语言标签（BCP 47）",
+    invalidLanguageTag: "请输入有效的 BCP 47 语言标签",
+  },
+} satisfies Record<InstallerDisplayLanguage, InstallerLanguagePromptCopy>;
 
 function formatOpenLinks(links?: string | string[]) {
   const list = (Array.isArray(links) ? links : [links])
@@ -57,7 +68,8 @@ export async function promptInstallerLanguage(
   prompt: InstallerLanguagePromptApi,
 ) {
   const detected = detectLocalLanguageTag("en");
-  const copy = INSTALLER_LANGUAGE_PROMPT_COPY;
+  const promptDisplayLanguage = resolveInstallerDisplayLanguage(detected);
+  const copy = INSTALLER_LANGUAGE_PROMPT_COPY[promptDisplayLanguage];
   const selected = String(
     prompt.ensureNotCancelled(
       await prompt.select({
@@ -97,6 +109,9 @@ export function createInstallerI18n(languageTag = "en") {
   const language = normalizeLanguageTag(languageTag, "en");
   const displayLanguage = resolveInstallerDisplayLanguage(language);
   const zh = displayLanguage === "zh-CN";
+  const chatBridgeLabel = zh ? "聊天接入" : "Chat bridge";
+  const chatBridgeModeLabel = zh ? "聊天接入模式" : "Chat bridge mode";
+  const chatAuthorizationLabel = zh ? "聊天授权" : "Chat authorization";
 
   return {
     language,
@@ -203,7 +218,7 @@ export function createInstallerI18n(languageTag = "en") {
     valueRequired: zh ? "此项不能为空。" : "A value is required.",
     validUrlRequired: zh ? "请输入有效 URL。" : "Use a valid URL.",
     configureChatBridgeNowMessage: zh
-      ? "现在配置 chat bridge 吗？"
+      ? "现在配置聊天接入吗？"
       : "Configure a chat bridge now?",
     chooseChatPlatformMessage: zh
       ? "选择聊天平台。"
@@ -227,19 +242,19 @@ export function createInstallerI18n(languageTag = "en") {
       ? "Telegram @BotFather → 选择你的机器人 → API token。"
       : "Telegram @BotFather → choose your bot → API token.",
     telegramTokenDetail: zh
-      ? "Chat bridge 模式：polling · 令牌已保存到目标 settings.json"
-      : "Chat bridge mode: polling · token saved to target settings.json",
+      ? `${chatBridgeModeLabel}：polling · 令牌已保存到目标 settings.json`
+      : `${chatBridgeModeLabel}: polling · token saved to target settings.json`,
     onebotEndpointMessage: zh
       ? "输入 OneBot 端点 URL。"
       : "Enter the OneBot endpoint URL.",
     onebotEndpointGuide: zh
-      ? "你的 OneBot bridge 或客户端配置，例如 NapCat、LLOneBot 或其他 OneBot 服务。"
+      ? "你的 OneBot 接入服务或客户端配置，例如 NapCat、LLOneBot 或其他 OneBot 服务。"
       : "Your OneBot bridge or client config, for example NapCat, LLOneBot, or another OneBot server.",
     onebotSelfIdMessage: zh
       ? "如果你已经知道 OneBot self ID，请输入；否则留空稍后再填。"
       : "Enter the OneBot self ID if you already know it. Leave blank to fill later.",
     onebotSelfIdGuide: zh
-      ? "通常是 OneBot 客户端或 bridge 配置中的机器人 QQ 号。"
+      ? "通常是 OneBot 客户端或接入配置中的机器人 QQ 号。"
       : "Usually the bot QQ number from your OneBot client or bridge config.",
     onebotTokenMessage: zh
       ? "如果需要，请输入 OneBot access token；否则留空。"
@@ -250,8 +265,8 @@ export function createInstallerI18n(languageTag = "en") {
     optionalTokenPlaceholder: zh ? "可选令牌" : "optional token",
     onebotDetail: (protocol: string, endpoint: string) =>
       zh
-        ? `Chat bridge 模式：${protocol} · 端点：${endpoint}`
-        : `Chat bridge mode: ${protocol} · endpoint: ${endpoint}`,
+        ? `${chatBridgeModeLabel}：${protocol} · 端点：${endpoint}`
+        : `${chatBridgeModeLabel}: ${protocol} · endpoint: ${endpoint}`,
     discordTokenMessage: zh
       ? "输入 Discord 机器人令牌。"
       : "Enter the Discord bot token.",
@@ -259,8 +274,8 @@ export function createInstallerI18n(languageTag = "en") {
       ? "Discord Developer Portal → 你的应用 → Bot → Reset Token / Token。"
       : "Discord Developer Portal → your application → Bot → Reset Token / Token.",
     discordDetail: zh
-      ? "Chat bridge 令牌：[已保存到目标 settings.json]"
-      : "Chat bridge token: [saved to target settings.json]",
+      ? `${chatBridgeLabel}令牌：[已保存到目标 settings.json]`
+      : `${chatBridgeLabel} token: [saved to target settings.json]`,
     qqAppIdMessage: zh ? "输入 QQ 机器人 App ID。" : "Enter the QQ bot app ID.",
     qqCredentialsGuide: zh
       ? "QQ 机器人开发者文档 → 创建机器人应用 → app 凭据。"
@@ -274,8 +289,8 @@ export function createInstallerI18n(languageTag = "en") {
     publicLabel: zh ? "公开" : "Public",
     privateLabel: zh ? "私有" : "Private",
     qqDetail: zh
-      ? "Chat bridge 模式：websocket · 应用凭据已保存到目标 settings.json"
-      : "Chat bridge mode: websocket · app credentials saved to target settings.json",
+      ? `${chatBridgeModeLabel}：websocket · 应用凭据已保存到目标 settings.json`
+      : `${chatBridgeModeLabel}: websocket · app credentials saved to target settings.json`,
     larkPlatformMessage: zh
       ? "选择 Lark / 飞书区域。"
       : "Choose the Lark / Feishu region.",
@@ -297,8 +312,8 @@ export function createInstallerI18n(languageTag = "en") {
       : "Enter the Lark / Feishu app secret.",
     larkDetail: (platform: string) =>
       zh
-        ? `Chat bridge 模式：ws · 平台：${platform} · 应用凭据已保存到目标 settings.json`
-        : `Chat bridge mode: ws · platform: ${platform} · app credentials saved to target settings.json`,
+        ? `${chatBridgeModeLabel}：ws · 平台：${platform} · 应用凭据已保存到目标 settings.json`
+        : `${chatBridgeModeLabel}: ws · platform: ${platform} · app credentials saved to target settings.json`,
     slackAppTokenMessage: zh
       ? "输入 Slack app-level token。"
       : "Enter the Slack app-level token.",
@@ -311,15 +326,17 @@ export function createInstallerI18n(languageTag = "en") {
     slackBotTokenGuide: zh
       ? "Slack 应用设置 → OAuth & Permissions → Bot User OAuth Token（以 xoxb- 开头）。"
       : "Slack app settings → OAuth & Permissions → Bot User OAuth Token (starts with xoxb-).",
-    slackDetail: zh ? "Chat bridge 模式：ws" : "Chat bridge mode: ws",
+    slackDetail: zh
+      ? `${chatBridgeModeLabel}：ws`
+      : `${chatBridgeModeLabel}: ws`,
     minecraftUrlMessage: zh
       ? "输入 Minecraft QueQiao WebSocket URL。"
       : "Enter the Minecraft QueQiao WebSocket URL.",
     minecraftUrlGuide: zh
-      ? "使用 QueQiao bridge 或 Minecraft 适配器暴露出的 WebSocket 地址。"
+      ? "使用 QueQiao 接入服务或 Minecraft 适配器暴露出的 WebSocket 地址。"
       : "Use the WebSocket address exposed by your QueQiao bridge or Minecraft adapter.",
     minecraftSelfIdMessage: zh
-      ? "如果你想自定义 Minecraft bridge self ID，请输入；否则留空使用 minecraft。"
+      ? "如果你想自定义 Minecraft 接入 self ID，请输入；否则留空使用 minecraft。"
       : "Enter the Minecraft bridge self ID if you want a custom one. Leave blank to use minecraft.",
     minecraftServerNameMessage: zh
       ? "如果你希望聊天日志显示 Minecraft 服务器名称，请输入；否则留空。"
@@ -329,8 +346,8 @@ export function createInstallerI18n(languageTag = "en") {
       : "Enter the QueQiao access token if required. Leave blank otherwise.",
     minecraftDetail: (url: string) =>
       zh
-        ? `Chat bridge 模式：ws · 端点：${url}`
-        : `Chat bridge mode: ws · endpoint: ${url}`,
+        ? `${chatBridgeModeLabel}：ws · 端点：${url}`
+        : `${chatBridgeModeLabel}: ws · endpoint: ${url}`,
     buildInstallSafetyBoundaryText() {
       return [
         zh ? "Rin 安全边界：" : "Rin safety boundary:",
@@ -370,7 +387,7 @@ export function createInstallerI18n(languageTag = "en") {
           ? "- assistant 主动选择或按要求委派的 subagent 运行"
           : "- subagent runs when the assistant chooses or is asked to delegate work",
         zh
-          ? "- scheduled task / chat-bridge 触发的 agent 运行"
+          ? "- scheduled task / 聊天接入触发的 agent 运行"
           : "- scheduled task / chat-bridge-triggered agent runs that create their own turns",
         zh
           ? "- 使用 web search 时加入模型上下文的搜索结果文本"
@@ -398,13 +415,13 @@ export function createInstallerI18n(languageTag = "en") {
         `${zh ? "思考强度" : "Thinking level"}: ${options.thinkingLevel || (zh ? "暂不设置" : "skipped for now")}`,
         `${zh ? "模型认证状态" : "Model auth status"}: ${options.provider ? (options.authAvailable ? (zh ? "已就绪" : "ready") : zh ? "稍后需要认证/配置" : "needs auth/config later") : zh ? "暂不设置" : "skipped for now"}`,
         `${this.defaultTargetLabel}: ${options.setDefaultTarget ? this.defaultTargetSetValue(options.targetUser) : this.defaultTargetSkippedValue}`,
-        `${zh ? "Chat bridge" : "Chat bridge"}: ${options.chatDescription}`,
+        `${chatBridgeLabel}: ${options.chatDescription}`,
         options.chatDetail,
         options.chatDescription === (zh ? "暂不启用" : "disabled for now")
           ? ""
           : zh
-            ? "Chat 授权：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。"
-            : "Chat authorization: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.",
+            ? `${chatAuthorizationLabel}：安装流程会一次性引导首次 OWNER 设置；后续角色变更应通过自然语言对话提出，不使用 slash command。`
+            : `${chatAuthorizationLabel}: installer guidance covers the first OWNER setup once; later role changes should be requested in normal conversation, not slash commands.`,
       ]
         .filter(Boolean)
         .join("\n");

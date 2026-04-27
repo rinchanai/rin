@@ -84,6 +84,30 @@ test("installer interactive helpers describe dir state and plan text", () => {
   assert.ok(safety.includes("memory extraction"));
   assert.ok(safety.includes("chat-bridge-triggered agent runs"));
 
+  const zhPlan = interactive.buildInstallPlanText(
+    {
+      currentUser: "alice",
+      targetUser: "bob",
+      installDir: "/home/bob/.rin",
+      provider: "openai",
+      modelId: "gpt-5",
+      thinkingLevel: "medium",
+      authAvailable: true,
+      chatDescription: "telegram",
+      chatDetail: "\u804a\u5929\u63a5\u5165\u6a21\u5f0f\uff1apolling",
+    },
+    installerI18n.createInstallerI18n("zh-CN"),
+  );
+  assert.ok(zhPlan.includes("\u804a\u5929\u63a5\u5165: telegram"));
+  assert.ok(zhPlan.includes("\u804a\u5929\u6388\u6743\uff1a"));
+  assert.ok(!zhPlan.includes("Chat bridge"));
+
+  const zhSafety = interactive.buildInstallSafetyBoundaryText(
+    installerI18n.createInstallerI18n("zh-CN"),
+  );
+  assert.ok(zhSafety.includes("\u804a\u5929\u63a5\u5165\u89e6\u53d1"));
+  assert.ok(!zhSafety.includes("chat-bridge"));
+
   const initExit = interactive.buildPostInstallInitExitText({
     currentUser: "alice",
     targetUser: "bob",
@@ -241,7 +265,7 @@ test("promptInstallerLanguage uses English-only copy for non-Chinese locales", a
   }
 });
 
-test("promptInstallerLanguage keeps the picker copy English-only for Chinese locales", async () => {
+test("promptInstallerLanguage localizes the picker copy for Chinese locales", async () => {
   const originalLang = process.env.LANG;
   const originalLcAll = process.env.LC_ALL;
   const originalLcMessages = process.env.LC_MESSAGES;
@@ -267,15 +291,18 @@ test("promptInstallerLanguage keeps the picker copy English-only for Chinese loc
     });
 
     assert.equal(result, "en");
-    assert.equal(selectOptions.message, "Choose installer language");
+    assert.equal(
+      selectOptions.message,
+      "\u9009\u62e9\u5b89\u88c5\u5668\u8bed\u8a00",
+    );
     assert.equal(
       selectOptions.options.find((option) => option.value === "zh-CN")?.hint,
-      "zh-CN · detected",
+      "zh-CN \xb7 \u5df2\u68c0\u6d4b",
     );
-    assert.equal(selectOptions.options.at(-1)?.label, "Other");
+    assert.equal(selectOptions.options.at(-1)?.label, "\u5176\u4ed6");
     assert.equal(
       selectOptions.options.at(-1)?.hint,
-      "Enter any BCP 47 language tag",
+      "\u8f93\u5165\u4efb\u610f BCP 47 \u8bed\u8a00\u6807\u7b7e",
     );
   } finally {
     if (originalLang == null) delete process.env.LANG;
