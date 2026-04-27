@@ -18,19 +18,24 @@ function firstInstallRecordField(...values: unknown[]) {
   return "";
 }
 
-function createInstallRecord(
+function resolveInstallRecordInstallDir(home: string, installDir: string) {
+  return installDir || defaultInstallDirForHome(home);
+}
+
+function createNormalizedInstallRecord(
   home: string,
   fields: {
-    defaultTargetUser?: unknown;
-    defaultInstallDir?: unknown;
+    defaultTargetUser: string;
+    defaultInstallDir: string;
   },
 ): InstallRecord | null {
-  const defaultTargetUser = firstInstallRecordField(fields.defaultTargetUser);
-  const defaultInstallDir = firstInstallRecordField(fields.defaultInstallDir);
-  if (!defaultTargetUser && !defaultInstallDir) return null;
+  if (!fields.defaultTargetUser && !fields.defaultInstallDir) return null;
   return {
-    defaultTargetUser,
-    defaultInstallDir: defaultInstallDir || defaultInstallDirForHome(home),
+    defaultTargetUser: fields.defaultTargetUser,
+    defaultInstallDir: resolveInstallRecordInstallDir(
+      home,
+      fields.defaultInstallDir,
+    ),
   };
 }
 
@@ -40,7 +45,7 @@ export function normalizeInstallRecord(
 ): InstallRecord | null {
   if (!raw || typeof raw !== "object") return null;
   const value = raw as Record<string, unknown>;
-  return createInstallRecord(home, {
+  return createNormalizedInstallRecord(home, {
     defaultTargetUser: firstInstallRecordField(
       value.defaultTargetUser,
       value.targetUser,
@@ -66,7 +71,7 @@ function resolveInstallRecordTargetFromRecord(
   if (!targetUser) return null;
   return {
     targetUser,
-    installDir: installDir || defaultInstallDirForHome(home),
+    installDir: resolveInstallRecordInstallDir(home, installDir),
   };
 }
 

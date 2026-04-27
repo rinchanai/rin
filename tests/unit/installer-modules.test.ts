@@ -188,6 +188,15 @@ test("install-record normalizes launcher metadata and installer manifests", () =
       defaultInstallDir: "/home/demo/.rin",
     },
   );
+  assert.equal(
+    installRecord.normalizeInstallRecord("/home/demo", {
+      defaultTargetUser: "   ",
+      targetUser: "",
+      defaultInstallDir: "   ",
+      installDir: "",
+    }),
+    null,
+  );
   assert.deepEqual(
     installRecord.resolveInstallRecordTarget("/home/demo", "fallback-user", {
       defaultInstallDir: "/srv/rin-demo",
