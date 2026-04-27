@@ -206,6 +206,47 @@ function normalizeTaskTarget(target: CronTaskTarget | undefined) {
       };
 }
 
+function normalizeTaskTermination(
+  termination: CronTaskTermination | null | undefined,
+  existing: CronTaskRecord | undefined,
+) {
+  return termination === null
+    ? undefined
+    : termination !== undefined
+      ? {
+          maxRuns: termination.maxRuns
+            ? Math.max(1, Number(termination.maxRuns))
+            : undefined,
+          stopAt: normalizeIso(termination.stopAt, "stopAt"),
+        }
+      : existing?.termination;
+}
+
+function resolveDedicatedSessionBinding(options: {
+  agentDir: string;
+  taskId: string;
+  session: CronTaskSessionBinding;
+  explicitSessionFile: string;
+  target: CronTaskTarget;
+  existing?: CronTaskRecord;
+}) {
+  if (options.session.mode !== "dedicated") {
+    return {
+      dedicatedSessionFile: undefined,
+      dedicatedSessionPersistent: undefined,
+    };
+  }
+  return {
+    dedicatedSessionFile: options.explicitSessionFile
+      ? path.resolve(HOME_DIR, options.explicitSessionFile)
+      : options.existing?.dedicatedSessionFile ||
+        (options.target.kind === "agent_prompt"
+          ? getManagedTaskSessionFile(options.agentDir, options.taskId)
+          : undefined),
+    dedicatedSessionPersistent: true,
+  };
+}
+
 function createBuiltInMemoryIndexRepairTask(agentDir: string): CronTaskRecord {
   const createdAt = nowIso();
   const command = `${shellQuote(process.execPath)} ${shellQuote(path.join(agentDir, "app", "current", "dist", "app", "rin", "main.js"))} memory-index repair`;
@@ -340,29 +381,16 @@ export class CronScheduler {
     const normalizedTarget = normalizeTaskTarget(
       input.target ?? existing?.target,
     );
-    const dedicatedSessionPersistent =
-      session.mode === "dedicated" ? true : undefined;
-    const dedicatedSessionFile =
-      session.mode === "dedicated"
-        ? explicitSessionFile
-          ? path.resolve(HOME_DIR, explicitSessionFile)
-          : existing?.dedicatedSessionFile ||
-            (normalizedTarget.kind === "agent_prompt"
-              ? getManagedTaskSessionFile(this.options.agentDir, id)
-              : undefined)
-        : undefined;
-
-    const termination =
-      input.termination === null
-        ? undefined
-        : input.termination !== undefined
-          ? {
-              maxRuns: input.termination?.maxRuns
-                ? Math.max(1, Number(input.termination.maxRuns))
-                : undefined,
-              stopAt: normalizeIso(input.termination?.stopAt, "stopAt"),
-            }
-          : existing?.termination;
+    const { dedicatedSessionFile, dedicatedSessionPersistent } =
+      resolveDedicatedSessionBinding({
+        agentDir: this.options.agentDir,
+        taskId: id,
+        session,
+        explicitSessionFile,
+        target: normalizedTarget,
+        existing,
+      });
+    const termination = normalizeTaskTermination(input.termination, existing);
 
     const enabled =
       input.enabled !== undefined
