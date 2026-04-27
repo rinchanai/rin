@@ -253,6 +253,73 @@ test("chat controller polls typing and rotating reactions while a turn is active
   assert.deepEqual(reactions, [["create", "2", "m1", "🤔"]]);
 });
 
+test("chat controller uses adapter reaction capability for lark working indicators", async () => {
+  const controller = await createController("lark:chat-1");
+  const reactions = [];
+  let noticeSent = false;
+  controller.app = {
+    bots: [
+      {
+        platform: "lark",
+        selfId: "bot-1",
+        async createReaction(chatId, messageId, emoji) {
+          reactions.push(["create", chatId, messageId, emoji]);
+        },
+      },
+    ],
+  };
+  controller.sendWorkingNotice = async function () {
+    noticeSent = true;
+    return true;
+  };
+
+  controller.currentTurn = {
+    startedAt: Date.now(),
+    incomingMessageId: "m-lark",
+    workingNoticeSent: false,
+  };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
+
+  assert.equal(await controller.pollTyping(), true);
+  assert.deepEqual(reactions, [["create", "chat-1", "m-lark", "🤔"]]);
+  assert.equal(noticeSent, false);
+});
+
+test("chat controller uses discord typing and reaction capabilities together", async () => {
+  const controller = await createController("discord:channel-1");
+  const actions = [];
+  const reactions = [];
+  controller.app = {
+    bots: [
+      {
+        platform: "discord",
+        selfId: "bot-1",
+        internal: {
+          async sendTyping(chatId) {
+            actions.push(["typing", chatId]);
+          },
+          async createReaction(chatId, messageId, emoji) {
+            reactions.push(["create", chatId, messageId, emoji]);
+          },
+        },
+      },
+    ],
+  };
+
+  controller.currentTurn = {
+    startedAt: Date.now(),
+    incomingMessageId: "m-discord",
+    workingNoticeSent: false,
+  };
+  const liveTurn = controller.startLiveTurn();
+  liveTurn.promise.catch(() => {});
+
+  assert.equal(await controller.pollTyping(), true);
+  assert.deepEqual(actions, [["typing", "channel-1"]]);
+  assert.deepEqual(reactions, [["create", "channel-1", "m-discord", "🤔"]]);
+});
+
 test("chat controller flushes a completed interim assistant message before a later distinct final reply", async () => {
   const controller = await createController("telegram/1:2");
   const chatKey = "telegram/1:2";

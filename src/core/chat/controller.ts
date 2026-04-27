@@ -16,6 +16,7 @@ import {
 import { normalizeSessionRef } from "../session/ref.js";
 import {
   chatStatePath,
+  findBot,
   isPrivateChat,
   parseChatKey,
   readJsonFile,
@@ -60,6 +61,28 @@ function commandNameFromCommandLine(commandLine: string) {
   const commandPart = trimmed.slice(1).trim();
   if (!commandPart) return "";
   return safeString(commandPart.split(/\s+/, 1)[0]).trim();
+}
+
+function hasWorkingTypingCapability(bot: any) {
+  return Boolean(
+    typeof bot?.internal?.sendChatAction === "function" ||
+    typeof bot?.internal?.sendTyping === "function",
+  );
+}
+
+function hasWorkingReactionCapability(
+  bot: any,
+  parsed: { platform: string; chatId: string },
+) {
+  if (parsed.platform === "onebot" && isPrivateChat(parsed)) return false;
+  if (parsed.platform === "qq" && !parsed.chatId.startsWith("channel:")) {
+    return false;
+  }
+  return Boolean(
+    typeof bot?.internal?.setMessageReaction === "function" ||
+    typeof bot?.createReaction === "function" ||
+    typeof bot?.internal?.createReaction === "function",
+  );
 }
 
 function summarizePromptText(text: string, limit = 80) {
@@ -283,18 +306,14 @@ export class ChatController {
     if (!parsed) {
       return { typing: false, reaction: false, notice: false };
     }
-    if (parsed.platform === "telegram") {
-      return { typing: true, reaction: true, notice: false };
-    }
-    if (parsed.platform === "discord") {
-      return { typing: true, reaction: false, notice: false };
-    }
-    if (parsed.platform === "onebot") {
-      return isPrivateChat(parsed)
-        ? { typing: false, reaction: false, notice: true }
-        : { typing: false, reaction: true, notice: false };
-    }
-    return { typing: false, reaction: false, notice: true };
+    const bot = findBot(this.app, parsed.platform, parsed.botId);
+    const typing = hasWorkingTypingCapability(bot);
+    const reaction = hasWorkingReactionCapability(bot, parsed);
+    return {
+      typing,
+      reaction,
+      notice: !typing && !reaction,
+    };
   }
 
   private shouldRefreshWorkingReaction() {

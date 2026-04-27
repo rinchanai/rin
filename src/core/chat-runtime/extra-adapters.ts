@@ -26,6 +26,56 @@ import {
 const DISCORD_MAX_TEXT_LENGTH = 2000;
 const SLACK_MAX_TEXT_LENGTH = 40000;
 
+const SLACK_REACTION_NAMES: Record<string, string> = {
+  "🤔": "thinking_face",
+  "🔥": "fire",
+  "👍": "thumbsup",
+  "🎉": "tada",
+  "🌹": "rose",
+  "👀": "eyes",
+};
+
+const LARK_REACTION_TYPES: Record<string, string> = {
+  "🤔": "THINKING",
+  "🔥": "FIRE",
+  "👍": "THUMBSUP",
+  "🎉": "CELEBRATE",
+  "🌹": "ROSE",
+  "👀": "EYES",
+};
+
+const QQ_REACTION_EMOJI_IDS: Record<string, string> = {
+  "🤔": "212",
+  "🔥": "128293",
+  "👍": "128077",
+  "🎉": "127881",
+  "🌹": "127801",
+  "👀": "128064",
+};
+
+function toSlackReactionName(emoji: string) {
+  const value = safeString(emoji).trim();
+  return SLACK_REACTION_NAMES[value] || value.replace(/^:+|:+$/g, "");
+}
+
+function toLarkReactionType(emoji: string) {
+  const value = safeString(emoji).trim();
+  return LARK_REACTION_TYPES[value] || value;
+}
+
+function toQqReactionPayload(messageId: string, emoji: string) {
+  const value = safeString(emoji).trim();
+  const [first] = Array.from(value);
+  const codePoint = first?.codePointAt(0);
+  return {
+    message_id: safeString(messageId).trim(),
+    emoji_type: 1,
+    emoji_id:
+      QQ_REACTION_EMOJI_IDS[value] ||
+      (Number.isFinite(codePoint) ? String(codePoint) : value),
+  };
+}
+
 export class DiscordAdapter {
   private readonly app: any;
   private readonly config: Record<string, any>;
@@ -94,6 +144,16 @@ export class DiscordAdapter {
       internal,
       sendMessage: async (chatId: string, content: any) =>
         await this.sendMessage(chatId, content),
+      createReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await internal.createReaction(chatId, messageId, emoji),
+      deleteReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await internal.deleteOwnReaction(chatId, messageId, emoji),
     };
     this.app.register(this, this.bot);
   }
@@ -375,6 +435,16 @@ export class SlackAdapter {
       internal,
       sendMessage: async (chatId: string, content: any) =>
         await this.sendMessage(chatId, content),
+      createReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.createReaction(chatId, messageId, emoji),
+      deleteReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.deleteReaction(chatId, messageId, emoji),
     };
     this.app.register(this, this.bot);
   }
@@ -454,6 +524,28 @@ export class SlackAdapter {
       Authorization: `Bearer ${safeString(this.config?.botToken).trim()}`,
     });
     return { path: fullPath, name, mimeType };
+  }
+
+  async createReaction(chatId: string, messageId: string, emoji: string) {
+    const name = toSlackReactionName(emoji);
+    if (!name) throw new Error("slack_reaction_emoji_required");
+    await this.web.reactions.add({
+      channel: chatId,
+      timestamp: messageId,
+      name,
+    });
+    return true;
+  }
+
+  async deleteReaction(chatId: string, messageId: string, emoji: string) {
+    const name = toSlackReactionName(emoji);
+    if (!name) throw new Error("slack_reaction_emoji_required");
+    await this.web.reactions.remove({
+      channel: chatId,
+      timestamp: messageId,
+      name,
+    });
+    return true;
   }
 
   private async sendMessage(chatId: string, content: any) {
@@ -692,6 +784,16 @@ export class QQAdapter {
       internal,
       sendMessage: async (chatId: string, content: any) =>
         await this.sendMessage(chatId, content),
+      createReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.createReaction(chatId, messageId, emoji),
+      deleteReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.deleteReaction(chatId, messageId, emoji),
     };
     this.app.register(this, this.bot);
   }
@@ -771,6 +873,31 @@ export class QQAdapter {
       msg_id: replyToMessageId || undefined,
       msg_seq: replyToMessageId ? 1 : undefined,
     });
+  }
+
+  private reactionChannelId(chatId: string) {
+    const target = safeString(chatId).trim();
+    return target.startsWith("channel:") ? target.slice("channel:".length) : "";
+  }
+
+  async createReaction(chatId: string, messageId: string, emoji: string) {
+    const channelId = this.reactionChannelId(chatId);
+    if (!channelId) throw new Error("qq_reaction_requires_channel_chat");
+    await this.bot.internal.postReaction(
+      channelId,
+      toQqReactionPayload(messageId, emoji),
+    );
+    return true;
+  }
+
+  async deleteReaction(chatId: string, messageId: string, emoji: string) {
+    const channelId = this.reactionChannelId(chatId);
+    if (!channelId) throw new Error("qq_reaction_requires_channel_chat");
+    await this.bot.internal.deleteReaction(
+      channelId,
+      toQqReactionPayload(messageId, emoji),
+    );
+    return true;
   }
 
   private async sendMessage(chatId: string, content: any) {
@@ -964,6 +1091,12 @@ export class LarkAdapter {
         await this.client?.im?.message?.get?.(options),
       getChat: async (options: any) =>
         await this.client?.im?.chat?.get?.(options),
+      createReaction: async (options: any) =>
+        await this.client?.im?.messageReaction?.create?.(options),
+      deleteReaction: async (options: any) =>
+        await this.client?.im?.messageReaction?.delete?.(options),
+      listReactions: async (options: any) =>
+        await this.client?.im?.messageReaction?.list?.(options),
       listChatMembers: async (options: any) =>
         await this.client?.im?.chatMembers?.get?.(options),
       getUser: async (options: any) =>
@@ -977,6 +1110,16 @@ export class LarkAdapter {
       internal,
       sendMessage: async (chatId: string, content: any) =>
         await this.sendMessage(chatId, content),
+      createReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.createReaction(chatId, messageId, emoji),
+      deleteReaction: async (
+        chatId: string,
+        messageId: string,
+        emoji: string,
+      ) => await this.deleteReaction(chatId, messageId, emoji),
     };
     this.app.register(this, this.bot);
   }
@@ -1047,17 +1190,46 @@ export class LarkAdapter {
     }
   }
 
+  async createReaction(_chatId: string, messageId: string, emoji: string) {
+    const emojiType = toLarkReactionType(emoji);
+    if (!emojiType) throw new Error("lark_reaction_emoji_required");
+    await this.client.im.messageReaction.create({
+      path: { message_id: messageId },
+      data: { reaction_type: { emoji_type: emojiType } },
+    });
+    return true;
+  }
+
+  async deleteReaction(_chatId: string, messageId: string, emoji: string) {
+    const emojiType = toLarkReactionType(emoji);
+    if (!emojiType) throw new Error("lark_reaction_emoji_required");
+    const listed = await this.client.im.messageReaction.list({
+      path: { message_id: messageId },
+      params: { reaction_type: emojiType, page_size: 50 },
+    });
+    const items = Array.isArray(listed?.data?.items) ? listed.data.items : [];
+    const reaction =
+      items.find(
+        (item: any) =>
+          safeString(item?.reaction_type?.emoji_type).trim() === emojiType &&
+          safeString(item?.operator?.operator_type).trim() === "app",
+      ) || items[0];
+    const reactionId = safeString(reaction?.reaction_id).trim();
+    if (!reactionId) return false;
+    await this.client.im.messageReaction.delete({
+      path: { message_id: messageId, reaction_id: reactionId },
+    });
+    return true;
+  }
+
   private async sendMessage(chatId: string, content: any) {
     const { work } = prepareOutboundNodes(content);
-    const text = renderPlainTextFromNodes(
-      work,
-      {
-        renderAt(attrs) {
-          const id = safeString(attrs.id).trim();
-          return id ? `@${id}` : safeString(attrs.name).trim();
-        },
+    const text = renderPlainTextFromNodes(work, {
+      renderAt(attrs) {
+        const id = safeString(attrs.id).trim();
+        return id ? `@${id}` : safeString(attrs.name).trim();
       },
-    );
+    });
     if (!text) throw new Error("lark_send_message_empty");
     const result = await this.client.im.message.create({
       params: {
@@ -1338,14 +1510,11 @@ export class MinecraftAdapter {
 
   private async sendMessage(chatId: string, content: any) {
     const { work } = prepareOutboundNodes(content);
-    const text = renderPlainTextFromNodes(
-      work,
-      {
-        renderAt(attrs) {
-          return `@${safeString(attrs.name || attrs.id).trim()}`;
-        },
+    const text = renderPlainTextFromNodes(work, {
+      renderAt(attrs) {
+        return `@${safeString(attrs.name || attrs.id).trim()}`;
       },
-    );
+    });
     if (!text) throw new Error("minecraft_send_message_empty");
     const target = safeString(chatId).trim();
     if (target.startsWith("private:")) {
