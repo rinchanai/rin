@@ -3,12 +3,15 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
+import { buildGuiInstallerHtml } from "../rin-install/gui.js";
 import type { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
 
 export type NativeDesktopHostLaunch = {
   command: string;
   args: string[];
 };
+
+export type ElectronDesktopHostSurface = "chat" | "installer";
 
 const DEFAULT_NATIVE_DESKTOP_HOST = "rin-desktop-host";
 
@@ -123,38 +126,8 @@ contextBridge.exposeInMainWorld('rinDesktop', {
 `;
 }
 
-export function buildElectronDesktopHostMainScript(options: {
-  preloadPath: string;
-  title?: string;
-}) {
-  const title = JSON.stringify(options.title || "Rin");
-  const preloadPath = JSON.stringify(options.preloadPath);
-  return (
-    `const { app, BrowserWindow, ipcMain } = require('electron');
-const readline = require('node:readline');
-
-let mainWindow = null;
-const queuedEvents = [];
-
-function sendCommand(command) {
-  process.stdout.write(JSON.stringify(command) + '\\n');
-}
-
-function postEvent(payload) {
-  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) {
-    queuedEvents.push(payload);
-    return;
-  }
-  mainWindow.webContents.send('rin-event', payload);
-}
-
-function flushEvents() {
-  while (queuedEvents.length > 0) postEvent(queuedEvents.shift());
-}
-
-function html() {
-  return ` +
-    JSON.stringify(`<!doctype html>
+function buildChatDesktopHtml() {
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -216,8 +189,49 @@ function html() {
     abortEl.addEventListener('click', () => window.rinDesktop.send({ type: 'abort' }));
   </script>
 </body>
-</html>`) +
-    `;
+</html>`;
+}
+
+function htmlForSurface(surface: ElectronDesktopHostSurface) {
+  if (surface === "installer") return buildGuiInstallerHtml();
+  return buildChatDesktopHtml();
+}
+
+export function buildElectronDesktopHostMainScript(options: {
+  preloadPath: string;
+  title?: string;
+  surface?: ElectronDesktopHostSurface;
+}) {
+  const surface = options.surface || "chat";
+  const title = JSON.stringify(
+    options.title || (surface === "installer" ? "Rin Installer" : "Rin"),
+  );
+  const preloadPath = JSON.stringify(options.preloadPath);
+  const html = JSON.stringify(htmlForSurface(surface));
+  return `const { app, BrowserWindow, ipcMain } = require('electron');
+const readline = require('node:readline');
+
+let mainWindow = null;
+const queuedEvents = [];
+
+function sendCommand(command) {
+  process.stdout.write(JSON.stringify(command) + '\\n');
+}
+
+function postEvent(payload) {
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.webContents) {
+    queuedEvents.push(payload);
+    return;
+  }
+  mainWindow.webContents.send('rin-event', payload);
+}
+
+function flushEvents() {
+  while (queuedEvents.length > 0) postEvent(queuedEvents.shift());
+}
+
+function html() {
+  return ${html};
 }
 
 function createWindow() {
@@ -249,12 +263,11 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
 
 app.whenReady().then(createWindow);
 app.on('window-all-closed', () => app.quit());
-`
-  );
+`;
 }
 
 export function createElectronDesktopHostFiles(
-  options: { title?: string } = {},
+  options: { title?: string; surface?: ElectronDesktopHostSurface } = {},
 ) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-electron-host-"));
   const preloadPath = path.join(dir, "preload.cjs");
@@ -266,7 +279,11 @@ export function createElectronDesktopHostFiles(
   );
   fs.writeFileSync(
     mainPath,
-    buildElectronDesktopHostMainScript({ preloadPath, title: options.title }),
+    buildElectronDesktopHostMainScript({
+      preloadPath,
+      title: options.title,
+      surface: options.surface,
+    }),
     "utf8",
   );
   return { dir, mainPath, preloadPath };
@@ -278,12 +295,18 @@ export async function runElectronDesktopHost(options: {
   title?: string;
 }) {
   const args = options.args || [];
+  let surface: ElectronDesktopHostSurface = "chat";
   for (const arg of args) {
-    if (arg !== "--stdio")
-      throw new Error(`rin_desktop_host_unknown_arg:${arg}`);
+    if (arg === "--stdio") continue;
+    if (arg === "--installer") {
+      surface = "installer";
+      continue;
+    }
+    throw new Error(`rin_desktop_host_unknown_arg:${arg}`);
   }
   const { dir, mainPath } = createElectronDesktopHostFiles({
     title: options.title,
+    surface,
   });
   const child = spawn(options.electronBinary, [mainPath], {
     stdio: ["inherit", "inherit", "inherit"],

@@ -27,33 +27,20 @@ test("installer GUI starts by default only for Windows interactive installs", ()
   );
 });
 
-test("installer GUI args parse local host, ephemeral port, and browser opening switch", () => {
-  assert.deepEqual(
-    gui.parseGuiInstallerArgs([
-      "--gui",
-      "--host",
-      "0.0.0.0",
-      "--port=0",
-      "--no-open",
-    ]),
-    {
-      host: "0.0.0.0",
-      port: 0,
-      open: false,
-    },
-  );
-  assert.deepEqual(
-    gui.parseGuiInstallerArgs(["--host=localhost", "--port", "4321", "--open"]),
-    {
-      host: "localhost",
-      port: 4321,
-      open: true,
-    },
-  );
-  assert.throws(
-    () => gui.parseGuiInstallerArgs(["--port", "70000"]),
-    /rin_installer_gui_invalid_port:70000/,
-  );
+test("installer GUI args expose no browser server switches", () => {
+  assert.deepEqual(gui.parseGuiInstallerArgs(["--gui"]), {});
+  for (const arg of [
+    "--host",
+    "--host=localhost",
+    "--port",
+    "--open",
+    "--no-open",
+  ]) {
+    assert.throws(
+      () => gui.parseGuiInstallerArgs([arg]),
+      new RegExp(`rin_installer_gui_unrecognized_arg:${arg}`),
+    );
+  }
 });
 
 test("installer GUI plan reuses installer plan text and escapes the HTML shell", () => {
@@ -80,14 +67,15 @@ test("installer GUI plan reuses installer plan text and escapes the HTML shell",
 
   const html = gui.buildGuiInstallerHtml();
   assert.match(html, /Rin Installer/);
-  assert.match(html, /\/api\/plan/);
-  assert.match(html, /\/api\/models/);
-  assert.match(html, /\/api\/auth\/api-key/);
-  assert.match(html, /\/api\/apply/);
-  assert.doesNotMatch(html, /<script src=/);
+  assert.match(html, /installer:plan/);
+  assert.match(html, /installer:models/);
+  assert.match(html, /installer:auth:api-key/);
+  assert.match(html, /installer:apply/);
+  assert.match(html, /window\.rinDesktop\.send/);
+  assert.doesNotMatch(html, /fetch\(|\/api\/|<script src=/);
 });
 
-test("installer GUI saves API key provider auth for browser install", () => {
+test("installer GUI saves API key provider auth for desktop install", () => {
   let writtenPath = "";
   let writtenValue: any = null;
   const result = gui.saveGuiInstallerApiKeyAuth(
@@ -174,7 +162,7 @@ test("installer GUI rejects final apply when provider auth is missing", () => {
   );
 });
 
-test("installer GUI normalizes local model choices for browser selection", () => {
+test("installer GUI normalizes local model choices for desktop selection", () => {
   assert.deepEqual(
     gui.normalizeGuiInstallerModelChoices([
       { provider: "openai", id: "plain", reasoning: false, available: false },

@@ -1,7 +1,5 @@
-import http from "node:http";
 import os from "node:os";
 import { spawn } from "node:child_process";
-import { AddressInfo } from "node:net";
 
 import { escapeHtml } from "../rin-gui/web-assets.js";
 import { releaseInfoFromEnv } from "../rin-lib/release.js";
@@ -30,11 +28,7 @@ import {
   targetHomeForUser,
 } from "./users.js";
 
-export type GuiInstallerOptions = {
-  host: string;
-  port: number;
-  open: boolean;
-};
+export type GuiInstallerOptions = Record<string, never>;
 
 export type GuiInstallerPlanInput = {
   language?: string;
@@ -63,8 +57,28 @@ export type GuiInstallerFinalizePlan = {
   finalRequirements: string[];
 };
 
-const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORT = 0;
+export type GuiInstallerHostLaunch = {
+  command: string;
+  args: string[];
+};
+
+const DEFAULT_INSTALLER_DESKTOP_HOST = "rin-desktop-host";
+
+function splitHostCommand(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean);
+}
+
+export function buildGuiInstallerHostLaunch(
+  env: NodeJS.ProcessEnv = process.env,
+): GuiInstallerHostLaunch {
+  const parts = splitHostCommand(
+    env.RIN_INSTALLER_GUI_HOST ||
+      env.RIN_GUI_NATIVE_HOST ||
+      DEFAULT_INSTALLER_DESKTOP_HOST,
+  );
+  const command = parts.shift() || DEFAULT_INSTALLER_DESKTOP_HOST;
+  return { command, args: [...parts, "--stdio", "--installer"] };
+}
 
 export function shouldStartGuiInstaller(
   argv: string[],
@@ -85,87 +99,17 @@ export function shouldStartGuiInstaller(
 }
 
 export function parseGuiInstallerArgs(argv: string[]): GuiInstallerOptions {
-  const options: GuiInstallerOptions = {
-    host: DEFAULT_HOST,
-    port: DEFAULT_PORT,
-    open: true,
-  };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = String(argv[index] || "").trim();
+  for (const rawArg of argv) {
+    const arg = String(rawArg || "").trim();
     if (!arg || arg === "--gui") continue;
     if (arg === "--") break;
-    if (arg === "--host") {
-      options.host = String(argv[++index] || "").trim() || DEFAULT_HOST;
-      continue;
-    }
-    if (arg.startsWith("--host=")) {
-      options.host = arg.slice("--host=".length).trim() || DEFAULT_HOST;
-      continue;
-    }
-    if (arg === "--port") {
-      options.port = parseInstallerPort(argv[++index]);
-      continue;
-    }
-    if (arg.startsWith("--port=")) {
-      options.port = parseInstallerPort(arg.slice("--port=".length));
-      continue;
-    }
-    if (arg === "--no-open") {
-      options.open = false;
-      continue;
-    }
-    if (arg === "--open") {
-      options.open = true;
-      continue;
-    }
+    throw new Error(`rin_installer_gui_unrecognized_arg:${arg}`);
   }
-  return options;
+  return {};
 }
 
-function parseInstallerPort(value: unknown) {
-  const port = Number(String(value ?? "").trim());
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`rin_installer_gui_invalid_port:${String(value ?? "")}`);
-  }
-  return port;
-}
-
-function normalizeHostForUrl(host: string) {
-  if (!host || host === "0.0.0.0" || host === "::") return "127.0.0.1";
-  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
-}
-
-function openBrowser(url: string) {
-  const command =
-    process.platform === "win32"
-      ? "cmd"
-      : process.platform === "darwin"
-        ? "open"
-        : "xdg-open";
-  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-  try {
-    const child = spawn(command, args, {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    child.unref();
-  } catch {}
-}
-
-function sendJson(
-  response: http.ServerResponse,
-  status: number,
-  payload: unknown,
-) {
-  response.writeHead(status, { "content-type": "application/json" });
-  response.end(JSON.stringify(payload));
-}
-
-async function readJsonBody(request: http.IncomingMessage) {
-  let raw = "";
-  for await (const chunk of request) raw += String(chunk);
-  return raw ? JSON.parse(raw) : {};
+function sendHostEvent(stdin: NodeJS.WritableStream, payload: unknown) {
+  stdin.write(`${JSON.stringify(payload)}\n`);
 }
 
 export function normalizeGuiInstallerModelChoices(
@@ -372,7 +316,7 @@ export function buildGuiInstallerHtml() {
 <body>
   <main>
     <h1>${escapeHtml(title)}</h1>
-    <p class="notice">This GUI-first installer shell keeps Windows users in the browser after the initial launch. Provider authentication, chat setup, and the final elevated write step are being wired into this same surface next.</p>
+    <p class="notice">This GUI-first installer runs in the packaged Rin desktop host. It does not expose a browser server or browser fallback.</p>
     <form id="installer-form">
       <label>Language
         <select name="language">
@@ -400,7 +344,7 @@ export function buildGuiInstallerHtml() {
         <input name="apiKey" type="password" autocomplete="off" placeholder="Leave blank when existing auth is ready" />
       </label>
       <button id="save-auth-button" class="wide" type="button">Save provider auth</button>
-      <p id="auth-status" class="notice wide">Use this only on the local installer page; tokens are saved to the selected install directory.</p>
+      <p id="auth-status" class="notice wide">Use this only in the local desktop installer; tokens are saved to the selected install directory.</p>
       <label class="wide"><input name="setDefaultTarget" type="checkbox" checked /> Set as the default target for this launcher user</label>
       <button class="wide" type="submit">Refresh plan</button>
       <button id="apply-button" class="wide" type="button">Apply installation</button>
@@ -424,6 +368,8 @@ export function buildGuiInstallerHtml() {
     const saveAuthButton = document.getElementById('save-auth-button');
     const authStatus = document.getElementById('auth-status');
     let modelChoices = [];
+
+    function send(command) { window.rinDesktop.send(command); }
 
     function setOptions(select, values, selected) {
       select.replaceChildren(...values.map((value) => {
@@ -450,16 +396,9 @@ export function buildGuiInstallerHtml() {
       modelStatus.textContent = model ? (model.available ? 'Provider auth already exists for the selected model.' : 'Provider auth is still required before final install.') : 'No local models are available yet.';
     }
 
-    async function loadModels() {
+    function loadModels() {
       const data = new FormData(form);
-      const installDir = String(data.get('installDir') || '');
-      const response = await fetch('/api/models?installDir=' + encodeURIComponent(installDir));
-      const payload = await response.json();
-      modelChoices = payload.models || [];
-      const providers = [...new Set(modelChoices.map((model) => model.provider))];
-      setOptions(providerSelect, providers.length ? providers.map((provider) => ({ value: provider, label: provider })) : [{ value: 'pending', label: 'No providers found' }], providerSelect.value);
-      refreshModelFields();
-      await refreshPlan();
+      send({ type: 'installer:models', installDir: String(data.get('installDir') || '') });
     }
 
     function installerPayload() {
@@ -477,180 +416,184 @@ export function buildGuiInstallerHtml() {
       };
     }
 
-    async function refreshPlan(event) {
+    function refreshPlan(event) {
       if (event) event.preventDefault();
-      const response = await fetch('/api/plan', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(installerPayload()),
-      });
-      const next = await response.json();
-      safety.textContent = next.safety || '';
-      plan.textContent = next.planText || next.error || '';
+      send({ type: 'installer:plan', input: installerPayload() });
     }
 
-    async function saveProviderAuth() {
+    function saveProviderAuth() {
       saveAuthButton.disabled = true;
       authStatus.textContent = 'Saving provider auth…';
       const data = new FormData(form);
-      try {
-        const response = await fetch('/api/auth/api-key', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            installDir: data.get('installDir'),
-            provider: data.get('provider'),
-            token: data.get('apiKey'),
-          }),
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || 'rin_installer_gui_auth_failed');
-        form.elements.apiKey.value = '';
-        authStatus.textContent = 'Provider auth saved for ' + payload.provider + '.';
-        await loadModels();
-      } catch (error) {
-        authStatus.textContent = String(error && error.message || error);
-      } finally {
-        saveAuthButton.disabled = false;
-      }
+      send({
+        type: 'installer:auth:api-key',
+        input: {
+          installDir: data.get('installDir'),
+          provider: data.get('provider'),
+          token: data.get('apiKey'),
+        },
+      });
     }
 
-    async function applyInstallation() {
+    function applyInstallation() {
       applyButton.disabled = true;
-      applyStatus.textContent = 'Applying installation… keep this browser tab open.';
-      try {
-        const response = await fetch('/api/apply', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(installerPayload()),
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          if (payload.terminalCommand) {
-            applyStatus.textContent = 'Terminal confirmation required. Run this command in the launch terminal: ' + payload.terminalCommand;
-            return;
-          }
-          throw new Error(payload.error || 'rin_installer_gui_apply_failed');
-        }
-        applyStatus.textContent = 'Installation applied. Settings: ' + (payload.result && payload.result.written && payload.result.written.settingsPath || 'written');
-      } catch (error) {
-        applyStatus.textContent = String(error && error.message || error);
-      } finally {
-        applyButton.disabled = false;
-      }
+      applyStatus.textContent = 'Applying installation… keep this desktop window open.';
+      send({ type: 'installer:apply', input: installerPayload() });
     }
 
-    form.elements.installDir.addEventListener('change', () => { void loadModels(); });
-    providerSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
-    modelSelect.addEventListener('change', () => { refreshModelFields(); void refreshPlan(); });
-    thinkingSelect.addEventListener('change', () => { void refreshPlan(); });
-    saveAuthButton.addEventListener('click', () => { void saveProviderAuth(); });
-    applyButton.addEventListener('click', () => { void applyInstallation(); });
+    window.rinDesktop.onEvent((payload) => {
+      if (payload.type === 'installer:models') {
+        modelChoices = payload.models || [];
+        const providers = [...new Set(modelChoices.map((model) => model.provider))];
+        setOptions(providerSelect, providers.length ? providers.map((provider) => ({ value: provider, label: provider })) : [{ value: 'pending', label: 'No providers found' }], providerSelect.value);
+        refreshModelFields();
+        refreshPlan();
+      } else if (payload.type === 'installer:plan') {
+        safety.textContent = payload.plan && payload.plan.safety || '';
+        plan.textContent = payload.plan && payload.plan.planText || payload.error || '';
+      } else if (payload.type === 'installer:auth:api-key') {
+        saveAuthButton.disabled = false;
+        if (payload.ok) {
+          form.elements.apiKey.value = '';
+          authStatus.textContent = 'Provider auth saved for ' + payload.provider + '.';
+          loadModels();
+        } else {
+          authStatus.textContent = payload.error || 'rin_installer_gui_auth_failed';
+        }
+      } else if (payload.type === 'installer:apply') {
+        applyButton.disabled = false;
+        if (payload.ok) {
+          applyStatus.textContent = 'Installation applied. Settings: ' + (payload.result && payload.result.written && payload.result.written.settingsPath || 'written');
+        } else if (payload.terminalCommand) {
+          applyStatus.textContent = 'Terminal confirmation required. Run this command in the launch terminal: ' + payload.terminalCommand;
+        } else {
+          applyStatus.textContent = payload.error || 'rin_installer_gui_apply_failed';
+        }
+      } else if (payload.type === 'installer:error') {
+        modelStatus.textContent = payload.error || 'rin_installer_gui_error';
+      }
+    });
+
+    form.elements.installDir.addEventListener('change', () => { loadModels(); });
+    providerSelect.addEventListener('change', () => { refreshModelFields(); refreshPlan(); });
+    modelSelect.addEventListener('change', () => { refreshModelFields(); refreshPlan(); });
+    thinkingSelect.addEventListener('change', () => { refreshPlan(); });
+    saveAuthButton.addEventListener('click', () => { saveProviderAuth(); });
+    applyButton.addEventListener('click', () => { applyInstallation(); });
     form.addEventListener('submit', refreshPlan);
-    void loadModels().catch((error) => { modelStatus.textContent = String(error && error.message || error); });
+    loadModels();
   </script>
 </body>
 </html>`;
 }
 
+async function handleGuiInstallerCommand(command: any) {
+  if (command?.type === "installer:models") {
+    return {
+      type: "installer:models",
+      models: await buildGuiInstallerModelChoices(
+        String(command.installDir || ""),
+      ),
+    };
+  }
+  if (command?.type === "installer:plan") {
+    return {
+      type: "installer:plan",
+      plan: buildGuiInstallerPlan(command.input || {}),
+    };
+  }
+  if (command?.type === "installer:auth:api-key") {
+    const result = saveGuiInstallerApiKeyAuth(command.input || {});
+    return { type: "installer:auth:api-key", ok: true, ...result };
+  }
+  if (command?.type === "installer:apply") {
+    const finalPlan = buildGuiInstallerFinalizePlan(command.input || {});
+    if (finalPlan.needsElevatedWrite || finalPlan.needsElevatedService) {
+      const planPath = writeFinalizeInstallPlanFile(finalPlan.options);
+      return {
+        type: "installer:apply",
+        ok: false,
+        error: "rin_installer_gui_terminal_handoff_required",
+        finalRequirements: finalPlan.finalRequirements,
+        planPath,
+        terminalCommand: buildFinalizeInstallPlanCommand(planPath),
+      };
+    }
+    const result = await runFinalizeInstallPlanInChild(
+      finalPlan.options,
+      "rin install gui: applying install plan",
+      { writeStatus: () => {} },
+    );
+    return { type: "installer:apply", ok: true, result };
+  }
+  return null;
+}
+
 export async function runGuiInstaller(
   rawArgv: string[] = process.argv.slice(2),
 ) {
-  const options = parseGuiInstallerArgs(rawArgv);
-  const html = buildGuiInstallerHtml();
-  const server = http.createServer((request, response) => {
-    const url = new URL(request.url || "/", "http://localhost");
-    if (url.pathname === "/healthz") {
-      sendJson(response, 200, { ok: true });
-      return;
-    }
-    if (url.pathname === "/api/models") {
-      void buildGuiInstallerModelChoices(
-        url.searchParams.get("installDir") || "",
-      )
-        .then((models) => sendJson(response, 200, { models }))
-        .catch((error: any) =>
-          sendJson(response, 500, {
-            error: String(
-              error?.message || error || "rin_installer_gui_models_failed",
-            ),
-          }),
-        );
-      return;
-    }
-    if (url.pathname === "/api/plan" && request.method === "POST") {
-      void readJsonBody(request)
-        .then((body) => sendJson(response, 200, buildGuiInstallerPlan(body)))
-        .catch((error: any) =>
-          sendJson(response, 400, {
-            error: String(
-              error?.message || error || "rin_installer_gui_plan_failed",
-            ),
-          }),
-        );
-      return;
-    }
-    if (url.pathname === "/api/auth/api-key" && request.method === "POST") {
-      void readJsonBody(request)
-        .then((body) =>
-          sendJson(response, 200, saveGuiInstallerApiKeyAuth(body)),
-        )
-        .catch((error: any) =>
-          sendJson(response, 400, {
-            error: String(
-              error?.message || error || "rin_installer_gui_auth_failed",
-            ),
-          }),
-        );
-      return;
-    }
-    if (url.pathname === "/api/apply" && request.method === "POST") {
-      void readJsonBody(request)
-        .then(async (body) => {
-          const finalPlan = buildGuiInstallerFinalizePlan(body);
-          if (finalPlan.needsElevatedWrite || finalPlan.needsElevatedService) {
-            const planPath = writeFinalizeInstallPlanFile(finalPlan.options);
-            sendJson(response, 409, {
-              error: "rin_installer_gui_terminal_handoff_required",
-              finalRequirements: finalPlan.finalRequirements,
-              planPath,
-              terminalCommand: buildFinalizeInstallPlanCommand(planPath),
-            });
-            return;
-          }
-          const result = await runFinalizeInstallPlanInChild(
-            finalPlan.options,
-            "rin install gui: applying install plan",
-            {
-              ensureNotCancelled(value) {
-                if (typeof value === "symbol") {
-                  throw new Error("rin_installer_gui_apply_cancelled");
-                }
-                return value;
-              },
-              i18n: createInstallerI18n(finalPlan.options.language),
-              writeStatus: () => {},
-            },
-          );
-          sendJson(response, 200, { ok: true, result });
-        })
-        .catch((error: any) =>
-          sendJson(response, 400, {
-            error: String(
-              error?.message || error || "rin_installer_gui_apply_failed",
-            ),
-          }),
-        );
-      return;
-    }
-    response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-    response.end(html);
+  parseGuiInstallerArgs(rawArgv);
+  const launch = buildGuiInstallerHostLaunch();
+  const child = spawn(launch.command, launch.args, {
+    stdio: ["pipe", "pipe", "inherit"],
+    windowsHide: false,
   });
-  await new Promise<void>((resolve) =>
-    server.listen(options.port, options.host, resolve),
-  );
-  const address = server.address() as AddressInfo;
-  const url = `http://${normalizeHostForUrl(options.host)}:${address.port}/`;
-  console.log(`rin install gui: ${url}`);
-  if (options.open) openBrowser(url);
+
+  let buffer = "";
+  child.stdout.on("data", (chunk) => {
+    buffer += String(chunk);
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      newline = buffer.indexOf("\n");
+      if (!line) continue;
+      void (async () => {
+        let command: any;
+        try {
+          command = JSON.parse(line);
+        } catch {
+          return;
+        }
+        if (command?.type === "close") {
+          child.kill();
+          return;
+        }
+        const event = await handleGuiInstallerCommand(command);
+        if (event) sendHostEvent(child.stdin, event);
+      })().catch((error) => {
+        const type = (() => {
+          try {
+            const parsed = JSON.parse(line);
+            return typeof parsed?.type === "string"
+              ? parsed.type
+              : "installer:error";
+          } catch {
+            return "installer:error";
+          }
+        })();
+        sendHostEvent(child.stdin, {
+          type,
+          ok: false,
+          error: String(
+            error?.message || error || "rin_installer_gui_command_failed",
+          ),
+        });
+      });
+    }
+  });
+
+  sendHostEvent(child.stdin, {
+    type: "installer:plan",
+    plan: buildGuiInstallerPlan(),
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", () => resolve());
+  }).finally(() => {
+    try {
+      child.stdin.end();
+    } catch {}
+  });
 }

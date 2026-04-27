@@ -128,7 +128,6 @@ test("installer service helpers prefer current daemon entry, quote systemd value
       plist.plist.includes(`<string>${escapeXml(targetMacHome)}</string>`),
     );
 
-
     assert.equal(windowsStartup.kind, "windows-startup");
     assert.ok(
       windowsStartup.servicePath.endsWith(
@@ -290,7 +289,6 @@ test("managed systemd helpers prefer richer successful snapshots while keeping a
   assert.deepEqual(status, {
     unit: "rin-daemon-demo.service",
     lines: ["● rin-daemon-demo.service - Demo", "   Active: active (running)"],
-
   });
 
   const errorStatus = managedService.findManagedSystemdStatusSnapshot(
@@ -305,7 +303,6 @@ test("managed systemd helpers prefer richer successful snapshots while keeping a
   assert.deepEqual(errorStatus, {
     unit: "blank-stdout.service",
     lines: ["Unit blank-stdout.service could not be found", "Hint line"],
-
   });
 
   const journal = managedService.findManagedSystemdJournalSnapshot(

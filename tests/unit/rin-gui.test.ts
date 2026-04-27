@@ -60,6 +60,10 @@ test("Electron desktop host is the concrete GUI framework behind the host contra
     preloadPath: "/tmp/preload.cjs",
     title: "Rin",
   });
+  const installerScript = nativeDesktop.buildElectronDesktopHostMainScript({
+    preloadPath: "/tmp/preload.cjs",
+    surface: "installer",
+  });
 
   assert.match(mainScript, /BrowserWindow/);
   assert.match(mainScript, /ipcMain/);
@@ -67,7 +71,10 @@ test("Electron desktop host is the concrete GUI framework behind the host contra
   assert.match(preload, /ipcRenderer/);
   assert.match(mainScript, /rin-command/);
   assert.match(mainScript, /rin-event/);
+  assert.match(installerScript, /Rin Installer/);
+  assert.match(installerScript, /installer:apply/);
   assert.doesNotMatch(mainScript, /createServer|WebSocketServer|xdg-open/);
+  assert.doesNotMatch(installerScript, /createServer|WebSocketServer|xdg-open/);
   assert.doesNotMatch(preload, /createServer|WebSocketServer|xdg-open/);
 });
 

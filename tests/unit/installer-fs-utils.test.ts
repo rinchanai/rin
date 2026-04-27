@@ -30,12 +30,10 @@ test("installer fs utils compute launcher targets and script", () => {
   assert.ok(script.includes("PATH="));
   assert.ok(script.includes("'/usr/bin/env' 'node' '/tmp/a.js' \"$@\""));
   assert.equal(script.includes(process.execPath), false);
-  const windowsScript = fsUtils.windowsCmdLauncherScript(targets.rinGui, [
-    "--app",
-  ]);
+  const windowsScript = fsUtils.windowsCmdLauncherScript(targets.rinGui);
   assert.match(windowsScript, /^@echo off\r?$/m);
   assert.match(windowsScript, /rin-gui/);
-  assert.match(windowsScript, /--app/);
+  assert.doesNotMatch(windowsScript, /--app/);
 });
 
 test("commandAsUserInvocation prefers runuser for root", () => {
