@@ -132,28 +132,43 @@ async function startRpcTui(
     client,
     options.additionalExtensionPaths,
   );
-  try {
-    await rpcSession.connect();
-    await rpcSession.ensureSessionReady();
-  } catch (error) {
-    throw new Error(formatTuiStartupError(error), { cause: error });
-  }
-  profile.mark("interactive-mode-and-rpc-ready");
-
   let runtimeHost: { dispose(): Promise<void> } | undefined;
+  let interactiveMode: InteractiveMode | undefined;
   try {
+    await rpcSession.prepareForInteractiveStartup();
     runtimeHost = createRpcRuntimeHost(rpcSession);
     profile.mark("rpc-session-created");
     if (shouldPrintStartupSeparator()) {
       console.log();
     }
-    await runInteractiveMode(runtimeHost as any, interactiveOptions);
-  } finally {
+    interactiveMode = new InteractiveMode(
+      runtimeHost as any,
+      interactiveOptions,
+    );
+    await (interactiveMode as any).init();
+    await rpcSession.connect();
+    await rpcSession.ensureSessionReady();
+    await (interactiveMode as any).rebindCurrentSession?.();
+    (interactiveMode as any).renderCurrentSessionState?.();
+    (interactiveMode as any).ui?.requestRender?.();
+  } catch (error) {
+    interactiveMode?.stop?.();
     if (runtimeHost) {
       await runtimeHost.dispose().catch(() => {});
     } else {
       await rpcSession.disconnect().catch(() => {});
     }
+    throw new Error(formatTuiStartupError(error), { cause: error });
+  }
+  profile.mark("interactive-mode-and-rpc-ready");
+
+  try {
+    await interactiveMode.run();
+  } catch (error) {
+    interactiveMode.stop?.();
+    throw error;
+  } finally {
+    await runtimeHost.dispose().catch(() => {});
   }
 }
 
