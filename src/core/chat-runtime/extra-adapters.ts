@@ -29,28 +29,16 @@ const SLACK_MAX_TEXT_LENGTH = 40000;
 const SLACK_REACTION_NAMES: Record<string, string> = {
   "🤔": "thinking_face",
   "🔥": "fire",
-  "👍": "thumbsup",
-  "🎉": "tada",
-  "🌹": "rose",
-  "👀": "eyes",
 };
 
 const LARK_REACTION_TYPES: Record<string, string> = {
   "🤔": "THINKING",
   "🔥": "FIRE",
-  "👍": "THUMBSUP",
-  "🎉": "CELEBRATE",
-  "🌹": "ROSE",
-  "👀": "EYES",
 };
 
 const QQ_REACTION_EMOJI_IDS: Record<string, string> = {
   "🤔": "212",
   "🔥": "128293",
-  "👍": "128077",
-  "🎉": "127881",
-  "🌹": "127801",
-  "👀": "128064",
 };
 
 function toSlackReactionName(emoji: string) {
