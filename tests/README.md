@@ -8,6 +8,7 @@ Use these rules when adding or changing repository tests.
 - Put cross-process or multi-component flows in `tests/e2e`.
 - Put manual-terminal or pseudo-terminal smoke coverage in `tests/interactive`.
 - Do not place new tests back in the repository root. Pick the right bucket instead.
+- Retire obsolete root-level JavaScript tests instead of maintaining build-output-dependent shims.
 
 ## Design rules
 
