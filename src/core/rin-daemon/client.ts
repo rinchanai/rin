@@ -27,6 +27,12 @@ function createDaemonRequestPayload(commandType: string, requestId: string) {
   return { id: requestId, type: commandType };
 }
 
+function destroyDaemonSocket(socket: net.Socket) {
+  try {
+    socket.destroy();
+  } catch {}
+}
+
 function isMatchingDaemonResponse(
   payload: any,
   requestId: string,
@@ -47,7 +53,9 @@ function parseDaemonResponseLine(
   } catch {
     return { error: new Error("daemon_invalid_json") };
   }
-  if (!isMatchingDaemonResponse(payload, options.requestId, options.commandType)) {
+  if (
+    !isMatchingDaemonResponse(payload, options.requestId, options.commandType)
+  ) {
     return { ignored: true };
   }
   if (payload?.success === false) {
@@ -90,7 +98,9 @@ export function buildDaemonStatusScript(
   requestId = "doctor_1",
 ) {
   const id = resolveDaemonRequestId(requestId, "doctor");
-  const requestPayload = JSON.stringify(createDaemonRequestPayload("daemon_status", id));
+  const requestPayload = JSON.stringify(
+    createDaemonRequestPayload("daemon_status", id),
+  );
   return buildDaemonSocketScript(
     `const requestJson=${JSON.stringify(requestPayload)};const socket=net.createConnection({path:socketPath});let buffer='';let settled=false;const finish=(value)=>{if(settled)return;settled=true;try{socket.destroy()}catch{};process.stdout.write(JSON.stringify(value===undefined?null:value));};socket.once('error',()=>finish(undefined));socket.on('data',(chunk)=>{buffer+=String(chunk);while(true){const idx=buffer.indexOf('\\n');if(idx<0)break;let line=buffer.slice(0,idx);buffer=buffer.slice(idx+1);if(line.endsWith('\\r'))line=line.slice(0,-1);if(!line.trim())continue;try{const payload=JSON.parse(line);if(payload?.type==='response'&&payload?.command==='daemon_status'&&payload?.id===${JSON.stringify(id)}){finish(payload.success===true?payload.data:undefined);return;}}catch{finish(undefined);return;}}});socket.once('connect',()=>{socket.write(requestJson+'\\n');setTimeout(()=>finish(undefined),timeoutMs);});`,
     socketPath,
@@ -111,9 +121,7 @@ export async function canConnectDaemonSocket(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try {
-        socket.destroy();
-      } catch {}
+      destroyDaemonSocket(socket);
       resolve(value);
     };
     const timer = setTimeout(() => finish(false), timeout);
@@ -139,9 +147,7 @@ export async function requestDaemonCommand(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      try {
-        socket.destroy();
-      } catch {}
+      destroyDaemonSocket(socket);
       if (error) reject(error);
       else resolve(value);
     };
