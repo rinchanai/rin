@@ -19,7 +19,10 @@ import {
   findChatMessageByChatAndId,
   saveChatMessage,
 } from "./message-store.js";
-import type { ChatPromptRestoreInput, SavedAttachment } from "./chat-helpers.js";
+import type {
+  ChatPromptRestoreInput,
+  SavedAttachment,
+} from "./chat-helpers.js";
 import {
   ensureDir,
   extractTextFromContent,
@@ -60,31 +63,48 @@ export function getWorkingReactionFrame(platform: string, index: number) {
   return frames[nextIndex] || frames[0] || "";
 }
 
+function pickCreateReaction(bot: any) {
+  if (typeof bot?.createReaction === "function") {
+    return bot.createReaction.bind(bot);
+  }
+  if (typeof bot?.internal?.createReaction === "function") {
+    return bot.internal.createReaction.bind(bot.internal);
+  }
+  return null;
+}
+
+function pickDeleteReaction(bot: any) {
+  if (typeof bot?.deleteReaction === "function") {
+    return bot.deleteReaction.bind(bot);
+  }
+  if (typeof bot?.internal?.deleteReaction === "function") {
+    return bot.internal.deleteReaction.bind(bot.internal);
+  }
+  if (typeof bot?.internal?.deleteOwnReaction === "function") {
+    return bot.internal.deleteOwnReaction.bind(bot.internal);
+  }
+  return null;
+}
+
 export async function sendTyping(app: any, chatKey: string, h: any) {
   const target = tryResolveChatTarget(app, chatKey);
   if (!target) return false;
   const { parsed, bot } = target;
   if (typeof bot?.internal?.sendChatAction === "function") {
-    const sent = await withPresentationTimeout(
-      async () => {
-        await bot.internal.sendChatAction({
-          chat_id: parsed.chatId,
-          action: "typing",
-        });
-        return true;
-      },
-      false,
-    );
+    const sent = await withPresentationTimeout(async () => {
+      await bot.internal.sendChatAction({
+        chat_id: parsed.chatId,
+        action: "typing",
+      });
+      return true;
+    }, false);
     if (sent) return true;
   }
   if (typeof bot?.internal?.sendTyping === "function") {
-    const sent = await withPresentationTimeout(
-      async () => {
-        await bot.internal.sendTyping(parsed.chatId);
-        return true;
-      },
-      false,
-    );
+    const sent = await withPresentationTimeout(async () => {
+      await bot.internal.sendTyping(parsed.chatId);
+      return true;
+    }, false);
     if (sent) return true;
   }
   return false;
@@ -110,62 +130,50 @@ export async function rotateWorkingReaction(
     parsed.platform !== "onebot" &&
     typeof bot?.internal?.setMessageReaction === "function"
   ) {
-    return await withPresentationTimeout(
-      async () => {
-        await bot.internal.setMessageReaction({
-          chat_id: parsed.chatId,
-          message_id: Number(messageId),
-          reaction: [{ type: "emoji", emoji: nextEmoji }],
-        });
-        return nextEmoji;
-      },
-      previousEmoji || "",
-    );
+    return await withPresentationTimeout(async () => {
+      await bot.internal.setMessageReaction({
+        chat_id: parsed.chatId,
+        message_id: Number(messageId),
+        reaction: [{ type: "emoji", emoji: nextEmoji }],
+      });
+      return nextEmoji;
+    }, previousEmoji || "");
   }
 
   if (parsed.platform === "onebot" && isPrivateChat(parsed)) {
     return previousEmoji || "";
   }
 
-  if (typeof bot?.createReaction !== "function") {
+  const createReaction = pickCreateReaction(bot);
+  if (!createReaction) {
     return previousEmoji || "";
   }
+  const deleteReaction = pickDeleteReaction(bot);
   const deletePrevious =
-    previousEmoji &&
-    previousEmoji !== nextEmoji &&
-    typeof bot?.deleteReaction === "function";
+    previousEmoji && previousEmoji !== nextEmoji && deleteReaction;
   let previousDeleted = false;
   if (deletePrevious) {
-    await withPresentationTimeout(
-      async () => {
-        await bot.deleteReaction(
-          parsed.chatId,
-          messageId,
-          previousEmoji,
-          safeString(bot?.selfId).trim() || undefined,
-        );
-        previousDeleted = true;
-        return true;
-      },
-      false,
-    );
+    await withPresentationTimeout(async () => {
+      await deleteReaction(
+        parsed.chatId,
+        messageId,
+        previousEmoji,
+        safeString(bot?.selfId).trim() || undefined,
+      );
+      previousDeleted = true;
+      return true;
+    }, false);
   }
-  const created = await withPresentationTimeout(
-    async () => {
-      await bot.createReaction(parsed.chatId, messageId, nextEmoji);
-      return nextEmoji;
-    },
-    "",
-  );
+  const created = await withPresentationTimeout(async () => {
+    await createReaction(parsed.chatId, messageId, nextEmoji);
+    return nextEmoji;
+  }, "");
   if (created) return created;
   if (previousDeleted && previousEmoji) {
-    return await withPresentationTimeout(
-      async () => {
-        await bot.createReaction(parsed.chatId, messageId, previousEmoji);
-        return previousEmoji;
-      },
-      previousEmoji,
-    );
+    return await withPresentationTimeout(async () => {
+      await createReaction(parsed.chatId, messageId, previousEmoji);
+      return previousEmoji;
+    }, previousEmoji);
   }
   return previousEmoji || "";
 }
@@ -183,19 +191,17 @@ export async function clearWorkingReaction(
   if (!nextEmoji) return false;
   if (parsed.platform === "onebot" && isPrivateChat(parsed)) return false;
 
-  if (typeof bot?.deleteReaction === "function") {
-    const deleted = await withPresentationTimeout(
-      async () => {
-        await bot.deleteReaction(
-          parsed.chatId,
-          messageId,
-          nextEmoji,
-          safeString(bot?.selfId).trim() || undefined,
-        );
-        return true;
-      },
-      false,
-    );
+  const deleteReaction = pickDeleteReaction(bot);
+  if (deleteReaction) {
+    const deleted = await withPresentationTimeout(async () => {
+      await deleteReaction(
+        parsed.chatId,
+        messageId,
+        nextEmoji,
+        safeString(bot?.selfId).trim() || undefined,
+      );
+      return true;
+    }, false);
     if (deleted) return true;
   }
 
@@ -203,32 +209,27 @@ export async function clearWorkingReaction(
     parsed.platform !== "onebot" &&
     typeof bot?.internal?.setMessageReaction === "function"
   ) {
-    return await withPresentationTimeout(
-      async () => {
-        await bot.internal.setMessageReaction({
-          chat_id: parsed.chatId,
-          message_id: Number(messageId),
-          reaction: [],
-        });
-        return true;
-      },
-      false,
-    );
+    return await withPresentationTimeout(async () => {
+      await bot.internal.setMessageReaction({
+        chat_id: parsed.chatId,
+        message_id: Number(messageId),
+        reaction: [],
+      });
+      return true;
+    }, false);
   }
 
-  if (typeof bot?.deleteReaction !== "function") return false;
-  return await withPresentationTimeout(
-    async () => {
-      await bot.deleteReaction(
-        parsed.chatId,
-        messageId,
-        nextEmoji,
-        safeString(bot?.selfId).trim() || undefined,
-      );
-      return true;
-    },
-    false,
-  );
+  const fallbackDeleteReaction = pickDeleteReaction(bot);
+  if (!fallbackDeleteReaction) return false;
+  return await withPresentationTimeout(async () => {
+    await fallbackDeleteReaction(
+      parsed.chatId,
+      messageId,
+      nextEmoji,
+      safeString(bot?.selfId).trim() || undefined,
+    );
+    return true;
+  }, false);
 }
 
 function formatNoBotError(parsed: { platform: string; botId: string }) {
@@ -604,9 +605,7 @@ export async function attachmentToImageContent(
   return { type: "image", data: data.toString("base64"), mimeType };
 }
 
-export async function restorePromptParts(
-  processing: ChatPromptRestoreInput,
-) {
+export async function restorePromptParts(processing: ChatPromptRestoreInput) {
   const attachments = (processing.attachments || []).filter(
     (item) => item && fs.existsSync(item.path),
   );
