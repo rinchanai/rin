@@ -91,7 +91,21 @@ test("worker helpers expose resource diagnostics from the active session", () =>
   const diagnostics = workerHelpers.getResourceDiagnostics({
     resourceLoader: {
       getSkills: () => ({
-        skills: [],
+        skills: [
+          {
+            name: "demo",
+            description: "demo skill",
+            filePath: skillPath,
+            baseDir: "/tmp/rin-test/self_improve/skills/broken",
+            sourceInfo: {
+              path: skillPath,
+              source: "local",
+              scope: "user",
+              origin: "top-level",
+              baseDir: "/tmp/rin-test",
+            },
+          },
+        ],
         diagnostics: [
           {
             type: "warning",
@@ -113,6 +127,13 @@ test("worker helpers expose resource diagnostics from the active session", () =>
       path: skillPath,
     },
   ]);
+  assert.deepEqual(diagnostics.skills.skills[0].sourceInfo, {
+    path: skillPath,
+    source: "local",
+    scope: "user",
+    origin: "top-level",
+    baseDir: "/tmp/rin-test",
+  });
 });
 
 test("worker helpers expose normalized slash commands and oauth state", () => {
