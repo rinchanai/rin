@@ -135,7 +135,7 @@ test("chat prompt context requires reply lookup without injecting replied text",
   assert.equal(promptText.includes("first line"), false);
   assert.ok(
     promptText.includes(
-      "reply lookup: call get_chat_msg with that exact message id before answering",
+      "reply lookup: always call get_chat_msg with that exact message id before answering.",
     ),
   );
 });
