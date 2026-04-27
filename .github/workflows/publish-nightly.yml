@@ -35,14 +35,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: npm ci --no-fund --no-audit
       - run: npm run build
-      - run: >-
-          node --test
-          tests/installer-modules.test.mjs
-          tests/rin-cli.test.mjs
-          tests/rpc-and-shared.test.mjs
-          tests/bootstrap-entrypoint.test.mjs
-          tests/release.test.mjs
-          tests/release-scripts.test.mjs
+      - run: npm run test:release
       - name: Update release manifest
         run: >-
           npm run release:manifest --

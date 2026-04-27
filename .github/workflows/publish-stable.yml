@@ -54,14 +54,7 @@ jobs:
         run: npm run build
       - name: Validate candidate
         working-directory: ${{ runner.temp }}/stable-candidate
-        run: >-
-          node --test
-          tests/installer-modules.test.mjs
-          tests/rin-cli.test.mjs
-          tests/rpc-and-shared.test.mjs
-          tests/bootstrap-entrypoint.test.mjs
-          tests/release.test.mjs
-          tests/release-scripts.test.mjs
+        run: npm run test:release
       - name: Set stable version on candidate
         working-directory: ${{ runner.temp }}/stable-candidate
         run: npm version --no-git-tag-version '${{ steps.plan.outputs.version }}'

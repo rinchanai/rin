@@ -40,13 +40,7 @@ Run the focused release validation set from `main`:
 ```bash
 npm ci
 npm run build
-node --import tsx --test \
-  tests/unit/installer-modules.test.ts \
-  tests/unit/rin-cli.test.ts \
-  tests/unit/rpc-and-shared.test.ts \
-  tests/e2e/bootstrap-entrypoint.test.ts \
-  tests/unit/release.test.ts \
-  tests/e2e/release-scripts.test.ts
+npm run test:release
 ```
 
 Expected status:

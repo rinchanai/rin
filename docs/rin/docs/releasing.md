@@ -147,13 +147,7 @@ The release workflows intentionally use the focused validation set that already 
 
 ```bash
 npm run build
-node --import tsx --test \
-  tests/unit/installer-modules.test.ts \
-  tests/unit/rin-cli.test.ts \
-  tests/unit/rpc-and-shared.test.ts \
-  tests/e2e/bootstrap-entrypoint.test.ts \
-  tests/unit/release.test.ts \
-  tests/e2e/release-scripts.test.ts
+npm run test:release
 ```
 
-This keeps the focused release-path gate aligned with the canonical TypeScript test buckets.
+This keeps the focused release-path gate aligned with one package script and the canonical TypeScript test buckets.
