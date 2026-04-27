@@ -38,21 +38,21 @@ Use this checklist before the first real stable npm promotion.
 Run the focused release validation set from `main`:
 
 ```bash
-npm ci --no-fund --no-audit
+npm ci
 npm run build
-node --test \
-  tests/installer-modules.test.mjs \
-  tests/rin-cli.test.mjs \
-  tests/rpc-and-shared.test.mjs \
-  tests/bootstrap-entrypoint.test.mjs \
-  tests/release.test.mjs \
-  tests/release-scripts.test.mjs
+node --import tsx --test \
+  tests/unit/installer-modules.test.ts \
+  tests/unit/rin-cli.test.ts \
+  tests/unit/rpc-and-shared.test.ts \
+  tests/e2e/bootstrap-entrypoint.test.ts \
+  tests/unit/release.test.ts \
+  tests/e2e/release-scripts.test.ts
 ```
 
 Expected status:
 
 - this focused set passes fully
-- full `npm test` may still show the current unrelated known baseline failures outside the release path
+- full `npm test` passes before publishing
 
 ## Changelog and docs readiness
 
