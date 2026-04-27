@@ -146,8 +146,11 @@ async function applyInstalledRuntime(
           launcherMetadataPathForUser: (user) =>
             launcherMetadataPathForUser(user, homeForUser),
           readJsonFile,
-          writeLaunchersForUser: (user, dir) =>
-            writeLaunchersForUser(user, dir, homeForUser),
+          writeLaunchersForUser: (user, dir, launcherOptions) =>
+            writeLaunchersForUser(user, dir, homeForUser, {
+              ...launcherOptions,
+              findSystemUser,
+            }),
           reconcileInstallerManifest,
           runPrivileged,
         },

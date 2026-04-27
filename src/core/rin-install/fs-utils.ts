@@ -151,17 +151,49 @@ export function launcherTargetsForInstallDir(installDir: string) {
   };
 }
 
+export type LauncherWriteOptions = {
+  elevated?: boolean;
+  findSystemUser?: (user: string) => any;
+};
+
+function writeLauncherExecutableForUser(
+  userName: string,
+  filePath: string,
+  content: string,
+  options: LauncherWriteOptions = {},
+) {
+  if (!options.elevated) {
+    writeExecutable(filePath, content);
+    return;
+  }
+  const target = options.findSystemUser?.(userName) as any;
+  const ownerUser = target?.name || userName;
+  const ownerGroup = target?.name ? String(target?.gid ?? "") : "";
+  writeTextFileWithPrivilege(filePath, content, ownerUser, ownerGroup, 0o755);
+}
+
 export function writeLaunchersForUser(
   userName: string,
   installDir: string,
   homeForUser: (user: string) => string,
+  options: LauncherWriteOptions = {},
 ) {
   const home = homeForUser(userName);
   const targets = launcherTargetsForInstallDir(installDir);
   const rinPath = launcherPathForHome(home, "rin");
   const rinInstallPath = launcherPathForHome(home, "rin-install");
-  writeExecutable(rinPath, launcherScript(targets.rin));
-  writeExecutable(rinInstallPath, launcherScript(targets.rinInstall));
+  writeLauncherExecutableForUser(
+    userName,
+    rinPath,
+    launcherScript(targets.rin),
+    options,
+  );
+  writeLauncherExecutableForUser(
+    userName,
+    rinInstallPath,
+    launcherScript(targets.rinInstall),
+    options,
+  );
   return { rinPath, rinInstallPath };
 }
 

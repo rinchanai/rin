@@ -537,7 +537,7 @@ test("persistInstallerOutputs stores configured language in settings", async () 
       result.settingsPath.endsWith(path.join(dir, "settings.json")),
       true,
     );
-    assert.equal(launchWrites.length, 1);
+    assert.equal(launchWrites.length, 2);
     const settingsWrite = writes.find(
       (entry) => entry.filePath === result.settingsPath,
     );
@@ -929,6 +929,59 @@ test("persist persistInstallerOutputs can skip saving a launcher default target"
     assert.equal("defaultInstallDir" in launcherWrite.value, false);
     assert.equal(launcherWrite.value.installedBy, "operator");
     assert.match(launcherWrite.value.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+test("persist persistInstallerOutputs writes launchers for current and target users", async () => {
+  await withTempDir(async (dir) => {
+    const ownerHome = path.join(dir, "home", "demo");
+    const launcherCalls = [];
+    const result = await persist.persistInstallerOutputs(
+      {
+        currentUser: "operator",
+        targetUser: "demo",
+        installDir: dir,
+        provider: "openai",
+        modelId: "gpt",
+        thinkingLevel: "medium",
+        chatConfig: null,
+        authData: {},
+        elevated: true,
+      },
+      {
+        findSystemUser: () => ({ name: "demo", gid: 1000, home: ownerHome }),
+        ensureDir: () => {},
+        readInstallerJson: (_filePath, fallback) => fallback,
+        writeJsonFileWithPrivilege: () => {},
+        writeJsonFile: () => {},
+        launcherMetadataPathForUser: () => path.join(dir, "launcher.json"),
+        readJsonFile: (_filePath, fallback) => fallback,
+        writeLaunchersForUser: (userName, _installDir, options) => {
+          launcherCalls.push({ userName, options });
+          return {
+            rinPath: path.join(dir, userName, "rin"),
+            rinInstallPath: path.join(dir, userName, "rin-install"),
+          };
+        },
+        reconcileInstallerManifest: persist.reconcileInstallerManifest,
+        runPrivileged: () => {},
+      },
+    );
+
+    assert.deepEqual(launcherCalls, [
+      { userName: "operator", options: { elevated: false } },
+      { userName: "demo", options: { elevated: true } },
+    ]);
+    assert.equal(result.rinPath, path.join(dir, "operator", "rin"));
+    assert.equal(
+      result.rinInstallPath,
+      path.join(dir, "operator", "rin-install"),
+    );
+    assert.equal(result.targetRinPath, path.join(dir, "demo", "rin"));
+    assert.equal(
+      result.targetRinInstallPath,
+      path.join(dir, "demo", "rin-install"),
+    );
   });
 });
 

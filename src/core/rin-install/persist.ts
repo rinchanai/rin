@@ -572,7 +572,11 @@ export async function persistInstallerOutputs(
     writeJsonFile: (filePath: string, value: unknown) => void;
     launcherMetadataPathForUser: (userName: string) => string;
     readJsonFile: <T>(filePath: string, fallback: T) => T;
-    writeLaunchersForUser: (userName: string, installDir: string) => any;
+    writeLaunchersForUser: (
+      userName: string,
+      installDir: string,
+      options?: { elevated?: boolean },
+    ) => any;
     reconcileInstallerManifest: typeof reconcileInstallerManifest;
     runPrivileged: (command: string, args: string[]) => void;
   },
@@ -638,10 +642,17 @@ export async function persistInstallerOutputs(
   writeInstallerJson(settingsPath, settingsJson, writeOptions, deps);
   writeInstallerJson(authPath, nextAuthJson, writeOptions, deps);
   deps.writeJsonFile(launcherPath, launcherJson);
-  const launchers = deps.writeLaunchersForUser(
+  const currentLaunchers = deps.writeLaunchersForUser(
     options.currentUser,
     options.installDir,
+    { elevated: false },
   );
+  const targetLaunchers =
+    options.targetUser === options.currentUser
+      ? currentLaunchers
+      : deps.writeLaunchersForUser(options.targetUser, options.installDir, {
+          elevated: Boolean(options.elevated),
+        });
 
   return {
     settingsPath,
@@ -650,6 +661,10 @@ export async function persistInstallerOutputs(
     manifestPath,
     locatorManifestPath,
     migrations,
-    ...launchers,
+    ...currentLaunchers,
+    currentRinPath: currentLaunchers.rinPath,
+    currentRinInstallPath: currentLaunchers.rinInstallPath,
+    targetRinPath: targetLaunchers.rinPath,
+    targetRinInstallPath: targetLaunchers.rinInstallPath,
   };
 }

@@ -11,15 +11,13 @@ This document summarizes only the capabilities and conventions an agent needs as
 
 ## Self-update behavior
 
-Rin can update itself even when the current local account does not have a `rin` launcher.
+Rin installs a `rin` launcher for both the current installer user and the selected daemon target user when those accounts differ.
 
-As an agent, prefer this decision order when the user asks you to upgrade Rin:
+As an agent, use the `rin` command as the normal update entrypoint:
 
-1. try `rin update`
-2. if `rin` is missing, try `~/.local/bin/rin update`
-3. if no launcher exists for the current account, recover the real target install from the installed metadata described in `~/.rin/docs/rin/docs/runtime-layout.md`
-4. then invoke the stable installed runtime entry directly:
-   - `node <installDir>/app/current/dist/app/rin/main.js update -u <targetUser>`
+1. run `rin update`
+2. if PATH does not include the launcher, run `~/.local/bin/rin update`
+3. if the launcher is missing, treat that as an installation repair issue and audit the installed metadata described in `~/.rin/docs/rin/docs/runtime-layout.md`
 
 Release-channel default:
 
@@ -30,19 +28,13 @@ Release-channel default:
 - `rin update --git <name>` targets that branch or ref directly
 - `--branch` / `--version` remain supported as explicit selectors for direct stable/git resolution when needed
 
-When `rin` is confirmed missing on the current account, treat that as a cross-user setup clue.
-Prefer install recovery through the target manifest or managed service files.
-If those are unavailable but you are clearly operating as the launcher-owning account, the current account's launcher metadata is a valid last fallback for recovering `targetUser` and `installDir`.
-
-In short: no `rin` on the current account usually means “wrong user for the launcher”, so the normal recovery path is service file or locator manifest → target install dir → `installer.json` → `app/current/.../main.js update`, with launcher metadata only as a same-user fallback.
+When `rin` is confirmed missing on an account that should have it, repair the launcher rather than teaching agents to find and execute runtime entry files manually. Use the target manifest or managed service files only for audit and repair.
 
 Important implications:
 
-- interpret “current account has no `rin` command” as a launcher-placement clue rather than as evidence that Rin cannot self-update
-- the current local account may be only the execution account; the launcher may belong to a different interactive account, and that is a normal setup
-- reason in terms of installed runtime path, target user, launcher ownership, and permissions
-- prefer the stable `app/current/` path over release-specific timestamps when invoking an installed runtime directly
 - keep `rin update` as the canonical workflow for updating an installed Rin runtime
+- reason in terms of installed runtime path, target user, launcher ownership, and permissions when repairing launcher state
+- prefer the stable `app/current/` path only for read-only audit or emergency repair, not for normal agent-facing instructions
 - treat `install.sh` as installation/bootstrap rather than the normal update path
 - keep repo-checkout maintenance and installed-runtime maintenance as separate workflows; updating a repo checkout is not the same thing as updating the installed Rin runtime under `~/.rin/...`
 
