@@ -8,13 +8,14 @@ import { pathToFileURL } from "node:url";
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
+  "..",
 );
 const runtime = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "chat-runtime", "index.js"))
-    .href,
+    .href
 );
 
-async function withTempDir(fn) {
+async function withTempDir(fn: (dir: string) => Promise<void>) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-chat-runtime-"));
   try {
     await fn(dir);
@@ -23,20 +24,27 @@ async function withTempDir(fn) {
   }
 }
 
+function createRuntimeApp(agentDir: string, adapterEntry: Record<string, any>) {
+  const app = runtime.createChatRuntimeApp(agentDir);
+  runtime.instantiateBuiltInChatRuntimeAdapters(app, {
+    dataDir: path.join(agentDir, "data"),
+    settings: {},
+    adapterEntries: [adapterEntry],
+  });
+  return app;
+}
+
 test("telegram adapter splits oversized text sends and keeps the reply only on the first chunk", async () => {
   await withTempDir(async (agentDir) => {
-    const app = runtime.createChatRuntimeApp(agentDir);
-    runtime.instantiateBuiltInChatRuntimeAdapters(app, {
-      dataDir: path.join(agentDir, "data"),
-      settings: {},
-      adapterEntries: [
-        { key: "telegram", name: "Telegram", config: { token: "123:abc" } },
-      ],
+    const app = createRuntimeApp(agentDir, {
+      key: "telegram",
+      name: "Telegram",
+      config: { token: "123:abc" },
     });
     const adapter = [...app.adapters][0];
     const h = runtime.createChatRuntimeH();
-    const calls = [];
-    adapter.callApi = async (method, payload) => {
+    const calls: Array<{ method: string; payload: any }> = [];
+    adapter.callApi = async (method: string, payload: any) => {
       calls.push({ method, payload });
       return { message_id: String(calls.length) };
     };
@@ -48,10 +56,10 @@ test("telegram adapter splits oversized text sends and keeps the reply only on t
 
     assert.deepEqual(result, ["1", "2"]);
     assert.equal(calls.length, 2);
-    assert.deepEqual(calls.map((entry) => entry.method), [
-      "sendMessage",
-      "sendMessage",
-    ]);
+    assert.deepEqual(
+      calls.map((entry) => entry.method),
+      ["sendMessage", "sendMessage"],
+    );
     assert.equal(calls[0].payload.chat_id, "456");
     assert.equal(calls[0].payload.reply_to_message_id, "99");
     assert.equal(calls[0].payload.text.length, 4096);
@@ -62,18 +70,15 @@ test("telegram adapter splits oversized text sends and keeps the reply only on t
 
 test("telegram adapter keeps media first and spills oversized captions into follow-up text messages", async () => {
   await withTempDir(async (agentDir) => {
-    const app = runtime.createChatRuntimeApp(agentDir);
-    runtime.instantiateBuiltInChatRuntimeAdapters(app, {
-      dataDir: path.join(agentDir, "data"),
-      settings: {},
-      adapterEntries: [
-        { key: "telegram", name: "Telegram", config: { token: "123:abc" } },
-      ],
+    const app = createRuntimeApp(agentDir, {
+      key: "telegram",
+      name: "Telegram",
+      config: { token: "123:abc" },
     });
     const adapter = [...app.adapters][0];
     const h = runtime.createChatRuntimeH();
-    const calls = [];
-    adapter.callApi = async (method, payload) => {
+    const calls: Array<{ method: string; payload: any }> = [];
+    adapter.callApi = async (method: string, payload: any) => {
       calls.push({ method, payload });
       return { message_id: String(calls.length) };
     };
@@ -97,19 +102,16 @@ test("telegram adapter keeps media first and spills oversized captions into foll
 
 test("discord adapter splits oversized text sends and keeps attachments on the first chunk", async () => {
   await withTempDir(async (agentDir) => {
-    const app = runtime.createChatRuntimeApp(agentDir);
-    runtime.instantiateBuiltInChatRuntimeAdapters(app, {
-      dataDir: path.join(agentDir, "data"),
-      settings: {},
-      adapterEntries: [
-        { key: "discord", name: "Discord", config: { token: "abc" } },
-      ],
+    const app = createRuntimeApp(agentDir, {
+      key: "discord",
+      name: "Discord",
+      config: { token: "abc" },
     });
     const adapter = [...app.adapters][0];
     const h = runtime.createChatRuntimeH();
-    const calls = [];
+    const calls: any[] = [];
     adapter.fetchChannel = async () => ({
-      send: async (payload) => {
+      send: async (payload: any) => {
         calls.push(payload);
         return { id: String(calls.length) };
       },
@@ -134,20 +136,17 @@ test("discord adapter splits oversized text sends and keeps attachments on the f
 
 test("slack adapter splits oversized text posts into multiple threaded messages", async () => {
   await withTempDir(async (agentDir) => {
-    const app = runtime.createChatRuntimeApp(agentDir);
-    runtime.instantiateBuiltInChatRuntimeAdapters(app, {
-      dataDir: path.join(agentDir, "data"),
-      settings: {},
-      adapterEntries: [
-        { key: "slack", name: "Slack", config: { token: "xapp", botToken: "xoxb" } },
-      ],
+    const app = createRuntimeApp(agentDir, {
+      key: "slack",
+      name: "Slack",
+      config: { token: "xapp", botToken: "xoxb" },
     });
     const adapter = [...app.adapters][0];
     const h = runtime.createChatRuntimeH();
-    const calls = [];
+    const calls: any[] = [];
     adapter.web = {
       chat: {
-        postMessage: async (payload) => {
+        postMessage: async (payload: any) => {
           calls.push(payload);
           return { ts: String(calls.length) };
         },
