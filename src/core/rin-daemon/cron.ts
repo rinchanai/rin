@@ -11,6 +11,10 @@ import {
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
 import { shellQuote } from "../rin-lib/system.js";
+import {
+  isScheduledTaskSessionMode,
+  type ScheduledTaskSessionMode,
+} from "../scheduled-task-options.js";
 import { getManagedTaskSessionFile } from "../session/managed-paths.js";
 import { executeCronTask } from "./cron-execution.js";
 import {
@@ -54,7 +58,7 @@ export type CronTaskTermination = {
 };
 
 export type CronTaskSessionBinding = {
-  mode: "current" | "dedicated" | "ephemeral";
+  mode: ScheduledTaskSessionMode;
   sessionFile?: string;
 };
 
@@ -164,11 +168,7 @@ function normalizeTaskSession(
   defaults: CronTaskUpsertDefaults,
 ) {
   if (!session) throw new Error("cron_session_required");
-  if (
-    session.mode !== "current" &&
-    session.mode !== "dedicated" &&
-    session.mode !== "ephemeral"
-  ) {
+  if (!isScheduledTaskSessionMode(session.mode)) {
     throw new Error(
       `cron_invalid_session_mode:${safeString((session as any).mode).trim() || "unknown"}`,
     );

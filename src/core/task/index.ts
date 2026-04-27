@@ -14,6 +14,7 @@ import {
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { createCronTaskId } from "../rin-daemon/cron-utils.js";
 import type { CronTaskInput, CronTaskRecord } from "../rin-daemon/cron.js";
+import { SCHEDULED_TASK_SESSION_MODES } from "../scheduled-task-options.js";
 import { readSessionMetadata } from "../session/metadata.js";
 
 const NO_SCHEDULED_TASKS_TEXT = "No scheduled tasks.";
@@ -308,13 +309,10 @@ const taskSchema = Type.Object({
   ),
   session: Type.Optional(
     Type.Object({
-      mode: createLooseEnumSchema(
-        ["current", "dedicated", "ephemeral"] as const,
-        {
-          description:
-            "Session binding mode. Use `ephemeral` for stateless tasks that should not keep a session file; use `dedicated` when future runs should reuse context.",
-        },
-      ),
+      mode: createLooseEnumSchema(SCHEDULED_TASK_SESSION_MODES, {
+        description:
+          "Session binding mode. Use `ephemeral` for stateless tasks that should not keep a session file; use `dedicated` when future runs should reuse context.",
+      }),
       sessionFile: Type.Optional(
         Type.String({
           description:
