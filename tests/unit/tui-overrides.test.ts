@@ -86,6 +86,69 @@ test("loader stop clears render interval", () => {
   assert.ok(renders >= 1);
 });
 
+test("rpc working status does not create a parallel status animation", async () => {
+  await overrides.applyRinTuiOverrides();
+  themeModule.initTheme("dark", false);
+
+  let renders = 0;
+  const instance = {
+    isInitialized: true,
+    settingsManager: settingsManagerWithoutTerminalProgress,
+    session: {
+      getFrontendStatusEvent() {
+        return {
+          type: "rpc_frontend_status",
+          phase: "working",
+          label: "Working",
+          connected: true,
+        };
+      },
+    },
+    statusContainer: {
+      child: undefined,
+      clear() {
+        this.child = undefined;
+      },
+      addChild(child) {
+        this.child = child;
+      },
+    },
+    ui: {
+      requestRender() {
+        renders += 1;
+      },
+      terminal: { setProgress() {} },
+    },
+    footer: { invalidate() {} },
+    retryCountdown: undefined,
+    retryLoader: undefined,
+    loadingAnimation: undefined,
+  };
+
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(instance, {
+    type: "rpc_frontend_status",
+    phase: "working",
+    label: "Working",
+    connected: true,
+  });
+
+  assert.equal(instance.loadingAnimation, undefined);
+  assert.equal(instance.statusContainer.child, undefined);
+  assert.equal(renders, 0);
+
+  await codingAgentModule.InteractiveMode.prototype.handleEvent.call(instance, {
+    type: "agent_start",
+  });
+
+  try {
+    assert.ok(instance.loadingAnimation);
+    assert.equal(instance.statusContainer.child, instance.loadingAnimation);
+    assert.ok(renders >= 1);
+  } finally {
+    instance.loadingAnimation?.stop();
+  }
+});
+
 test("local session selector reuses bound session helpers for canonicalized list and rename", async () => {
   await overrides.applyRinTuiOverrides();
 
