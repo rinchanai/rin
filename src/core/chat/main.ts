@@ -16,7 +16,6 @@ import {
   appendChatBridgeAudit,
   createChatBridgeRuntime,
 } from "../chat-bridge/runtime.js";
-import { enqueueChatPromptContext } from "../chat-bridge/prompt-context.js";
 import {
   canRunCommand,
   chatStateDir,
@@ -471,7 +470,7 @@ export async function startChatBridge(
     const promptBody = inboundAttachmentNotice
       ? `${decision.text}\n\n${inboundAttachmentNotice}`
       : decision.text;
-    enqueueChatPromptContext({
+    const promptMeta = {
       source: "chat-bridge",
       sentAt: Number.isFinite(Number(session?.timestamp))
         ? Number(session.timestamp)
@@ -492,7 +491,7 @@ export async function startChatBridge(
       attachedFiles: attachments
         .filter((item) => item?.kind === "file")
         .map((item) => ({ name: item.name, path: item.path })),
-    });
+    };
     const handleTurnFailure = async (
       error: any,
       sessionFile = linkedSessionFile,
@@ -525,6 +524,7 @@ export async function startChatBridge(
         {
           text: promptBody,
           attachments,
+          promptMeta,
           replyToMessageId: messageId,
           incomingMessageId: messageId,
           sessionFile: linkedSessionFile || undefined,

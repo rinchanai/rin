@@ -21,230 +21,153 @@ const promptContextMod = await import(
 
 function createPi() {
   const handlers = new Map();
-  const entries = [];
   return {
     handlers,
-    entries,
     on(event, handler) {
       const list = handlers.get(event) || [];
       list.push(handler);
       handlers.set(event, list);
     },
-    appendEntry(customType, data) {
-      entries.push({ customType, data });
-    },
   };
 }
 
-test("chat message header focuses sender identity guidance in the system prompt", async () => {
-  const pi = createPi();
-  messageHeaderMod.default(pi);
-
-  promptContextMod.enqueueChatPromptContext({
-    source: "chat-bridge",
-    sentAt: Date.now(),
-    chatKey: "telegram/1:2",
-    chatType: "group",
-    userId: "guest-1",
-    nickname: "Alice",
-    identity: "OTHER",
-  });
-
-  const inputResult = await pi.handlers.get("input")[0]({
-    source: "chat-bridge",
-    text: "你好",
-  });
-  assert.deepEqual(inputResult, { action: "continue" });
-
-  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
-    prompt: "你好",
-    systemPrompt: "Base prompt",
-  });
-
-  const systemPrompt = String(beforeStart?.systemPrompt || "");
-  const header = String(beforeStart?.message?.content || "");
-
-  assert.ok(
-    systemPrompt.includes(
-      "The injected message header above `---` is runtime metadata for the current message, not user-authored text.",
-    ),
-  );
-  assert.ok(
-    systemPrompt.includes(
-      "Use `sender trust` to identify who is speaking: `owner` means the owner, `trusted user` means a known trusted chat user, and `other chat user` means any other chat user.",
-    ),
-  );
-  assert.equal(systemPrompt.includes("owner-only"), false);
-  assert.ok(header.includes("sender nickname: Alice"));
-  assert.equal(header.includes("sender is owner:"), false);
-  assert.ok(header.includes("sender trust: other chat user"));
-});
-
-test("chat message header omits local system user guidance", async () => {
-  const previous = process.env.RIN_INVOKING_SYSTEM_USER;
-  process.env.RIN_INVOKING_SYSTEM_USER = "different-local-user-for-test";
-
-  try {
-    const pi = createPi();
-    messageHeaderMod.default(pi);
-
-    const inputResult = await pi.handlers.get("input")[0]({
-      source: "user",
-      text: "你好",
-    });
-    assert.deepEqual(inputResult, { action: "continue" });
-
-    const beforeStart = await pi.handlers.get("before_agent_start")[0]({
-      prompt: "你好",
-      systemPrompt: "Base prompt",
-    });
-
-    const systemPrompt = String(beforeStart?.systemPrompt || "");
-    const header = String(beforeStart?.message?.content || "");
-    assert.equal(systemPrompt.includes("System user guidance:"), false);
-    assert.equal(systemPrompt.includes("local system user"), false);
-    assert.equal(header.includes("invoking system user:"), false);
-    assert.equal(header.includes("agent system user:"), false);
-  } finally {
-    if (previous === undefined) delete process.env.RIN_INVOKING_SYSTEM_USER;
-    else process.env.RIN_INVOKING_SYSTEM_USER = previous;
-  }
-});
-
-test("chat message header remembers stable system prompt blocks for forked sessions", async () => {
-  const pi = createPi();
-  messageHeaderMod.default(pi);
-
-  promptContextMod.enqueueChatPromptContext({
-    source: "chat-bridge",
-    sentAt: Date.now(),
-    chatKey: "telegram/1:2",
-    chatType: "group",
-    userId: "guest-1",
-    nickname: "Alice",
-    identity: "OTHER",
-  });
-
-  await pi.handlers.get("input")[0]({
-    source: "chat-bridge",
-    text: "你好",
-  });
-
-  await pi.handlers.get("before_agent_start")[0](
+test("chat prompt context packages sender identity guidance into the prompt text", () => {
+  const promptText = promptContextMod.formatPromptContext(
     {
-      prompt: "你好",
-      systemPrompt: "Base prompt",
+      source: "chat-bridge",
+      sentAt: 1710000000000,
+      chatKey: "telegram/1:2",
+      chatType: "group",
+      userId: "guest-1",
+      nickname: "Alice",
+      identity: "OTHER",
     },
-    {
-      sessionManager: {
-        getBranch: () => [],
-      },
-    },
+    "你好",
   );
 
-  assert.equal(pi.entries.length, 1);
-  assert.equal(pi.entries[0].customType, "rin-system-prompt-blocks");
+  assert.ok(promptText.startsWith("time: "));
+  assert.ok(promptText.includes("chatKey: telegram/1:2"));
   assert.ok(
-    pi.entries[0].data.blocks.some((block) =>
-      block.includes("Chat bridge guidelines:"),
+    promptText.includes(
+      "runtime note: header lines above `---` are runtime metadata for this message, not user-authored text.",
+    ),
+  );
+  assert.ok(promptText.includes("sender nickname: Alice"));
+  assert.ok(promptText.includes("sender trust: other chat user"));
+  assert.ok(
+    promptText.includes(
+      "sender trust note: owner means the owner, trusted user means a known trusted chat user, and other chat user means any other chat user.",
+    ),
+  );
+  assert.equal(promptText.includes("sender is owner:"), false);
+  assert.ok(promptText.endsWith("---\n你好"));
+});
+
+test("message header skips duplicate metadata for already formatted chat prompts", async () => {
+  const pi = createPi();
+  messageHeaderMod.default(pi);
+
+  const promptText = promptContextMod.formatPromptContext(
+    {
+      source: "chat-bridge",
+      sentAt: Date.now(),
+      chatKey: "onebot/1:2",
+      chatType: "group",
+      userId: "guest-1",
+      nickname: "很酷",
+      identity: "OTHER",
+    },
+    "@☆铃酱☆ my name is?",
+  );
+
+  const inputResult = await pi.handlers.get("input")[0]({
+    source: "chat-bridge",
+    text: promptText,
+  });
+  assert.deepEqual(inputResult, { action: "continue" });
+
+  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
+    prompt: promptText,
+    systemPrompt: "Base prompt",
+  });
+
+  assert.deepEqual(beforeStart, {});
+});
+
+test("message header still injects a local hidden timestamp for non-chat prompts", async () => {
+  const pi = createPi();
+  messageHeaderMod.default(pi);
+
+  const inputResult = await pi.handlers.get("input")[0]({
+    source: "user",
+    text: "你好",
+  });
+  assert.deepEqual(inputResult, { action: "continue" });
+
+  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
+    prompt: "你好",
+    systemPrompt: "Base prompt",
+  });
+
+  const header = String(beforeStart?.message?.content || "");
+  assert.ok(header.startsWith("time: "));
+  assert.ok(header.endsWith("---\n你好"));
+  assert.equal(String(beforeStart?.systemPrompt || ""), "");
+});
+
+test("chat prompt context requires reply lookup without injecting replied text", () => {
+  const promptText = promptContextMod.formatPromptContext(
+    {
+      source: "chat-bridge",
+      sentAt: Date.now(),
+      chatKey: "telegram/1:2",
+      chatType: "group",
+      userId: "guest-1",
+      nickname: "Alice",
+      identity: "OTHER",
+      replyToMessageId: "quoted-42",
+    },
+    "这条是什么意思？",
+  );
+
+  assert.ok(promptText.includes("reply to message id: quoted-42"));
+  assert.equal(promptText.includes("reply message:"), false);
+  assert.equal(promptText.includes("第一行"), false);
+  assert.ok(
+    promptText.includes(
+      "reply lookup: call get_chat_msg with that exact message id before answering",
     ),
   );
 });
 
-test("chat message header keeps owner senders marked as owner", async () => {
-  const pi = createPi();
-  messageHeaderMod.default(pi);
-
-  promptContextMod.enqueueChatPromptContext({
-    source: "chat-bridge",
-    sentAt: Date.now(),
-    chatKey: "telegram/1:2",
-    chatType: "private",
-    userId: "owner-1",
-    nickname: "Master",
-    identity: "OWNER",
-  });
-
-  const inputResult = await pi.handlers.get("input")[0]({
-    source: "chat-bridge",
-    text: "你好",
-  });
-  assert.deepEqual(inputResult, { action: "continue" });
-
-  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
-    prompt: "你好",
-    systemPrompt: "Base prompt",
-  });
-
-  const systemPrompt = String(beforeStart?.systemPrompt || "");
-  const header = String(beforeStart?.message?.content || "");
-  assert.equal(systemPrompt.includes("owner-only"), false);
-  assert.equal(header.includes("sender is owner:"), false);
-  assert.ok(header.includes("sender trust: owner"));
-});
-
-test("chat message header keeps trusted senders distinct from owner", async () => {
-  const pi = createPi();
-  messageHeaderMod.default(pi);
-
-  promptContextMod.enqueueChatPromptContext({
-    source: "chat-bridge",
-    sentAt: Date.now(),
-    chatKey: "telegram/1:2",
-    chatType: "group",
-    userId: "trusted-1",
-    nickname: "Bob",
-    identity: "TRUSTED",
-  });
-
-  const inputResult = await pi.handlers.get("input")[0]({
-    source: "chat-bridge",
-    text: "你好",
-  });
-  assert.deepEqual(inputResult, { action: "continue" });
-
-  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
-    prompt: "你好",
-    systemPrompt: "Base prompt",
-  });
-
-  const header = String(beforeStart?.message?.content || "");
-  assert.equal(header.includes("sender is owner:"), false);
-  assert.ok(header.includes("sender trust: trusted user"));
-});
-
-test("chat message header requires reply lookup without injecting replied text", async () => {
-  const pi = createPi();
-  messageHeaderMod.default(pi);
-
-  promptContextMod.enqueueChatPromptContext({
-    source: "chat-bridge",
-    sentAt: Date.now(),
-    chatKey: "telegram/1:2",
-    chatType: "group",
-    userId: "guest-1",
-    nickname: "Alice",
-    identity: "OTHER",
-    replyToMessageId: "quoted-42",
-  });
-
-  const inputResult = await pi.handlers.get("input")[0]({
-    source: "chat-bridge",
-    text: "这条是什么意思？",
-  });
-  assert.deepEqual(inputResult, { action: "continue" });
-
-  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
-    prompt: "这条是什么意思？",
-    systemPrompt: "Base prompt",
-  });
-
-  const systemPrompt = String(beforeStart?.systemPrompt || "");
-  const header = String(beforeStart?.message?.content || "");
-  assert.ok(header.includes("reply to message id: quoted-42"));
-  assert.equal(header.includes("reply message:"), false);
-  assert.equal(header.includes("第一行"), false);
-  assert.ok(
-    systemPrompt.includes("calling `get_chat_msg` with that exact message id"),
+test("chat prompt context keeps owner and trusted senders distinct", () => {
+  const ownerPrompt = promptContextMod.formatPromptContext(
+    {
+      source: "chat-bridge",
+      sentAt: Date.now(),
+      chatKey: "telegram/1:2",
+      chatType: "private",
+      userId: "owner-1",
+      nickname: "Master",
+      identity: "OWNER",
+    },
+    "你好",
   );
+  const trustedPrompt = promptContextMod.formatPromptContext(
+    {
+      source: "chat-bridge",
+      sentAt: Date.now(),
+      chatKey: "telegram/1:2",
+      chatType: "group",
+      userId: "trusted-1",
+      nickname: "Bob",
+      identity: "TRUSTED",
+    },
+    "你好",
+  );
+
+  assert.ok(ownerPrompt.includes("sender trust: owner"));
+  assert.ok(trustedPrompt.includes("sender trust: trusted user"));
+  assert.equal(ownerPrompt.includes("sender is owner:"), false);
+  assert.equal(trustedPrompt.includes("sender is owner:"), false);
 });

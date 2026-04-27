@@ -6,6 +6,10 @@ import prettyMilliseconds from "pretty-ms";
 import type { RpcFrontendClient } from "../rin-tui/frontend-surface.js";
 import { ChatFrontendDriver } from "../rin-tui/chat-frontend-driver.js";
 import {
+  formatPromptContext,
+  type PromptContextMeta,
+} from "../chat-bridge/prompt-context.js";
+import {
   resolveStoredSessionFile,
   toStoredSessionFile,
 } from "../session/ref.js";
@@ -713,6 +717,7 @@ export class ChatController {
       replyToMessageId?: string;
       incomingMessageId?: string;
       sessionFile?: string;
+      promptMeta?: PromptContextMeta;
     },
     mode: "prompt" | "steer" = "prompt",
   ) {
@@ -726,8 +731,11 @@ export class ChatController {
         attachments: input.attachments,
         startedAt: Date.now(),
       });
+      const promptText = input.promptMeta
+        ? formatPromptContext(input.promptMeta, text)
+        : text;
       const result = await this.driver.runTurn({
-        text,
+        text: promptText,
         images,
         sessionFile: wantedSessionFile,
         restoreSessionFile,
@@ -776,8 +784,11 @@ export class ChatController {
       this.awaitingTurnSettle = true;
       void this.pollTyping().catch(() => {});
       try {
+        const promptText = input.promptMeta
+          ? formatPromptContext(input.promptMeta, text)
+          : text;
         const result = await this.driver.runTurn({
-          text,
+          text: promptText,
           images,
           sessionFile: wantedSessionFile,
           restoreSessionFile,
