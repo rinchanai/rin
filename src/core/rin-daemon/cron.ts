@@ -4,6 +4,10 @@ import path from "node:path";
 
 const HOME_DIR = os.homedir();
 import { cloneJson } from "../json-utils.js";
+import {
+  ALL_THINKING_LEVELS,
+  type AvailableThinkingLevel,
+} from "../model-thinking-levels.js";
 import { readJsonFile, writeJsonAtomic } from "../platform/fs.js";
 import { safeString } from "../platform/process.js";
 import { shellQuote } from "../rin-lib/system.js";
@@ -54,16 +58,7 @@ export type CronTaskSessionBinding = {
   sessionFile?: string;
 };
 
-const CRON_TASK_THINKING_LEVELS = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-] as const;
-
-export type CronTaskThinkingLevel = (typeof CRON_TASK_THINKING_LEVELS)[number];
+export type CronTaskThinkingLevel = AvailableThinkingLevel;
 
 export type CronTaskRecord = {
   id: string;
@@ -123,7 +118,7 @@ function normalizeThinkingLevel(
   value: unknown,
 ): CronTaskThinkingLevel | undefined {
   const level = safeString(value).trim();
-  return CRON_TASK_THINKING_LEVELS.includes(level as CronTaskThinkingLevel)
+  return ALL_THINKING_LEVELS.includes(level as CronTaskThinkingLevel)
     ? (level as CronTaskThinkingLevel)
     : undefined;
 }

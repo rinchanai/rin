@@ -6,18 +6,21 @@ type ThinkingLevelModel = {
   reasoning?: boolean | null;
 };
 
-const OFF_ONLY_THINKING_LEVELS = ["off"] as const satisfies ThinkingLevel[];
-const STANDARD_REASONING_THINKING_LEVELS = [
+export const ALL_THINKING_LEVELS = [
   "off",
   "minimal",
   "low",
   "medium",
   "high",
-] as const satisfies ThinkingLevel[];
-const MAX_REASONING_THINKING_LEVELS = [
-  ...STANDARD_REASONING_THINKING_LEVELS,
   "xhigh",
 ] as const satisfies ThinkingLevel[];
+
+export type AvailableThinkingLevel = (typeof ALL_THINKING_LEVELS)[number];
+
+const OFF_ONLY_THINKING_LEVELS = ["off"] as const satisfies ThinkingLevel[];
+const STANDARD_REASONING_THINKING_LEVELS = ALL_THINKING_LEVELS.filter(
+  (level) => level !== "xhigh",
+);
 
 function normalizeModelText(value: string | null | undefined) {
   return String(value ?? "")
@@ -35,7 +38,7 @@ function supportsMaxReasoningThinkingLevels(model: ThinkingLevelModel) {
 function resolveThinkingLevels(model: ThinkingLevelModel) {
   if (!model?.reasoning) return OFF_ONLY_THINKING_LEVELS;
   return supportsMaxReasoningThinkingLevels(model)
-    ? MAX_REASONING_THINKING_LEVELS
+    ? ALL_THINKING_LEVELS
     : STANDARD_REASONING_THINKING_LEVELS;
 }
 

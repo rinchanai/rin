@@ -5,6 +5,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 
 import { normalizeChatKey } from "../chat/support.js";
+import { ALL_THINKING_LEVELS } from "../model-thinking-levels.js";
 import {
   buildUserFacingTextResult,
   prepareTruncatedAgentUserText,
@@ -259,13 +260,9 @@ const taskSchema = Type.Object({
     }),
   ),
   thinkingLevel: Type.Optional(
-    createLooseEnumSchema(
-      ["off", "minimal", "low", "medium", "high", "xhigh"] as const,
-      {
-        description:
-          "Optional thinking level override for agent_prompt tasks. Allowed values: off, minimal, low, medium, high, xhigh.",
-      },
-    ),
+    createLooseEnumSchema(ALL_THINKING_LEVELS, {
+      description: `Optional thinking level override for agent_prompt tasks. Allowed values: ${ALL_THINKING_LEVELS.join(", ")}.`,
+    }),
   ),
   trigger: Type.Object({
     kind: createLooseEnumSchema(["interval", "cron", "once"] as const, {
