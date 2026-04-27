@@ -74,22 +74,14 @@ test("rpc helpers normalize scoped commands and return fresh empty session state
 });
 
 test("shared resolveParsedArgs keeps passthrough and install defaults coherent", () => {
-  const parsed = shared.resolveParsedArgs("", { std: true, user: "demo" }, [
-    "--std",
+  const parsed = shared.resolveParsedArgs("", { user: "demo" }, [
     "--foo",
     "bar",
   ]);
   assert.equal(parsed.targetUser, "demo");
-  assert.equal(parsed.std, true);
   assert.deepEqual(parsed.passthrough, ["--foo", "bar"]);
   assert.deepEqual(
-    shared.stripRinWrapperArgs([
-      "--user=demo",
-      "--std",
-      "usage",
-      "--limit",
-      "5",
-    ]),
+    shared.stripRinWrapperArgs(["--user=demo", "usage", "--limit", "5"]),
     ["usage", "--limit", "5"],
   );
   assert.deepEqual(shared.stripRinWrapperArgs(["--session=old"]), [
@@ -184,20 +176,46 @@ test("shared loadInstallConfigForHome prefers launcher metadata candidates and r
 });
 
 test("tui launch helpers target the direct TUI runner", () => {
-  assert.equal(launch.buildTuiModeArg(true), "--std");
-  assert.equal(launch.buildTuiModeArg(false), "--rpc");
   assert.deepEqual(
     launch.buildDirectTuiArgs("/repo/dist/app/rin-tui/main.js", {
-      std: false,
       passthrough: ["--foo", "bar"],
     }),
-    [
-      process.execPath,
-      "/repo/dist/app/rin-tui/main.js",
-      "--rpc",
-      "--foo",
-      "bar",
-    ],
+    [process.execPath, "/repo/dist/app/rin-tui/main.js", "--foo", "bar"],
+  );
+});
+
+test("TUI launch environment enables maintenance mode only when the daemon is unavailable", async () => {
+  const available = await launch.resolveTuiLaunchEnvironment(
+    {} as any,
+    { BASE: "1" } as any,
+    { ensureDaemonAvailable: async () => undefined },
+  );
+  assert.equal(available.runtimeEnv.BASE, "1");
+  assert.equal(available.runtimeEnv.RIN_TUI_RUNTIME_ROLE, "rpc-frontend");
+
+  const unavailable = await launch.resolveTuiLaunchEnvironment(
+    {} as any,
+    { BASE: "1" } as any,
+    {
+      ensureDaemonAvailable: async () => {
+        throw new Error("daemon down");
+      },
+    },
+  );
+  assert.equal(unavailable.runtimeEnv.BASE, "1");
+  assert.equal(unavailable.runtimeEnv.RIN_TUI_MAINTENANCE_MODE, "1");
+  assert.equal(unavailable.runtimeEnv.RIN_TUI_RUNTIME_ROLE, "maintenance-tui");
+  assert.match(
+    unavailable.maintenanceModeNotice,
+    /Rin daemon is unavailable \(daemon down\)\./,
+  );
+  assert.match(
+    unavailable.maintenanceModeNotice,
+    /Entering temporary maintenance mode\./,
+  );
+  assert.match(
+    unavailable.maintenanceModeNotice,
+    /features may be unavailable/,
   );
 });
 

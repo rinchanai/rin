@@ -23,7 +23,7 @@ async function withTempDir(fn: (dir: string) => Promise<void>) {
   }
 }
 
-test("rpc tui startup suggests doctor and std mode on daemon socket refusal", async () => {
+test("rpc tui startup suggests doctor and maintenance mode on daemon socket refusal", async () => {
   await withTempDir(async (tempDir) => {
     const home = path.join(tempDir, "home");
     const agentDir = path.join(tempDir, "agent");
@@ -36,7 +36,7 @@ test("rpc tui startup suggests doctor and std mode on daemon socket refusal", as
     await fs.writeFile(socketPath, "", "utf8");
 
     await assert.rejects(
-      execFileAsync(process.execPath, [tuiPath, "--rpc"], {
+      execFileAsync(process.execPath, [tuiPath], {
         cwd: rootDir,
         env: {
           ...process.env,
@@ -59,7 +59,7 @@ test("rpc tui startup suggests doctor and std mode on daemon socket refusal", as
           /RPC TUI could not connect to the daemon \(connect ECONNREFUSED .*daemon\.sock\)\./,
         );
         assert.match(stderr, /Try `rin doctor`/);
-        assert.match(stderr, /`rin --std`/);
+        assert.match(stderr, /temporary maintenance mode/);
         return true;
       },
     );

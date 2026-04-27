@@ -12,14 +12,20 @@ const launcher = await import(
     .href
 );
 
-test("tui launcher normalizes explicit mode inputs", () => {
-  assert.equal(launcher.normalizeTuiMode(" std "), "std");
-  assert.equal(launcher.normalizeTuiMode("RPC"), "rpc");
-  assert.equal(launcher.normalizeTuiMode("invalid"), undefined);
-  assert.equal(launcher.resolveTuiMode([]), "rpc");
-  assert.equal(launcher.resolveTuiMode(["--std"]), "std");
-  assert.equal(launcher.resolveTuiMode(["--rpc"]), "rpc");
-  assert.equal(launcher.resolveTuiMode([], { RIN_TUI_MODE: " std " }), "std");
+test("tui launcher uses only the maintenance-mode environment switch", () => {
+  assert.equal(launcher.shouldStartMaintenanceMode({}), false);
+  assert.equal(
+    launcher.shouldStartMaintenanceMode({ RIN_TUI_MAINTENANCE_MODE: "1" }),
+    true,
+  );
+  assert.equal(
+    launcher.shouldStartMaintenanceMode({ RIN_TUI_MAINTENANCE_MODE: "true" }),
+    true,
+  );
+  assert.equal(
+    launcher.shouldStartMaintenanceMode({ RIN_TUI_MAINTENANCE_MODE: "no" }),
+    false,
+  );
 });
 
 test("tui launcher resolves interactive startup options", () => {
@@ -33,21 +39,13 @@ test("tui launcher resolves interactive startup options", () => {
     initialMessages: undefined,
     verbose: true,
   });
+  assert.deepEqual(launcher.resolveTuiInteractiveOptions(["/init", "next"]), {
+    initialMessage: "/init",
+    initialMessages: ["next"],
+    verbose: undefined,
+  });
   assert.deepEqual(
-    launcher.resolveTuiInteractiveOptions(["--rpc", "/init", "next"]),
-    {
-      initialMessage: "/init",
-      initialMessages: ["next"],
-      verbose: undefined,
-    },
-  );
-  assert.deepEqual(
-    launcher.resolveTuiInteractiveOptions([
-      "--std",
-      "--unknown",
-      "--",
-      "--literal",
-    ]),
+    launcher.resolveTuiInteractiveOptions(["--unknown", "--", "--literal"]),
     {
       initialMessage: "--literal",
       initialMessages: undefined,
@@ -77,22 +75,7 @@ test("tui launcher suppresses its startup separator when quiet startup is enable
   assert.equal(launcher.shouldPrintStartupSeparator({}), true);
 });
 
-test("tui launcher rejects invalid or conflicting mode requests", () => {
-  assert.throws(
-    () => launcher.resolveTuiMode([], { RIN_TUI_MODE: "broken" }),
-    /Invalid RIN_TUI_MODE: broken\. Allowed values: rpc, std\./,
-  );
-  assert.throws(
-    () => launcher.resolveTuiMode(["--std", "--rpc"]),
-    /Conflicting TUI mode flags: --std, --rpc\./,
-  );
-  assert.throws(
-    () => launcher.resolveTuiMode(["--rpc"], { RIN_TUI_MODE: "std" }),
-    /Conflicting TUI mode requests: RIN_TUI_MODE=std and --rpc\./,
-  );
-});
-
-test("tui launcher formats daemon startup socket failures with doctor/std guidance", () => {
+test("tui launcher formats daemon startup socket failures with doctor/reopen guidance", () => {
   const message = launcher.formatTuiStartupError(
     new Error("connect ECONNREFUSED /run/user/1001/rin-daemon/daemon.sock"),
   );
@@ -101,7 +84,7 @@ test("tui launcher formats daemon startup socket failures with doctor/std guidan
     /RPC TUI could not connect to the daemon \(connect ECONNREFUSED \/run\/user\/1001\/rin-daemon\/daemon\.sock\)\./,
   );
   assert.match(message, /Try `rin doctor`/);
-  assert.match(message, /`rin --std`/);
+  assert.match(message, /temporary maintenance mode/);
 });
 
 test("tui launcher leaves unrelated startup errors unchanged", () => {

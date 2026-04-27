@@ -50,7 +50,7 @@ test("installer interactive helpers describe dir state and plan text", () => {
   assert.ok(plan.includes("Target daemon user: bob"));
   assert.ok(plan.includes("Model auth status: ready"));
   assert.ok(!plan.includes("Rin safety boundary:"));
-  assert.ok(!plan.includes("`rin --std` → std TUI for the target user"));
+  assert.ok(!plan.includes("TUI for the target user"));
   assert.ok(plan.includes("Default target user: not set"));
   assert.ok(plan.includes("Chat bridge: telegram"));
   assert.ok(

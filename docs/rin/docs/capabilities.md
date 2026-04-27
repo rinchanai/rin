@@ -7,7 +7,7 @@ This document summarizes only the capabilities and conventions an agent needs as
 - `rin` normally prefers daemon + RPC TUI mode
 - if the daemon goes offline temporarily, Rin tries to resume the interrupted session when it returns
 - keep `rin` as the normal recommendation in guidance
-- mention `rin --std` mainly when RPC mode is failing and the user needs a foreground fallback for troubleshooting or repair
+- Rin automatically enters temporary maintenance mode only when the daemon is unavailable
 
 ## Self-update behavior
 
