@@ -105,6 +105,14 @@ function normalizeRpcResourceSnapshot(value: any): RpcResourceSnapshot {
   };
 }
 
+function normalizeQueuedMessages(value: any) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const text = String(item ?? "");
+    return text ? [text] : [];
+  });
+}
+
 function createRpcResourceLoader(getSnapshot: () => RpcResourceSnapshot) {
   return {
     getThemes: () => getSnapshot().themes,
@@ -1069,12 +1077,27 @@ export class RpcInteractiveSession {
     return await this.restorePromise;
   }
 
+  applyQueueUpdate(payload: any) {
+    this.steeringMessages = normalizeQueuedMessages(payload?.steering);
+    this.followUpMessages = normalizeQueuedMessages(payload?.followUp);
+    this.syncPendingCount();
+  }
+
   private enqueuePending(
     queue: "steeringMessages" | "followUpMessages",
     message: string,
   ) {
     this[queue].push(message);
     this.syncPendingCount();
+    this.emitQueueUpdate();
+  }
+
+  private emitQueueUpdate() {
+    this.emitEvent({
+      type: "queue_update",
+      steering: [...this.steeringMessages],
+      followUp: [...this.followUpMessages],
+    } as any);
   }
 
   private getLocalExtensionCommand(text: string) {
