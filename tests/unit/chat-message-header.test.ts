@@ -63,6 +63,35 @@ test("chat prompt context packages sender identity guidance into the prompt text
   assert.ok(promptText.endsWith("---\nhello"));
 });
 
+test("prompt context header injection is reusable and idempotent", () => {
+  const promptText = promptContextMod.injectPromptContextHeader(
+    {
+      source: "chat-bridge",
+      sentAt: 1710000000000,
+      chatKey: "telegram/1:2",
+      userId: "guest-1",
+      nickname: "Alice",
+      identity: "OTHER",
+    },
+    "hello",
+  );
+  const reinjected = promptContextMod.injectPromptContextHeader(
+    {
+      source: "chat-bridge",
+      sentAt: 1710000000000,
+      chatKey: "telegram/1:2",
+      userId: "guest-1",
+      nickname: "Alice",
+      identity: "OTHER",
+    },
+    promptText,
+  );
+
+  assert.equal(reinjected, promptText);
+  assert.equal(promptText.match(/^time: /gm)?.length, 1);
+  assert.ok(promptText.endsWith("---\nhello"));
+});
+
 test("message header skips duplicate metadata for already formatted chat prompts", async () => {
   const pi = createPi();
   messageHeaderMod.default(pi);

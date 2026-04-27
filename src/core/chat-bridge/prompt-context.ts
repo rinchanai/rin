@@ -112,3 +112,17 @@ export function formatPromptContext(
   }
   return `${lines.join("\n")}\n---\n${safeString(body)}`;
 }
+
+export function injectPromptContextHeader(
+  meta: PromptContextMeta | null | undefined,
+  body: string,
+  options: { fallbackTimestamp?: number } = {},
+) {
+  const text = safeString(body);
+  if (!meta || isPromptContextFormatted(text)) return text;
+  return formatPromptContext(
+    meta,
+    text,
+    options.fallbackTimestamp ?? Date.now(),
+  );
+}
