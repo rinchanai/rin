@@ -151,9 +151,7 @@ export function lookupReplySession(
 
 function isSubstantiveAssistantChatText(text: unknown) {
   const value = safeString(text).trim();
-  return Boolean(
-    value && value !== CHAT_WORKING_NOTICE_TEXT && value !== "Working……",
-  );
+  return Boolean(value && value !== CHAT_WORKING_NOTICE_TEXT);
 }
 
 export function hasDeliveredAssistantReplyForMessage(
