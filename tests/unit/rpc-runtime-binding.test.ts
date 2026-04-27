@@ -497,9 +497,10 @@ test("rpc runtime restores active session history from one daemon snapshot", asy
     { role: "assistant", content: "world" },
   ]);
   const sentTypes = sent.map((payload) => payload.type);
-  assert.equal(sentTypes.includes("get_session_snapshot"), true);
-  assert.equal(sentTypes.includes("get_session_entries"), false);
-  assert.equal(sentTypes.includes("get_session_tree"), false);
+  assert.equal(
+    sentTypes.filter((type) => type === "get_session_snapshot").length,
+    1,
+  );
   assert.equal(sentTypes.includes("get_messages"), false);
 });
 

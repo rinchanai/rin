@@ -102,7 +102,7 @@ function shouldReleaseStoredSessionOnTransientTurnError(
   if (safeString(options.wantedSessionFile).trim()) return false;
   if (!safeString(options.restoreSessionFile).trim()) return false;
   const message = safeString((error as any)?.message || error).trim();
-  return /rin_timeout:(?:prompt|get_session_entries|select_session)\b|rin_no_attached_session\b/.test(
+  return /rin_timeout:(?:prompt|get_session_snapshot|select_session)\b|rin_no_attached_session\b/.test(
     message,
   );
 }

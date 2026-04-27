@@ -190,8 +190,6 @@ export async function startDaemon(
     get_session_snapshot: () => ({
       data: { entries: [], tree: [], leafId: null },
     }),
-    get_session_entries: () => ({ data: { entries: [] } }),
-    get_session_tree: () => ({ data: { tree: [], leafId: null } }),
     get_commands: async () => ({
       data: {
         commands: await listCatalogCommands(catalogOptions),
