@@ -67,7 +67,7 @@ async function launchInstallerInitTui(options: {
   rinPath: string;
   sourceRoot: string;
 }) {
-  return await runCommand(options.rinPath, [], {
+  return await runCommand(options.rinPath, ["/init"], {
     cwd: options.sourceRoot,
   });
 }
