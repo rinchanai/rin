@@ -40,6 +40,23 @@ function normalizeCredentialSummary(value: any): OAuthCredentialSummary {
   return type ? { type } : undefined;
 }
 
+async function sendIgnoredClientCommand(
+  client: RpcFrontendClient,
+  payload: Record<string, unknown>,
+) {
+  await client.send(payload).catch(() => {});
+}
+
+function restoreCredential(
+  credentials: Record<string, OAuthCredentialSummary>,
+  providerId: string,
+  previous: OAuthCredentialSummary,
+) {
+  if (typeof previous !== "undefined") {
+    credentials[providerId] = previous;
+  }
+}
+
 function normalizeCredentials(input: any) {
   const credentials: Record<string, OAuthCredentialSummary> = {};
   if (!input || typeof input !== "object") return credentials;
@@ -95,9 +112,10 @@ export function createAuthStorageProxy(client: RpcFrontendClient) {
   const sendLoginCancel = async (loginId: unknown) => {
     const nextLoginId = normalizeLoginId(loginId);
     if (!nextLoginId) return;
-    await client
-      .send({ type: "oauth_login_cancel", loginId: nextLoginId })
-      .catch(() => {});
+    await sendIgnoredClientCommand(client, {
+      type: "oauth_login_cancel",
+      loginId: nextLoginId,
+    });
   };
 
   const sendLoginResponse = async (
@@ -111,14 +129,12 @@ export function createAuthStorageProxy(client: RpcFrontendClient) {
       await sendLoginCancel(loginId);
       return;
     }
-    await client
-      .send({
-        type: "oauth_login_respond",
-        loginId: nextLoginId,
-        requestId: nextRequestId,
-        value: String(value ?? ""),
-      })
-      .catch(() => {});
+    await sendIgnoredClientCommand(client, {
+      type: "oauth_login_respond",
+      loginId: nextLoginId,
+      requestId: nextRequestId,
+      value: String(value ?? ""),
+    });
   };
 
   const finishLogin = (loginId: unknown, payload: any) => {
@@ -216,14 +232,10 @@ export function createAuthStorageProxy(client: RpcFrontendClient) {
             applyState(response.data);
             return;
           }
-          if (typeof previous !== "undefined") {
-            state.credentials[nextProviderId] = previous;
-          }
+          restoreCredential(state.credentials, nextProviderId, previous);
         })
         .catch(() => {
-          if (typeof previous !== "undefined") {
-            state.credentials[nextProviderId] = previous;
-          }
+          restoreCredential(state.credentials, nextProviderId, previous);
         });
     },
     async login(providerId: string, callbacks: any = {}) {
