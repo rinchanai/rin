@@ -265,7 +265,7 @@ test("chat inbox restores stranded items after only a working notice", async () 
     replyToMessageId: "m-working",
     receivedAt: new Date().toISOString(),
     processedAt: new Date().toISOString(),
-    text: "Working……",
+    text: "Working...",
   });
   const [pendingPath] = inbox.listPendingChatInboxFiles(agentDir);
   inbox.claimChatInboxFile(agentDir, pendingPath);

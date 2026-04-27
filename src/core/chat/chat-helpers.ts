@@ -44,6 +44,8 @@ export type ChatState = {
   sessionFile?: string;
 };
 
+export const CHAT_WORKING_NOTICE_TEXT = "Working...";
+
 export type ChatPromptRestoreInput = {
   text: string;
   attachments: SavedAttachment[];
@@ -149,7 +151,9 @@ export function lookupReplySession(
 
 function isSubstantiveAssistantChatText(text: unknown) {
   const value = safeString(text).trim();
-  return Boolean(value && value !== "Working……");
+  return Boolean(
+    value && value !== CHAT_WORKING_NOTICE_TEXT && value !== "Working……",
+  );
 }
 
 export function hasDeliveredAssistantReplyForMessage(

@@ -23,6 +23,7 @@ import {
   writeJsonFile,
 } from "./support.js";
 import {
+  CHAT_WORKING_NOTICE_TEXT,
   ChatState,
   SavedAttachment,
   markProcessedChatMessage,
@@ -337,7 +338,7 @@ export class ChatController {
         {
           type: "text_delivery",
           chatKey: this.chatKey,
-          text: "Working……",
+          text: CHAT_WORKING_NOTICE_TEXT,
           replyToMessageId,
           sessionFile: this.currentSessionFile(),
           createdAt: new Date().toISOString(),
