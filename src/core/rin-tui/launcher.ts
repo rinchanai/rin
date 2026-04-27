@@ -90,14 +90,8 @@ export function resolveTuiInteractiveOptions(
   };
 }
 
-export function shouldPrintStartupSeparator(
-  sessionLike: any,
-  options: TuiInteractiveOptions = {},
-) {
-  if (options.verbose) return true;
-  const getQuietStartup = sessionLike?.settingsManager?.getQuietStartup;
-  if (typeof getQuietStartup !== "function") return true;
-  return !Boolean(getQuietStartup.call(sessionLike.settingsManager));
+export function shouldPrintStartupSeparator() {
+  return true;
 }
 
 async function runInteractiveMode(
@@ -122,7 +116,7 @@ async function startStdTui(
     additionalExtensionPaths: options.additionalExtensionPaths,
   });
   profile.mark("maintenance-session-created");
-  if (shouldPrintStartupSeparator(sessionRuntime.session, interactiveOptions)) {
+  if (shouldPrintStartupSeparator()) {
     console.log();
   }
   await runInteractiveMode(sessionRuntime, interactiveOptions);
@@ -150,7 +144,7 @@ async function startRpcTui(
   try {
     runtimeHost = createRpcRuntimeHost(rpcSession);
     profile.mark("rpc-session-created");
-    if (shouldPrintStartupSeparator(rpcSession, interactiveOptions)) {
+    if (shouldPrintStartupSeparator()) {
       console.log();
     }
     await runInteractiveMode(runtimeHost as any, interactiveOptions);
