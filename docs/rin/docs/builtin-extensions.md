@@ -5,9 +5,6 @@ These capabilities are now registered directly by Rin core rather than being for
 
 ## Default extra capabilities
 
-- `rules`
-  - provides the `rules` tool
-  - helps the agent find ancestor `AGENTS.md` / `CLAUDE.md` files for a target directory
 - `web-search`
   - provides live web search
 - `fetch`
