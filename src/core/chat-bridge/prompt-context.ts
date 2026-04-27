@@ -89,9 +89,6 @@ export function formatPromptContext(
       lines.push(
         `reply to message id: ${safeString(meta.replyToMessageId).trim()}`,
       );
-      lines.push(
-        "reply lookup: always call get_chat_msg with that exact message id before answering.",
-      );
     }
     const attachedFiles = Array.isArray(meta.attachedFiles)
       ? meta.attachedFiles

@@ -115,7 +115,7 @@ test("message header still injects a local hidden timestamp for non-chat prompts
   assert.equal(String(beforeStart?.systemPrompt || ""), "");
 });
 
-test("chat prompt context requires reply lookup without injecting replied text", () => {
+test("chat prompt context keeps reply id metadata without embedding lookup guidance", () => {
   const promptText = promptContextMod.formatPromptContext(
     {
       source: "chat-bridge",
@@ -133,9 +133,43 @@ test("chat prompt context requires reply lookup without injecting replied text",
   assert.ok(promptText.includes("reply to message id: quoted-42"));
   assert.equal(promptText.includes("reply message:"), false);
   assert.equal(promptText.includes("first line"), false);
+  assert.equal(promptText.includes("reply lookup:"), false);
+});
+
+test("message header adds reply lookup guidance only to the system prompt", async () => {
+  const pi = createPi();
+  messageHeaderMod.default(pi);
+
+  const promptText = promptContextMod.formatPromptContext(
+    {
+      source: "chat-bridge",
+      sentAt: Date.now(),
+      chatKey: "telegram/1:2",
+      chatType: "group",
+      userId: "guest-1",
+      nickname: "Alice",
+      identity: "OTHER",
+      replyToMessageId: "quoted-42",
+    },
+    "what does this mean?",
+  );
+
+  const inputResult = await pi.handlers.get("input")[0]({
+    source: "chat-bridge",
+    text: promptText,
+  });
+  assert.deepEqual(inputResult, { action: "continue" });
+
+  const beforeStart = await pi.handlers.get("before_agent_start")[0]({
+    prompt: promptText,
+    systemPrompt: "Base prompt",
+  });
+
+  assert.equal(beforeStart?.message, undefined);
+  assert.equal(promptText.includes("reply lookup:"), false);
   assert.ok(
-    promptText.includes(
-      "reply lookup: always call get_chat_msg with that exact message id before answering.",
+    String(beforeStart?.systemPrompt || "").includes(
+      "Chat reply lookup rule: if the current message metadata contains `reply to message id: <id>`, always call `get_chat_msg` with that exact `<id>` before answering.",
     ),
   );
 });
