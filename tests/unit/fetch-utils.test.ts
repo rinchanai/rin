@@ -6,18 +6,19 @@ import { pathToFileURL } from "node:url";
 const rootDir = path.resolve(
   path.dirname(new URL(import.meta.url).pathname),
   "..",
+  "..",
 );
 const regexUtils = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "fetch", "regex-utils.js"))
-    .href,
+    .href
 );
 const textUtils = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "fetch", "text-utils.js"))
-    .href,
+    .href
 );
 const htmlUtils = await import(
   pathToFileURL(path.join(rootDir, "dist", "core", "fetch", "html-utils.js"))
-    .href,
+    .href
 );
 
 test("fetch regex utils apply replacements in sequence over normalized text input", () => {
