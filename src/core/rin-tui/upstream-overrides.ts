@@ -4,7 +4,7 @@ import {
   SessionManager,
   SessionSelectorComponent,
 } from "@mariozechner/pi-coding-agent";
-import { Loader, truncateToWidth } from "@mariozechner/pi-tui";
+import { Loader, ProcessTerminal, truncateToWidth } from "@mariozechner/pi-tui";
 
 import { extractMessageText } from "../message-content.js";
 import { listBoundSessions, renameBoundSession } from "../session/factory.js";
@@ -12,6 +12,10 @@ import { listBoundSessions, renameBoundSession } from "../session/factory.js";
 let applied = false;
 const ANSI_DIM = "\u001b[2m";
 const ANSI_RESET = "\u001b[0m";
+const CLEAR_SCROLLBACK_SEQUENCE = "\u001b[3J";
+const PRESERVE_SCROLLBACK_PATCH = Symbol.for(
+  "rin.tui.preserve_scrollback_full_redraw",
+);
 
 function dim(text: string) {
   return `${ANSI_DIM}${text}${ANSI_RESET}`;
@@ -105,6 +109,36 @@ function shouldIgnoreInteractiveSigint(instance: any) {
   return instance?.ui?.stopped === true;
 }
 
+function stripClearScrollback(data: string) {
+  return data.includes(CLEAR_SCROLLBACK_SEQUENCE)
+    ? data.split(CLEAR_SCROLLBACK_SEQUENCE).join("")
+    : data;
+}
+
+function preserveScrollbackOnFullRedraw() {
+  const processTerminalProto: any = ProcessTerminal?.prototype as any;
+  if (
+    !processTerminalProto ||
+    processTerminalProto[PRESERVE_SCROLLBACK_PATCH]
+  ) {
+    return;
+  }
+
+  const originalWrite = processTerminalProto.write;
+  if (typeof originalWrite !== "function") return;
+
+  Object.defineProperty(processTerminalProto, PRESERVE_SCROLLBACK_PATCH, {
+    value: true,
+  });
+  processTerminalProto.write = function writePreservingScrollback(
+    data: unknown,
+  ) {
+    const nextData =
+      typeof data === "string" ? stripClearScrollback(data) : data;
+    return originalWrite.call(this, nextData);
+  };
+}
+
 function createSessionSelectorLoaders(instance: any) {
   const renameSessionIfNamed = async (
     rename: (sessionFilePath: string, nextName: string) => Promise<void> | void,
@@ -158,6 +192,8 @@ function createSessionSelectorLoaders(instance: any) {
 export async function applyRinTuiOverrides() {
   if (applied) return;
   applied = true;
+
+  preserveScrollbackOnFullRedraw();
 
   const footerProto: any = FooterComponent?.prototype as any;
   const interactiveModeProto: any = InteractiveMode?.prototype as any;
