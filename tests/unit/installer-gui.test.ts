@@ -67,6 +67,9 @@ test("installer GUI plan reuses installer plan text and escapes the HTML shell",
 
   const html = gui.buildGuiInstallerHtml();
   assert.match(html, /Rin Installer/);
+  assert.match(html, /Step 1 of 4: choose install target/);
+  assert.match(html, /Step 4 of 4: apply installation/);
+  assert.match(html, /data-next/);
   assert.match(html, /installer:plan/);
   assert.match(html, /installer:models/);
   assert.match(html, /installer:auth:api-key/);

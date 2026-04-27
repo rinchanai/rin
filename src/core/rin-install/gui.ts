@@ -302,58 +302,101 @@ export function buildGuiInstallerHtml() {
   <style>
     :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; background: Canvas; color: CanvasText; }
-    main { max-width: 960px; margin: 0 auto; padding: 24px; }
+    main { max-width: 920px; margin: 0 auto; padding: 24px; }
     h1 { margin-top: 0; }
-    form { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    form { display: grid; gap: 16px; }
     label { display: grid; gap: 6px; font-weight: 600; }
     input, select, button { border-radius: 8px; padding: 10px; font: inherit; }
     button { cursor: pointer; }
-    .wide { grid-column: 1 / -1; }
     pre { white-space: pre-wrap; border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 10px; padding: 12px; overflow: auto; }
     .notice { padding: 12px; border-radius: 10px; background: color-mix(in srgb, Highlight 12%, Canvas); }
+    .steps { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; padding: 0; list-style: none; }
+    .steps li { border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 999px; padding: 6px 10px; }
+    .steps li[aria-current="step"] { background: Highlight; color: HighlightText; }
+    .step { display: none; gap: 12px; }
+    .step[aria-current="true"] { display: grid; }
+    .step-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
   </style>
 </head>
 <body>
   <main>
     <h1>${escapeHtml(title)}</h1>
     <p class="notice">This GUI-first installer runs in the packaged Rin desktop host. It does not expose a browser server or browser fallback.</p>
+    <ol class="steps" aria-label="Installer steps">
+      <li data-step-marker="0" aria-current="step">1. Target</li>
+      <li data-step-marker="1">2. Model</li>
+      <li data-step-marker="2">3. Review</li>
+      <li data-step-marker="3">4. Apply</li>
+    </ol>
     <form id="installer-form">
-      <label>Language
-        <select name="language">
-          <option value="en">English</option>
-          <option value="zh-CN">简体中文</option>
-        </select>
-      </label>
-      <label>Target user
-        <input name="targetUser" value="${escapeHtml(initialPlan.targetUser)}" />
-      </label>
-      <label class="wide">Install directory
-        <input name="installDir" value="${escapeHtml(initialPlan.installDir)}" />
-      </label>
-      <label>Provider
-        <select name="provider"><option value="pending">Loading providers…</option></select>
-      </label>
-      <label>Model
-        <select name="modelId"><option value="pending">Select a provider first</option></select>
-      </label>
-      <label>Thinking level
-        <select name="thinkingLevel"><option value="medium">medium</option></select>
-      </label>
-      <p id="model-status" class="notice wide">Loading local model and provider auth state…</p>
-      <label class="wide">API key / manual token for selected provider
-        <input name="apiKey" type="password" autocomplete="off" placeholder="Leave blank when existing auth is ready" />
-      </label>
-      <button id="save-auth-button" class="wide" type="button">Save provider auth</button>
-      <p id="auth-status" class="notice wide">Use this only in the local desktop installer; tokens are saved to the selected install directory.</p>
-      <label class="wide"><input name="setDefaultTarget" type="checkbox" checked /> Set as the default target for this launcher user</label>
-      <button class="wide" type="submit">Refresh plan</button>
-      <button id="apply-button" class="wide" type="button">Apply installation</button>
-      <p id="apply-status" class="notice wide">Review the plan, then apply when provider auth is ready.</p>
+      <section class="step" data-step="0" aria-current="true">
+        <h2>Step 1 of 4: choose install target</h2>
+        <div class="grid">
+          <label>Language
+            <select name="language">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </label>
+          <label>Target user
+            <input name="targetUser" value="${escapeHtml(initialPlan.targetUser)}" />
+          </label>
+        </div>
+        <label>Install directory
+          <input name="installDir" value="${escapeHtml(initialPlan.installDir)}" />
+        </label>
+        <div class="step-actions">
+          <button type="button" data-next>Continue to model</button>
+        </div>
+      </section>
+      <section class="step" data-step="1">
+        <h2>Step 2 of 4: choose provider and model</h2>
+        <p id="model-status" class="notice">Loading local model and provider auth state…</p>
+        <div class="grid">
+          <label>Provider
+            <select name="provider"><option value="pending">Loading providers…</option></select>
+          </label>
+          <label>Model
+            <select name="modelId"><option value="pending">Select a provider first</option></select>
+          </label>
+          <label>Thinking level
+            <select name="thinkingLevel"><option value="medium">medium</option></select>
+          </label>
+        </div>
+        <label>API key / manual token for selected provider
+          <input name="apiKey" type="password" autocomplete="off" placeholder="Leave blank when existing auth is ready" />
+        </label>
+        <button id="save-auth-button" type="button">Save provider auth</button>
+        <p id="auth-status" class="notice">Use this only in the local desktop installer; tokens are saved to the selected install directory.</p>
+        <div class="step-actions">
+          <button type="button" data-back>Back</button>
+          <button type="button" data-next>Continue to review</button>
+        </div>
+      </section>
+      <section class="step" data-step="2">
+        <h2>Step 3 of 4: review install plan</h2>
+        <label><input name="setDefaultTarget" type="checkbox" checked /> Set as the default target for this launcher user</label>
+        <button type="submit">Refresh plan</button>
+        <h3>Safety boundary</h3>
+        <pre id="safety">${escapeHtml(initialPlan.safety)}</pre>
+        <h3>Install plan</h3>
+        <pre id="plan">${escapeHtml(initialPlan.planText)}</pre>
+        <div class="step-actions">
+          <button type="button" data-back>Back</button>
+          <button type="button" data-next>Continue to apply</button>
+        </div>
+      </section>
+      <section class="step" data-step="3">
+        <h2>Step 4 of 4: apply installation</h2>
+        <p class="notice">Apply only after the target, model, auth state, and plan are correct.</p>
+        <button id="apply-button" type="button">Apply installation</button>
+        <p id="apply-status" class="notice">Review the plan, then apply when provider auth is ready.</p>
+        <div class="step-actions">
+          <button type="button" data-back>Back</button>
+        </div>
+      </section>
     </form>
-    <h2>Safety boundary</h2>
-    <pre id="safety">${escapeHtml(initialPlan.safety)}</pre>
-    <h2>Install plan</h2>
-    <pre id="plan">${escapeHtml(initialPlan.planText)}</pre>
   </main>
   <script>
     const form = document.getElementById('installer-form');
@@ -367,9 +410,24 @@ export function buildGuiInstallerHtml() {
     const applyStatus = document.getElementById('apply-status');
     const saveAuthButton = document.getElementById('save-auth-button');
     const authStatus = document.getElementById('auth-status');
+    const stepPanels = Array.from(document.querySelectorAll('[data-step]'));
+    const stepMarkers = Array.from(document.querySelectorAll('[data-step-marker]'));
     let modelChoices = [];
+    let currentStep = 0;
 
     function send(command) { window.rinDesktop.send(command); }
+
+    function showStep(index) {
+      currentStep = Math.max(0, Math.min(index, stepPanels.length - 1));
+      stepPanels.forEach((panel, panelIndex) => {
+        panel.setAttribute('aria-current', panelIndex === currentStep ? 'true' : 'false');
+      });
+      stepMarkers.forEach((marker, markerIndex) => {
+        if (markerIndex === currentStep) marker.setAttribute('aria-current', 'step');
+        else marker.removeAttribute('aria-current');
+      });
+      if (currentStep >= 2) refreshPlan();
+    }
 
     function setOptions(select, values, selected) {
       select.replaceChildren(...values.map((value) => {
@@ -481,6 +539,8 @@ export function buildGuiInstallerHtml() {
     saveAuthButton.addEventListener('click', () => { saveProviderAuth(); });
     applyButton.addEventListener('click', () => { applyInstallation(); });
     form.addEventListener('submit', refreshPlan);
+    document.querySelectorAll('[data-next]').forEach((button) => button.addEventListener('click', () => { showStep(currentStep + 1); }));
+    document.querySelectorAll('[data-back]').forEach((button) => button.addEventListener('click', () => { showStep(currentStep - 1); }));
     loadModels();
   </script>
 </body>
