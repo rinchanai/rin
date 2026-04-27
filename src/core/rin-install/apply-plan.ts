@@ -4,8 +4,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
-import { type InstallerI18n } from "./i18n.js";
-
 import { type InstalledReleaseInfo } from "../rin-lib/release.js";
 
 export type FinalizeInstallOptions = {
@@ -29,11 +27,9 @@ export async function runFinalizeInstallPlanInChild(
   options: FinalizeInstallOptions,
   message: string,
   deps: {
-    ensureNotCancelled: <T>(value: T | symbol) => T;
-    i18n?: InstallerI18n;
     spawnImpl?: typeof spawn;
     writeStatus?: (message: string) => void;
-  },
+  } = {},
 ) {
   const resultDir = fs.mkdtempSync(path.join(os.tmpdir(), "rin-install-"));
   const resultPath = path.join(resultDir, "result.json");
@@ -71,7 +67,8 @@ export async function runFinalizeInstallPlanInChild(
     if (exitCode !== 0) {
       let errorMessage = "rin_installer_apply_failed";
       try {
-        errorMessage = fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
+        errorMessage =
+          fs.readFileSync(errorPath, "utf8").trim() || errorMessage;
       } catch {}
       throw new Error(errorMessage);
     }

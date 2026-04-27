@@ -236,7 +236,6 @@ export async function startInstaller() {
     needsElevatedWrite
       ? i18n.publishingRuntimeMessageElevated
       : i18n.publishingRuntimeMessage,
-    { ensureNotCancelled, i18n },
   );
   const {
     written,

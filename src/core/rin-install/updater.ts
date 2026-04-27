@@ -93,9 +93,6 @@ export async function startUpdater(deps: {
       ...(deps.release ? { release: deps.release } : {}),
     } satisfies FinalizeInstallOptions,
     "Publishing runtime and refreshing the installed target...",
-    {
-      ensureNotCancelled: deps.ensureNotCancelled,
-    },
   );
 
   const {

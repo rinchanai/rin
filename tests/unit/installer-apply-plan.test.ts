@@ -12,7 +12,7 @@ const rootDir = path.resolve(
 const applyPlan = await import(
   pathToFileURL(
     path.join(rootDir, "dist", "core", "rin-install", "apply-plan.js"),
-  ).href,
+  ).href
 );
 
 test("runFinalizeInstallPlanInChild inherits stdio so sudo prompts stay interactive", async () => {
@@ -27,9 +27,6 @@ test("runFinalizeInstallPlanInChild inherits stdio so sudo prompts stay interact
     },
     "Publishing runtime and writing configuration with elevated permissions...",
     {
-      ensureNotCancelled(value) {
-        return value;
-      },
       writeStatus(message) {
         statuses.push(message);
       },
@@ -58,7 +55,10 @@ test("runFinalizeInstallPlanInChild inherits stdio so sudo prompts stay interact
     "inherit",
     "inherit",
   ]);
-  assert.equal(typeof spawnCalls[0].options.env.RIN_INSTALL_APPLY_PLAN, "string");
+  assert.equal(
+    typeof spawnCalls[0].options.env.RIN_INSTALL_APPLY_PLAN,
+    "string",
+  );
   assert.deepEqual(result, { ok: true });
 });
 
@@ -72,9 +72,6 @@ test("runFinalizeInstallPlanInChild surfaces child error output on failure", asy
       },
       "Publishing runtime...",
       {
-        ensureNotCancelled(value) {
-          return value;
-        },
         writeStatus() {},
         spawnImpl(_command, _args, options) {
           const child = new EventEmitter();
