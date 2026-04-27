@@ -145,6 +145,86 @@ test("terminal turn state baseline marks legacy untracked sessions completed onc
   }
 });
 
+test("terminal turn state baseline preserves unmarked interrupted sessions", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
+  try {
+    const baselineFile = path.join(dir, "data", "baseline.json");
+    const sessionsDir = path.join(dir, "sessions");
+    const assistantToolCall = path.join(
+      sessionsDir,
+      "assistant-tool-call.jsonl",
+    );
+    const toolResultTail = path.join(sessionsDir, "tool-result-tail.jsonl");
+    const userTail = path.join(sessionsDir, "user-tail.jsonl");
+    const completed = path.join(sessionsDir, "completed.jsonl");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.writeFile(
+      assistantToolCall,
+      [
+        JSON.stringify({
+          type: "message",
+          message: { role: "user", content: "run tool" },
+          id: "u1",
+          parentId: null,
+        }),
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "tool-1", name: "bash" }],
+          },
+          id: "a1",
+          parentId: "u1",
+        }),
+        "",
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      toolResultTail,
+      [
+        JSON.stringify({
+          type: "message",
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "tool-2", name: "read" }],
+          },
+          id: "a2",
+          parentId: null,
+        }),
+        JSON.stringify({
+          type: "message",
+          message: { role: "toolResult", toolCallId: "tool-2", content: [] },
+          id: "t2",
+          parentId: "a2",
+        }),
+        "",
+      ].join("\n"),
+    );
+    await fs.writeFile(
+      userTail,
+      `${JSON.stringify({ type: "message", message: { role: "user", content: "continue" }, id: "u3", parentId: null })}\n`,
+    );
+    await fs.writeFile(
+      completed,
+      `${JSON.stringify({ type: "message", message: { role: "assistant", content: "done" }, id: "a4", parentId: null })}\n`,
+    );
+
+    initializeTerminalTurnStateBaseline(sessionsDir, baselineFile);
+
+    assert.equal(readSessionTurnState(assistantToolCall), undefined);
+    assert.equal(readSessionTurnState(toolResultTail), undefined);
+    assert.equal(readSessionTurnState(userTail), undefined);
+    assert.equal(readSessionTurnState(completed)?.status, "completed");
+    assert.deepEqual(listResumableSessionFiles(sessionsDir), [
+      assistantToolCall,
+      toolResultTail,
+      userTail,
+    ]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("terminal turn state baseline ignores malformed lines while preserving the latest valid parent", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rin-turn-state-"));
   try {

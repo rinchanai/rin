@@ -145,6 +145,38 @@ export function listResumableSessionFiles(sessionDir: string): string[] {
   );
 }
 
+function hasToolCallContent(content: unknown) {
+  if (!Array.isArray(content)) return false;
+  return content.some((part) => {
+    if (!part || typeof part !== "object") return false;
+    return (
+      safeString((part as any).type)
+        .trim()
+        .toLowerCase() === "toolcall"
+    );
+  });
+}
+
+function isTerminalLegacyTailEntry(entry: any) {
+  if (entry?.type !== "message") return false;
+  const message = entry?.message;
+  const role = safeString(message?.role).trim();
+  if (role !== "assistant") return false;
+  return !hasToolCallContent(message?.content);
+}
+
+function shouldAppendTerminalBaseline(sessionFile: string) {
+  let lastEntry: any;
+  if (
+    !forEachSessionFileEntry(sessionFile, (entry) => {
+      lastEntry = entry;
+    })
+  ) {
+    return false;
+  }
+  return isTerminalLegacyTailEntry(lastEntry);
+}
+
 function appendTerminalTurnStateEntry(
   sessionFile: string,
   status: TerminalSessionTurnStateStatus,
@@ -185,6 +217,7 @@ export function initializeTerminalTurnStateBaseline(
   const timestamp = new Date().toISOString();
   for (const sessionFile of listSessionFiles(sessionDir)) {
     if (readSessionTurnState(sessionFile)) continue;
+    if (!shouldAppendTerminalBaseline(sessionFile)) continue;
     appendTerminalTurnStateEntry(
       sessionFile,
       "completed",
