@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const rootDir = path.resolve(
@@ -329,6 +330,23 @@ test("createInstallerI18n exposes localized post-install path labels", () => {
   assert.equal(zh.serviceLabelLabel, "\u6807\u7b7e");
   assert.equal(zh.confirmActiveLabel, "\u662f");
   assert.equal(zh.confirmInactiveLabel, "\u5426");
+});
+
+test("installer i18n source keeps localized copy in one display table", () => {
+  const source = readFileSync(
+    path.join(rootDir, "src", "core", "rin-install", "i18n.ts"),
+    "utf8",
+  );
+  assert.equal(
+    (source.match(/const INSTALLER_DISPLAY_COPY =/g) || []).length,
+    1,
+  );
+  assert.equal(source.includes("const local ="), false);
+  assert.equal(source.includes("local({"), false);
+  assert.equal(source.includes("Record<InstallerDisplayLanguage, T>"), false);
+  assert.equal(source.includes("[key: string]"), false);
+  assert.equal(source.includes("zh ?"), false);
+  assert.equal(source.includes("if (zh)"), false);
 });
 
 test("promptProviderSetup reuses complete existing provider config", async () => {
