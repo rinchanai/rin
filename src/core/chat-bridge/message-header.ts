@@ -1,17 +1,24 @@
 import type { BuiltinModuleApi } from "../builtins/host.js";
 
+import { safeString } from "../text-utils.js";
+import {
+  RIN_TUI_AGENT_RUNTIME_ROLE,
+  RIN_TUI_MAINTENANCE_ROLE,
+  RIN_TUI_RPC_FRONTEND_ROLE,
+  RIN_TUI_RUNTIME_ROLE_ENV,
+  type RinTuiRuntimeRole,
+} from "../tui-runtime-env.js";
 import {
   formatPromptContext,
   isPromptContextFormatted,
 } from "./prompt-context.js";
-import { safeString } from "../text-utils.js";
 
-type RuntimeRole = "rpc-frontend" | "maintenance-tui" | "agent-runtime";
-
-function getRuntimeRole(): RuntimeRole {
-  const role = safeString(process.env.RIN_TUI_RUNTIME_ROLE).trim();
-  if (role === "rpc-frontend" || role === "maintenance-tui") return role;
-  return "agent-runtime";
+function getRuntimeRole(): RinTuiRuntimeRole {
+  const role = safeString(process.env[RIN_TUI_RUNTIME_ROLE_ENV]).trim();
+  if (role === RIN_TUI_RPC_FRONTEND_ROLE || role === RIN_TUI_MAINTENANCE_ROLE) {
+    return role;
+  }
+  return RIN_TUI_AGENT_RUNTIME_ROLE;
 }
 
 export default function messageHeaderModule(pi: BuiltinModuleApi) {
@@ -25,7 +32,7 @@ export default function messageHeaderModule(pi: BuiltinModuleApi) {
   pi.on("input", async (event) => {
     if (event.source === "extension") return { action: "continue" };
 
-    if (runtimeRole === "rpc-frontend") {
+    if (runtimeRole === RIN_TUI_RPC_FRONTEND_ROLE) {
       return { action: "continue" };
     }
 

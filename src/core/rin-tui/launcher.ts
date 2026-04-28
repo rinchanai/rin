@@ -8,14 +8,17 @@ import {
   createConfiguredAgentSession,
   resolveRuntimeProfile,
 } from "../rin-lib/runtime.js";
+import {
+  RIN_TUI_MAINTENANCE_MODE_ENV,
+  RIN_TUI_MAINTENANCE_ROLE,
+  RIN_TUI_RPC_FRONTEND_ROLE,
+  RIN_TUI_RUNTIME_ROLE_ENV,
+} from "../tui-runtime-env.js";
 
 import { RinDaemonFrontendClient } from "./rpc-client.js";
 import { RpcInteractiveSession } from "./runtime.js";
 import { createRpcRuntimeHost } from "./runtime-host.js";
 import { applyRinTuiOverrides } from "./upstream-overrides.js";
-
-const MAINTENANCE_MODE_ENV = "RIN_TUI_MAINTENANCE_MODE";
-const RUNTIME_ROLE_ENV = "RIN_TUI_RUNTIME_ROLE";
 
 type TuiInteractiveOptions = Pick<
   InteractiveModeOptions,
@@ -34,7 +37,9 @@ export function formatTuiStartupError(error: unknown) {
 export function shouldStartMaintenanceMode(
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  return /^(1|true|yes)$/i.test(String(env[MAINTENANCE_MODE_ENV] || "").trim());
+  return /^(1|true|yes)$/i.test(
+    String(env[RIN_TUI_MAINTENANCE_MODE_ENV] || "").trim(),
+  );
 }
 
 function startupProfiler() {
@@ -171,9 +176,9 @@ export async function startTui(
 
   const argv = options.argv ?? process.argv.slice(2);
   const maintenanceMode = shouldStartMaintenanceMode();
-  process.env[RUNTIME_ROLE_ENV] = maintenanceMode
-    ? "maintenance-tui"
-    : "rpc-frontend";
+  process.env[RIN_TUI_RUNTIME_ROLE_ENV] = maintenanceMode
+    ? RIN_TUI_MAINTENANCE_ROLE
+    : RIN_TUI_RPC_FRONTEND_ROLE;
   const interactiveOptions = resolveTuiInteractiveOptions(argv);
   profile.mark(maintenanceMode ? "mode=maintenance" : "mode=rpc");
 

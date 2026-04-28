@@ -6,6 +6,12 @@ import {
   targetUserRuntimeEnv,
 } from "../rin-lib/system.js";
 import { PI_AGENT_DIR_ENV, RIN_DIR_ENV } from "../rin-lib/runtime.js";
+import {
+  RIN_TUI_MAINTENANCE_MODE_ENV,
+  RIN_TUI_MAINTENANCE_ROLE,
+  RIN_TUI_RPC_FRONTEND_ROLE,
+  RIN_TUI_RUNTIME_ROLE_ENV,
+} from "../tui-runtime-env.js";
 
 import {
   createTargetExecutionContext,
@@ -15,9 +21,6 @@ import {
   runCommand,
   safeString,
 } from "./shared.js";
-
-const MAINTENANCE_MODE_ENV = "RIN_TUI_MAINTENANCE_MODE";
-const RUNTIME_ROLE_ENV = "RIN_TUI_RUNTIME_ROLE";
 
 export function formatMaintenanceModeNotice(error: unknown) {
   const detail = safeString((error as any)?.message || error).trim();
@@ -84,14 +87,17 @@ export async function resolveTuiLaunchEnvironment(
   try {
     await (deps.ensureDaemonAvailable || ensureDaemonAvailable)(context);
     return {
-      runtimeEnv: { ...runtimeEnv, [RUNTIME_ROLE_ENV]: "rpc-frontend" },
+      runtimeEnv: {
+        ...runtimeEnv,
+        [RIN_TUI_RUNTIME_ROLE_ENV]: RIN_TUI_RPC_FRONTEND_ROLE,
+      },
     };
   } catch (error) {
     return {
       runtimeEnv: {
         ...runtimeEnv,
-        [MAINTENANCE_MODE_ENV]: "1",
-        [RUNTIME_ROLE_ENV]: "maintenance-tui",
+        [RIN_TUI_MAINTENANCE_MODE_ENV]: "1",
+        [RIN_TUI_RUNTIME_ROLE_ENV]: RIN_TUI_MAINTENANCE_ROLE,
       },
       maintenanceModeNotice: formatMaintenanceModeNotice(error),
     };
