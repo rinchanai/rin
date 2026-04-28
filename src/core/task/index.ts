@@ -77,6 +77,23 @@ function wrapAgentPrompt(prompt: string) {
 const createLooseEnumSchema = (...args: Parameters<typeof StringEnum>) =>
   StringEnum(...args) as any;
 
+function formatAllowedValues(
+  values: readonly string[],
+  options = { quote: true },
+) {
+  return values
+    .map((value) => (options.quote ? `\`${value}\`` : value))
+    .join(", ");
+}
+
+function allowedValuesDescription(
+  prefix: string,
+  values: readonly string[],
+  options = { quote: true },
+) {
+  return `${prefix} Allowed values: ${formatAllowedValues(values, options)}.`;
+}
+
 function readTaskSaveDefaults(ctx: unknown): TaskSaveDefaults {
   const session = readSessionMetadata(ctx);
   const sessionName = session.sessionName || undefined;
@@ -271,12 +288,19 @@ const taskSchema = Type.Object({
   ),
   thinkingLevel: Type.Optional(
     createLooseEnumSchema(ALL_THINKING_LEVELS, {
-      description: `Optional thinking level override for agent_prompt tasks. Allowed values: ${ALL_THINKING_LEVELS.join(", ")}.`,
+      description: allowedValuesDescription(
+        "Optional thinking level override for agent_prompt tasks.",
+        ALL_THINKING_LEVELS,
+        { quote: false },
+      ),
     }),
   ),
   trigger: Type.Object({
     kind: createLooseEnumSchema(SCHEDULED_TASK_TRIGGER_KINDS, {
-      description: `Trigger kind. Allowed values: ${SCHEDULED_TASK_TRIGGER_KINDS.map((kind) => `\`${kind}\``).join(", ")}.`,
+      description: allowedValuesDescription(
+        "Trigger kind.",
+        SCHEDULED_TASK_TRIGGER_KINDS,
+      ),
     }),
     intervalMs: Type.Optional(
       Type.Number({
@@ -331,7 +355,10 @@ const taskSchema = Type.Object({
   ),
   target: Type.Object({
     kind: createLooseEnumSchema(SCHEDULED_TASK_TARGET_KINDS, {
-      description: `Task target kind. Allowed values: ${SCHEDULED_TASK_TARGET_KINDS.map((kind) => `\`${kind}\``).join(", ")}.`,
+      description: allowedValuesDescription(
+        "Task target kind.",
+        SCHEDULED_TASK_TARGET_KINDS,
+      ),
     }),
     prompt: Type.Optional(
       Type.String({
@@ -354,7 +381,10 @@ const getTaskSchema = Type.Object({
 
 const manageTaskSchema = Type.Object({
   action: createLooseEnumSchema(SCHEDULED_TASK_MANAGE_ACTIONS, {
-    description: `Task action. Allowed values: ${SCHEDULED_TASK_MANAGE_ACTIONS.map((action) => `\`${action}\``).join(", ")}.`,
+    description: allowedValuesDescription(
+      "Task action.",
+      SCHEDULED_TASK_MANAGE_ACTIONS,
+    ),
   }),
   taskId: Type.String({
     description: "Task id.",
