@@ -329,7 +329,10 @@ test("export-bootstrap-branch script exports bootstrap payload", () => {
     for (const relativePath of [
       "install.sh",
       "update.sh",
+      "install.ps1",
+      "update.ps1",
       path.join("scripts", "bootstrap-entrypoint.sh"),
+      path.join("scripts", "bootstrap-entrypoint.ps1"),
       "release-manifest.json",
       path.join("docs", "rin", "CHANGELOG.md"),
       "README.md",
@@ -345,8 +348,16 @@ test("export-bootstrap-branch script exports bootstrap payload", () => {
       path.join(tempDir, "install.sh"),
       "utf8",
     );
+    const installPowerShellWrapper = fs.readFileSync(
+      path.join(tempDir, "install.ps1"),
+      "utf8",
+    );
     assert.match(readme, /bootstrap branch/);
     assert.match(installWrapper, /^DEFAULT_BOOTSTRAP_BRANCH=bootstrap$/m);
+    assert.match(
+      installPowerShellWrapper,
+      /^\$defaultBootstrapBranch = "bootstrap"$/m,
+    );
     assert.equal(fs.existsSync(path.join(tempDir, "stale.txt")), false);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

@@ -16,14 +16,17 @@ Rin uses a four-channel release model.
 - `bootstrap`: dedicated branch that only stores:
   - `install.sh`
   - `update.sh`
+  - `install.ps1`
+  - `update.ps1`
   - `scripts/bootstrap-entrypoint.sh`
+  - `scripts/bootstrap-entrypoint.ps1`
   - `release-manifest.json`
   - `docs/rin/CHANGELOG.md`
 
 ## User-facing rules
 
 - stable install and update resolve through the published npm package by default; they do not fetch GitHub source archives
-- `./install.sh` and `rin update` target stable by default
+- `./install.sh`, `./install.ps1`, and `rin update` target stable by default
 - `--beta` selects the current weekly beta candidate
 - `--nightly` selects the current nightly build
 - `--git` with no suffix means `main`

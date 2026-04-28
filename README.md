@@ -48,17 +48,24 @@ The public bootstrap branch now only carries the install and update entry wrappe
 
 ### Windows
 
-Install from PowerShell or Windows Terminal with Node.js and npm available:
+Install from PowerShell or Windows Terminal with Node.js and npm available, no clone required:
 
 ```powershell
-npm exec --yes --package @rinchanai/rin -- rin-install
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.ps1)))
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.ps1))) --beta
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.ps1))) --nightly
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.ps1))) --git
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.ps1))) --git main
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.ps1))) --git deadbeef
 ```
+
+The Windows PowerShell bootstrap follows the same release-channel contract as `install.sh`: stable launches the published npm installer, while `--beta`, `--nightly`, and `--git` download the selected source archive, build it locally, and run its installer without cloning the repository.
 
 On Windows, the interactive installer opens the GUI installer by default. It walks through language, target user, install directory, provider/model/auth, plan review, and final apply. If protected writes need confirmation, the GUI shows a one-line terminal handoff command instead of asking for privileged credentials inside the window.
 
 After installation, Windows gets a GUI-first setup: the default `rin` launch opens the desktop GUI, and the installer writes direct GUI launchers plus a user-scoped Startup launcher for the daemon. Use `rin gui` explicitly if you want to open the GUI from a terminal, or `rin-install --tui` / `rin-install --no-gui` if you need the terminal installer.
 
-If you already have the repo locally, the bundled `install.sh` wrapper runs the same release-selection flow:
+If you already have the repo locally, the bundled `install.sh` and `install.ps1` wrappers run the same release-selection flow:
 
 ```bash
 ./install.sh              # stable release (default)
@@ -67,6 +74,15 @@ If you already have the repo locally, the bundled `install.sh` wrapper runs the 
 ./install.sh --git        # main
 ./install.sh --git main
 ./install.sh --git deadbeef
+```
+
+```powershell
+.\install.ps1
+.\install.ps1 --beta
+.\install.ps1 --nightly
+.\install.ps1 --git
+.\install.ps1 --git main
+.\install.ps1 --git deadbeef
 ```
 
 Open Rin:
