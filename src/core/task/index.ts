@@ -14,7 +14,12 @@ import {
 import { requestDaemonCommand } from "../rin-daemon/client.js";
 import { createCronTaskId } from "../rin-daemon/cron-utils.js";
 import type { CronTaskInput, CronTaskRecord } from "../rin-daemon/cron.js";
-import { SCHEDULED_TASK_SESSION_MODES } from "../scheduled-task-options.js";
+import {
+  DEFAULT_SCHEDULED_TASK_SESSION_MODE,
+  SCHEDULED_TASK_SESSION_MODES,
+  SCHEDULED_TASK_TARGET_KINDS,
+  SCHEDULED_TASK_TRIGGER_KINDS,
+} from "../scheduled-task-options.js";
 import { readSessionMetadata } from "../session/metadata.js";
 
 const NO_SCHEDULED_TASKS_TEXT = "No scheduled tasks.";
@@ -99,7 +104,9 @@ function buildTaskTarget(target: CronTaskInput["target"]) {
 
 function buildTaskForSave(input: CronTaskInput, defaults: TaskSaveDefaults) {
   const taskId = String(input.id || "").trim() || createCronTaskId();
-  const session = input.session ?? { mode: "ephemeral" as const };
+  const session = input.session ?? {
+    mode: DEFAULT_SCHEDULED_TASK_SESSION_MODE,
+  };
   const chatKey =
     input.chatKey !== undefined ? input.chatKey : defaults.chatKey;
   return {
@@ -266,9 +273,8 @@ const taskSchema = Type.Object({
     }),
   ),
   trigger: Type.Object({
-    kind: createLooseEnumSchema(["interval", "cron", "once"] as const, {
-      description:
-        "Trigger kind. Allowed values: `interval`, `cron`, or `once`.",
+    kind: createLooseEnumSchema(SCHEDULED_TASK_TRIGGER_KINDS, {
+      description: `Trigger kind. Allowed values: ${SCHEDULED_TASK_TRIGGER_KINDS.map((kind) => `\`${kind}\``).join(", ")}.`,
     }),
     intervalMs: Type.Optional(
       Type.Number({
@@ -322,9 +328,8 @@ const taskSchema = Type.Object({
     }),
   ),
   target: Type.Object({
-    kind: createLooseEnumSchema(["agent_prompt", "shell_command"] as const, {
-      description:
-        "Task target kind. Allowed values: `agent_prompt` or `shell_command`.",
+    kind: createLooseEnumSchema(SCHEDULED_TASK_TARGET_KINDS, {
+      description: `Task target kind. Allowed values: ${SCHEDULED_TASK_TARGET_KINDS.map((kind) => `\`${kind}\``).join(", ")}.`,
     }),
     prompt: Type.Optional(
       Type.String({

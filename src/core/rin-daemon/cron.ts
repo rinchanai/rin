@@ -14,6 +14,8 @@ import { shellQuote } from "../rin-lib/system.js";
 import {
   isScheduledTaskSessionMode,
   type ScheduledTaskSessionMode,
+  type ScheduledTaskTargetKind,
+  type ScheduledTaskTriggerKind,
 } from "../scheduled-task-options.js";
 import { getManagedTaskSessionFile } from "../session/managed-paths.js";
 import { executeCronTask } from "./cron-execution.js";
@@ -28,27 +30,27 @@ import {
 
 export type CronTaskTarget =
   | {
-      kind: "agent_prompt";
+      kind: Extract<ScheduledTaskTargetKind, "agent_prompt">;
       prompt: string;
     }
   | {
-      kind: "shell_command";
+      kind: Extract<ScheduledTaskTargetKind, "shell_command">;
       command: string;
     };
 
 export type CronTaskTrigger =
   | {
-      kind: "interval";
+      kind: Extract<ScheduledTaskTriggerKind, "interval">;
       intervalMs: number;
       startAt?: string;
     }
   | {
-      kind: "cron";
+      kind: Extract<ScheduledTaskTriggerKind, "cron">;
       expression: string;
       timezone?: "local";
     }
   | {
-      kind: "once";
+      kind: Extract<ScheduledTaskTriggerKind, "once">;
       runAt: string;
     };
 
