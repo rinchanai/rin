@@ -1,3 +1,4 @@
+[CmdletBinding(PositionalBinding = $false)]
 param(
   [ValidateSet("install", "update")]
   [string]$Mode = "install",
