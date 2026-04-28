@@ -347,6 +347,10 @@ test("installer i18n source keeps localized copy in one display table", () => {
   assert.equal(source.includes("[key: string]"), false);
   assert.equal(source.includes("zh ?"), false);
   assert.equal(source.includes("if (zh)"), false);
+  assert.equal(
+    source.includes("buildInstallSafetyBoundaryText() {\n      return ["),
+    false,
+  );
 });
 
 test("promptProviderSetup reuses complete existing provider config", async () => {

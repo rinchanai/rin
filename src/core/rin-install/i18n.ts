@@ -152,6 +152,7 @@ type InstallerDisplayCopy = {
   minecraftServerNameMessage: string;
   minecraftTokenMessage: string;
   minecraftDetail: (url: string) => string;
+  installSafetyBoundaryLines: string[];
   buildInstallSafetyBoundaryText: (this: InstallerDisplayCopy) => string;
   buildInstallPlanText: (
     this: InstallerDisplayCopy,
@@ -380,25 +381,26 @@ const INSTALLER_DISPLAY_COPY = {
     minecraftTokenMessage:
       "Enter the QueQiao access token if required. Leave blank otherwise.",
     minecraftDetail: (url: string) => `Chat bridge mode: ws · endpoint: ${url}`,
+    installSafetyBoundaryLines: [
+      "Rin safety boundary:",
+      "- Rin always runs in YOLO mode.",
+      "- There is no sandbox for shell/file actions.",
+      "- Rin acts with the full user-level permissions of the selected system account.",
+      "- It may read files, modify files, run commands, and access network resources available to that account.",
+      "- Prompts, tool outputs, file contents, memory context, and search results may be sent to the active model/provider, so sensitive data may be exposed.",
+      "",
+      "Possible extra token overhead beyond your visible chat turns:",
+      "- memory prompt blocks injected into normal turns",
+      "- the first-run /init onboarding conversation",
+      "- memory extraction during session shutdown or `/new` handoff",
+      "- episode synthesis during session shutdown or `/new` handoff",
+      "- context compaction / summarization when the session grows large",
+      "- subagent runs when the assistant chooses or is asked to delegate work",
+      "- scheduled task / chat-bridge-triggered agent runs that create their own turns",
+      "- web-search result text added into the model context when search is used",
+    ],
     buildInstallSafetyBoundaryText() {
-      return [
-        "Rin safety boundary:",
-        "- Rin always runs in YOLO mode.",
-        "- There is no sandbox for shell/file actions.",
-        "- Rin acts with the full user-level permissions of the selected system account.",
-        "- It may read files, modify files, run commands, and access network resources available to that account.",
-        "- Prompts, tool outputs, file contents, memory context, and search results may be sent to the active model/provider, so sensitive data may be exposed.",
-        "",
-        "Possible extra token overhead beyond your visible chat turns:",
-        "- memory prompt blocks injected into normal turns",
-        "- the first-run /init onboarding conversation",
-        "- memory extraction during session shutdown or `/new` handoff",
-        "- episode synthesis during session shutdown or `/new` handoff",
-        "- context compaction / summarization when the session grows large",
-        "- subagent runs when the assistant chooses or is asked to delegate work",
-        "- scheduled task / chat-bridge-triggered agent runs that create their own turns",
-        "- web-search result text added into the model context when search is used",
-      ].join("\n");
+      return this.installSafetyBoundaryLines.join("\n");
     },
     buildInstallPlanText(options) {
       const skippedForNow = "skipped for now";
@@ -660,25 +662,26 @@ const INSTALLER_DISPLAY_COPY = {
       "如果你希望聊天日志显示 Minecraft 服务器名称，请输入；否则留空。",
     minecraftTokenMessage: "如果需要，请输入 QueQiao access token；否则留空。",
     minecraftDetail: (url: string) => `聊天接入模式：ws · 端点：${url}`,
+    installSafetyBoundaryLines: [
+      "Rin 安全边界：",
+      "- Rin 始终运行在 YOLO 模式。",
+      "- shell / 文件操作没有沙箱。",
+      "- Rin 将以所选系统账号的完整用户级权限运行。",
+      "- 它可能读取文件、修改文件、执行命令，并访问该账号可用的网络资源。",
+      "- 提示词、工具输出、文件内容、记忆上下文与搜索结果可能会发送给当前模型/提供商，因此敏感数据可能暴露。",
+      "",
+      "除可见聊天轮次外，可能产生额外 Token 开销：",
+      "- 正常轮次中注入的记忆提示块",
+      "- 首次运行的 /init 引导对话",
+      "- 会话关闭或 `/new` 交接时的记忆提取",
+      "- 会话关闭或 `/new` 交接时的 episode 综合",
+      "- 会话上下文过大时的压缩 / 总结",
+      "- assistant 主动选择或按要求委派的 subagent 运行",
+      "- scheduled task / 聊天接入触发的 agent 运行",
+      "- 使用 web search 时加入模型上下文的搜索结果文本",
+    ],
     buildInstallSafetyBoundaryText() {
-      return [
-        "Rin 安全边界：",
-        "- Rin 始终运行在 YOLO 模式。",
-        "- shell / 文件操作没有沙箱。",
-        "- Rin 将以所选系统账号的完整用户级权限运行。",
-        "- 它可能读取文件、修改文件、执行命令，并访问该账号可用的网络资源。",
-        "- 提示词、工具输出、文件内容、记忆上下文与搜索结果可能会发送给当前模型/提供商，因此敏感数据可能暴露。",
-        "",
-        "除可见聊天轮次外，可能产生额外 Token 开销：",
-        "- 正常轮次中注入的记忆提示块",
-        "- 首次运行的 /init 引导对话",
-        "- 会话关闭或 `/new` 交接时的记忆提取",
-        "- 会话关闭或 `/new` 交接时的 episode 综合",
-        "- 会话上下文过大时的压缩 / 总结",
-        "- assistant 主动选择或按要求委派的 subagent 运行",
-        "- scheduled task / 聊天接入触发的 agent 运行",
-        "- 使用 web search 时加入模型上下文的搜索结果文本",
-      ].join("\n");
+      return this.installSafetyBoundaryLines.join("\n");
     },
     buildInstallPlanText(options) {
       const skippedForNow = "暂不设置";
