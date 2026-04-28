@@ -1,6 +1,14 @@
 param(
   [ValidateSet("install", "update")]
   [string]$Mode = "install",
+  [switch]$Stable,
+  [switch]$Beta,
+  [switch]$Nightly,
+  [switch]$Git,
+  [string]$Branch,
+  [string]$Version,
+  [Alias("h")]
+  [switch]$Help,
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$RemainingArgs
 )
@@ -40,6 +48,19 @@ $version = ""
 $gitSelector = ""
 $explicitChannel = ""
 $expectGitSelector = $false
+
+function Build-ParsedArgs {
+  $args = @()
+  if ($Stable) { $args += "--stable" }
+  if ($Beta) { $args += "--beta" }
+  if ($Nightly) { $args += "--nightly" }
+  if ($Git) { $args += "--git" }
+  if ($Branch) { $args += @("--branch", $Branch) }
+  if ($Version) { $args += @("--version", $Version) }
+  if ($Help) { $args += "--help" }
+  $args += $RemainingArgs
+  return $args
+}
 
 function Say([string]$Message) {
   Write-Host "[$prefix] $Message"
@@ -222,7 +243,8 @@ function Set-Release-Env($Release) {
 }
 
 try {
-  Parse-Args $RemainingArgs
+  $parsedArgs = Build-ParsedArgs
+  Parse-Args $parsedArgs
   Say "Fetching release manifest"
   Fetch-Manifest
   $release = Resolve-Release
