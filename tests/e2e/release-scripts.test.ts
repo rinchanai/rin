@@ -362,10 +362,18 @@ test("export-bootstrap-branch script exports bootstrap payload", () => {
       installPowerShellWrapper,
       /^\$defaultBootstrapBranch = "bootstrap"$/m,
     );
+    assert.match(
+      installPowerShellWrapper,
+      /\[CmdletBinding\(PositionalBinding = \$false\)\]/,
+    );
     assert.match(installPowerShellWrapper, /\[switch\]\$Git/);
     assert.match(
       installPowerShellWrapper,
       /if \(\$Git\) \{ \$args \+= "--git" \}/,
+    );
+    assert.match(
+      bootstrapPowerShell,
+      /\[CmdletBinding\(PositionalBinding = \$false\)\]/,
     );
     assert.match(bootstrapPowerShell, /\[switch\]\$Git/);
     assert.match(bootstrapPowerShell, /if \(\$Git\) \{ \$args \+= "--git" \}/);
