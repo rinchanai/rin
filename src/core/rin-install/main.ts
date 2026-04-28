@@ -22,8 +22,8 @@ import {
   buildFinalRequirements,
   buildInstallPlanText,
   buildInstallSafetyBoundaryText,
-  buildPlainInstallerSection,
   buildPostInstallInitExitText,
+  wrapInstallerNoteText,
   describeInstallDirState,
   promptChatSetup,
   promptDefaultTargetUser,
@@ -132,9 +132,27 @@ export async function startInstaller() {
   const currentUser = detectCurrentUser();
   const allUsers = listSystemUsers();
   intro(i18n.introTitle);
-  note(buildInstallSafetyBoundaryText(i18n), i18n.safetyBoundaryTitle);
+  const localizedConfirm: typeof confirm = (options) =>
+    confirm({
+      active: i18n.confirmActiveLabel,
+      inactive: i18n.confirmInactiveLabel,
+      ...options,
+    });
 
-  const promptApi = { ensureNotCancelled, select, text, confirm };
+  note(
+    wrapInstallerNoteText(
+      buildInstallSafetyBoundaryText(i18n),
+      process.stderr.columns,
+    ),
+    i18n.safetyBoundaryTitle,
+  );
+
+  const promptApi = {
+    ensureNotCancelled,
+    select,
+    text,
+    confirm: localizedConfirm,
+  };
   const target = await promptTargetInstall(
     promptApi,
     currentUser,
@@ -161,11 +179,10 @@ export async function startInstaller() {
     i18n,
   );
   note(installDirNote.text, installDirNote.title);
-  const setDefaultTarget = await promptDefaultTargetUser(
-    promptApi,
-    targetUser,
-    i18n,
-  );
+  const setDefaultTarget =
+    targetUser === currentUser
+      ? false
+      : await promptDefaultTargetUser(promptApi, targetUser, i18n);
 
   const { provider, modelId, thinkingLevel, authResult } =
     await promptProviderSetup(promptApi, installDir, readJsonFile, {}, i18n);
@@ -174,9 +191,8 @@ export async function startInstaller() {
     i18n,
   );
 
-  process.stderr.write(
-    `${buildPlainInstallerSection(
-      i18n.installChoicesTitle,
+  note(
+    wrapInstallerNoteText(
       buildInstallPlanText(
         {
           currentUser,
@@ -193,7 +209,9 @@ export async function startInstaller() {
         },
         i18n,
       ),
-    )}\n\n`,
+      process.stderr.columns,
+    ),
+    i18n.installChoicesTitle,
   );
 
   const ownership = describeOwnership(targetUser, installDir);
@@ -217,8 +235,11 @@ export async function startInstaller() {
     i18n,
   );
   const shouldProceed = ensureNotCancelled(
-    await confirm({
-      message: i18n.finalizeInstallationMessage(finalRequirements),
+    await localizedConfirm({
+      message: wrapInstallerNoteText(
+        i18n.finalizeInstallationMessage(finalRequirements),
+        process.stderr.columns,
+      ),
       initialValue: true,
     }),
   );
