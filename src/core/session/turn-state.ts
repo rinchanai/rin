@@ -109,7 +109,7 @@ export function readSessionTurnState(
   return readSessionTurnStateDetails(sessionFile)?.latest;
 }
 
-export function shouldResumeInterruptedTurn(
+export function shouldContinueInterruptedTurn(
   sessionFile: string,
   options?: { terminalBaselineTimestamp?: string },
 ) {
@@ -155,12 +155,12 @@ export function listSessionFiles(sessionDir: string): string[] {
   return result.sort();
 }
 
-export function listInterruptedTurnSessionFiles(
+export function listContinuableInterruptedTurnSessionFiles(
   sessionDir: string,
   options?: { terminalBaselineTimestamp?: string },
 ): string[] {
   return listSessionFiles(sessionDir).filter((sessionFile) =>
-    shouldResumeInterruptedTurn(sessionFile, options),
+    shouldContinueInterruptedTurn(sessionFile, options),
   );
 }
 

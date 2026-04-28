@@ -375,7 +375,7 @@ export class WorkerPool {
     return Array.from(restorable.values());
   }
 
-  restoreSessionWorker(item: { sessionFile?: string; resumeTurn?: boolean }) {
+  restoreSessionWorker(item: { sessionFile?: string }) {
     const selector = sessionSelectorFromState(item);
     if (!selector.sessionFile) return;
     const worker = this.createWorker();
@@ -386,12 +386,31 @@ export class WorkerPool {
           worker,
           createSwitchSessionCommand(selector.sessionFile),
         );
-        if (item?.resumeTurn) {
-          await this.sendInternalCommand(worker, {
-            type: "resume_interrupted_turn",
-            source: "daemon-restart",
-          });
-        }
+      } catch {
+        this.destroyWorker(worker);
+      }
+    })().catch(() => {});
+    return worker;
+  }
+
+  continueInterruptedTurnSessionWorker(item: {
+    sessionFile?: string;
+    source?: string;
+  }) {
+    const selector = sessionSelectorFromState(item);
+    if (!selector.sessionFile) return;
+    const worker = this.createWorker();
+    this.setWorkerSessionRefs(worker, selector);
+    void (async () => {
+      try {
+        await this.sendInternalCommand(
+          worker,
+          createSwitchSessionCommand(selector.sessionFile),
+        );
+        await this.sendInternalCommand(worker, {
+          type: "resume_interrupted_turn",
+          source: item.source || "daemon-restart",
+        });
       } catch {
         this.destroyWorker(worker);
       }

@@ -7,9 +7,9 @@ import path from "node:path";
 import {
   appendSessionTurnState,
   initializeTerminalTurnStateBaseline,
-  listInterruptedTurnSessionFiles,
+  listContinuableInterruptedTurnSessionFiles,
   readSessionTurnState,
-  shouldResumeInterruptedTurn,
+  shouldContinueInterruptedTurn,
 } from "../../src/core/session/turn-state.js";
 
 test("session turn state uses the latest durable marker", async () => {
@@ -37,7 +37,7 @@ test("session turn state uses the latest durable marker", async () => {
       status: "completed",
       timestamp: "2",
     });
-    assert.equal(shouldResumeInterruptedTurn(sessionFile), false);
+    assert.equal(shouldContinueInterruptedTurn(sessionFile), false);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -104,13 +104,13 @@ test("session turn state treats missing, active, or post-terminal user tails as 
       ].join("\n"),
     );
 
-    assert.deepEqual(listInterruptedTurnSessionFiles(dir), [
+    assert.deepEqual(listContinuableInterruptedTurnSessionFiles(dir), [
       active,
       completedWithUserTail,
       unmarked,
     ]);
     assert.equal(
-      shouldResumeInterruptedTurn(completedWithAssistantTail),
+      shouldContinueInterruptedTurn(completedWithAssistantTail),
       false,
     );
   } finally {
@@ -141,12 +141,12 @@ test("terminal turn state baseline leaves legacy sessions recoverable without mu
 
     assert.equal(readSessionTurnState(legacy), undefined);
     assert.equal(readSessionTurnState(active)?.status, "active");
-    assert.deepEqual(listInterruptedTurnSessionFiles(path.dirname(legacy)), [
-      active,
-      legacy,
-    ]);
     assert.deepEqual(
-      listInterruptedTurnSessionFiles(path.dirname(legacy), {
+      listContinuableInterruptedTurnSessionFiles(path.dirname(legacy)),
+      [active, legacy],
+    );
+    assert.deepEqual(
+      listContinuableInterruptedTurnSessionFiles(path.dirname(legacy), {
         terminalBaselineTimestamp: baselineTimestamp,
       }),
       [active],
@@ -237,7 +237,7 @@ test("terminal turn state baseline preserves unmarked interrupted turns", async 
     assert.equal(readSessionTurnState(userTail), undefined);
     assert.equal(readSessionTurnState(completed), undefined);
     assert.deepEqual(
-      listInterruptedTurnSessionFiles(sessionsDir, {
+      listContinuableInterruptedTurnSessionFiles(sessionsDir, {
         terminalBaselineTimestamp: baselineTimestamp,
       }),
       [assistantToolCall, toolResultTail, userTail],
@@ -281,7 +281,7 @@ test("terminal turn state baseline ignores malformed lines when classifying lega
 
     assert.equal(await fs.readFile(legacy, "utf8"), legacyBefore);
     assert.deepEqual(
-      listInterruptedTurnSessionFiles(path.dirname(legacy), {
+      listContinuableInterruptedTurnSessionFiles(path.dirname(legacy), {
         terminalBaselineTimestamp: baselineTimestamp,
       }),
       [],
@@ -331,9 +331,11 @@ test("terminal baseline markers classify by the previous session tail", async ()
       ].join("\n"),
     );
 
-    assert.equal(shouldResumeInterruptedTurn(completed), false);
-    assert.equal(shouldResumeInterruptedTurn(interrupted), true);
-    assert.deepEqual(listInterruptedTurnSessionFiles(dir), [interrupted]);
+    assert.equal(shouldContinueInterruptedTurn(completed), false);
+    assert.equal(shouldContinueInterruptedTurn(interrupted), true);
+    assert.deepEqual(listContinuableInterruptedTurnSessionFiles(dir), [
+      interrupted,
+    ]);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
