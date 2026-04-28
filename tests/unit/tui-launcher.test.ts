@@ -54,25 +54,18 @@ test("tui launcher resolves interactive startup options", () => {
   );
 });
 
-test("tui launcher suppresses its startup separator when quiet startup is enabled", () => {
+test("tui launcher prints its startup separator independently of startup verbosity", () => {
   const quietSession = {
     settingsManager: {
       getQuietStartup: () => true,
     },
   };
-  const loudSession = {
-    settingsManager: {
-      getQuietStartup: () => false,
-    },
-  };
 
-  assert.equal(launcher.shouldPrintStartupSeparator(quietSession), false);
-  assert.equal(launcher.shouldPrintStartupSeparator(loudSession), true);
+  assert.equal(launcher.shouldPrintStartupSeparator(quietSession), true);
   assert.equal(
-    launcher.shouldPrintStartupSeparator(quietSession, { verbose: true }),
+    launcher.shouldPrintStartupSeparator(undefined, { verbose: false }),
     true,
   );
-  assert.equal(launcher.shouldPrintStartupSeparator({}), true);
 });
 
 test("tui launcher formats daemon startup socket failures with doctor/reopen guidance", () => {
