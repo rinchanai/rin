@@ -1,6 +1,10 @@
 import os from "node:os";
 import { spawn } from "node:child_process";
 
+import {
+  buildDesktopHostLaunch,
+  type DesktopHostLaunch,
+} from "../rin-gui/host-launch.js";
 import { escapeHtml } from "../rin-gui/web-assets.js";
 import { releaseInfoFromEnv } from "../rin-lib/release.js";
 import {
@@ -57,27 +61,16 @@ export type GuiInstallerFinalizePlan = {
   finalRequirements: string[];
 };
 
-export type GuiInstallerHostLaunch = {
-  command: string;
-  args: string[];
-};
-
-const DEFAULT_INSTALLER_DESKTOP_HOST = "rin-desktop-host";
-
-function splitHostCommand(value: string) {
-  return value.trim().split(/\s+/).filter(Boolean);
-}
+export type GuiInstallerHostLaunch = DesktopHostLaunch;
 
 export function buildGuiInstallerHostLaunch(
   env: NodeJS.ProcessEnv = process.env,
 ): GuiInstallerHostLaunch {
-  const parts = splitHostCommand(
-    env.RIN_INSTALLER_GUI_HOST ||
-      env.RIN_GUI_NATIVE_HOST ||
-      DEFAULT_INSTALLER_DESKTOP_HOST,
+  return buildDesktopHostLaunch(
+    env,
+    ["RIN_INSTALLER_GUI_HOST", "RIN_GUI_NATIVE_HOST"],
+    ["--stdio", "--installer"],
   );
-  const command = parts.shift() || DEFAULT_INSTALLER_DESKTOP_HOST;
-  return { command, args: [...parts, "--stdio", "--installer"] };
 }
 
 export function shouldStartGuiInstaller(

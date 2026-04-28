@@ -5,28 +5,19 @@ import { spawn } from "node:child_process";
 
 import { buildGuiInstallerHtml } from "../rin-install/gui.js";
 import type { RinDaemonFrontendClient } from "../rin-tui/rpc-client.js";
+import {
+  buildDesktopHostLaunch,
+  type DesktopHostLaunch,
+} from "./host-launch.js";
 
-export type NativeDesktopHostLaunch = {
-  command: string;
-  args: string[];
-};
+export type NativeDesktopHostLaunch = DesktopHostLaunch;
 
 export type ElectronDesktopHostSurface = "chat" | "installer";
-
-const DEFAULT_NATIVE_DESKTOP_HOST = "rin-desktop-host";
-
-function splitHostCommand(value: string) {
-  return value.trim().split(/\s+/).filter(Boolean);
-}
 
 export function buildNativeDesktopHostLaunch(
   env: NodeJS.ProcessEnv = process.env,
 ): NativeDesktopHostLaunch {
-  const parts = splitHostCommand(
-    env.RIN_GUI_NATIVE_HOST || DEFAULT_NATIVE_DESKTOP_HOST,
-  );
-  const command = parts.shift() || DEFAULT_NATIVE_DESKTOP_HOST;
-  return { command, args: [...parts, "--stdio"] };
+  return buildDesktopHostLaunch(env, ["RIN_GUI_NATIVE_HOST"], ["--stdio"]);
 }
 
 function frontendEventText(event: any) {
