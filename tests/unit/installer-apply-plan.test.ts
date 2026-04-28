@@ -15,6 +15,38 @@ const applyPlan = await import(
   ).href
 );
 
+test("installer apply-plan writes a private terminal handoff plan and command", () => {
+  const writes = [];
+  const chmods = [];
+  const planPath = applyPlan.writeFinalizeInstallPlanFile(
+    { currentUser: "alice", targetUser: "bob", installDir: "/srv/rin" },
+    {
+      tmpdir: () => "/tmp",
+      mkdtempSync(prefix) {
+        assert.equal(prefix, "/tmp/rin-install-plan-");
+        return "/tmp/rin-install-plan-demo";
+      },
+      writeFileSync(filePath, value, encoding) {
+        writes.push({ filePath, value, encoding });
+      },
+      chmodSync(filePath, mode) {
+        chmods.push({ filePath, mode });
+      },
+    },
+  );
+  assert.equal(planPath, "/tmp/rin-install-plan-demo/apply-plan.json");
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].value, /"targetUser": "bob"/);
+  assert.deepEqual(chmods, [{ filePath: planPath, mode: 0o600 }]);
+  assert.match(
+    applyPlan.buildFinalizeInstallPlanCommand(
+      planPath,
+      "/opt/rin install/main.js",
+    ),
+    /^RIN_INSTALL_APPLY_PLAN_FILE='\/tmp\/rin-install-plan-demo\/apply-plan.json' '.+' '\/opt\/rin install\/main.js'$/,
+  );
+});
+
 test("runFinalizeInstallPlanInChild inherits stdio so sudo prompts stay interactive", async () => {
   const statuses = [];
   const spawnCalls = [];

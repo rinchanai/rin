@@ -14,11 +14,13 @@
     "rin": "dist/app/rin/main.js",
     "rin-daemon": "dist/app/rin-daemon/daemon.js",
     "rin-tui": "dist/app/rin-tui/main.js",
-    "rin-install": "dist/app/rin-install/main.js"
+    "rin-gui": "dist/app/rin-gui/main.js",
+    "rin-install": "dist/app/rin-install/main.js",
+    "rin-desktop-host": "dist/app/rin-desktop-host/main.js"
   },
   "scripts": {
     "build:core": "rm -rf dist && tsc -p tsconfig.json --pretty false",
-    "build": "npm run build:core && chmod +x dist/app/rin/main.js dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-install/main.js",
+    "build": "npm run build:core && chmod +x dist/app/rin/main.js dist/app/rin-daemon/daemon.js dist/app/rin-daemon/worker.js dist/app/rin-tui/main.js dist/app/rin-gui/main.js dist/app/rin-desktop-host/main.js dist/app/rin-install/main.js",
     "format:check": "node scripts/run-format-check.mjs",
     "sync:upstreams": "node scripts/sync-upstreams.mjs",
     "sync:pi-docs": "node scripts/sync-upstreams.mjs pi",
@@ -50,6 +52,7 @@
     "cli-highlight": "^2.1.11",
     "diff": "^8.0.4",
     "discord.js": "^14.26.3",
+    "electron": "^41.3.0",
     "extract-zip": "^2.0.1",
     "file-type": "^21.3.4",
     "glob": "^13.0.6",

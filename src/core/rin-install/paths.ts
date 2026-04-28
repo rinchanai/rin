@@ -12,6 +12,9 @@ const INSTALLED_APP_ENTRY_LAYOUT = {
   "rin-install": {
     current: ["app", "rin-install", "main.js"],
   },
+  "rin-gui": {
+    current: ["app", "rin-gui", "main.js"],
+  },
 } as const;
 
 const INSTALLER_MANIFEST_RELATIVE_PATH = ["installer.json"] as const;
@@ -40,7 +43,9 @@ function pathCandidatesForSupportedHomeDiscoveryPlatforms(
 }
 
 export function defaultHomeRoot(platform = process.platform) {
-  return platform === "darwin" ? "/Users" : "/home";
+  if (platform === "darwin") return "/Users";
+  if (platform === "win32") return "C:\\Users";
+  return "/home";
 }
 
 export function installDiscoveryHomeRoots() {
@@ -245,13 +250,60 @@ export function localBinDirForHome(home: string) {
   return path.join(home, ".local", "bin");
 }
 
-export function launcherPathForHome(home: string, name: "rin" | "rin-install") {
+export function launcherPathForHome(
+  home: string,
+  name: "rin" | "rin-install" | "rin-gui",
+) {
   return path.join(localBinDirForHome(home), name);
+}
+
+export function windowsDesktopDirForHome(home: string) {
+  return path.join(home, "Desktop");
+}
+
+export function windowsStartMenuProgramsDirForHome(home: string) {
+  return path.join(
+    home,
+    "AppData",
+    "Roaming",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+  );
+}
+
+export function windowsGuiDesktopLauncherPathForHome(home: string) {
+  return path.join(windowsDesktopDirForHome(home), "Rin GUI.cmd");
+}
+
+export function windowsGuiStartMenuLauncherPathForHome(home: string) {
+  return path.join(windowsStartMenuProgramsDirForHome(home), "Rin GUI.cmd");
+}
+
+export function windowsStartupDirForHome(home: string) {
+  return path.join(
+    home,
+    "AppData",
+    "Roaming",
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+  );
+}
+
+export function windowsStartupLauncherPathForHome(home: string) {
+  return path.join(windowsStartupDirForHome(home), "Rin Daemon.cmd");
 }
 
 export function appConfigDirForHome(home: string, platform = process.platform) {
   if (platform === "darwin") {
     return path.join(home, "Library", "Application Support", "rin");
+  }
+  if (platform === "win32") {
+    return path.join(home, "AppData", "Roaming", "rin");
   }
   return path.join(home, ".config", "rin");
 }

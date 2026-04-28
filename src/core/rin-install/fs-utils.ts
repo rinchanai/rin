@@ -21,6 +21,8 @@ import {
   installedRinDocsRoot,
   launcherMetadataPathForHome,
   launcherPathForHome,
+  windowsGuiDesktopLauncherPathForHome,
+  windowsGuiStartMenuLauncherPathForHome,
 } from "./paths.js";
 
 export { ensureDir, readJsonFile, writeJsonFile };
@@ -148,12 +150,14 @@ export function launcherTargetsForInstallDir(installDir: string) {
   return {
     rin: installedAppEntryCandidates(installDir, "rin"),
     rinInstall: installedAppEntryCandidates(installDir, "rin-install"),
+    rinGui: installedAppEntryCandidates(installDir, "rin-gui"),
   };
 }
 
 export type LauncherWriteOptions = {
   elevated?: boolean;
   findSystemUser?: (user: string) => any;
+  platform?: NodeJS.Platform;
 };
 
 function writeLauncherExecutableForUser(
@@ -172,6 +176,21 @@ function writeLauncherExecutableForUser(
   writeTextFileWithPrivilege(filePath, content, ownerUser, ownerGroup, 0o755);
 }
 
+export function windowsCmdLauncherScript(
+  candidates: string[],
+  args: string[] = [],
+) {
+  const nodeCommand = installedRuntimeNodeCommandArgs().join(" ");
+  const forwardedArgs = args.map((arg) => ` ${arg}`).join("");
+  const checks = candidates
+    .map(
+      (candidate) =>
+        `if exist "${String(candidate).replace(/"/g, '""')}" start "" "${nodeCommand}" "${String(candidate).replace(/"/g, '""')}"${forwardedArgs}`,
+    )
+    .join("\r\n");
+  return `@echo off\r\n${checks}\r\necho rin: installed GUI entry not found\r\nexit /b 1\r\n`;
+}
+
 export function writeLaunchersForUser(
   userName: string,
   installDir: string,
@@ -179,9 +198,11 @@ export function writeLaunchersForUser(
   options: LauncherWriteOptions = {},
 ) {
   const home = homeForUser(userName);
+  const platform = options.platform || process.platform;
   const targets = launcherTargetsForInstallDir(installDir);
   const rinPath = launcherPathForHome(home, "rin");
   const rinInstallPath = launcherPathForHome(home, "rin-install");
+  const rinGuiPath = launcherPathForHome(home, "rin-gui");
   writeLauncherExecutableForUser(
     userName,
     rinPath,
@@ -194,7 +215,24 @@ export function writeLaunchersForUser(
     launcherScript(targets.rinInstall),
     options,
   );
-  return { rinPath, rinInstallPath };
+  writeLauncherExecutableForUser(
+    userName,
+    rinGuiPath,
+    launcherScript(targets.rinGui),
+    options,
+  );
+  const windowsGuiShortcutPaths: string[] = [];
+  if (platform === "win32") {
+    const script = windowsCmdLauncherScript(targets.rinGui);
+    for (const filePath of [
+      windowsGuiStartMenuLauncherPathForHome(home),
+      windowsGuiDesktopLauncherPathForHome(home),
+    ]) {
+      writeLauncherExecutableForUser(userName, filePath, script, options);
+      windowsGuiShortcutPaths.push(filePath);
+    }
+  }
+  return { rinPath, rinInstallPath, rinGuiPath, windowsGuiShortcutPaths };
 }
 
 export function appConfigDirForUser(

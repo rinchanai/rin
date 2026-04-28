@@ -69,6 +69,11 @@ test("installer service helpers prefer current daemon entry, quote systemd value
       installDir,
       () => targetMacHome,
     );
+    const windowsStartup = service.buildWindowsStartupLauncher(
+      "demo.user+test",
+      installDir,
+      () => path.join("C:\\Users", "demo space"),
+    );
 
     assert.equal(spec.kind, "systemd");
     assert.equal(spec.label, "rin-daemon-demo.user-test.service");
@@ -121,6 +126,32 @@ test("installer service helpers prefer current daemon entry, quote systemd value
     );
     assert.ok(
       plist.plist.includes(`<string>${escapeXml(targetMacHome)}</string>`),
+    );
+
+    assert.equal(windowsStartup.kind, "windows-startup");
+    assert.ok(
+      windowsStartup.servicePath.endsWith(
+        path.join(
+          "AppData",
+          "Roaming",
+          "Microsoft",
+          "Windows",
+          "Start Menu",
+          "Programs",
+          "Startup",
+          "Rin Daemon.cmd",
+        ),
+      ),
+    );
+    assert.match(windowsStartup.service, /^@echo off\r?$/m);
+    assert.match(
+      windowsStartup.service,
+      /^set "RIN_DIR=.*install & data"\r?$/m,
+    );
+    assert.match(windowsStartup.service, /start "" \/min /);
+    assert.match(
+      windowsStartup.service,
+      new RegExp(escapeRegex(currentDaemon)),
     );
   });
 });

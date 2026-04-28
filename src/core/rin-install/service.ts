@@ -25,6 +25,7 @@ import {
   managedSystemdUnitPathsForHome,
   resolveInstalledAppEntryPath,
   systemdUserUnitPathForHome,
+  windowsStartupLauncherPathForHome,
 } from "./paths.js";
 import {
   buildDaemonSocketProbeScript,
@@ -97,6 +98,10 @@ function escapeXmlText(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+function windowsCmdQuote(value: string) {
+  return `"${String(value).replace(/"/g, '""')}"`;
 }
 
 function resolveTargetUserContext(
@@ -531,6 +536,59 @@ export function reconcileSystemdUserService(
   );
 }
 
+export function buildWindowsStartupCommand(options: {
+  nodePath: string;
+  daemonEntry: string;
+  installDir: string;
+}) {
+  return `@echo off
+set "RIN_DIR=${String(options.installDir).replace(/"/g, '""')}"
+start "" /min ${windowsCmdQuote(options.nodePath)} ${windowsCmdQuote(options.daemonEntry)}
+`;
+}
+
+export function buildWindowsStartupLauncher(
+  targetUser: string,
+  installDir: string,
+  targetHomeForUser: (user: string) => string,
+) {
+  const context = resolveDaemonLaunchContext(
+    targetUser,
+    installDir,
+    targetHomeForUser,
+  );
+  const launcherPath = windowsStartupLauncherPathForHome(context.targetHome);
+  return {
+    kind: "windows-startup" as const,
+    label: "Rin Daemon",
+    servicePath: launcherPath,
+    stdoutPath: daemonStdoutLogPath(context.targetHome),
+    stderrPath: daemonStderrLogPath(context.targetHome),
+    service: buildWindowsStartupCommand({
+      nodePath: process.execPath,
+      daemonEntry: context.daemonEntry,
+      installDir,
+    }),
+  };
+}
+
+export function installWindowsStartupLauncher(
+  targetUser: string,
+  installDir: string,
+  elevated = false,
+  deps: {
+    targetHomeForUser: (user: string) => string;
+  },
+) {
+  const spec = buildWindowsStartupLauncher(
+    targetUser,
+    installDir,
+    deps.targetHomeForUser,
+  );
+  writeManagedServiceFile(spec.servicePath, spec.service, { elevated });
+  return spec;
+}
+
 export function installDaemonService(
   targetUser: string,
   installDir: string,
@@ -547,6 +605,13 @@ export function installDaemonService(
     (fs.existsSync("/usr/bin/systemctl") || fs.existsSync("/bin/systemctl"))
   )
     return installSystemdUserService(targetUser, installDir, elevated, deps);
+  if (process.platform === "win32")
+    return installWindowsStartupLauncher(
+      targetUser,
+      installDir,
+      elevated,
+      deps,
+    );
   throw new Error(`rin_service_install_unsupported:${process.platform}`);
 }
 

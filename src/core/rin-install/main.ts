@@ -34,6 +34,7 @@ import { createInstallerI18n, promptInstallerLanguage } from "./i18n.js";
 import { detectCurrentUser, repoRootFromHere, runCommand } from "./common.js";
 import { finalizeInstallPlan } from "./finalize.js";
 import { releaseInfoFromEnv } from "../rin-lib/release.js";
+import { runGuiInstaller, shouldStartGuiInstaller } from "./gui.js";
 import {
   describeOwnership,
   listSystemUsers,
@@ -74,14 +75,18 @@ async function launchInstallerInitTui(options: {
 
 export async function startInstaller() {
   const applyPlanRaw = String(process.env.RIN_INSTALL_APPLY_PLAN || "").trim();
-  if (applyPlanRaw) {
+  const applyPlanFile = String(
+    process.env.RIN_INSTALL_APPLY_PLAN_FILE || "",
+  ).trim();
+  if (applyPlanRaw || applyPlanFile) {
     const resultPath = String(
       process.env.RIN_INSTALL_APPLY_RESULT || "",
     ).trim();
     const errorPath = String(process.env.RIN_INSTALL_APPLY_ERROR || "").trim();
     try {
+      const rawPlan = applyPlanRaw || fs.readFileSync(applyPlanFile, "utf8");
       const result = await finalizeInstallPlan(
-        JSON.parse(applyPlanRaw) as FinalizeInstallOptions,
+        JSON.parse(rawPlan) as FinalizeInstallOptions,
       );
       if (resultPath)
         fs.writeFileSync(resultPath, `${JSON.stringify(result)}\n`, "utf8");
@@ -108,6 +113,11 @@ export async function startInstaller() {
       ensureNotCancelled,
       release: releaseInfoFromEnv(),
     });
+    return;
+  }
+
+  if (shouldStartGuiInstaller(process.argv.slice(2))) {
+    await runGuiInstaller(process.argv.slice(2));
     return;
   }
 

@@ -21,12 +21,19 @@ test("installer fs utils compute launcher targets and script", () => {
   assert.ok(
     targets.rin[0].endsWith(path.join("dist", "app", "rin", "main.js")),
   );
+  assert.ok(
+    targets.rinGui[0].endsWith(path.join("dist", "app", "rin-gui", "main.js")),
+  );
   const script = fsUtils.launcherScript(["/tmp/a.js", "/tmp/b.js"]);
   assert.ok(script.includes("installed runtime entry not found"));
   assert.ok(script.includes("/tmp/a.js"));
   assert.ok(script.includes("PATH="));
   assert.ok(script.includes("'/usr/bin/env' 'node' '/tmp/a.js' \"$@\""));
   assert.equal(script.includes(process.execPath), false);
+  const windowsScript = fsUtils.windowsCmdLauncherScript(targets.rinGui);
+  assert.match(windowsScript, /^@echo off\r?$/m);
+  assert.match(windowsScript, /rin-gui/);
+  assert.doesNotMatch(windowsScript, /--app/);
 });
 
 test("commandAsUserInvocation prefers runuser for root", () => {
@@ -163,9 +170,12 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
     "utf8",
   );
 
-  await fs.mkdir(path.join(installDir, "docs", "rin", "builtin-skills", "legacy"), {
-    recursive: true,
-  });
+  await fs.mkdir(
+    path.join(installDir, "docs", "rin", "builtin-skills", "legacy"),
+    {
+      recursive: true,
+    },
+  );
   await fs.writeFile(
     path.join(installDir, "docs", "rin", "builtin-skills", "legacy", "OLD.md"),
     "# Old\n",
@@ -202,7 +212,16 @@ test("syncInstalledDocs copies upstream mirrors into installed doc locations", a
     ),
   );
   await assert.rejects(
-    fs.access(path.join(installDir, "docs", "rin", "builtin-skills", "legacy", "OLD.md")),
+    fs.access(
+      path.join(
+        installDir,
+        "docs",
+        "rin",
+        "builtin-skills",
+        "legacy",
+        "OLD.md",
+      ),
+    ),
   );
   await assert.rejects(
     fs.access(path.join(installDir, "docs", "rin", "obsolete.md")),

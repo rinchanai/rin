@@ -31,6 +31,8 @@ Rin is for people who want a local assistant they can actually keep using.
 
 ## Quick start
 
+### Linux and macOS
+
 Install with one command, no clone required:
 
 ```bash
@@ -43,6 +45,18 @@ curl -fsSL https://raw.githubusercontent.com/rinchanai/rin/bootstrap/install.sh 
 ```
 
 The public bootstrap branch now only carries the install and update entry wrappers. Stable installs and updates hand off to the published npm package, while `--beta`, `--nightly`, and `--git` continue to resolve through the bootstrap manifest and GitHub refs.
+
+### Windows
+
+Install from PowerShell or Windows Terminal with Node.js and npm available:
+
+```powershell
+npm exec --yes --package @rinchanai/rin -- rin-install
+```
+
+On Windows, the interactive installer opens the GUI installer by default. It walks through language, target user, install directory, provider/model/auth, plan review, and final apply. If protected writes need confirmation, the GUI shows a one-line terminal handoff command instead of asking for privileged credentials inside the window.
+
+After installation, Windows gets a GUI-first setup: the default `rin` launch opens the desktop GUI, and the installer writes direct GUI launchers plus a user-scoped Startup launcher for the daemon. Use `rin gui` explicitly if you want to open the GUI from a terminal, or `rin-install --tui` / `rin-install --no-gui` if you need the terminal installer.
 
 If you already have the repo locally, the bundled `install.sh` wrapper runs the same release-selection flow:
 
@@ -109,6 +123,7 @@ It refreshes the core runtime and installed docs.
 It does not replace the user-scoped CLI launcher or installer.
 
 Important release-channel rule:
+
 - stable is the default for install and update
 - `--beta` means the current weekly beta candidate
 - `--nightly` means the current nightly build from `main`

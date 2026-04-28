@@ -23,6 +23,41 @@ export type FinalizeInstallOptions = {
   release?: InstalledReleaseInfo;
 };
 
+export function writeFinalizeInstallPlanFile(
+  options: FinalizeInstallOptions,
+  deps: {
+    tmpdir?: () => string;
+    writeFileSync?: typeof fs.writeFileSync;
+    chmodSync?: typeof fs.chmodSync;
+    mkdtempSync?: typeof fs.mkdtempSync;
+  } = {},
+) {
+  const tmpdir = deps.tmpdir || os.tmpdir;
+  const mkdtempSync = deps.mkdtempSync || fs.mkdtempSync;
+  const writeFileSync = deps.writeFileSync || fs.writeFileSync;
+  const chmodSync = deps.chmodSync || fs.chmodSync;
+  const planDir = mkdtempSync(path.join(tmpdir(), "rin-install-plan-"));
+  const planPath = path.join(planDir, "apply-plan.json");
+  writeFileSync(planPath, `${JSON.stringify(options, null, 2)}\n`, "utf8");
+  chmodSync(planPath, 0o600);
+  return planPath;
+}
+
+function shellQuote(value: string) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
+
+export function buildFinalizeInstallPlanCommand(
+  planPath: string,
+  entryPath = process.argv[1] || fileURLToPath(import.meta.url),
+) {
+  return [
+    `RIN_INSTALL_APPLY_PLAN_FILE=${shellQuote(planPath)}`,
+    shellQuote(process.execPath),
+    shellQuote(entryPath),
+  ].join(" ");
+}
+
 export async function runFinalizeInstallPlanInChild(
   options: FinalizeInstallOptions,
   message: string,
