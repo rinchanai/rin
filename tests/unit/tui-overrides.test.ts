@@ -27,6 +27,7 @@ const loaderModule = await import(
     ),
   ).href
 );
+const piTuiModule = await import("@mariozechner/pi-tui");
 const codingAgentModule = await import("@mariozechner/pi-coding-agent");
 const themeModule = await import(
   pathToFileURL(
@@ -66,6 +67,28 @@ test("terminal title override shows only session name", async () => {
   });
 
   assert.equal(title, "π - demo");
+});
+
+test("full redraw override preserves terminal scrollback", async () => {
+  await overrides.applyRinTuiOverrides();
+
+  let captured = "";
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk, ...args) => {
+    captured += String(chunk);
+    const callback = args.find((arg) => typeof arg === "function");
+    if (callback) callback();
+    return true;
+  }) as typeof process.stdout.write;
+
+  try {
+    const terminal = new piTuiModule.ProcessTerminal();
+    terminal.write("\u001b[?2026h\u001b[2J\u001b[H\u001b[3Jdemo");
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+
+  assert.equal(captured, "\u001b[?2026h\u001b[2J\u001b[Hdemo");
 });
 
 test("loader stop clears render interval", () => {
