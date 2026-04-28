@@ -309,14 +309,18 @@ export class RpcInteractiveSession {
     };
   }
 
+  async prepareForInteractiveStartup() {
+    this.settingsManager ??= await getPersistentSettingsManager();
+    this.autoCompactionEnabled = Boolean(
+      this.settingsManager.getCompactionEnabled?.(),
+    );
+  }
+
   async connect() {
     this.disposed = false;
     this.startupPending = true;
     this.emitFrontendStatus(true);
-    this.settingsManager = await getPersistentSettingsManager();
-    this.autoCompactionEnabled = Boolean(
-      this.settingsManager.getCompactionEnabled?.(),
-    );
+    await this.prepareForInteractiveStartup();
     this.unsubscribeClient?.();
     this.unsubscribeClient = this.client.subscribe((event) => {
       if (event.type === "ui" && event.name === "connection_lost") {
@@ -584,13 +588,20 @@ export class RpcInteractiveSession {
   }
 
   async ensureSessionReady() {
-    await this.ensureRemoteSession();
-    await this.refreshResourceDiagnostics();
-    return {
-      sessionFile: this.sessionFile,
-      sessionId: this.sessionId,
-      sessionName: this.sessionName,
-    };
+    this.startupPending = true;
+    this.emitFrontendStatus(true);
+    try {
+      await this.ensureRemoteSession();
+      await this.refreshResourceDiagnostics();
+      return {
+        sessionFile: this.sessionFile,
+        sessionId: this.sessionId,
+        sessionName: this.sessionName,
+      };
+    } finally {
+      this.startupPending = false;
+      this.emitFrontendStatus(true);
+    }
   }
 
   async runCommand(commandLine: string) {
@@ -802,13 +813,13 @@ export class RpcInteractiveSession {
   }
 
   private getFrontendPhase(): RpcFrontendPhase {
+    if (this.startupPending || this.sessionOperationPending) {
+      return "starting";
+    }
     if (!this.rpcConnected || this.recoveryPending) return "connecting";
     if (this.isCompacting) return "compacting";
     if (this.remoteTurnRunning) return "working";
     if (this.activeTurn) return "sending";
-    if (this.startupPending || this.sessionOperationPending) {
-      return "starting";
-    }
     return "idle";
   }
 
@@ -979,6 +990,7 @@ export class RpcInteractiveSession {
 
   handleSessionUnavailable(options?: { transportClosed?: boolean }) {
     if (this.disposed) return;
+    this.startupPending = false;
     this.recoveringTurnPending = Boolean(
       this.recoveringTurnPending ||
       this.remoteTurnRunning ||
