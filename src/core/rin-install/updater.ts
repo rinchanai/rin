@@ -131,7 +131,7 @@ export async function startUpdater(deps: {
       "Recommended next commands:",
       `- doctor: rin doctor${userSuffix}`,
       `- open Rin: rin${userSuffix}`,
-      "- if RPC mode fails, try `rin --std` only as a troubleshooting fallback",
+      "- if RPC mode fails, run `rin doctor` or reopen Rin to enter temporary maintenance mode",
     ]
       .filter(Boolean)
       .join("\n"),

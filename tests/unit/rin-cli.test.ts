@@ -51,6 +51,7 @@ test("cli help omits removed hidden-session flags", () => {
 
   assert.doesNotMatch(output, /--session\b/);
   assert.doesNotMatch(output, /--sessions\b/);
+  assert.doesNotMatch(output, /--(?:std|rpc)\b/);
 });
 
 test("usage and memory-index parsers ignore wrapper args around the subcommand", () => {

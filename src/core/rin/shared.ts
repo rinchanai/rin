@@ -53,7 +53,6 @@ export type ParsedArgs = {
     | "version";
   targetUser: string;
   installDir: string;
-  std: boolean;
   passthrough: string[];
   explicitUser: boolean;
   hasSavedInstall: boolean;
@@ -70,7 +69,7 @@ type InstallConfig = {
 export { repoRootFromHere, runCommand, safeString };
 
 const RIN_WRAPPER_FLAGS_WITH_VALUE = new Set(["-u", "--user"]);
-const RIN_WRAPPER_FLAGS = new Set(["--std"]);
+const RIN_WRAPPER_FLAGS = new Set<string>();
 
 function hasInlineWrapperValue(arg: string) {
   return arg.startsWith("--user=");
@@ -525,7 +524,6 @@ export function resolveParsedArgs(
       safeString(installConfig.defaultTargetUser).trim() ||
       os.userInfo().username,
     installDir: safeString(installConfig.defaultInstallDir).trim(),
-    std: Boolean(options.std),
     passthrough: command ? [] : collectTuiPassthroughArgs(rawArgv),
     explicitUser: Boolean(targetUser),
     hasSavedInstall: Boolean(

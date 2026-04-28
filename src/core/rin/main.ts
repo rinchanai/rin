@@ -49,7 +49,6 @@ function createCli() {
       "[command] [--beta|--nightly|--git [branch-or-ref]] [options] [-- passthrough]",
     )
     .option("-u, --user <name>", "Run against a specific daemon user")
-    .option("--std", "Start std TUI instead of RPC TUI")
     .option("--stable", "Use the stable release channel (default)")
     .option("--beta", "Use the beta release channel")
     .option("--nightly", "Use the nightly release channel")

@@ -13,6 +13,7 @@ const rootDir = path.resolve(
   "..",
 );
 const cliPath = path.join(rootDir, "dist", "app", "rin", "main.js");
+const tuiPath = path.join(rootDir, "dist", "app", "rin-tui", "main.js");
 
 async function removeDirRobust(dir: string, attempts = 10) {
   for (let i = 0; i < attempts; i += 1) {
@@ -69,6 +70,7 @@ async function setupIsolatedCliEnv(tempDir: string) {
       PI_CODING_AGENT_DIR: agentDir,
       RIN_DAEMON_SOCKET_PATH: path.join(runtimeDir, "daemon.sock"),
       RIN_DAEMON_SHUTDOWN_GRACE_MS: "250",
+      RIN_TUI_MAINTENANCE_MODE: "1",
       NO_COLOR: "1",
       TERM: "xterm-256color",
     },
@@ -76,7 +78,7 @@ async function setupIsolatedCliEnv(tempDir: string) {
 }
 
 test(
-  "std TUI can boot in an isolated pseudo-terminal smoke run",
+  "maintenance mode TUI can boot in an isolated pseudo-terminal smoke run",
   {
     skip:
       process.env.RIN_RUN_INTERACTIVE_TESTS === "1"
@@ -93,7 +95,7 @@ test(
       const { env } = await setupIsolatedCliEnv(tempDir);
       const child = spawn(
         "script",
-        ["-qfec", `${process.execPath} ${cliPath} --std`, "/dev/null"],
+        ["-qfec", `${process.execPath} ${tuiPath}`, "/dev/null"],
         {
           cwd: rootDir,
           env,
@@ -110,7 +112,10 @@ test(
       });
 
       const startedAt = Date.now();
-      const exitPromise = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+      const exitPromise = new Promise<{
+        code: number | null;
+        signal: NodeJS.Signals | null;
+      }>((resolve, reject) => {
         child.once("error", reject);
         child.once("exit", (code, signal) => resolve({ code, signal }));
       });
@@ -124,12 +129,19 @@ test(
         const result = await Promise.race([
           exitPromise,
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("interactive_smoke_timeout")), 8000),
+            setTimeout(
+              () => reject(new Error("interactive_smoke_timeout")),
+              8000,
+            ),
           ),
         ]);
 
         assert.ok(Date.now() - startedAt >= 1500);
-        assert.ok(result.code === 0 || result.code === 130 || result.signal === "SIGINT");
+        assert.ok(
+          result.code === 0 ||
+            result.code === 130 ||
+            result.signal === "SIGINT",
+        );
         assert.doesNotMatch(output, /rin_not_installed/);
       } finally {
         child.kill("SIGTERM");

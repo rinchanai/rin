@@ -918,7 +918,7 @@ export class RpcInteractiveSession {
       this.emitEvent({
         type: "status",
         level: "warning",
-        text: "Daemon is still unavailable after 30s. Try `rin doctor` and `rin --std` to troubleshoot.",
+        text: "Daemon is still unavailable after 30s. Try `rin doctor` or reopen Rin to enter temporary maintenance mode.",
       } as any);
     }, 30000);
     this.waitForDaemonPromise = this.ensureReconnectLoop().finally(() => {

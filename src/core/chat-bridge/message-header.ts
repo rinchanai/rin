@@ -6,12 +6,11 @@ import {
 } from "./prompt-context.js";
 import { safeString } from "../text-utils.js";
 
-type RuntimeRole = "rpc-frontend" | "std-tui" | "agent-runtime";
+type RuntimeRole = "rpc-frontend" | "maintenance-tui" | "agent-runtime";
 
 function getRuntimeRole(): RuntimeRole {
-  const argv = process.argv.slice(1);
-  if (argv.includes("--rpc")) return "rpc-frontend";
-  if (argv.includes("--std")) return "std-tui";
+  const role = safeString(process.env.RIN_TUI_RUNTIME_ROLE).trim();
+  if (role === "rpc-frontend" || role === "maintenance-tui") return role;
   return "agent-runtime";
 }
 
