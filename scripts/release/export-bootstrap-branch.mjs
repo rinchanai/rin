@@ -3,6 +3,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const BOOTSTRAP_PAYLOAD_FILES = Object.freeze([
+  "install.sh",
+  "update.sh",
+  "install.ps1",
+  "update.ps1",
+  "scripts/bootstrap-entrypoint.sh",
+  "scripts/bootstrap-entrypoint.ps1",
+  "release-manifest.json",
+  "docs/rin/CHANGELOG.md",
+]);
+
 function parseArgs(argv) {
   const args = {
     output: "",
@@ -67,16 +78,7 @@ for (const entry of fs.readdirSync(outputDir)) {
   fs.rmSync(path.join(outputDir, entry), { recursive: true, force: true });
 }
 
-for (const relativePath of [
-  "install.sh",
-  "update.sh",
-  "install.ps1",
-  "update.ps1",
-  path.join("scripts", "bootstrap-entrypoint.sh"),
-  path.join("scripts", "bootstrap-entrypoint.ps1"),
-  "release-manifest.json",
-  path.join("docs", "rin", "CHANGELOG.md"),
-]) {
+for (const relativePath of BOOTSTRAP_PAYLOAD_FILES) {
   copyFile(repoRoot, relativePath, outputDir, args);
 }
 
@@ -90,14 +92,7 @@ fs.writeFileSync(
     "Do not develop Rin source code on this branch.",
     "",
     "Included files:",
-    "- install.sh",
-    "- update.sh",
-    "- install.ps1",
-    "- update.ps1",
-    "- scripts/bootstrap-entrypoint.sh",
-    "- scripts/bootstrap-entrypoint.ps1",
-    "- release-manifest.json",
-    "- docs/rin/CHANGELOG.md",
+    ...BOOTSTRAP_PAYLOAD_FILES.map((relativePath) => `- ${relativePath}`),
     "",
   ].join("\n"),
   "utf8",
