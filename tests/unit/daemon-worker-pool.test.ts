@@ -85,6 +85,92 @@ test("getRestorableSessionSelectors normalizes duplicate session files and prese
   await fs.rm(dir, { recursive: true, force: true });
 });
 
+test("restoreSessionWorker only attaches the session worker", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  const logPath = path.join(dir, "commands.log");
+  await fs.writeFile(
+    workerPath,
+    `
+import fs from "node:fs";
+import process from "node:process";
+const logPath = ${JSON.stringify(logPath)};
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf("\\n");
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    fs.appendFileSync(logPath, command.type + "\\n");
+    process.stdout.write(JSON.stringify({ id: command.id, type: "response", command: command.type, success: true, data: {} }) + "\\n");
+  }
+});
+setInterval(() => {}, 1000);
+`,
+  );
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  pool.restoreSessionWorker({ sessionFile: "/tmp/session.jsonl" });
+  await sleep(100);
+
+  assert.deepEqual((await fs.readFile(logPath, "utf8")).trim().split("\n"), [
+    "switch_session",
+  ]);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
+test("continueInterruptedTurnSessionWorker attaches then continues the turn", async () => {
+  const dir = await makeTempDir("rin-worker-pool-");
+  const workerPath = path.join(dir, "worker.mjs");
+  const logPath = path.join(dir, "commands.log");
+  await fs.writeFile(
+    workerPath,
+    `
+import fs from "node:fs";
+import process from "node:process";
+const logPath = ${JSON.stringify(logPath)};
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  while (true) {
+    const idx = buffer.indexOf("\\n");
+    if (idx < 0) break;
+    const line = buffer.slice(0, idx);
+    buffer = buffer.slice(idx + 1);
+    if (!line.trim()) continue;
+    const command = JSON.parse(line);
+    fs.appendFileSync(logPath, command.type + ":" + (command.source || "") + "\\n");
+    process.stdout.write(JSON.stringify({ id: command.id, type: "response", command: command.type, success: true, data: {} }) + "\\n");
+  }
+});
+setInterval(() => {}, 1000);
+`,
+  );
+
+  const pool = new WorkerPool({ workerPath, cwd: dir, gcIdleMs: 50 });
+  pool.continueInterruptedTurnSessionWorker({
+    sessionFile: "/tmp/session.jsonl",
+    source: "daemon-restart",
+  });
+  await sleep(150);
+
+  assert.deepEqual((await fs.readFile(logPath, "utf8")).trim().split("\n"), [
+    "switch_session:",
+    "resume_interrupted_turn:daemon-restart",
+  ]);
+
+  pool.destroyAll();
+  await fs.rm(dir, { recursive: true, force: true });
+});
+
 test("detached worker survives eviction while response is pending", async () => {
   const dir = await makeTempDir("rin-worker-pool-");
   const workerPath = path.join(dir, "worker.mjs");
@@ -673,7 +759,10 @@ test("worker status snapshot exposes graceful shutdown state", async () => {
 
   pool.terminateWorkerGracefully(worker);
 
-  assert.equal(pool.getStatusSnapshot().workers[0]?.gracefulShutdownRequested, true);
+  assert.equal(
+    pool.getStatusSnapshot().workers[0]?.gracefulShutdownRequested,
+    true,
+  );
 
   pool.destroyAll();
   await fs.rm(dir, { recursive: true, force: true });

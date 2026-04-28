@@ -42,7 +42,7 @@ import {
 } from "../session/ref.js";
 import {
   initializeTerminalTurnStateBaseline,
-  listResumableSessionFiles,
+  listContinuableInterruptedTurnSessionFiles,
 } from "../session/turn-state.js";
 import { ConnectionState, WorkerPool } from "./worker-pool.js";
 
@@ -530,13 +530,21 @@ export async function startDaemon(
 
   clearLegacyRestartState(runtime.agentDir);
   const sessionDir = getRuntimeSessionDir(runtime.cwd, runtime.agentDir);
-  initializeTerminalTurnStateBaseline(
+  const terminalBaselineTimestamp = initializeTerminalTurnStateBaseline(
     sessionDir,
     turnStateBaselinePath(runtime.agentDir),
   );
-  for (const sessionFile of listResumableSessionFiles(sessionDir)) {
+  for (const sessionFile of listContinuableInterruptedTurnSessionFiles(
+    sessionDir,
+    {
+      terminalBaselineTimestamp,
+    },
+  )) {
     try {
-      workerPool.restoreSessionWorker({ sessionFile, resumeTurn: true });
+      workerPool.continueInterruptedTurnSessionWorker({
+        sessionFile,
+        source: "daemon-restart",
+      });
     } catch {}
   }
 

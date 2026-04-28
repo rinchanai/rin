@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -12,6 +11,7 @@ export type TerminalSessionTurnStateStatus = "completed" | "aborted";
 export type SessionTurnState = {
   status: SessionTurnStateStatus;
   timestamp: string;
+  reason?: string;
 };
 
 const VALID_TURN_STATES = new Set<SessionTurnStateStatus>([
@@ -41,9 +41,11 @@ function normalizeTurnState(value: unknown): SessionTurnState | undefined {
   const data = (value as any).data;
   const status = safeString(data?.status).trim() as SessionTurnStateStatus;
   if (!VALID_TURN_STATES.has(status)) return undefined;
+  const reason = safeString(data?.reason).trim();
   return {
     status,
     timestamp: safeString(data?.timestamp).trim(),
+    ...(reason ? { reason } : {}),
   };
 }
 
@@ -107,10 +109,24 @@ export function readSessionTurnState(
   return readSessionTurnStateDetails(sessionFile)?.latest;
 }
 
-export function shouldResumeSessionFile(sessionFile: string) {
+export function shouldContinueInterruptedTurn(
+  sessionFile: string,
+  options?: { terminalBaselineTimestamp?: string },
+) {
   const details = readSessionTurnStateDetails(sessionFile);
   const latest = details?.latest;
-  if (!latest) return true;
+  if (!latest || isTerminalBaselineState(latest)) {
+    if (latest && !details.hasTurnStartAfterLatestState) {
+      return !isTerminalLegacyTailSessionFile(sessionFile, {
+        ignoreTerminalBaseline: true,
+      });
+    }
+    const baselineTimestamp = safeString(
+      options?.terminalBaselineTimestamp,
+    ).trim();
+    if (!baselineTimestamp) return true;
+    return !isTerminalLegacyTailSessionFile(sessionFile);
+  }
   if (details.hasTurnStartAfterLatestState) return true;
   return !TERMINAL_TURN_STATES.has(latest.status);
 }
@@ -139,64 +155,97 @@ export function listSessionFiles(sessionDir: string): string[] {
   return result.sort();
 }
 
-export function listResumableSessionFiles(sessionDir: string): string[] {
+export function listContinuableInterruptedTurnSessionFiles(
+  sessionDir: string,
+  options?: { terminalBaselineTimestamp?: string },
+): string[] {
   return listSessionFiles(sessionDir).filter((sessionFile) =>
-    shouldResumeSessionFile(sessionFile),
+    shouldContinueInterruptedTurn(sessionFile, options),
   );
 }
 
-function appendTerminalTurnStateEntry(
+function hasToolCallContent(content: unknown) {
+  if (!Array.isArray(content)) return false;
+  return content.some((part) => {
+    if (!part || typeof part !== "object") return false;
+    return (
+      safeString((part as any).type)
+        .trim()
+        .toLowerCase() === "toolcall"
+    );
+  });
+}
+
+function isTerminalLegacyTailEntry(entry: any) {
+  if (entry?.type !== "message") return false;
+  const message = entry?.message;
+  const role = safeString(message?.role).trim();
+  if (role !== "assistant") return false;
+  return !hasToolCallContent(message?.content);
+}
+
+function isTerminalBaselineState(state: SessionTurnState | undefined) {
+  return state?.reason === "terminal-state-baseline";
+}
+
+function isTerminalBaselineEntry(entry: any) {
+  return (
+    entry?.type === "custom" &&
+    entry?.customType === SESSION_TURN_STATE_ENTRY_TYPE &&
+    safeString(entry?.data?.reason).trim() === "terminal-state-baseline"
+  );
+}
+
+function readLastSessionFileEntry(
   sessionFile: string,
-  status: TerminalSessionTurnStateStatus,
-  reason: string,
-  timestamp: string,
+  options?: { ignoreTerminalBaseline?: boolean },
 ) {
-  const ids = new Set<string>();
-  let parentId: string | null = null;
+  let lastEntry: any;
   if (
     !forEachSessionFileEntry(sessionFile, (entry) => {
-      const id = safeString(entry?.id).trim();
-      if (!id) return;
-      ids.add(id);
-      parentId = id;
+      if (options?.ignoreTerminalBaseline && isTerminalBaselineEntry(entry)) {
+        return;
+      }
+      lastEntry = entry;
     })
   ) {
-    return;
+    return undefined;
   }
+  return lastEntry;
+}
 
-  let id = crypto.randomBytes(4).toString("hex");
-  while (ids.has(id)) id = crypto.randomBytes(4).toString("hex");
-  const entry = {
-    type: "custom",
-    customType: SESSION_TURN_STATE_ENTRY_TYPE,
-    data: { status, timestamp, reason },
-    id,
-    parentId,
-    timestamp,
-  };
-  fs.appendFileSync(sessionFile, `${JSON.stringify(entry)}\n`);
+function isTerminalLegacyTailSessionFile(
+  sessionFile: string,
+  options?: { ignoreTerminalBaseline?: boolean },
+) {
+  return isTerminalLegacyTailEntry(
+    readLastSessionFileEntry(sessionFile, options),
+  );
+}
+
+function readTerminalBaselineTimestamp(baselineFile: string) {
+  try {
+    const line = fs.readFileSync(baselineFile, "utf8").split(/\r?\n/, 1)[0];
+    const timestamp = safeString(JSON.parse(line)?.timestamp).trim();
+    return timestamp || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function initializeTerminalTurnStateBaseline(
   sessionDir: string,
   baselineFile: string,
 ) {
-  if (fs.existsSync(baselineFile)) return;
+  const existingTimestamp = readTerminalBaselineTimestamp(baselineFile);
+  if (existingTimestamp) return existingTimestamp;
   const timestamp = new Date().toISOString();
-  for (const sessionFile of listSessionFiles(sessionDir)) {
-    if (readSessionTurnState(sessionFile)) continue;
-    appendTerminalTurnStateEntry(
-      sessionFile,
-      "completed",
-      "terminal-state-baseline",
-      timestamp,
-    );
-  }
   try {
     fs.mkdirSync(path.dirname(baselineFile), { recursive: true });
     fs.writeFileSync(
       baselineFile,
-      `${JSON.stringify({ version: 1, timestamp })}\n`,
+      `${JSON.stringify({ version: 1, timestamp, sessionDir })}\n`,
     );
   } catch {}
+  return timestamp;
 }
