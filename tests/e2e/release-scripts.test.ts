@@ -352,12 +352,23 @@ test("export-bootstrap-branch script exports bootstrap payload", () => {
       path.join(tempDir, "install.ps1"),
       "utf8",
     );
+    const bootstrapPowerShell = fs.readFileSync(
+      path.join(tempDir, "scripts", "bootstrap-entrypoint.ps1"),
+      "utf8",
+    );
     assert.match(readme, /bootstrap branch/);
     assert.match(installWrapper, /^DEFAULT_BOOTSTRAP_BRANCH=bootstrap$/m);
     assert.match(
       installPowerShellWrapper,
       /^\$defaultBootstrapBranch = "bootstrap"$/m,
     );
+    assert.match(installPowerShellWrapper, /\[switch\]\$Git/);
+    assert.match(
+      installPowerShellWrapper,
+      /if \(\$Git\) \{ \$args \+= "--git" \}/,
+    );
+    assert.match(bootstrapPowerShell, /\[switch\]\$Git/);
+    assert.match(bootstrapPowerShell, /if \(\$Git\) \{ \$args \+= "--git" \}/);
     assert.equal(fs.existsSync(path.join(tempDir, "stale.txt")), false);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

@@ -1,4 +1,12 @@
 param(
+  [switch]$Stable,
+  [switch]$Beta,
+  [switch]$Nightly,
+  [switch]$Git,
+  [string]$Branch,
+  [string]$Version,
+  [Alias("h")]
+  [switch]$Help,
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$RemainingArgs
 )
@@ -8,8 +16,23 @@ $scriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { "" }
 $mode = if ($env:RIN_BOOTSTRAP_WRAPPER_MODE) { $env:RIN_BOOTSTRAP_WRAPPER_MODE } else { "install" }
 $localBootstrapScript = if ($scriptDir) { Join-Path $scriptDir "scripts/bootstrap-entrypoint.ps1" } else { "" }
 
+function Build-BootstrapArgs {
+  $args = @()
+  if ($Stable) { $args += "--stable" }
+  if ($Beta) { $args += "--beta" }
+  if ($Nightly) { $args += "--nightly" }
+  if ($Git) { $args += "--git" }
+  if ($Branch) { $args += @("--branch", $Branch) }
+  if ($Version) { $args += @("--version", $Version) }
+  if ($Help) { $args += "--help" }
+  $args += $RemainingArgs
+  return $args
+}
+
+$bootstrapArgs = Build-BootstrapArgs
+
 if ($localBootstrapScript -and (Test-Path -LiteralPath $localBootstrapScript)) {
-  & $localBootstrapScript -Mode $mode @RemainingArgs
+  & $localBootstrapScript -Mode $mode @bootstrapArgs
   exit $LASTEXITCODE
 }
 
@@ -39,7 +62,7 @@ try {
     }
   }
 
-  & $bootstrapScript -Mode $mode @RemainingArgs
+  & $bootstrapScript -Mode $mode @bootstrapArgs
   exit $LASTEXITCODE
 } finally {
   Remove-Item -LiteralPath $bootstrapScript -Force -ErrorAction SilentlyContinue
