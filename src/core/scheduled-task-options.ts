@@ -15,6 +15,12 @@ export const SCHEDULED_TASK_SESSION_MODES = [
   "ephemeral",
 ] as const;
 
+export const SCHEDULED_TASK_MANAGE_ACTIONS = [
+  "delete",
+  "pause",
+  "resume",
+] as const;
+
 export const DEFAULT_SCHEDULED_TASK_SESSION_MODE = "ephemeral";
 
 export type ScheduledTaskTriggerKind =
@@ -25,6 +31,9 @@ export type ScheduledTaskTargetKind =
 
 export type ScheduledTaskSessionMode =
   (typeof SCHEDULED_TASK_SESSION_MODES)[number];
+
+export type ScheduledTaskManageAction =
+  (typeof SCHEDULED_TASK_MANAGE_ACTIONS)[number];
 
 export function isScheduledTaskSessionMode(
   value: unknown,

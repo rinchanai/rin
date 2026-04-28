@@ -16,9 +16,11 @@ import { createCronTaskId } from "../rin-daemon/cron-utils.js";
 import type { CronTaskInput, CronTaskRecord } from "../rin-daemon/cron.js";
 import {
   DEFAULT_SCHEDULED_TASK_SESSION_MODE,
+  SCHEDULED_TASK_MANAGE_ACTIONS,
   SCHEDULED_TASK_SESSION_MODES,
   SCHEDULED_TASK_TARGET_KINDS,
   SCHEDULED_TASK_TRIGGER_KINDS,
+  type ScheduledTaskManageAction,
 } from "../scheduled-task-options.js";
 import { readSessionMetadata } from "../session/metadata.js";
 
@@ -27,9 +29,9 @@ const TASK_MUTATION_COMMANDS = {
   delete: "cron_delete_task",
   pause: "cron_pause_task",
   resume: "cron_resume_task",
-} as const;
+} as const satisfies Record<ScheduledTaskManageAction, string>;
 
-type TaskAction = "get" | "save" | keyof typeof TASK_MUTATION_COMMANDS;
+type TaskAction = "get" | "save" | ScheduledTaskManageAction;
 type TaskRecordLike = Partial<CronTaskRecord>;
 type TaskCommandResponse = {
   task?: TaskRecordLike;
@@ -351,8 +353,8 @@ const getTaskSchema = Type.Object({
 });
 
 const manageTaskSchema = Type.Object({
-  action: createLooseEnumSchema(["delete", "pause", "resume"] as const, {
-    description: "Task action. Allowed values: `delete`, `pause`, or `resume`.",
+  action: createLooseEnumSchema(SCHEDULED_TASK_MANAGE_ACTIONS, {
+    description: `Task action. Allowed values: ${SCHEDULED_TASK_MANAGE_ACTIONS.map((action) => `\`${action}\``).join(", ")}.`,
   }),
   taskId: Type.String({
     description: "Task id.",
@@ -380,7 +382,7 @@ function formatListTaskResult(
 
 function isTaskMutationAction(
   action: string,
-): action is keyof typeof TASK_MUTATION_COMMANDS {
+): action is ScheduledTaskManageAction {
   return Object.prototype.hasOwnProperty.call(TASK_MUTATION_COMMANDS, action);
 }
 
